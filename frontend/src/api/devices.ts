@@ -51,7 +51,7 @@ export async function getDevices(
   if (filters.group_id) params.append("group_id", filters.group_id.toString());
   if (filters.search) params.append("search", filters.search);
 
-  return fetchJson<Device[]>(`/devices?${params.toString()}`);
+  return fetchJson<Device[]>(`/api/v1/devices/?${params.toString()}`);
 }
 
 export async function getDevicesCount(filters: DeviceFilters = {}): Promise<number> {
@@ -62,16 +62,17 @@ export async function getDevicesCount(filters: DeviceFilters = {}): Promise<numb
   if (filters.group_id) params.append("group_id", filters.group_id.toString());
   if (filters.search) params.append("search", filters.search);
 
-  const response = await fetchJson<{ count: number }>(`/devices/count?${params.toString()}`);
+  const response = await fetchJson<{ count: number }>(`/api/v1/devices/count?${params.toString()}`);
   return response.count;
 }
 
 export async function getDevice(deviceId: number): Promise<Device> {
-  return fetchJson<Device>(`/devices/${deviceId}`);
+  return fetchJson<Device>(`/api/v1/devices/${deviceId}/`);
 }
 
 export async function createDevice(device: Omit<Device, "id" | "registered_at">): Promise<Device> {
-  const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/devices`, {
+  const url = `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/devices/`;
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -80,14 +81,17 @@ export async function createDevice(device: Omit<Device, "id" | "registered_at">)
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create device");
+    console.error(`API Error: ${response.status} ${response.statusText}`);
+    console.error(`URL: ${url}`);
+    throw new Error(`Failed to create device: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
 }
 
 export async function updateDevice(deviceId: number, updates: Partial<Device>): Promise<Device> {
-  const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/devices/${deviceId}`, {
+  const url = `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/devices/${deviceId}/`;
+  const response = await fetch(url, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -96,7 +100,9 @@ export async function updateDevice(deviceId: number, updates: Partial<Device>): 
   });
 
   if (!response.ok) {
-    throw new Error("Failed to update device");
+    console.error(`API Error: ${response.status} ${response.statusText}`);
+    console.error(`URL: ${url}`);
+    throw new Error(`Failed to update device: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
