@@ -1,7 +1,6 @@
 import { Search, Server, Monitor, Wifi, WifiOff, ExternalLink } from "lucide-react";
 import { Device, DeviceFilters } from "../api/devices";
-import { Badge } from "./ui";
-import { Button } from "./ui/Button";
+import { Badge, Button } from "./ui";
 
 interface DevicesTableProps {
   devices: Device[];

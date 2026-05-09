@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, RefreshCcw, Wifi, WifiOff, Server, Clock3, CheckCircle2, AlertTriangle } from "lucide-react";
+import { RefreshCcw, Wifi, WifiOff, Server, Clock3, CheckCircle2, AlertTriangle } from "lucide-react";
 import { getDevicesCount } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { Badge, Button } from "../components/ui";
