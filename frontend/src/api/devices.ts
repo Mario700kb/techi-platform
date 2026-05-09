@@ -54,6 +54,18 @@ export async function getDevices(
   return fetchJson<Device[]>(`/devices?${params.toString()}`);
 }
 
+export async function getDevicesCount(filters: DeviceFilters = {}): Promise<number> {
+  const params = new URLSearchParams();
+  if (filters.status) params.append("status", filters.status);
+  if (filters.device_type) params.append("device_type", filters.device_type);
+  if (filters.client_id) params.append("client_id", filters.client_id.toString());
+  if (filters.group_id) params.append("group_id", filters.group_id.toString());
+  if (filters.search) params.append("search", filters.search);
+
+  const response = await fetchJson<{ count: number }>(`/devices/count?${params.toString()}`);
+  return response.count;
+}
+
 export async function getDevice(deviceId: number): Promise<Device> {
   return fetchJson<Device>(`/devices/${deviceId}`);
 }
