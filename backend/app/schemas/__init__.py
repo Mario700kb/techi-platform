@@ -3,5 +3,6 @@ from app.schemas.client import Client
 from app.schemas.device import Device
 from app.schemas.device_group import DeviceGroup
 from app.schemas.operator import Operator
+from app.schemas.agent import AgentHeartbeatPayload, AgentHeartbeatResponse
 
-__all__ = ["HealthResponse", "Client", "Device", "DeviceGroup", "Operator"]
+__all__ = ["HealthResponse", "Client", "Device", "DeviceGroup", "Operator", "AgentHeartbeatPayload", "AgentHeartbeatResponse"]

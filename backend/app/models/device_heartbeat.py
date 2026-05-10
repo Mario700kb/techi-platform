@@ -1,0 +1,31 @@
+from datetime import datetime
+from enum import Enum
+from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
+from app.db.base import Base
+from app.models.device import DeviceType, DeviceStatus
+
+
+class DeviceHeartbeat(Base):
+    __tablename__ = "device_heartbeats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    rustdesk_id = Column(String(64), nullable=False, index=True)
+    hostname = Column(String(128), nullable=True)
+    current_user = Column(String(128), nullable=True)
+    domain = Column(String(128), nullable=True)
+    public_ip = Column(String(45), nullable=True)
+    local_ip = Column(String(45), nullable=True)
+    os_name = Column(String(80), nullable=True)
+    os_version = Column(String(80), nullable=True)
+    platform = Column(String(80), nullable=True)
+    device_type = Column(SQLEnum(DeviceType), nullable=False, default=DeviceType.UNASSIGNED)
+    status = Column(SQLEnum(DeviceStatus), nullable=False, default=DeviceStatus.ONLINE)
+    cpu = Column(String(120), nullable=True)
+    ram = Column(String(120), nullable=True)
+    storage = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    device = relationship("Device", back_populates="heartbeats")

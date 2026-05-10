@@ -28,6 +28,7 @@ class DeviceBase(BaseModel):
     platform: Optional[str]
     device_type: DeviceType = DeviceType.UNASSIGNED
     status: DeviceStatus = DeviceStatus.OFFLINE
+    last_seen: Optional[datetime] = None
     cpu: Optional[str]
     ram: Optional[str]
     storage: Optional[str]

@@ -75,6 +75,34 @@ Phase 1 establishes the development skeleton only:
 - Backend health endpoint: `http://localhost:8000/health`
 - Frontend homepage: `http://localhost:5173`
 
+## Agent Heartbeat API
+
+The backend exposes a simple agent heartbeat endpoint under `/api/v1/agent/heartbeat`.
+The agent sends inventory data, and the backend stores a device heartbeat record plus updates the device record.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rustdesk_id": "ABCD-1234",
+    "hostname": "ms-branch-01",
+    "current_user": "admin",
+    "domain": "WORKGROUP",
+    "public_ip": "203.0.113.10",
+    "local_ip": "192.168.1.24",
+    "os_name": "Windows 11 Pro",
+    "os_version": "10.0.22000",
+    "platform": "windows",
+    "cpu": "Intel Core i7",
+    "ram": "16GB",
+    "storage": "512GB"
+  }'
+```
+
+A successful response returns the device and heartbeat identifiers, along with the last seen timestamp.
+
 ## Next Recommended Task
 
 Implement the first backend CRUD endpoints for devices and wire the frontend device page to fetch actual inventory data.

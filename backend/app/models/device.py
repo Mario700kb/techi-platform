@@ -44,3 +44,4 @@ class Device(Base):
 
     client = relationship("Client", back_populates="devices")
     group = relationship("DeviceGroup", back_populates="devices")
+    heartbeats = relationship("DeviceHeartbeat", back_populates="device")
