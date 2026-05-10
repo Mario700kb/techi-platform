@@ -239,3 +239,4 @@ frontend/.vite/
 # Docker
 **/docker-compose.override.yml
 **/*.env
+backend/*.db
