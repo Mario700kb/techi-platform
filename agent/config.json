@@ -1,0 +1,8 @@
+{
+  "backend_url": "http://localhost:8000/api/v1/agent/heartbeat",
+  "rustdesk_id": "rustdesk-placeholder",
+  "public_ip_service": "https://api.ipify.org?format=text",
+  "timeout_seconds": 10,
+  "retries": 3,
+  "retry_delay_seconds": 5
+}
