@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { RefreshCcw, Wifi, WifiOff, Server, Clock3, CheckCircle2, AlertTriangle } from "lucide-react";
 import { getDevicesCount } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { Badge, Button } from "../components/ui";
+import { usePollingRefresh } from "../hooks/usePollingRefresh";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
@@ -23,10 +24,14 @@ export default function Dashboard() {
   const [deployments, setDeployments] = useState<RecentDeployment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const firstLoadDoneRef = useRef(false);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
+    const showLoading = !firstLoadDoneRef.current;
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       setError(null);
       
       const [totalCount, onlineCount, offlineCount, recentDeployments] = await Promise.all([
@@ -40,17 +45,22 @@ export default function Dashboard() {
       setOnline(onlineCount);
       setOffline(offlineCount);
       setDeployments(recentDeployments.slice(0, 4));
+      firstLoadDoneRef.current = true;
     } catch (err) {
       console.error('Dashboard load error:', err);
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
-  };
-
-  useEffect(() => {
-    loadDashboard();
   }, []);
+
+  const { runNow: refreshDashboard } = usePollingRefresh(loadDashboard, {
+    intervalMs: 15000,
+    enabled: true,
+    immediate: true,
+  });
 
   return (
     <section className="space-y-6">
@@ -64,7 +74,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={loadDashboard}>
+            <Button onClick={() => void refreshDashboard()}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
             </Button>

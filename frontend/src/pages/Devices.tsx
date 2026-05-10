@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { RefreshCcw, Monitor, Server } from "lucide-react";
 import { getDevices, Device, DeviceFilters } from "../api/devices";
 import DeviceTree from "../components/DeviceTree";
 import DevicesTable from "../components/DevicesTable";
 import { Badge, Button } from "../components/ui";
+import { usePollingRefresh } from "../hooks/usePollingRefresh";
 
 const categoryFilters: Record<string, Partial<DeviceFilters>> = {
   all: {},
@@ -23,16 +24,16 @@ export default function Devices() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadAllDevices = async () => {
+  const loadAllDevices = useCallback(async () => {
     try {
       const data = await getDevices({});
       setAllDevices(data);
     } catch {
       // ignore
     }
-  };
+  }, []);
 
-  const loadDevices = async () => {
+  const loadDevices = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -43,15 +44,17 @@ export default function Devices() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadAllDevices();
-  }, []);
-
-  useEffect(() => {
-    loadDevices();
   }, [filters, searchQuery]);
+
+  const refreshBoth = useCallback(async () => {
+    await Promise.all([loadAllDevices(), loadDevices()]);
+  }, [loadAllDevices, loadDevices]);
+
+  const { runNow: refreshDevices } = usePollingRefresh(refreshBoth, {
+    intervalMs: 15000,
+    enabled: true,
+    immediate: true,
+  });
 
   const handleTreeSelect = (key: string) => {
     setSelectedTreeKey(key);
@@ -77,7 +80,7 @@ export default function Devices() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([loadAllDevices(), loadDevices()]);
+    await refreshDevices();
   };
 
   const statusSummary = useMemo(() => {
