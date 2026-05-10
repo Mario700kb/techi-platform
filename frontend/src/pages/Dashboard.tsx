@@ -28,11 +28,12 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError(null);
+      
       const [totalCount, onlineCount, offlineCount, recentDeployments] = await Promise.all([
-        getDevicesCount(),
-        getDevicesCount({ status: "online" }),
-        getDevicesCount({ status: "offline" }),
-        getRecentDeployments(),
+        getDevicesCount().catch(err => { console.error('Total count error:', err); return 0; }),
+        getDevicesCount({ status: "online" }).catch(err => { console.error('Online count error:', err); return 0; }),
+        getDevicesCount({ status: "offline" }).catch(err => { console.error('Offline count error:', err); return 0; }),
+        getRecentDeployments().catch(err => { console.error('Deployments error:', err); return []; }),
       ]);
 
       setTotal(totalCount);
@@ -40,6 +41,7 @@ export default function Dashboard() {
       setOffline(offlineCount);
       setDeployments(recentDeployments.slice(0, 4));
     } catch (err) {
+      console.error('Dashboard load error:', err);
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
     } finally {
       setLoading(false);

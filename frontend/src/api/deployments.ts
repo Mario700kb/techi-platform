@@ -9,5 +9,5 @@ export interface RecentDeployment {
 }
 
 export async function getRecentDeployments(): Promise<RecentDeployment[]> {
-  return fetchJson<RecentDeployment[]>("/api/v1/deployments/recent/");
+  return fetchJson<RecentDeployment[]>("/api/v1/deployments/recent");
 }
