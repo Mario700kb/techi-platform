@@ -12,7 +12,7 @@ class DeviceHeartbeat(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
-    rustdesk_id = Column(String(64), nullable=False, index=True)
+    rustdesk_id = Column(String(64), nullable=True, index=True)
     hostname = Column(String(128), nullable=True)
     current_user = Column(String(128), nullable=True)
     domain = Column(String(128), nullable=True)
@@ -26,6 +26,10 @@ class DeviceHeartbeat(Base):
     cpu = Column(String(120), nullable=True)
     ram = Column(String(120), nullable=True)
     storage = Column(String(120), nullable=True)
+    rustdesk_install_status = Column(String(32), nullable=True)
+    rustdesk_status = Column(String(32), nullable=True)
+    rustdesk_version = Column(String(80), nullable=True)
+    rustdesk_install_path = Column(String(512), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     device = relationship("Device", back_populates="heartbeats")

@@ -1,0 +1,1567 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle, Edit3, Loader2, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
+import { Client, DeviceGroup } from "../api/clients";
+import { assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, enterDeviceMaintenance } from "../api/devices";
+import { isValidRustDeskId } from "../services/rustdeskLaunch";
+import {
+  ACTION_LABELS,
+  ACTION_STATUS_LABELS,
+  ActionType,
+  cancelAction,
+  getDeviceActions,
+  isActiveStatus,
+  isTerminalStatus,
+  queueDeviceAction,
+  RemoteAction,
+  retryAction,
+  statusColor,
+  statusDotColor,
+} from "../api/actions";
+import { useAuth } from "../auth/AuthContext";
+import { DeviceInventory, getDeviceInventory } from "../api/inventory";
+import { createDeviceNote, deleteDeviceNote, DeviceNote, getDeviceNotes, updateDeviceNote } from "../api/notes";
+import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
+import { useDeviceActivity } from "../hooks/useDeviceActivity";
+import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
+import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
+import { Alert, AlertSeverity } from "../types/alert";
+import ActivityTimeline from "./ActivityTimeline";
+import HealthBadge from "./HealthBadge";
+import ResourceBar from "./ResourceBar";
+
+interface DeviceDrawerProps {
+  device: Device;
+  isOpen: boolean;
+  onClose: () => void;
+  wsStatus?: DeviceRealtimeStatus;
+  latestEvent?: DeviceRealtimeEvent | null;
+  clients?: Client[];
+  groups?: DeviceGroup[];
+  onDeviceUpdated?: (device: Device) => void;
+  canOperate?: boolean;
+}
+
+type DrawerTab = "overview" | "telemetry" | "patch" | "actions" | "inventory" | "notes" | "timeline";
+
+const drawerTabs: Array<{ id: DrawerTab; label: string; privacySensitive?: boolean }> = [
+  { id: "overview", label: "Overview" },
+  { id: "telemetry", label: "Telemetry" },
+  { id: "patch", label: "Patch" },
+  { id: "actions", label: "Actions" },
+  { id: "inventory", label: "Inventory", privacySensitive: true },
+  { id: "notes", label: "Notes" },
+  { id: "timeline", label: "Timeline" },
+];
+
+function DetailRow({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
+  return (
+    <div>
+      <p className="premium-kicker mb-1">{label}</p>
+      <p className={`text-xs font-medium leading-5 ${mono ? "font-mono" : ""} ${value ? "text-slate-100" : "text-slate-500"}`}>
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
+function HeartbeatFreshness({ lastSeen }: { lastSeen?: string }) {
+  if (!lastSeen) return <span className="text-xs font-medium text-slate-500">Never</span>;
+  const diffSec = (Date.now() - new Date(lastSeen).getTime()) / 1000;
+  let label: string;
+  let cls: string;
+  if (diffSec < 90) { label = "Fresh"; cls = "text-emerald-400"; }
+  else if (diffSec < 300) { label = `${Math.floor(diffSec / 60)}m ago`; cls = "text-emerald-300"; }
+  else if (diffSec < 900) { label = `${Math.floor(diffSec / 60)}m ago`; cls = "text-amber-400"; }
+  else { label = `${Math.floor(diffSec / 3600)}h ago`; cls = "text-red-400"; }
+  return <span className={`text-xs font-semibold ${cls}`}>{label}</span>;
+}
+
+function WsIndicator({ status }: { status?: DeviceRealtimeStatus }) {
+  if (status === "connected") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]" />
+        Live
+      </div>
+    );
+  }
+  if (status === "connecting") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-amber-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+        Connecting
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+      <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+      Polling
+    </div>
+  );
+}
+
+function formatUptime(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function alertSeverityColor(severity: AlertSeverity): string {
+  if (severity === "critical") return "text-red-400";
+  if (severity === "warning") return "text-amber-400";
+  return "text-slate-400";
+}
+
+function alertSeverityDot(severity: AlertSeverity): string {
+  if (severity === "critical") return "bg-red-400";
+  if (severity === "warning") return "bg-amber-400";
+  return "bg-slate-500";
+}
+
+function alertTimeAgo(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function patchStateLabel(state?: string): string {
+  if (state === "up_to_date") return "Up to date";
+  if (state === "updates_available") return "Updates available";
+  if (state === "reboot_required") return "Reboot required";
+  return "Unknown";
+}
+
+function patchStateClass(state?: string): string {
+  if (state === "up_to_date") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+  if (state === "reboot_required") return "border-red-400/30 bg-red-400/10 text-red-300";
+  return "border-amber-400/30 bg-amber-400/10 text-amber-200";
+}
+
+function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolean }) {
+  return (
+    <div className={`flex items-start gap-2 py-2 ${resolved ? "opacity-65" : ""}`}>
+      <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${alertSeverityDot(alert.severity)}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-semibold uppercase tracking-wide ${alertSeverityColor(alert.severity)}`}>
+            {alert.severity}
+          </span>
+          {resolved && <span className="text-[10px] text-slate-500">resolved</span>}
+          <span className="ml-auto flex-none text-[10px] text-slate-500">{alertTimeAgo(alert.created_at)}</span>
+        </div>
+        <p className="text-xs leading-5 text-slate-200">{alert.message}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function DeviceDrawer({
+  device,
+  isOpen,
+  onClose,
+  wsStatus,
+  latestEvent,
+  clients = [],
+  groups = [],
+  onDeviceUpdated,
+  canOperate = false,
+}: DeviceDrawerProps) {
+  const { user } = useAuth();
+
+  const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false);
+
+  const [actions, setActions] = useState<RemoteAction[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
+  const [selectedActionType, setSelectedActionType] = useState<ActionType>("ping");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionFilter, setActionFilter] = useState<"all" | "active" | "done" | "failed">("all");
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+  const actionLoadedFor = useRef<number | null>(null);
+
+  const [inventory, setInventory] = useState<DeviceInventory | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [processSearch, setProcessSearch] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [softwareSearch, setSoftwareSearch] = useState("");
+  const inventoryLoadedFor = useRef<number | null>(null);
+  const [activeTab, setActiveTab] = useState<DrawerTab>("overview");
+  const [notes, setNotes] = useState<DeviceNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const notesLoadedFor = useRef<number | null>(null);
+
+  const { events, loading, reload } = useDeviceActivity({
+    deviceId: device.id,
+    latestEvent,
+    enabled: isOpen && activeTab === "timeline",
+  });
+  const { snapshot, healthScore, healthState, healthReasons } = useDeviceTelemetry({
+    deviceId: device.id,
+    latestEvent,
+  });
+  const { openAlerts, resolvedAlerts } = useDeviceAlerts({
+    deviceId: device.id,
+    latestEvent,
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    setActiveTab("overview");
+  }, [device.id]);
+
+  const loadActions = useCallback(async () => {
+    setActionsLoading(true);
+    try {
+      const data = await getDeviceActions(device.id);
+      setActions(data);
+    } catch {
+      // non-critical
+    } finally {
+      setActionsLoading(false);
+    }
+  }, [device.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (actionLoadedFor.current !== device.id) {
+      actionLoadedFor.current = device.id;
+      void loadActions();
+    }
+  }, [isOpen, device.id, loadActions]);
+
+  const loadInventory = useCallback(async () => {
+    setInventoryLoading(true);
+    try {
+      const data = await getDeviceInventory(device.id);
+      setInventory(data);
+    } catch {
+      // non-critical
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, [device.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (inventoryLoadedFor.current !== device.id) {
+      inventoryLoadedFor.current = device.id;
+      void loadInventory();
+    }
+  }, [isOpen, device.id, loadInventory]);
+
+  const loadNotes = useCallback(async () => {
+    setNotesLoading(true);
+    try {
+      const data = await getDeviceNotes(device.id);
+      setNotes(data);
+    } catch {
+      setNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  }, [device.id]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "notes") return;
+    if (notesLoadedFor.current !== device.id) {
+      notesLoadedFor.current = device.id;
+      void loadNotes();
+    }
+  }, [isOpen, activeTab, device.id, loadNotes]);
+
+  useEffect(() => {
+    setNoteText("");
+    setEditingNoteId(null);
+    setEditingText("");
+    notesLoadedFor.current = null;
+  }, [device.id]);
+
+  // Refresh actions list on realtime action events for this device.
+  useEffect(() => {
+    if (!latestEvent) return;
+    const { type, data } = latestEvent;
+    if (type === "action_queued" || type === "action_status_changed") {
+      const eventDeviceId = (data as Record<string, unknown>)?.device_id;
+      if (eventDeviceId === device.id) {
+        void loadActions();
+      }
+    }
+  }, [latestEvent, device.id, loadActions]);
+
+  const addNote = useCallback(async () => {
+    const note = noteText.trim();
+    if (!note) return;
+    setNoteBusy(true);
+    try {
+      const created = await createDeviceNote(device.id, note);
+      setNotes((prev) => [created, ...prev]);
+      setNoteText("");
+      if (activeTab === "timeline") void reload();
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [activeTab, device.id, noteText, reload]);
+
+  const saveNote = useCallback(async (noteId: number) => {
+    const note = editingText.trim();
+    if (!note) return;
+    setNoteBusy(true);
+    try {
+      const updated = await updateDeviceNote(device.id, noteId, note);
+      setNotes((prev) => prev.map((item) => (item.id === noteId ? updated : item)));
+      setEditingNoteId(null);
+      setEditingText("");
+      if (activeTab === "timeline") void reload();
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [activeTab, device.id, editingText, reload]);
+
+  const removeNote = useCallback(async (noteId: number) => {
+    setNoteBusy(true);
+    try {
+      await deleteDeviceNote(device.id, noteId);
+      setNotes((prev) => prev.filter((item) => item.id !== noteId));
+      if (activeTab === "timeline") void reload();
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [activeTab, device.id, reload]);
+
+  const filteredProcesses = useMemo(() => {
+    const all = inventory?.processes ?? [];
+    if (!processSearch.trim()) return all;
+    const q = processSearch.toLowerCase();
+    return all.filter((p) => p.name.toLowerCase().includes(q) || String(p.pid).includes(q));
+  }, [inventory, processSearch]);
+
+  const filteredServices = useMemo(() => {
+    const all = inventory?.services ?? [];
+    if (!serviceSearch.trim()) return all;
+    const q = serviceSearch.toLowerCase();
+    return all.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.display_name.toLowerCase().includes(q) ||
+        s.status.toLowerCase().includes(q)
+    );
+  }, [inventory, serviceSearch]);
+
+  const filteredSoftware = useMemo(() => {
+    const all = inventory?.software ?? [];
+    if (!softwareSearch.trim()) return all;
+    const q = softwareSearch.toLowerCase();
+    return all.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.version ?? "").toLowerCase().includes(q) ||
+        (s.publisher ?? "").toLowerCase().includes(q)
+    );
+  }, [inventory, softwareSearch]);
+
+  const isOnline = device.status === "online";
+  const availableGroups = groups.filter((group) => group.client_id === device.client_id);
+
+  const syncColor =
+    device.rustdesk_conflict_detected
+      ? "text-red-400"
+      : device.rustdesk_sync_state === "synced"
+      ? "text-emerald-400"
+      : device.rustdesk_sync_state === "degraded"
+      ? "text-amber-400"
+      : "text-slate-400";
+
+  const syncLabel = device.rustdesk_manual_override
+    ? "Manual override"
+    : device.rustdesk_conflict_detected
+    ? "Conflict"
+    : device.rustdesk_sync_state;
+  const hasInventoryDetails =
+    Boolean(inventory && (inventory.processes.length > 0 || inventory.services.length > 0 || (inventory.software ?? []).length > 0));
+  const visibleDrawerTabs = useMemo(
+    () => drawerTabs.filter((tab) => !tab.privacySensitive || hasInventoryDetails),
+    [hasInventoryDetails]
+  );
+
+  useEffect(() => {
+    if (activeTab === "inventory" && !hasInventoryDetails) {
+      setActiveTab("overview");
+    }
+  }, [activeTab, hasInventoryDetails]);
+
+  return (
+    <>
+	      {/* Shtresa mbyllese */}
+	      <div
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] transition-opacity duration-300 ${
+          isOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Paneli */}
+      <div
+        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl transition-transform duration-300 ease-out ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        style={{
+          borderLeft: "1px solid rgba(255,255,255,0.08)",
+          background: "linear-gradient(180deg, #0e0e18 0%, #08080f 100%)",
+        }}
+      >
+        {/* Koka */}
+        <div
+          className="flex flex-none items-center justify-between px-5 py-4"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 flex-none rounded-full ${
+                  isOnline ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-slate-600"
+                }`}
+              />
+              <h2 className="truncate text-sm font-semibold text-white">
+                {device.hostname || "Unknown host"}
+              </h2>
+              <span
+                className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300"
+                style={{ background: "rgba(255,255,255,0.04)" }}
+              >
+                {device.device_type}
+              </span>
+	            </div>
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">Device #{device.id}</p>
+          </div>
+          <div className="ml-4 flex items-center gap-4">
+	            <WsIndicator status={wsStatus} />
+	            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
+            >
+	              <X className="h-4 w-4" />
+	            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-none gap-1 overflow-x-auto border-b border-white/[0.07] px-4 py-2">
+          {visibleDrawerTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                activeTab === tab.id
+                  ? "bg-techi-orange/15 text-orange-100 shadow-[inset_0_0_0_1px_rgba(255,85,63,0.22)]"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Trupi me scroll */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={activeTab === "overview" ? "" : "hidden"}>
+
+          {/* Paralajmerim per pajisje te arkivuar por aktive */}
+          {device.is_archived && device.freshness_state !== "offline" && (
+            <div
+              className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
+              style={{ border: "1px solid rgba(251,146,60,0.25)", background: "rgba(251,146,60,0.07)" }}
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-orange-400" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-orange-300">Archived device is checking in</p>
+                <p className="mt-0.5 text-[11px] leading-5 text-orange-200/70">
+                  This device is archived but is still sending heartbeats. No automatic action has been taken.
+                  Restore the device manually if it should rejoin the active fleet.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Paralajmerim per duplikim */}
+          {device.duplicate_candidate && (
+            <div
+              className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
+              style={{ border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.07)" }}
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-400" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-amber-300">Possible duplicate device</p>
+                <p className="mt-0.5 text-[11px] leading-5 text-amber-200/70">
+                  {device.duplicate_of_device_id
+                    ? `Fingerprint similarity with Device #${device.duplicate_of_device_id}${
+                        device.duplicate_score != null
+                          ? ` — ${Math.round(device.duplicate_score * 100)}% match`
+                          : ""
+                      }. Review and manually merge or dismiss.`
+                    : "This device may be a duplicate of an existing record. No automatic action has been taken."}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Mirembajtja */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center gap-2">
+              <p className="premium-kicker">Maintenance</p>
+              {device.is_in_maintenance && (
+                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-400">
+                  active
+                </span>
+              )}
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              {device.is_in_maintenance ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-sky-300">Device is in maintenance</p>
+                      {device.maintenance_note && (
+                        <p className="mt-0.5 text-[11px] text-slate-400">{device.maintenance_note}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-2">
+                    {device.maintenance_started_by && (
+                      <div>
+                        <p className="premium-kicker mb-0.5">Started by</p>
+                        <p className="text-xs font-medium text-slate-200">{device.maintenance_started_by}</p>
+                      </div>
+                    )}
+                    {device.maintenance_started_at && (
+                      <div>
+                        <p className="premium-kicker mb-0.5">Started at</p>
+                        <p className="text-xs font-medium text-slate-200">
+                          {new Date(device.maintenance_started_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    )}
+                    {device.maintenance_ends_at && (
+                      <div className="col-span-2">
+                        <p className="premium-kicker mb-0.5">Ends at</p>
+                        <p className="text-xs font-medium text-slate-200">
+                          {new Date(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    )}
+                    {!device.maintenance_ends_at && (
+                      <div className="col-span-2">
+                        <p className="premium-kicker mb-0.5">Duration</p>
+                        <p className="text-xs font-medium text-slate-400">Indefinite</p>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={maintenanceBusy}
+                    onClick={async () => {
+                      setMaintenanceBusy(true);
+                      try {
+                        const updated = await clearDeviceMaintenance(device.id);
+                        onDeviceUpdated?.(updated);
+                      } finally {
+                        setMaintenanceBusy(false);
+                      }
+                    }}
+                    className="mt-1 w-full rounded-md border border-white/10 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Exit maintenance
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className="text-[11px] font-medium text-slate-500">
+                    Alerts are suppressed while a device is in maintenance. Heartbeats and telemetry continue normally.
+                  </p>
+	                  {canOperate && (
+	                  <>
+	                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="premium-kicker mb-1 block">Duration (minutes)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="Leave blank for indefinite"
+                        value={maintenanceForm.duration}
+                        onChange={(e) => setMaintenanceForm((f) => ({ ...f, duration: e.target.value }))}
+                        className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="premium-kicker mb-1 block">Note (optional)</span>
+                      <input
+                        type="text"
+                        placeholder="Reason..."
+                        value={maintenanceForm.note}
+                        onChange={(e) => setMaintenanceForm((f) => ({ ...f, note: e.target.value }))}
+                        className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                      />
+                    </label>
+                  </div>
+	                  <button
+                    type="button"
+                    disabled={maintenanceBusy}
+                    onClick={async () => {
+                      setMaintenanceBusy(true);
+                      try {
+                        const updated = await enterDeviceMaintenance(device.id, {
+                          duration_minutes: maintenanceForm.duration ? Number(maintenanceForm.duration) : null,
+                          note: maintenanceForm.note || null,
+                          started_by: "admin",
+                        });
+                        setMaintenanceForm({ duration: "", note: "" });
+                        onDeviceUpdated?.(updated);
+                      } finally {
+                        setMaintenanceBusy(false);
+                      }
+                    }}
+                    className="w-full rounded-md border border-sky-400/30 bg-sky-400/10 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Wrench className="mr-1 inline h-3 w-3" />
+	                    Enter maintenance
+	                  </button>
+	                  </>
+	                  )}
+	                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Identiteti */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Identity</p>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <DetailRow label="Current User" value={device.current_user} />
+              <DetailRow label="Domain" value={device.domain} />
+              <DetailRow label="OS" value={device.os_name} />
+              <DetailRow label="Platform" value={device.platform} />
+              {(device.cpu || device.ram || device.storage) && (
+                <div className="col-span-2">
+                  <p className="premium-kicker mb-1">Hardware</p>
+                  <p className="text-xs font-medium leading-5 text-slate-200">
+                    {[device.cpu, device.ram, device.storage].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Caktimi */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Client Assignment</p>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <DetailRow label="Client" value={device.client_name || "No client"} />
+              <DetailRow label="Group" value={device.group_name || "No group"} />
+	              {canOperate && (
+	              <label className="col-span-2 block">
+                <span className="premium-kicker mb-1 block">Assign Client</span>
+                <select
+                  value={device.client_id ?? "none"}
+                  onChange={async (event) => {
+                    const value = event.target.value === "none" ? null : Number(event.target.value);
+                    const updated = await assignDeviceClient(device.id, value);
+                    onDeviceUpdated?.(updated);
+                  }}
+                  className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none transition focus:border-techi-orange/60"
+                >
+                  <option value="none">No client</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
+                  ))}
+                </select>
+	              </label>
+	              )}
+	              {canOperate && (
+	              <label className="col-span-2 block">
+                <span className="premium-kicker mb-1 block">Assign Group</span>
+                <select
+                  value={device.group_id ?? "none"}
+                  disabled={!device.client_id}
+                  onChange={async (event) => {
+                    const value = event.target.value === "none" ? null : Number(event.target.value);
+                    const updated = await assignDeviceGroup(device.id, value);
+                    onDeviceUpdated?.(updated);
+                  }}
+                  className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none transition focus:border-techi-orange/60 disabled:cursor-not-allowed disabled:text-slate-600"
+                >
+                  <option value="none">No group</option>
+                  {availableGroups.map((group) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+	              </label>
+	              )}
+            </div>
+          </section>
+
+          {/* Rrjeti */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Network</p>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <DetailRow label="Local IP" value={device.local_ip} mono />
+              <DetailRow label="Public IP" value={device.public_ip} mono />
+            </div>
+          </section>
+
+          {/* Heartbeat */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Heartbeat</p>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <div>
+                <p className="premium-kicker mb-1">Last Seen</p>
+                <p className="text-xs font-medium text-slate-100">
+                  {device.last_seen
+                    ? new Date(device.last_seen).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
+                    : <span className="text-slate-500">Never</span>}
+                </p>
+              </div>
+              <div>
+                <p className="premium-kicker mb-1">Freshness</p>
+                <HeartbeatFreshness lastSeen={device.last_seen} />
+              </div>
+            </div>
+          </section>
+
+          {/* RustDesk */}
+          <section className="mb-5">
+            <p className="premium-kicker mb-2">RustDesk</p>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <div className="col-span-2">
+                <DetailRow label="RustDesk ID" value={device.rustdesk_id} mono />
+              </div>
+              <DetailRow label="Install Status" value={device.rustdesk_install_status} />
+              <DetailRow label="Runtime" value={device.rustdesk_status} />
+              <DetailRow
+                label="Version"
+                value={device.rustdesk_version ? `v${device.rustdesk_version}` : undefined}
+              />
+              <div>
+                <p className="premium-kicker mb-1">Sync State</p>
+                <p className={`text-xs font-semibold ${syncColor}`}>{syncLabel}</p>
+                {device.rustdesk_sync_message && (
+                  <p className="mt-0.5 text-[10px] leading-4 text-slate-400">{device.rustdesk_sync_message}</p>
+                )}
+              </div>
+              {!isValidRustDeskId(device.rustdesk_id) && (
+                <div className="col-span-2">
+                  <p className="text-[11px] font-medium text-slate-500">RustDesk ID not resolved yet — Connect is disabled until a valid ID is confirmed.</p>
+                </div>
+              )}
+            </div>
+          </section>
+          </div>
+
+          <div className={activeTab === "telemetry" ? "" : "hidden"}>
+          {/* Telemetria */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Health &amp; Telemetry</p>
+              <HealthBadge state={healthState} score={healthScore} showLabel />
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <div className="space-y-3">
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 border-b border-white/5 pb-3">
+                  <div
+                    className={`flex h-14 w-14 items-center justify-center rounded-lg border text-lg font-bold ${
+                      healthState === "critical"
+                        ? "border-red-400/30 bg-red-400/10 text-red-300"
+                        : healthState === "warning"
+                        ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                        : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                    }`}
+                  >
+                    {healthScore ?? "—"}
+                  </div>
+                  <div>
+                    <p className="premium-kicker mb-1">Health score</p>
+                    <p className="text-xs font-medium text-slate-300">
+                      Computed from telemetry, freshness, alerts, trust, and lifecycle signals.
+                    </p>
+                  </div>
+                </div>
+                {snapshot ? (
+                  <>
+                  <ResourceBar label="CPU" percent={snapshot.cpu_percent} warnAt={75} criticalAt={90} />
+                  <ResourceBar label="RAM" percent={snapshot.ram_percent} warnAt={80} criticalAt={90} />
+                  <ResourceBar label="Disk" percent={snapshot.disk_percent} warnAt={85} criticalAt={95} />
+                  <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-white/5 pt-3">
+                    <div>
+                      <p className="premium-kicker mb-1">Uptime</p>
+                      <p className="text-xs font-medium text-slate-100">{formatUptime(snapshot.uptime_seconds)}</p>
+                    </div>
+                    <div>
+                      <p className="premium-kicker mb-1">Latency</p>
+                      <p className="text-xs font-medium text-slate-100">
+                        {snapshot.heartbeat_latency_ms !== null ? `${snapshot.heartbeat_latency_ms}ms` : "—"}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="premium-kicker mb-1">Last Telemetry</p>
+                      <p className="text-xs font-medium text-slate-300">
+                        {new Date(snapshot.created_at).toLocaleTimeString(undefined, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  {healthReasons.length > 0 && (
+                    <div className="border-t border-white/5 pt-3">
+                      {healthReasons.map((r) => (
+                        <p key={r} className="text-[11px] font-medium text-amber-300">⚠ {r}</p>
+                      ))}
+                    </div>
+                  )}
+                  </>
+                ) : (
+                  <p className="py-2 text-center text-xs font-medium text-slate-500">
+                    No telemetry yet — run the agent to collect metrics
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Sinjalizimet */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center gap-2">
+              <p className="premium-kicker">Alerts</p>
+              {openAlerts.length > 0 && (
+                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+                  {openAlerts.length} active
+                </span>
+              )}
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
+                <div className="flex items-center gap-2 py-1">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
+                </div>
+              ) : (
+                <>
+                  {openAlerts.length > 0 && (
+                    <div className="divide-y divide-white/5">
+                      {openAlerts.map((a) => (
+                        <AlertRow key={a.id} alert={a} />
+                      ))}
+                    </div>
+                  )}
+                  {resolvedAlerts.length > 0 && (
+                    <div className={`divide-y divide-white/5 ${openAlerts.length > 0 ? "mt-2 border-t border-white/5 pt-2" : ""}`}>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
+                      {resolvedAlerts.map((a) => (
+                        <AlertRow key={a.id} alert={a} resolved />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+          </div>
+
+          <div className={activeTab === "actions" ? "" : "hidden"}>
+          {/* Restart Device confirmation modal */}
+          {restartConfirmOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setRestartConfirmOpen(false)} />
+              <div
+                className="relative z-10 w-full max-w-sm rounded-xl p-6"
+                style={{ background: "#0e0e18", border: "1px solid rgba(255,255,255,0.1)" }}
+              >
+                <div className="mb-4 flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 flex-none text-amber-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">Restart device?</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      This will trigger an OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will be temporarily unreachable.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRestartConfirmOpen(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionBusy}
+                    onClick={async () => {
+                      setRestartConfirmOpen(false);
+                      setActionBusy(true);
+                      try {
+                        const created = await queueDeviceAction(device.id, {
+                          action_type: "restart_device",
+                          created_by: user?.username ?? "operator",
+                        });
+                        setActions((prev) => [created, ...prev]);
+                      } finally {
+                        setActionBusy(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Confirm restart
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Veprimet remote */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center gap-2">
+              <p className="premium-kicker">Remote Actions</p>
+              {actions.filter((a) => isActiveStatus(a.status)).length > 0 && (
+                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
+                  {actions.filter((a) => isActiveStatus(a.status)).length} active
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={loadActions}
+                className="ml-auto rounded p-0.5 text-slate-600 hover:text-slate-300"
+                title="Refresh actions"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+            </div>
+
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              {/* Paralajmerime */}
+              {device.is_archived && (
+                <div className="mb-3 flex items-start gap-2 rounded-md bg-orange-500/10 px-3 py-2 text-[11px] text-orange-200">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none text-orange-400" />
+                  <span>Device is archived. Actions will queue but may not be delivered.</span>
+                </div>
+              )}
+              {device.is_in_maintenance && (
+                <div className="mb-3 flex items-start gap-2 rounded-md bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
+                  <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400" />
+                  <span>Device is in maintenance. Actions will still be queued.</span>
+                </div>
+              )}
+              {!device.is_archived && device.freshness_state === "offline" && (
+                <div className="mb-3 flex items-start gap-2 rounded-md bg-slate-700/30 px-3 py-2 text-[11px] text-slate-400">
+                  <WifiOff className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" />
+                  <span>Device is offline. Action will queue and deliver on next heartbeat.</span>
+                </div>
+              )}
+              {device.freshness_state === "online" && !device.is_archived && (
+                <div className="mb-3 flex items-start gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-200">
+                  <Wifi className="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-400" />
+                  <span>Device is online. Action will be delivered on next heartbeat.</span>
+                </div>
+              )}
+
+              {canOperate ? (
+              <div className="mb-3 flex gap-2">
+                <select
+                  value={selectedActionType}
+                  onChange={(e) => setSelectedActionType(e.target.value as ActionType)}
+                  className="flex-1 rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
+                >
+                  <option value="ping">Ping</option>
+                  <option value="refresh_inventory">Refresh Inventory</option>
+                  <option value="restart_agent">Restart Agent</option>
+                  <option value="sync_rustdesk">Sync RustDesk</option>
+                  <option value="restart_device">Restart Device</option>
+                </select>
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={async () => {
+                    if (selectedActionType === "restart_device") {
+                      setRestartConfirmOpen(true);
+                      return;
+                    }
+                    setActionBusy(true);
+                    try {
+                      const created = await queueDeviceAction(device.id, {
+                        action_type: selectedActionType,
+                        created_by: user?.username ?? "operator",
+                      });
+                      setActions((prev) => [created, ...prev]);
+                    } finally {
+                      setActionBusy(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-techi-orange/25 bg-techi-orange/10 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <PlayCircle className="h-3 w-3" />
+                  Run
+                </button>
+              </div>
+              ) : (
+                <p className="mb-3 rounded-md bg-white/[0.03] px-3 py-2 text-[11px] font-medium text-slate-500">
+                  Remote actions are read-only for this role.
+                </p>
+              )}
+
+              {/* Status filter pills */}
+              <div className="mb-3 flex gap-1.5">
+                {(["all", "active", "done", "failed"] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setActionFilter(f)}
+                    className={`rounded-md px-2 py-0.5 text-[10px] font-semibold capitalize transition ${
+                      actionFilter === f
+                        ? "bg-techi-orange/15 text-orange-200 shadow-[inset_0_0_0_1px_rgba(255,85,63,0.22)]"
+                        : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              {/* Lista e veprimeve */}
+              {actionsLoading ? (
+                <p className="py-3 text-center text-[11px] text-slate-500">Loading actions…</p>
+              ) : actions.length === 0 ? (
+                <p className="py-3 text-center text-[11px] text-slate-500">No actions yet</p>
+              ) : (
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {actions
+                    .filter((a) => {
+                      if (actionFilter === "active") return isActiveStatus(a.status);
+                      if (actionFilter === "done") return a.status === "completed";
+                      if (actionFilter === "failed") return a.status === "failed" || a.status === "expired" || a.status === "cancelled";
+                      return true;
+                    })
+                    .map((action) => (
+                    <ActionRow
+                      key={action.id}
+                      action={action}
+                      onCancel={canOperate ? async (id) => {
+                        try {
+                          const updated = await cancelAction(id);
+                          setActions((prev) => prev.map((a) => a.id === id ? updated : a));
+                        } catch {
+                          // ignore
+                        }
+                      } : undefined}
+                      onRetry={canOperate ? async (id) => {
+                        try {
+                          const created = await retryAction(id);
+                          setActions((prev) => [created, ...prev]);
+                        } catch {
+                          // ignore
+                        }
+                      } : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+          </div>
+
+          <div className={activeTab === "patch" ? "" : "hidden"}>
+          {/* Patch status */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Patch Status</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${patchStateClass(inventory?.patch_state)}`}>
+                {patchStateLabel(inventory?.patch_state)}
+              </span>
+            </div>
+            <div
+              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <div>
+                <p className="premium-kicker mb-1">Pending Updates</p>
+                <p className="text-xs font-medium text-slate-100">
+                  {inventory?.pending_updates != null ? inventory.pending_updates : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="premium-kicker mb-1">Reboot Required</p>
+                <p className={`text-xs font-semibold ${inventory?.reboot_required ? "text-red-300" : "text-emerald-300"}`}>
+                  {inventory ? (inventory.reboot_required ? "Yes" : "No") : "—"}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="premium-kicker mb-1">Last Update</p>
+                <p className="text-xs font-medium text-slate-300">
+                  {inventory?.last_update_at || "—"}
+                </p>
+              </div>
+            </div>
+          </section>
+          </div>
+
+          {hasInventoryDetails && (
+          <div className={activeTab === "inventory" ? "" : "hidden"}>
+          {inventory && inventory.processes.length > 0 && (
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Processes</p>
+              <span className="text-[10px] text-slate-500">
+                {inventory.processes.length} collected
+              </span>
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <>
+                  <input
+                    type="text"
+                    placeholder="Search by name or PID…"
+                    value={processSearch}
+                    onChange={(e) => setProcessSearch(e.target.value)}
+                    className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                  />
+                  <div className="max-h-60 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-[#0e0e18]">
+                        <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <th className="pb-1.5 pr-3">PID</th>
+                          <th className="pb-1.5 pr-3">Name</th>
+                          <th className="pb-1.5 text-right">Mem (MB)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.04]">
+                        {filteredProcesses.map((p) => (
+                          <tr key={p.pid} className="text-slate-300 hover:bg-white/[0.02]">
+                            <td className="py-1 pr-3 font-mono text-[10px] text-slate-500">{p.pid}</td>
+                            <td className="max-w-[200px] truncate py-1 pr-3 font-medium">{p.name}</td>
+                            <td className="py-1 text-right text-slate-400">
+                              {p.memory_mb != null ? p.memory_mb.toFixed(1) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredProcesses.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="py-3 text-center text-slate-500">
+                              No matches
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+              </>
+            </div>
+          </section>
+          )}
+
+          {/* Sherbimet shfaqen vetem kur ka te dhena */}
+          {inventory && inventory.services.length > 0 && (
+            <section className="mb-4">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="premium-kicker">Services</p>
+                <span className="text-[10px] text-slate-500">
+                  {inventory.services.length} collected
+                </span>
+              </div>
+              <div
+                className="rounded-lg p-4"
+                style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              >
+                <input
+                  type="text"
+                  placeholder="Search by name or status…"
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
+                  className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                />
+                <div className="max-h-60 overflow-y-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="sticky top-0 bg-[#0e0e18]">
+                      <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="pb-1.5 pr-3">Name</th>
+                        <th className="pb-1.5 pr-3">Status</th>
+                        <th className="pb-1.5 text-right">Startup</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.04]">
+                      {filteredServices.map((s) => (
+                        <tr key={s.name} className="text-slate-300 hover:bg-white/[0.02]">
+                          <td className="py-1 pr-3">
+                            <p className="max-w-[180px] truncate font-medium">{s.display_name || s.name}</p>
+                            <p className="font-mono text-[10px] text-slate-600">{s.name}</p>
+                          </td>
+                          <td className="py-1 pr-3">
+                            <span
+                              className={`font-semibold ${
+                                s.status === "running"
+                                  ? "text-emerald-400"
+                                  : s.status === "stopped"
+                                  ? "text-slate-500"
+                                  : "text-amber-400"
+                              }`}
+                            >
+                              {s.status}
+                            </span>
+                          </td>
+                          <td className="py-1 text-right text-slate-500">
+                            {s.startup_type ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredServices.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="py-3 text-center text-slate-500">
+                            No matches
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {inventory && (inventory.software ?? []).length > 0 && (
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Software</p>
+              <span className="text-[10px] text-slate-500">
+                {(inventory.software ?? []).length} collected
+              </span>
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <>
+                  <input
+                    type="text"
+                    placeholder="Search by name, version, or publisher…"
+                    value={softwareSearch}
+                    onChange={(e) => setSoftwareSearch(e.target.value)}
+                    className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                  />
+                  <div className="max-h-72 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-[#0e0e18]">
+                        <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <th className="pb-1.5 pr-3">Name</th>
+                          <th className="pb-1.5 pr-3">Version</th>
+                          <th className="pb-1.5">Publisher</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.04]">
+                        {filteredSoftware.map((s, idx) => (
+                          <tr key={`${s.name}-${s.version ?? ""}-${idx}`} className="text-slate-300 hover:bg-white/[0.02]">
+                            <td className="max-w-[180px] truncate py-1 pr-3 font-medium">{s.name}</td>
+                            <td className="max-w-[90px] truncate py-1 pr-3 text-slate-400">{s.version || "—"}</td>
+                            <td className="max-w-[140px] truncate py-1 text-slate-500">{s.publisher || "—"}</td>
+                          </tr>
+                        ))}
+                        {filteredSoftware.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="py-3 text-center text-slate-500">
+                              No matches
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+              </>
+            </div>
+          </section>
+          )}
+          </div>
+          )}
+
+          <div className={activeTab === "notes" ? "" : "hidden"}>
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Notes</p>
+              <span className="text-[10px] text-slate-500">{notes.length} saved</span>
+            </div>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                rows={3}
+                placeholder="Add an internal note..."
+                className="w-full resize-none rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={noteBusy || !noteText.trim()}
+                  onClick={addNote}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-techi-orange/25 bg-techi-orange/10 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Save className="h-3 w-3" />
+                  Add note
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {notesLoading ? (
+                <p className="py-4 text-center text-[11px] text-slate-500">Loading notes...</p>
+              ) : notes.length === 0 ? (
+                <div
+                  className="rounded-lg p-4 text-center text-xs font-medium text-slate-500"
+                  style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}
+                >
+                  No notes yet.
+                </div>
+              ) : (
+                notes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="rounded-lg p-3"
+                    style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+                  >
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        {note.created_by || "admin"}
+                      </span>
+                      <span className="text-[10px] text-slate-600">{actionTimeAgo(note.updated_at)}</span>
+	                      {canOperate && (
+	                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={noteBusy}
+                          onClick={() => {
+                            setEditingNoteId(note.id);
+                            setEditingText(note.note);
+                          }}
+                          className="rounded p-1 text-slate-600 transition hover:bg-white/[0.05] hover:text-slate-300 disabled:opacity-50"
+                          title="Edit note"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={noteBusy}
+                          onClick={() => removeNote(note.id)}
+                          className="rounded p-1 text-slate-600 transition hover:bg-white/[0.05] hover:text-red-300 disabled:opacity-50"
+                          title="Delete note"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+	                      </div>
+	                      )}
+                    </div>
+	                    {canOperate && editingNoteId === note.id ? (
+                      <div>
+                        <textarea
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          rows={3}
+                          className="w-full resize-none rounded-md border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white outline-none focus:border-techi-orange/60"
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingNoteId(null);
+                              setEditingText("");
+                            }}
+                            className="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={noteBusy || !editingText.trim()}
+                            onClick={() => saveNote(note.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-techi-orange/25 bg-techi-orange/10 px-2 py-1 text-[11px] font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Save className="h-3 w-3" />
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap text-xs leading-5 text-slate-300">{note.note}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+          </div>
+
+          <div className={activeTab === "timeline" ? "" : "hidden"}>
+          <section
+            className="rounded-lg p-4"
+            style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}
+          >
+            <ActivityTimeline events={events} loading={loading} onReload={reload} />
+          </section>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function actionTimeAgo(iso?: string | null): string {
+  if (!iso) return "";
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+function ActionRow({
+  action,
+  onCancel,
+  onRetry,
+}: {
+  action: RemoteAction;
+  onCancel?: (id: number) => void;
+  onRetry?: (id: number) => void;
+}) {
+  const label = ACTION_LABELS[action.action_type as ActionType] ?? action.action_type;
+  const statusLabel = ACTION_STATUS_LABELS[action.status] ?? action.status;
+  const canCancel = Boolean(onCancel) && isActiveStatus(action.status);
+  const canRetry = Boolean(onRetry) && isTerminalStatus(action.status);
+  const isRunning = action.status === "running";
+  const relevantTime =
+    action.completed_at ??
+    action.failed_at ??
+    action.cancelled_at ??
+    action.expired_at ??
+    action.acknowledged_at ??
+    action.sent_at ??
+    action.queued_at ??
+    action.created_at;
+
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md px-3 py-2 text-xs"
+      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+    >
+      {isRunning ? (
+        <Loader2 className="mt-0.5 h-3 w-3 flex-none animate-spin text-sky-400" />
+      ) : (
+        <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${statusDotColor(action.status)}`} />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-slate-100">{label}</span>
+          <span className={`text-[10px] font-medium ${statusColor(action.status)}`}>
+            {statusLabel}
+          </span>
+          {action.duration_seconds != null && (
+            <span className="text-[10px] text-slate-500">
+              {formatDuration(action.duration_seconds)}
+            </span>
+          )}
+          <span className="ml-auto flex-none text-[10px] text-slate-600">
+            {actionTimeAgo(relevantTime)}
+          </span>
+        </div>
+        {action.created_by && (
+          <p className="text-[10px] text-slate-600">by {action.created_by}</p>
+        )}
+        {action.result_message && (
+          <p className="mt-0.5 text-[10px] text-emerald-400">{action.result_message}</p>
+        )}
+        {action.error_message && (
+          <p className="mt-0.5 text-[10px] text-red-400">{action.error_message}</p>
+        )}
+        <div className="mt-1 flex items-center gap-2">
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => onCancel?.(action.id)}
+              className="text-[10px] font-semibold text-slate-500 underline hover:text-slate-300"
+            >
+              Cancel
+            </button>
+          )}
+          {canRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry?.(action.id)}
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 underline hover:text-slate-300"
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

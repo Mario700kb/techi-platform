@@ -4,5 +4,8 @@
   "public_ip_service": "https://api.ipify.org?format=text",
   "timeout_seconds": 10,
   "retries": 3,
-  "retry_delay_seconds": 5
+  "retry_delay_seconds": 5,
+  "collect_processes": false,
+  "collect_services": false,
+  "collect_software": false
 }

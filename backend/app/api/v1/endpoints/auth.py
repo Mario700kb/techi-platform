@@ -1,0 +1,36 @@
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
+
+from app.core.agent_auth import login_limiter
+from app.core.auth import create_operator_token, get_current_operator
+from app.core.config import settings
+from app.db.session import get_db
+from app.models.operator import Operator as OperatorModel
+from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.operator import Operator
+from app.services.audit_service import AuditAction, audit_log
+from app.services.auth_service import AuthService
+
+router = APIRouter()
+
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not login_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts")
+    operator = AuthService(db).authenticate(payload.username, payload.password)
+    if not operator:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    audit_log(db, operator=operator, action=AuditAction.LOGIN)
+    return TokenResponse(
+        access_token=create_operator_token(operator),
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=Operator.model_validate(operator),
+    )
+
+
+@router.get("/me", response_model=Operator)
+def read_me(operator: OperatorModel = Depends(get_current_operator)):
+    return operator
+

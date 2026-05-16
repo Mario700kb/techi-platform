@@ -1,0 +1,37 @@
+from typing import List, Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.enrollment_token import EnrollmentToken
+
+
+class EnrollmentTokenRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, token: EnrollmentToken) -> EnrollmentToken:
+        self.db.add(token)
+        self.db.commit()
+        self.db.refresh(token)
+        return token
+
+    def get(self, token_id: int) -> Optional[EnrollmentToken]:
+        return self.db.query(EnrollmentToken).filter(EnrollmentToken.id == token_id).first()
+
+    def get_by_hash(self, token_hash: str) -> Optional[EnrollmentToken]:
+        return self.db.query(EnrollmentToken).filter(EnrollmentToken.token_hash == token_hash).first()
+
+    def list(self, *, limit: int = 100, offset: int = 0) -> List[EnrollmentToken]:
+        return (
+            self.db.query(EnrollmentToken)
+            .order_by(EnrollmentToken.created_at.desc(), EnrollmentToken.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    def save(self, token: EnrollmentToken) -> EnrollmentToken:
+        self.db.add(token)
+        self.db.commit()
+        self.db.refresh(token)
+        return token

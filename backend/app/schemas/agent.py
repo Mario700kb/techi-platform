@@ -1,13 +1,19 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.device import DeviceStatus, DeviceType
+from app.schemas.remote_action import PendingActionDelivery
 
 
 class AgentHeartbeatPayload(BaseModel):
-    rustdesk_id: str
+    model_config = ConfigDict(from_attributes=True)
+
+    agent_id: Optional[str] = None
+    device_id: Optional[int] = None
+    rustdesk_id: Optional[str] = None
+    rustdesk_enc_id: Optional[str] = None
     hostname: Optional[str] = None
     current_user: Optional[str] = None
     domain: Optional[str] = None
@@ -21,14 +27,26 @@ class AgentHeartbeatPayload(BaseModel):
     storage: Optional[str] = None
     client_id: Optional[int] = None
     group_id: Optional[int] = None
-
-    class Config:
-        orm_mode = True
+    rustdesk_install_status: Optional[str] = None
+    rustdesk_status: Optional[str] = None
+    rustdesk_version: Optional[str] = None
+    rustdesk_install_path: Optional[str] = None
+    cpu_percent: Optional[float] = None
+    ram_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
+    uptime_seconds: Optional[int] = None
+    heartbeat_latency_ms: Optional[int] = None
+    processes: Optional[List[Dict[str, Any]]] = None
+    services: Optional[List[Dict[str, Any]]] = None
+    software: Optional[List[Dict[str, Any]]] = None
+    patch_status: Optional[Dict[str, Any]] = None
 
 
 class DeviceHeartbeatCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     device_id: int
-    rustdesk_id: str
+    rustdesk_id: Optional[str] = None
     hostname: Optional[str] = None
     current_user: Optional[str] = None
     domain: Optional[str] = None
@@ -42,19 +60,44 @@ class DeviceHeartbeatCreate(BaseModel):
     cpu: Optional[str] = None
     ram: Optional[str] = None
     storage: Optional[str] = None
-
-    class Config:
-        orm_mode = True
+    rustdesk_install_status: Optional[str] = None
+    rustdesk_status: Optional[str] = None
+    rustdesk_version: Optional[str] = None
+    rustdesk_install_path: Optional[str] = None
 
 
 class AgentHeartbeatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     device_id: int
     heartbeat_id: int
-    rustdesk_id: str
+    rustdesk_id: Optional[str] = None
     device_type: DeviceType
     status: DeviceStatus
     last_seen: Optional[datetime]
     heartbeat_at: datetime
+    pending_actions: List[PendingActionDelivery] = []
 
-    class Config:
-        orm_mode = True
+
+class AgentEnrollmentRequest(BaseModel):
+    enrollment_token: Optional[str] = None  # optional for trusted domain auto-enrollment
+    domain: Optional[str] = None
+    hostname: Optional[str] = None
+    current_user: Optional[str] = None
+    platform: Optional[str] = None
+    os_name: Optional[str] = None
+    os_version: Optional[str] = None
+    local_ip: Optional[str] = None
+    public_ip: Optional[str] = None
+    rustdesk_id: Optional[str] = None
+    agent_version: Optional[str] = None
+
+
+class AgentEnrollmentResponse(BaseModel):
+    agent_id: str
+    device_id: int
+    heartbeat_url: str
+    websocket_url: str
+    enrollment_status: str
+    assigned_client_id: Optional[int] = None
+    assigned_group_id: Optional[int] = None

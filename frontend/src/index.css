@@ -5,7 +5,8 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background-color: #0b0f1c;
+  font-size: 13px;
+  background-color: #0d1220;
   color: #f8fafc;
 }
 
@@ -16,7 +17,11 @@ body,
 }
 
 body {
-  background: linear-gradient(180deg, #0b0f1c 0%, #111827 100%);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 85, 63, 0.09), transparent 28rem),
+    radial-gradient(circle at 88% 8%, rgba(255, 63, 50, 0.06), transparent 24rem),
+    linear-gradient(180deg, #08090d 0%, #101119 46%, #090a0f 100%);
+  color: #f8fafc;
 }
 
 button,
@@ -27,5 +32,332 @@ select {
 }
 
 ::selection {
-  background: rgba(255, 106, 22, 0.3);
+  background: rgba(255, 85, 63, 0.28);
+}
+
+@layer components {
+  /* ── Page shell ── */
+  .premium-page {
+    position: relative;
+    font-size: 0.95rem;
+  }
+
+  .premium-page::before {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+
+  /* ── Cards ── */
+  .premium-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background:
+      linear-gradient(145deg, rgba(18, 25, 42, 0.96), rgba(7, 12, 24, 0.98)),
+      linear-gradient(135deg, rgba(255, 85, 63, 0.07), rgba(255, 63, 50, 0.03));
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .premium-card.p-5,
+  .premium-card.p-6,
+  .premium-card.overflow-hidden {
+    padding: 0.85rem;
+  }
+
+  .premium-metric.p-5,
+  .premium-card-soft.p-4,
+  .premium-card-soft.p-5 {
+    padding: 0.75rem;
+  }
+
+  .premium-card-soft {
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    background: rgba(8, 14, 28, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  /* ── Metric cards — severity variants ── */
+  .premium-metric {
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at top right, rgba(255, 85, 63, 0.12), transparent 10rem),
+      rgba(8, 14, 28, 0.86);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .metric-online {
+    border-color: rgba(16, 185, 129, 0.22) !important;
+    background:
+      radial-gradient(circle at top right, rgba(16, 185, 129, 0.07), transparent 10rem),
+      rgba(8, 14, 28, 0.86) !important;
+  }
+
+  .metric-offline {
+    border-color: rgba(100, 116, 139, 0.2) !important;
+    background:
+      radial-gradient(circle at top right, rgba(100, 116, 139, 0.06), transparent 10rem),
+      rgba(8, 14, 28, 0.86) !important;
+  }
+
+  .metric-critical {
+    border-color: rgba(239, 68, 68, 0.28) !important;
+    background:
+      radial-gradient(circle at top right, rgba(239, 68, 68, 0.09), transparent 10rem),
+      rgba(8, 14, 28, 0.86) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(239, 68, 68, 0.06) !important;
+  }
+
+  .metric-warning {
+    border-color: rgba(251, 191, 36, 0.22) !important;
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.07), transparent 10rem),
+      rgba(8, 14, 28, 0.86) !important;
+  }
+
+  /* ── Operational status pills ── */
+  .op-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding-top: 10px;
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .op-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    line-height: 1.6;
+  }
+
+  .op-pill-ok {
+    color: #6ee7b7;
+    border-color: rgba(16, 185, 129, 0.28);
+    background: rgba(16, 185, 129, 0.07);
+  }
+
+  .op-pill-warn {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.28);
+    background: rgba(251, 191, 36, 0.07);
+  }
+
+  .op-pill-err {
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.28);
+    background: rgba(248, 113, 113, 0.07);
+  }
+
+  .op-pill-neutral {
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.24);
+    background: rgba(148, 163, 184, 0.06);
+  }
+
+  .op-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* ── Typography ── */
+  .premium-accent-text {
+    background: linear-gradient(90deg, #ff6a50, #ff3f32);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .premium-kicker {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #ff7a63;
+  }
+
+  .premium-page .text-slate-600 {
+    color: #8f9caf;
+  }
+
+  .premium-page .text-slate-500 {
+    color: #a5b1c2;
+  }
+
+  .premium-page .text-slate-400 {
+    color: #c5cfdd;
+  }
+
+  .premium-page .text-slate-300 {
+    color: #e1e7ef;
+  }
+
+  .premium-page .text-slate-200 {
+    color: #edf2f7;
+  }
+
+  /* ── Status colors ── */
+  .premium-status-online {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.24);
+  }
+
+  .premium-status-offline {
+    color: #d8e0eb;
+    background: rgba(100, 116, 139, 0.12);
+    border-color: rgba(148, 163, 184, 0.18);
+  }
+
+  /* ── Table ── */
+  .devices-premium [class*="rounded-3xl"],
+  .devices-premium [class*="rounded-2xl"] {
+    border-radius: 8px;
+  }
+
+  .devices-premium table th {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: #cbd5e1;
+    white-space: nowrap;
+    font-weight: 700;
+  }
+
+  .devices-premium table td {
+    padding-top: 0.58rem;
+    padding-bottom: 0.58rem;
+    font-size: 0.86rem;
+    vertical-align: middle;
+    color: #cbd5e1;
+  }
+
+  .devices-premium tbody tr {
+    transition: background-color 120ms ease, box-shadow 120ms ease;
+  }
+
+  .devices-premium tbody tr:hover {
+    background: rgba(255, 255, 255, 0.055);
+    box-shadow: inset 2px 0 0 rgba(255, 85, 63, 0.85);
+  }
+
+  .devices-premium input,
+  .devices-premium select {
+    border-radius: 8px;
+    background: rgba(10, 16, 30, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  /* ── Sidebar ── */
+  #root aside.flex.flex-col {
+    border-radius: 8px;
+    background:
+      linear-gradient(180deg, rgba(10, 14, 28, 0.98), rgba(2, 6, 23, 0.99)),
+      radial-gradient(circle at top left, rgba(255, 85, 63, 0.1), transparent 12rem);
+    box-shadow: 0 16px 52px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  #root aside.flex.flex-col img {
+    filter: drop-shadow(0 0 12px rgba(255, 85, 63, 0.14));
+  }
+
+  #root nav a {
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-weight: 600;
+    transition: background-color 130ms ease, color 130ms ease, box-shadow 130ms ease;
+  }
+
+  #root nav a:not([aria-current="page"]):hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: white !important;
+  }
+
+  #root nav a[aria-current="page"] {
+    background: rgba(255, 85, 63, 0.12);
+    color: white;
+    box-shadow: inset 2px 0 0 #ff553f, inset 0 0 0 1px rgba(255, 85, 63, 0.18);
+  }
+
+  /* ── Headings ── */
+  #root main h1 {
+    font-size: clamp(1.45rem, 1.9vw, 2.05rem);
+    line-height: 1.15;
+  }
+
+  #root main h2 {
+    font-size: clamp(1rem, 1.35vw, 1.35rem);
+    line-height: 1.2;
+  }
+
+  #root main .text-5xl { font-size: 2.2rem; }
+  #root main .text-4xl { font-size: 1.85rem; }
+  #root main .text-3xl { font-size: 1.42rem; }
+
+  #root main .premium-metric .text-5xl,
+  #root main .premium-metric .text-4xl,
+  #root main .premium-metric .text-3xl {
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  #root main .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.85rem; }
+  #root main .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+
+  /* ── Grid cards (Dashboard) ── */
+  #root .grid > div > .flex.flex-col.justify-between {
+    border-radius: 8px;
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(2, 6, 23, 0.96)),
+      radial-gradient(circle at top right, rgba(255, 63, 50, 0.09), transparent 16rem);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  /* ── Activity timeline ── */
+  .timeline-icon-wrap {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #0c0e1a;
+    flex-shrink: 0;
+  }
+
+  .timeline-connector {
+    position: absolute;
+    left: 9px;
+    top: 22px;
+    bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  }
 }

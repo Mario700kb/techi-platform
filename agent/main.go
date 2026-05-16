@@ -1,28 +1,135 @@
 package main
 
 import (
-    "flag"
-    "log"
+	"context"
+	"flag"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
-    configPath := flag.String("config", "config.json", "path to agent configuration file")
-    flag.Parse()
+	command := ""
+	args := os.Args[1:]
+	if len(args) > 0 && isServiceCommand(args[0]) {
+		command = args[0]
+		args = args[1:]
+	}
 
-    cfg, err := loadConfig(*configPath)
-    if err != nil {
-        log.Fatalf("failed to load config: %v", err)
-    }
+	defaultConfigPath := defaultConfigPath()
+	configPath := flag.String("config", defaultConfigPath, "path to agent configuration file")
+	enrollmentToken := flag.String("enrollment-token", "", "enrollment token for first-run agent enrollment")
+	once := flag.Bool("once", false, "send one heartbeat and exit")
+	if err := flag.CommandLine.Parse(args); err != nil {
+		log.Fatalf("failed to parse flags: %v", err)
+	}
+	if command == "" && flag.NArg() > 0 {
+		command = flag.Arg(0)
+	}
 
-    inventory, err := collectInventory(cfg)
-    if err != nil {
-        log.Fatalf("failed to collect inventory: %v", err)
-    }
+	if isServiceCommand(command) {
+		if err := runServiceCommand(command, *configPath, *enrollmentToken); err != nil {
+			log.Fatalf("%s failed: %v", command, err)
+		}
+		return
+	}
 
-    payload := buildHeartbeatPayload(cfg, inventory)
-    if err := sendHeartbeat(cfg, payload); err != nil {
-        log.Fatalf("heartbeat failed: %v", err)
-    }
+	if isWindowsService, err := runWindowsService(*configPath, *enrollmentToken); err != nil {
+		log.Fatalf("service failed: %v", err)
+	} else if isWindowsService {
+		return
+	}
 
-    log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
+	if err := configureLogging(defaultLogPath(), false); err != nil {
+		log.Printf("file logging disabled: %v", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := runAgent(ctx, *configPath, *enrollmentToken, *once); err != nil {
+		log.Fatalf("agent failed: %v", err)
+	}
+}
+
+func runSingleHeartbeat(configPath string, enrollmentToken string) error {
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return err
+	}
+	applyEnvironment(cfg)
+	if enrollmentToken != "" {
+		cfg.EnrollmentToken = enrollmentToken
+	}
+
+	inventory, err := collectInventory(cfg)
+	if err != nil {
+		return err
+	}
+	if cfg.AgentName != "" {
+		inventory.Hostname = cfg.AgentName
+	}
+
+	// RustDesk self-healing before discovery so the discovered state reflects any fixes
+	ensureRustDesk(cfg)
+
+	rustdesk := discoverRustDesk(cfg)
+	log.Printf(
+		"rustdesk discovery: id=%s install_status=%s status=%s version=%s path=%s",
+		rustdesk.ID,
+		rustdesk.InstallStatus,
+		rustdesk.Status,
+		rustdesk.Version,
+		rustdesk.InstallPath,
+	)
+
+	if err := ensureEnrollment(cfg, configPath, inventory, rustdesk); err != nil {
+		return err
+	}
+
+	tel := collectTelemetry()
+	tel.HeartbeatLatencyMs = measureLatencyMs(cfg.BackendURL, cfg.TimeoutSeconds)
+	log.Printf(
+		"telemetry: cpu=%.1f%% ram=%.1f%% disk=%.1f%% uptime=%ds latency=%dms",
+		tel.CPUPercent, tel.RAMPercent, tel.DiskPercent, tel.UptimeSeconds, tel.HeartbeatLatencyMs,
+	)
+
+	var procs []ProcessInfo
+	var svcs []ServiceInfo
+	if cfg.CollectProcesses || cfg.CollectServices {
+		procs, svcs = collectProcessesAndServices()
+		if !cfg.CollectProcesses {
+			procs = nil
+		}
+		if !cfg.CollectServices {
+			svcs = nil
+		}
+		log.Printf("inventory snapshot: %d processes, %d services", len(procs), len(svcs))
+	} else {
+		log.Printf("heavy process/service inventory disabled")
+	}
+
+	var software []SoftwareInfo
+	if cfg.CollectSoftware {
+		software = collectSoftwareInventory()
+		log.Printf("software inventory snapshot: %d entries", len(software))
+	} else {
+		log.Printf("software inventory disabled")
+	}
+
+	patchStatus := collectPatchStatus()
+	if patchStatus != nil {
+		log.Printf("patch status: state=%s pending=%d reboot_required=%t", patchStatus.PatchState, patchStatus.PendingUpdates, patchStatus.RebootRequired)
+	}
+
+	payload := buildHeartbeatPayload(cfg, inventory, rustdesk, tel, procs, svcs, software, patchStatus)
+	hbResp, err := sendHeartbeat(cfg, payload)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
+	processActions(cfg, hbResp.PendingActions)
+	return nil
 }

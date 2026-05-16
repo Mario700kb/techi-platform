@@ -1,23 +1,80 @@
+import logging
 import os
-from typing import List
+import secrets
+from typing import Any, List
 
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
-from pydantic import PostgresDsn, validator
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "TECHI Platform"
-    PROJECT_VERSION: str = "0.1.0"
+    PROJECT_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
+    DEV_ALLOW_RANDOM_SECRET: bool = False
     API_PREFIX: str = "/api/v1"
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
 
     DATABASE_URL: str = "sqlite:///./techi.db"  # Use SQLite for local development
 
-    SECRET_KEY: str = "please-change-this-secret"
+    SECRET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    BOOTSTRAP_OWNER_USERNAME: str = "owner"
+    BOOTSTRAP_OWNER_EMAIL: str = "owner@localhost"
+    BOOTSTRAP_OWNER_PASSWORD: str = ""
+    HEARTBEAT_TIMEOUT_SECONDS: int = 300
+    RECONCILIATION_INTERVAL_SECONDS: int = 30
+    RECONCILIATION_BATCH_SIZE: int = 500
+    STALE_DEVICE_CLEANUP_DAYS: int = 0
+    AGENT_PACKAGE_STORAGE_DIR: str = "agent_packages"
+    RUSTDESK_SERVER_DB_PATH: str = ""
+    RUSTDESK_RESOLVER_ENABLED: bool = False
+    TRUSTED_DOMAIN_AUTO_ENROLLMENT: bool = False
+    TRUSTED_DOMAIN_ALLOWLIST: str = ""  # comma-separated domains; empty = any non-WORKGROUP domain
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_secret_key(cls, data: Any) -> Any:
+        raw = data if isinstance(data, dict) else {}
+        explicit = (
+            os.environ.get("JWT_SECRET", "").strip()
+            or os.environ.get("SECRET_KEY", "").strip()
+            or str(raw.get("SECRET_KEY", "")).strip()
+        )
+        environment = (
+            os.environ.get("ENVIRONMENT", "").strip()
+            or str(raw.get("ENVIRONMENT", "development"))
+        ).lower()
+        allow_random = (
+            os.environ.get("DEV_ALLOW_RANDOM_SECRET", "").lower() in ("true", "1", "yes")
+            or str(raw.get("DEV_ALLOW_RANDOM_SECRET", "false")).lower() in ("true", "1", "yes")
+        )
+
+        if explicit:
+            if isinstance(data, dict):
+                data["SECRET_KEY"] = explicit
+            return data
+
+        if environment == "development" or allow_random:
+            logging.getLogger("techi.config").warning(
+                "JWT_SECRET not configured — using ephemeral random secret (sessions will reset on restart)"
+            )
+            if isinstance(data, dict):
+                data["SECRET_KEY"] = secrets.token_urlsafe(32)
+            return data
+
+        raise ValueError(
+            "JWT_SECRET must be explicitly set in production. "
+            "Set the JWT_SECRET environment variable, or set DEV_ALLOW_RANDOM_SECRET=true for development."
+        )
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
     def assemble_cors_origins(cls, value):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]

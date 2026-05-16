@@ -16,7 +16,7 @@ export default function Button({ children, className, size = "md", ...props }: B
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center rounded-2xl bg-techi-orange px-4 py-2 text-sm font-semibold text-white transition hover:bg-techi-pink",
+        "inline-flex items-center justify-center rounded-lg border border-orange-300/20 bg-gradient-to-r from-techi-orange to-techi-pink px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(255,85,63,0.2)] transition hover:border-orange-200/40 hover:shadow-[0_0_30px_rgba(255,63,50,0.24)] focus:outline-none focus:ring-2 focus:ring-techi-orange/40",
         sizeClasses[size],
         className
       )}

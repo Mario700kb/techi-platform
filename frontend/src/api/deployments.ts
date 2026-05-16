@@ -1,4 +1,4 @@
-import { fetchJson } from "../lib/api";
+import { fetchJson } from "./client";
 
 export interface RecentDeployment {
   id: number;

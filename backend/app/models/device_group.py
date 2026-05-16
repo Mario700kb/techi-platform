@@ -10,6 +10,7 @@ class DeviceGroup(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(120), nullable=False, index=True)
+    description = Column(String(255), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

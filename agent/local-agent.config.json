@@ -1,0 +1,15 @@
+{
+  "backend_url": "http://localhost:8000/api/v1/agent/heartbeat",
+  "api_url": "http://localhost:8000",
+  "websocket_url": "ws://localhost:8000/ws/devices?tenant_id=default",
+  "agent_id": "agent_-ubcqqEtbV0KoErJciFRpBVp",
+  "device_id": 10,
+  "rustdesk_id": "agent_-ubcqqEtbV0KoErJciFRpBVp",
+  "public_ip_service": "https://api.ipify.org?format=text",
+  "timeout_seconds": 10,
+  "retries": 3,
+  "retry_delay_seconds": 5,
+  "collect_processes": false,
+  "collect_services": false,
+  "collect_software": false
+}

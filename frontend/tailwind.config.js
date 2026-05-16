@@ -4,10 +4,10 @@ export default {
     extend: {
       colors: {
         techi: {
-          orange: "#FF6A16",
-          pink: "#FF4F8B",
-          dark: "#0B0F1C",
-          surface: "#141C2D",
+          orange: "#FF553F",
+          pink: "#FF3F32",
+          dark: "#050505",
+          surface: "#111010",
         },
       },
       boxShadow: {

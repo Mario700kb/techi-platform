@@ -1,0 +1,2 @@
+RUSTDESK_RESOLVER_ENABLED=true
+RUSTDESK_SERVER_DB_PATH=/opt/rustdesk/db_v2.sqlite3
