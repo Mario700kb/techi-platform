@@ -23,14 +23,14 @@ class EnrollmentTokenStatusType(TypeDecorator):
         if value is None:
             return None
         if isinstance(value, EnrollmentTokenStatus):
-            return value.name
+            return value.value
         normalized = str(value).strip()
         if not normalized:
             return normalized
         try:
-            return EnrollmentTokenStatus[normalized.upper()].name
+            return EnrollmentTokenStatus[normalized.upper()].value
         except KeyError:
-            return normalized
+            return normalized.lower()
 
     def process_result_value(self, value: Optional[str], dialect) -> Optional[EnrollmentTokenStatus]:
         if value is None:
