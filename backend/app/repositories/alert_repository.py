@@ -17,8 +17,8 @@ class AlertRepository:
             self.db.query(DeviceAlert)
             .filter(
                 DeviceAlert.device_id == device_id,
-                DeviceAlert.kind == kind,
-                DeviceAlert.state == AlertState.OPEN,
+                DeviceAlert.kind == kind.value,
+                DeviceAlert.state == AlertState.OPEN.value,
             )
             .first()
         )
@@ -28,8 +28,8 @@ class AlertRepository:
             self.db.query(DeviceAlert)
             .filter(
                 DeviceAlert.device_id == device_id,
-                DeviceAlert.kind == kind,
-                DeviceAlert.state == AlertState.RESOLVED,
+                DeviceAlert.kind == kind.value,
+                DeviceAlert.state == AlertState.RESOLVED.value,
             )
             .order_by(DeviceAlert.resolved_at.desc())
             .first()
@@ -48,9 +48,9 @@ class AlertRepository:
         now = utcnow()
         db_obj = DeviceAlert(
             device_id=device_id,
-            kind=kind,
-            severity=severity,
-            state=AlertState.OPEN,
+            kind=kind.value,
+            severity=severity.value,
+            state=AlertState.OPEN.value,
             message=message,
             detail=detail,
             created_at=now,
@@ -66,7 +66,7 @@ class AlertRepository:
         if not alert:
             return None
         now = utcnow()
-        alert.state = AlertState.RESOLVED
+        alert.state = AlertState.RESOLVED.value
         alert.resolved_at = now
         alert.updated_at = now
         if cooldown_seconds > 0:
@@ -79,7 +79,7 @@ class AlertRepository:
     def get_by_device(
         self,
         device_id: int,
-        state: Optional[AlertState] = None,
+        state: Optional[str] = None,
         limit: int = 20,
     ) -> List[DeviceAlert]:
         q = self.db.query(DeviceAlert).filter(DeviceAlert.device_id == device_id)
@@ -90,7 +90,7 @@ class AlertRepository:
     def get_recent_open(self, limit: int = 50) -> List[DeviceAlert]:
         return (
             self.db.query(DeviceAlert)
-            .filter(DeviceAlert.state == AlertState.OPEN)
+            .filter(DeviceAlert.state == AlertState.OPEN.value)
             .order_by(DeviceAlert.created_at.desc())
             .limit(limit)
             .all()
@@ -106,12 +106,12 @@ class AlertRepository:
         )
 
     def count_open(self) -> int:
-        return self.db.query(DeviceAlert).filter(DeviceAlert.state == AlertState.OPEN).count()
+        return self.db.query(DeviceAlert).filter(DeviceAlert.state == AlertState.OPEN.value).count()
 
     def count_open_by_severity(self) -> Dict[str, int]:
         rows = (
             self.db.query(DeviceAlert.severity, func.count(DeviceAlert.id))
-            .filter(DeviceAlert.state == AlertState.OPEN)
+            .filter(DeviceAlert.state == AlertState.OPEN.value)
             .group_by(DeviceAlert.severity)
             .all()
         )
@@ -122,7 +122,7 @@ class AlertRepository:
             return {}
         rows = (
             self.db.query(DeviceAlert.device_id, DeviceAlert.severity, func.count(DeviceAlert.id))
-            .filter(DeviceAlert.state == AlertState.OPEN)
+            .filter(DeviceAlert.state == AlertState.OPEN.value)
             .filter(DeviceAlert.device_id.in_(device_ids))
             .group_by(DeviceAlert.device_id, DeviceAlert.severity)
             .all()

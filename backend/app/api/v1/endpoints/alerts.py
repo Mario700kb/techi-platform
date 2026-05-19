@@ -55,7 +55,7 @@ def device_alerts(
         if not device or not device_in_scope(device.client_id, device.group_id, device.id, scope):
             raise HTTPException(status_code=404, detail="Device not found")
     repo = AlertRepository(db)
-    parsed_state = AlertState(state) if state in ("open", "resolved") else None
+    parsed_state = state if state in ("open", "resolved") else None
     return repo.get_by_device(device_id=device_id, state=parsed_state, limit=limit)
 
 
