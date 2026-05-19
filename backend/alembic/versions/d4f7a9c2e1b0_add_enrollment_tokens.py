@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("active", "revoked", "expired", "used", name="enrollmenttokenstatus"),
+            sa.Enum("ACTIVE", "REVOKED", "EXPIRED", "USED", name="enrollmenttokenstatus"),
             nullable=False,
         ),
         sa.Column("created_at", sa.DateTime(), nullable=False),

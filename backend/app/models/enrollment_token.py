@@ -1,7 +1,9 @@
 from datetime import datetime
 from enum import Enum
+from typing import Optional, Union
 
-from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
 
@@ -13,8 +15,31 @@ class EnrollmentTokenStatus(str, Enum):
     USED = "used"
 
 
-def enrollment_token_status_values(statuses: type[EnrollmentTokenStatus]) -> list[str]:
-    return [status.name for status in statuses]
+class EnrollmentTokenStatusType(TypeDecorator):
+    impl = String(16)
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[Union[EnrollmentTokenStatus, str]], dialect) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, EnrollmentTokenStatus):
+            return value.name
+        normalized = str(value).strip()
+        if not normalized:
+            return normalized
+        try:
+            return EnrollmentTokenStatus[normalized.upper()].name
+        except KeyError:
+            return normalized
+
+    def process_result_value(self, value: Optional[str], dialect) -> Optional[EnrollmentTokenStatus]:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        try:
+            return EnrollmentTokenStatus[normalized.upper()]
+        except KeyError:
+            return EnrollmentTokenStatus(normalized.lower())
 
 
 class EnrollmentToken(Base):
@@ -27,17 +52,7 @@ class EnrollmentToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(160), nullable=False)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
-    status = Column(
-        SQLEnum(
-            EnrollmentTokenStatus,
-            native_enum=False,
-            create_constraint=False,
-            values_callable=enrollment_token_status_values,
-        ),
-        default=EnrollmentTokenStatus.ACTIVE,
-        nullable=False,
-        index=True,
-    )
+    status = Column(EnrollmentTokenStatusType(), default=EnrollmentTokenStatus.ACTIVE, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=True, index=True)
     used_at = Column(DateTime, nullable=True)
