@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.time import utcnow
 from app.models.alert import AlertKind, AlertSeverity, AlertState, DeviceAlert
 
 
@@ -44,7 +45,7 @@ class AlertRepository:
         detail: Optional[str] = None,
         cooldown_seconds: int = 300,
     ) -> DeviceAlert:
-        now = datetime.utcnow()
+        now = utcnow()
         db_obj = DeviceAlert(
             device_id=device_id,
             kind=kind,
@@ -64,7 +65,7 @@ class AlertRepository:
         alert = self.db.query(DeviceAlert).filter(DeviceAlert.id == alert_id).first()
         if not alert:
             return None
-        now = datetime.utcnow()
+        now = utcnow()
         alert.state = AlertState.RESOLVED
         alert.resolved_at = now
         alert.updated_at = now

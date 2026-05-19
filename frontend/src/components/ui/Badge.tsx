@@ -9,7 +9,7 @@ interface BadgeProps {
 }
 
 const variantClasses = {
-  primary: "border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white shadow-[0_0_18px_rgba(255,85,63,0.18)]",
+  primary: "th-btn-primary border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white shadow-[0_0_18px_rgba(255,85,63,0.18)]",
   secondary: "border-red-300/25 bg-techi-pink/15 text-red-100",
   ghost: "border-white/[0.12] bg-white/[0.07] text-slate-100",
   neutral: "border-slate-500/50 bg-slate-900/85 text-slate-100",

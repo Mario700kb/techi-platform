@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from app.core.time import utcnow
 from typing import List
 
 from fastapi import APIRouter
@@ -10,7 +11,7 @@ router = APIRouter()
 
 @router.get("/recent", response_model=List[RecentDeployment])
 def read_recent_deployments():
-    now = datetime.utcnow()
+    now = utcnow()
     return [
         RecentDeployment(
             id=1,

@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utcnow
 from app.models.device_activity_event import DeviceActivityEvent
 
 
@@ -26,7 +27,7 @@ class DeviceActivityEventRepository:
             summary=summary,
             detail=detail,
             actor=actor,
-            occurred_at=occurred_at or datetime.utcnow(),
+            occurred_at=occurred_at or utcnow(),
         )
         self.db.add(event)
         self.db.commit()

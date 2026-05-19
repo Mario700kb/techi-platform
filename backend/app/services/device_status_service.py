@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from app.core.time import ensure_utc, utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -29,7 +30,8 @@ class DeviceStatusService:
         now: Optional[datetime] = None,
         timeout_seconds: Optional[int] = None,
     ) -> DeviceStatus:
-        now = now or datetime.utcnow()
+        now = ensure_utc(now or utcnow())
+        last_seen = ensure_utc(last_seen)
         timeout = timeout_seconds or settings.HEARTBEAT_TIMEOUT_SECONDS
 
         if last_seen is None:
@@ -64,7 +66,7 @@ class DeviceStatusService:
         return device
 
     def reconcile_stale_devices(self, *, now: Optional[datetime] = None, batch_size: Optional[int] = None) -> int:
-        now = now or datetime.utcnow()
+        now = ensure_utc(now or utcnow())
         timeout = settings.HEARTBEAT_TIMEOUT_SECONDS
         cutoff = now - timedelta(seconds=timeout)
         stale_devices = self.device_repo.get_online_stale(cutoff, limit=batch_size or settings.RECONCILIATION_BATCH_SIZE)

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bell, CheckCircle, XCircle } from "lucide-react";
 import { Alert, AlertSeverity } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
+import { parseUTC } from "../utils/time";
 
 interface NotificationCenterProps {
   alerts: Alert[];
@@ -23,7 +25,7 @@ function severityText(severity: AlertSeverity): string {
 }
 
 function timeAgo(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  const diff = (Date.now() - parseUTC(iso).getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
@@ -33,6 +35,16 @@ function timeAgo(iso: string): string {
 function kindLabel(kind: string): string {
   return kind.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+const PANEL_MAX_WIDTH = 360;
+const PANEL_MARGIN = 8;
+const PANEL_GAP = 6;
+
+type PanelPosition = {
+  top: number;
+  left: number;
+  width: number;
+};
 
 export default function NotificationCenter({
   alerts,
@@ -53,6 +65,8 @@ export default function NotificationCenter({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const panelPositionRef = useRef<PanelPosition | null>(null);
+  const frameRef = useRef<number | null>(null);
 
   // Click-outside
   useEffect(() => {
@@ -77,14 +91,74 @@ export default function NotificationCenter({
 
   const hasCritical = alerts.some((a) => a.severity === "critical");
 
+  const positionPanel = useCallback(() => {
+    if (!buttonRef.current) return;
+    const r = buttonRef.current.getBoundingClientRect();
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const width = Math.min(PANEL_MAX_WIDTH, Math.max(240, viewportWidth - PANEL_MARGIN * 2));
+    const panelHeight = Math.min(
+      panelRef.current?.offsetHeight ?? 430,
+      viewportHeight - PANEL_MARGIN * 2
+    );
+    const left = Math.min(
+      Math.max(PANEL_MARGIN, r.right - width),
+      viewportWidth - width - PANEL_MARGIN
+    );
+    const top = Math.min(
+      Math.max(PANEL_MARGIN, r.bottom + PANEL_GAP),
+      viewportHeight - panelHeight - PANEL_MARGIN
+    );
+    const nextPosition = {
+      width,
+      top,
+      left,
+    };
+    const previous = panelPositionRef.current;
+    if (
+      previous &&
+      Math.abs(previous.top - nextPosition.top) < 0.5 &&
+      Math.abs(previous.left - nextPosition.left) < 0.5 &&
+      Math.abs(previous.width - nextPosition.width) < 0.5
+    ) {
+      return;
+    }
+    panelPositionRef.current = nextPosition;
+    setPanelStyle((prev) => ({ ...prev, ...nextPosition }));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    positionPanel();
+    const trackAnchor = () => {
+      positionPanel();
+      frameRef.current = window.requestAnimationFrame(trackAnchor);
+    };
+    frameRef.current = window.requestAnimationFrame(trackAnchor);
+    const onUpdate = () => {
+      if (frameRef.current !== null) return;
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+        positionPanel();
+      });
+    };
+    window.addEventListener("resize", onUpdate);
+    window.addEventListener("scroll", onUpdate, true);
+    window.visualViewport?.addEventListener("resize", onUpdate);
+    return () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      window.removeEventListener("resize", onUpdate);
+      window.removeEventListener("scroll", onUpdate, true);
+      window.visualViewport?.removeEventListener("resize", onUpdate);
+    };
+  }, [open, positionPanel]);
+
   const handleToggle = () => {
-    if (!open && buttonRef.current) {
-      const r = buttonRef.current.getBoundingClientRect();
-      setPanelStyle((prev) => ({
-        ...prev,
-        top: r.bottom + 6,
-        left: Math.max(8, r.right - 360),
-      }));
+    if (!open) {
+      positionPanel();
     }
     setOpen((v) => !v);
   };
@@ -122,10 +196,13 @@ export default function NotificationCenter({
         type="button"
         onClick={handleToggle}
         className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors duration-150 ${
-          open
-            ? "border-techi-orange/50 bg-techi-orange/10 text-white"
-            : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20 hover:text-white"
+          open ? "border-techi-orange/50 bg-techi-orange/10" : ""
         }`}
+        style={open ? { color: "var(--th-text-primary)" } : {
+          borderColor: "var(--th-border-default)",
+          background: "var(--th-bg-surface)",
+          color: "var(--th-text-secondary)",
+        }}
       >
         <Bell className={`h-3.5 w-3.5 ${hasCritical ? "text-red-400" : ""}`} />
         {totalOpen > 0 && (
@@ -140,30 +217,33 @@ export default function NotificationCenter({
         <span className="hidden sm:inline">Alerts</span>
       </button>
 
-      {/* Panel — always in DOM, animated via CSS */}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-label="Alert notifications"
-        style={{
-          ...panelStyle,
-          opacity: open ? 1 : 0,
-          transform: open ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.98)",
-          pointerEvents: open ? "auto" : "none",
-          transition: "opacity 130ms ease-out, transform 130ms ease-out",
-        }}
-        className="overflow-hidden rounded-lg border border-white/[0.09] bg-[#0d0f1c] shadow-[0_8px_40px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.04)]"
-      >
+      {createPortal(
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-label="Alert notifications"
+          style={{
+            ...panelStyle,
+            opacity: open ? 1 : 0,
+            transform: open ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.98)",
+            pointerEvents: open ? "auto" : "none",
+            transition: "opacity 130ms ease-out, transform 130ms ease-out",
+            border: "1px solid var(--th-border-card)",
+            background: "var(--th-bg-surface)",
+          }}
+          className="overflow-hidden rounded-lg shadow-[0_8px_40px_rgba(0,0,0,0.4)]"
+        >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--th-text-muted)" }}>
             Active Alerts
           </span>
           {alerts.length > 0 && (
             <button
               type="button"
               onClick={() => void handleResolveAll()}
-            className="text-[11px] font-medium text-slate-400 transition hover:text-slate-200"
+              className="text-[11px] font-medium transition"
+              style={{ color: "var(--th-text-muted)" }}
             >
               Resolve all
             </button>
@@ -176,37 +256,39 @@ export default function NotificationCenter({
             <div className="flex flex-col items-center gap-2 py-10">
               <CheckCircle className="h-5 w-5 text-emerald-500/60" />
               <div className="text-center">
-                <p className="text-xs font-medium text-slate-300">Fleet operating normally</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">No active incidents</p>
+                <p className="text-xs font-medium" style={{ color: "var(--th-text-secondary)" }}>Fleet operating normally</p>
+                <p className="mt-0.5 text-[11px]" style={{ color: "var(--th-text-muted)" }}>No active incidents</p>
               </div>
             </div>
           ) : (
-            <ul className="divide-y divide-white/[0.04]">
+            <ul>
               {alerts.map((alert) => (
                 <li
                   key={alert.id}
-                  className="group flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.04]"
+                  className="group flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors"
+                  style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
                   onClick={() => { onDeviceJump?.(alert.device_id); setOpen(false); }}
                 >
                   <span className={`mt-[5px] h-1.5 w-1.5 flex-none rounded-full ${severityDot(alert.severity)}`} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] font-semibold leading-snug text-slate-50">
+                    <p className="truncate text-[12px] font-semibold leading-snug" style={{ color: "var(--th-text-primary)" }}>
                       {alert.message}
                     </p>
                     <p className="mt-0.5 text-[10px] font-medium">
                       <span className={`font-semibold ${severityText(alert.severity)}`}>{alert.severity}</span>
-                      <span className="text-slate-500"> · </span>
-                      <span className="text-slate-400">{kindLabel(alert.kind)}</span>
+                      <span style={{ color: "var(--th-text-muted)" }}> · </span>
+                      <span style={{ color: "var(--th-text-tertiary)" }}>{kindLabel(alert.kind)}</span>
                     </p>
                   </div>
                   <div className="flex flex-none flex-col items-end gap-1.5">
-                    <span className="text-[10px] font-medium tabular-nums text-slate-400">{timeAgo(alert.created_at)} ago</span>
+                    <span className="text-[10px] font-medium tabular-nums" style={{ color: "var(--th-text-tertiary)" }}>{timeAgo(alert.created_at)} ago</span>
                     <button
                       type="button"
                       title="Resolve"
                       onClick={(e) => void handleResolve(e, alert.id)}
                       disabled={resolving.has(alert.id)}
-                      className="rounded p-0.5 text-slate-500 opacity-0 transition hover:text-emerald-300 group-hover:opacity-100 disabled:opacity-30"
+                      className="rounded p-0.5 opacity-0 transition hover:text-emerald-400 group-hover:opacity-100 disabled:opacity-30"
+                      style={{ color: "var(--th-text-muted)" }}
                     >
                       <XCircle className="h-3 w-3" />
                     </button>
@@ -218,12 +300,14 @@ export default function NotificationCenter({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-white/[0.05] px-4 py-2">
-          <p className="text-center text-[10px] font-medium text-slate-500">
+        <div className="px-4 py-2" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
+          <p className="text-center text-[10px] font-medium" style={{ color: "var(--th-text-muted)" }}>
             {alerts.length > 0 ? "Click alert to jump to device · hover row to dismiss" : "All systems nominal"}
           </p>
         </div>
-      </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

@@ -14,14 +14,16 @@ import {
 import { UserRole } from "../api/auth";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
+import { parseUTC } from "../utils/time";
+import ConfirmationModal from "../components/ConfirmationModal";
 
 const ROLES: UserRole[] = ["owner", "admin", "operator", "readonly"];
 
 const roleBadgeClass: Record<UserRole, string> = {
-  owner: "border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white",
+  owner: "th-btn-primary border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white",
   admin: "border-red-300/25 bg-techi-pink/15 text-red-100",
   operator: "border-white/[0.12] bg-white/[0.07] text-slate-100",
-  readonly: "border-slate-500/50 bg-slate-900/85 text-slate-300",
+  readonly: "border-slate-500/50 bg-slate-500/10 text-slate-300",
 };
 
 const statusBadgeClass = {
@@ -31,7 +33,7 @@ const statusBadgeClass = {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", {
+  return parseUTC(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -40,7 +42,7 @@ function formatDate(iso: string | null): string {
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "Never";
-  return new Date(iso).toLocaleString("en-GB", {
+  return parseUTC(iso).toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -50,7 +52,7 @@ function formatDateTime(iso: string | null): string {
 }
 
 const INPUT_CLS =
-  "w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60";
+  "th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none focus:border-techi-orange/60";
 const LABEL_CLS = "block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1";
 
 interface ModalProps {
@@ -60,9 +62,28 @@ interface ModalProps {
 }
 
 function Modal({ onClose, children, title }: ModalProps) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-950 p-5 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
+      <div
+        className="th-elevated w-full max-w-md rounded-xl border p-5 shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-white">{title}</h2>
           <button
@@ -94,7 +115,8 @@ export default function Operators() {
     email: "",
     display_name: "",
     password: "",
-    role: "readonly",
+    role: "operator",
+    is_active: true,
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
@@ -130,24 +152,50 @@ export default function Operators() {
     void loadData();
   }, []);
 
+  const activeAdminCount = operators.filter((op) => op.is_active && (op.role === "owner" || op.role === "admin")).length;
+
+  const isLastActiveAdmin = (op: OperatorRecord) =>
+    op.is_active && (op.role === "owner" || op.role === "admin") && activeAdminCount <= 1;
+
   const canEditRole = (targetRole: UserRole) => {
     if (isOwner) return true;
-    if (user?.role === "admin" && (targetRole === "owner" || targetRole === "admin")) return false;
+    if (user?.role === "admin" && targetRole === "owner") return false;
     return canManage;
   };
 
   const handleCreate = async () => {
-    if (!createForm.username.trim() || !createForm.email.trim() || !createForm.password.trim()) return;
+    const username = createForm.username.trim();
+    const email = createForm.email.trim();
+    const displayName = createForm.display_name?.trim() ?? "";
+    const password = createForm.password;
+    if (!username || !email || !displayName || !password || !createForm.role) {
+      setCreateError("Username, display name, email, password, and role are required");
+      return;
+    }
+    if (password.length < 8) {
+      setCreateError("Password must be at least 8 characters");
+      return;
+    }
+    if (password.trim() !== password) {
+      setCreateError("Password cannot start or end with spaces");
+      return;
+    }
+    if (operators.some((op) => op.username.toLowerCase() === username.toLowerCase())) {
+      setCreateError("Username already exists");
+      return;
+    }
     try {
       setCreateLoading(true);
       setCreateError(null);
       const created = await createOperator({
         ...createForm,
-        display_name: createForm.display_name || undefined,
+        username,
+        email,
+        display_name: displayName,
       });
       setOperators((prev) => [...prev, created]);
       setShowCreate(false);
-      setCreateForm({ username: "", email: "", display_name: "", password: "", role: "readonly" });
+      setCreateForm({ username: "", email: "", display_name: "", password: "", role: "operator", is_active: true });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create operator");
     } finally {
@@ -186,6 +234,10 @@ export default function Operators() {
   };
 
   const handleToggleActive = async (op: OperatorRecord) => {
+    if (op.is_active && isLastActiveAdmin(op)) {
+      setError("Cannot deactivate the last active admin account");
+      return;
+    }
     try {
       setError(null);
       const updated = await updateOperator(op.id, { is_active: !op.is_active });
@@ -212,6 +264,11 @@ export default function Operators() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    if (isLastActiveAdmin(deleteTarget)) {
+      setError("Cannot delete the last active admin account");
+      setDeleteTarget(null);
+      return;
+    }
     try {
       setDeleteLoading(true);
       await deleteOperator(deleteTarget.id);
@@ -227,7 +284,7 @@ export default function Operators() {
 
   const availableRoles = (): UserRole[] => {
     if (isOwner) return ROLES;
-    return ["operator", "readonly"];
+    return ["admin", "operator", "readonly"];
   };
 
   return (
@@ -247,9 +304,15 @@ export default function Operators() {
               Refresh
             </Button>
             {canManage && (
-              <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateError(null);
+                  setShowCreate(true);
+                }}
+              >
                 <Plus className="h-3.5 w-3.5" />
-                Add Operator
+                Add User
               </Button>
             )}
           </div>
@@ -374,13 +437,18 @@ export default function Operators() {
                             <KeySquare className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {canEdit && !isSelf && (
+                      {canEdit && !isSelf && (
                           <button
                             type="button"
                             onClick={() => void handleToggleActive(op)}
                             title={op.is_active ? "Deactivate" : "Activate"}
+                            disabled={op.is_active && isLastActiveAdmin(op)}
                             className={`rounded-md p-1.5 text-[11px] font-bold transition hover:bg-white/[0.06] ${
-                              op.is_active ? "text-slate-500 hover:text-amber-300" : "text-emerald-500 hover:text-emerald-300"
+                              op.is_active && isLastActiveAdmin(op)
+                              ? "cursor-not-allowed text-slate-500 opacity-60"
+                                : op.is_active
+                                ? "text-slate-500 hover:text-amber-300"
+                                : "text-emerald-500 hover:text-emerald-300"
                             }`}
                           >
                             {op.is_active ? "Deact." : "Act."}
@@ -391,7 +459,12 @@ export default function Operators() {
                             type="button"
                             onClick={() => setDeleteTarget(op)}
                             title="Delete operator"
-                            className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-red-300"
+                            disabled={isLastActiveAdmin(op)}
+                            className={`rounded-md p-1.5 transition hover:bg-white/[0.06] ${
+                              isLastActiveAdmin(op)
+                                ? "cursor-not-allowed text-slate-500 opacity-60"
+                                : "text-slate-500 hover:text-red-300"
+                            }`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -415,11 +488,11 @@ export default function Operators() {
               </div>
             )}
             <div>
-              <label className={LABEL_CLS}>Display name</label>
+              <label className={LABEL_CLS}>Display name *</label>
               <input
                 value={createForm.display_name ?? ""}
                 onChange={(e) => setCreateForm((f) => ({ ...f, display_name: e.target.value }))}
-                placeholder="Full name (optional)"
+                placeholder="Full name"
                 className={INPUT_CLS}
               />
             </div>
@@ -450,6 +523,7 @@ export default function Operators() {
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 placeholder="Min. 8 characters"
                 className={INPUT_CLS}
+                autoComplete="new-password"
               />
             </div>
             <div>
@@ -464,16 +538,25 @@ export default function Operators() {
                 ))}
               </select>
             </div>
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm font-semibold text-slate-200">
+              <span>Enabled</span>
+              <input
+                type="checkbox"
+                checked={createForm.is_active}
+                onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))}
+                className="h-4 w-4 rounded border-white/15 accent-orange-500"
+              />
+            </label>
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
+                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
               >
                 Cancel
               </button>
               <Button type="button" onClick={handleCreate} disabled={createLoading}>
-                {createLoading ? "Creating…" : "Create Operator"}
+                {createLoading ? "Creating…" : "Create User"}
               </Button>
             </div>
           </div>
@@ -531,7 +614,7 @@ export default function Operators() {
               <button
                 type="button"
                 onClick={() => setEditTarget(null)}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
+                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
               >
                 Cancel
               </button>
@@ -568,7 +651,7 @@ export default function Operators() {
               <button
                 type="button"
                 onClick={() => setPasswordTarget(null)}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
+                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
               >
                 Cancel
               </button>
@@ -588,32 +671,17 @@ export default function Operators() {
       )}
 
       {deleteTarget && (
-        <Modal title="Delete Operator" onClose={() => setDeleteTarget(null)}>
-          <div className="space-y-4">
-            <p className="text-sm text-slate-300">
-              Permanently delete{" "}
-              <span className="font-semibold text-white">{deleteTarget.display_name ?? deleteTarget.username}</span>?
-              This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleteLoading}
-                className="rounded-lg border border-red-500/30 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/25 disabled:opacity-50"
-              >
-                {deleteLoading ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+        <ConfirmationModal
+          title="Delete Operator"
+          confirmLabel={deleteLoading ? "Deleting" : "Delete"}
+          loading={deleteLoading}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => void handleDelete()}
+        >
+          Permanently delete{" "}
+          <span className="font-semibold text-white">{deleteTarget.display_name ?? deleteTarget.username}</span>?
+          This action cannot be undone.
+        </ConfirmationModal>
       )}
     </section>
   );

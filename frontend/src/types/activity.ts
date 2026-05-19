@@ -3,6 +3,7 @@ export type ActivityEventType =
   | "device_online"
   | "device_offline"
   | "rustdesk_updated"
+  | "rustdesk_repaired"
   | "sync_failed"
   | "device_updated"
   | "reconnect_detected"
@@ -10,6 +11,7 @@ export type ActivityEventType =
   | "health_critical"
   | "health_recovered"
   | "device_registered"
+  | "device_reenrolled"
   | "assignment_changed"
   | "device_archived"
   | "device_restored"
@@ -22,7 +24,8 @@ export type ActivityEventType =
   | "note_edited"
   | "note_deleted"
   | "duplicate_candidate"
-  | "archived_checkin";
+  | "archived_checkin"
+  | "user_changed";
 
 export interface ActivityEvent {
   id: string;

@@ -38,7 +38,7 @@ export default function AppRoutes() {
       <Route path="/enrollment-bootstrap" element={<RequireAuth><EnrollmentBootstrap /></RequireAuth>} />
       <Route path="/agent-packages" element={<RequireAuth><AgentPackages /></RequireAuth>} />
       <Route path="/inventory" element={<RequireAuth><Inventory /></RequireAuth>} />
-      <Route path="/operators" element={<RequireAuth><Operators /></RequireAuth>} />
+      <Route path="/operators" element={<RequireAuth><RequireAdmin><Operators /></RequireAdmin></RequireAuth>} />
       <Route path="/audit" element={<RequireAuth><RequireAdmin><Audit /></RequireAdmin></RequireAuth>} />
     </Routes>
   );

@@ -29,7 +29,7 @@ function SectionSearch({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-md border border-white/[0.08] bg-slate-900 py-1.5 pl-7 pr-3 text-xs font-medium text-white outline-none placeholder:text-slate-600 focus:border-techi-orange/40"
+        className="th-input w-full rounded-md border py-1.5 pl-7 pr-3 text-xs font-medium outline-none focus:border-techi-orange/40"
       />
     </div>
   );
@@ -196,7 +196,7 @@ export default function OperatorScopeModal({ operator, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="flex w-full max-w-xl flex-col rounded-xl border border-white/10 bg-slate-950 shadow-2xl">
+      <div className="th-elevated flex w-full max-w-xl flex-col rounded-xl border shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
           <div>
@@ -224,7 +224,7 @@ export default function OperatorScopeModal({ operator, onClose }: Props) {
         ) : (
           <>
             {/* Effective access summary */}
-            <div className="border-b border-white/[0.06] bg-slate-900/40 px-5 py-3">
+            <div className="th-table-head border-b border-white/[0.06] px-5 py-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Effective Access</p>
               <p className={`mt-0.5 text-xs font-medium ${totalEntries === 0 ? "text-amber-400" : "text-emerald-300"}`}>
                 {effectiveSummary}
@@ -346,7 +346,7 @@ export default function OperatorScopeModal({ operator, onClose }: Props) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
+                  className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
                 >
                   Cancel
                 </button>

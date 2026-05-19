@@ -10,8 +10,11 @@ from app.repositories.device_group_repository import DeviceGroupRepository
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import DeviceCreate, DeviceUpdate, MaintenanceEnterRequest
 from app.services.device_activity_event_service import DeviceActivityEventService
+from app.services.device_assignment_service import DeviceAssignmentService
 from app.services.device_maintenance_service import DeviceMaintenanceService
 from app.services.rustdesk_service import RustDeskIdentityService
+from app.websocket.events import RealtimeEventType, build_event, device_payload
+from app.websocket.publisher import realtime_publisher
 
 
 class DeviceService:
@@ -21,11 +24,13 @@ class DeviceService:
         self.groups = DeviceGroupRepository(db)
         self.maintenance = DeviceMaintenanceService(db)
         self.activity = DeviceActivityEventService(db)
+        self.assignment = DeviceAssignmentService(db)
 
     def get_device(self, device_id: int) -> Optional[Device]:
         device = self.repository.get(device_id)
         if device is not None:
             device = self.maintenance.expire_if_needed(device)
+            device = self.assignment.apply_resolution(device)
         return device
 
     def get_device_by_rustdesk_id(self, rustdesk_id: str) -> Optional[Device]:
@@ -45,9 +50,10 @@ class DeviceService:
         search: Optional[str] = None,
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
+        smart_folder: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
-        return self.repository.get_multi(
+        devices = self.repository.get_multi(
             skip=skip,
             limit=limit,
             status=status,
@@ -60,8 +66,10 @@ class DeviceService:
             search=search,
             duplicate_candidates=duplicate_candidates,
             maintenance_state=maintenance_state,
+            smart_folder=smart_folder,
             scope=scope,
         )
+        return self.assignment.apply_resolution_many(devices)
 
     def create_device(self, device_in: DeviceCreate) -> Device:
         verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id)
@@ -72,7 +80,7 @@ class DeviceService:
         if existing:
             raise ValueError(f"Device with rustdesk_id {device_in.rustdesk_id} already exists")
 
-        return self.repository.create(device_in)
+        return self.assignment.apply_resolution(self.repository.create(device_in))
 
     def update_device(self, device_id: int, device_in: DeviceUpdate) -> Optional[Device]:
         device = self.repository.get(device_id)
@@ -82,7 +90,7 @@ class DeviceService:
             verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id, exclude_device_id=device_id)
             if not verification.valid:
                 raise ValueError(verification.message or "Invalid RustDesk ID")
-        return self.repository.update(device, device_in)
+        return self.assignment.apply_resolution(self.repository.update(device, device_in))
 
     def delete_device(self, device_id: int) -> Optional[Device]:
         return self.repository.hard_delete(device_id)
@@ -99,7 +107,7 @@ class DeviceService:
             actor=archived_by,
             fail_silently=True,
         )
-        return archived
+        return self.assignment.apply_resolution(archived)
 
     def restore_device(self, device_id: int) -> Optional[Device]:
         device = self.repository.get(device_id)
@@ -112,7 +120,7 @@ class DeviceService:
             summary="Device restored",
             fail_silently=True,
         )
-        return restored
+        return self.assignment.apply_resolution(restored)
 
     def get_devices_count(
         self,
@@ -126,6 +134,7 @@ class DeviceService:
         search: Optional[str] = None,
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
+        smart_folder: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         return self.repository.count(
@@ -139,6 +148,7 @@ class DeviceService:
             search=search,
             duplicate_candidates=duplicate_candidates,
             maintenance_state=maintenance_state,
+            smart_folder=smart_folder,
             scope=scope,
         )
 
@@ -160,7 +170,7 @@ class DeviceService:
             actor=request.started_by,
             fail_silently=True,
         )
-        return updated
+        return self.assignment.apply_resolution(updated)
 
     def clear_maintenance(self, device_id: int) -> Optional[Device]:
         device = self.repository.get(device_id)
@@ -190,16 +200,21 @@ class DeviceService:
             device,
             DeviceUpdate(client_id=client_id, group_id=group_id, auto_assigned=False, assignment_source="manual"),
         )
-        if old_client_id != updated.client_id or old_group_id != updated.group_id:
+        resolved = self.assignment.apply_resolution(updated)
+        if old_client_id != resolved.client_id or old_group_id != resolved.group_id:
             self.activity.record(
-                device_id=updated.id,
+                device_id=resolved.id,
                 event_type="assignment_changed",
                 summary="Assignment changed",
-                detail=f"Client #{updated.client_id or 'none'}, Group #{updated.group_id or 'none'}",
+                detail=f"Client #{resolved.client_id or 'none'}, Group #{resolved.group_id or 'none'}",
                 actor="admin",
                 fail_silently=True,
             )
-        return updated
+            realtime_publisher.publish_threadsafe(
+                build_event(RealtimeEventType.DEVICE_UPDATED, data=device_payload(resolved), reason="assignment_changed"),
+                dedupe_key=f"device_updated:{resolved.id}:assignment",
+            )
+        return resolved
 
     def assign_group(self, device_id: int, group_id: Optional[int]) -> Optional[Device]:
         device = self.repository.get(device_id)
@@ -212,16 +227,21 @@ class DeviceService:
                 device,
                 DeviceUpdate(group_id=None, auto_assigned=False, assignment_source="manual"),
             )
-            if old_group_id != updated.group_id:
+            resolved = self.assignment.apply_resolution(updated)
+            if old_group_id != resolved.group_id:
                 self.activity.record(
-                    device_id=updated.id,
+                    device_id=resolved.id,
                     event_type="assignment_changed",
                     summary="Assignment changed",
-                    detail=f"Client #{updated.client_id or 'none'}, Group none",
+                    detail=f"Client #{resolved.client_id or 'none'}, Group none",
                     actor="admin",
                     fail_silently=True,
                 )
-            return updated
+                realtime_publisher.publish_threadsafe(
+                    build_event(RealtimeEventType.DEVICE_UPDATED, data=device_payload(resolved), reason="assignment_changed"),
+                    dedupe_key=f"device_updated:{resolved.id}:assignment",
+                )
+            return resolved
         group = self.groups.get(group_id)
         if not group:
             raise ValueError("Group not found")
@@ -229,13 +249,18 @@ class DeviceService:
             device,
             DeviceUpdate(client_id=group.client_id, group_id=group.id, auto_assigned=False, assignment_source="manual"),
         )
-        if old_client_id != updated.client_id or old_group_id != updated.group_id:
+        resolved = self.assignment.apply_resolution(updated)
+        if old_client_id != resolved.client_id or old_group_id != resolved.group_id:
             self.activity.record(
-                device_id=updated.id,
+                device_id=resolved.id,
                 event_type="assignment_changed",
                 summary="Assignment changed",
-                detail=f"Client #{updated.client_id or 'none'}, Group #{updated.group_id or 'none'}",
+                detail=f"Client #{resolved.client_id or 'none'}, Group #{resolved.group_id or 'none'}",
                 actor="admin",
                 fail_silently=True,
             )
-        return updated
+            realtime_publisher.publish_threadsafe(
+                build_event(RealtimeEventType.DEVICE_UPDATED, data=device_payload(resolved), reason="assignment_changed"),
+                dedupe_key=f"device_updated:{resolved.id}:assignment",
+            )
+        return resolved

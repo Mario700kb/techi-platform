@@ -1,9 +1,23 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+from app.core.time import utcnow
 from app.models.device import Device
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    """Serialize a datetime to ISO-8601 with UTC offset.
+
+    DB columns use naive UTC.  Stamping with timezone.utc before isoformat()
+    produces '…+00:00' so browsers parse it as UTC, not local time.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 class RealtimeEventType(str, Enum):
@@ -43,19 +57,24 @@ def device_payload(device: Device) -> Dict[str, Any]:
         "device_type": device.device_type.value,
         "status": device.status.value,
         "freshness_state": device.freshness_state,
-        "registered_at": device.registered_at.isoformat() if device.registered_at else None,
-        "last_seen": device.last_seen.isoformat() if device.last_seen else None,
+        "registered_at": _iso(device.registered_at),
+        "last_seen": _iso(device.last_seen),
         "client_id": device.client_id,
         "group_id": device.group_id,
         "client_name": device.client_name,
         "group_name": device.group_name,
         "assignment_source": device.assignment_source,
+        "resolved_client_id": getattr(device, "resolved_client_id", device.client_id),
+        "resolved_client_name": getattr(device, "resolved_client_name", device.client_name),
+        "resolved_group": getattr(device, "resolved_group", device.group_name),
+        "resolved_assignment_source": getattr(device, "resolved_assignment_source", device.assignment_source or "unassigned"),
+        "resolved_device_category": getattr(device, "resolved_device_category", "unassigned"),
         "is_archived": device.is_archived,
         "duplicate_candidate": device.duplicate_candidate,
         "duplicate_of_device_id": device.duplicate_of_device_id,
         "duplicate_score": device.duplicate_score,
         "is_in_maintenance": device.is_in_maintenance,
-        "maintenance_ends_at": device.maintenance_ends_at.isoformat() if device.maintenance_ends_at else None,
+        "maintenance_ends_at": _iso(device.maintenance_ends_at),
         "maintenance_note": device.maintenance_note,
         "rustdesk_install_status": device.rustdesk_install_status,
         "rustdesk_status": device.rustdesk_status,
@@ -63,11 +82,13 @@ def device_payload(device: Device) -> Dict[str, Any]:
         "rustdesk_install_path": device.rustdesk_install_path,
         "rustdesk_sync_state": device.rustdesk_sync_state,
         "rustdesk_sync_message": device.rustdesk_sync_message,
-        "rustdesk_last_seen_at": device.rustdesk_last_seen_at.isoformat() if device.rustdesk_last_seen_at else None,
-        "rustdesk_synced_at": device.rustdesk_synced_at.isoformat() if device.rustdesk_synced_at else None,
-        "rustdesk_verified_at": device.rustdesk_verified_at.isoformat() if device.rustdesk_verified_at else None,
+        "rustdesk_last_seen_at": _iso(device.rustdesk_last_seen_at),
+        "rustdesk_synced_at": _iso(device.rustdesk_synced_at),
+        "rustdesk_verified_at": _iso(device.rustdesk_verified_at),
         "rustdesk_manual_override": device.rustdesk_manual_override,
         "rustdesk_conflict_detected": device.rustdesk_conflict_detected,
+        "rustdesk_last_repair_at": _iso(device.rustdesk_last_repair_at),
+        "rustdesk_repair_count": device.rustdesk_repair_count,
     }
 
 
@@ -83,7 +104,7 @@ def build_event(
         "version": 1,
         "type": event_type.value,
         "tenant_id": tenant_id,
-        "occurred_at": datetime.utcnow().isoformat(),
+        "occurred_at": utcnow().isoformat(),
         "reason": reason,
         "data": data,
     }

@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+from app.core.time import utcnow
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ class DeviceInventoryService:
             services_json=json.dumps(services) if services else None,
             software_json=json.dumps(software) if software else None,
             patch_json=json.dumps(patch_status) if patch_status else None,
-            collected_at=datetime.utcnow(),
+            collected_at=utcnow(),
         )
 
     def get_inventory(self, device_id: int) -> DeviceInventoryResponse:

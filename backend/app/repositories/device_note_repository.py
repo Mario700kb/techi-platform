@@ -1,4 +1,5 @@
 from datetime import datetime
+from app.core.time import utcnow
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ class DeviceNoteRepository:
         )
 
     def create(self, device_id: int, note: str, created_by: Optional[str] = None) -> DeviceNote:
-        now = datetime.utcnow()
+        now = utcnow()
         db_obj = DeviceNote(
             device_id=device_id,
             note=note,
@@ -38,7 +39,7 @@ class DeviceNoteRepository:
 
     def update(self, db_obj: DeviceNote, note: str) -> DeviceNote:
         db_obj.note = note
-        db_obj.updated_at = datetime.utcnow()
+        db_obj.updated_at = utcnow()
         self.db.add(db_obj)
         self.db.commit()
         self.db.refresh(db_obj)

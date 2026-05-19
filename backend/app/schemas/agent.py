@@ -16,6 +16,8 @@ class AgentHeartbeatPayload(BaseModel):
     rustdesk_enc_id: Optional[str] = None
     hostname: Optional[str] = None
     current_user: Optional[str] = None
+    user_source: Optional[str] = None
+    user_session_state: Optional[str] = None
     domain: Optional[str] = None
     public_ip: Optional[str] = None
     local_ip: Optional[str] = None
@@ -31,6 +33,8 @@ class AgentHeartbeatPayload(BaseModel):
     rustdesk_status: Optional[str] = None
     rustdesk_version: Optional[str] = None
     rustdesk_install_path: Optional[str] = None
+    rustdesk_last_repair_at: Optional[datetime] = None
+    rustdesk_repair_count: Optional[int] = None
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
     disk_percent: Optional[float] = None
@@ -80,6 +84,7 @@ class AgentHeartbeatResponse(BaseModel):
 
 
 class AgentEnrollmentRequest(BaseModel):
+    agent_id: Optional[str] = None
     enrollment_token: Optional[str] = None  # optional for trusted domain auto-enrollment
     domain: Optional[str] = None
     hostname: Optional[str] = None

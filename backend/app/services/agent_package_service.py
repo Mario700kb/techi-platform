@@ -2,7 +2,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from datetime import datetime
+from app.core.time import utcnow
 from pathlib import Path
 from typing import BinaryIO, List, Optional
 from uuid import uuid4
@@ -75,7 +77,7 @@ class AgentPackageService:
             "version": version,
             "platform": platform,
             "filename": safe_filename,
-            "uploaded_at": datetime.utcnow().isoformat(),
+            "uploaded_at": utcnow().isoformat(),
             "uploaded_by": uploaded_by,
             "is_active": False,
             "sha256": sha256,
@@ -102,6 +104,27 @@ class AgentPackageService:
         target["is_active"] = is_active
         self._write_manifest(manifest)
         return self._to_out(target)
+
+    def delete(self, package_id: str, *, confirm_active: bool = False) -> AgentPackageOut:
+        manifest = self._read_manifest()
+        target = None
+        remaining = []
+        for item in manifest:
+            if item.get("id") == package_id:
+                target = item
+            else:
+                remaining.append(item)
+        if target is None:
+            raise ValueError("Package not found")
+        if bool(target.get("is_active", False)) and not confirm_active:
+            raise ValueError("Active package requires confirmation before delete")
+
+        package = self._to_out(target)
+        self._write_manifest(remaining)
+        package_dir = (self.files_dir / package.id).resolve()
+        if str(package_dir).startswith(str(self.files_dir.resolve())) and package_dir.exists():
+            shutil.rmtree(package_dir)
+        return package
 
     def download_url(self, package_id: str) -> str:
         return f"{settings.API_PREFIX}/agent-packages/{package_id}/download"

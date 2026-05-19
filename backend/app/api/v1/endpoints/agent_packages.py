@@ -5,6 +5,9 @@ from app.core.auth import get_current_operator, require_min_role
 from app.models.operator import Operator, OperatorRole
 from app.schemas.agent_package import AgentPackageActivationRequest, AgentPackageOut, AgentPackageUploadResponse
 from app.services.agent_package_service import AgentPackageService
+from app.services.audit_service import AuditAction, audit_log
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -39,12 +42,47 @@ def upload_agent_package(
 def set_agent_package_active(
     package_id: str,
     payload: AgentPackageActivationRequest,
-    _: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    db: Session = Depends(get_db),
 ):
     try:
-        return AgentPackageService().set_active(package_id, payload.is_active)
+        package = AgentPackageService().set_active(package_id, payload.is_active)
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.AGENT_PACKAGE_ACTIVATED if payload.is_active else AuditAction.AGENT_PACKAGE_DEACTIVATED,
+            entity_type="agent_package",
+            entity_id=None,
+            details={"package_id": package.id, "version": package.version, "platform": package.platform.value},
+        )
+        return package
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.delete("/{package_id}", response_model=AgentPackageOut)
+def delete_agent_package(
+    package_id: str,
+    confirm_active: bool = False,
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    db: Session = Depends(get_db),
+):
+    try:
+        package = AgentPackageService().delete(package_id, confirm_active=confirm_active)
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.AGENT_PACKAGE_DELETED,
+            entity_type="agent_package",
+            entity_id=None,
+            details={"package_id": package.id, "version": package.version, "platform": package.platform.value},
+        )
+        return package
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
 
 
 @router.get("/{package_id}/download")

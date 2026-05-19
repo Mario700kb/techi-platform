@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text
 
+from app.core.time import utcnow
 from app.db.base import Base
 
 
@@ -20,4 +19,4 @@ class DeviceInventory(Base):
     services_json = Column(Text, nullable=True)
     software_json = Column(Text, nullable=True)
     patch_json = Column(Text, nullable=True)
-    collected_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    collected_at = Column(DateTime, nullable=False, default=utcnow)

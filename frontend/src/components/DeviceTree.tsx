@@ -5,7 +5,10 @@ import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
 
 const SHOW_EMPTY_STORAGE_KEY = "techi.deviceTree.showEmptyGroups";
-const GROUP_ORDER = ["servers", "workstations", "mac devices", "linux devices", "network devices"];
+const CLIENT_FOLDERS = [
+  { id: "servers", label: "Servers", smartFolder: "windows_server" },
+  { id: "clientpc", label: "Client PC", smartFolder: "windows_workstation" },
+] as const;
 
 const readShowEmptyGroups = () => {
   try {
@@ -24,43 +27,40 @@ interface DeviceTreeProps {
 }
 
 const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups }: DeviceTreeProps) {
-  const activeGroupClientId = useMemo(() => {
-    if (!selectedKey.startsWith("group-")) return null;
-    const groupId = Number(selectedKey.replace("group-", ""));
-    return groups.find((group) => group.id === groupId)?.client_id ?? null;
-  }, [groups, selectedKey]);
+  void groups;
+  const activeClientFolder = useMemo(() => {
+    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc)$/);
+    if (!match) return null;
+    return { clientId: Number(match[1]), folderId: match[2] };
+  }, [selectedKey]);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
   const [showEmptyGroups, setShowEmptyGroups] = useState(readShowEmptyGroups);
   const allCount = devices.length;
-  const unassignedCount = devices.filter((d) => !d.client_id).length;
-  const clientCount = (clientId: number) => devices.filter((d) => d.client_id === clientId).length;
-  const groupCount = (groupId: number) => devices.filter((d) => d.group_id === groupId).length;
-  const clientHasMaintenance = (clientId: number) => devices.some((d) => d.client_id === clientId && d.is_in_maintenance);
-  const groupHasMaintenance = (groupId: number) => devices.some((d) => d.group_id === groupId && d.is_in_maintenance);
+  const resolvedClientId = (device: Device) => device.resolved_client_id ?? device.client_id ?? null;
+  const resolvedCategory = (device: Device) => device.resolved_device_category ?? "unassigned";
+  const unassignedCount = devices.filter((d) => !resolvedClientId(d)).length;
+  const clientCount = (clientId: number) => devices.filter((d) => resolvedClientId(d) === clientId).length;
+  const folderCount = (clientId: number, folderId: string) => devices.filter((device) => {
+    if (resolvedClientId(device) !== clientId) return false;
+    return resolvedCategory(device) === folderId;
+  }).length;
+  const clientHasMaintenance = (clientId: number) => devices.some((d) => resolvedClientId(d) === clientId && d.is_in_maintenance);
+  const folderHasMaintenance = (clientId: number, folderId: string) => devices.some((device) => {
+    if (resolvedClientId(device) !== clientId || !device.is_in_maintenance) return false;
+    return resolvedCategory(device) === folderId;
+  });
   const sortedClients = useMemo(
     () => [...clients].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     [clients]
   );
-  const sortedGroups = useMemo(() => {
-    const rank = (name: string) => {
-      const index = GROUP_ORDER.indexOf(name.trim().toLowerCase());
-      return index === -1 ? Number.MAX_SAFE_INTEGER : index;
-    };
-    return [...groups].sort((a, b) => {
-      const rankDelta = rank(a.name) - rank(b.name);
-      if (rankDelta !== 0) return rankDelta;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-    });
-  }, [groups]);
   const visibleClients = useMemo(() => {
     if (showEmptyGroups) return sortedClients;
     return sortedClients.filter((client) => {
       const hasDevices = clientCount(client.id) > 0;
-      const hasVisibleGroups = sortedGroups.some((group) => group.client_id === client.id && groupCount(group.id) > 0);
-      const isActive = selectedKey === `client-${client.id}` || activeGroupClientId === client.id;
-      return hasDevices || hasVisibleGroups || isActive;
+      const isActive = selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id;
+      return hasDevices || isActive;
     });
-  }, [activeGroupClientId, devices, selectedKey, showEmptyGroups, sortedClients, sortedGroups]);
+  }, [activeClientFolder, devices, selectedKey, showEmptyGroups, sortedClients]);
 
   useEffect(() => {
     window.localStorage.setItem(SHOW_EMPTY_STORAGE_KEY, String(showEmptyGroups));
@@ -109,36 +109,35 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             />
           </li>
           {visibleClients.map((client) => {
-            const childGroups = sortedGroups.filter((group) => {
-              if (group.client_id !== client.id) return false;
+            const childFolders = CLIENT_FOLDERS.filter((folder) => {
               if (showEmptyGroups) return true;
-              return groupCount(group.id) > 0 || selectedKey === `group-${group.id}`;
+              return folderCount(client.id, folder.id) > 0 || selectedKey === `client-${client.id}-${folder.id}`;
             });
             const expanded = expandedClients.has(client.id);
             return (
               <li key={client.id}>
                 <TreeButton
-                  active={selectedKey === `client-${client.id}` || activeGroupClientId === client.id}
+                  active={selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id}
                   expanded={expanded}
-                  hasChildren={childGroups.length > 0}
+                  hasChildren={childFolders.length > 0}
                   icon={Server}
                   label={client.name}
                   count={clientCount(client.id)}
                   hasMaintenance={clientHasMaintenance(client.id)}
                   onClick={() => toggleClient(client.id)}
                 />
-                {expanded && childGroups.length > 0 && (
+                {expanded && childFolders.length > 0 && (
                   <ul className="mt-0.5 space-y-0.5 pl-5">
-                    {childGroups.map((group) => (
-                      <li key={group.id}>
+                    {childFolders.map((folder) => (
+                      <li key={folder.id}>
                         <TreeButton
-                          active={selectedKey === `group-${group.id}`}
+                          active={selectedKey === `client-${client.id}-${folder.id}`}
                           child
                           icon={Monitor}
-                          label={group.name}
-                          count={groupCount(group.id)}
-                          hasMaintenance={groupHasMaintenance(group.id)}
-                          onClick={() => onSelect(`group-${group.id}`)}
+                          label={folder.label}
+                          count={folderCount(client.id, folder.id)}
+                          hasMaintenance={folderHasMaintenance(client.id, folder.id)}
+                          onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
                         />
                       </li>
                     ))}
@@ -160,7 +159,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             className="h-3.5 w-3.5 rounded border-white/15 bg-slate-950 accent-orange-500"
           />
         </label>
-        <p className="mt-2 text-[10px] text-slate-600">Browse by client · group · type</p>
+        <p className="mt-2 text-[10px] text-slate-600">Browse by client · device type</p>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, Archive, CheckCircle, ClipboardList, FilePenLine, Monitor, RefreshCcw, RotateCcw, ShieldAlert, Wifi, WifiOff, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
 import { ActivityEvent, ActivityEventType } from "../types/activity";
+import { timeAgo } from "../utils/time";
 
 interface ActivityTimelineProps {
   events: ActivityEvent[];
@@ -21,6 +22,7 @@ const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
   device_online:     { icon: Wifi,           color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
   device_offline:    { icon: WifiOff,        color: "text-slate-400",   iconClass: "text-slate-500",   bg: "bg-slate-700/20",        border: "border-slate-600/25"   },
   rustdesk_updated:  { icon: Monitor,        color: "text-orange-400",  iconClass: "text-orange-400",  bg: "bg-orange-400/[0.07]",   border: "border-orange-400/20"  },
+  rustdesk_repaired: { icon: Wrench,         color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
   sync_failed:       { icon: AlertTriangle,  color: "text-red-400",     iconClass: "text-red-400",     bg: "bg-red-400/[0.07]",      border: "border-red-400/20"     },
   device_updated:    { icon: RefreshCcw,     color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
   reconnect_detected:{ icon: Wifi,           color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
@@ -28,6 +30,7 @@ const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
   health_critical:   { icon: ShieldAlert,    color: "text-red-400",     iconClass: "text-red-400",     bg: "bg-red-400/[0.07]",      border: "border-red-400/20"     },
   health_recovered:  { icon: CheckCircle,    color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
   device_registered: { icon: Monitor,        color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
+  device_reenrolled: { icon: RefreshCcw,     color: "text-blue-300",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
   assignment_changed:{ icon: ClipboardList,  color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
   device_archived:   { icon: Archive,        color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
   device_restored:   { icon: RotateCcw,      color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
@@ -41,6 +44,7 @@ const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
   note_deleted:      { icon: FilePenLine,    color: "text-slate-400",   iconClass: "text-slate-500",   bg: "bg-slate-700/15",        border: "border-slate-700/25"   },
   duplicate_candidate:{ icon: AlertTriangle, color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
   archived_checkin:  { icon: AlertTriangle,  color: "text-orange-400",  iconClass: "text-orange-400",  bg: "bg-orange-400/[0.07]",   border: "border-orange-400/20"  },
+  user_changed:      { icon: Monitor,        color: "text-blue-300",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
 };
 
 const FALLBACK_CONFIG: EventConfig = {
@@ -48,14 +52,7 @@ const FALLBACK_CONFIG: EventConfig = {
 };
 
 function formatActivityTime(occurredAt: string): string {
-  const date = new Date(occurredAt);
-  const diffMs = Date.now() - date.getTime();
-  const diffSec = diffMs / 1000;
-  if (diffSec < 10) return "just now";
-  if (diffSec < 60) return `${Math.floor(diffSec)}s ago`;
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return timeAgo(occurredAt);
 }
 
 export default function ActivityTimeline({ events, loading, onReload }: ActivityTimelineProps) {

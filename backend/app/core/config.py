@@ -19,6 +19,9 @@ class Settings(BaseSettings):
         "http://localhost:5174",
         "http://127.0.0.1:5174",
     ]
+    # Set to true for LAN / real-device testing to allow all origins.
+    # Never enable in production without a strict BACKEND_CORS_ORIGINS list.
+    BACKEND_CORS_ALLOW_ALL: bool = False
 
     DATABASE_URL: str = "sqlite:///./techi.db"  # Use SQLite for local development
 
@@ -36,6 +39,9 @@ class Settings(BaseSettings):
     RUSTDESK_RESOLVER_ENABLED: bool = False
     TRUSTED_DOMAIN_AUTO_ENROLLMENT: bool = False
     TRUSTED_DOMAIN_ALLOWLIST: str = ""  # comma-separated domains; empty = any non-WORKGROUP domain
+    DEFAULT_DEPLOYMENT_TOKEN_ENABLED: bool = True
+    DEFAULT_DEPLOYMENT_TOKEN_MAX_USES: int = 500
+    DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS: int = 0
 
     @model_validator(mode="before")
     @classmethod

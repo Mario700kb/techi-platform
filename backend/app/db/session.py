@@ -1,9 +1,33 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-engine = create_engine(settings.DATABASE_URL, future=True)
+
+def _build_engine():
+    url = settings.DATABASE_URL
+    kwargs = {"future": True, "pool_pre_ping": True}
+
+    if url.startswith("sqlite"):
+        # SQLite: disable same-thread check (FastAPI uses multiple threads via
+        # thread-pool executor for sync endpoints) and keep a single connection.
+        kwargs["connect_args"] = {"check_same_thread": False}
+
+    engine = create_engine(url, **kwargs)
+
+    if url.startswith("sqlite"):
+        # Enable WAL mode so concurrent readers don't block writes.
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return engine
+
+
+engine = _build_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 
 

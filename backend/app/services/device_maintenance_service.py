@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from app.core.time import utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ def is_maintenance_active(device) -> bool:
     if not getattr(device, "is_in_maintenance", False):
         return False
     ends_at = getattr(device, "maintenance_ends_at", None)
-    if ends_at and ends_at < datetime.utcnow():
+    if ends_at and ends_at < utcnow():
         return False
     return True
 
@@ -29,7 +30,7 @@ class DeviceMaintenanceService:
         """Lazy expiration: clear maintenance when maintenance_ends_at has passed."""
         if not device.is_in_maintenance:
             return device
-        if device.maintenance_ends_at and device.maintenance_ends_at < datetime.utcnow():
+        if device.maintenance_ends_at and device.maintenance_ends_at < utcnow():
             logger.info("[maintenance] expired for device #%d, clearing", device.id)
             return self.repo.update(
                 device,
@@ -50,7 +51,7 @@ class DeviceMaintenanceService:
         note: Optional[str] = None,
         started_by: Optional[str] = None,
     ) -> Device:
-        now = datetime.utcnow()
+        now = utcnow()
         ends_at = now + timedelta(minutes=duration_minutes) if duration_minutes else None
         logger.info(
             "[maintenance] device #%d entered by=%s duration=%s",

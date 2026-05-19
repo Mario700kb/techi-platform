@@ -18,6 +18,8 @@ type HeartbeatPayload struct {
 	RustDeskEncID         string         `json:"rustdesk_enc_id,omitempty"`
 	Hostname              string         `json:"hostname"`
 	CurrentUser           string         `json:"current_user"`
+	UserSource            string         `json:"user_source,omitempty"`
+	UserSessionState      string         `json:"user_session_state,omitempty"`
 	Domain                string         `json:"domain"`
 	PublicIP              string         `json:"public_ip"`
 	LocalIP               string         `json:"local_ip"`
@@ -31,6 +33,8 @@ type HeartbeatPayload struct {
 	RustDeskStatus        string         `json:"rustdesk_status"`
 	RustDeskVersion       string         `json:"rustdesk_version"`
 	RustDeskInstallPath   string         `json:"rustdesk_install_path"`
+	RustDeskLastRepairAt  string         `json:"rustdesk_last_repair_at,omitempty"`
+	RustDeskRepairCount   int            `json:"rustdesk_repair_count,omitempty"`
 	CPUPercent            float64        `json:"cpu_percent"`
 	RAMPercent            float64        `json:"ram_percent"`
 	DiskPercent           float64        `json:"disk_percent"`
@@ -54,6 +58,8 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		RustDeskEncID:         rustdesk.EncID,
 		Hostname:              inv.Hostname,
 		CurrentUser:           inv.CurrentUser,
+		UserSource:            inv.UserSource,
+		UserSessionState:      inv.UserSessionState,
 		Domain:                inv.Domain,
 		PublicIP:              inv.PublicIP,
 		LocalIP:               inv.LocalIP,
@@ -67,6 +73,8 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		RustDeskStatus:        rustdesk.Status,
 		RustDeskVersion:       rustdesk.Version,
 		RustDeskInstallPath:   rustdesk.InstallPath,
+		RustDeskLastRepairAt:  cfg.RustDeskLastRepairAt,
+		RustDeskRepairCount:   cfg.RustDeskRepairCount,
 		Processes:             procs,
 		Services:              svcs,
 		Software:              software,

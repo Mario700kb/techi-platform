@@ -27,6 +27,10 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	}
 
 	log.Printf("agent loop started config=%s interval=%s", configPath, interval)
+
+	// Apply power policy once on startup (Windows only; no-op elsewhere).
+	applyPowerPolicy(cfg)
+
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 		log.Printf("heartbeat cycle failed: %v", err)
 	}

@@ -42,6 +42,13 @@ export async function setAgentPackageActive(packageId: string, isActive: boolean
   });
 }
 
+export async function deleteAgentPackage(packageId: string, confirmActive = false): Promise<AgentPackage> {
+  const suffix = confirmActive ? "?confirm_active=true" : "";
+  return fetchJson<AgentPackage>(`/api/v1/agent-packages/${packageId}${suffix}`, {
+    method: "DELETE",
+  });
+}
+
 export async function downloadAgentPackage(pkg: AgentPackage): Promise<void> {
   const response = await fetch(`${API_BASE_URL}${pkg.download_url}`, {
     headers: {

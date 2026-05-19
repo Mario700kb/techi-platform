@@ -1,16 +1,20 @@
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from app.models.alert import AlertSeverity
 from app.models.device import Device
+from app.models.device_inventory import DeviceInventory
 from app.models.device_telemetry import DeviceTelemetry
 from app.repositories.alert_repository import AlertRepository
+from app.repositories.device_inventory_repository import DeviceInventoryRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 
 
 class DeviceHealthScoreService:
     def __init__(self, db):
         self.telemetry_repo = DeviceTelemetryRepository(db)
+        self.inventory_repo = DeviceInventoryRepository(db)
         self.alert_repo = AlertRepository(db)
 
     def compute_for_device(
@@ -23,16 +27,19 @@ class DeviceHealthScoreService:
             snapshot = self.telemetry_repo.get_latest(device.id)
         if alert_counts is None:
             alert_counts = self.alert_repo.count_open_by_device_and_severity([device.id]).get(device.id, {})
-        return compute_device_health_score(device, snapshot, alert_counts)
+        inventory = self.inventory_repo.get_by_device(device.id)
+        return compute_device_health_score(device, snapshot, alert_counts, inventory)
 
     def compute_for_devices(self, devices: List[Device]) -> Dict[int, Tuple[int, str, List[str]]]:
         latest_by_device = {t.device_id: t for t in self.telemetry_repo.get_latest_all()}
+        inventory_by_device = {i.device_id: i for i in self.inventory_repo.get_many_by_device_ids([device.id for device in devices])}
         alert_counts = self.alert_repo.count_open_by_device_and_severity([device.id for device in devices])
         return {
             device.id: compute_device_health_score(
                 device,
                 latest_by_device.get(device.id),
                 alert_counts.get(device.id, {}),
+                inventory_by_device.get(device.id),
             )
             for device in devices
         }
@@ -42,11 +49,15 @@ def compute_device_health_score(
     device: Device,
     snapshot: Optional[DeviceTelemetry],
     alert_counts: Dict[str, int],
+    inventory: Optional[DeviceInventory] = None,
 ) -> Tuple[int, str, List[str]]:
     penalties: List[Tuple[float, str]] = []
 
     _add_telemetry_penalties(penalties, snapshot)
     _add_freshness_penalties(penalties, device)
+    _add_rustdesk_penalties(penalties, device)
+    _add_user_penalties(penalties, device)
+    _add_patch_penalties(penalties, inventory)
     _add_inventory_trust_penalties(penalties, device)
     _add_alert_penalties(penalties, alert_counts)
 
@@ -69,7 +80,7 @@ def _add_telemetry_penalties(penalties: List[Tuple[float, str]], snapshot: Optio
     for label, value, warning, critical, warning_penalty, critical_penalty in [
         ("CPU", snapshot.cpu_percent, 75.0, 90.0, 10.0, 22.0),
         ("RAM", snapshot.ram_percent, 80.0, 90.0, 10.0, 22.0),
-        ("Disk", snapshot.disk_percent, 85.0, 95.0, 12.0, 24.0),
+        ("Disk", snapshot.disk_percent, 80.0, 90.0, 12.0, 28.0),
     ]:
         if value is None:
             continue
@@ -105,6 +116,38 @@ def _add_inventory_trust_penalties(penalties: List[Tuple[float, str]], device: D
         penalties.append((7.0, "Possible duplicate device"))
     if getattr(device, "is_archived", False) and getattr(device, "freshness_state", "offline") != "offline":
         penalties.append((18.0, "Archived device is checking in"))
+
+
+def _add_rustdesk_penalties(penalties: List[Tuple[float, str]], device: Device) -> None:
+    install_status = (getattr(device, "rustdesk_install_status", "") or "").lower()
+    status = (getattr(device, "rustdesk_status", "") or "").lower()
+    if install_status in {"missing", "not_installed", "not installed", "absent"}:
+        penalties.append((24.0, "RustDesk missing"))
+    elif status in {"offline", "stopped", "not_running", "not running"}:
+        penalties.append((16.0, "RustDesk offline"))
+
+
+def _add_user_penalties(penalties: List[Tuple[float, str]], device: Device) -> None:
+    current_user = (getattr(device, "current_user", "") or "").strip()
+    if current_user == "" or current_user.upper() in {"SYSTEM", "N/A", "UNKNOWN"}:
+        penalties.append((6.0, "No active user"))
+
+
+def _add_patch_penalties(penalties: List[Tuple[float, str]], inventory: Optional[DeviceInventory]) -> None:
+    if inventory is None or not inventory.patch_json:
+        return
+    try:
+        patch = json.loads(inventory.patch_json)
+    except Exception:
+        return
+    if not isinstance(patch, dict):
+        return
+    pending = int(patch.get("pending_updates") or 0)
+    reboot_required = bool(patch.get("reboot_required"))
+    if reboot_required:
+        penalties.append((16.0, "Reboot required"))
+    if pending:
+        penalties.append((min(6.0 + pending * 1.5, 18.0), f"{pending} patch(es) pending"))
 
 
 def _add_alert_penalties(penalties: List[Tuple[float, str]], alert_counts: Dict[str, int]) -> None:

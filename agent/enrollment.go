@@ -13,6 +13,7 @@ import (
 const agentVersion = "1.0.0"
 
 type EnrollmentRequest struct {
+	AgentID         string `json:"agent_id,omitempty"`
 	EnrollmentToken string `json:"enrollment_token,omitempty"`
 	Domain          string `json:"domain,omitempty"`
 	Hostname        string `json:"hostname"`
@@ -77,6 +78,7 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 
 func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*EnrollmentResponse, error) {
 	requestPayload := EnrollmentRequest{
+		AgentID:         strings.TrimSpace(cfg.AgentID),
 		EnrollmentToken: strings.TrimSpace(cfg.EnrollmentToken),
 		Domain:          strings.TrimSpace(inv.Domain),
 		Hostname:        inv.Hostname,

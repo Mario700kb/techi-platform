@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.db.session import engine
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
 from app.services.auth_service import ensure_bootstrap_owner
+from app.services.enrollment_token_service import EnrollmentTokenService
 from app.websocket.publisher import realtime_publisher
 from app.websocket.routes import router as websocket_router
 from app.workers.device_reconciliation_worker import device_reconciliation_worker
@@ -23,9 +24,10 @@ app = FastAPI(
     redoc_url=None,
 )
 
+_cors_origins = ["*"] if settings.BACKEND_CORS_ALLOW_ALL else settings.BACKEND_CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,7 +40,10 @@ app.include_router(websocket_router)
 @app.on_event("startup")
 async def start_background_workers() -> None:
     logger.info("Starting %s v%s [env=%s]", settings.PROJECT_NAME, settings.PROJECT_VERSION, settings.ENVIRONMENT)
-    logger.info("CORS origins: %s", settings.BACKEND_CORS_ORIGINS)
+    if settings.BACKEND_CORS_ALLOW_ALL:
+        logger.warning("CORS: allow_all=true — all origins permitted (LAN/dev mode only)")
+    else:
+        logger.info("CORS origins: %s", settings.BACKEND_CORS_ORIGINS)
     logger.info("Database: %s", settings.DATABASE_URL)
 
     if settings.ENVIRONMENT != "development" and not settings.BOOTSTRAP_OWNER_PASSWORD:
@@ -53,6 +58,11 @@ async def start_background_workers() -> None:
     db = SessionLocal()
     try:
         ensure_bootstrap_owner(db)
+        EnrollmentTokenService(db).ensure_default_token(
+            enabled=settings.DEFAULT_DEPLOYMENT_TOKEN_ENABLED,
+            max_uses=settings.DEFAULT_DEPLOYMENT_TOKEN_MAX_USES,
+            expires_days=settings.DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS,
+        )
     finally:
         db.close()
     realtime_publisher.start()

@@ -183,7 +183,9 @@ def complete_action(
     if not verify_callback_token(action_id, x_callback_secret or ""):
         raise HTTPException(status_code=401, detail="Invalid or missing callback secret")
     try:
-        action = RemoteActionService(db).complete(action_id, result_message=payload.result_message)
+        action = RemoteActionService(db).complete(
+            action_id, result_message=payload.result_message, output=payload.output
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     if not action:
@@ -202,7 +204,9 @@ def fail_action(
     if not verify_callback_token(action_id, x_callback_secret or ""):
         raise HTTPException(status_code=401, detail="Invalid or missing callback secret")
     try:
-        action = RemoteActionService(db).fail(action_id, error_message=payload.error_message)
+        action = RemoteActionService(db).fail(
+            action_id, error_message=payload.error_message, stderr_output=payload.stderr_output
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     if not action:

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -20,8 +19,6 @@ type RustDeskInfo struct {
 	Version       string `json:"rustdesk_version"`
 	InstallPath   string `json:"rustdesk_install_path"`
 }
-
-var rustDeskIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,64}$`)
 
 func discoverRustDesk(cfg *Config) RustDeskInfo {
 	info := RustDeskInfo{
@@ -51,6 +48,32 @@ func configuredRustDeskID(cfg *Config) string {
 	return id
 }
 
+// normalizeRustDeskID strips whitespace and non-digit characters.
+// "1 235 009 710" → "1235009710"
+func normalizeRustDeskID(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isNumericRustDeskID returns true for a normalized all-digit ID of 5–20 digits.
+func isNumericRustDeskID(id string) bool {
+	if len(id) < 5 || len(id) > 20 {
+		return false
+	}
+	for _, r := range id {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func isUsableRustDeskID(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -63,7 +86,40 @@ func isUsableRustDeskID(id string) bool {
 	if strings.HasPrefix(lower, "agent_") || strings.HasPrefix(lower, "pending_") {
 		return false
 	}
-	return rustDeskIDPattern.MatchString(id)
+	return isNumericRustDeskID(normalizeRustDeskID(id))
+}
+
+// localRustDeskIDFromCLI runs `rustdesk.exe --get-id` and returns the
+// normalized numeric ID (e.g. "1235009710") or "" if unavailable.
+func localRustDeskIDFromCLI(installPath string) string {
+	if installPath == "" {
+		return ""
+	}
+	cmd := exec.Command(installPath, "--get-id")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run() }()
+	select {
+	case <-time.After(5 * time.Second):
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return ""
+	case <-done:
+	}
+	scanner := bufio.NewScanner(strings.NewReader(out.String()))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		id := normalizeRustDeskID(line)
+		if isNumericRustDeskID(id) {
+			return id
+		}
+	}
+	return ""
 }
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
@@ -82,9 +138,18 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	}
 
 	info.Status = rustDeskWindowsStatus()
-	id, encID := readRustDeskFromKnownFiles()
-	if id != "" {
-		info.ID = id
+
+	// Prefer CLI: rustdesk.exe --get-id gives the exact ID shown in the UI.
+	if installPath != "" {
+		if cliID := localRustDeskIDFromCLI(installPath); cliID != "" {
+			info.ID = cliID
+		}
+	}
+
+	// Read TOML files for encID, and ID as fallback if CLI produced nothing.
+	fileID, encID := readRustDeskFromKnownFiles()
+	if info.ID == "" && fileID != "" {
+		info.ID = fileID
 	}
 	if encID != "" {
 		info.EncID = encID
@@ -245,8 +310,11 @@ func readRustDeskFieldsFromFile(path string) (id, encID string) {
 
 		switch key {
 		case "id", "rustdesk_id":
-			if id == "" && isUsableRustDeskID(value) {
-				id = value
+			if id == "" {
+				normalized := normalizeRustDeskID(value)
+				if isNumericRustDeskID(normalized) {
+					id = normalized
+				}
 			}
 		case "enc_id":
 			if encID == "" && value != "" {

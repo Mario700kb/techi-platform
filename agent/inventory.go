@@ -3,22 +3,29 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"runtime"
 )
 
+type UserSession struct {
+	CurrentUser      string
+	UserSource       string
+	UserSessionState string
+}
+
 type Inventory struct {
-	Hostname    string `json:"hostname"`
-	CurrentUser string `json:"current_user"`
-	Domain      string `json:"domain"`
-	LocalIP     string `json:"local_ip"`
-	PublicIP    string `json:"public_ip"`
-	OSName      string `json:"os_name"`
-	OSVersion   string `json:"os_version"`
-	Platform    string `json:"platform"`
-	CPU         string `json:"cpu"`
-	RAM         string `json:"ram"`
-	Storage     string `json:"storage"`
+	Hostname         string `json:"hostname"`
+	CurrentUser      string `json:"current_user"`
+	UserSource       string `json:"user_source"`
+	UserSessionState string `json:"user_session_state"`
+	Domain           string `json:"domain"`
+	LocalIP          string `json:"local_ip"`
+	PublicIP         string `json:"public_ip"`
+	OSName           string `json:"os_name"`
+	OSVersion        string `json:"os_version"`
+	Platform         string `json:"platform"`
+	CPU              string `json:"cpu"`
+	RAM              string `json:"ram"`
+	Storage          string `json:"storage"`
 }
 
 func collectInventory(cfg *Config) (*Inventory, error) {
@@ -27,7 +34,7 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 		hostname = ""
 	}
 
-	currentUser := buildCurrentUser()
+	userSession := buildUserSession()
 	domain := buildDomain()
 	localIP := getLocalIP()
 	publicIP := getPublicIP(cfg.PublicIPService, cfg.TimeoutSeconds)
@@ -37,9 +44,11 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 	storageInfo := buildStorageInfo()
 
 	inventory := &Inventory{
-		Hostname:    hostname,
-		CurrentUser: currentUser,
-		Domain:      domain,
+		Hostname:         hostname,
+		CurrentUser:      userSession.CurrentUser,
+		UserSource:       userSession.UserSource,
+		UserSessionState: userSession.UserSessionState,
+		Domain:           domain,
 		LocalIP:     localIP,
 		PublicIP:    publicIP,
 		OSName:      osName,
@@ -51,13 +60,6 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 	}
 
 	return inventory, nil
-}
-
-func buildCurrentUser() string {
-	if userInfo, err := user.Current(); err == nil {
-		return userInfo.Username
-	}
-	return ""
 }
 
 func buildDomain() string {

@@ -3,6 +3,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -20,13 +22,14 @@ const (
 
 // ensureRustDesk checks and heals RustDesk installation, config, and service.
 // Returns without error even if healing steps fail so heartbeat always continues.
-func ensureRustDesk(cfg *Config) {
+func ensureRustDesk(cfg *Config, configPath string) {
 	if !cfg.RustDeskManageEnabled {
 		log.Printf("[rustdesk_manage] disabled — skipping")
 		return
 	}
 
 	installed := isRustDeskInstalled()
+	repaired := false
 
 	if !installed {
 		if cfg.RustDeskMSIUrl == "" {
@@ -36,6 +39,7 @@ func ensureRustDesk(cfg *Config) {
 				log.Printf("[rustdesk_manage] install failed: %v — continuing heartbeat", err)
 				return
 			}
+			repaired = true
 			installed = isRustDeskInstalled()
 		}
 	} else {
@@ -43,17 +47,25 @@ func ensureRustDesk(cfg *Config) {
 	}
 
 	if installed {
-		if err := writeRustDeskConfig(cfg); err != nil {
+		if changed, err := writeRustDeskConfig(cfg); err != nil {
 			log.Printf("[rustdesk_manage] config write failed: %v", err)
+		} else if changed {
+			repaired = true
 		}
-		if err := ensureRustDeskService(); err != nil {
+		if changed, err := ensureRustDeskService(); err != nil {
 			log.Printf("[rustdesk_manage] service ensure failed: %v", err)
+		} else if changed {
+			repaired = true
 		}
 		if cfg.RustDeskDefaultPassword != "" {
 			if err := setRustDeskPassword(cfg.RustDeskDefaultPassword); err != nil {
 				log.Printf("[rustdesk_manage] password set failed: %v", err)
 			}
 		}
+	}
+
+	if repaired {
+		recordRustDeskRepair(cfg, configPath)
 	}
 }
 
@@ -65,21 +77,33 @@ func isRustDeskInstalled() bool {
 func installRustDeskMSI(cfg *Config) error {
 	log.Printf("[rustdesk_manage] downloading MSI from %s", cfg.RustDeskMSIUrl)
 
-	tmpPath := filepath.Join(os.TempDir(), "rustdesk_setup.msi")
-	if err := downloadFile(cfg.RustDeskMSIUrl, tmpPath, cfg.TimeoutSeconds*10); err != nil {
-		return fmt.Errorf("MSI download failed: %w", err)
+	cachePath, err := cachedMSIPath(cfg)
+	if err != nil {
+		return err
 	}
-	defer func() { _ = os.Remove(tmpPath) }()
+	if err := ensureCachedMSI(cfg, cachePath); err != nil {
+		return fmt.Errorf("MSI cache failed: %w", err)
+	}
 
 	log.Printf("[rustdesk_manage] installing MSI silently")
-	if _, err := runWithTimeout(5*time.Minute, "msiexec", "/i", tmpPath, "/qn", "/norestart"); err != nil {
-		return fmt.Errorf("msiexec failed: %w", err)
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, err := runWithTimeout(5*time.Minute, "msiexec", "/i", cachePath, "/qn", "/norestart"); err == nil {
+			log.Printf("[rustdesk_manage] installed successfully")
+			return nil
+		} else {
+			lastErr = err
+			if attempt < 3 {
+				delay := time.Duration(1<<uint(attempt-1)) * 5 * time.Second
+				log.Printf("[rustdesk_manage] msiexec attempt %d failed: %v; retrying in %s", attempt, err, delay)
+				time.Sleep(delay)
+			}
+		}
 	}
-	log.Printf("[rustdesk_manage] installed successfully")
-	return nil
+	return fmt.Errorf("msiexec failed: %w", lastErr)
 }
 
-func writeRustDeskConfig(cfg *Config) error {
+func writeRustDeskConfig(cfg *Config) (bool, error) {
 	content := buildRustDeskTOML(cfg)
 
 	dirs := rustDeskConfigDirs()
@@ -92,8 +116,11 @@ func writeRustDeskConfig(cfg *Config) error {
 		}
 		for _, name := range []string{"RustDesk2.toml", "RustDesk.toml"} {
 			path := filepath.Join(dir, name)
-			if !cfg.RustDeskForceConfig {
-				if _, err := os.Stat(path); err == nil {
+			if existing, err := os.ReadFile(path); err == nil {
+				if string(existing) == content {
+					continue
+				}
+				if !cfg.RustDeskForceConfig && !rustDeskConfigNeedsRepair(string(existing), cfg) {
 					log.Printf("[rustdesk_manage] config exists, skipping (force_config=false): %s", path)
 					continue
 				}
@@ -110,7 +137,7 @@ func writeRustDeskConfig(cfg *Config) error {
 	if wrote > 0 {
 		log.Printf("[rustdesk_manage] config written to %d locations", wrote)
 	}
-	return nil
+	return wrote > 0, nil
 }
 
 func buildRustDeskTOML(cfg *Config) string {
@@ -163,21 +190,21 @@ func rustDeskConfigDirs() []string {
 	return dirs
 }
 
-func ensureRustDeskService() error {
+func ensureRustDeskService() (bool, error) {
 	out, err := runWithTimeout(10*time.Second, "sc", "query", rustdeskServiceName)
 	if err == nil {
 		lower := strings.ToLower(string(out))
 		if strings.Contains(lower, "running") {
 			log.Printf("[rustdesk_manage] service already running")
-			return nil
+			return false, nil
 		}
 		if strings.Contains(lower, strings.ToLower(rustdeskServiceName)) {
 			log.Printf("[rustdesk_manage] service exists but not running — starting")
 			if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
-				return fmt.Errorf("sc start: %w", err2)
+				return false, fmt.Errorf("sc start: %w", err2)
 			}
 			log.Printf("[rustdesk_manage] service started")
-			return nil
+			return true, nil
 		}
 	}
 
@@ -185,13 +212,13 @@ func ensureRustDeskService() error {
 	log.Printf("[rustdesk_manage] creating service")
 	if _, err2 := runWithTimeout(15*time.Second, "sc", "create", rustdeskServiceName,
 		"binPath=", binPath, "start=", "auto", "DisplayName=", "RustDesk"); err2 != nil {
-		return fmt.Errorf("sc create: %w", err2)
+		return false, fmt.Errorf("sc create: %w", err2)
 	}
 	if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
-		return fmt.Errorf("sc start after create: %w", err2)
+		return false, fmt.Errorf("sc start after create: %w", err2)
 	}
 	log.Printf("[rustdesk_manage] service created and started")
-	return nil
+	return true, nil
 }
 
 func setRustDeskPassword(password string) error {
@@ -200,6 +227,125 @@ func setRustDeskPassword(password string) error {
 	}
 	log.Printf("[rustdesk_manage] password configured")
 	return nil
+}
+
+func rustDeskConfigNeedsRepair(content string, cfg *Config) bool {
+	checks := []string{}
+	if cfg.RustDeskRendezvousServer != "" {
+		checks = append(checks, fmt.Sprintf("custom-rendezvous-server = '%s'", cfg.RustDeskRendezvousServer))
+	}
+	if cfg.RustDeskRelayServer != "" {
+		checks = append(checks, fmt.Sprintf("relay-server = '%s'", cfg.RustDeskRelayServer))
+	}
+	if cfg.RustDeskAPIServer != "" {
+		checks = append(checks, fmt.Sprintf("api-server = '%s'", cfg.RustDeskAPIServer))
+	}
+	if cfg.RustDeskKey != "" {
+		checks = append(checks, fmt.Sprintf("key = '%s'", cfg.RustDeskKey))
+	}
+	for _, expected := range checks {
+		if !strings.Contains(content, expected) {
+			return true
+		}
+	}
+	return len(strings.TrimSpace(content)) == 0
+}
+
+func recordRustDeskRepair(cfg *Config, configPath string) {
+	cfg.RustDeskRepairCount++
+	cfg.RustDeskLastRepairAt = time.Now().UTC().Format(time.RFC3339)
+	if configPath == "" {
+		return
+	}
+	if err := saveConfig(configPath, cfg); err != nil {
+		log.Printf("[rustdesk_manage] repair state save failed: %v", err)
+	}
+}
+
+func cachedMSIPath(cfg *Config) (string, error) {
+	// filepath.Join never returns "" even when its first argument is "",
+	// so check the env var explicitly before joining.
+	programData := strings.TrimSpace(os.Getenv("ProgramData"))
+	var base string
+	if programData != "" {
+		base = programData
+	} else {
+		base = os.TempDir()
+	}
+	root := filepath.Join(base, "TechiAgent", "cache")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return "", err
+	}
+	version := sanitizeCachePart(cfg.RustDeskPackageVersion)
+	if version == "" {
+		version = "latest"
+	}
+	return filepath.Join(root, "rustdesk-"+version+".msi"), nil
+}
+
+func sanitizeCachePart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func ensureCachedMSI(cfg *Config, cachePath string) error {
+	expected := strings.TrimSpace(strings.ToLower(cfg.RustDeskMSIChecksumSHA256))
+	if fileExists(cachePath) && (expected == "" || sha256Matches(cachePath, expected)) {
+		log.Printf("[rustdesk_manage] using cached MSI at %s", cachePath)
+		return nil
+	}
+
+	tmpPath := cachePath + ".download"
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := downloadFile(cfg.RustDeskMSIUrl, tmpPath, cfg.TimeoutSeconds*10); err == nil {
+			if expected != "" && !sha256Matches(tmpPath, expected) {
+				_ = os.Remove(tmpPath)
+				return fmt.Errorf("downloaded MSI checksum mismatch")
+			}
+			return os.Rename(tmpPath, cachePath)
+		} else {
+			lastErr = err
+			if attempt < 3 {
+				delay := time.Duration(1<<uint(attempt-1)) * 5 * time.Second
+				log.Printf("[rustdesk_manage] MSI download attempt %d failed: %v; retrying in %s", attempt, err, delay)
+				time.Sleep(delay)
+			}
+		}
+	}
+
+	if fileExists(cachePath) && (expected == "" || sha256Matches(cachePath, expected)) {
+		log.Printf("[rustdesk_manage] backend unavailable; falling back to cached MSI at %s", cachePath)
+		return nil
+	}
+	return lastErr
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func sha256Matches(path string, expected string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return false
+	}
+	return hex.EncodeToString(sum.Sum(nil)) == expected
 }
 
 func downloadFile(url, dest string, timeoutSeconds int) error {

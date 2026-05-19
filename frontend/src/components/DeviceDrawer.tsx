@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, Edit3, Loader2, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import { Client, DeviceGroup } from "../api/clients";
-import { assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, enterDeviceMaintenance } from "../api/devices";
+import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, enterDeviceMaintenance } from "../api/devices";
+import { parseUTC, timeAgo } from "../utils/time";
 import { isValidRustDeskId } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
+  ActionStatus,
   ActionType,
   cancelAction,
+  DESTRUCTIVE_ACTIONS,
   getDeviceActions,
   isActiveStatus,
   isTerminalStatus,
@@ -26,6 +29,7 @@ import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { Alert, AlertSeverity } from "../types/alert";
 import ActivityTimeline from "./ActivityTimeline";
+import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
 
@@ -64,9 +68,24 @@ function DetailRow({ label, value, mono = false }: { label: string; value?: stri
   );
 }
 
+function AssignmentSourceBadge({ source }: { source?: string | null }) {
+  const normalized = (source || "unassigned").toLowerCase();
+  const label =
+    normalized === "manual" || normalized === "legacy_manual" ? "manual" :
+    normalized === "trusted_domain" ? "domain" :
+    normalized === "enrollment_token" ? "token" :
+    normalized === "auto_os" || normalized === "system_auto" ? "auto" :
+    "unassigned";
+  return (
+    <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+      {label}
+    </span>
+  );
+}
+
 function HeartbeatFreshness({ lastSeen }: { lastSeen?: string }) {
   if (!lastSeen) return <span className="text-xs font-medium text-slate-500">Never</span>;
-  const diffSec = (Date.now() - new Date(lastSeen).getTime()) / 1000;
+  const diffSec = (Date.now() - parseUTC(lastSeen).getTime()) / 1000;
   let label: string;
   let cls: string;
   if (diffSec < 90) { label = "Fresh"; cls = "text-emerald-400"; }
@@ -124,11 +143,7 @@ function alertSeverityDot(severity: AlertSeverity): string {
 }
 
 function alertTimeAgo(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  return timeAgo(iso);
 }
 
 function patchStateLabel(state?: string): string {
@@ -177,6 +192,7 @@ export default function DeviceDrawer({
 
   const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   const [actions, setActions] = useState<RemoteAction[]>([]);
   const [actionsLoading, setActionsLoading] = useState(false);
@@ -217,11 +233,16 @@ export default function DeviceDrawer({
 
   useEffect(() => {
     if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handler);
+    };
   }, [isOpen, onClose]);
 
   useEffect(() => {
@@ -295,17 +316,28 @@ export default function DeviceDrawer({
     notesLoadedFor.current = null;
   }, [device.id]);
 
-  // Refresh actions list on realtime action events for this device.
+  // Merge realtime action events without a full reload.
   useEffect(() => {
     if (!latestEvent) return;
     const { type, data } = latestEvent;
-    if (type === "action_queued" || type === "action_status_changed") {
-      const eventDeviceId = (data as Record<string, unknown>)?.device_id;
-      if (eventDeviceId === device.id) {
-        void loadActions();
+    if (type !== "action_queued" && type !== "action_status_changed") return;
+    const ev = data as Record<string, unknown>;
+    if (ev?.device_id !== device.id) return;
+
+    const patch = ev as unknown as RemoteAction;
+    if (!patch?.id) return;
+
+    setActions((prev) => {
+      const idx = prev.findIndex((a) => a.id === patch.id);
+      if (idx === -1) {
+        // New action queued from another session — prepend it.
+        return [patch, ...prev];
       }
-    }
-  }, [latestEvent, device.id, loadActions]);
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], ...patch };
+      return updated;
+    });
+  }, [latestEvent, device.id]);
 
   const addNote = useCallback(async () => {
     const note = noteText.trim();
@@ -379,7 +411,8 @@ export default function DeviceDrawer({
   }, [inventory, softwareSearch]);
 
   const isOnline = device.status === "online";
-  const availableGroups = groups.filter((group) => group.client_id === device.client_id);
+  const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
+  const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
 
   const syncColor =
     device.rustdesk_conflict_detected
@@ -424,14 +457,14 @@ export default function DeviceDrawer({
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         style={{
-          borderLeft: "1px solid rgba(255,255,255,0.08)",
-          background: "linear-gradient(180deg, #0e0e18 0%, #08080f 100%)",
+          borderLeft: "1px solid var(--th-border-drawer)",
+          background: "var(--th-bg-drawer)",
         }}
       >
         {/* Koka */}
         <div
           className="flex flex-none items-center justify-between px-5 py-4"
-          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+          style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}
         >
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -465,7 +498,7 @@ export default function DeviceDrawer({
           </div>
         </div>
 
-        <div className="flex flex-none gap-1 overflow-x-auto border-b border-white/[0.07] px-4 py-2">
+        <div className="flex flex-none gap-1 overflow-x-auto px-4 py-2" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
           {visibleDrawerTabs.map((tab) => (
             <button
               key={tab.id}
@@ -506,22 +539,42 @@ export default function DeviceDrawer({
           {/* Paralajmerim per duplikim */}
           {device.duplicate_candidate && (
             <div
-              className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
+              className="mb-4 rounded-lg px-4 py-3"
               style={{ border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.07)" }}
             >
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-400" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-amber-300">Possible duplicate device</p>
-                <p className="mt-0.5 text-[11px] leading-5 text-amber-200/70">
-                  {device.duplicate_of_device_id
-                    ? `Fingerprint similarity with Device #${device.duplicate_of_device_id}${
-                        device.duplicate_score != null
-                          ? ` — ${Math.round(device.duplicate_score * 100)}% match`
-                          : ""
-                      }. Review and manually merge or dismiss.`
-                    : "This device may be a duplicate of an existing record. No automatic action has been taken."}
-                </p>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-amber-300">Possible duplicate device</p>
+                  <p className="mt-0.5 text-[11px] leading-5 text-amber-200/70">
+                    {device.duplicate_of_device_id
+                      ? `Fingerprint similarity with Device #${device.duplicate_of_device_id}${
+                          device.duplicate_score != null
+                            ? ` — ${Math.round(device.duplicate_score * 100)}% match`
+                            : ""
+                        }. Review and archive this record if it is a stale duplicate.`
+                      : "This device may be a duplicate of an existing record. No automatic action has been taken."}
+                  </p>
+                </div>
               </div>
+              {canOperate && !device.is_archived && (
+                <button
+                  type="button"
+                  disabled={archiveBusy}
+                  onClick={async () => {
+                    setArchiveBusy(true);
+                    try {
+                      const updated = await archiveDevice(device.id);
+                      onDeviceUpdated?.(updated);
+                    } finally {
+                      setArchiveBusy(false);
+                    }
+                  }}
+                  className="mt-3 w-full rounded-md border border-amber-400/25 bg-amber-400/10 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {archiveBusy ? "Archiving…" : "Archive this duplicate"}
+                </button>
+              )}
             </div>
           )}
 
@@ -537,7 +590,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               {device.is_in_maintenance ? (
                 <div className="space-y-3">
@@ -561,7 +614,7 @@ export default function DeviceDrawer({
                       <div>
                         <p className="premium-kicker mb-0.5">Started at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {new Date(device.maintenance_started_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_started_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -569,7 +622,7 @@ export default function DeviceDrawer({
                       <div className="col-span-2">
                         <p className="premium-kicker mb-0.5">Ends at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {new Date(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -636,7 +689,7 @@ export default function DeviceDrawer({
                         const updated = await enterDeviceMaintenance(device.id, {
                           duration_minutes: maintenanceForm.duration ? Number(maintenanceForm.duration) : null,
                           note: maintenanceForm.note || null,
-                          started_by: "admin",
+                          started_by: user?.display_name ?? user?.username ?? "operator",
                         });
                         setMaintenanceForm({ duration: "", note: "" });
                         onDeviceUpdated?.(updated);
@@ -661,9 +714,33 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">Identity</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
-              <DetailRow label="Current User" value={device.current_user} />
+              <div>
+                <p className="premium-kicker mb-1">Current User</p>
+                <div className="flex items-center gap-1.5">
+                  <p className={`text-xs font-medium leading-5 ${device.current_user ? "text-slate-100" : "text-slate-500"}`}>
+                    {device.current_user || "—"}
+                  </p>
+                  {device.user_source && device.user_source !== "no_interactive_user" && device.user_source !== "fallback" && (
+                    <span
+                      className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase leading-3 ${
+                        device.user_source === "rdp_session"
+                          ? "border border-purple-400/25 bg-purple-400/[0.1] text-purple-300"
+                          : "border border-sky-400/25 bg-sky-400/[0.1] text-sky-300"
+                      }`}
+                      title={device.user_source}
+                    >
+                      {device.user_source === "rdp_session" ? "RDP" : "Console"}
+                    </span>
+                  )}
+                </div>
+                {device.user_session_state && device.user_session_state !== "unknown" && (
+                  <p className="mt-0.5 text-[10px] font-medium text-slate-500">
+                    Session: {device.user_session_state}
+                  </p>
+                )}
+              </div>
               <DetailRow label="Domain" value={device.domain} />
               <DetailRow label="OS" value={device.os_name} />
               <DetailRow label="Platform" value={device.platform} />
@@ -683,10 +760,14 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">Client Assignment</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
-              <DetailRow label="Client" value={device.client_name || "No client"} />
-              <DetailRow label="Group" value={device.group_name || "No group"} />
+              <DetailRow label="Client" value={device.resolved_client_name || device.client_name || "No client"} />
+              <DetailRow label="Group" value={device.resolved_group || device.group_name || "No group"} />
+              <div className="col-span-2">
+                <p className="premium-kicker mb-1">Assignment Source</p>
+                <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
+              </div>
 	              {canOperate && (
 	              <label className="col-span-2 block">
                 <span className="premium-kicker mb-1 block">Assign Client</span>
@@ -711,7 +792,7 @@ export default function DeviceDrawer({
                 <span className="premium-kicker mb-1 block">Assign Group</span>
                 <select
                   value={device.group_id ?? "none"}
-                  disabled={!device.client_id}
+                  disabled={!assignmentClientId}
                   onChange={async (event) => {
                     const value = event.target.value === "none" ? null : Number(event.target.value);
                     const updated = await assignDeviceGroup(device.id, value);
@@ -734,7 +815,7 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">Network</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <DetailRow label="Local IP" value={device.local_ip} mono />
               <DetailRow label="Public IP" value={device.public_ip} mono />
@@ -746,13 +827,13 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">Heartbeat</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div>
                 <p className="premium-kicker mb-1">Last Seen</p>
                 <p className="text-xs font-medium text-slate-100">
                   {device.last_seen
-                    ? new Date(device.last_seen).toLocaleString(undefined, {
+                    ? parseUTC(device.last_seen).toLocaleString(undefined, {
                         month: "short",
                         day: "numeric",
                         hour: "2-digit",
@@ -774,7 +855,7 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">RustDesk</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div className="col-span-2">
                 <DetailRow label="RustDesk ID" value={device.rustdesk_id} mono />
@@ -810,7 +891,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div className="space-y-3">
                 <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 border-b border-white/5 pb-3">
@@ -888,7 +969,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
                 <div className="flex items-center gap-2 py-1">
@@ -919,54 +1000,44 @@ export default function DeviceDrawer({
           </div>
 
           <div className={activeTab === "actions" ? "" : "hidden"}>
-          {/* Restart Device confirmation modal */}
+          {/* Destructive action confirmation modal */}
           {restartConfirmOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setRestartConfirmOpen(false)} />
-              <div
-                className="relative z-10 w-full max-w-sm rounded-xl p-6"
-                style={{ background: "#0e0e18", border: "1px solid rgba(255,255,255,0.1)" }}
-              >
-                <div className="mb-4 flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 flex-none text-amber-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-white">Restart device?</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
-                      This will trigger an OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will be temporarily unreachable.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRestartConfirmOpen(false)}
-                    className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={actionBusy}
-                    onClick={async () => {
-                      setRestartConfirmOpen(false);
-                      setActionBusy(true);
-                      try {
-                        const created = await queueDeviceAction(device.id, {
-                          action_type: "restart_device",
-                          created_by: user?.username ?? "operator",
-                        });
-                        setActions((prev) => [created, ...prev]);
-                      } finally {
-                        setActionBusy(false);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Confirm restart
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ConfirmationModal
+              title={
+                selectedActionType === "reinstall_rustdesk"
+                  ? "Reinstall RustDesk?"
+                  : "Restart device?"
+              }
+              confirmLabel={
+                actionBusy
+                  ? "Confirming…"
+                  : selectedActionType === "reinstall_rustdesk"
+                  ? "Confirm reinstall"
+                  : "Confirm restart"
+              }
+              destructive={false}
+              loading={actionBusy}
+              onClose={() => setRestartConfirmOpen(false)}
+              onConfirm={async () => {
+                setRestartConfirmOpen(false);
+                setActionBusy(true);
+                try {
+                  const created = await queueDeviceAction(device.id, {
+                    action_type: selectedActionType,
+                    created_by: user?.username ?? "operator",
+                  });
+                  setActions((prev) => [created, ...prev]);
+                } finally {
+                  setActionBusy(false);
+                }
+              }}
+            >
+              {selectedActionType === "reinstall_rustdesk" ? (
+                <>This will download and silently reinstall RustDesk on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
+              ) : (
+                <>This will trigger an OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will be temporarily unreachable.</>
+              )}
+            </ConfirmationModal>
           )}
 
           {/* Veprimet remote */}
@@ -990,7 +1061,7 @@ export default function DeviceDrawer({
 
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               {/* Paralajmerime */}
               {device.is_archived && (
@@ -1025,17 +1096,31 @@ export default function DeviceDrawer({
                   onChange={(e) => setSelectedActionType(e.target.value as ActionType)}
                   className="flex-1 rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
                 >
-                  <option value="ping">Ping</option>
-                  <option value="refresh_inventory">Refresh Inventory</option>
-                  <option value="restart_agent">Restart Agent</option>
-                  <option value="sync_rustdesk">Sync RustDesk</option>
-                  <option value="restart_device">Restart Device</option>
+                  <optgroup label="Diagnostics">
+                    <option value="ping">Ping</option>
+                    <option value="immediate_heartbeat">Immediate Heartbeat</option>
+                    <option value="refresh_inventory">Refresh Inventory</option>
+                    <option value="sync_inventory">Sync Inventory</option>
+                  </optgroup>
+                  <optgroup label="Agent">
+                    <option value="restart_agent">Restart Agent</option>
+                    <option value="apply_power_policy">Apply Power Policy</option>
+                  </optgroup>
+                  <optgroup label="RustDesk">
+                    <option value="sync_rustdesk">Sync RustDesk</option>
+                    <option value="restart_rustdesk">Restart RustDesk</option>
+                    <option value="reopen_rustdesk">Reopen RustDesk</option>
+                    <option value="reinstall_rustdesk">Reinstall RustDesk</option>
+                  </optgroup>
+                  <optgroup label="Device">
+                    <option value="restart_device">Restart Device</option>
+                  </optgroup>
                 </select>
                 <button
                   type="button"
                   disabled={actionBusy}
                   onClick={async () => {
-                    if (selectedActionType === "restart_device") {
+                    if (DESTRUCTIVE_ACTIONS.has(selectedActionType)) {
                       setRestartConfirmOpen(true);
                       return;
                     }
@@ -1046,6 +1131,8 @@ export default function DeviceDrawer({
                         created_by: user?.username ?? "operator",
                       });
                       setActions((prev) => [created, ...prev]);
+                    } catch {
+                      // queue rejection is surfaced in the action list via WS update
                     } finally {
                       setActionBusy(false);
                     }
@@ -1133,7 +1220,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div>
                 <p className="premium-kicker mb-1">Pending Updates</p>
@@ -1169,7 +1256,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <>
                   <input
@@ -1181,7 +1268,7 @@ export default function DeviceDrawer({
                   />
                   <div className="max-h-60 overflow-y-auto">
                     <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-[#0e0e18]">
+                      <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
                         <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                           <th className="pb-1.5 pr-3">PID</th>
                           <th className="pb-1.5 pr-3">Name</th>
@@ -1224,7 +1311,7 @@ export default function DeviceDrawer({
               </div>
               <div
                 className="rounded-lg p-4"
-                style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
               >
                 <input
                   type="text"
@@ -1235,7 +1322,7 @@ export default function DeviceDrawer({
                 />
                 <div className="max-h-60 overflow-y-auto">
                   <table className="w-full text-[11px]">
-                    <thead className="sticky top-0 bg-[#0e0e18]">
+                    <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
                       <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                         <th className="pb-1.5 pr-3">Name</th>
                         <th className="pb-1.5 pr-3">Status</th>
@@ -1291,7 +1378,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <>
                   <input
@@ -1303,7 +1390,7 @@ export default function DeviceDrawer({
                   />
                   <div className="max-h-72 overflow-y-auto">
                     <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-[#0e0e18]">
+                      <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
                         <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                           <th className="pb-1.5 pr-3">Name</th>
                           <th className="pb-1.5 pr-3">Version</th>
@@ -1343,7 +1430,7 @@ export default function DeviceDrawer({
             </div>
             <div
               className="rounded-lg p-4"
-              style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <textarea
                 value={noteText}
@@ -1371,7 +1458,7 @@ export default function DeviceDrawer({
               ) : notes.length === 0 ? (
                 <div
                   className="rounded-lg p-4 text-center text-xs font-medium text-slate-500"
-                  style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}
+                  style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
                 >
                   No notes yet.
                 </div>
@@ -1380,7 +1467,7 @@ export default function DeviceDrawer({
                   <div
                     key={note.id}
                     className="rounded-lg p-3"
-                    style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
+                    style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
                   >
                     <div className="mb-1.5 flex items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1456,7 +1543,7 @@ export default function DeviceDrawer({
           <div className={activeTab === "timeline" ? "" : "hidden"}>
           <section
             className="rounded-lg p-4"
-            style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}
+            style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
           >
             <ActivityTimeline events={events} loading={loading} onReload={reload} />
           </section>
@@ -1468,12 +1555,7 @@ export default function DeviceDrawer({
 }
 
 function actionTimeAgo(iso?: string | null): string {
-  if (!iso) return "";
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  return iso ? timeAgo(iso) : "";
 }
 
 function formatDuration(seconds: number): string {
@@ -1509,7 +1591,7 @@ function ActionRow({
   return (
     <div
       className="flex items-start gap-2 rounded-md px-3 py-2 text-xs"
-      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+      style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)" }}
     >
       {isRunning ? (
         <Loader2 className="mt-0.5 h-3 w-3 flex-none animate-spin text-sky-400" />
@@ -1539,6 +1621,16 @@ function ActionRow({
         )}
         {action.error_message && (
           <p className="mt-0.5 text-[10px] text-red-400">{action.error_message}</p>
+        )}
+        {action.output && action.output !== action.result_message && (
+          <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap break-words rounded bg-white/[0.03] px-2 py-1 text-[9px] font-mono leading-4 text-slate-400">
+            {action.output}
+          </pre>
+        )}
+        {action.stderr_output && (
+          <pre className="mt-1 max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded bg-red-950/30 px-2 py-1 text-[9px] font-mono leading-4 text-red-300">
+            {action.stderr_output}
+          </pre>
         )}
         <div className="mt-1 flex items-center gap-2">
           {canCancel && (

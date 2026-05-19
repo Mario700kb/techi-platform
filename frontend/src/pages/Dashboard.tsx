@@ -31,14 +31,14 @@ import {
   statusDotColor,
 } from "../api/actions";
 import { Badge, Button } from "../components/ui";
+import { parseUTC, timeAgo } from "../utils/time";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
 const deploymentStatusColor = (status: RecentDeployment["status"]) => {
@@ -48,15 +48,11 @@ const deploymentStatusColor = (status: RecentDeployment["status"]) => {
 };
 
 function actionTimeAgo(iso?: string | null): string {
-  if (!iso) return "—";
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  return iso ? timeAgo(iso) : "—";
 }
 
 const compactBadgeClass = "!px-1 !py-0 !text-[8px] !leading-3";
+const assignmentBadgeClass = `${compactBadgeClass} !border-slate-500/30 !bg-slate-500/10 !text-slate-500`;
 const METRIC_REFRESH_MIN_MS = 10000;
 
 const assignmentSourceLabel = (device: Device) => {
@@ -75,7 +71,8 @@ const statusBadgeClass = (device: Device) => {
 };
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const canViewOperators = can("admin");
 
   const [total, setTotal] = useState(0);
   const [online, setOnline] = useState(0);
@@ -110,7 +107,7 @@ export default function Dashboard() {
         getDevices({ lifecycle_state: "all" }, 0, 25).catch(err => { console.error('Recent devices error:', err); return []; }),
         getRecentDeployments().catch(err => { console.error('Deployments error:', err); return []; }),
         getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
-        getOperators().catch(() => [] as OperatorRecord[]),
+        canViewOperators ? getOperators().catch(() => [] as OperatorRecord[]) : Promise.resolve([] as OperatorRecord[]),
       ]);
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
       const sortedDevices = [...latestDevices].sort(
@@ -135,7 +132,7 @@ export default function Dashboard() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [canViewOperators]);
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
@@ -479,7 +476,7 @@ export default function Dashboard() {
                             <div className="whitespace-nowrap font-semibold text-slate-100">{device.client_name || "No client"}</div>
                             <div className="flex items-center gap-0.5 whitespace-nowrap text-[9px] text-slate-500">
                               <span>{device.group_name || "No group"}</span>
-                              <Badge variant="neutral" className={compactBadgeClass}>{assignmentSourceLabel(device)}</Badge>
+                              <Badge variant="neutral" className={assignmentBadgeClass}>{assignmentSourceLabel(device)}</Badge>
                             </div>
                           </td>
                           <td className="whitespace-nowrap px-2 py-1">{device.domain || "—"}</td>

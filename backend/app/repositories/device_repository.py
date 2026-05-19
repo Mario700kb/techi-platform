@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
+from app.core.time import utcnow
 from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, false, or_
+from sqlalchemy import and_, case, false, not_, or_
 
 from app.models.alert import DeviceAlert
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
+from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
@@ -26,6 +28,45 @@ class DeviceRepository:
             return None
         return self.db.query(Device).filter(Device.rustdesk_id == rustdesk_id).first()
 
+    def get_by_agent_id(self, agent_id: Optional[str]) -> Optional[Device]:
+        if not agent_id:
+            return None
+        return self.db.query(Device).filter(Device.agent_id == agent_id).first()
+
+    def find_reenrollment_match(
+        self,
+        *,
+        agent_id: Optional[str],
+        rustdesk_id: Optional[str],
+        hostname: Optional[str],
+        local_ip: Optional[str],
+        public_ip: Optional[str],
+    ) -> Optional[Device]:
+        match = self.get_by_agent_id(agent_id)
+        if match:
+            return match
+        match = self.get_by_rustdesk_id(rustdesk_id)
+        if match:
+            return match
+        normalized_hostname = (hostname or "").strip()
+        if normalized_hostname and local_ip:
+            match = (
+                self.db.query(Device)
+                .filter(Device.hostname == normalized_hostname, Device.local_ip == local_ip)
+                .order_by(Device.id.desc())
+                .first()
+            )
+            if match:
+                return match
+        if normalized_hostname and public_ip:
+            return (
+                self.db.query(Device)
+                .filter(Device.hostname == normalized_hostname, Device.public_ip == public_ip)
+                .order_by(Device.id.desc())
+                .first()
+            )
+        return None
+
     def get_conflicting_rustdesk_id(self, rustdesk_id: Optional[str], *, exclude_device_id: Optional[int] = None) -> Optional[Device]:
         if not rustdesk_id:
             return None
@@ -39,7 +80,11 @@ class DeviceRepository:
             self.db.query(Device)
             .filter(Device.status == DeviceStatus.ONLINE)
             .filter(or_(Device.last_seen.is_(None), Device.last_seen < cutoff))
-            .order_by(Device.last_seen.asc().nullsfirst(), Device.id.asc())
+            .order_by(
+                case((Device.last_seen.is_(None), 0), else_=1),
+                Device.last_seen.asc(),
+                Device.id.asc(),
+            )
             .limit(limit)
             .all()
         )
@@ -58,6 +103,7 @@ class DeviceRepository:
         search: Optional[str] = None,
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
+        smart_folder: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         query = self.db.query(Device)
@@ -74,6 +120,7 @@ class DeviceRepository:
         if group_id:
             query = query.filter(Device.group_id == group_id)
         query = self._apply_assignment_filter(query, assignment_source)
+        query = self._apply_smart_folder_filter(query, smart_folder)
         query = self._apply_lifecycle_filter(query, lifecycle_state)
         if duplicate_candidates is True:
             query = query.filter(Device.duplicate_candidate.is_(True))
@@ -114,11 +161,11 @@ class DeviceRepository:
             return query
         source = assignment_source.strip().lower()
         if source == "auto":
-            return query.filter(Device.assignment_source == "system_auto")
+            return query.filter(Device.assignment_source.in_(["auto_os", "system_auto", "trusted_domain"]))
         if source == "system_auto":
             return query.filter(Device.assignment_source == "system_auto")
         if source == "manual":
-            return query.filter(Device.assignment_source == "manual")
+            return query.filter(or_(Device.assignment_source.in_(["manual", "legacy_manual"]), and_(Device.assignment_source.is_(None), or_(Device.client_id.is_not(None), Device.group_id.is_not(None)))))
         if source in {"token", "enrollment"}:
             return query.filter(Device.assignment_source == "enrollment_token")
         if source == "unassigned":
@@ -131,10 +178,51 @@ class DeviceRepository:
             )
         return query.filter(Device.assignment_source == source)
 
+    def _apply_smart_folder_filter(self, query, smart_folder: Optional[str]):
+        if not smart_folder:
+            return query
+        key = smart_folder.strip().lower()
+        server_group = Device.group.has(or_(DeviceGroup.name.ilike("servers"), DeviceGroup.name.ilike("server")))
+        client_pc_group = Device.group.has(
+            or_(
+                DeviceGroup.name.ilike("client pc"),
+                DeviceGroup.name.ilike("client pcs"),
+                DeviceGroup.name.ilike("workstation"),
+                DeviceGroup.name.ilike("workstations"),
+            )
+        )
+        ungrouped = Device.group_id.is_(None)
+        if key == "windows_server":
+            return query.filter(or_(server_group, and_(ungrouped, Device.os_name.ilike("%windows server%"))))
+        if key == "windows_workstation":
+            return query.filter(
+                or_(
+                    client_pc_group,
+                    and_(
+                        ungrouped,
+                        or_(Device.os_name.ilike("%windows%"), Device.platform.ilike("%windows%")),
+                        not_(Device.os_name.ilike("%windows server%")),
+                    ),
+                )
+            )
+        if key == "laptop":
+            return query.filter(or_(Device.hostname.ilike("%laptop%"), Device.group.has(name="laptop")))
+        if key == "domain":
+            return query.filter(and_(Device.domain.is_not(None), Device.domain != "", not_(Device.domain.ilike("%workgroup%"))))
+        if key == "workgroup":
+            return query.filter(or_(Device.domain.is_(None), Device.domain == "", Device.domain.ilike("%workgroup%")))
+        if key == "unassigned":
+            return query.filter(and_(Device.client_id.is_(None), Device.group_id.is_(None)))
+        if key == "offline":
+            return self._apply_freshness_filter(query, DeviceFreshnessState.OFFLINE)
+        if key == "rustdesk_missing":
+            return query.filter(Device.rustdesk_install_status.in_(["missing", "not_installed", "not installed", "absent", "unknown"]))
+        return query
+
     def _apply_freshness_filter(self, query, freshness_state: Optional[DeviceFreshnessState]):
         if not freshness_state:
             return query
-        now = datetime.utcnow()
+        now = utcnow()
         online_cutoff = now - timedelta(minutes=2)
         stale_cutoff = now - timedelta(minutes=15)
         if freshness_state == DeviceFreshnessState.ONLINE:
@@ -163,7 +251,7 @@ class DeviceRepository:
 
     def archive(self, db_obj: Device, archived_by: Optional[str] = None) -> Device:
         db_obj.is_archived = True
-        db_obj.archived_at = datetime.utcnow()
+        db_obj.archived_at = utcnow()
         db_obj.archived_by = archived_by
         self.db.add(db_obj)
         self.db.commit()
@@ -237,6 +325,7 @@ class DeviceRepository:
         search: Optional[str] = None,
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
+        smart_folder: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         query = self.db.query(Device)
@@ -253,6 +342,7 @@ class DeviceRepository:
         if group_id:
             query = query.filter(Device.group_id == group_id)
         query = self._apply_assignment_filter(query, assignment_source)
+        query = self._apply_smart_folder_filter(query, smart_folder)
         query = self._apply_lifecycle_filter(query, lifecycle_state)
         if duplicate_candidates is True:
             query = query.filter(Device.duplicate_candidate.is_(True))

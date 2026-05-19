@@ -1,11 +1,19 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
-import { Archive, AlertTriangle, ExternalLink, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Trash2, Wrench } from "lucide-react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Trash2, Wrench } from "lucide-react";
 import { Device, DeviceFilters } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
-import { queueDeviceAction } from "../api/actions";
+import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
 import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
+import ConfirmationModal from "./ConfirmationModal";
+import { parseUTC, timeAgo } from "../utils/time";
+
+export interface ActiveActionEntry {
+  action_type: string;
+  status: ActionStatus;
+}
 
 interface DevicesTableProps {
   devices: Device[];
@@ -24,8 +32,10 @@ interface DevicesTableProps {
   onDeviceRestore?: (device: Device) => void;
   healthMap?: Record<number, DeviceHealthSummary>;
   patchMap?: Record<number, PatchStatus>;
+  activeActionMap?: Record<number, ActiveActionEntry>;
   canOperate?: boolean;
   canDelete?: boolean;
+  currentUser?: string;
 }
 
 type PendingAction = "archive" | "restore" | "delete";
@@ -33,6 +43,11 @@ export type HealthFilter = "all" | DeviceHealthSummary["health_state"];
 
 const compactBadgeClass = "!px-1 !py-0 !text-[8px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
+const FILTER_INPUT_CLS = "th-input rounded-lg border px-3 py-1.5 text-xs font-medium focus:border-techi-orange/50 focus:outline-none";
+const ACTION_MENU_WIDTH = 192;
+const ACTION_MENU_MAX_HEIGHT = 220;
+const ACTION_MENU_GAP = 6;
+const ACTION_MENU_MARGIN = 8;
 
 const getStatusCell = (device: Device) => {
   const state = device.freshness_state ?? device.status;
@@ -80,7 +95,7 @@ const getRustDeskRuntime = (device: Device) => {
 };
 
 const getAssignmentBadge = (device: Device) => {
-  const source = device.assignment_source || "system_auto_unassigned";
+  const source = device.resolved_assignment_source || device.assignment_source || "unassigned";
   if (source === "enrollment_token") {
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Enrollment token assignment">
@@ -88,14 +103,21 @@ const getAssignmentBadge = (device: Device) => {
       </Badge>
     );
   }
-  if (source === "manual") {
+  if (source === "manual" || source === "legacy_manual") {
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Manual assignment">
         manual
       </Badge>
     );
   }
-  if (source === "system_auto") {
+  if (source === "trusted_domain") {
+    return (
+      <Badge variant="ghost" className={subtleBadgeClass} title="Domain assignment">
+        domain
+      </Badge>
+    );
+  }
+  if (source === "auto_os" || source === "system_auto") {
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Auto assigned from domain">
         auto
@@ -111,8 +133,7 @@ const getAssignmentBadge = (device: Device) => {
 
 const formatLastSeen = (lastSeen?: string) => {
   if (!lastSeen) return "Never";
-  const date = new Date(lastSeen);
-  const diffMs = Date.now() - date.getTime();
+  const diffMs = Date.now() - parseUTC(lastSeen).getTime();
   const diffHours = diffMs / (1000 * 60 * 60);
   if (diffHours < 1) return "Just now";
   if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
@@ -121,14 +142,14 @@ const formatLastSeen = (lastSeen?: string) => {
 
 const isSuggestedArchive = (device: Device) => {
   if (device.is_archived || device.freshness_state !== "offline" || !device.last_seen) return false;
-  const diffDays = (Date.now() - new Date(device.last_seen).getTime()) / (1000 * 60 * 60 * 24);
+  const diffDays = (Date.now() - parseUTC(device.last_seen).getTime()) / (1000 * 60 * 60 * 24);
   return diffDays > 30;
 };
 
 const getMaintenanceBadge = (device: Device) => {
   if (!device.is_in_maintenance) return null;
   const title = device.maintenance_ends_at
-    ? `In maintenance until ${new Date(device.maintenance_ends_at).toLocaleString()}`
+    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString()}`
     : device.maintenance_note
     ? `In maintenance: ${device.maintenance_note}`
     : "In maintenance";
@@ -165,6 +186,22 @@ const getDuplicateBadge = (device: Device) => {
   );
 };
 
+const getUserSourceBadge = (device: Device) => {
+  if (!device.user_source || device.user_source === "no_interactive_user" || device.user_source === "fallback") return null;
+  const label = device.user_source === "rdp_session" ? "rdp" : "con";
+  const cls = device.user_source === "rdp_session"
+    ? `border-purple-400/25 bg-purple-400/[0.08] text-purple-300 ${compactBadgeClass}`
+    : `border-sky-400/25 bg-sky-400/[0.08] text-sky-300 ${compactBadgeClass}`;
+  const stateLabel = device.user_session_state && device.user_session_state !== "unknown"
+    ? ` · ${device.user_session_state}`
+    : "";
+  return (
+    <Badge variant="ghost" className={cls} title={`${device.user_source}${stateLabel}`}>
+      {label}
+    </Badge>
+  );
+};
+
 const getPatchBadge = (patch?: PatchStatus) => {
   const state = patch?.patch_state ?? "unknown";
   if (state === "up_to_date") {
@@ -183,7 +220,7 @@ const getPatchBadge = (patch?: PatchStatus) => {
 const getLifecycleSignals = (device: Device) => (
   <>
     {device.is_archived && (
-      <Badge variant="neutral" className={compactBadgeClass} title={device.archived_at ? `Archived ${new Date(device.archived_at).toLocaleString()}` : "Archived device"}>
+      <Badge variant="neutral" className={compactBadgeClass} title={device.archived_at ? `Archived ${parseUTC(device.archived_at).toLocaleString()}` : "Archived device"}>
         archived
       </Badge>
     )}
@@ -208,7 +245,6 @@ const getLifecycleSignals = (device: Device) => (
 
 const getCompactHealthBadge = (health?: DeviceHealthSummary) => {
   const score = health?.health_score;
-
   return (
     <span className="min-w-[18px] text-right text-[10px] font-semibold leading-4 text-slate-200 tabular-nums">
       {score != null ? score : "—"}
@@ -233,10 +269,13 @@ const DevicesTable = memo(function DevicesTable({
   onDeviceRestore,
   healthMap = {},
   patchMap = {},
+  activeActionMap = {},
   canOperate = false,
   canDelete = false,
+  currentUser,
 }: DevicesTableProps) {
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef({ left: 0, top: 0 });
@@ -247,6 +286,54 @@ const DevicesTable = memo(function DevicesTable({
     node.scrollLeft = scrollPositionRef.current.left;
     node.scrollTop = scrollPositionRef.current.top;
   }, [devices]);
+
+  // Close portal menu when the user clicks outside both the trigger and the menu.
+  useEffect(() => {
+    if (openActionDeviceId === null) return;
+    const closeMenu = () => {
+      setOpenActionDeviceId(null);
+      setMenuAnchor(null);
+    };
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-action-menu]") && !target.closest("[data-action-trigger]")) {
+        closeMenu();
+      }
+    };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", keyHandler);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [openActionDeviceId]);
+
+  const activeActionDevice = openActionDeviceId !== null
+    ? devices.find((d) => d.id === openActionDeviceId) ?? null
+    : null;
+
+  const getMenuAnchor = (trigger: HTMLElement) => {
+    const rect = trigger.getBoundingClientRect();
+    const availableBelow = window.innerHeight - rect.bottom - ACTION_MENU_MARGIN;
+    const opensUp = availableBelow < ACTION_MENU_MAX_HEIGHT && rect.top > availableBelow;
+    const top = opensUp
+      ? Math.max(ACTION_MENU_MARGIN, rect.top - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_GAP)
+      : Math.max(
+          ACTION_MENU_MARGIN,
+          Math.min(rect.bottom + ACTION_MENU_GAP, window.innerHeight - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_MARGIN)
+        );
+    const preferredLeft = rect.right - ACTION_MENU_WIDTH;
+    const left = Math.min(
+      Math.max(ACTION_MENU_MARGIN, preferredLeft),
+      window.innerWidth - ACTION_MENU_WIDTH - ACTION_MENU_MARGIN
+    );
+    return { top, left };
+  };
 
   const confirmAction = () => {
     if (!pendingAction) return;
@@ -276,13 +363,13 @@ const DevicesTable = memo(function DevicesTable({
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Search hostname, user, domain or IP..."
-              className="w-full rounded-lg border border-white/[0.1] bg-slate-900/70 py-1.5 pl-9 pr-3 text-xs font-medium text-white placeholder-slate-500 focus:border-techi-orange/50 focus:outline-none"
+              className={`${FILTER_INPUT_CLS} w-full py-1.5 pl-9 pr-3`}
             />
           </div>
           <select
             value={filters.freshness_state || "all"}
             onChange={(e) => onFilterChange("freshness_state", e.target.value)}
-            className="rounded-lg border border-white/[0.1] bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-white focus:border-techi-orange/50 focus:outline-none"
+            className={FILTER_INPUT_CLS}
           >
             <option value="all">All statuses</option>
             <option value="online">Online</option>
@@ -292,7 +379,7 @@ const DevicesTable = memo(function DevicesTable({
           <select
             value={healthFilter}
             onChange={(e) => onHealthFilterChange(e.target.value as HealthFilter)}
-            className="rounded-lg border border-white/[0.1] bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-white focus:border-techi-orange/50 focus:outline-none"
+            className={FILTER_INPUT_CLS}
           >
             <option value="all">All health</option>
             <option value="healthy">Healthy</option>
@@ -302,7 +389,7 @@ const DevicesTable = memo(function DevicesTable({
           <select
             value={filters.lifecycle_state || "active"}
             onChange={(e) => onFilterChange("lifecycle_state", e.target.value)}
-            className="rounded-lg border border-white/[0.1] bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-white focus:border-techi-orange/50 focus:outline-none"
+            className={FILTER_INPUT_CLS}
           >
             <option value="active">Active devices</option>
             <option value="archived">Archived devices</option>
@@ -320,7 +407,7 @@ const DevicesTable = memo(function DevicesTable({
               onFilterChange("duplicate_candidates", undefined);
               onFilterChange("maintenance_state", value === "all" ? undefined : value);
             }}
-            className="rounded-lg border border-white/[0.1] bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-white focus:border-techi-orange/50 focus:outline-none"
+            className={FILTER_INPUT_CLS}
           >
             <option value="all">All signals</option>
             <option value="maintenance">In maintenance</option>
@@ -351,7 +438,7 @@ const DevicesTable = memo(function DevicesTable({
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-white/[0.1] bg-slate-950/80">
+        <div className="overflow-hidden rounded-lg border border-white/[0.1] bg-slate-950/80 th-table-row">
           <div
             ref={scrollRef}
             className="overflow-x-auto"
@@ -360,11 +447,15 @@ const DevicesTable = memo(function DevicesTable({
                 left: event.currentTarget.scrollLeft,
                 top: event.currentTarget.scrollTop,
               };
+              if (openActionDeviceId !== null) {
+                setOpenActionDeviceId(null);
+                setMenuAnchor(null);
+              }
             }}
           >
-            <table className="min-w-full border-separate border-spacing-0 text-left text-[11px]">
+            <table className="min-w-[1120px] border-separate border-spacing-0 text-left text-[11px]">
               <thead className="sticky top-0 z-20">
-                <tr className="border-b border-white/[0.06] bg-slate-950/90">
+                <tr className="th-table-head border-b border-white/[0.06]">
                   <th className="w-[46px] px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Status</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Hostname</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Assignment</th>
@@ -390,6 +481,9 @@ const DevicesTable = memo(function DevicesTable({
                       <div className="flex items-center gap-1">
                         {getStatusCell(device)}
                         {getCompactHealthBadge(healthMap[device.id])}
+                        {activeActionMap[device.id] && (
+                          <ActionIndicator entry={activeActionMap[device.id]} />
+                        )}
                       </div>
                     </td>
                     <td className="px-2.5 py-1 align-middle">
@@ -417,7 +511,12 @@ const DevicesTable = memo(function DevicesTable({
                         <div className="text-[9px] font-medium leading-3 text-slate-500">v{device.rustdesk_version}</div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-200">{device.current_user || "—"}</td>
+                    <td className="whitespace-nowrap px-2.5 py-1 align-middle">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] font-medium text-slate-200">{device.current_user || "—"}</span>
+                        {getUserSourceBadge(device)}
+                      </div>
+                    </td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.public_ip || "—"}</td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.local_ip || "—"}</td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.domain || "—"}</td>
@@ -441,83 +540,27 @@ const DevicesTable = memo(function DevicesTable({
                           <ExternalLink className="h-2.5 w-2.5" />
                           Connect
                         </button>
-	                        {canOperate && (
-	                          <div className="relative inline-block">
-	                            <button
-	                              type="button"
-	                              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
-	                              onClick={() => setOpenActionDeviceId((value) => (value === device.id ? null : device.id))}
-	                              title="More actions"
-	                            >
-	                              <MoreHorizontal className="h-3 w-3" />
-	                            </button>
-	                            {openActionDeviceId === device.id && (
-	                              <div className="absolute right-0 top-8 z-30 w-48 rounded-lg border border-white/10 bg-slate-950 p-1 shadow-2xl">
-	                                <button
-	                                  type="button"
-	                                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-sky-100 transition hover:bg-sky-500/10"
-	                                  onClick={() => {
-	                                    setOpenActionDeviceId(null);
-	                                    void queueDeviceAction(device.id, { action_type: "ping", created_by: "admin" });
-	                                  }}
-	                                >
-	                                  <PlayCircle className="h-3.5 w-3.5" />
-	                                  Ping device
-	                                </button>
-	                                <button
-	                                  type="button"
-	                                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:bg-white/[0.05]"
-	                                  onClick={() => {
-	                                    setOpenActionDeviceId(null);
-	                                    void queueDeviceAction(device.id, { action_type: "refresh_inventory", created_by: "admin" });
-	                                  }}
-	                                >
-	                                  <RotateCcw className="h-3.5 w-3.5" />
-	                                  Refresh inventory
-	                                </button>
-	                                {!device.is_archived ? (
-	                                  <button
-	                                    type="button"
-	                                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
-	                                    onClick={() => {
-	                                      setOpenActionDeviceId(null);
-	                                      setPendingAction({ type: "archive", device });
-	                                    }}
-	                                  >
-	                                    <Archive className="h-3.5 w-3.5" />
-	                                    Archive device
-	                                  </button>
-	                                ) : (
-	                                  <button
-	                                    type="button"
-	                                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/10"
-	                                    onClick={() => {
-	                                      setOpenActionDeviceId(null);
-	                                      setPendingAction({ type: "restore", device });
-	                                    }}
-	                                  >
-	                                    <RotateCcw className="h-3.5 w-3.5" />
-	                                    Restore device
-	                                  </button>
-	                                )}
-	                                {canDelete && (
-	                                  <button
-	                                    type="button"
-	                                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-200 transition hover:bg-red-500/10 hover:text-red-100"
-	                                    onClick={() => {
-	                                      setOpenActionDeviceId(null);
-	                                      setPendingAction({ type: "delete", device });
-	                                    }}
-	                                  >
-	                                    <Trash2 className="h-3.5 w-3.5" />
-	                                    Remove permanently
-	                                  </button>
-	                                )}
-	                              </div>
-	                            )}
-	                          </div>
-	                        )}
-	                      </div>
+                        {canOperate && (
+                          <button
+                            type="button"
+                            data-action-trigger="true"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (openActionDeviceId === device.id) {
+                                setOpenActionDeviceId(null);
+                                setMenuAnchor(null);
+                              } else {
+                                setMenuAnchor(getMenuAnchor(e.currentTarget));
+                                setOpenActionDeviceId(device.id);
+                              }
+                            }}
+                            title="More actions"
+                          >
+                            <MoreHorizontal className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -525,12 +568,89 @@ const DevicesTable = memo(function DevicesTable({
             </table>
           </div>
 
-          <div className="border-t border-white/[0.06] bg-slate-950/60 px-4 py-2.5 text-xs font-medium text-slate-500 sm:flex sm:items-center sm:justify-between">
+          <div className="th-table-head border-t border-white/[0.06] px-4 py-2.5 text-xs font-medium text-slate-500 sm:flex sm:items-center sm:justify-between">
             <span>{devices.length} device{devices.length !== 1 ? "s" : ""} shown</span>
             <span className="mt-1 sm:mt-0">Fleet operating normally</span>
           </div>
         </div>
       )}
+
+      {/* Portal action menu — rendered in document.body to escape table scroll clipping */}
+      {activeActionDevice && menuAnchor && createPortal(
+        <div
+          data-action-menu="true"
+          style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left }}
+          className="th-elevated z-[10000] max-h-[220px] w-48 overflow-y-auto rounded-lg border p-1 shadow-2xl"
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-sky-100 transition hover:bg-sky-500/10"
+            onClick={() => {
+              setOpenActionDeviceId(null);
+              setMenuAnchor(null);
+              void queueDeviceAction(activeActionDevice.id, { action_type: "ping", created_by: currentUser ?? "unknown" });
+            }}
+          >
+            <PlayCircle className="h-3.5 w-3.5" />
+            Ping device
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:bg-white/[0.05]"
+            onClick={() => {
+              setOpenActionDeviceId(null);
+              setMenuAnchor(null);
+              void queueDeviceAction(activeActionDevice.id, { action_type: "refresh_inventory", created_by: currentUser ?? "unknown" });
+            }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Refresh inventory
+          </button>
+          {!activeActionDevice.is_archived ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
+              onClick={() => {
+                setOpenActionDeviceId(null);
+                setMenuAnchor(null);
+                setPendingAction({ type: "archive", device: activeActionDevice });
+              }}
+            >
+              <Archive className="h-3.5 w-3.5" />
+              Archive device
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/10"
+              onClick={() => {
+                setOpenActionDeviceId(null);
+                setMenuAnchor(null);
+                setPendingAction({ type: "restore", device: activeActionDevice });
+              }}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore device
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-200 transition hover:bg-red-500/10 hover:text-red-100"
+              onClick={() => {
+                setOpenActionDeviceId(null);
+                setMenuAnchor(null);
+                setPendingAction({ type: "delete", device: activeActionDevice });
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove permanently
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+
       {pendingAction && (
         <ConfirmDeviceAction
           type={pendingAction.type}
@@ -544,6 +664,28 @@ const DevicesTable = memo(function DevicesTable({
 });
 
 export default DevicesTable;
+
+function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
+  const isRunning = entry.status === "running";
+  const isQueued = entry.status === "queued" || entry.status === "sent" || entry.status === "acknowledged";
+  const title = `${entry.action_type.replace(/_/g, " ")} — ${entry.status}`;
+  if (isRunning) {
+    return (
+      <span title={title}>
+        <Loader2 className="h-2.5 w-2.5 flex-none animate-spin text-sky-400" />
+      </span>
+    );
+  }
+  if (isQueued) {
+    return (
+      <span
+        className="h-2 w-2 flex-none rounded-full bg-amber-400/80"
+        title={title}
+      />
+    );
+  }
+  return null;
+}
 
 function ConfirmDeviceAction({
   type,
@@ -567,24 +709,15 @@ function ConfirmDeviceAction({
   const actionLabel = type === "archive" ? "Archive" : type === "restore" ? "Restore" : "Remove permanently";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className={`w-full max-w-md rounded-xl border p-5 shadow-2xl ${isDelete ? "border-red-400/35 bg-red-950/40" : "border-white/10 bg-slate-950"}`}>
-        <p className={`text-sm font-semibold ${isDelete ? "text-red-100" : "text-white"}`}>{title}</p>
-        <p className="mt-2 text-sm font-medium text-slate-300">{device.hostname || device.rustdesk_id}</p>
-        <p className={`mt-3 text-sm ${isDelete ? "text-red-100" : "text-slate-300"}`}>{message}</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/[0.06]">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${isDelete ? "bg-red-600 hover:bg-red-500" : type === "restore" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-amber-600 hover:bg-amber-500"}`}
-          >
-            {actionLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      title={title}
+      confirmLabel={actionLabel}
+      destructive={isDelete || type === "archive"}
+      onClose={onCancel}
+      onConfirm={onConfirm}
+    >
+      <p className="font-medium text-slate-200">{device.hostname || device.rustdesk_id}</p>
+      <p className="mt-3">{message}</p>
+    </ConfirmationModal>
   );
 }

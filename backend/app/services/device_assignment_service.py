@@ -25,13 +25,32 @@ class AssignmentSignal:
     device_type: Optional[DeviceType] = None
 
 
+@dataclass(frozen=True)
+class AssignmentResolution:
+    resolved_client_id: Optional[int]
+    resolved_client_name: Optional[str]
+    resolved_group: Optional[str]
+    resolved_assignment_source: str
+    resolved_device_category: str
+
+
 class DeviceAssignmentService:
     MANUAL_SOURCE = "manual"
+    LEGACY_MANUAL_SOURCE = "legacy_manual"
+    TRUSTED_DOMAIN_SOURCE = "trusted_domain"
     ENROLLMENT_SOURCE = "enrollment_token"
-    UNASSIGNED_SOURCE = "system_auto_unassigned"
+    AUTO_OS_SOURCE = "auto_os"
+    SYSTEM_AUTO_SOURCE = "system_auto"
+    UNASSIGNED_SOURCE = "unassigned"
     INVALID_CLIENT_LABELS = {"", "workgroup", "localhost", "local"}
     INVALID_HOST_PREFIXES = ("desktop-", "laptop-", "win-", "pc-", "macbook-", "imac-")
     VALID_PRIVATE_SUFFIXES = {"local", "lan", "internal"}
+    AUTHORITATIVE_SOURCES = {
+        MANUAL_SOURCE,
+        LEGACY_MANUAL_SOURCE,
+        TRUSTED_DOMAIN_SOURCE,
+        ENROLLMENT_SOURCE,
+    }
 
     def __init__(self, db: Session):
         self.clients = ClientRepository(db)
@@ -46,6 +65,8 @@ class DeviceAssignmentService:
         group_id: Optional[int],
         signal: AssignmentSignal,
     ) -> Device:
+        if self._has_authoritative_assignment(device):
+            return device
         if client_id or group_id:
             return self.devices.update(
                 device,
@@ -64,11 +85,11 @@ class DeviceAssignmentService:
 
         client_name, source = self._detect_client(signal)
         if not client_name:
-            if device.assignment_source == self.UNASSIGNED_SOURCE:
+            if device.assignment_source == self.UNASSIGNED_SOURCE and not device.client_id and not device.group_id:
                 return device
             return self.devices.update(
                 device,
-                DeviceUpdate(auto_assigned=False, assignment_source=self.UNASSIGNED_SOURCE),
+                DeviceUpdate(client_id=None, group_id=None, auto_assigned=False, assignment_source=self.UNASSIGNED_SOURCE),
             )
 
         client = self._get_or_create_client(client_name)
@@ -84,22 +105,14 @@ class DeviceAssignmentService:
         )
 
     def _can_auto_assign(self, device: Device) -> bool:
-        if device.assignment_source in {self.MANUAL_SOURCE, self.ENROLLMENT_SOURCE}:
+        if self._has_authoritative_assignment(device):
             return False
         return device.client_id is None
 
     def _detect_client(self, signal: AssignmentSignal) -> tuple[Optional[str], str]:
         domain = self._clean(signal.domain)
-        hostname = self._clean(signal.hostname)
-        if self._is_valid_org_domain(domain, hostname):
-            return self._humanize(domain.split(".")[0]), "domain_match"
-
-        if self._is_valid_org_domain(hostname, hostname):
-            labels = hostname.split(".")
-            if len(labels) >= 3:
-                return self._humanize(labels[-2]), "hostname_match"
-            return self._humanize(labels[0]), "hostname_match"
-
+        if self._is_domain_managed(domain):
+            return self._normalize_domain_to_client_name(domain), self.TRUSTED_DOMAIN_SOURCE
         return None, self.UNASSIGNED_SOURCE
 
     def apply_trusted_domain_assignment(
@@ -115,7 +128,7 @@ class DeviceAssignmentService:
         if not self._can_auto_assign(device):
             return device
 
-        client_name = TrustedDomainService.normalize_to_client_name(domain)
+        client_name = self._normalize_domain_to_client_name(domain) or TrustedDomainService.normalize_to_client_name(domain)
         client = self._get_or_create_client(client_name)
         group_name = TrustedDomainService.detect_group_name(signal.os_name, signal.platform)
         self._ensure_standard_groups(client.id)
@@ -127,7 +140,7 @@ class DeviceAssignmentService:
                 client_id=client.id,
                 group_id=group.id,
                 auto_assigned=True,
-                assignment_source="trusted_domain",
+                assignment_source=self.TRUSTED_DOMAIN_SOURCE,
             ),
         )
 
@@ -139,15 +152,103 @@ class DeviceAssignmentService:
     def _detect_group(self, signal: AssignmentSignal) -> str:
         platform = self._clean(signal.platform).lower()
         os_name = self._clean(signal.os_name).lower()
-        if "darwin" in platform or "mac" in platform or "mac" in os_name:
-            return "Mac Devices"
-        if "linux" in platform or "linux" in os_name:
-            return "Linux Devices"
         if signal.device_type == DeviceType.SERVER or "server" in os_name:
             return "Servers"
-        if any(value in os_name for value in ("router", "switch", "firewall", "network")):
-            return "Network Devices"
         return "Client PC"
+
+    def resolve_device_assignment(self, device: Device) -> AssignmentResolution:
+        source = self._resolved_source(device)
+        category = self._category_from_group(device.group.name if device.group else None)
+        if category is None and device.group_id:
+            category = "other"
+        if category is None:
+            category = self._category_from_os(device.os_name, device.platform, device.device_type)
+
+        if device.client_id or device.group_id:
+            return AssignmentResolution(
+                resolved_client_id=device.client_id,
+                resolved_client_name=device.client.name if device.client else None,
+                resolved_group=device.group.name if device.group else None,
+                resolved_assignment_source=source,
+                resolved_device_category=category,
+            )
+
+        if self._is_domain_managed(device.domain):
+            return AssignmentResolution(
+                resolved_client_id=None,
+                resolved_client_name=self._normalize_domain_to_client_name(device.domain),
+                resolved_group="Servers" if category == "servers" else "Client PC",
+                resolved_assignment_source=self.TRUSTED_DOMAIN_SOURCE,
+                resolved_device_category=category,
+            )
+
+        return AssignmentResolution(
+            resolved_client_id=None,
+            resolved_client_name=None,
+            resolved_group=None,
+            resolved_assignment_source="unassigned",
+            resolved_device_category="unassigned",
+        )
+
+    def apply_resolution(self, device: Device) -> Device:
+        resolution = self.resolve_device_assignment(device)
+        setattr(device, "resolved_client_id", resolution.resolved_client_id)
+        setattr(device, "resolved_client_name", resolution.resolved_client_name)
+        setattr(device, "resolved_group", resolution.resolved_group)
+        setattr(device, "resolved_assignment_source", resolution.resolved_assignment_source)
+        setattr(device, "resolved_device_category", resolution.resolved_device_category)
+        return device
+
+    def apply_resolution_many(self, devices: list[Device]) -> list[Device]:
+        return [self.apply_resolution(device) for device in devices]
+
+    def _has_authoritative_assignment(self, device: Device) -> bool:
+        return self._resolved_source(device) in self.AUTHORITATIVE_SOURCES and (device.client_id is not None or device.group_id is not None)
+
+    def _resolved_source(self, device: Device) -> str:
+        source = (device.assignment_source or "").strip().lower()
+        if not source and (device.client_id is not None or device.group_id is not None):
+            return self.LEGACY_MANUAL_SOURCE
+        if source in {"domain_match", "hostname_match"}:
+            return self.TRUSTED_DOMAIN_SOURCE
+        if source == "system_auto_unassigned":
+            return "unassigned"
+        return source or "unassigned"
+
+    @classmethod
+    def _is_domain_managed(cls, domain: Optional[str]) -> bool:
+        normalized = cls._clean_static(domain).strip(".").lower()
+        return bool(normalized) and normalized != "workgroup"
+
+    @classmethod
+    def _normalize_domain_to_client_name(cls, domain: Optional[str]) -> Optional[str]:
+        if not cls._is_domain_managed(domain):
+            return None
+        label = cls._clean_static(domain).strip(".").split(".", 1)[0]
+        return cls._humanize(label)
+
+    @staticmethod
+    def _category_from_group(group_name: Optional[str]) -> Optional[str]:
+        normalized = (group_name or "").strip().lower()
+        if normalized in {"servers", "server"}:
+            return "servers"
+        if normalized in {"client pc", "client pcs", "workstation", "workstations"}:
+            return "clientpc"
+        return None
+
+    def _category_from_os(
+        self,
+        os_name: Optional[str],
+        platform: Optional[str],
+        device_type: Optional[DeviceType],
+    ) -> str:
+        os_value = self._clean(os_name).lower()
+        platform_value = self._clean(platform).lower()
+        if device_type == DeviceType.SERVER or "windows server" in os_value or "server" in os_value:
+            return "servers"
+        if "windows" in os_value or "windows" in platform_value:
+            return "clientpc"
+        return "clientpc"
 
     def _get_or_create_client(self, name: str) -> Client:
         existing = self.clients.get_by_name_normalized(name)

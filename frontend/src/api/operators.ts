@@ -20,6 +20,7 @@ export interface OperatorCreate {
   display_name?: string;
   password: string;
   role: UserRole;
+  is_active: boolean;
 }
 
 export interface OperatorUpdate {

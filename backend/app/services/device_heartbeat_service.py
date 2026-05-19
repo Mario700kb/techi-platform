@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from app.core.time import utcnow
 from typing import Optional
 
 from app.models.device import Device, DeviceStatus, DeviceType
@@ -9,13 +10,14 @@ from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
 from app.schemas.device import DeviceCreate, DeviceUpdate
 from app.services.alert_engine import AlertEngine
 from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
-from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
+from app.services.device_assignment_service import DeviceAssignmentService
 from app.services.device_fingerprint_service import DeviceFingerprintService, FingerprintMatch
 from app.services.device_health_score_service import DeviceHealthScoreService
 from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_maintenance_service import DeviceMaintenanceService, is_maintenance_active
 from app.services.device_status_service import DeviceStatusService
 from app.services.device_telemetry_service import DeviceTelemetryService
+from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload
 from app.websocket.publisher import realtime_publisher
@@ -54,25 +56,35 @@ class DeviceHeartbeatService:
 
     def process_heartbeat(self, payload: AgentHeartbeatPayload):
         device_type = self.classify_device_type(payload.os_name, payload.domain)
-        now = datetime.utcnow()
+        now = utcnow()
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
         )
 
-        device = self.device_repo.get(payload.device_id) if payload.device_id else None
+        device = self.device_repo.get_by_agent_id(payload.agent_id) if payload.agent_id else None
+        if device is None:
+            device = self.device_repo.get(payload.device_id) if payload.device_id else None
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
         if device is not None:
             device = self.maintenance_service.expire_if_needed(device)
         previous_payload = device_payload(device) if device else None
+        prev_user = device.current_user if device else None
+        prev_repair_count = device.rustdesk_repair_count if device else 0
         if device:
-            update_data = payload.model_dump(exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id"})
+            update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id"})
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)
             if has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
                 conflict = self.device_repo.get_conflicting_rustdesk_id(normalized_rustdesk_id, exclude_device_id=device.id)
                 if conflict is None:
                     update_data["rustdesk_id"] = normalized_rustdesk_id
+            if device.assignment_source in {
+                DeviceAssignmentService.MANUAL_SOURCE,
+                DeviceAssignmentService.ENROLLMENT_SOURCE,
+            }:
+                for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
+                    update_data.pop(field, None)
             update_data["device_type"] = device_type
             update_data["last_seen"] = now
             device = self.device_repo.update(device, DeviceUpdate(**update_data))
@@ -80,17 +92,6 @@ class DeviceHeartbeatService:
             device = self._resolve_via_fingerprint(payload, device_type, now)
 
         device = self.status_service.mark_online_from_heartbeat(device)
-        device = self.assignment_service.apply_auto_assignment(
-            device,
-            signal=AssignmentSignal(
-                hostname=device.hostname,
-                domain=device.domain,
-                public_ip=device.public_ip,
-                os_name=device.os_name,
-                platform=device.platform,
-                device_type=device.device_type,
-            ),
-        )
         device = self.rustdesk_service.apply_heartbeat_sync(
             device,
             reported_rustdesk_id=payload.rustdesk_id,
@@ -103,6 +104,8 @@ class DeviceHeartbeatService:
             public_ip=payload.public_ip,
             now=now,
         )
+
+        device = self.assignment_service.apply_resolution(device)
 
         heartbeat_data = DeviceHeartbeatCreate(
             device_id=device.id,
@@ -144,6 +147,8 @@ class DeviceHeartbeatService:
                 dedupe_key=f"device_updated:{device.id}:inventory",
             )
 
+        self._maybe_emit_user_changed(device, prev_user)
+        self._maybe_emit_rustdesk_repaired(device, prev_repair_count)
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
         self._evaluate_post_heartbeat_alerts(device)
@@ -192,6 +197,7 @@ class DeviceHeartbeatService:
             return self._reuse_device(effective_match.device, payload, device_type, now)
 
         create_data = payload.model_dump(exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id"})
+        create_data["agent_id"] = payload.agent_id
         create_data["rustdesk_id"] = fingerprint_rustdesk_id  # None when agent has no numeric RustDesk ID yet
         create_data["device_type"] = device_type
         create_data["status"] = DeviceStatus.OFFLINE
@@ -281,7 +287,7 @@ class DeviceHeartbeatService:
         """
         update_data = payload.model_dump(
             exclude_unset=True,
-            exclude={"agent_id", "device_id", "rustdesk_id"},
+            exclude={"device_id", "rustdesk_id"},
         )
 
         # Rustdesk runtime fields are synced separately by apply_heartbeat_sync
@@ -332,9 +338,22 @@ class DeviceHeartbeatService:
         engine = AlertEngine(self.db)
         engine.evaluate_archived_checkin(device)
         engine.evaluate_rustdesk_sync(device)
-        window_start = datetime.utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
+        window_start = utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
         count = DeviceStatusHistoryRepository(self.db).count_recent_online_transitions(device.id, since=window_start)
         engine.evaluate_reconnect(device, count)
+
+    def _maybe_emit_rustdesk_repaired(self, device, previous_count: Optional[int]) -> None:
+        current_count = device.rustdesk_repair_count or 0
+        if current_count <= (previous_count or 0):
+            return
+        DeviceActivityEventService(self.db).record(
+            device_id=device.id,
+            event_type="rustdesk_repaired",
+            summary="RustDesk repaired",
+            detail=f"Repair count: {current_count}",
+            actor="agent",
+            fail_silently=True,
+        )
 
     def _process_telemetry(self, payload: AgentHeartbeatPayload, device) -> None:
         has_telemetry = any(
@@ -423,7 +442,36 @@ class DeviceHeartbeatService:
         except Exception:
             logger.warning("inventory snapshot failed for device %d — heartbeat continues", device.id, exc_info=True)
 
+    def _maybe_emit_user_changed(self, device, prev_user: Optional[str]) -> None:
+        def _is_meaningful(u: Optional[str]) -> bool:
+            if not u or not u.strip():
+                return False
+            s = u.strip()
+            if s == "No interactive user":
+                return False
+            if s.endswith("$"):
+                return False
+            return True
+
+        prev = (prev_user or "").strip()
+        next_ = (device.current_user or "").strip()
+        if prev == next_:
+            return
+        if not _is_meaningful(prev) and not _is_meaningful(next_):
+            return
+
+        prev_display = prev if _is_meaningful(prev) else "No user"
+        next_display = next_ if _is_meaningful(next_) else "No user"
+        DeviceActivityEventService(self.db).record(
+            device_id=device.id,
+            event_type="user_changed",
+            summary=f"User changed to {next_display}",
+            detail=f"Previous: {prev_display}",
+            actor="agent",
+            fail_silently=True,
+        )
+
     @staticmethod
     def _has_inventory_change(previous_payload: dict, current_payload: dict) -> bool:
-        fields = ("hostname", "device_type", "status", "client_id", "group_id")
+        fields = ("hostname", "device_type", "status", "client_id", "group_id", "current_user")
         return any(previous_payload.get(field) != current_payload.get(field) for field in fields)

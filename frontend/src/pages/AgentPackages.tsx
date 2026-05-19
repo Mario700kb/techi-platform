@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Download, Package, RefreshCcw, UploadCloud } from "lucide-react";
+import { CheckCircle2, Download, Package, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
 import {
   AgentPackage,
   AgentPackagePlatform,
+  deleteAgentPackage,
   downloadAgentPackage,
   getAgentPackages,
   setAgentPackageActive,
   uploadAgentPackage,
 } from "../api/agentPackages";
 import { useAuth } from "../auth/AuthContext";
+import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
+import { parseUTC } from "../utils/time";
 
 const PLATFORMS: AgentPackagePlatform[] = ["windows-amd64", "windows-arm64", "linux-amd64", "darwin-arm64"];
+const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function AgentPackages() {
@@ -27,6 +31,8 @@ export default function AgentPackages() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AgentPackage | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeCount = useMemo(() => packages.filter((pkg) => pkg.is_active).length, [packages]);
@@ -91,6 +97,21 @@ export default function AgentPackages() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeleting(true);
+      setError(null);
+      await deleteAgentPackage(deleteTarget.id, deleteTarget.is_active);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <section className="premium-page space-y-5">
       <div className="premium-card overflow-hidden p-5 md:p-6">
@@ -123,12 +144,12 @@ export default function AgentPackages() {
               value={version}
               onChange={(event) => setVersion(event.target.value)}
               placeholder="Version"
-              className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
+              className={INPUT_CLS}
             />
             <select
               value={platform}
               onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
-              className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
+              className={INPUT_CLS}
             >
               {PLATFORMS.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -137,7 +158,7 @@ export default function AgentPackages() {
             <input
               type="file"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm font-medium text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white"
+              className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
             />
             <Button onClick={handleUpload} disabled={uploading}>
               <UploadCloud className="h-4 w-4" />
@@ -208,14 +229,25 @@ export default function AgentPackages() {
                         Download
                       </Button>
                       {canManage && (
-                        <Button
-                          size="sm"
-                          onClick={() => void handleActiveToggle(pkg, !pkg.is_active)}
-                          disabled={busyId === pkg.id}
-                          className={pkg.is_active ? "border-white/10 bg-none bg-slate-800 text-slate-100 shadow-none hover:bg-slate-700" : undefined}
-                        >
-                          {pkg.is_active ? "Deactivate" : "Activate"}
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => void handleActiveToggle(pkg, !pkg.is_active)}
+                            disabled={busyId === pkg.id}
+                            className={pkg.is_active ? "th-btn-secondary" : undefined}
+                          >
+                            {pkg.is_active ? "Deactivate" : "Activate"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setDeleteTarget(pkg)}
+                            disabled={busyId === pkg.id || deleting}
+                            className="th-btn-danger hover:bg-red-500/20"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </Button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -225,6 +257,19 @@ export default function AgentPackages() {
           </table>
         </div>
       </div>
+
+      {deleteTarget && (
+        <ConfirmationModal
+          title="Delete agent package"
+          confirmLabel={deleting ? "Deleting" : "Delete"}
+          loading={deleting}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => void handleDelete()}
+        >
+          Permanently delete <span className="font-semibold text-white">{deleteTarget.filename}</span>?
+          {deleteTarget.is_active && " This package is active and deleting it removes the current active package for this platform."}
+        </ConfirmationModal>
+      )}
     </section>
   );
 }

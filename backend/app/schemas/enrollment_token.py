@@ -25,6 +25,8 @@ class EnrollmentTokenOut(BaseModel):
     use_count: int
     client_id: Optional[int]
     group_id: Optional[int]
+    is_default: bool = False
+    token_prefix: Optional[str] = None
 
 
 class EnrollmentTokenCreateResponse(EnrollmentTokenOut):

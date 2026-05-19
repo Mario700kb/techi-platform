@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from app.core.time import utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -74,7 +75,7 @@ class RustDeskIdentityService:
         public_ip: Optional[str] = None,
         now: Optional[datetime] = None,
     ) -> Device:
-        now = now or datetime.utcnow()
+        now = now or utcnow()
         previous_status = device.rustdesk_status
         device.rustdesk_install_status = install_status or "unknown"
         device.rustdesk_status = rustdesk_status or "unknown"
@@ -212,7 +213,7 @@ class RustDeskIdentityService:
         device.rustdesk_manual_override = True
         device.rustdesk_sync_state = "manual_override"
         device.rustdesk_sync_message = reason
-        device.rustdesk_verified_at = datetime.utcnow()
+        device.rustdesk_verified_at = utcnow()
         device.rustdesk_conflict_detected = False
         self.db.add(device)
         self.db.commit()

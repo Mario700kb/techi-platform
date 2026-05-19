@@ -10,16 +10,18 @@ import {
   getAuditLogs,
 } from "../api/audit";
 import { Button } from "../components/ui";
+import { parseUTC, timeAgo as timeAgoUtil } from "../utils/time";
 
 const PAGE_SIZE = 100;
 
 function timeAgo(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const d = parseUTC(iso);
+  const diffSec = (Date.now() - d.getTime()) / 1000;
+  if (diffSec < 60) return `${Math.floor(diffSec)}s ago`;
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function actionBadgeClass(action: string): string {
@@ -29,11 +31,11 @@ function actionBadgeClass(action: string): string {
     return "border-amber-400/25 bg-amber-400/10 text-amber-200";
   if (action.startsWith("action_")) return "border-orange-400/25 bg-orange-400/10 text-orange-300";
   if (action.startsWith("scope_")) return "border-emerald-400/25 bg-emerald-400/10 text-emerald-300";
-  return "border-slate-500/30 bg-slate-800/50 text-slate-400";
+  return "border-slate-500/30 bg-slate-500/10 text-slate-400";
 }
 
 const INPUT_CLS =
-  "rounded-md border border-white/[0.08] bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white outline-none focus:border-techi-orange/50 placeholder:text-slate-600";
+  "th-input rounded-md border px-2.5 py-1.5 text-xs font-medium outline-none focus:border-techi-orange/50";
 const SELECT_CLS = INPUT_CLS + " cursor-pointer";
 
 interface DetailsRowProps {
@@ -44,7 +46,7 @@ function DetailsRow({ json }: DetailsRowProps) {
   try {
     const parsed = JSON.parse(json);
     return (
-      <pre className="max-h-40 overflow-auto rounded-md border border-white/[0.08] bg-slate-900/70 p-3 text-[11px] leading-5 text-slate-300">
+      <pre className="th-input max-h-40 overflow-auto rounded-md border p-3 text-[11px] leading-5 text-slate-300">
         {JSON.stringify(parsed, null, 2)}
       </pre>
     );
@@ -275,7 +277,7 @@ export default function Audit() {
                         ? <ChevronDown className="h-3.5 w-3.5" />
                         : <ChevronRight className="h-3.5 w-3.5" />}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={new Date(entry.created_at).toLocaleString()}>
+                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={parseUTC(entry.created_at).toLocaleString()}>
                       {timeAgo(entry.created_at)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
@@ -296,7 +298,7 @@ export default function Audit() {
                     </td>
                   </tr>,
                   isExpanded && (
-                    <tr key={`${entry.id}-detail`} className="bg-slate-950/60">
+                    <tr key={`${entry.id}-detail`} className="th-table-head">
                       <td />
                       <td colSpan={5} className="px-4 py-3">
                         <DetailsRow json={entry.details_json} />

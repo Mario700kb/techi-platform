@@ -26,7 +26,7 @@ function uniqueUrls(urls: string[]): string[] {
 }
 
 export const API_BASE_URL = normalizeBaseUrl(configuredApiBaseUrl || localApiBaseUrls()[0]);
-const API_BASE_URLS = uniqueUrls([API_BASE_URL, ...localApiBaseUrls(), "http://localhost:8000"]);
+const API_BASE_URLS = uniqueUrls([API_BASE_URL, ...localApiBaseUrls()]);
 const TOKEN_KEY = "techi.auth.token";
 const USER_KEY = "techi.auth.user";
 

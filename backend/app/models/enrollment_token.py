@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, ForeignKey, Index, Integer, String
 
 from app.db.base import Base
 
@@ -31,3 +31,5 @@ class EnrollmentToken(Base):
     use_count = Column(Integer, default=0, nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True, index=True)
+    is_default = Column(Boolean, default=False, nullable=False)
+    token_prefix = Column(String(12), nullable=True)

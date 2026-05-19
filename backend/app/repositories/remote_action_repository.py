@@ -3,8 +3,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
+from app.core.time import ensure_utc, utcnow
 from app.models.remote_action import ActionStatus, EXPIRABLE_STATUSES, RemoteAction
 
 logger = logging.getLogger(__name__)
@@ -59,7 +61,11 @@ class RemoteActionRepository:
                 RemoteAction.device_id == device_id,
                 RemoteAction.status == ActionStatus.QUEUED,
             )
-            .order_by(RemoteAction.queued_at.asc().nullsfirst(), RemoteAction.created_at.asc())
+            .order_by(
+                case((RemoteAction.queued_at.is_(None), 0), else_=1),
+                RemoteAction.queued_at.asc(),
+                RemoteAction.created_at.asc(),
+            )
             .all()
         )
         live = []
@@ -104,7 +110,7 @@ class RemoteActionRepository:
         created_by: Optional[str] = None,
         execution_timeout_seconds: int = 300,
     ) -> RemoteAction:
-        now = datetime.utcnow()
+        now = utcnow()
         action = RemoteAction(
             device_id=device_id,
             action_type=action_type,
@@ -122,7 +128,7 @@ class RemoteActionRepository:
 
     def mark_sent(self, action: RemoteAction) -> RemoteAction:
         action.status = ActionStatus.SENT
-        action.sent_at = datetime.utcnow()
+        action.sent_at = utcnow()
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
@@ -130,7 +136,7 @@ class RemoteActionRepository:
 
     def mark_acknowledged(self, action: RemoteAction) -> RemoteAction:
         action.status = ActionStatus.ACKNOWLEDGED
-        action.acknowledged_at = datetime.utcnow()
+        action.acknowledged_at = utcnow()
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
@@ -138,25 +144,37 @@ class RemoteActionRepository:
 
     def mark_running(self, action: RemoteAction) -> RemoteAction:
         action.status = ActionStatus.RUNNING
-        action.started_at = datetime.utcnow()
+        action.started_at = utcnow()
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
         return action
 
-    def mark_completed(self, action: RemoteAction, result_message: Optional[str] = None) -> RemoteAction:
+    def mark_completed(
+        self,
+        action: RemoteAction,
+        result_message: Optional[str] = None,
+        output: Optional[str] = None,
+    ) -> RemoteAction:
         action.status = ActionStatus.COMPLETED
-        action.completed_at = datetime.utcnow()
+        action.completed_at = utcnow()
         action.result_message = result_message
+        action.output = output
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
         return action
 
-    def mark_failed(self, action: RemoteAction, error_message: Optional[str] = None) -> RemoteAction:
+    def mark_failed(
+        self,
+        action: RemoteAction,
+        error_message: Optional[str] = None,
+        stderr_output: Optional[str] = None,
+    ) -> RemoteAction:
         action.status = ActionStatus.FAILED
-        action.failed_at = datetime.utcnow()
+        action.failed_at = utcnow()
         action.error_message = error_message
+        action.stderr_output = stderr_output
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
@@ -164,7 +182,7 @@ class RemoteActionRepository:
 
     def mark_cancelled(self, action: RemoteAction) -> RemoteAction:
         action.status = ActionStatus.CANCELLED
-        action.cancelled_at = datetime.utcnow()
+        action.cancelled_at = utcnow()
         self.db.add(action)
         self.db.commit()
         self.db.refresh(action)
@@ -177,11 +195,14 @@ class RemoteActionRepository:
     def _expire_if_needed(self, action: RemoteAction) -> RemoteAction:
         if action.status not in EXPIRABLE_STATUSES:
             return action
-        deadline = action.created_at + timedelta(seconds=action.execution_timeout_seconds)
-        if datetime.utcnow() > deadline:
+        created_at = ensure_utc(action.created_at)
+        if created_at is None:
+            return action
+        deadline = created_at + timedelta(seconds=action.execution_timeout_seconds)
+        if utcnow() > deadline:
             logger.info("[action] expired action #%d (type=%s device=%d)", action.id, action.action_type, action.device_id)
             action.status = ActionStatus.EXPIRED
-            action.expired_at = datetime.utcnow()
+            action.expired_at = utcnow()
             self.db.add(action)
             self.db.commit()
             self.db.refresh(action)

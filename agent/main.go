@@ -72,7 +72,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	}
 
 	// RustDesk self-healing before discovery so the discovered state reflects any fixes
-	ensureRustDesk(cfg)
+	ensureRustDesk(cfg, configPath)
 
 	rustdesk := discoverRustDesk(cfg)
 	log.Printf(
@@ -131,5 +131,17 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)
+
+	// If restart_agent was dispatched, fire an immediate follow-up heartbeat
+	// with fresh inventory (including updated current user) so the dashboard
+	// reflects the new state within seconds rather than waiting for the next
+	// scheduled tick.
+	if pendingImmediateHeartbeat.CompareAndSwap(true, false) {
+		log.Printf("restart_agent: running immediate follow-up heartbeat cycle")
+		if err2 := runSingleHeartbeat(configPath, enrollmentToken); err2 != nil {
+			log.Printf("immediate heartbeat failed: %v", err2)
+		}
+	}
+
 	return nil
 }

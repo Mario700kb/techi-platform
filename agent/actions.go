@@ -7,8 +7,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
+
+// pendingImmediateHeartbeat is set by handleRestartAgent after completing its
+// action callback. runSingleHeartbeat checks and clears this flag so the next
+// heartbeat runs immediately instead of waiting for the next ticker tick.
+var pendingImmediateHeartbeat atomic.Bool
 
 type PendingAction struct {
 	ActionID       int                    `json:"action_id"`
@@ -24,6 +30,8 @@ type HeartbeatResponse struct {
 
 type actionResult struct {
 	message string
+	output  string // full stdout for the action log
+	stderr  string // full stderr for the action log
 	err     error
 }
 
@@ -64,14 +72,14 @@ func runAction(cfg *Config, action PendingAction) {
 
 	if result.err != nil {
 		log.Printf("action %d: failed after %s: %v", action.ActionID, elapsed.Round(time.Millisecond), result.err)
-		if err := failAction(cfg, action.ActionID, result.err.Error(), secret); err != nil {
+		if err := failAction(cfg, action.ActionID, result.err.Error(), result.stderr, secret); err != nil {
 			log.Printf("action %d: fail report error: %v", action.ActionID, err)
 		}
 		return
 	}
 
 	log.Printf("action %d: completed in %s: %s", action.ActionID, elapsed.Round(time.Millisecond), result.message)
-	if err := completeAction(cfg, action.ActionID, result.message, secret); err != nil {
+	if err := completeAction(cfg, action.ActionID, result.message, result.output, secret); err != nil {
 		log.Printf("action %d: complete report error: %v", action.ActionID, err)
 	}
 }
@@ -80,14 +88,24 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 	switch action.Action {
 	case "ping":
 		return handlePing(ctx)
-	case "refresh_inventory":
+	case "refresh_inventory", "sync_inventory":
 		return handleRefreshInventory(ctx, cfg)
 	case "restart_device":
 		return handleRestartDevice(ctx)
 	case "restart_agent":
 		return handleRestartAgent(ctx)
+	case "immediate_heartbeat":
+		return handleImmediateHeartbeat()
 	case "sync_rustdesk":
 		return handleSyncRustDesk(ctx, cfg)
+	case "restart_rustdesk":
+		return handleRestartRustDesk(ctx, cfg)
+	case "reinstall_rustdesk":
+		return handleReinstallRustDesk(ctx, cfg)
+	case "reopen_rustdesk":
+		return handleReopenRustDesk(ctx, cfg)
+	case "apply_power_policy":
+		return handleApplyPowerPolicy(ctx, cfg)
 	default:
 		return actionResult{err: fmt.Errorf("unknown action type: %q", action.Action)}
 	}
@@ -126,11 +144,19 @@ func handleRestartDevice(_ context.Context) actionResult {
 }
 
 func handleRestartAgent(_ context.Context) actionResult {
-	// Logs the intent; actual process restart happens when the agent's
-	// supervisor (systemd, launchd, Windows Service) detects exit code 0
-	// and re-launches it. We return success so the action completes cleanly.
-	log.Printf("restart_agent: signalling clean exit for supervisor restart")
-	return actionResult{message: "Agent restart acknowledged — will exit after this action cycle for supervisor restart"}
+	// Schedule an immediate inventory + heartbeat cycle after this action
+	// cycle completes. runSingleHeartbeat checks the flag after processActions
+	// returns, rebuilds all inventory (including buildUserSession), and sends
+	// a fresh heartbeat so the dashboard updates within seconds.
+	pendingImmediateHeartbeat.Store(true)
+	log.Printf("restart_agent: immediate inventory refresh and heartbeat scheduled")
+	return actionResult{message: "Agent restarting — immediate inventory refresh and heartbeat triggered"}
+}
+
+func handleImmediateHeartbeat() actionResult {
+	pendingImmediateHeartbeat.Store(true)
+	log.Printf("immediate_heartbeat: next heartbeat forced immediately")
+	return actionResult{message: "Immediate heartbeat scheduled — telemetry and inventory will refresh within seconds"}
 }
 
 func handleSyncRustDesk(ctx context.Context, cfg *Config) actionResult {
@@ -160,15 +186,17 @@ func markRunningAction(cfg *Config, actionID int, secret string) error {
 	return postActionEndpoint(cfg, fmt.Sprintf("/api/v1/actions/%d/running", actionID), nil, secret)
 }
 
-func completeAction(cfg *Config, actionID int, message string, secret string) error {
+func completeAction(cfg *Config, actionID int, message, output, secret string) error {
 	return postActionEndpoint(cfg, fmt.Sprintf("/api/v1/actions/%d/complete", actionID), map[string]string{
 		"result_message": message,
+		"output":         output,
 	}, secret)
 }
 
-func failAction(cfg *Config, actionID int, errMsg string, secret string) error {
+func failAction(cfg *Config, actionID int, errMsg, stderrOutput, secret string) error {
 	return postActionEndpoint(cfg, fmt.Sprintf("/api/v1/actions/%d/fail", actionID), map[string]string{
 		"error_message": errMsg,
+		"stderr_output": stderrOutput,
 	}, secret)
 }
 

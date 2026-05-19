@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utcnow
 from app.models.audit_log import AuditLog
 
 
@@ -28,7 +29,7 @@ class AuditLogRepository:
             entity_type=entity_type,
             entity_id=entity_id,
             details_json=json.dumps(details) if details else None,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         self.db.add(entry)
         self.db.commit()

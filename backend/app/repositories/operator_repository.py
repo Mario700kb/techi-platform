@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.operator import Operator, OperatorRole
@@ -20,6 +21,16 @@ class OperatorRepository:
         return (
             self.db.query(Operator)
             .filter(Operator.role == OperatorRole.OWNER.value, Operator.is_active.is_(True))
+            .count()
+        )
+
+    def count_active_admins(self) -> int:
+        return (
+            self.db.query(Operator)
+            .filter(
+                Operator.role.in_((OperatorRole.OWNER.value, OperatorRole.ADMIN.value)),
+                Operator.is_active.is_(True),
+            )
             .count()
         )
 
@@ -51,6 +62,7 @@ class OperatorRepository:
         hashed_password: str,
         role: str,
         is_superuser: bool = False,
+        is_active: bool = True,
     ) -> Operator:
         operator = Operator(
             username=username,
@@ -59,10 +71,14 @@ class OperatorRepository:
             hashed_password=hashed_password,
             role=role,
             is_superuser=is_superuser,
-            is_active=True,
+            is_active=is_active,
         )
         self.db.add(operator)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("Username or email already taken") from exc
         self.db.refresh(operator)
         return operator
 

@@ -1,10 +1,10 @@
 import json
-from textwrap import dedent
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.schemas.enrollment_bootstrap import (
+    AvailabilityProfile,
     EnrollmentBootstrapMode,
     EnrollmentBootstrapPlatform,
     EnrollmentBootstrapRequest,
@@ -15,11 +15,16 @@ from app.services.enrollment_token_service import EnrollmentTokenService
 
 
 class EnrollmentBootstrapService:
-    NOTICE = "Temporary pre-production bootstrap. Replace placeholder binary URLs before real deployment."
+    NOTICE = (
+        "Lock screen stays enabled — remote access (RustDesk) works via Windows service. "
+        "Sleep/hibernate makes the device unreachable; use Server profile or Wake-on-LAN to prevent this."
+    )
     WINDOWS_AGENT_URL_PLACEHOLDER = "<TECHI_AGENT_WINDOWS_EXE_URL>"
 
     def __init__(self, db: Session):
         self.token_service = EnrollmentTokenService(db)
+
+    # ─── Public entry point ────────────────────────────────────────────────────
 
     def generate(self, payload: EnrollmentBootstrapRequest) -> EnrollmentBootstrapResponse:
         backend_url = payload.backend_url.rstrip("/")
@@ -27,20 +32,26 @@ class EnrollmentBootstrapService:
         if payload.mode == EnrollmentBootstrapMode.GPO:
             return self._generate_gpo(payload, backend_url)
 
-        # Token enrollment mode
-        self.token_service.get_active_token(payload.enrollment_token_id)
-        if payload.enrollment_token:
+        token = self.token_service.get_active_token(payload.enrollment_token_id)
+        enrollment_token = (payload.enrollment_token or "").strip()
+        if enrollment_token:
             self.token_service.validate_plaintext_for_token_id(
-                payload.enrollment_token_id, payload.enrollment_token
+                payload.enrollment_token_id, enrollment_token
             )
-
-        enrollment_token = payload.enrollment_token or f"<ENROLLMENT_TOKEN_FOR_ID_{payload.enrollment_token_id}>"
+        else:
+            enrollment_token = self.token_service.issue_plaintext_for_token(token)
         config_template = self._config_template(backend_url, enrollment_token, payload)
 
         if payload.platform == EnrollmentBootstrapPlatform.WINDOWS:
-            command, script = self._windows_bootstrap(backend_url, enrollment_token, config_template)
+            command, script = self._windows_bootstrap(
+                backend_url, enrollment_token, config_template, payload
+            )
+            filename = "techi-installer.ps1"
         else:
-            command, script = self._posix_bootstrap(payload.platform, backend_url, enrollment_token, config_template)
+            command, script = self._posix_bootstrap(
+                payload.platform, backend_url, enrollment_token, config_template
+            )
+            filename = "techi-bootstrap.sh"
 
         return EnrollmentBootstrapResponse(
             mode=payload.mode,
@@ -51,16 +62,23 @@ class EnrollmentBootstrapService:
             bootstrap_script=script,
             config_template=config_template,
             preproduction_notice=self.NOTICE,
+            installer_filename=filename,
         )
 
-    def _generate_gpo(self, payload: EnrollmentBootstrapRequest, backend_url: str) -> EnrollmentBootstrapResponse:
+    def _generate_gpo(
+        self, payload: EnrollmentBootstrapRequest, backend_url: str
+    ) -> EnrollmentBootstrapResponse:
         enrollment_token = payload.enrollment_token or ""
         config_template = self._config_template(backend_url, enrollment_token, payload)
-        command, script = self._gpo_windows_bootstrap(backend_url, enrollment_token, config_template, payload)
+        command, script = self._gpo_windows_bootstrap(
+            backend_url, enrollment_token, config_template, payload
+        )
         notice = (
-            "GPO/Domain deployment mode. "
-            "Requires TRUSTED_DOMAIN_AUTO_ENROLLMENT=true on the backend. "
-            "No enrollment token is needed for domain-joined machines."
+            "GPO/Domain deployment — runs at every startup, idempotent. "
+            "Lock screen stays enabled. "
+            "Domain-joined machines enroll automatically "
+            "(TRUSTED_DOMAIN_AUTO_ENROLLMENT=true required). "
+            "WORKGROUP machines will not enroll via GPO — use Token Enrollment for those."
         )
         return EnrollmentBootstrapResponse(
             mode=payload.mode,
@@ -71,10 +89,16 @@ class EnrollmentBootstrapService:
             bootstrap_script=script,
             config_template=config_template,
             preproduction_notice=notice,
+            installer_filename="techi-gpo-bootstrap.ps1",
         )
 
+    # ─── Config template (JSON) ───────────────────────────────────────────────
+
     def _config_template(
-        self, backend_url: str, enrollment_token: str, payload: EnrollmentBootstrapRequest
+        self,
+        backend_url: str,
+        enrollment_token: str,
+        payload: EnrollmentBootstrapRequest,
     ) -> str:
         cfg: dict = {
             "api_url": backend_url,
@@ -87,15 +111,30 @@ class EnrollmentBootstrapService:
             "collect_processes": False,
             "collect_services": False,
             "collect_software": False,
+            "availability_profile": payload.availability_profile.value,
+            "manage_power_policy": payload.manage_power_policy,
         }
         if enrollment_token:
             cfg["enrollment_token"] = enrollment_token
 
-        # RustDesk self-healing fields
+        if payload.manage_power_policy:
+            if payload.availability_profile == AvailabilityProfile.SERVER:
+                cfg["prevent_sleep_on_ac"] = True
+                cfg["prevent_hibernate"] = True
+                cfg["allow_display_off_on_ac"] = True
+            else:
+                cfg["prevent_sleep_on_ac"] = payload.prevent_sleep_on_ac
+                cfg["prevent_hibernate"] = payload.prevent_hibernate
+                cfg["allow_display_off_on_ac"] = payload.allow_display_off_on_ac
+
         if payload.rustdesk_manage_enabled:
             cfg["rustdesk_manage_enabled"] = True
             if payload.rustdesk_msi_url:
                 cfg["rustdesk_msi_url"] = payload.rustdesk_msi_url
+            if payload.rustdesk_msi_checksum_sha256:
+                cfg["rustdesk_msi_checksum_sha256"] = payload.rustdesk_msi_checksum_sha256
+            if payload.rustdesk_package_version:
+                cfg["rustdesk_package_version"] = payload.rustdesk_package_version
             if payload.rustdesk_rendezvous_server:
                 cfg["rustdesk_rendezvous_server"] = payload.rustdesk_rendezvous_server
             if payload.rustdesk_relay_server:
@@ -111,6 +150,188 @@ class EnrollmentBootstrapService:
 
         return json.dumps(cfg, indent=2)
 
+    # ─── PowerShell config writer (no here-string) ────────────────────────────
+
+    @staticmethod
+    def _py_to_ps_literal(value) -> str:
+        """Convert a Python scalar to a PowerShell literal.  Strings are
+        single-quoted (single quotes inside are doubled) so the value is
+        never subject to variable or escape expansion."""
+        if value is True:
+            return "$true"
+        if value is False:
+            return "$false"
+        if value is None:
+            return "$null"
+        if isinstance(value, (int, float)):
+            return str(value)
+        # Single-quoted PS string — safe for any string content
+        escaped = str(value).replace("'", "''")
+        return f"'{escaped}'"
+
+    def _config_ps_lines(self, config_json: str) -> list[str]:
+        """Return PowerShell lines that write agent.config.json without using
+        a here-string.  Uses [ordered]@{} + ConvertTo-Json so the output is
+        pretty-printed and avoids all indentation/terminator issues.
+        'agent_name' is always set to $env:COMPUTERNAME at runtime."""
+        cfg: dict = json.loads(config_json)
+        lines = ["$AgentConfig = [ordered]@{"]
+        for key, value in cfg.items():
+            if key == "agent_name":
+                lines.append(f"    {key} = $env:COMPUTERNAME")
+            else:
+                ps_val = self._py_to_ps_literal(value)
+                lines.append(f"    {key} = {ps_val}")
+        lines.append("}")
+        lines.append("$ConfigJson = $AgentConfig | ConvertTo-Json -Depth 5")
+        lines.append(
+            "[System.IO.File]::WriteAllText("
+            "$ConfigPath, $ConfigJson, [System.Text.UTF8Encoding]::new($false))"
+        )
+        return lines
+
+    # ─── Windows token-mode installer ─────────────────────────────────────────
+
+    def _windows_bootstrap(
+        self,
+        backend_url: str,
+        enrollment_token: str,
+        config_template: str,
+        payload: EnrollmentBootstrapRequest,
+    ) -> tuple[str, str]:
+        package_url, sha256 = self._windows_package_info(backend_url)
+        config_lines = self._config_ps_lines(config_template)
+
+        # Single-quote the token so PowerShell doesn't expand it as a variable
+        safe_token = enrollment_token.replace("'", "''")
+
+        L: list[str] = []
+
+        def A(*lines: str) -> None:
+            L.extend(lines)
+
+        A(
+            '$ErrorActionPreference = "Stop"',
+            "# Techi Agent -- one-click installer (Token Enrollment)",
+            "# Run as Administrator:",
+            "#   powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-installer.ps1",
+            "",
+            '$InstallDir = "C:\\ProgramData\\TechiAgent"',
+            "$LogDir     = Join-Path $InstallDir 'logs'",
+            "$LogFile    = Join-Path $LogDir 'installer.log'",
+            f"$AgentUrl   = '{package_url}'",
+            "$AgentPath  = Join-Path $InstallDir 'techi-agent.exe'",
+            "$ConfigPath = Join-Path $InstallDir 'agent.config.json'",
+            f"$EnrollToken = '{safe_token}'",
+            "",
+            "function Write-Log {",
+            "    param([string]$Msg)",
+            "    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'",
+            '    $line = "$ts  $Msg"',
+            "    Write-Host $line",
+            "    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}",
+            "}",
+            "",
+            "New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null",
+            "New-Item -ItemType Directory -Force -Path $LogDir | Out-Null",
+            'Write-Log "=== Techi Agent Installer (Token mode) ==="',
+            "",
+            "# -- Download or verify binary",
+            "if ($AgentUrl -like '<*>' -or [string]::IsNullOrWhiteSpace($AgentUrl)) {",
+            "    if (-not (Test-Path $AgentPath)) {",
+            '        Write-Log "ERROR: No download URL and no binary at $AgentPath"',
+            "        exit 1",
+            "    }",
+            '    Write-Log "Using existing binary at $AgentPath -- checksum skipped (local binary)."',
+            "} else {",
+            "    $NeedDownload = $true",
+            "    if (Test-Path $AgentPath) {",
+        )
+        if sha256:
+            A(
+                "        $Cur = (Get-FileHash -Algorithm SHA256 -Path $AgentPath).Hash.ToLower()",
+                f"        if ($Cur -eq '{sha256}') {{",
+                "            $NeedDownload = $false",
+                '            Write-Log "Binary checksum matches -- skipping download."',
+                "        }",
+            )
+        else:
+            A("        # No checksum configured -- will re-download each time")
+        A(
+            "    }",
+            "    if ($NeedDownload) {",
+            '        Write-Log "Downloading Techi Agent from $AgentUrl"',
+            "        try {",
+            "            Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath -UseBasicParsing",
+            "        } catch {",
+            '            Write-Log "ERROR: Download failed: $_"',
+            "            exit 1",
+            "        }",
+        )
+        if sha256:
+            A(
+                "        $Got = (Get-FileHash -Algorithm SHA256 -Path $AgentPath).Hash.ToLower()",
+                f"        if ($Got -ne '{sha256}') {{",
+                "            Remove-Item -Force $AgentPath -ErrorAction SilentlyContinue",
+                f"            Write-Log \"ERROR: SHA256 mismatch. Expected={sha256} Actual=$Got\"",
+                "            exit 1",
+                "        }",
+                '        Write-Log "SHA256 verified: $Got"',
+            )
+        else:
+            A('        Write-Log "WARNING: No SHA256 configured -- skipping integrity check."')
+        A(
+            '        Write-Log "Binary downloaded."',
+            "    } else {",
+            '        Write-Log "Binary up-to-date -- skipping download."',
+            "    }",
+            "}",
+            "",
+            "# -- Write config (UTF-8 without BOM) using ConvertTo-Json",
+            'Write-Log "Writing config to $ConfigPath"',
+        )
+        A(*config_lines)
+        A(
+            'Write-Log "Config written."',
+            "",
+            "# -- Install service (idempotent)",
+            '$svc = Get-Service -Name "TechiAgent" -ErrorAction SilentlyContinue',
+            "if ($null -eq $svc) {",
+            '    Write-Log "Installing TechiAgent service..."',
+        )
+        if enrollment_token:
+            A("    & $AgentPath install -config $ConfigPath -enrollment-token $EnrollToken")
+        else:
+            A("    & $AgentPath install -config $ConfigPath")
+        A(
+            '    Write-Log "Service installed."',
+            "} else {",
+            '    Write-Log "TechiAgent already installed -- skipping install step."',
+            "}",
+            "",
+            "# -- Start service",
+            "& $AgentPath start",
+            "Start-Sleep -Seconds 3",
+            "& $AgentPath status",
+            "",
+            '$svc = Get-Service -Name "TechiAgent" -ErrorAction Stop',
+            'if ($svc.Status -ne "Running") {',
+            '    Write-Log "ERROR: TechiAgent is $($svc.Status) -- expected Running."',
+            "    exit 1",
+            "}",
+            "",
+            'Write-Log "TechiAgent running successfully."',
+            'Write-Log "Config : $ConfigPath"',
+            'Write-Log "Logs   : $LogDir\\agent.log"',
+            "exit 0",
+        )
+
+        script = "\n".join(L)
+        command = "powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-installer.ps1"
+        return command, script
+
+    # ─── Windows GPO / Trusted Domain installer ───────────────────────────────
+
     def _gpo_windows_bootstrap(
         self,
         backend_url: str,
@@ -118,136 +339,139 @@ class EnrollmentBootstrapService:
         config_template: str,
         payload: EnrollmentBootstrapRequest,
     ) -> tuple[str, str]:
-        package_url, expected_sha256 = self._windows_package_info(backend_url)
-        sha256_block = self._sha256_block(expected_sha256)
-        token_install_arg = f"-enrollment-token {enrollment_token}" if enrollment_token else ""
+        package_url, sha256 = self._windows_package_info(backend_url)
+        config_lines = self._config_ps_lines(config_template)
 
-        script = dedent(f"""
-            $ErrorActionPreference = "Stop"
-            # GPO / Trusted Domain deployment script — run as Administrator via GPO.
-            # No enrollment token required for domain-joined machines when
-            # TRUSTED_DOMAIN_AUTO_ENROLLMENT=true is set on the backend.
+        safe_token = enrollment_token.replace("'", "''")
 
-            $InstallDir = "C:\\ProgramData\\TechiAgent"
-            $LogDir     = Join-Path $InstallDir "logs"
-            $AgentUrl   = "{package_url}"
-            $AgentPath  = Join-Path $InstallDir "techi-agent.exe"
-            $ConfigPath = Join-Path $InstallDir "agent.config.json"
+        L: list[str] = []
 
-            New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-            New-Item -ItemType Directory -Force -Path $LogDir     | Out-Null
+        def A(*lines: str) -> None:
+            L.extend(lines)
 
-            # Download agent binary if URL is configured
-            if ($AgentUrl -like "<*>" -or [string]::IsNullOrWhiteSpace($AgentUrl)) {{
-              if (-not (Test-Path $AgentPath)) {{
-                throw "Place techi-agent.exe at $AgentPath or set a real agent download URL."
-              }}
-              Write-Host "Using existing agent binary at $AgentPath — checksum skipped for local binary."
-            }} else {{
-              Write-Host "Downloading Techi Agent from $AgentUrl"
-              Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath -UseBasicParsing
-            {sha256_block}
-            }}
+        A(
+            '$ErrorActionPreference = "Stop"',
+            "# Techi Agent -- GPO / Trusted Domain deployment",
+            "# Idempotent: safe to run at every PC startup via GPO.",
+            "# No prompts, no Read-Host. Exits 0 on success, 1 on error.",
+            "",
+            '$InstallDir = "C:\\ProgramData\\TechiAgent"',
+            "$LogDir     = Join-Path $InstallDir 'logs'",
+            "$LogFile    = Join-Path $LogDir 'installer.log'",
+            f"$AgentUrl   = '{package_url}'",
+            "$AgentPath  = Join-Path $InstallDir 'techi-agent.exe'",
+            "$ConfigPath = Join-Path $InstallDir 'agent.config.json'",
+            "",
+            "function Write-Log {",
+            "    param([string]$Msg)",
+            "    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'",
+            '    $line = "$ts  $Msg"',
+            "    Write-Host $line",
+            "    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}",
+            "}",
+            "",
+            "New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null",
+            "New-Item -ItemType Directory -Force -Path $LogDir | Out-Null",
+            'Write-Log "=== Techi Agent GPO Installer ==="',
+            "",
+            "# -- Download or verify binary",
+            "if ($AgentUrl -like '<*>' -or [string]::IsNullOrWhiteSpace($AgentUrl)) {",
+            "    if (-not (Test-Path $AgentPath)) {",
+            '        Write-Log "ERROR: No download URL and no binary at $AgentPath"',
+            "        exit 1",
+            "    }",
+            '    Write-Log "Using existing binary at $AgentPath -- checksum skipped."',
+            "} else {",
+            "    $NeedDownload = $true",
+            "    if (Test-Path $AgentPath) {",
+        )
+        if sha256:
+            A(
+                "        $Cur = (Get-FileHash -Algorithm SHA256 -Path $AgentPath).Hash.ToLower()",
+                f"        if ($Cur -eq '{sha256}') {{",
+                "            $NeedDownload = $false",
+                '            Write-Log "Binary checksum matches -- skipping download."',
+                "        }",
+            )
+        else:
+            A("        # No checksum configured -- will re-download each time")
+        A(
+            "    }",
+            "    if ($NeedDownload) {",
+            '        Write-Log "Downloading Techi Agent from $AgentUrl"',
+            "        try {",
+            "            Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath -UseBasicParsing",
+            "        } catch {",
+            '            Write-Log "ERROR: Download failed: $_"',
+            "            exit 1",
+            "        }",
+        )
+        if sha256:
+            A(
+                "        $Got = (Get-FileHash -Algorithm SHA256 -Path $AgentPath).Hash.ToLower()",
+                f"        if ($Got -ne '{sha256}') {{",
+                "            Remove-Item -Force $AgentPath -ErrorAction SilentlyContinue",
+                f"            Write-Log \"ERROR: SHA256 mismatch. Expected={sha256} Actual=$Got\"",
+                "            exit 1",
+                "        }",
+                '        Write-Log "SHA256 verified: $Got"',
+            )
+        else:
+            A('        Write-Log "WARNING: No SHA256 configured -- skipping integrity check."')
+        A(
+            '        Write-Log "Binary downloaded."',
+            "    } else {",
+            '        Write-Log "Binary up-to-date -- skipping download."',
+            "    }",
+            "}",
+            "",
+            "# -- Write/update config (UTF-8 without BOM) using ConvertTo-Json",
+            'Write-Log "Writing config to $ConfigPath"',
+        )
+        A(*config_lines)
+        A(
+            'Write-Log "Config written."',
+            "",
+            "# -- Install service (idempotent)",
+            '$svc = Get-Service -Name "TechiAgent" -ErrorAction SilentlyContinue',
+            "if ($null -eq $svc) {",
+            '    Write-Log "Installing TechiAgent service..."',
+        )
+        if enrollment_token:
+            A(f"    & $AgentPath install -config $ConfigPath -enrollment-token '{safe_token}'")
+        else:
+            A("    & $AgentPath install -config $ConfigPath")
+        A(
+            '    Write-Log "Service installed."',
+            "} else {",
+            '    Write-Log "TechiAgent already installed -- skipping install."',
+            "}",
+            "",
+            "# -- Ensure service is running",
+            '$svc = Get-Service -Name "TechiAgent" -ErrorAction SilentlyContinue',
+            "if ($null -ne $svc -and $svc.Status -ne 'Running') {",
+            '    Write-Log "Starting TechiAgent service..."',
+            "    & $AgentPath start",
+            "    Start-Sleep -Seconds 3",
+            "}",
+            "",
+            '$svc = Get-Service -Name "TechiAgent" -ErrorAction Stop',
+            'if ($svc.Status -ne "Running") {',
+            '    Write-Log "ERROR: TechiAgent is $($svc.Status) -- expected Running."',
+            "    exit 1",
+            "}",
+            "",
+            'Write-Log "TechiAgent running. Domain auto-enrollment occurs on next heartbeat."',
+            'Write-Log "Config : $ConfigPath"',
+            'Write-Log "Logs   : $LogDir\\agent.log"',
+            "exit 0",
+        )
 
-            # Write config without BOM (UTF8NoBOM)
-            $ConfigContent = @'
-__CONFIG_TEMPLATE__
-'@ -replace '<HOSTNAME>', $env:COMPUTERNAME
-            [System.IO.File]::WriteAllText($ConfigPath, $ConfigContent, [System.Text.UTF8Encoding]::new($false))
-            Write-Host "Config written: $ConfigPath"
-
-            # Install and start the service
-            $svc = Get-Service -Name "TechiAgent" -ErrorAction SilentlyContinue
-            if ($svc -eq $null) {{
-              & $AgentPath install -config $ConfigPath {token_install_arg}
-              Write-Host "TechiAgent service installed."
-            }} else {{
-              Write-Host "TechiAgent service already installed — skipping install step."
-            }}
-
-            & $AgentPath start
-            Start-Sleep -Seconds 3
-            & $AgentPath status
-
-            $Service = Get-Service -Name "TechiAgent" -ErrorAction Stop
-            if ($Service.Status -ne "Running") {{
-              throw "TechiAgent service is $($Service.Status), expected Running."
-            }}
-
-            Write-Host "TechiAgent running. Domain auto-enrollment will occur on next heartbeat."
-            Write-Host "Config : $ConfigPath"
-            Write-Host "Logs   : $LogDir\\agent.log"
-        """).strip()
-        script = script.replace("__CONFIG_TEMPLATE__", config_template)
-        command = 'powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-gpo-bootstrap.ps1'
+        script = "\n".join(L)
+        command = "powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-gpo-bootstrap.ps1"
         return command, script
 
-    def _windows_bootstrap(self, backend_url: str, enrollment_token: str, config_template: str) -> tuple[str, str]:
-        package_url, expected_sha256 = self._windows_package_info(backend_url)
-        sha256_block = self._sha256_block(expected_sha256)
-
-        script_template = dedent(
-            f"""
-            $ErrorActionPreference = "Stop"
-            # Run this PowerShell session as Administrator.
-            $InstallDir = "C:\\ProgramData\\TechiAgent"
-            $LogDir = Join-Path $InstallDir "logs"
-            $AgentUrl = "{package_url}"
-            $AgentPath = Join-Path $InstallDir "techi-agent.exe"
-            $ConfigPath = Join-Path $InstallDir "agent.config.json"
-            $EnrollmentToken = "{enrollment_token}"
-
-            New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-            New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-
-            if ($AgentUrl -like "<*>" -or [string]::IsNullOrWhiteSpace($AgentUrl)) {{
-              if (-not (Test-Path $AgentPath)) {{
-                throw "Agent binary hosting is not ready. Place techi-agent.exe at $AgentPath or replace `$AgentUrl with a real download URL."
-              }}
-              Write-Host "Using existing agent binary at $AgentPath — checksum verification skipped for local binary."
-            }} else {{
-              Write-Host "Downloading Techi Agent from $AgentUrl"
-              Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath
-            {sha256_block}
-            }}
-
-            @'
-            __CONFIG_TEMPLATE__
-            '@ -replace '<HOSTNAME>', $env:COMPUTERNAME | Set-Content -Encoding UTF8 -Path $ConfigPath
-
-            & $AgentPath install -config $ConfigPath -enrollment-token $EnrollmentToken
-            & $AgentPath start
-
-            Start-Sleep -Seconds 2
-            & $AgentPath status
-
-            $Service = Get-Service -Name "TechiAgent" -ErrorAction Stop
-            if ($Service.Status -ne "Running") {{
-              throw "TechiAgent service is $($Service.Status), expected Running."
-            }}
-
-            Write-Host "TechiAgent service installed and running."
-            Write-Host "Config: $ConfigPath"
-            Write-Host "Logs: C:\\ProgramData\\TechiAgent\\logs\\agent.log"
-            """
-        ).strip()
-        script = script_template.replace("__CONFIG_TEMPLATE__", config_template)
-        command = 'powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-agent-service-bootstrap.ps1'
-        return command, script
-
-    @staticmethod
-    def _sha256_block(expected_sha256: str) -> str:
-        if expected_sha256:
-            return dedent(f"""
-              $ExpectedSHA256 = "{expected_sha256}"
-              $ActualSHA256   = (Get-FileHash -Algorithm SHA256 -Path $AgentPath).Hash.ToLower()
-              if ($ActualSHA256 -ne $ExpectedSHA256.ToLower()) {{
-                Remove-Item -Force $AgentPath -ErrorAction SilentlyContinue
-                throw "SHA256 mismatch — download may be corrupted or tampered.`nExpected: $ExpectedSHA256`nActual:   $ActualSHA256"
-              }}
-              Write-Host "SHA256 verified: $ActualSHA256"
-            """).rstrip()
-        return "              Write-Host 'Warning: no SHA256 checksum available — skipping integrity check.'"
+    # ─── Helpers ──────────────────────────────────────────────────────────────
 
     def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
         svc = AgentPackageService()
@@ -265,29 +489,33 @@ __CONFIG_TEMPLATE__
         config_template: str,
     ) -> tuple[str, str]:
         binary_name = "darwin" if platform == EnrollmentBootstrapPlatform.MACOS else "linux"
-        script = dedent(
-            f"""
-            #!/usr/bin/env bash
-            set -euo pipefail
-
-            INSTALL_DIR="${{HOME}}/.techi-agent"
-            AGENT_URL="https://downloads.example.invalid/techi-agent/{binary_name}/techi-agent"
-            AGENT_PATH="${{INSTALL_DIR}}/techi-agent"
-            CONFIG_PATH="${{INSTALL_DIR}}/config.json"
-            HOSTNAME_VALUE="$(hostname)"
-
-            mkdir -p "${{INSTALL_DIR}}"
-            curl -fsSL "${{AGENT_URL}}" -o "${{AGENT_PATH}}"
-            chmod +x "${{AGENT_PATH}}"
-
-            cat > "${{CONFIG_PATH}}" <<'JSON'
-            {config_template}
-            JSON
-            sed -i.bak "s/<HOSTNAME>/${{HOSTNAME_VALUE}}/g" "${{CONFIG_PATH}}"
-            rm -f "${{CONFIG_PATH}}.bak"
-
-            "${{AGENT_PATH}}" -config "${{CONFIG_PATH}}" -enrollment-token "{enrollment_token}"
-            """
-        ).strip()
+        # Bash here-doc is fine: 'JSON' terminator must be at column 0,
+        # which it is since we join lines ourselves.
+        lines = [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "",
+            'INSTALL_DIR="${HOME}/.techi-agent"',
+            f'AGENT_URL="https://downloads.example.invalid/techi-agent/{binary_name}/techi-agent"',
+            'AGENT_PATH="${INSTALL_DIR}/techi-agent"',
+            'CONFIG_PATH="${INSTALL_DIR}/config.json"',
+            'HOSTNAME_VALUE="$(hostname)"',
+            "",
+            'mkdir -p "${INSTALL_DIR}"',
+            'curl -fsSL "${AGENT_URL}" -o "${AGENT_PATH}"',
+            'chmod +x "${AGENT_PATH}"',
+            "",
+            'cat > "${CONFIG_PATH}" <<\'JSON\'',
+        ]
+        # Embed config as-is — bash here-doc terminator must be at col 0
+        lines.append(config_template)
+        lines += [
+            "JSON",
+            'sed -i.bak "s/<HOSTNAME>/${HOSTNAME_VALUE}/g" "${CONFIG_PATH}"',
+            'rm -f "${CONFIG_PATH}.bak"',
+            "",
+            f'"${{AGENT_PATH}}" -config "${{CONFIG_PATH}}" -enrollment-token "{enrollment_token}"',
+        ]
+        script = "\n".join(lines)
         command = "bash ./techi-bootstrap.sh"
         return command, script

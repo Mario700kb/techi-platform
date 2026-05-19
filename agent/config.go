@@ -30,14 +30,27 @@ type Config struct {
 	CollectServices  bool   `json:"collect_services"`
 
 	// RustDesk self-healing policy (Windows only)
-	RustDeskManageEnabled    bool   `json:"rustdesk_manage_enabled"`
-	RustDeskForceConfig      bool   `json:"rustdesk_force_config"`
-	RustDeskMSIUrl           string `json:"rustdesk_msi_url,omitempty"`
-	RustDeskRendezvousServer string `json:"rustdesk_rendezvous_server,omitempty"`
-	RustDeskRelayServer      string `json:"rustdesk_relay_server,omitempty"`
-	RustDeskAPIServer        string `json:"rustdesk_api_server,omitempty"`
-	RustDeskKey              string `json:"rustdesk_key,omitempty"`
-	RustDeskDefaultPassword  string `json:"rustdesk_default_password,omitempty"`
+	RustDeskManageEnabled     bool   `json:"rustdesk_manage_enabled"`
+	RustDeskForceConfig       bool   `json:"rustdesk_force_config"`
+	RustDeskMSIUrl            string `json:"rustdesk_msi_url,omitempty"`
+	RustDeskRendezvousServer  string `json:"rustdesk_rendezvous_server,omitempty"`
+	RustDeskRelayServer       string `json:"rustdesk_relay_server,omitempty"`
+	RustDeskAPIServer         string `json:"rustdesk_api_server,omitempty"`
+	RustDeskKey               string `json:"rustdesk_key,omitempty"`
+	RustDeskDefaultPassword   string `json:"rustdesk_default_password,omitempty"`
+	RustDeskMSIChecksumSHA256 string `json:"rustdesk_msi_checksum_sha256,omitempty"`
+	RustDeskPackageVersion    string `json:"rustdesk_package_version,omitempty"`
+	RustDeskLastRepairAt      string `json:"rustdesk_last_repair_at,omitempty"`
+	RustDeskRepairCount       int    `json:"rustdesk_repair_count,omitempty"`
+
+	// Availability profile — controls power policy (Windows only).
+	// "server": prevent sleep + hibernate on AC; "workstation": use explicit flags; "custom": use explicit flags.
+	// Lock screen is NEVER disabled regardless of profile.
+	AvailabilityProfile string `json:"availability_profile,omitempty"` // "server" | "workstation" | "custom"
+	ManagePowerPolicy   bool   `json:"manage_power_policy"`
+	PreventSleepOnAC    bool   `json:"prevent_sleep_on_ac"`
+	PreventHibernate    bool   `json:"prevent_hibernate"`
+	AllowDisplayOffOnAC bool   `json:"allow_display_off_on_ac"`
 }
 
 func defaultConfig() Config {

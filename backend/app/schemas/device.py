@@ -23,9 +23,12 @@ class DeviceFreshnessState(str, Enum):
 
 
 class DeviceBase(BaseModel):
+    agent_id: Optional[str] = None
     rustdesk_id: Optional[str] = None
     hostname: Optional[str]
     current_user: Optional[str]
+    user_source: Optional[str] = None
+    user_session_state: Optional[str] = None
     domain: Optional[str]
     public_ip: Optional[str]
     local_ip: Optional[str]
@@ -35,6 +38,9 @@ class DeviceBase(BaseModel):
     device_type: DeviceType = DeviceType.UNASSIGNED
     status: DeviceStatus = DeviceStatus.OFFLINE
     last_seen: Optional[datetime] = None
+    last_enrollment_at: Optional[datetime] = None
+    enrollment_count: int = 0
+    reenrolled_from_agent_id: Optional[str] = None
     cpu: Optional[str]
     ram: Optional[str]
     storage: Optional[str]
@@ -49,6 +55,8 @@ class DeviceBase(BaseModel):
     rustdesk_verified_at: Optional[datetime] = None
     rustdesk_manual_override: bool = False
     rustdesk_conflict_detected: bool = False
+    rustdesk_last_repair_at: Optional[datetime] = None
+    rustdesk_repair_count: int = 0
     auto_assigned: bool = False
     assignment_source: str = "manual"
     is_archived: bool = False
@@ -70,8 +78,11 @@ class DeviceCreate(DeviceBase):
 
 
 class DeviceUpdate(BaseModel):
+    agent_id: Optional[str] = None
     hostname: Optional[str] = None
     current_user: Optional[str] = None
+    user_source: Optional[str] = None
+    user_session_state: Optional[str] = None
     domain: Optional[str] = None
     public_ip: Optional[str] = None
     local_ip: Optional[str] = None
@@ -86,6 +97,9 @@ class DeviceUpdate(BaseModel):
     ram: Optional[str] = None
     storage: Optional[str] = None
     last_seen: Optional[datetime] = None
+    last_enrollment_at: Optional[datetime] = None
+    enrollment_count: Optional[int] = None
+    reenrolled_from_agent_id: Optional[str] = None
     rustdesk_id: Optional[str] = None
     rustdesk_install_status: Optional[str] = None
     rustdesk_status: Optional[str] = None
@@ -98,6 +112,8 @@ class DeviceUpdate(BaseModel):
     rustdesk_verified_at: Optional[datetime] = None
     rustdesk_manual_override: Optional[bool] = None
     rustdesk_conflict_detected: Optional[bool] = None
+    rustdesk_last_repair_at: Optional[datetime] = None
+    rustdesk_repair_count: Optional[int] = None
     auto_assigned: Optional[bool] = None
     assignment_source: Optional[str] = None
     is_archived: Optional[bool] = None
@@ -154,6 +170,11 @@ class Device(DeviceBase):
     group_id: Optional[int]
     client_name: Optional[str] = None
     group_name: Optional[str] = None
+    resolved_client_id: Optional[int] = None
+    resolved_client_name: Optional[str] = None
+    resolved_group: Optional[str] = None
+    resolved_assignment_source: str = "unassigned"
+    resolved_device_category: str = "unassigned"
     freshness_state: DeviceFreshnessState = DeviceFreshnessState.OFFLINE
 
 

@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.agent_auth import compute_callback_token
 from app.models.remote_action import ActionStatus, RemoteAction, TERMINAL_STATUSES
 from app.repositories.remote_action_repository import RemoteActionRepository
-from app.schemas.remote_action import ActionStatusStats, ActionType, PendingActionDelivery, RemoteActionCreate
+from app.schemas.remote_action import (
+    ACTION_CONFLICT_GROUPS,
+    ActionStatusStats,
+    ActionType,
+    PendingActionDelivery,
+    RemoteActionCreate,
+)
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
 
@@ -33,6 +39,8 @@ def _action_event_payload(action: RemoteAction) -> dict:
         "expired_at": action.expired_at.isoformat() if action.expired_at else None,
         "result_message": action.result_message,
         "error_message": action.error_message,
+        "output": action.output,
+        "stderr_output": action.stderr_output,
         "execution_timeout_seconds": action.execution_timeout_seconds,
     }
 
@@ -59,6 +67,51 @@ def _record_audit(db: Session, action: RemoteAction, summary: str, actor: Option
         logger.debug("audit record skipped", exc_info=True)
 
 
+def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Optional[str]:
+    """
+    Return an error message if new_type conflicts with any active (non-terminal)
+    action in existing_actions, otherwise None.
+
+    Two action types conflict when they belong to the same conflict group.
+    A duplicate of the exact same type is always blocked.
+    """
+    active = [a for a in existing_actions if a.status not in TERMINAL_STATUSES]
+    if not active:
+        return None
+
+    new_enum: Optional[ActionType] = None
+    try:
+        new_enum = ActionType(new_type)
+    except ValueError:
+        # Unknown type — no conflict check possible.
+        return None
+
+    for action in active:
+        existing_type = action.action_type
+
+        if existing_type == new_type:
+            return (
+                f"A '{new_type}' action is already queued or running "
+                f"(action #{action.id}, status={action.status.value}). "
+                "Cancel or wait for it to finish before queuing another."
+            )
+
+        try:
+            existing_enum = ActionType(existing_type)
+        except ValueError:
+            continue
+
+        for group in ACTION_CONFLICT_GROUPS:
+            if new_enum in group and existing_enum in group:
+                return (
+                    f"Cannot queue '{new_type}': conflicts with active '{existing_type}' "
+                    f"(action #{action.id}, status={action.status.value}). "
+                    "Cancel the conflicting action first."
+                )
+
+    return None
+
+
 class RemoteActionService:
     def __init__(self, db: Session):
         self.repo = RemoteActionRepository(db)
@@ -70,6 +123,13 @@ class RemoteActionService:
     def queue_action(self, device_id: int, create_in: RemoteActionCreate) -> RemoteAction:
         if create_in.action_type.value not in _ALLOWED_TYPES:
             raise ValueError(f"Unsupported action type: {create_in.action_type}")
+
+        # Conflict / duplicate guard — check all recent actions for this device.
+        recent = self.repo.get_recent_for_device(device_id, limit=50)
+        conflict_msg = _check_conflicts(recent, create_in.action_type.value)
+        if conflict_msg:
+            raise ValueError(conflict_msg)
+
         action = self.repo.create(
             device_id=device_id,
             action_type=create_in.action_type.value,
@@ -77,7 +137,10 @@ class RemoteActionService:
             created_by=create_in.created_by,
             execution_timeout_seconds=create_in.execution_timeout_seconds or 300,
         )
-        logger.info("[action] queued #%d type=%s device=%d by=%s", action.id, action.action_type, device_id, create_in.created_by)
+        logger.info(
+            "[action] queued #%d type=%s device=%d by=%s",
+            action.id, action.action_type, device_id, create_in.created_by,
+        )
         _publish_action_status(action, RealtimeEventType.ACTION_QUEUED)
         _record_audit(self.repo.db, action, f"Action queued: {action.action_type}", actor=create_in.created_by)
         return action
@@ -153,28 +216,41 @@ class RemoteActionService:
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         return action
 
-    def complete(self, action_id: int, result_message: Optional[str] = None) -> Optional[RemoteAction]:
+    def complete(
+        self,
+        action_id: int,
+        result_message: Optional[str] = None,
+        output: Optional[str] = None,
+    ) -> Optional[RemoteAction]:
         action = self.repo.get(action_id)
         if not action:
             return None
         if action.status in TERMINAL_STATUSES:
             raise ValueError(f"Cannot complete action in terminal status: {action.status.value}")
-        action = self.repo.mark_completed(action, result_message=result_message)
+        action = self.repo.mark_completed(action, result_message=result_message, output=output)
         logger.info("[action] completed #%d result=%r", action_id, result_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         _record_audit(self.repo.db, action, f"Action completed: {action.action_type}")
         return action
 
-    def fail(self, action_id: int, error_message: Optional[str] = None) -> Optional[RemoteAction]:
+    def fail(
+        self,
+        action_id: int,
+        error_message: Optional[str] = None,
+        stderr_output: Optional[str] = None,
+    ) -> Optional[RemoteAction]:
         action = self.repo.get(action_id)
         if not action:
             return None
         if action.status in TERMINAL_STATUSES:
             raise ValueError(f"Cannot fail action in terminal status: {action.status.value}")
-        action = self.repo.mark_failed(action, error_message=error_message)
+        action = self.repo.mark_failed(action, error_message=error_message, stderr_output=stderr_output)
         logger.info("[action] failed #%d error=%r", action_id, error_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
-        _record_audit(self.repo.db, action, f"Action failed: {action.action_type} — {error_message or 'no detail'}")
+        _record_audit(
+            self.repo.db, action,
+            f"Action failed: {action.action_type} — {error_message or 'no detail'}",
+        )
         return action
 
     # ------------------------------------------------------------------ #
@@ -202,5 +278,8 @@ class RemoteActionService:
                     callback_secret=compute_callback_token(action.id),
                 )
             )
-            logger.info("[action] sent #%d (type=%s) to device #%d", action.id, action.action_type, device_id)
+            logger.info(
+                "[action] sent #%d (type=%s) to device #%d",
+                action.id, action.action_type, device_id,
+            )
         return deliveries

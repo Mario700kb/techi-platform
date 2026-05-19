@@ -2,9 +2,12 @@ import { fetchJson } from "./client";
 
 export interface Device {
   id: number;
+  agent_id?: string | null;
   rustdesk_id: string;
   hostname?: string;
   current_user?: string;
+  user_source?: string;
+  user_session_state?: string;
   domain?: string;
   public_ip?: string;
   local_ip?: string;
@@ -16,6 +19,9 @@ export interface Device {
   freshness_state?: "online" | "stale" | "offline";
   registered_at: string;
   last_seen?: string;
+  last_enrollment_at?: string | null;
+  enrollment_count?: number;
+  reenrolled_from_agent_id?: string | null;
   client_id?: number;
   group_id?: number;
   client_name?: string | null;
@@ -34,8 +40,15 @@ export interface Device {
   rustdesk_verified_at?: string;
   rustdesk_manual_override: boolean;
   rustdesk_conflict_detected: boolean;
+  rustdesk_last_repair_at?: string | null;
+  rustdesk_repair_count?: number;
   auto_assigned?: boolean;
   assignment_source?: string;
+  resolved_client_id?: number | null;
+  resolved_client_name?: string | null;
+  resolved_group?: string | null;
+  resolved_assignment_source?: string;
+  resolved_device_category?: "servers" | "clientpc" | "unassigned" | "other" | string;
   is_archived?: boolean;
   archived_at?: string | null;
   archived_by?: string | null;
@@ -60,6 +73,7 @@ export interface DeviceFilters {
   search?: string;
   duplicate_candidates?: boolean;
   maintenance_state?: "maintenance" | "normal";
+  smart_folder?: "windows_server" | "windows_workstation" | "laptop" | "domain" | "workgroup" | "unassigned" | "offline" | "rustdesk_missing";
 }
 
 const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
@@ -72,9 +86,10 @@ const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
 const allowedStatuses = new Set(["online", "offline"]);
 const allowedFreshnessStates = new Set(["online", "stale", "offline"]);
 const allowedDeviceTypes = new Set(["server", "client", "unassigned"]);
-const allowedAssignmentSources = new Set(["system_auto", "manual", "enrollment_token", "unassigned"]);
+const allowedAssignmentSources = new Set(["system_auto", "manual", "legacy_manual", "trusted_domain", "enrollment_token", "auto_os", "unassigned"]);
 const allowedLifecycleStates = new Set(["active", "archived", "all"]);
 const allowedMaintenanceStates = new Set(["maintenance", "normal"]);
+const allowedSmartFolders = new Set(["windows_server", "windows_workstation", "laptop", "domain", "workgroup", "unassigned", "offline", "rustdesk_missing"]);
 
 function appendIfAllowed(params: URLSearchParams, key: string, value: string | undefined, allowed: Set<string>) {
   if (value && allowed.has(value)) {
@@ -97,6 +112,7 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   if (filters.search?.trim()) params.append("search", filters.search.trim());
   if (filters.duplicate_candidates === true) params.append("duplicate_candidates", "true");
   appendIfAllowed(params, "maintenance_state", filters.maintenance_state, allowedMaintenanceStates);
+  appendIfAllowed(params, "smart_folder", filters.smart_folder, allowedSmartFolders);
 }
 
 export interface DevicesResponse {
@@ -173,8 +189,9 @@ export async function updateDevice(deviceId: number, updates: Partial<Device>): 
   });
 }
 
-export async function deleteDevice(deviceId: number): Promise<void> {
-  await fetchJson<Device>(`/api/v1/devices/${deviceId}`, { method: "DELETE" });
+export async function deleteDevice(deviceId: number, confirmDelete = false): Promise<void> {
+  const suffix = confirmDelete ? "?confirm_delete=true" : "";
+  await fetchJson<Device>(`/api/v1/devices/${deviceId}${suffix}`, { method: "DELETE" });
 }
 
 export async function archiveDevice(deviceId: number): Promise<Device> {

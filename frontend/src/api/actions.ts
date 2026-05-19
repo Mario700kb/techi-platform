@@ -15,7 +15,13 @@ export type ActionType =
   | "restart_device"
   | "refresh_inventory"
   | "restart_agent"
-  | "sync_rustdesk";
+  | "sync_rustdesk"
+  | "restart_rustdesk"
+  | "reinstall_rustdesk"
+  | "reopen_rustdesk"
+  | "sync_inventory"
+  | "immediate_heartbeat"
+  | "apply_power_policy";
 
 export const ACTION_LABELS: Record<ActionType, string> = {
   ping: "Ping",
@@ -23,6 +29,12 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   refresh_inventory: "Refresh Inventory",
   restart_agent: "Restart Agent",
   sync_rustdesk: "Sync RustDesk",
+  restart_rustdesk: "Restart RustDesk",
+  reinstall_rustdesk: "Reinstall RustDesk",
+  reopen_rustdesk: "Reopen RustDesk",
+  sync_inventory: "Sync Inventory",
+  immediate_heartbeat: "Immediate Heartbeat",
+  apply_power_policy: "Apply Power Policy",
 };
 
 export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
@@ -35,6 +47,17 @@ export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
   expired: "Expired",
   cancelled: "Cancelled",
 };
+
+// Actions that require a destructive confirmation before queuing.
+export const DESTRUCTIVE_ACTIONS = new Set<ActionType>(["restart_device", "reinstall_rustdesk"]);
+
+// Actions that are Windows-agent-only.
+export const WINDOWS_ONLY_ACTIONS = new Set<ActionType>([
+  "restart_rustdesk",
+  "reinstall_rustdesk",
+  "reopen_rustdesk",
+  "apply_power_policy",
+]);
 
 export interface RemoteAction {
   id: number;
@@ -54,6 +77,8 @@ export interface RemoteAction {
   expired_at?: string | null;
   result_message?: string | null;
   error_message?: string | null;
+  output?: string | null;
+  stderr_output?: string | null;
   execution_timeout_seconds: number;
   duration_seconds?: number | null;
 }

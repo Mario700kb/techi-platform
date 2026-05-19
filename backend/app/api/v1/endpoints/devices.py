@@ -76,6 +76,7 @@ def read_devices(
     search: Optional[str] = None,
     duplicate_candidates: Optional[bool] = None,
     maintenance_state: Optional[str] = None,
+    smart_folder: Optional[str] = None,
 ):
     return DeviceService(db).get_devices(
         skip=skip,
@@ -90,6 +91,7 @@ def read_devices(
         search=search,
         duplicate_candidates=duplicate_candidates,
         maintenance_state=maintenance_state,
+        smart_folder=smart_folder,
         scope=scope,
     )
 
@@ -108,6 +110,7 @@ def read_devices_count(
     search: Optional[str] = None,
     duplicate_candidates: Optional[bool] = None,
     maintenance_state: Optional[str] = None,
+    smart_folder: Optional[str] = None,
 ):
     count = DeviceService(db).get_devices_count(
         status=status,
@@ -120,6 +123,7 @@ def read_devices_count(
         search=search,
         duplicate_candidates=duplicate_candidates,
         maintenance_state=maintenance_state,
+        smart_folder=smart_folder,
         scope=scope,
     )
     return {"count": count}
@@ -415,12 +419,16 @@ def update_device(
 def delete_device(
     *,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
     device: Device = Depends(get_scoped_device),
+    confirm_delete: bool = Query(default=False),
 ):
+    if not confirm_delete:
+        raise HTTPException(status_code=400, detail="Permanent device delete requires explicit confirmation")
     deleted = DeviceService(db).delete_device(device.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Device not found")
+    audit_log(db, operator=operator, action=AuditAction.DEVICE_DELETED, entity_type="device", entity_id=device.id, details={"hostname": device.hostname})
     return deleted
 
 

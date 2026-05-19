@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 
+from app.core.time import utcnow
 from app.db.base import Base
 
 
@@ -14,5 +13,5 @@ class DeviceActivityEvent(Base):
     summary = Column(String(255), nullable=False)
     detail = Column(Text, nullable=True)
     actor = Column(String(128), nullable=True)
-    occurred_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    occurred_at = Column(DateTime, default=utcnow, nullable=False, index=True)
 

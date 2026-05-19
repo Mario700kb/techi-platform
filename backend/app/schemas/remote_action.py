@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from app.core.time import utcnow
+
 
 class ActionStatus(str, Enum):
     QUEUED = "queued"
@@ -23,16 +25,36 @@ class ActionType(str, Enum):
     REFRESH_INVENTORY = "refresh_inventory"
     RESTART_AGENT = "restart_agent"
     SYNC_RUSTDESK = "sync_rustdesk"
+    # Phase 2: full action engine
+    RESTART_RUSTDESK = "restart_rustdesk"
+    REINSTALL_RUSTDESK = "reinstall_rustdesk"
+    REOPEN_RUSTDESK = "reopen_rustdesk"
+    SYNC_INVENTORY = "sync_inventory"
+    IMMEDIATE_HEARTBEAT = "immediate_heartbeat"
+    APPLY_POWER_POLICY = "apply_power_policy"
 
 
-# Human-readable labels used in the UI.
 ACTION_LABELS: Dict[str, str] = {
     ActionType.PING: "Ping",
     ActionType.RESTART_DEVICE: "Restart Device",
     ActionType.REFRESH_INVENTORY: "Refresh Inventory",
     ActionType.RESTART_AGENT: "Restart Agent",
     ActionType.SYNC_RUSTDESK: "Sync RustDesk",
+    ActionType.RESTART_RUSTDESK: "Restart RustDesk",
+    ActionType.REINSTALL_RUSTDESK: "Reinstall RustDesk",
+    ActionType.REOPEN_RUSTDESK: "Reopen RustDesk",
+    ActionType.SYNC_INVENTORY: "Sync Inventory",
+    ActionType.IMMEDIATE_HEARTBEAT: "Immediate Heartbeat",
+    ActionType.APPLY_POWER_POLICY: "Apply Power Policy",
 }
+
+# Actions that conflict with each other — only one may be non-terminal at a time.
+# Each inner set is a conflict group.
+ACTION_CONFLICT_GROUPS: List[set] = [
+    {ActionType.RESTART_RUSTDESK, ActionType.REINSTALL_RUSTDESK, ActionType.REOPEN_RUSTDESK},
+    {ActionType.RESTART_AGENT, ActionType.IMMEDIATE_HEARTBEAT},
+    {ActionType.RESTART_DEVICE},
+]
 
 
 class RemoteActionCreate(BaseModel):
@@ -52,10 +74,12 @@ class RemoteActionRunning(BaseModel):
 
 class RemoteActionComplete(BaseModel):
     result_message: Optional[str] = None
+    output: Optional[str] = None
 
 
 class RemoteActionFail(BaseModel):
     error_message: Optional[str] = None
+    stderr_output: Optional[str] = None
 
 
 class RemoteActionResponse(BaseModel):
@@ -78,6 +102,8 @@ class RemoteActionResponse(BaseModel):
     expired_at: Optional[datetime] = None
     result_message: Optional[str] = None
     error_message: Optional[str] = None
+    output: Optional[str] = None
+    stderr_output: Optional[str] = None
     execution_timeout_seconds: int
     duration_seconds: Optional[float] = None
 
@@ -104,7 +130,7 @@ class RemoteActionResponse(BaseModel):
         if end:
             self.duration_seconds = (end - self.started_at).total_seconds()
         elif self.status == ActionStatus.RUNNING:
-            self.duration_seconds = (datetime.utcnow() - self.started_at).total_seconds()
+            self.duration_seconds = (utcnow().replace(tzinfo=None) - self.started_at).total_seconds()
         return self
 
 
@@ -124,7 +150,6 @@ class ActionStatusStats(BaseModel):
     total: int = 0
 
 
-# Lightweight payload returned to the agent inside the heartbeat response.
 class PendingActionDelivery(BaseModel):
     action_id: int
     action: str

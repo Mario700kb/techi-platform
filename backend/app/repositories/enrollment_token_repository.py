@@ -30,8 +30,30 @@ class EnrollmentTokenRepository:
             .all()
         )
 
+    def get_active_default(self) -> Optional[EnrollmentToken]:
+        from app.models.enrollment_token import EnrollmentTokenStatus
+        return (
+            self.db.query(EnrollmentToken)
+            .filter(EnrollmentToken.is_default.is_(True), EnrollmentToken.status == EnrollmentTokenStatus.ACTIVE)
+            .order_by(EnrollmentToken.id.desc())
+            .first()
+        )
+
+    def get_any_default(self) -> Optional[EnrollmentToken]:
+        return (
+            self.db.query(EnrollmentToken)
+            .filter(EnrollmentToken.is_default.is_(True))
+            .order_by(EnrollmentToken.id.desc())
+            .first()
+        )
+
     def save(self, token: EnrollmentToken) -> EnrollmentToken:
         self.db.add(token)
         self.db.commit()
         self.db.refresh(token)
+        return token
+
+    def delete(self, token: EnrollmentToken) -> EnrollmentToken:
+        self.db.delete(token)
+        self.db.commit()
         return token

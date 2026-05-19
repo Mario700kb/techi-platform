@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 DEVICE_COLUMNS = {
+    "agent_id": "VARCHAR(80)",
+    "last_enrollment_at": "DATETIME",
+    "enrollment_count": "INTEGER NOT NULL DEFAULT 0",
+    "reenrolled_from_agent_id": "VARCHAR(80)",
     "rustdesk_install_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_version": "VARCHAR(80)",
@@ -20,6 +24,8 @@ DEVICE_COLUMNS = {
     "rustdesk_verified_at": "DATETIME",
     "rustdesk_manual_override": "BOOLEAN NOT NULL DEFAULT 0",
     "rustdesk_conflict_detected": "BOOLEAN NOT NULL DEFAULT 0",
+    "rustdesk_last_repair_at": "DATETIME",
+    "rustdesk_repair_count": "INTEGER NOT NULL DEFAULT 0",
     "is_archived": "BOOLEAN NOT NULL DEFAULT 0",
     "archived_at": "DATETIME",
     "archived_by": "VARCHAR(128)",
@@ -47,6 +53,13 @@ REMOTE_ACTION_COLUMNS = {
     "started_at": "DATETIME",
     "cancelled_at": "DATETIME",
     "expired_at": "DATETIME",
+    "output": "TEXT",
+    "stderr_output": "TEXT",
+}
+
+ENROLLMENT_TOKEN_COLUMNS = {
+    "is_default": "BOOLEAN NOT NULL DEFAULT 0",
+    "token_prefix": "VARCHAR(12)",
 }
 
 DEV_TABLES = {
@@ -126,6 +139,7 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "device_heartbeats": HEARTBEAT_COLUMNS,
         "device_inventory": INVENTORY_COLUMNS,
         "remote_actions": REMOTE_ACTION_COLUMNS,
+        "enrollment_tokens": ENROLLMENT_TOKEN_COLUMNS,
     }.items():
         if not inspector.has_table(table_name):
             continue

@@ -1,13 +1,13 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 from collections import defaultdict
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from fastapi import WebSocket
 
+from app.core.time import utcnow
 from app.websocket.events import RealtimeEventType, build_event
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,11 @@ class RealtimeConnection:
     tenant_id: str
     channel: str
     connection_id: str = field(default_factory=lambda: str(uuid4()))
-    connected_at: datetime = field(default_factory=datetime.utcnow)
-    last_seen_at: datetime = field(default_factory=datetime.utcnow)
+    connected_at: str = field(default_factory=lambda: utcnow().isoformat())
+    last_seen_at: str = field(default_factory=lambda: utcnow().isoformat())
+
+    def touch(self) -> None:
+        self.last_seen_at = utcnow().isoformat()
 
 
 class RealtimeConnectionManager:
@@ -67,7 +70,7 @@ class RealtimeConnectionManager:
         async with self._lock:
             connection = self._connections.get(tenant_id, {}).get(connection_id)
             if connection:
-                connection.last_seen_at = datetime.utcnow()
+                connection.touch()
 
     async def broadcast(self, event: Dict[str, Any]) -> None:
         tenant_id = event.get("tenant_id") or "default"
@@ -107,7 +110,7 @@ class RealtimeConnectionManager:
                 connection.websocket.send_json(event),
                 timeout=self._send_timeout_seconds,
             )
-            connection.last_seen_at = datetime.utcnow()
+            connection.touch()
             return True
         except Exception:
             logger.debug(

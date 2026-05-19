@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime
+from app.core.time import utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ class AuthService:
             return None
         if not verify_password(password, operator.hashed_password):
             return None
-        operator.last_login_at = datetime.utcnow()
+        operator.last_login_at = utcnow()
         self.repo.save(operator)
         return operator
 

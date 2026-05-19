@@ -6,6 +6,68 @@ import (
 	"testing"
 )
 
+func TestNormalizeRustDeskIDStripsSpaces(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"1 235 009 710", "1235009710"},
+		{"123456789", "123456789"},
+		{"1 234 567 890", "1234567890"},
+		{"  9 876 543 210  ", "9876543210"},
+		{"AbCdEfGh", ""},
+		{"enc_id_base64==", "64"}, // digits extracted; "64" is too short → rejected by isNumericRustDeskID
+		{"", ""},
+	}
+	for _, c := range cases {
+		got := normalizeRustDeskID(c.input)
+		if got != c.want {
+			t.Errorf("normalizeRustDeskID(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsNumericRustDeskIDValidation(t *testing.T) {
+	accept := []string{"12345", "123456789", "1235009710", "12345678901234567890"}
+	for _, id := range accept {
+		if !isNumericRustDeskID(id) {
+			t.Errorf("expected %q to be accepted", id)
+		}
+	}
+	reject := []string{"", "1234", "123456789012345678901", "AbCdEfGh", "agent_foo", "123abc456"}
+	for _, id := range reject {
+		if isNumericRustDeskID(id) {
+			t.Errorf("expected %q to be rejected", id)
+		}
+	}
+}
+
+func TestIsUsableRustDeskIDRejectsNonNumeric(t *testing.T) {
+	// base64 / enc_id strings must be rejected
+	reject := []string{"AbCdEfGhIjKlMnOp", "enc_AbCd123=", "agent_foo", "pending_bar", ""}
+	for _, id := range reject {
+		if isUsableRustDeskID(id) {
+			t.Errorf("expected %q to be rejected by isUsableRustDeskID", id)
+		}
+	}
+	// plain numeric IDs must be accepted
+	if !isUsableRustDeskID("1235009710") {
+		t.Error("expected numeric ID 1235009710 to be accepted")
+	}
+}
+
+func TestLocalRustDeskIDNormalizesUIFormat(t *testing.T) {
+	// Simulates what --get-id outputs and verifies the full normalization pipeline.
+	raw := "1 235 009 710"
+	id := normalizeRustDeskID(raw)
+	if id != "1235009710" {
+		t.Fatalf("expected 1235009710, got %q", id)
+	}
+	if !isNumericRustDeskID(id) {
+		t.Fatal("1235009710 should be a valid numeric RustDesk ID")
+	}
+}
+
 func TestConfiguredRustDeskIDRejectsGeneratedAgentID(t *testing.T) {
 	cfg := &Config{RustDeskID: "agent_Q79DLxgeFHnxlfTL5RxLWXmN"}
 

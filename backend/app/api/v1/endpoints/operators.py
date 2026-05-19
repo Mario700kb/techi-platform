@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("", response_model=List[Operator])
 def list_operators(
     db: Session = Depends(get_db),
-    current: OperatorModel = Depends(get_current_operator),
+    current: OperatorModel = Depends(require_min_role(OperatorRole.ADMIN.value)),
 ):
     operators = OperatorService(db).list_operators()
     result = []

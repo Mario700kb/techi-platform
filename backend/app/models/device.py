@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.core.time import ensure_utc, utcnow
 
 
 class DeviceType(str, Enum):
@@ -28,8 +29,11 @@ class Device(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     rustdesk_id = Column(String(64), unique=True, nullable=True, index=True)
+    agent_id = Column(String(80), unique=True, nullable=True, index=True)
     hostname = Column(String(128), nullable=True)
     current_user = Column(String(128), nullable=True)
+    user_source = Column(String(40), nullable=True)
+    user_session_state = Column(String(40), nullable=True)
     domain = Column(String(128), nullable=True)
     public_ip = Column(String(45), nullable=True)
     local_ip = Column(String(45), nullable=True)
@@ -38,8 +42,11 @@ class Device(Base):
     platform = Column(String(80), nullable=True)
     device_type = Column(SQLEnum(DeviceType), default=DeviceType.UNASSIGNED, nullable=False)
     status = Column(SQLEnum(DeviceStatus), default=DeviceStatus.OFFLINE, nullable=False)
-    registered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    registered_at = Column(DateTime, default=utcnow, nullable=False)
     last_seen = Column(DateTime, nullable=True)
+    last_enrollment_at = Column(DateTime, nullable=True)
+    enrollment_count = Column(Integer, default=0, nullable=False)
+    reenrolled_from_agent_id = Column(String(80), nullable=True)
     cpu = Column(String(120), nullable=True)
     ram = Column(String(120), nullable=True)
     storage = Column(String(120), nullable=True)
@@ -58,6 +65,8 @@ class Device(Base):
     rustdesk_verified_at = Column(DateTime, nullable=True)
     rustdesk_manual_override = Column(Boolean, default=False, nullable=False)
     rustdesk_conflict_detected = Column(Boolean, default=False, nullable=False)
+    rustdesk_last_repair_at = Column(DateTime, nullable=True)
+    rustdesk_repair_count = Column(Integer, default=0, nullable=False)
 
     duplicate_candidate = Column(Boolean, default=False, nullable=False)
     duplicate_of_device_id = Column(Integer, nullable=True)
@@ -92,7 +101,7 @@ class Device(Base):
     def freshness_state(self):
         if not self.last_seen:
             return DeviceFreshnessState.OFFLINE.value
-        age = datetime.utcnow() - self.last_seen
+        age = ensure_utc(utcnow()) - ensure_utc(self.last_seen)
         if age <= timedelta(minutes=2):
             return DeviceFreshnessState.ONLINE.value
         if age <= timedelta(minutes=15):

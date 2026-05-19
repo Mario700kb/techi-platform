@@ -47,6 +47,11 @@ export interface DeviceRealtimeEvent {
     group_name?: string | null;
     registered_at?: string | null;
     assignment_source?: string;
+    resolved_client_id?: number | null;
+    resolved_client_name?: string | null;
+    resolved_group?: string | null;
+    resolved_assignment_source?: string;
+    resolved_device_category?: string;
     is_archived?: boolean;
     duplicate_candidate?: boolean;
     duplicate_of_device_id?: number | null;
@@ -69,6 +74,8 @@ export interface DeviceRealtimeEvent {
     rustdesk_verified_at?: string | null;
     rustdesk_manual_override?: boolean;
     rustdesk_conflict_detected?: boolean;
+    rustdesk_last_repair_at?: string | null;
+    rustdesk_repair_count?: number;
     cpu_percent?: number | null;
     ram_percent?: number | null;
     disk_percent?: number | null;
@@ -113,8 +120,18 @@ const STALE_CONNECTION_MS = 45000;
 const CLIENT_PING_MS = 20000;
 
 export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
-  const wsUrl = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8000";
-  const url = new URL(wsUrl);
+  let wsBase: string;
+  const configured = import.meta.env.VITE_WS_BASE_URL;
+  if (configured) {
+    wsBase = configured;
+  } else if (typeof window !== "undefined") {
+    // Mirror the same host the page was loaded from so LAN access works automatically
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    wsBase = `${wsProtocol}//${window.location.hostname}:8000`;
+  } else {
+    wsBase = "ws://localhost:8000";
+  }
+  const url = new URL(wsBase);
   url.pathname = "/ws/devices";
   url.searchParams.set("tenant_id", tenantId);
   const token = window.localStorage.getItem("techi.auth.token");

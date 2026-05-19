@@ -1,0 +1,356 @@
+"""
+Validates that generated PowerShell installer scripts have correct syntax.
+
+These tests catch the class of bugs where Python string templating
+(dedent + f-string substitution) produced scripts with:
+  - Here-string terminators ('@ or "@) that had leading whitespace
+  - Inconsistent indentation that confused PowerShell's parser
+  - Unexpected literal {{ or }} from missed f-string escaping
+
+No Windows runtime required — we check structural invariants that
+must hold for PowerShell 5.1 to parse the scripts correctly.
+"""
+import json
+import re
+from types import SimpleNamespace
+
+import pytest
+
+from app.schemas.enrollment_bootstrap import (
+    AvailabilityProfile,
+    EnrollmentBootstrapPlatform,
+    EnrollmentBootstrapRequest,
+)
+from app.services.enrollment_bootstrap_service import EnrollmentBootstrapService
+
+
+# ---------------------------------------------------------------------------
+# Minimal service stub (no DB, no real package store)
+# ---------------------------------------------------------------------------
+
+class _StubService(EnrollmentBootstrapService):
+    """Bypass DB + AgentPackageService so we can unit-test script generation."""
+
+    def __init__(self, sha256: str = "aabbccdd" * 8):
+        self._stub_sha256 = sha256
+
+    def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
+        url = f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download"
+        return url, self._stub_sha256
+
+
+class _StubTokenService:
+    def __init__(self, issued_token: str = "real-token-from-backend-123"):
+        self.issued_token = issued_token
+        self.validated_token = None
+
+    def get_active_token(self, token_id: int):
+        return SimpleNamespace(id=token_id, status="active")
+
+    def validate_plaintext_for_token_id(self, token_id: int, plaintext_token: str) -> None:
+        self.validated_token = (token_id, plaintext_token)
+
+    def issue_plaintext_for_token(self, token) -> str:
+        return self.issued_token
+
+
+def _make_req(**overrides) -> EnrollmentBootstrapRequest:
+    defaults = dict(
+        mode="token",
+        enrollment_token_id=1,
+        backend_url="http://10.5.50.63:8000",
+        platform="windows",
+        enrollment_token="tok123tok123tok123",
+        availability_profile="server",
+        manage_power_policy=True,
+        rustdesk_manage_enabled=False,
+    )
+    defaults.update(overrides)
+    return EnrollmentBootstrapRequest(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _check_no_here_strings(script: str, label: str) -> None:
+    """Fail if any here-string opener/terminator is found."""
+    for i, line in enumerate(script.splitlines(), 1):
+        stripped = line.lstrip()
+        # here-string openers must end the line; terminators must be col-0
+        assert not stripped.startswith("@'"), (
+            f"{label}: line {i} starts with @' (here-string opener): {line!r}"
+        )
+        assert not stripped.startswith('@"'), (
+            f"{label}: line {i} starts with @\" (here-string opener): {line!r}"
+        )
+        # Terminators at wrong column
+        if stripped.startswith("'@") or stripped.startswith('"@'):
+            leading = len(line) - len(stripped)
+            assert leading == 0, (
+                f"{label}: line {i} has indented here-string terminator: {line!r}"
+            )
+
+
+def _check_ps_braces(script: str, label: str) -> None:
+    """Fail if literal {{ or }} appear (double-brace leak from f-string)."""
+    assert "{{" not in script, f"{label}: contains literal {{{{ (f-string brace leak)"
+    assert "}}" not in script, f"{label}: contains literal }}}} (f-string brace leak)"
+
+
+def _check_no_leading_spaces_inconsistency(script: str, label: str) -> None:
+    """All lines must have consistent indentation style (no mix of
+    column-0 and heavily-indented lines that would indicate dedent failure).
+    Specifically: there must be no line that has more than 0 and fewer than
+    4 leading spaces right next to a line at column 0 — the hallmark of
+    the broken dedent approach."""
+    # We just assert every line's leading spaces count is a multiple of 4 or 0
+    # (our new implementation uses 4-space indentation exclusively)
+    for i, line in enumerate(script.splitlines(), 1):
+        if not line.strip():
+            continue  # blank lines are fine
+        leading = len(line) - len(line.lstrip())
+        assert leading % 4 == 0, (
+            f"{label}: line {i} has {leading} leading spaces (not a multiple of 4): {line!r}"
+        )
+
+
+def _check_config_json(script: str, label: str) -> None:
+    """ConvertTo-Json block must be present; no literal JSON blob in script."""
+    assert "ConvertTo-Json" in script, f"{label}: missing ConvertTo-Json call"
+    assert "$AgentConfig = [ordered]@{" in script, f"{label}: missing ordered hashtable"
+    # Ensure agent_name is set to $env:COMPUTERNAME
+    assert "$env:COMPUTERNAME" in script, f"{label}: agent_name not set from $env:COMPUTERNAME"
+
+
+def _check_sha256(script: str, sha256: str, label: str) -> None:
+    assert sha256 in script, f"{label}: SHA256 hash not in script"
+    assert "Get-FileHash" in script, f"{label}: missing Get-FileHash call"
+
+
+def _check_exit_codes(script: str, label: str) -> None:
+    assert "exit 0" in script, f"{label}: missing 'exit 0'"
+    assert "exit 1" in script, f"{label}: missing 'exit 1'"
+
+
+def _check_installer_log(script: str, label: str) -> None:
+    assert "installer.log" in script, f"{label}: missing installer.log path"
+    assert "Write-Log" in script, f"{label}: missing Write-Log function"
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+class TestTokenInstallerScript:
+    def setup_method(self):
+        self.sha256 = "aabbccdd" * 8
+        self.svc = _StubService(sha256=self.sha256)
+        req = _make_req()
+        cfg = self.svc._config_template("http://10.5.50.63:8000", "tok123tok123tok123", req)
+        _, self.script = self.svc._windows_bootstrap(
+            "http://10.5.50.63:8000", "tok123tok123tok123", cfg, req
+        )
+
+    def test_no_here_strings(self):
+        _check_no_here_strings(self.script, "token-installer")
+
+    def test_no_brace_leaks(self):
+        _check_ps_braces(self.script, "token-installer")
+
+    def test_consistent_indentation(self):
+        _check_no_leading_spaces_inconsistency(self.script, "token-installer")
+
+    def test_config_uses_converttojson(self):
+        _check_config_json(self.script, "token-installer")
+
+    def test_sha256_present(self):
+        _check_sha256(self.script, self.sha256, "token-installer")
+
+    def test_exit_codes(self):
+        _check_exit_codes(self.script, "token-installer")
+
+    def test_installer_log(self):
+        _check_installer_log(self.script, "token-installer")
+
+    def test_utf8_no_bom(self):
+        assert "UTF8Encoding" in self.script, "token-installer: missing UTF8Encoding call"
+        assert "WriteAllText" in self.script, "token-installer: missing WriteAllText call"
+
+    def test_enrollment_token_in_script(self):
+        assert "tok123tok123tok123" in self.script, "token-installer: enrollment token missing"
+
+    def test_idempotent_service_install(self):
+        assert "already installed" in self.script, "token-installer: missing idempotency check"
+
+
+class TestTokenInstallerPlaintextResolution:
+    def setup_method(self):
+        self.svc = _StubService()
+        self.svc.token_service = _StubTokenService()
+
+    def test_generate_without_payload_token_embeds_real_transient_token(self):
+        req = _make_req(enrollment_token=None)
+        response = self.svc.generate(req)
+
+        assert "real-token-from-backend-123" in response.bootstrap_script
+        assert '"enrollment_token": "real-token-from-backend-123"' in response.config_template
+        assert "<ENROLLMENT_TOKEN_FOR_ID_1>" not in response.bootstrap_script
+        assert "<ENROLLMENT_TOKEN_FOR_ID_1>" not in response.config_template
+
+    def test_generate_with_payload_token_embeds_supplied_token(self):
+        req = _make_req(enrollment_token="supplied-token-value-123")
+        response = self.svc.generate(req)
+
+        assert "supplied-token-value-123" in response.bootstrap_script
+        assert '"enrollment_token": "supplied-token-value-123"' in response.config_template
+        assert self.svc.token_service.validated_token == (1, "supplied-token-value-123")
+
+
+class TestTokenInstallerNoSHA256:
+    """When no package is uploaded, SHA256 is empty — script must still be valid."""
+
+    def setup_method(self):
+        self.svc = _StubService(sha256="")
+        req = _make_req()
+        cfg = self.svc._config_template("http://10.5.50.63:8000", "tok123tok123tok123", req)
+        _, self.script = self.svc._windows_bootstrap(
+            "http://10.5.50.63:8000", "tok123tok123tok123", cfg, req
+        )
+
+    def test_no_here_strings(self):
+        _check_no_here_strings(self.script, "token-no-sha256")
+
+    def test_no_brace_leaks(self):
+        _check_ps_braces(self.script, "token-no-sha256")
+
+    def test_consistent_indentation(self):
+        _check_no_leading_spaces_inconsistency(self.script, "token-no-sha256")
+
+    def test_config_uses_converttojson(self):
+        _check_config_json(self.script, "token-no-sha256")
+
+    def test_exit_codes(self):
+        _check_exit_codes(self.script, "token-no-sha256")
+
+
+class TestGPOInstallerScript:
+    def setup_method(self):
+        self.sha256 = "deadbeef" * 8
+        self.svc = _StubService(sha256=self.sha256)
+        req = _make_req(mode="gpo", enrollment_token_id=None, enrollment_token=None)
+        cfg = self.svc._config_template("http://10.5.50.63:8000", "", req)
+        _, self.script = self.svc._gpo_windows_bootstrap(
+            "http://10.5.50.63:8000", "", cfg, req
+        )
+
+    def test_no_here_strings(self):
+        _check_no_here_strings(self.script, "gpo-installer")
+
+    def test_no_brace_leaks(self):
+        _check_ps_braces(self.script, "gpo-installer")
+
+    def test_consistent_indentation(self):
+        _check_no_leading_spaces_inconsistency(self.script, "gpo-installer")
+
+    def test_config_uses_converttojson(self):
+        _check_config_json(self.script, "gpo-installer")
+
+    def test_sha256_present(self):
+        _check_sha256(self.script, self.sha256, "gpo-installer")
+
+    def test_exit_codes(self):
+        _check_exit_codes(self.script, "gpo-installer")
+
+    def test_installer_log(self):
+        _check_installer_log(self.script, "gpo-installer")
+
+    def test_idempotent_service_install(self):
+        assert "already installed" in self.script, "gpo-installer: missing idempotency check"
+
+    def test_no_read_host(self):
+        # Ignore comment lines; only fail if Read-Host appears as actual code
+        code_lines = [l for l in self.script.splitlines() if not l.strip().startswith("#")]
+        code = "\n".join(code_lines)
+        assert "Read-Host" not in code, "gpo-installer: must not call Read-Host in code"
+
+    def test_no_prompts(self):
+        assert "Confirm" not in self.script, "gpo-installer: must not prompt"
+
+
+class TestConfigPSLines:
+    """Unit tests for the PowerShell config writer."""
+
+    def setup_method(self):
+        self.svc = _StubService()
+
+    def test_hostname_uses_computername(self):
+        cfg_json = json.dumps({"agent_name": "<HOSTNAME>", "timeout_seconds": 10})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        assert "$env:COMPUTERNAME" in joined
+        assert "<HOSTNAME>" not in joined
+
+    def test_bool_literals(self):
+        cfg_json = json.dumps({"manage_power_policy": True, "collect_processes": False})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        assert "$true" in joined
+        assert "$false" in joined
+
+    def test_int_literals(self):
+        cfg_json = json.dumps({"timeout_seconds": 30})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        assert "30" in joined
+
+    def test_string_single_quoted(self):
+        cfg_json = json.dumps({"api_url": "http://server:8000"})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        # Must appear as single-quoted PS string
+        assert "'http://server:8000'" in joined
+
+    def test_string_with_single_quote_escaped(self):
+        val = "it's here"
+        cfg_json = json.dumps({"description": val})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        # Single quote inside should be doubled
+        assert "it''s here" in joined
+
+    def test_converttojson_and_writealltext(self):
+        cfg_json = json.dumps({"api_url": "http://x"})
+        lines = self.svc._config_ps_lines(cfg_json)
+        joined = "\n".join(lines)
+        assert "ConvertTo-Json" in joined
+        assert "WriteAllText" in joined
+        assert "UTF8Encoding" in joined
+
+    def test_ordered_hashtable(self):
+        cfg_json = json.dumps({"a": 1, "b": 2})
+        lines = self.svc._config_ps_lines(cfg_json)
+        assert lines[0] == "$AgentConfig = [ordered]@{"
+
+
+class TestPyToPsLiteral:
+    def setup_method(self):
+        self.svc = _StubService()
+
+    def test_true(self):
+        assert self.svc._py_to_ps_literal(True) == "$true"
+
+    def test_false(self):
+        assert self.svc._py_to_ps_literal(False) == "$false"
+
+    def test_none(self):
+        assert self.svc._py_to_ps_literal(None) == "$null"
+
+    def test_int(self):
+        assert self.svc._py_to_ps_literal(42) == "42"
+
+    def test_string(self):
+        assert self.svc._py_to_ps_literal("hello") == "'hello'"
+
+    def test_string_with_single_quote(self):
+        assert self.svc._py_to_ps_literal("it's") == "'it''s'"
