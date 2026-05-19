@@ -240,3 +240,16 @@ frontend/.vite/
 **/docker-compose.override.yml
 **/*.env
 backend/*.db
+
+# DB
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+backend/predeploy_backup_*/
+
+# Agent binaries
+agent/*.exe
+agent/old-builds/
+
+# Static installers
+static/rustdesk/
