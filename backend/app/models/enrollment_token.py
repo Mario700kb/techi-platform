@@ -23,7 +23,7 @@ class EnrollmentToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(160), nullable=False)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
-    status = Column(SQLEnum(EnrollmentTokenStatus, values_callable=lambda x: [e.value for e in x]), default=EnrollmentTokenStatus.ACTIVE, nullable=False, index=True)
+    status = Column(SQLEnum(EnrollmentTokenStatus, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=EnrollmentTokenStatus.ACTIVE, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=True, index=True)
     used_at = Column(DateTime, nullable=True)

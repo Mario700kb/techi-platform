@@ -44,7 +44,7 @@ class RemoteAction(Base):
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     action_type = Column(String(64), nullable=False)
     payload = Column(Text, nullable=True)  # JSON-encoded dict
-    status = Column(SQLEnum(ActionStatus, values_callable=lambda x: [e.value for e in x]), default=ActionStatus.QUEUED, nullable=False, index=True)
+    status = Column(SQLEnum(ActionStatus, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=ActionStatus.QUEUED, nullable=False, index=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     created_by = Column(String(128), nullable=True)
     queued_at = Column(DateTime, nullable=True)

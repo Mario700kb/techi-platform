@@ -38,9 +38,9 @@ class DeviceAlert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
-    kind = Column(SQLEnum(AlertKind, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
-    severity = Column(SQLEnum(AlertSeverity, values_callable=lambda x: [e.value for e in x]), nullable=False)
-    state = Column(SQLEnum(AlertState, values_callable=lambda x: [e.value for e in x]), default=AlertState.OPEN, nullable=False, index=True)
+    kind = Column(SQLEnum(AlertKind, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    severity = Column(SQLEnum(AlertSeverity, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    state = Column(SQLEnum(AlertState, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=AlertState.OPEN, nullable=False, index=True)
     message = Column(String(512), nullable=False)
     detail = Column(String(1024), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
