@@ -37,7 +37,7 @@ class DeviceActivityService:
         )
         archived_checkins = (
             self.db.query(DeviceAlert)
-            .filter(DeviceAlert.device_id == device_id, DeviceAlert.kind == AlertKind.ARCHIVED_CHECKIN)
+            .filter(DeviceAlert.device_id == device_id, DeviceAlert.kind == AlertKind.ARCHIVED_CHECKIN.value)
             .order_by(DeviceAlert.created_at.desc())
             .limit(limit)
             .all()
