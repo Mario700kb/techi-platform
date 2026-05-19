@@ -41,20 +41,29 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
       </div>
       <div className="flex flex-none items-center gap-2">
         {user && (
-          <span
-            className="hidden rounded-md border px-2 py-1 text-[11px] font-semibold sm:block"
-            style={{
-              borderColor: "var(--th-border-default)",
-              background: "var(--th-bg-surface)",
-              color: "var(--th-text-secondary)",
-            }}
-          >
-            {user.username} · {user.role}
-          </span>
+          <div className="hidden items-center gap-1.5 sm:flex">
+            <span
+              className="rounded-md border px-2 py-1 text-[11px] font-semibold"
+              style={{
+                borderColor: "var(--th-border-default)",
+                background: "var(--th-bg-surface)",
+                color: "var(--th-text-secondary)",
+              }}
+            >
+              {user.display_name || user.username}
+            </span>
+            <span
+              className="rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+              style={{
+                borderColor: "var(--th-border-default)",
+                background: "var(--th-bg-page)",
+                color: "var(--th-text-muted)",
+              }}
+            >
+              {user.role}
+            </span>
+          </div>
         )}
-        <span className="hidden text-[11px] font-medium sm:block" style={{ color: "var(--th-text-muted)" }}>Native RustDesk workflow</span>
-        <span className="h-1 w-1 rounded-full hidden sm:block" style={{ background: "var(--th-border-default)" }} />
-        <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>Developer preview</span>
 
         {/* Theme toggle */}
         <button

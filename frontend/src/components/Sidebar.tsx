@@ -49,12 +49,16 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         <img
-          src={expanded
-            ? (theme === "light" ? "/brand/techi-logo.webp" : "/brand/techi-logo-dark.png")
-            : "/brand/techi-mark-dark.png"}
+          src={expanded ? "/brand/techi-logo-dark.png" : "/brand/techi-mark-dark.png"}
           alt="techi"
           className={expanded ? "h-7 w-auto max-w-[124px] object-contain" : "h-6 w-6 object-contain"}
-          style={!expanded && theme === "light" ? { filter: "brightness(0) opacity(0.65)" } : {}}
+          style={theme === "light" ? { filter: "brightness(0) opacity(0.72)" } : {}}
+          onError={(e) => {
+            const img = e.currentTarget;
+            if (!img.src.endsWith("techi-mark-dark.png")) {
+              img.src = "/brand/techi-mark-dark.png";
+            }
+          }}
         />
       </button>
 
