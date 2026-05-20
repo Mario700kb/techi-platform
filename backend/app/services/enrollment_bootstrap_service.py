@@ -190,6 +190,118 @@ class EnrollmentBootstrapService:
         )
         return lines
 
+    def _rustdesk_force_migration_ps_lines(self, payload: EnrollmentBootstrapRequest) -> list[str]:
+        if not payload.rustdesk_manage_enabled:
+            return []
+        rendezvous = (payload.rustdesk_rendezvous_server or "").strip()
+        relay = (payload.rustdesk_relay_server or rendezvous).strip()
+        key = (payload.rustdesk_key or "").strip()
+        if not rendezvous or not key:
+            return [
+                "",
+                "# -- RustDesk force migration skipped: missing TECHI server/key",
+                'Write-Log "RustDesk force migration skipped: missing TECHI server/key"',
+            ]
+
+        safe_rendezvous = rendezvous.replace("'", "''")
+        safe_relay = relay.replace("'", "''")
+        safe_key = key.replace("'", "''")
+        return [
+            "",
+            "# -- Force RustDesk migration to TECHI self-hosted server",
+            f"$RustDeskRendezvous = '{safe_rendezvous}'",
+            f"$RustDeskRelay = '{safe_relay}'",
+            f"$RustDeskKey = '{safe_key}'",
+            'Write-Log "Forcing RustDesk migration to TECHI infrastructure..."',
+            "$RustDeskServices = @('RustDesk', 'rustdesk')",
+            "foreach ($ServiceName in $RustDeskServices) {",
+            "    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",
+            "    if ($null -ne $svc -and $svc.Status -ne 'Stopped') {",
+            '        Write-Log "Stopping RustDesk service: $ServiceName"',
+            "        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue",
+            "    }",
+            "}",
+            "Get-Process -Name 'RustDesk', 'rustdesk' -ErrorAction SilentlyContinue | ForEach-Object {",
+            '    Write-Log "Stopping RustDesk process: $($_.ProcessName) pid=$($_.Id)"',
+            "    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue",
+            "}",
+            "Start-Sleep -Seconds 2",
+            "$RustDeskRoots = @(",
+            "    'C:\\ProgramData\\RustDesk',",
+            "    'C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\RustDesk'",
+            ")",
+            "if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {",
+            "    $RustDeskRoots += (Join-Path $env:APPDATA 'RustDesk')",
+            "}",
+            "if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {",
+            "    $RustDeskRoots += (Join-Path $env:LOCALAPPDATA 'RustDesk')",
+            "}",
+            "$RustDeskRoots = $RustDeskRoots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique",
+            "foreach ($Root in $RustDeskRoots) {",
+            "    if (Test-Path $Root) {",
+            '        Write-Log "Old RustDesk config found: $Root"',
+            "        foreach ($Name in @('RustDesk.toml', 'RustDesk2.toml')) {",
+            "            $Path = Join-Path $Root $Name",
+            "            if (Test-Path $Path) {",
+            "                Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue",
+            '                Write-Log "RustDesk config removed: $Path"',
+            "            }",
+            "        }",
+            "        Get-ChildItem -Path $Root -Filter '*.toml' -File -ErrorAction SilentlyContinue | ForEach-Object {",
+            "            Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue",
+            '            Write-Log "RustDesk config removed: $($_.FullName)"',
+            "        }",
+            "        $ConfigDir = Join-Path $Root 'config'",
+            "        if (Test-Path $ConfigDir) {",
+            "            Get-ChildItem -Path $ConfigDir -Force -ErrorAction SilentlyContinue | ForEach-Object {",
+            "                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue",
+            '                Write-Log "RustDesk config removed: $($_.FullName)"',
+            "            }",
+            "        }",
+            "    } else {",
+            '        Write-Log "RustDesk config root not present: $Root"',
+            "    }",
+            "}",
+            "$RustDeskToml = @(",
+            "    \"rendezvous_server = '$RustDeskRendezvous'\",",
+            "    'nat_type = 1',",
+            "    'serial = 0',",
+            "    '',",
+            "    '[options]',",
+            "    \"custom-rendezvous-server = '$RustDeskRendezvous'\",",
+            "    \"relay-server = '$RustDeskRelay'\",",
+            "    \"key = '$RustDeskKey'\"",
+            ") -join \"`n\"",
+            "foreach ($Root in $RustDeskRoots) {",
+            "    $ConfigDir = Join-Path $Root 'config'",
+            "    New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null",
+            "    foreach ($Path in @((Join-Path $Root 'RustDesk2.toml'), (Join-Path $ConfigDir 'RustDesk2.toml'))) {",
+            "        [System.IO.File]::WriteAllText($Path, $RustDeskToml, [System.Text.UTF8Encoding]::new($false))",
+            '        Write-Log "RustDesk config rewritten: $Path"',
+            "        $Written = Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue",
+            "        if ($Written -and $Written.Contains($RustDeskRendezvous)) {",
+            '            Write-Log "RustDesk TECHI config verified: $Path"',
+            "        } else {",
+            '            Write-Log "ERROR: RustDesk TECHI config verification failed: $Path"',
+            "            exit 1",
+            "        }",
+            "    }",
+            "}",
+            "foreach ($ServiceName in $RustDeskServices) {",
+            "    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",
+            "    if ($null -ne $svc) {",
+            '        Write-Log "Restarting RustDesk service: $ServiceName"',
+            "        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue",
+            "        Start-Sleep -Seconds 3",
+            "        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",
+            "        if ($null -ne $svc) {",
+            '            Write-Log "RustDesk restarted: $ServiceName status=$($svc.Status)"',
+            "        }",
+            "    }",
+            "}",
+            'Write-Log "RustDesk forced migration complete."',
+        ]
+
     # ─── Windows token-mode installer ─────────────────────────────────────────
 
     def _windows_bootstrap(
@@ -201,6 +313,7 @@ class EnrollmentBootstrapService:
     ) -> tuple[str, str]:
         package_url, sha256 = self._windows_package_info(backend_url)
         config_lines = self._config_ps_lines(config_template)
+        rustdesk_migration_lines = self._rustdesk_force_migration_ps_lines(payload)
 
         # Single-quote the token so PowerShell doesn't expand it as a variable
         safe_token = enrollment_token.replace("'", "''")
@@ -286,6 +399,9 @@ class EnrollmentBootstrapService:
             '        Write-Log "Binary up-to-date -- skipping download."',
             "    }",
             "}",
+        )
+        A(*rustdesk_migration_lines)
+        A(
             "",
             "# -- Write config (UTF-8 without BOM) using ConvertTo-Json",
             'Write-Log "Writing config to $ConfigPath"',
@@ -341,6 +457,7 @@ class EnrollmentBootstrapService:
     ) -> tuple[str, str]:
         package_url, sha256 = self._windows_package_info(backend_url)
         config_lines = self._config_ps_lines(config_template)
+        rustdesk_migration_lines = self._rustdesk_force_migration_ps_lines(payload)
 
         safe_token = enrollment_token.replace("'", "''")
 
@@ -424,6 +541,9 @@ class EnrollmentBootstrapService:
             '        Write-Log "Binary up-to-date -- skipping download."',
             "    }",
             "}",
+        )
+        A(*rustdesk_migration_lines)
+        A(
             "",
             "# -- Write/update config (UTF-8 without BOM) using ConvertTo-Json",
             'Write-Log "Writing config to $ConfigPath"',

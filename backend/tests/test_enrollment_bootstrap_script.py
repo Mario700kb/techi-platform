@@ -72,6 +72,17 @@ def _make_req(**overrides) -> EnrollmentBootstrapRequest:
     return EnrollmentBootstrapRequest(**defaults)
 
 
+def _make_rustdesk_req(**overrides) -> EnrollmentBootstrapRequest:
+    defaults = dict(
+        rustdesk_manage_enabled=True,
+        rustdesk_rendezvous_server="139.162.158.208",
+        rustdesk_relay_server="139.162.158.208",
+        rustdesk_key="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=",
+    )
+    defaults.update(overrides)
+    return _make_req(**defaults)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -185,6 +196,94 @@ class TestTokenInstallerScript:
 
     def test_idempotent_service_install(self):
         assert "already installed" in self.script, "token-installer: missing idempotency check"
+
+    def test_rustdesk_migration_not_added_when_disabled(self):
+        assert "Forcing RustDesk migration to TECHI infrastructure" not in self.script
+
+
+class TestRustDeskForceMigrationScript:
+    def setup_method(self):
+        self.svc = _StubService()
+        req = _make_rustdesk_req()
+        cfg = self.svc._config_template("http://10.5.50.63:8000", "tok123tok123tok123", req)
+        _, self.script = self.svc._windows_bootstrap(
+            "http://10.5.50.63:8000", "tok123tok123tok123", cfg, req
+        )
+
+    def test_stops_service_and_process_before_config_cleanup(self):
+        service_index = self.script.index("Stopping RustDesk service")
+        process_index = self.script.index("Stopping RustDesk process")
+        cleanup_index = self.script.index("Old RustDesk config found")
+
+        assert service_index < cleanup_index
+        assert process_index < cleanup_index
+
+    def test_removes_all_requested_config_locations(self):
+        assert "C:\\ProgramData\\RustDesk" in self.script
+        assert "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\RustDesk" in self.script
+        assert "Join-Path $env:APPDATA 'RustDesk'" in self.script
+        assert "Join-Path $env:LOCALAPPDATA 'RustDesk'" in self.script
+
+    def test_removes_requested_config_files_and_config_contents(self):
+        assert "'RustDesk.toml', 'RustDesk2.toml'" in self.script
+        assert "-Filter '*.toml'" in self.script
+        assert "Join-Path $Root 'config'" in self.script
+        assert "Remove-Item -Path $_.FullName -Recurse -Force" in self.script
+
+    def test_rewrites_techi_config_and_verifies_host(self):
+        assert "rendezvous_server = '$RustDeskRendezvous'" in self.script
+        assert "relay-server = '$RustDeskRelay'" in self.script
+        assert "key = '$RustDeskKey'" in self.script
+        assert "RustDesk config rewritten" in self.script
+        assert "$Written.Contains($RustDeskRendezvous)" in self.script
+        assert "RustDesk TECHI config verified" in self.script
+
+    def test_restarts_rustdesk_and_logs_migration(self):
+        assert "Restarting RustDesk service" in self.script
+        assert "RustDesk restarted" in self.script
+        assert "RustDesk forced migration complete" in self.script
+
+    def test_idempotent_cleanup_then_rewrite_order(self):
+        remove_index = self.script.index("RustDesk config removed")
+        rewrite_index = self.script.index("RustDesk config rewritten")
+
+        assert remove_index < rewrite_index
+
+    def test_public_endpoint_enables_techi_rustdesk_migration(self, monkeypatch):
+        captured = {}
+
+        class FakeTokenService:
+            def __init__(self, db):
+                pass
+
+            def get_active_token_by_plaintext(self, token: str):
+                return SimpleNamespace(id=7)
+
+        class FakeBootstrapService:
+            def __init__(self, db):
+                pass
+
+            def generate(self, payload):
+                captured["payload"] = payload
+                return SimpleNamespace(bootstrap_script="$ErrorActionPreference = 'Stop'\n")
+
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentTokenService", FakeTokenService)
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentBootstrapService", FakeBootstrapService)
+
+        app = FastAPI()
+        app.include_router(bootstrap_endpoint.router, prefix="/api/v1/bootstrap")
+
+        def _fake_db():
+            yield object()
+
+        app.dependency_overrides[bootstrap_endpoint.get_db] = _fake_db
+        response = TestClient(app).get("/api/v1/bootstrap/windows.ps1?token=active-token-123456")
+
+        assert response.status_code == 200
+        assert captured["payload"].rustdesk_manage_enabled is True
+        assert captured["payload"].rustdesk_rendezvous_server == "139.162.158.208"
+        assert captured["payload"].rustdesk_relay_server == "139.162.158.208"
+        assert captured["payload"].rustdesk_key == "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
 
 
 class TestPublicWindowsBootstrapEndpoint:

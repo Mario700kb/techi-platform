@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
@@ -44,7 +45,10 @@ def windows_bootstrap_script(
         backend_url=_public_backend_url(request),
         platform=EnrollmentBootstrapPlatform.WINDOWS,
         enrollment_token=token,
-        rustdesk_manage_enabled=False,
+        rustdesk_manage_enabled=True,
+        rustdesk_rendezvous_server=settings.RUSTDESK_SERVER_HOST,
+        rustdesk_relay_server=settings.RUSTDESK_RELAY_HOST,
+        rustdesk_key=settings.RUSTDESK_PUBLIC_KEY,
         availability_profile=AvailabilityProfile.WORKSTATION,
         manage_power_policy=False,
     )
