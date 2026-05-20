@@ -7,6 +7,7 @@ import Devices from "../pages/Devices";
 import Clients from "../pages/Clients";
 import Audit from "../pages/Audit";
 import AgentPackages from "../pages/AgentPackages";
+import Deployment from "../pages/Deployment";
 import EnrollmentBootstrap from "../pages/EnrollmentBootstrap";
 import Inventory from "../pages/Inventory";
 import Operators from "../pages/Operators";
@@ -35,6 +36,7 @@ export default function AppRoutes() {
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/devices" element={<RequireAuth><Devices /></RequireAuth>} />
       <Route path="/clients" element={<RequireAuth><Clients /></RequireAuth>} />
+      <Route path="/deployment" element={<RequireAuth><RequireAdmin><Deployment /></RequireAdmin></RequireAuth>} />
       <Route path="/enrollment-bootstrap" element={<RequireAuth><EnrollmentBootstrap /></RequireAuth>} />
       <Route path="/agent-packages" element={<RequireAuth><AgentPackages /></RequireAuth>} />
       <Route path="/inventory" element={<RequireAuth><Inventory /></RequireAuth>} />

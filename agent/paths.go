@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	windowsConfigPath = `C:\ProgramData\TechiAgent\agent.config.json`
-	windowsLogPath    = `C:\ProgramData\TechiAgent\logs\agent.log`
+	windowsConfigPath = `C:\ProgramData\TECHI\agent.config.json`
+	windowsLogPath    = `C:\ProgramData\TECHI\logs\agent.log`
 )
 
 func defaultConfigPath() string {

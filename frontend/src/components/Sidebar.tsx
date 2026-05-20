@@ -1,4 +1,4 @@
-import { Home, Cpu, Folder, KeyRound, Building2, Users, ClipboardList, Package } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, Building2, Users, ClipboardList, Package, MonitorCog } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -8,6 +8,7 @@ const navItems = [
   { label: "Dashboard", to: "/", icon: Home, minRole: null },
   { label: "Devices", to: "/devices", icon: Folder, minRole: null },
   { label: "Clients", to: "/clients", icon: Building2, minRole: null },
+  { label: "Deployment", to: "/deployment", icon: MonitorCog, minRole: null },
   { label: "Enrollment", to: "/enrollment-bootstrap", icon: KeyRound, minRole: null },
   { label: "Packages", to: "/agent-packages", icon: Package, minRole: null },
   { label: "Inventory", to: "/inventory", icon: Cpu, minRole: null },

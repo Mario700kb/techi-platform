@@ -1,4 +1,4 @@
-import { fetchJson } from "./client";
+import { API_BASE_URL, fetchJson } from "./client";
 
 export type EnrollmentBootstrapPlatform = "windows" | "macos" | "linux";
 export type EnrollmentBootstrapMode = "token" | "gpo";
@@ -66,6 +66,12 @@ export interface CreateTokenResponse extends EnrollmentToken {
   token: string; // plaintext — only available at creation
 }
 
+export interface RustDeskConfig {
+  server_host: string;
+  relay_host: string;
+  public_key: string;
+}
+
 export async function getEnrollmentTokens(): Promise<EnrollmentToken[]> {
   return fetchJson<EnrollmentToken[]>("/api/v1/enrollment-tokens");
 }
@@ -113,4 +119,16 @@ export async function generateEnrollmentBootstrap(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function getRustDeskConfig(): Promise<RustDeskConfig> {
+  return fetchJson<RustDeskConfig>("/api/v1/rustdesk/config");
+}
+
+export function buildWindowsBootstrapUrl(token: string): string {
+  return `${API_BASE_URL}/api/v1/bootstrap/windows.ps1?token=${encodeURIComponent(token)}`;
+}
+
+export function buildWindowsBootstrapCommand(token: string): string {
+  return `powershell -ExecutionPolicy Bypass -Command "irm ${buildWindowsBootstrapUrl(token)} | iex"`;
 }

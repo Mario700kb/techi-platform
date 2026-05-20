@@ -134,8 +134,19 @@ func installService(configPath string, enrollmentToken string) error {
 	defer m.Disconnect()
 
 	if existing, err := m.OpenService(serviceName); err == nil {
-		existing.Close()
-		return fmt.Errorf("service %s already installed", serviceName)
+		defer existing.Close()
+		exePath := `"` + exePath + `" -config "` + configPath + `"`
+		if err := existing.UpdateConfig(mgr.Config{
+			DisplayName:      "Techi Agent",
+			Description:      "Techi endpoint inventory, heartbeat, and remote action agent.",
+			StartType:        mgr.StartAutomatic,
+			DelayedAutoStart: true,
+			BinaryPathName:   exePath,
+		}); err != nil {
+			return err
+		}
+		fmt.Printf("updated %s\nconfig: %s\nlogs: %s\n", serviceName, configPath, defaultLogPath())
+		return nil
 	}
 
 	args := []string{"-config", configPath}
