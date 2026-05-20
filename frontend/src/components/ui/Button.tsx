@@ -4,19 +4,27 @@ import clsx from "clsx";
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   size?: "sm" | "md" | "lg";
+  variant?: "primary" | "secondary" | "danger" | "ghost";
 }
 
-export default function Button({ children, className, size = "md", ...props }: ButtonProps) {
+export default function Button({ children, className, size = "md", variant = "primary", ...props }: ButtonProps) {
   const sizeClasses = {
-    sm: "px-3 py-1.5 text-sm",
-    md: "px-4 py-2 text-sm",
-    lg: "px-6 py-3 text-base",
+    sm: "min-h-9 px-3.5 py-2 text-sm",
+    md: "min-h-10 px-4 py-2.5 text-sm",
+    lg: "min-h-11 px-5 py-3 text-base",
+  };
+  const variantClasses = {
+    primary: "th-btn-primary",
+    secondary: "th-btn-secondary",
+    danger: "th-btn-danger",
+    ghost: "th-btn-ghost",
   };
 
   return (
     <button
       className={clsx(
-        "th-btn-primary inline-flex items-center justify-center rounded-lg border border-orange-300/20 bg-gradient-to-r from-techi-orange to-techi-pink px-4 py-2 text-sm font-semibold text-white shadow-[0_0_24px_rgba(255,85,63,0.2)] transition hover:border-orange-200/40 hover:shadow-[0_0_30px_rgba(255,63,50,0.24)] focus:outline-none focus:ring-2 focus:ring-techi-orange/40",
+        "inline-flex items-center justify-center gap-2 rounded-lg border font-semibold transition duration-150 focus:outline-none focus:ring-2 focus:ring-techi-orange/25",
+        variantClasses[variant],
         sizeClasses[size],
         className
       )}

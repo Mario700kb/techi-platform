@@ -196,6 +196,7 @@ class EnrollmentBootstrapService:
         rendezvous = (payload.rustdesk_rendezvous_server or "").strip()
         relay = (payload.rustdesk_relay_server or rendezvous).strip()
         key = (payload.rustdesk_key or "").strip()
+        password = (payload.rustdesk_default_password or "").strip()
         if not rendezvous or not key:
             return [
                 "",
@@ -206,12 +207,14 @@ class EnrollmentBootstrapService:
         safe_rendezvous = rendezvous.replace("'", "''")
         safe_relay = relay.replace("'", "''")
         safe_key = key.replace("'", "''")
+        safe_password = password.replace("'", "''")
         return [
             "",
             "# -- Force RustDesk migration to TECHI self-hosted server",
             f"$RustDeskRendezvous = '{safe_rendezvous}'",
             f"$RustDeskRelay = '{safe_relay}'",
             f"$RustDeskKey = '{safe_key}'",
+            f"$RustDeskPassword = '{safe_password}'",
             'Write-Log "Forcing RustDesk migration to TECHI infrastructure..."',
             "$RustDeskServices = @('RustDesk', 'rustdesk')",
             "foreach ($ServiceName in $RustDeskServices) {",
@@ -286,6 +289,49 @@ class EnrollmentBootstrapService:
             "            exit 1",
             "        }",
             "    }",
+            "}",
+            "function Get-RustDeskExecutable {",
+            "    $Candidates = @(",
+            "        'C:\\Program Files\\RustDesk\\rustdesk.exe',",
+            "        'C:\\Program Files (x86)\\RustDesk\\rustdesk.exe'",
+            "    )",
+            "    foreach ($ServiceName in $RustDeskServices) {",
+            "        $Service = Get-CimInstance Win32_Service -Filter \"Name='$ServiceName'\" -ErrorAction SilentlyContinue",
+            "        if ($null -ne $Service -and -not [string]::IsNullOrWhiteSpace($Service.PathName)) {",
+            "            $ImagePath = $Service.PathName.Trim()",
+            "            if ($ImagePath -match '\"([^\"]*rustdesk\\.exe)\"') {",
+            "                $Candidates += $Matches[1]",
+            "            } elseif ($ImagePath -match '([A-Za-z]:\\\\.*?rustdesk\\.exe)') {",
+            "                $Candidates += $Matches[1]",
+            "            }",
+            "        }",
+            "    }",
+            "    foreach ($Candidate in ($Candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {",
+            "        if (Test-Path $Candidate) {",
+            "            return $Candidate",
+            "        }",
+            "    }",
+            "    return $null",
+            "}",
+            "if (-not [string]::IsNullOrWhiteSpace($RustDeskPassword)) {",
+            "    $RustDeskExe = Get-RustDeskExecutable",
+            "    if ($null -eq $RustDeskExe) {",
+            '        Write-Log "WARNING: RustDesk password not set because rustdesk.exe was not found."',
+            "    } else {",
+            "        try {",
+            '            Write-Log "Setting RustDesk unattended access password via CLI."',
+            "            $PasswordProcess = Start-Process -FilePath $RustDeskExe -ArgumentList @('--password', $RustDeskPassword) -Wait -PassThru -WindowStyle Hidden",
+            "            if ($PasswordProcess.ExitCode -eq 0) {",
+            '                Write-Log "RustDesk unattended access password configured."',
+            "            } else {",
+            '                Write-Log "WARNING: RustDesk password CLI exited with code $($PasswordProcess.ExitCode); continuing bootstrap."',
+            "            }",
+            "        } catch {",
+            '            Write-Log "WARNING: RustDesk password CLI failed; continuing bootstrap. Error=$_"',
+            "        }",
+            "    }",
+            "} else {",
+            '    Write-Log "RustDesk unattended access password skipped: no password configured."',
             "}",
             "foreach ($ServiceName in $RustDeskServices) {",
             "    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",

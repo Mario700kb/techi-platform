@@ -75,12 +75,7 @@ export default function ConfirmationModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-lg border px-4 py-2 text-sm font-semibold transition disabled:opacity-50"
-            style={{
-              borderColor: "var(--th-border-input)",
-              background: "var(--th-bg-input)",
-              color: "var(--th-text-secondary)",
-            }}
+            className="th-btn-secondary min-h-10 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50"
           >
             {cancelLabel}
           </button>
@@ -89,8 +84,8 @@ export default function ConfirmationModal({
             onClick={onConfirm}
             disabled={loading}
             className={clsx(
-              "rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50",
-              destructive ? "bg-red-600 hover:bg-red-500" : "bg-techi-orange hover:bg-techi-orange/90"
+              "min-h-10 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50",
+              destructive ? "th-btn-danger" : "th-btn-primary"
             )}
           >
             {loading ? `${confirmLabel}…` : confirmLabel}

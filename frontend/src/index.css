@@ -45,8 +45,16 @@
   --th-grid-line: rgba(255, 255, 255, 0.018);
   --th-shell-border: rgba(255, 255, 255, 0.12);
   --th-table-hover: rgba(255, 255, 255, 0.055);
-  --th-table-hover-shadow: inset 2px 0 0 rgba(255, 85, 63, 0.85);
+  --th-table-hover-shadow: inset 2px 0 0 rgba(255, 126, 93, 0.52);
   --th-divide-color: rgba(255, 255, 255, 0.04);
+  --th-accent-muted: #d56b55;
+  --th-btn-primary-bg: rgba(168, 76, 58, 0.24);
+  --th-btn-primary-border: rgba(255, 143, 116, 0.25);
+  --th-btn-primary-hover: rgba(188, 86, 66, 0.32);
+  --th-btn-secondary-bg: rgba(255, 255, 255, 0.045);
+  --th-btn-secondary-hover: rgba(255, 255, 255, 0.075);
+  --th-btn-danger-bg: rgba(153, 27, 27, 0.18);
+  --th-btn-danger-hover: rgba(185, 28, 28, 0.25);
 
   color-scheme: dark;
 }
@@ -94,15 +102,23 @@ html.light {
   --th-grid-line: rgba(0, 0, 0, 0.04);
   --th-shell-border: rgba(0, 0, 0, 0.1);
   --th-table-hover: rgba(0, 0, 0, 0.03);
-  --th-table-hover-shadow: inset 2px 0 0 rgba(255, 85, 63, 0.7);
+  --th-table-hover-shadow: inset 2px 0 0 rgba(213, 107, 85, 0.58);
   --th-divide-color: rgba(0, 0, 0, 0.05);
+  --th-accent-muted: #c75e49;
+  --th-btn-primary-bg: rgba(199, 94, 73, 0.12);
+  --th-btn-primary-border: rgba(199, 94, 73, 0.28);
+  --th-btn-primary-hover: rgba(199, 94, 73, 0.18);
+  --th-btn-secondary-bg: rgba(15, 23, 42, 0.035);
+  --th-btn-secondary-hover: rgba(15, 23, 42, 0.07);
+  --th-btn-danger-bg: rgba(220, 38, 38, 0.09);
+  --th-btn-danger-hover: rgba(220, 38, 38, 0.14);
 
   color-scheme: light;
 }
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   background-color: var(--th-bg-page);
   color: var(--th-text-primary);
 }
@@ -119,6 +135,10 @@ body {
     radial-gradient(circle at 88% 8%, rgba(255, 63, 50, 0.06), transparent 24rem),
     linear-gradient(180deg, #08090d 0%, #101119 46%, #090a0f 100%);
   color: var(--th-text-primary);
+  font-size: 1rem;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 html.light body {
@@ -292,7 +312,7 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
 
   .th-table-head {
     background: var(--th-bg-table-head) !important;
-    color: var(--th-text-muted);
+    color: var(--th-text-secondary);
   }
 
   .th-table-row {
@@ -301,28 +321,61 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   }
 
   .th-btn-primary {
-    color: #ffffff !important;
+    border-color: var(--th-btn-primary-border) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+      var(--th-btn-primary-bg) !important;
+    color: #f8fafc !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+  }
+
+  .th-btn-primary:hover {
+    border-color: rgba(255, 168, 142, 0.36) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+      var(--th-btn-primary-hover) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 22px rgba(0, 0, 0, 0.18) !important;
   }
 
   .th-btn-secondary {
     border-color: var(--th-border-input) !important;
-    background: var(--th-bg-input) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+      var(--th-btn-secondary-bg) !important;
     color: var(--th-text-secondary) !important;
-    box-shadow: none !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  }
+
+  .th-btn-secondary:hover {
+    border-color: var(--th-border-card) !important;
+    background: var(--th-btn-secondary-hover) !important;
+    color: var(--th-text-primary) !important;
   }
 
   .th-btn-ghost {
-    border-color: var(--th-border-card) !important;
-    background: color-mix(in srgb, var(--th-bg-card) 72%, transparent) !important;
+    border-color: transparent !important;
+    background: transparent !important;
     color: var(--th-text-secondary) !important;
     box-shadow: none !important;
   }
 
+  .th-btn-ghost:hover {
+    border-color: var(--th-border-subtle) !important;
+    background: var(--th-btn-secondary-bg) !important;
+    color: var(--th-text-primary) !important;
+  }
+
   .th-btn-danger {
-    border-color: rgba(239, 68, 68, 0.28) !important;
-    background: rgba(239, 68, 68, 0.1) !important;
-    color: #ef4444 !important;
-    box-shadow: none !important;
+    border-color: rgba(248, 113, 113, 0.22) !important;
+    background: var(--th-btn-danger-bg) !important;
+    color: #fca5a5 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+  }
+
+  .th-btn-danger:hover {
+    border-color: rgba(248, 113, 113, 0.32) !important;
+    background: var(--th-btn-danger-hover) !important;
+    color: #fecaca !important;
   }
 
   .th-btn-primary:disabled,
@@ -361,7 +414,8 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   /* ── Page shell ── */
   .premium-page {
     position: relative;
-    font-size: 0.95rem;
+    font-size: 1rem;
+    line-height: 1.55;
   }
 
   .premium-page::before {
@@ -384,7 +438,7 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
     background:
       linear-gradient(145deg, rgba(18, 25, 42, 0.96), rgba(7, 12, 24, 0.98)),
       linear-gradient(135deg, rgba(255, 85, 63, 0.07), rgba(255, 63, 50, 0.03));
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.045);
   }
 
   html.light .premium-card {
@@ -395,19 +449,19 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   .premium-card.p-5,
   .premium-card.p-6,
   .premium-card.overflow-hidden {
-    padding: 0.85rem;
+    padding: 1.2rem;
   }
 
   .premium-metric.p-5,
   .premium-card-soft.p-4,
   .premium-card-soft.p-5 {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .premium-card-soft {
     border: 1px solid var(--th-border-subtle);
     border-radius: 8px;
-    background: rgba(8, 14, 28, 0.78);
+    background: rgba(10, 16, 31, 0.82);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
@@ -423,7 +477,7 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
     background:
       radial-gradient(circle at top right, rgba(255, 85, 63, 0.12), transparent 10rem),
       rgba(8, 14, 28, 0.86);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
     transition: border-color 200ms ease, box-shadow 200ms ease;
   }
 
@@ -559,11 +613,18 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   }
 
   .premium-kicker {
-    font-size: 0.62rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #ff7a63;
+    color: var(--th-accent-muted);
+  }
+
+  .premium-page label,
+  .premium-page .text-xs.font-semibold,
+  .premium-page .text-\[10px\].font-semibold,
+  .premium-page .text-\[9px\].font-semibold {
+    letter-spacing: 0.02em;
   }
 
   /* Override premium-page text utility remaps for light mode */
@@ -601,15 +662,63 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   }
 
   /* ── Table ── */
+  .premium-page table {
+    font-size: 0.9rem !important;
+    line-height: 1.45;
+  }
+
+  .premium-page table th {
+    padding: 0.7rem 0.85rem !important;
+    font-size: 0.72rem !important;
+    font-weight: 750 !important;
+    letter-spacing: 0.055em !important;
+    text-transform: uppercase;
+    color: var(--th-text-secondary) !important;
+    background: color-mix(in srgb, var(--th-bg-table-head) 88%, rgba(255, 255, 255, 0.035)) !important;
+  }
+
+  .premium-page table td {
+    padding: 0.8rem 0.85rem !important;
+    font-size: 0.9rem !important;
+    color: var(--th-text-secondary);
+    vertical-align: middle;
+  }
+
+  .premium-page table tbody tr {
+    min-height: 52px;
+  }
+
+  .premium-page table tbody tr:hover {
+    background: var(--th-table-hover);
+  }
+
+  .premium-page table td .text-\[9px\],
+  .premium-page table td .text-\[10px\],
+  .premium-page table td .text-\[11px\],
+  .premium-page table td .text-xs {
+    font-size: 0.78rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .premium-page table td .text-\[8px\] {
+    font-size: 0.7rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .premium-page table button,
+  .premium-page table a {
+    min-height: 1.9rem;
+  }
+
   .devices-premium [class*="rounded-3xl"],
   .devices-premium [class*="rounded-2xl"] {
     border-radius: 8px;
   }
 
   .devices-premium table th {
-    padding-top: 0.55rem;
-    padding-bottom: 0.55rem;
-    font-size: 0.7rem;
+    padding-top: 0.72rem;
+    padding-bottom: 0.72rem;
+    font-size: 0.72rem;
     letter-spacing: 0.045em;
     text-transform: uppercase;
     color: #cbd5e1;
@@ -622,9 +731,9 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
   }
 
   .devices-premium table td {
-    padding-top: 0.58rem;
-    padding-bottom: 0.58rem;
-    font-size: 0.86rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+    font-size: 0.9rem;
     vertical-align: middle;
     color: #cbd5e1;
   }
@@ -705,28 +814,37 @@ html.light [data-action-menu] .text-slate-300 { color: #475569 !important; }
 
   /* ── Headings ── */
   #root main h1 {
-    font-size: clamp(1.45rem, 1.9vw, 2.05rem);
+    font-size: clamp(1.7rem, 2vw, 2.35rem);
     line-height: 1.15;
   }
 
   #root main h2 {
-    font-size: clamp(1rem, 1.35vw, 1.35rem);
+    font-size: clamp(1.12rem, 1.35vw, 1.45rem);
     line-height: 1.2;
   }
 
-  #root main .text-5xl { font-size: 2.2rem; }
-  #root main .text-4xl { font-size: 1.85rem; }
-  #root main .text-3xl { font-size: 1.42rem; }
+  #root main .text-5xl { font-size: 2.65rem; }
+  #root main .text-4xl { font-size: 2.2rem; }
+  #root main .text-3xl { font-size: 1.8rem; }
 
   #root main .premium-metric .text-5xl,
   #root main .premium-metric .text-4xl,
   #root main .premium-metric .text-3xl {
-    font-weight: 700;
+    font-size: clamp(2rem, 2.2vw, 2.55rem);
+    font-weight: 750;
     letter-spacing: 0;
+    line-height: 1;
   }
 
-  #root main .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.85rem; }
-  #root main .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+  #root main .premium-metric p.text-\[13px\],
+  #root main .premium-metric .text-xs,
+  #root main .premium-metric .text-slate-400 {
+    font-size: 0.9rem !important;
+    line-height: 1.45;
+  }
+
+  #root main .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.15rem; }
+  #root main .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
 
   /* ── Grid cards (Dashboard) ── */
   #root .grid > div > .flex.flex-col.justify-between {

@@ -78,6 +78,7 @@ def _make_rustdesk_req(**overrides) -> EnrollmentBootstrapRequest:
         rustdesk_rendezvous_server="139.162.158.208",
         rustdesk_relay_server="139.162.158.208",
         rustdesk_key="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=",
+        rustdesk_default_password="Durres.12",
     )
     defaults.update(overrides)
     return _make_req(**defaults)
@@ -243,6 +244,24 @@ class TestRustDeskForceMigrationScript:
         assert "RustDesk restarted" in self.script
         assert "RustDesk forced migration complete" in self.script
 
+    def test_sets_unattended_password_with_cli_without_logging_secret(self):
+        assert "$RustDeskPassword = 'Durres.12'" in self.script
+        assert "'C:\\Program Files\\RustDesk\\rustdesk.exe'" in self.script
+        assert "'C:\\Program Files (x86)\\RustDesk\\rustdesk.exe'" in self.script
+        assert "Get-CimInstance Win32_Service" in self.script
+        assert "$Service.PathName" in self.script
+        assert "Start-Process -FilePath $RustDeskExe -ArgumentList @('--password', $RustDeskPassword)" in self.script
+        assert "RustDesk unattended access password configured." in self.script
+        assert "WARNING: RustDesk password CLI failed; continuing bootstrap." in self.script
+        assert 'Write-Log "Durres.12' not in self.script
+        assert "Write-Log 'Durres.12" not in self.script
+
+    def test_password_set_happens_before_restart(self):
+        password_index = self.script.index("Setting RustDesk unattended access password via CLI")
+        restart_index = self.script.index("Restarting RustDesk service")
+
+        assert password_index < restart_index
+
     def test_idempotent_cleanup_then_rewrite_order(self):
         remove_index = self.script.index("RustDesk config removed")
         rewrite_index = self.script.index("RustDesk config rewritten")
@@ -284,6 +303,7 @@ class TestRustDeskForceMigrationScript:
         assert captured["payload"].rustdesk_rendezvous_server == "139.162.158.208"
         assert captured["payload"].rustdesk_relay_server == "139.162.158.208"
         assert captured["payload"].rustdesk_key == "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
+        assert captured["payload"].rustdesk_default_password == "Durres.12"
 
 
 class TestPublicWindowsBootstrapEndpoint:
