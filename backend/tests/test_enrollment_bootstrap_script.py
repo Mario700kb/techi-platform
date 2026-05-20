@@ -15,7 +15,10 @@ import re
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from app.api.v1.endpoints import bootstrap as bootstrap_endpoint
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
     EnrollmentBootstrapPlatform,
@@ -182,6 +185,77 @@ class TestTokenInstallerScript:
 
     def test_idempotent_service_install(self):
         assert "already installed" in self.script, "token-installer: missing idempotency check"
+
+
+class TestPublicWindowsBootstrapEndpoint:
+    def setup_method(self):
+        app = FastAPI()
+        app.include_router(bootstrap_endpoint.router, prefix="/api/v1/bootstrap")
+
+        def _fake_db():
+            yield object()
+
+        app.dependency_overrides[bootstrap_endpoint.get_db] = _fake_db
+        self.client = TestClient(app)
+
+    def test_missing_token_returns_validation_error(self):
+        response = self.client.get("/api/v1/bootstrap/windows.ps1")
+
+        assert response.status_code == 422
+
+    def test_invalid_token_returns_400(self, monkeypatch):
+        class FakeTokenService:
+            def __init__(self, db):
+                pass
+
+            def get_active_token_by_plaintext(self, token: str):
+                raise ValueError("invalid")
+
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentTokenService", FakeTokenService)
+
+        response = self.client.get("/api/v1/bootstrap/windows.ps1?token=bad-token")
+
+        assert response.status_code == 400
+        assert "invalid" in response.json()["detail"]
+
+    def test_active_token_returns_plaintext_powershell_without_admin_auth(self, monkeypatch):
+        captured = {}
+
+        class FakeTokenService:
+            def __init__(self, db):
+                pass
+
+            def get_active_token_by_plaintext(self, token: str):
+                return SimpleNamespace(id=7)
+
+        class FakeBootstrapService:
+            def __init__(self, db):
+                pass
+
+            def generate(self, payload):
+                captured["payload"] = payload
+                return SimpleNamespace(
+                    bootstrap_script=(
+                        '$ErrorActionPreference = "Stop"\n'
+                        "# Techi Agent -- one-click installer (Token Enrollment)\n"
+                        "$EnrollToken = 'active-token-123456'\n"
+                    )
+                )
+
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentTokenService", FakeTokenService)
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentBootstrapService", FakeBootstrapService)
+
+        response = self.client.get("/api/v1/bootstrap/windows.ps1?token=active-token-123456")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "techi-bootstrap.ps1" in response.headers["content-disposition"]
+        assert "$ErrorActionPreference" in response.text
+        assert "Token Enrollment" in response.text
+        assert captured["payload"].enrollment_token_id == 7
+        assert captured["payload"].enrollment_token == "active-token-123456"
+        assert captured["payload"].mode == "token"
+        assert captured["payload"].platform == "windows"
 
 
 class TestTokenInstallerPlaintextResolution:

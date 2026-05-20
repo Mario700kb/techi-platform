@@ -132,6 +132,17 @@ class EnrollmentTokenService:
         if token.token_hash != token_hash:
             raise ValueError("Enrollment token value does not match selected token")
 
+    def get_active_token_by_plaintext(self, plaintext_token: str) -> EnrollmentToken:
+        token_hash = self.hash_token(plaintext_token)
+        token = self.repo.get_by_hash(token_hash)
+        if not token:
+            raise ValueError("invalid")
+
+        self._refresh_status(token)
+        if token.status != EnrollmentTokenStatus.ACTIVE:
+            raise ValueError(token.status.value)
+        return token
+
     def issue_plaintext_for_token(self, token: EnrollmentToken) -> str:
         self._refresh_status(token)
         if token.status != EnrollmentTokenStatus.ACTIVE:
