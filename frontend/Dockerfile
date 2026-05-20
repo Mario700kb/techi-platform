@@ -10,7 +10,9 @@ COPY ./index.html ./
 COPY ./tailwind.config.js ./
 COPY ./postcss.config.js ./
 COPY ./tsconfig.json ./
+COPY ./tsconfig.node.json ./
 COPY ./vite.config.ts ./
+COPY ./public ./public
 
 # Bake API/WS URLs into the static build at image build time.
 # Pass via docker-compose build.args or --build-arg.
