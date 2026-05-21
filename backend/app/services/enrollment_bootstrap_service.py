@@ -578,6 +578,8 @@ class EnrollmentBootstrapService:
 
         A(
             '$ErrorActionPreference = "Stop"',
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
+            "",
             "# Techi Agent -- one-click installer (Token Enrollment)",
             "# Run as Administrator:",
             "#   powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-installer.ps1",
