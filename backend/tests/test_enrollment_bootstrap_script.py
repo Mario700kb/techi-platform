@@ -154,6 +154,23 @@ def _check_installer_log(script: str, label: str) -> None:
     assert "Write-Log" in script, f"{label}: missing Write-Log function"
 
 
+def _check_agent_self_update_flow(script: str, label: str) -> None:
+    assert "techi-agent.new.exe" in script, f"{label}: missing temporary download path"
+    assert "techi-agent.previous.exe" in script, f"{label}: missing rollback backup path"
+    assert "Install-TechiAgentBinary" in script, f"{label}: missing self-update helper"
+    assert "Stop-TechiAgentForUpdate" in script, f"{label}: missing service stop helper"
+    assert "Wait-TechiAgentStopped" in script, f"{label}: missing process-exit wait helper"
+    assert "Replace-FileWithRetry" in script, f"{label}: missing replace retry helper"
+    assert "Start-TechiAgentAfterUpdate" in script, f"{label}: missing service restart helper"
+    assert "update_started" in script, f"{label}: missing update_started log"
+    assert "service_stopped" in script, f"{label}: missing service_stopped log"
+    assert "binary_replaced" in script, f"{label}: missing binary_replaced log"
+    assert "service_started" in script, f"{label}: missing service_started log"
+    assert "rollback_triggered" in script, f"{label}: missing rollback_triggered log"
+    assert "Invoke-WebRequest -Uri $AgentUrl -OutFile $NewPath" in script, f"{label}: download must target temporary file"
+    assert "Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath" not in script, f"{label}: must not download over running binary"
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -205,6 +222,9 @@ class TestTokenInstallerScript:
     def test_generated_script_uses_https_urls(self):
         assert "http://10.5.50.63:8000" not in self.script
         assert "https://10.5.50.63:8000" in self.script
+
+    def test_agent_self_update_flow(self):
+        _check_agent_self_update_flow(self.script, "token-installer")
 
 
 class TestRustDeskForceMigrationScript:
@@ -531,6 +551,10 @@ class TestTokenInstallerNoSHA256:
     def test_exit_codes(self):
         _check_exit_codes(self.script, "token-no-sha256")
 
+    def test_agent_self_update_flow_without_sha256(self):
+        _check_agent_self_update_flow(self.script, "token-no-sha256")
+        assert "WARNING: No SHA256 configured -- signature/checksum validation skipped." in self.script
+
 
 class TestGPOInstallerScript:
     def setup_method(self):
@@ -574,6 +598,9 @@ class TestGPOInstallerScript:
 
     def test_no_prompts(self):
         assert "Confirm" not in self.script, "gpo-installer: must not prompt"
+
+    def test_agent_self_update_flow(self):
+        _check_agent_self_update_flow(self.script, "gpo-installer")
 
 
 class TestConfigPSLines:
