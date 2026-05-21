@@ -66,6 +66,7 @@ REMOTE_ACTION_COLUMNS = {
 ENROLLMENT_TOKEN_COLUMNS = {
     "is_default": "BOOLEAN NOT NULL DEFAULT 0",
     "token_prefix": "VARCHAR(12)",
+    "token_ciphertext": "TEXT",
     "is_internal": "BOOLEAN NOT NULL DEFAULT 0",
     "internal_kind": "VARCHAR(32)",
 }

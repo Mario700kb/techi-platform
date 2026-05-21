@@ -1,18 +1,24 @@
 import hashlib
+import base64
+import hmac
 import logging
 import secrets
 from datetime import timedelta
 from app.core.time import ensure_utc, utcnow
 from typing import List, Optional, Tuple
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.enrollment_token import EnrollmentToken, EnrollmentTokenStatus
 from app.repositories.enrollment_token_repository import EnrollmentTokenRepository
 from app.schemas.enrollment_token import (
     EnrollmentTokenCreate,
     EnrollmentTokenCreateResponse,
+    EnrollmentTokenDeployment,
     EnrollmentTokenOut,
+    EnrollmentTokenUpdate,
     EnrollmentTokenVerifyResponse,
 )
 
@@ -31,6 +37,48 @@ class EnrollmentTokenService:
     def hash_token(token: str) -> str:
         return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _cipher_key() -> bytes:
+        return hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+
+    @classmethod
+    def _keystream(cls, nonce: bytes, length: int) -> bytes:
+        key = cls._cipher_key()
+        output = bytearray()
+        counter = 0
+        while len(output) < length:
+            output.extend(hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest())
+            counter += 1
+        return bytes(output[:length])
+
+    @classmethod
+    def encrypt_token(cls, plaintext_token: str) -> str:
+        raw = plaintext_token.encode("utf-8")
+        nonce = secrets.token_bytes(16)
+        stream = cls._keystream(nonce, len(raw))
+        ciphertext = bytes(a ^ b for a, b in zip(raw, stream))
+        mac = hmac.new(cls._cipher_key(), nonce + ciphertext, hashlib.sha256).digest()
+        return "v1:" + base64.urlsafe_b64encode(nonce + mac + ciphertext).decode("ascii")
+
+    @classmethod
+    def decrypt_token(cls, token_ciphertext: Optional[str]) -> Optional[str]:
+        if not token_ciphertext:
+            return None
+        if not token_ciphertext.startswith("v1:"):
+            return None
+        try:
+            payload = base64.urlsafe_b64decode(token_ciphertext[3:].encode("ascii"))
+            nonce, mac, ciphertext = payload[:16], payload[16:48], payload[48:]
+            expected = hmac.new(cls._cipher_key(), nonce + ciphertext, hashlib.sha256).digest()
+            if not hmac.compare_digest(mac, expected):
+                return None
+            stream = cls._keystream(nonce, len(ciphertext))
+            raw = bytes(a ^ b for a, b in zip(ciphertext, stream))
+            return raw.decode("utf-8")
+        except Exception:
+            logger.exception("Failed to decrypt enrollment token ciphertext")
+            return None
+
     def create(
         self,
         payload: EnrollmentTokenCreate,
@@ -42,6 +90,7 @@ class EnrollmentTokenService:
             name=payload.name.strip(),
             token_hash=token_hash,
             token_prefix=plaintext_token[:8],
+            token_ciphertext=self.encrypt_token(plaintext_token),
             status=EnrollmentTokenStatus.ACTIVE,
             expires_at=payload.expires_at,
             max_uses=payload.max_uses,
@@ -124,6 +173,98 @@ class EnrollmentTokenService:
             self._refresh_status(token)
         return tokens
 
+    def get(self, token_id: int) -> EnrollmentToken:
+        token = self.repo.get(token_id)
+        if not token or token.is_internal:
+            raise ValueError("Enrollment token not found")
+        return self._refresh_status(token)
+
+    def update(self, token_id: int, payload: EnrollmentTokenUpdate) -> EnrollmentToken:
+        token = self.get(token_id)
+        data = payload.model_dump(exclude_unset=True)
+        if "name" in data and data["name"] is not None:
+            token.name = data["name"].strip()
+        if "max_uses" in data and data["max_uses"] is not None:
+            token.max_uses = data["max_uses"]
+            if token.status == EnrollmentTokenStatus.USED and token.use_count < token.max_uses:
+                token.status = EnrollmentTokenStatus.ACTIVE
+                token.used_at = None
+        if "expires_at" in data:
+            token.expires_at = data["expires_at"]
+            if token.status == EnrollmentTokenStatus.EXPIRED:
+                expires_at = ensure_utc(token.expires_at)
+                if not expires_at or expires_at > ensure_utc(utcnow()):
+                    token.status = EnrollmentTokenStatus.ACTIVE
+        if "client_id" in data:
+            token.client_id = data["client_id"]
+        if "group_id" in data:
+            token.group_id = data["group_id"]
+        if "status" in data and data["status"] is not None:
+            token.status = EnrollmentTokenStatus(data["status"])
+        return self.repo.save(token)
+
+    def regenerate(self, token_id: int) -> EnrollmentTokenCreateResponse:
+        token = self.get(token_id)
+        plaintext_token, token_hash = self._generate_unique_token()
+        token.token_hash = token_hash
+        token.token_prefix = plaintext_token[:8]
+        token.token_ciphertext = self.encrypt_token(plaintext_token)
+        token.status = EnrollmentTokenStatus.ACTIVE
+        token.used_at = None
+        token = self.repo.save(token)
+        data = EnrollmentTokenOut.model_validate(token).model_dump()
+        return EnrollmentTokenCreateResponse(**data, token=plaintext_token)
+
+    @staticmethod
+    def safe_manual_command(bootstrap_url: str) -> str:
+        return "\n".join(
+            [
+                f'$BootstrapUrl = "{bootstrap_url}"',
+                '$BootstrapFile = Join-Path $env:TEMP "techi-bootstrap.ps1"',
+                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile",
+                "Unblock-File -Path $BootstrapFile -ErrorAction SilentlyContinue",
+                "powershell.exe -ExecutionPolicy Bypass -NoProfile -File $BootstrapFile",
+            ]
+        )
+
+    @staticmethod
+    def safe_gpo_command(bootstrap_url: str) -> str:
+        return "\n".join(
+            [
+                f'$BootstrapUrl = "{bootstrap_url}"',
+                '$BootstrapFile = "C:\\Windows\\Temp\\techi-bootstrap.ps1"',
+                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile",
+                "Unblock-File -Path $BootstrapFile -ErrorAction SilentlyContinue",
+                "powershell.exe -ExecutionPolicy Bypass -NoProfile -File $BootstrapFile",
+            ]
+        )
+
+    @staticmethod
+    def build_bootstrap_url(backend_url: str, plaintext_token: str) -> str:
+        return f"{backend_url.strip().rstrip('/')}/api/v1/bootstrap/windows.ps1?token={quote(plaintext_token)}"
+
+    def deployment(self, token_id: int, *, backend_url: str) -> EnrollmentTokenDeployment:
+        token = self.get(token_id)
+        plaintext_token = self.decrypt_token(token.token_ciphertext)
+        token_available = bool(plaintext_token)
+        token_value = plaintext_token or "<regenerate-token-value>"
+        bootstrap_url = self.build_bootstrap_url(backend_url, token_value)
+        return EnrollmentTokenDeployment(
+            token_id=token.id,
+            token_name=token.name,
+            token_prefix=token.token_prefix,
+            token_available=token_available,
+            bootstrap_url=bootstrap_url,
+            manual_command=self.safe_manual_command(bootstrap_url),
+            gpo_command=self.safe_gpo_command(bootstrap_url),
+            token_metadata=EnrollmentTokenOut.model_validate(token),
+            rustdesk={
+                "server_host": settings.RUSTDESK_SERVER_HOST,
+                "relay_host": settings.RUSTDESK_RELAY_HOST,
+                "public_key": settings.RUSTDESK_PUBLIC_KEY,
+            },
+        )
+
     def revoke(self, token_id: int) -> EnrollmentToken:
         token = self.repo.get(token_id)
         if not token:
@@ -184,6 +325,7 @@ class EnrollmentTokenService:
         plaintext_token, token_hash = self._generate_unique_token()
         token.token_hash = token_hash
         token.token_prefix = plaintext_token[:8]
+        token.token_ciphertext = self.encrypt_token(plaintext_token)
         self.repo.save(token)
         return plaintext_token
 

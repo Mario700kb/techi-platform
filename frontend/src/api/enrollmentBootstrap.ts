@@ -17,6 +17,19 @@ export interface EnrollmentToken {
   group_id?: number | null;
   is_default: boolean;
   token_prefix?: string | null;
+  has_recoverable_token: boolean;
+}
+
+export interface EnrollmentTokenDeployment {
+  token_id: number;
+  token_name: string;
+  token_prefix?: string | null;
+  token_available: boolean;
+  bootstrap_url: string;
+  manual_command: string;
+  gpo_command: string;
+  token_metadata: EnrollmentToken;
+  rustdesk: Record<string, string>;
 }
 
 export interface EnrollmentBootstrapRequest {
@@ -62,6 +75,15 @@ export interface CreateTokenRequest {
   group_id?: number | null;
 }
 
+export interface UpdateTokenRequest {
+  name?: string;
+  max_uses?: number;
+  expires_at?: string | null;
+  client_id?: number | null;
+  group_id?: number | null;
+  status?: "active" | "revoked";
+}
+
 export interface CreateTokenResponse extends EnrollmentToken {
   token: string; // plaintext — only available at creation
 }
@@ -74,6 +96,10 @@ export interface RustDeskConfig {
 
 export async function getEnrollmentTokens(): Promise<EnrollmentToken[]> {
   return fetchJson<EnrollmentToken[]>("/api/v1/enrollment-tokens");
+}
+
+export async function getEnrollmentTokenDeployment(tokenId: number): Promise<EnrollmentTokenDeployment> {
+  return fetchJson<EnrollmentTokenDeployment>(`/api/v1/enrollment-tokens/${tokenId}/deployment`);
 }
 
 export async function createEnrollmentToken(
@@ -89,6 +115,20 @@ export async function createEnrollmentToken(
 export async function revokeEnrollmentToken(tokenId: number): Promise<EnrollmentToken> {
   return fetchJson<EnrollmentToken>(`/api/v1/enrollment-tokens/${tokenId}/revoke`, {
     method: "PUT",
+  });
+}
+
+export async function updateEnrollmentToken(tokenId: number, payload: UpdateTokenRequest): Promise<EnrollmentToken> {
+  return fetchJson<EnrollmentToken>(`/api/v1/enrollment-tokens/${tokenId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function regenerateEnrollmentToken(tokenId: number): Promise<CreateTokenResponse> {
+  return fetchJson<CreateTokenResponse>(`/api/v1/enrollment-tokens/${tokenId}/regenerate`, {
+    method: "POST",
   });
 }
 
@@ -130,5 +170,16 @@ export function buildWindowsBootstrapUrl(token: string): string {
 }
 
 export function buildWindowsBootstrapCommand(token: string): string {
-  return `powershell -ExecutionPolicy Bypass -Command "irm ${buildWindowsBootstrapUrl(token)} | iex"`;
+  const url = buildWindowsBootstrapUrl(token);
+  return [
+    `$BootstrapUrl = "${url}"`,
+    `$BootstrapFile = Join-Path $env:TEMP "techi-bootstrap.ps1"`,
+    "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile",
+    "Unblock-File -Path $BootstrapFile -ErrorAction SilentlyContinue",
+    "powershell.exe -ExecutionPolicy Bypass -NoProfile -File $BootstrapFile",
+  ].join("\n");
+}
+
+export function enrollmentTokenBootstrapDownloadUrl(tokenId: number): string {
+  return `${API_BASE_URL}/api/v1/enrollment-tokens/${tokenId}/bootstrap.ps1`;
 }

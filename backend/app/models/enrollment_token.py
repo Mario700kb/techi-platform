@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
@@ -62,5 +62,10 @@ class EnrollmentToken(Base):
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True, index=True)
     is_default = Column(Boolean, default=False, nullable=False)
     token_prefix = Column(String(12), nullable=True)
+    token_ciphertext = Column(Text, nullable=True)
     is_internal = Column(Boolean, default=False, nullable=False, index=True)
     internal_kind = Column(String(32), nullable=True, index=True)
+
+    @property
+    def has_recoverable_token(self) -> bool:
+        return bool(self.token_ciphertext)
