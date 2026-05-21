@@ -219,9 +219,10 @@ class EnrollmentTokenService:
     def safe_manual_command(bootstrap_url: str) -> str:
         return "\n".join(
             [
+                "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
                 f'$BootstrapUrl = "{bootstrap_url}"',
                 '$BootstrapFile = Join-Path $env:TEMP "techi-bootstrap.ps1"',
-                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile",
+                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile -UseBasicParsing",
                 "Unblock-File -Path $BootstrapFile -ErrorAction SilentlyContinue",
                 "powershell.exe -ExecutionPolicy Bypass -NoProfile -File $BootstrapFile",
             ]
@@ -231,9 +232,10 @@ class EnrollmentTokenService:
     def safe_gpo_command(bootstrap_url: str) -> str:
         return "\n".join(
             [
+                "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
                 f'$BootstrapUrl = "{bootstrap_url}"',
                 '$BootstrapFile = "C:\\Windows\\Temp\\techi-bootstrap.ps1"',
-                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile",
+                "Invoke-WebRequest -Uri $BootstrapUrl -OutFile $BootstrapFile -UseBasicParsing",
                 "Unblock-File -Path $BootstrapFile -ErrorAction SilentlyContinue",
                 "powershell.exe -ExecutionPolicy Bypass -NoProfile -File $BootstrapFile",
             ]
