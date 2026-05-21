@@ -229,7 +229,24 @@ class TestRustDeskForceMigrationScript:
         assert "'RustDesk.toml', 'RustDesk2.toml'" in self.script
         assert "-Filter '*.toml'" in self.script
         assert "Join-Path $Root 'config'" in self.script
-        assert "Remove-Item -Path $_.FullName -Recurse -Force" in self.script
+        assert "Remove-Item -LiteralPath $_.FullName -Recurse -Force" in self.script
+
+    def test_profile_cleanup_is_access_denied_safe(self):
+        assert "function Test-PathSafe" in self.script
+        assert "Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue" in self.script
+        assert "function Get-ChildItemSafe" in self.script
+        assert "Get-ChildItem -LiteralPath $Path" in self.script
+        assert "WARNING: RustDesk path inaccessible, skipping" in self.script
+        assert "WARNING: RustDesk profile scan inaccessible, skipping" in self.script
+        assert "RustDesk config root not present or inaccessible" in self.script
+
+    def test_profile_rewrite_is_access_denied_safe(self):
+        assert "function New-DirectorySafe" in self.script
+        assert "function Write-RustDeskConfigSafe" in self.script
+        assert "WARNING: RustDesk directory inaccessible, skipping" in self.script
+        assert "WARNING: RustDesk config write inaccessible, skipping" in self.script
+        assert "WARNING: RustDesk TECHI config verification failed; continuing bootstrap" in self.script
+        assert "ERROR: RustDesk TECHI config verification failed" not in self.script
 
     def test_rewrites_techi_config_and_verifies_host(self):
         assert "rendezvous_server = '$RustDeskRendezvous'" in self.script
@@ -264,7 +281,7 @@ class TestRustDeskForceMigrationScript:
 
     def test_idempotent_cleanup_then_rewrite_order(self):
         remove_index = self.script.index("RustDesk config removed")
-        rewrite_index = self.script.index("RustDesk config rewritten")
+        rewrite_index = self.script.index("Write-RustDeskConfigSafe -Path $Path")
 
         assert remove_index < rewrite_index
 
