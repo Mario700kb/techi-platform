@@ -10,7 +10,7 @@ from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
 from app.schemas.device import DeviceCreate, DeviceUpdate
 from app.services.alert_engine import AlertEngine
 from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
-from app.services.device_assignment_service import DeviceAssignmentService
+from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_fingerprint_service import DeviceFingerprintService, FingerprintMatch
 from app.services.device_health_score_service import DeviceHealthScoreService
 from app.services.device_inventory_service import DeviceInventoryService
@@ -41,21 +41,44 @@ class DeviceHeartbeatService:
         self.maintenance_service = DeviceMaintenanceService(db)
 
     @staticmethod
-    def classify_device_type(os_name: Optional[str], domain: Optional[str]) -> DeviceType:
+    def classify_device_type(
+        os_name: Optional[str],
+        domain: Optional[str],
+        *,
+        os_version: Optional[str] = None,
+        os_caption: Optional[str] = None,
+        os_build: Optional[str] = None,
+        windows_product_type: Optional[int] = None,
+    ) -> DeviceType:
         if not domain or domain.strip().upper() == "WORKGROUP":
             return DeviceType.UNASSIGNED
 
-        if os_name:
-            normalized = os_name.strip().lower()
-            if "windows server" in normalized:
-                return DeviceType.SERVER
-            if "windows 10" in normalized or "windows 11" in normalized:
-                return DeviceType.CLIENT
+        if windows_product_type in {2, 3}:
+            return DeviceType.SERVER
+        if windows_product_type == 1:
+            return DeviceType.CLIENT
+
+        normalized = " ".join(
+            value.strip().lower()
+            for value in (os_name, os_version, os_caption, os_build)
+            if value and value.strip()
+        )
+        if "windows server" in normalized:
+            return DeviceType.SERVER
+        if "windows 10" in normalized or "windows 11" in normalized:
+            return DeviceType.CLIENT
 
         return DeviceType.UNASSIGNED
 
     def process_heartbeat(self, payload: AgentHeartbeatPayload):
-        device_type = self.classify_device_type(payload.os_name, payload.domain)
+        device_type = self.classify_device_type(
+            payload.os_name,
+            payload.domain,
+            os_version=payload.os_version,
+            os_caption=payload.os_caption,
+            os_build=payload.os_build,
+            windows_product_type=payload.windows_product_type,
+        )
         now = utcnow()
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
@@ -105,6 +128,32 @@ class DeviceHeartbeatService:
             now=now,
         )
 
+        before_assignment = (device.client_id, device.group_id, device.assignment_source)
+        device = self.assignment_service.reconcile_trusted_domain_assignment(
+            device,
+            signal=AssignmentSignal(
+                hostname=payload.hostname,
+                domain=payload.domain,
+                public_ip=payload.public_ip,
+                os_name=payload.os_name,
+                os_version=payload.os_version,
+                os_caption=payload.os_caption,
+                os_build=payload.os_build,
+                windows_product_type=payload.windows_product_type,
+                platform=payload.platform,
+                device_type=device.device_type,
+            ),
+        )
+        if before_assignment != (device.client_id, device.group_id, device.assignment_source):
+            DeviceActivityEventService(self.db).record(
+                device_id=device.id,
+                event_type="device_regrouped",
+                summary="Device regrouped",
+                detail=f"Trusted-domain classification changed: {self._classification_reason(payload)}",
+                actor="agent",
+                fail_silently=True,
+            )
+
         device = self.assignment_service.apply_resolution(device)
 
         heartbeat_data = DeviceHeartbeatCreate(
@@ -117,6 +166,9 @@ class DeviceHeartbeatService:
             local_ip=device.local_ip,
             os_name=device.os_name,
             os_version=device.os_version,
+            os_caption=device.os_caption,
+            os_build=device.os_build,
+            windows_product_type=device.windows_product_type,
             platform=device.platform,
             device_type=device.device_type,
             status=device.status,
@@ -181,6 +233,9 @@ class DeviceHeartbeatService:
             "current_user": payload.current_user,
             "domain": payload.domain,
             "os_name": payload.os_name,
+            "os_caption": payload.os_caption,
+            "os_build": payload.os_build,
+            "windows_product_type": payload.windows_product_type,
             "platform": payload.platform,
             "cpu": payload.cpu,
             "ram": payload.ram,
@@ -225,6 +280,15 @@ class DeviceHeartbeatService:
             create_data["duplicate_score"] = None
 
         return self.device_repo.create(DeviceCreate(**create_data))
+
+    @staticmethod
+    def _classification_reason(payload: AgentHeartbeatPayload) -> str:
+        if payload.windows_product_type in {1, 2, 3}:
+            return f"windows_product_type={payload.windows_product_type}"
+        for value in (payload.os_caption, payload.os_version, payload.os_name):
+            if value and "windows server" in value.lower():
+                return "os_caption_contains_server"
+        return "default"
 
     def _apply_safety_gate(
         self,

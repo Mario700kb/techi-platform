@@ -13,18 +13,21 @@ import (
 const agentVersion = "1.0.0"
 
 type EnrollmentRequest struct {
-	AgentID         string `json:"agent_id,omitempty"`
-	EnrollmentToken string `json:"enrollment_token,omitempty"`
-	Domain          string `json:"domain,omitempty"`
-	Hostname        string `json:"hostname"`
-	CurrentUser     string `json:"current_user"`
-	Platform        string `json:"platform"`
-	OSName          string `json:"os_name"`
-	OSVersion       string `json:"os_version"`
-	LocalIP         string `json:"local_ip"`
-	PublicIP        string `json:"public_ip,omitempty"`
-	RustDeskID      string `json:"rustdesk_id,omitempty"`
-	AgentVersion    string `json:"agent_version,omitempty"`
+	AgentID            string `json:"agent_id,omitempty"`
+	EnrollmentToken    string `json:"enrollment_token,omitempty"`
+	Domain             string `json:"domain,omitempty"`
+	Hostname           string `json:"hostname"`
+	CurrentUser        string `json:"current_user"`
+	Platform           string `json:"platform"`
+	OSName             string `json:"os_name"`
+	OSVersion          string `json:"os_version"`
+	OSCaption          string `json:"os_caption,omitempty"`
+	OSBuild            string `json:"os_build,omitempty"`
+	WindowsProductType int    `json:"windows_product_type,omitempty"`
+	LocalIP            string `json:"local_ip"`
+	PublicIP           string `json:"public_ip,omitempty"`
+	RustDeskID         string `json:"rustdesk_id,omitempty"`
+	AgentVersion       string `json:"agent_version,omitempty"`
 }
 
 type EnrollmentResponse struct {
@@ -78,18 +81,21 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 
 func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*EnrollmentResponse, error) {
 	requestPayload := EnrollmentRequest{
-		AgentID:         strings.TrimSpace(cfg.AgentID),
-		EnrollmentToken: strings.TrimSpace(cfg.EnrollmentToken),
-		Domain:          strings.TrimSpace(inv.Domain),
-		Hostname:        inv.Hostname,
-		CurrentUser:     inv.CurrentUser,
-		Platform:        inv.Platform,
-		OSName:          inv.OSName,
-		OSVersion:       inv.OSVersion,
-		LocalIP:         inv.LocalIP,
-		PublicIP:        inv.PublicIP,
-		RustDeskID:      configuredRustDeskID(&Config{RustDeskID: rustdesk.ID}),
-		AgentVersion:    agentVersion,
+		AgentID:            strings.TrimSpace(cfg.AgentID),
+		EnrollmentToken:    strings.TrimSpace(cfg.EnrollmentToken),
+		Domain:             strings.TrimSpace(inv.Domain),
+		Hostname:           inv.Hostname,
+		CurrentUser:        inv.CurrentUser,
+		Platform:           inv.Platform,
+		OSName:             inv.OSName,
+		OSVersion:          inv.OSVersion,
+		OSCaption:          inv.OSCaption,
+		OSBuild:            inv.OSBuild,
+		WindowsProductType: inv.WindowsProductType,
+		LocalIP:            inv.LocalIP,
+		PublicIP:           inv.PublicIP,
+		RustDeskID:         configuredRustDeskID(&Config{RustDeskID: rustdesk.ID}),
+		AgentVersion:       agentVersion,
 	}
 	data, err := json.Marshal(requestPayload)
 	if err != nil {

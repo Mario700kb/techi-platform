@@ -193,7 +193,20 @@ class DeviceRepository:
         )
         ungrouped = Device.group_id.is_(None)
         if key == "windows_server":
-            return query.filter(or_(server_group, and_(ungrouped, Device.os_name.ilike("%windows server%"))))
+            return query.filter(
+                or_(
+                    server_group,
+                    and_(
+                        ungrouped,
+                        or_(
+                            Device.windows_product_type.in_([2, 3]),
+                            Device.os_name.ilike("%windows server%"),
+                            Device.os_version.ilike("%windows server%"),
+                            Device.os_caption.ilike("%windows server%"),
+                        ),
+                    ),
+                )
+            )
         if key == "windows_workstation":
             return query.filter(
                 or_(
@@ -201,7 +214,10 @@ class DeviceRepository:
                     and_(
                         ungrouped,
                         or_(Device.os_name.ilike("%windows%"), Device.platform.ilike("%windows%")),
-                        not_(Device.os_name.ilike("%windows server%")),
+                        or_(Device.os_name.is_(None), not_(Device.os_name.ilike("%windows server%"))),
+                        or_(Device.os_version.is_(None), not_(Device.os_version.ilike("%windows server%"))),
+                        or_(Device.os_caption.is_(None), not_(Device.os_caption.ilike("%windows server%"))),
+                        or_(Device.windows_product_type.is_(None), Device.windows_product_type == 1),
                     ),
                 )
             )

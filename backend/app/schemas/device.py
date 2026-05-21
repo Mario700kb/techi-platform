@@ -34,6 +34,9 @@ class DeviceBase(BaseModel):
     local_ip: Optional[str]
     os_name: Optional[str]
     os_version: Optional[str]
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     platform: Optional[str]
     device_type: DeviceType = DeviceType.UNASSIGNED
     status: DeviceStatus = DeviceStatus.OFFLINE
@@ -88,6 +91,9 @@ class DeviceUpdate(BaseModel):
     local_ip: Optional[str] = None
     os_name: Optional[str] = None
     os_version: Optional[str] = None
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     platform: Optional[str] = None
     device_type: Optional[DeviceType] = None
     status: Optional[DeviceStatus] = None

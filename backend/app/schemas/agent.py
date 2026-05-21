@@ -23,6 +23,9 @@ class AgentHeartbeatPayload(BaseModel):
     local_ip: Optional[str] = None
     os_name: Optional[str] = None
     os_version: Optional[str] = None
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     platform: Optional[str] = None
     cpu: Optional[str] = None
     ram: Optional[str] = None
@@ -58,6 +61,9 @@ class DeviceHeartbeatCreate(BaseModel):
     local_ip: Optional[str] = None
     os_name: Optional[str] = None
     os_version: Optional[str] = None
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     platform: Optional[str] = None
     device_type: DeviceType
     status: DeviceStatus
@@ -92,6 +98,9 @@ class AgentEnrollmentRequest(BaseModel):
     platform: Optional[str] = None
     os_name: Optional[str] = None
     os_version: Optional[str] = None
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     local_ip: Optional[str] = None
     public_ip: Optional[str] = None
     rustdesk_id: Optional[str] = None

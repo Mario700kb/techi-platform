@@ -13,6 +13,9 @@ DEVICE_COLUMNS = {
     "last_enrollment_at": "DATETIME",
     "enrollment_count": "INTEGER NOT NULL DEFAULT 0",
     "reenrolled_from_agent_id": "VARCHAR(80)",
+    "os_caption": "VARCHAR(160)",
+    "os_build": "VARCHAR(80)",
+    "windows_product_type": "INTEGER",
     "rustdesk_install_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_version": "VARCHAR(80)",
@@ -32,6 +35,9 @@ DEVICE_COLUMNS = {
 }
 
 HEARTBEAT_COLUMNS = {
+    "os_caption": "VARCHAR(160)",
+    "os_build": "VARCHAR(80)",
+    "windows_product_type": "INTEGER",
     "rustdesk_install_status": "VARCHAR(32)",
     "rustdesk_status": "VARCHAR(32)",
     "rustdesk_version": "VARCHAR(80)",

@@ -106,9 +106,23 @@ class TrustedDomainService:
         return cleaned.title() if cleaned else "Domain Client"
 
     @classmethod
-    def detect_group_name(cls, os_name: Optional[str], platform: Optional[str]) -> str:
+    def detect_group_name(
+        cls,
+        os_name: Optional[str],
+        platform: Optional[str],
+        *,
+        os_version: Optional[str] = None,
+        os_caption: Optional[str] = None,
+        windows_product_type: Optional[int] = None,
+    ) -> str:
         """Return 'Servers' or 'Client PC' based on the reported OS."""
-        os_lower = (os_name or "").lower()
+        if windows_product_type in {2, 3}:
+            return "Servers"
+        os_lower = " ".join(
+            value.lower()
+            for value in (os_name or "", os_version or "", os_caption or "")
+            if value
+        )
         platform_lower = (platform or "").lower()
         if any(tok in os_lower for tok in _SERVER_OS_TOKENS):
             return "Servers"

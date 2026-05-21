@@ -3,6 +3,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os/exec"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -25,6 +27,107 @@ const (
 	wtsActive         = 0 // WTSActive
 	wtsDisconnected   = 4 // WTSDisconnected
 )
+
+type windowsCIMOperatingSystem struct {
+	Caption     string `json:"Caption"`
+	Version     string `json:"Version"`
+	ProductType int    `json:"ProductType"`
+}
+
+func collectOSInfo() OSInfo {
+	info := collectWindowsOSInfoFromCIM()
+	if info.Caption == "" || info.Build == "" || info.WindowsProductType == 0 {
+		fallback := collectWindowsOSInfoFromRegistry()
+		if info.Caption == "" {
+			info.Caption = fallback.Caption
+		}
+		if info.Build == "" {
+			info.Build = fallback.Build
+		}
+		if info.WindowsProductType == 0 {
+			info.WindowsProductType = fallback.WindowsProductType
+		}
+	}
+	if info.Name == "" {
+		info.Name = "windows"
+	}
+	if info.Version == "" {
+		info.Version = info.Caption
+	}
+	if info.Version == "" {
+		info.Version = info.Build
+	}
+	return info
+}
+
+func collectWindowsOSInfoFromCIM() OSInfo {
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy",
+		"Bypass",
+		"-Command",
+		"Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption,Version,ProductType | ConvertTo-Json -Compress",
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return OSInfo{Name: "windows"}
+	}
+	var cim windowsCIMOperatingSystem
+	if err := json.Unmarshal(output, &cim); err != nil {
+		return OSInfo{Name: "windows"}
+	}
+	caption := strings.TrimSpace(cim.Caption)
+	build := strings.TrimSpace(cim.Version)
+	return OSInfo{
+		Name:               "windows",
+		Version:            firstNonEmpty(caption, build),
+		Caption:            caption,
+		Build:              build,
+		WindowsProductType: cim.ProductType,
+	}
+}
+
+func collectWindowsOSInfoFromRegistry() OSInfo {
+	info := OSInfo{Name: "windows"}
+	const currentVersionKey = `SOFTWARE\Microsoft\Windows NT\CurrentVersion`
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, currentVersionKey, registry.QUERY_VALUE)
+	if err == nil {
+		defer k.Close()
+		productName, _, _ := k.GetStringValue("ProductName")
+		displayVersion, _, _ := k.GetStringValue("DisplayVersion")
+		currentBuild, _, _ := k.GetStringValue("CurrentBuild")
+		info.Caption = strings.TrimSpace(productName)
+		info.Build = firstNonEmpty(strings.TrimSpace(displayVersion), strings.TrimSpace(currentBuild))
+		info.Version = firstNonEmpty(info.Caption, info.Build)
+	}
+
+	const productOptionsKey = `SYSTEM\CurrentControlSet\Control\ProductOptions`
+	productOptions, err := registry.OpenKey(registry.LOCAL_MACHINE, productOptionsKey, registry.QUERY_VALUE)
+	if err == nil {
+		defer productOptions.Close()
+		productType, _, _ := productOptions.GetStringValue("ProductType")
+		switch strings.ToLower(strings.TrimSpace(productType)) {
+		case "winnt":
+			info.WindowsProductType = 1
+		case "lanmannt":
+			info.WindowsProductType = 2
+		case "servernt":
+			info.WindowsProductType = 3
+		}
+	}
+	return info
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
 
 // wtsQueryString calls WTSQuerySessionInformationW for a string info class and returns
 // the result, or "" on failure. The caller must not free the buffer.

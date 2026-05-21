@@ -4,6 +4,10 @@ package main
 
 import "os/user"
 
+func collectOSInfo() OSInfo {
+	return OSInfo{}
+}
+
 func buildUserSession() UserSession {
 	name := ""
 	if u, err := user.Current(); err == nil {

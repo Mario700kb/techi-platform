@@ -25,6 +25,9 @@ type HeartbeatPayload struct {
 	LocalIP               string         `json:"local_ip"`
 	OSName                string         `json:"os_name"`
 	OSVersion             string         `json:"os_version"`
+	OSCaption             string         `json:"os_caption,omitempty"`
+	OSBuild               string         `json:"os_build,omitempty"`
+	WindowsProductType    int            `json:"windows_product_type,omitempty"`
 	Platform              string         `json:"platform"`
 	CPU                   string         `json:"cpu"`
 	RAM                   string         `json:"ram"`
@@ -65,6 +68,9 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		LocalIP:               inv.LocalIP,
 		OSName:                inv.OSName,
 		OSVersion:             inv.OSVersion,
+		OSCaption:             inv.OSCaption,
+		OSBuild:               inv.OSBuild,
+		WindowsProductType:    inv.WindowsProductType,
 		Platform:              inv.Platform,
 		CPU:                   inv.CPU,
 		RAM:                   inv.RAM,

@@ -21,6 +21,10 @@ class AssignmentSignal:
     domain: Optional[str] = None
     public_ip: Optional[str] = None
     os_name: Optional[str] = None
+    os_version: Optional[str] = None
+    os_caption: Optional[str] = None
+    os_build: Optional[str] = None
+    windows_product_type: Optional[int] = None
     platform: Optional[str] = None
     device_type: Optional[DeviceType] = None
 
@@ -130,10 +134,53 @@ class DeviceAssignmentService:
 
         client_name = self._normalize_domain_to_client_name(domain) or TrustedDomainService.normalize_to_client_name(domain)
         client = self._get_or_create_client(client_name)
-        group_name = TrustedDomainService.detect_group_name(signal.os_name, signal.platform)
+        group_name = TrustedDomainService.detect_group_name(
+            signal.os_name,
+            signal.platform,
+            os_version=signal.os_version,
+            os_caption=signal.os_caption,
+            windows_product_type=signal.windows_product_type,
+        )
         self._ensure_standard_groups(client.id)
         group = self._get_or_create_group(client.id, group_name)
 
+        return self.devices.update(
+            device,
+            DeviceUpdate(
+                client_id=client.id,
+                group_id=group.id,
+                auto_assigned=True,
+                assignment_source=self.TRUSTED_DOMAIN_SOURCE,
+            ),
+        )
+
+    def reconcile_trusted_domain_assignment(self, device: Device, *, signal: AssignmentSignal) -> Device:
+        if not self._is_domain_managed(signal.domain):
+            return device
+        source = self._resolved_source(device)
+        if source in {self.MANUAL_SOURCE, self.LEGACY_MANUAL_SOURCE, self.ENROLLMENT_SOURCE}:
+            return device
+
+        from app.services.trusted_domain_service import TrustedDomainService
+
+        client_name = self._normalize_domain_to_client_name(signal.domain) or TrustedDomainService.normalize_to_client_name(signal.domain or "")
+        client = self._get_or_create_client(client_name)
+        self._ensure_standard_groups(client.id)
+        group_name = TrustedDomainService.detect_group_name(
+            signal.os_name,
+            signal.platform,
+            os_version=signal.os_version,
+            os_caption=signal.os_caption,
+            windows_product_type=signal.windows_product_type,
+        )
+        group = self._get_or_create_group(client.id, group_name)
+        if (
+            device.client_id == client.id
+            and device.group_id == group.id
+            and source == self.TRUSTED_DOMAIN_SOURCE
+            and device.auto_assigned
+        ):
+            return device
         return self.devices.update(
             device,
             DeviceUpdate(
@@ -151,8 +198,12 @@ class DeviceAssignmentService:
 
     def _detect_group(self, signal: AssignmentSignal) -> str:
         platform = self._clean(signal.platform).lower()
-        os_name = self._clean(signal.os_name).lower()
-        if signal.device_type == DeviceType.SERVER or "server" in os_name:
+        os_values = " ".join(
+            self._clean(value).lower()
+            for value in (signal.os_name, signal.os_version, signal.os_caption)
+            if self._clean(value)
+        )
+        if signal.device_type == DeviceType.SERVER or signal.windows_product_type in {2, 3} or "server" in os_values:
             return "Servers"
         return "Client PC"
 
@@ -162,7 +213,14 @@ class DeviceAssignmentService:
         if category is None and device.group_id:
             category = "other"
         if category is None:
-            category = self._category_from_os(device.os_name, device.platform, device.device_type)
+            category = self._category_from_os(
+                device.os_name,
+                device.platform,
+                device.device_type,
+                os_version=device.os_version,
+                os_caption=device.os_caption,
+                windows_product_type=device.windows_product_type,
+            )
 
         if device.client_id or device.group_id:
             return AssignmentResolution(
@@ -241,10 +299,18 @@ class DeviceAssignmentService:
         os_name: Optional[str],
         platform: Optional[str],
         device_type: Optional[DeviceType],
+        *,
+        os_version: Optional[str] = None,
+        os_caption: Optional[str] = None,
+        windows_product_type: Optional[int] = None,
     ) -> str:
-        os_value = self._clean(os_name).lower()
+        os_value = " ".join(
+            self._clean(value).lower()
+            for value in (os_name, os_version, os_caption)
+            if self._clean(value)
+        )
         platform_value = self._clean(platform).lower()
-        if device_type == DeviceType.SERVER or "windows server" in os_value or "server" in os_value:
+        if device_type == DeviceType.SERVER or windows_product_type in {2, 3} or "windows server" in os_value or "server" in os_value:
             return "servers"
         if "windows" in os_value or "windows" in platform_value:
             return "clientpc"
