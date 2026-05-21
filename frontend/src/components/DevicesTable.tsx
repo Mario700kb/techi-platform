@@ -41,7 +41,7 @@ interface DevicesTableProps {
 type PendingAction = "archive" | "restore" | "delete";
 export type HealthFilter = "all" | DeviceHealthSummary["health_state"];
 
-const compactBadgeClass = "!px-1 !py-0 !text-[8px] !leading-3";
+const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[10px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
 const FILTER_INPUT_CLS = "th-input rounded-lg border px-3 py-1.5 text-xs font-medium focus:border-techi-orange/50 focus:outline-none";
 const ACTION_MENU_WIDTH = 192;
@@ -453,7 +453,7 @@ const DevicesTable = memo(function DevicesTable({
               }
             }}
           >
-            <table className="min-w-[1120px] border-separate border-spacing-0 text-left text-[11px]">
+            <table className="min-w-[1120px] border-separate border-spacing-0 text-left">
               <thead className="sticky top-0 z-20">
                 <tr className="th-table-head border-b border-white/[0.06]">
                   <th className="w-[46px] px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Status</th>
@@ -527,7 +527,7 @@ const DevicesTable = memo(function DevicesTable({
                         <button
                           type="button"
                           disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
-                          className="inline-flex items-center gap-1 rounded-md border border-techi-orange/25 bg-techi-orange/10 px-1.5 py-0.5 text-[9px] font-semibold leading-4 text-orange-200 transition hover:bg-techi-orange/20 hover:text-white disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-transparent disabled:text-slate-600"
+                          className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-transparent disabled:text-slate-600"
                           onClick={() => launchRustDesk(device.rustdesk_id)}
                           title={
                             device.rustdesk_conflict_detected
@@ -544,7 +544,7 @@ const DevicesTable = memo(function DevicesTable({
                           <button
                             type="button"
                             data-action-trigger="true"
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+                            className="th-icon-btn !min-h-8 !min-w-8"
                             onClick={(e) => {
                               e.stopPropagation();
                               if (openActionDeviceId === device.id) {

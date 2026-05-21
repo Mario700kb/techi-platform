@@ -31,19 +31,20 @@ export default function AppShell({ children }: AppShellProps) {
       className="h-screen overflow-hidden"
       style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
     >
-      {/* Mobile overlay backdrop */}
+      {/* Mobile overlay */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] sm:hidden"
+          className="fixed inset-0 z-40 bg-black/60 sm:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 transition-transform duration-200 sm:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 sm:hidden ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        style={{ transition: "transform 380ms cubic-bezier(0.32, 0.72, 0, 1)" }}
       >
         <Sidebar
           collapsed={false}
@@ -52,15 +53,15 @@ export default function AppShell({ children }: AppShellProps) {
         />
       </div>
 
-      <div className="h-full p-2 lg:p-4">
+      <div className="h-full p-2 lg:p-3">
         <div
-          className="grid h-full min-w-0 grid-cols-1 overflow-hidden rounded-2xl shadow-soft sm:grid-cols-[auto_minmax(0,1fr)]"
+          className="grid h-full min-w-0 grid-cols-1 overflow-hidden rounded-xl shadow-soft sm:grid-cols-[auto_minmax(0,1fr)]"
           style={{
             border: "1px solid var(--th-shell-border)",
             background: "var(--th-bg-surface)",
           }}
         >
-          {/* Desktop/tablet sidebar — hidden on mobile */}
+          {/* Desktop sidebar */}
           <div className="hidden min-w-0 sm:block">
             <Sidebar collapsed={sidebarCollapsed} onCollapsedChange={handleSidebarCollapsedChange} />
           </div>
@@ -70,7 +71,7 @@ export default function AppShell({ children }: AppShellProps) {
               onToggleSidebar={handleTopbarToggle}
             />
             <main
-              className="min-w-0 flex-1 overflow-y-auto p-3 backdrop-blur-sm lg:p-4"
+              className="min-w-0 flex-1 overflow-y-auto p-3 lg:p-4"
               style={{ background: "var(--th-bg-main)" }}
             >
               {children}

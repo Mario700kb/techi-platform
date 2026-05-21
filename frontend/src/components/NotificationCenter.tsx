@@ -195,7 +195,7 @@ export default function NotificationCenter({
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
-        className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors duration-150 ${
+        className={`th-btn th-btn-secondary relative flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors duration-150 ${
           open ? "border-techi-orange/50 bg-techi-orange/10" : ""
         }`}
         style={open ? { color: "var(--th-text-primary)" } : {

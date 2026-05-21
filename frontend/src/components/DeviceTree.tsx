@@ -88,8 +88,8 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         </div>
       </div>
 
-      <div className="p-2">
-        <ul className="space-y-0.5">
+      <div className="fleet-tree p-2.5">
+        <ul className="space-y-1">
           <li>
             <TreeButton
               active={selectedKey === "all"}
@@ -127,7 +127,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                   onClick={() => toggleClient(client.id)}
                 />
                 {expanded && childFolders.length > 0 && (
-                  <ul className="mt-0.5 space-y-0.5 pl-5">
+                  <ul className="fleet-tree-child mt-1 space-y-1 border-l pl-4" style={{ borderColor: "var(--th-border-subtle)" }}>
                     {childFolders.map((folder) => (
                       <li key={folder.id}>
                         <TreeButton
@@ -150,7 +150,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
       </div>
 
       <div className="border-t border-white/[0.05] px-4 py-2.5">
-        <label className="flex cursor-pointer items-center justify-between gap-3 text-[11px] font-medium text-slate-400">
+        <label className="flex cursor-pointer items-center justify-between gap-3 text-[12px] font-semibold text-slate-400">
           <span>Show empty groups</span>
           <input
             type="checkbox"
@@ -159,7 +159,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             className="h-3.5 w-3.5 rounded border-white/15 bg-slate-950 accent-orange-500"
           />
         </label>
-        <p className="mt-2 text-[10px] text-slate-600">Browse by client · device type</p>
+        <p className="mt-2 text-[11px] text-slate-600">Browse by client · device type</p>
       </div>
     </div>
   );
@@ -184,21 +184,22 @@ function TreeButton({ active, child = false, icon: Icon, label, count, expanded 
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? "true" : undefined}
       className={clsx(
-        "flex w-full items-center rounded-md text-left text-xs transition-all duration-120",
-        child ? "px-2 py-1.5" : "px-2 py-1.5",
+        "flex w-full items-center rounded-md text-left transition-all duration-120",
+        child ? "px-2.5 py-1.5" : "px-2.5 py-1.5",
         active
-          ? "bg-techi-orange/[0.11] text-white shadow-[inset_2px_0_0_#ff553f]"
+          ? "bg-[#3A1A14] text-[#FF6B47] shadow-[inset_2px_0_0_#E85A3C,inset_0_0_0_1px_rgba(232,90,60,0.18)]"
           : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
       )}
     >
-      <span className="flex min-w-0 items-center gap-1">
+      <span className="flex min-w-0 items-center gap-1.5">
         {hasChildren && (
-          <ChevronRight className={clsx("h-3 w-3 shrink-0 transition-transform", expanded ? "rotate-90 text-slate-300" : "text-slate-600")} />
+          <ChevronRight className={clsx("h-3.5 w-3.5 shrink-0 transition-transform", expanded ? "rotate-90 text-slate-300" : "text-slate-600")} />
         )}
-        <Icon className={clsx(child ? "h-3 w-3" : "h-3.5 w-3.5", "shrink-0", active ? "text-techi-orange" : "text-slate-600")} />
-        <span className={clsx("truncate font-medium", active ? "text-white" : "")}>{label}</span>
-        <span className={clsx("rounded-full px-1 text-[10px] tabular-nums", active ? "bg-white/10 text-slate-300" : "bg-white/[0.04] text-slate-600")}>{count}</span>
+        <Icon className={clsx(child ? "h-3.5 w-3.5" : "h-4 w-4", "shrink-0", active ? "text-techi-orange" : "text-slate-600")} />
+        <span className={clsx("truncate font-semibold", active ? "text-white" : "")}>{label}</span>
+        <span className="fleet-tree-count rounded-full px-1.5 text-[11px] font-bold tabular-nums">{count}</span>
         {hasMaintenance && (
           <span className="h-1.5 w-1.5 flex-none rounded-full bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.6)]" title="Has devices in maintenance" />
         )}

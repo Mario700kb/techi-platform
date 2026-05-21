@@ -23,7 +23,7 @@ export default function Button({ children, className, size = "md", variant = "pr
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-lg border font-semibold transition duration-150 focus:outline-none focus:ring-2 focus:ring-techi-orange/25",
+        "th-btn inline-flex items-center justify-center gap-2 border transition duration-150 focus:outline-none focus:ring-2 focus:ring-techi-orange/25",
         variantClasses[variant],
         sizeClasses[size],
         className

@@ -644,10 +644,10 @@ export default function EnrollmentBootstrap() {
                       key={p}
                       type="button"
                       onClick={() => setAvailProfile(p)}
-                      className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition capitalize ${
+                      className={`th-btn min-h-9 rounded-lg border px-2 py-2 text-xs font-semibold capitalize transition ${
                         availProfile === p
-                          ? "border-techi-orange/60 bg-techi-orange/10 text-techi-orange"
-                          : "th-btn-secondary hover:border-white/20"
+                          ? "th-btn-primary"
+                          : "th-btn-secondary"
                       }`}
                     >
                       {PROFILE_INFO[p].label}

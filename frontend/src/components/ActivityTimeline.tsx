@@ -64,7 +64,7 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
           <button
             type="button"
             onClick={onReload}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200"
+            className="th-btn th-btn-secondary inline-flex min-h-8 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold"
           >
             <RefreshCcw className="h-2.5 w-2.5" />
             Refresh

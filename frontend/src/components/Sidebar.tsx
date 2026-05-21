@@ -30,12 +30,11 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
 
   return (
     <aside
-      className={`flex flex-col transition-all duration-200 ${
-        expanded ? "w-[196px] p-2.5" : "w-[52px] p-2"
-      }`}
+      className={`flex flex-col ${expanded ? "w-[260px] p-3" : "w-[72px] p-2"}`}
       style={{
         background: "var(--th-bg-sidebar)",
         borderRight: "1px solid var(--th-border-subtle)",
+        transition: "width 380ms cubic-bezier(0.32, 0.72, 0, 1), padding 380ms cubic-bezier(0.32, 0.72, 0, 1)",
       }}
       onMouseEnter={() => collapsed && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -43,7 +42,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       <button
         type="button"
         onClick={() => onCollapsedChange?.(!collapsed)}
-        className={`mb-3 flex items-center rounded-md transition ${
+        className={`mb-3 flex items-center rounded-md transition-colors ${
           expanded ? "px-1 py-0.5" : "justify-center py-0.5"
         }`}
         style={{ color: "var(--th-text-muted)" }}
@@ -52,7 +51,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         <img
           src={expanded ? "/brand/techi-logo-dark.png" : "/brand/techi-mark-dark.png"}
           alt="techi"
-          className={expanded ? "h-7 w-auto max-w-[124px] object-contain" : "h-6 w-6 object-contain"}
+          className={expanded ? "h-7 w-auto max-w-[130px] object-contain" : "h-6 w-6 object-contain"}
           style={theme === "light" ? { filter: "brightness(0) opacity(0.72)" } : {}}
           onError={(e) => {
             const img = e.currentTarget;
@@ -64,7 +63,10 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       </button>
 
       {expanded && (
-        <p className="mb-1 px-2 text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: "var(--th-sidebar-label)" }}>
+        <p
+          className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-[0.16em]"
+          style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-sidebar-label)" }}
+        >
           Navigation
         </p>
       )}
@@ -80,21 +82,19 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
               title={expanded ? undefined : item.label}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center rounded-md py-1.5 text-sm transition-all duration-120 ${
+                `flex items-center rounded-md py-1.5 transition-all ${
                   expanded ? "gap-2.5 px-2.5" : "justify-center px-0"
                 } ${
                   isActive
-                    ? "bg-techi-orange/[0.11] text-white shadow-[inset_2px_0_0_#ff553f,inset_0_0_0_1px_rgba(255,85,63,0.16)]"
-                    : "hover:bg-white/[0.05] hover:text-white"
+                    ? "bg-[#3A1A14] text-[#FF6B47] shadow-[inset_2px_0_0_#E85A3C,inset_0_0_0_1px_rgba(232,90,60,0.18)]"
+                    : "hover:bg-white/[0.04] hover:text-white"
                 }`
               }
               style={({ isActive }) =>
-                isActive
-                  ? {}
-                  : { color: "var(--th-text-secondary)" }
+                isActive ? {} : { color: "var(--th-text-secondary)" }
               }
             >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <Icon className="h-[15px] w-[15px] shrink-0" />
               {expanded && <span className="text-[13px] font-medium">{item.label}</span>}
             </NavLink>
           );
@@ -105,8 +105,20 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         <div className="border-t" style={{ borderColor: "var(--th-sidebar-divider)" }} />
         {expanded && (
           <div className="mt-3 px-2">
-            <p className="text-[10px] font-medium" style={{ color: "var(--th-text-muted)" }}>v1.0 · MSP Console</p>
-            {user && <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-tertiary)" }}>{user.role}</p>}
+            <p
+              className="text-[10px] font-medium"
+              style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-muted)" }}
+            >
+              v1.0 · MSP Console
+            </p>
+            {user && (
+              <p
+                className="mt-1 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-tertiary)" }}
+              >
+                {user.role}
+              </p>
+            )}
           </div>
         )}
       </div>
