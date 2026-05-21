@@ -109,6 +109,14 @@ class DeviceHeartbeatService:
                 for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
                     update_data.pop(field, None)
             update_data["device_type"] = device_type
+            # If device_type changed (e.g. CLIENT → SERVER), allow re-grouping
+            if device.device_type != device_type and device_type in (DeviceType.SERVER, DeviceType.CLIENT):
+                update_data.pop("client_id", None)
+                update_data.pop("group_id", None)
+                update_data.pop("assignment_source", None)
+                update_data.pop("auto_assigned", None)
+                # Clear enrollment lock so reconcile can re-assign
+                device.assignment_source = DeviceAssignmentService.TRUSTED_DOMAIN_SOURCE
             update_data["last_seen"] = now
             device = self.device_repo.update(device, DeviceUpdate(**update_data))
         else:
