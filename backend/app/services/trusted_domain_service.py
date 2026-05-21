@@ -3,6 +3,7 @@ import re
 from typing import Optional
 
 from app.core.config import settings
+from app.models.trusted_domain import TrustedDomain
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,35 @@ _STRIP_SUFFIXES = (".local", ".lan", ".internal", ".home", ".corp", ".ad")
 class TrustedDomainService:
     """Validates and normalizes domain names for trusted auto-enrollment."""
 
+    def __init__(self, db=None):
+        self.db = db
+
+    def is_trusted_domain(self, domain: Optional[str], hostname: Optional[str] = None) -> bool:
+        normalized = self.normalize_domain(domain)
+        if not normalized or normalized in _WORKGROUP_NAMES:
+            return False
+        hostname_lower = (hostname or "").strip().lower()
+        if normalized == hostname_lower:
+            return False
+        if self.db is None:
+            return self.is_trusted(domain, hostname)
+        configured = (
+            self.db.query(TrustedDomain)
+            .filter(TrustedDomain.domain == normalized, TrustedDomain.is_active.is_(True))
+            .first()
+        )
+        if configured:
+            return True
+        # If explicit DB domains exist, they become the tenant boundary.
+        any_configured = self.db.query(TrustedDomain.id).filter(TrustedDomain.is_active.is_(True)).first()
+        if any_configured is not None:
+            return False
+        return self.is_trusted(domain, hostname)
+
+    @classmethod
+    def normalize_domain(cls, domain: Optional[str]) -> str:
+        return (domain or "").strip().lower().rstrip(".")
+
     @classmethod
     def is_trusted(cls, domain: Optional[str], hostname: Optional[str] = None) -> bool:
         """Return True if the domain is eligible for token-free auto-enrollment."""
@@ -32,7 +62,7 @@ class TrustedDomainService:
         if not domain or not domain.strip():
             return False
 
-        normalized = domain.strip().lower().rstrip(".")
+        normalized = cls.normalize_domain(domain)
         hostname_lower = (hostname or "").strip().lower()
 
         # Reject workgroup names
@@ -55,8 +85,10 @@ class TrustedDomainService:
                 )
             return trusted
 
-        # Empty allowlist = allow any non-workgroup domain in dev mode
-        return True
+        # Empty allowlist is only permissive outside production. Production and
+        # multi-tenant deployments must use TRUSTED_DOMAIN_ALLOWLIST or rows in
+        # trusted_domains.
+        return settings.ENVIRONMENT.lower() != "production"
 
     @classmethod
     def normalize_to_client_name(cls, domain: str) -> str:

@@ -24,10 +24,24 @@ class EnrollmentTokenRepository:
     def list(self, *, limit: int = 100, offset: int = 0) -> List[EnrollmentToken]:
         return (
             self.db.query(EnrollmentToken)
+            .filter(EnrollmentToken.is_internal.is_(False))
             .order_by(EnrollmentToken.created_at.desc(), EnrollmentToken.id.desc())
             .offset(offset)
             .limit(limit)
             .all()
+        )
+
+    def get_active_internal(self, kind: str) -> Optional[EnrollmentToken]:
+        from app.models.enrollment_token import EnrollmentTokenStatus
+        return (
+            self.db.query(EnrollmentToken)
+            .filter(
+                EnrollmentToken.is_internal.is_(True),
+                EnrollmentToken.internal_kind == kind,
+                EnrollmentToken.status == EnrollmentTokenStatus.ACTIVE,
+            )
+            .order_by(EnrollmentToken.id.desc())
+            .first()
         )
 
     def get_active_default(self) -> Optional[EnrollmentToken]:

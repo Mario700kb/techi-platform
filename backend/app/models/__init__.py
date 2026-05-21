@@ -11,6 +11,7 @@ from app.models.device_telemetry import DeviceTelemetry
 from app.models.enrollment_token import EnrollmentToken
 from app.models.operator import Operator
 from app.models.remote_action import RemoteAction
+from app.models.trusted_domain import TrustedDomain
 
 __all__ = [
     "Client",
@@ -26,4 +27,5 @@ __all__ = [
     "EnrollmentToken",
     "Operator",
     "RemoteAction",
+    "TrustedDomain",
 ]

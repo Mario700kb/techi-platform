@@ -15,6 +15,7 @@ from app.services.device_activity_event_service import DeviceActivityEventServic
 from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.services.trusted_domain_service import TrustedDomainService
+from app.services.audit_service import AuditAction, system_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class AgentEnrollmentService:
     ) -> AgentEnrollmentResponse:
         # Trusted domain path — no token required
         domain = (payload.domain or "").strip()
-        if not payload.enrollment_token and TrustedDomainService.is_trusted(domain, payload.hostname):
+        if not payload.enrollment_token and TrustedDomainService(self.db).is_trusted_domain(domain, payload.hostname):
             return self._enroll_trusted_domain(
                 payload, domain=domain, heartbeat_url=heartbeat_url, websocket_url=websocket_url
             )
@@ -117,6 +118,20 @@ class AgentEnrollmentService:
                     platform=payload.platform,
                 ),
             )
+        device = self.assignment_service.apply_resolution(device)
+        system_audit_log(
+            self.db,
+            action=AuditAction.BOOTSTRAP_SCRIPT_SERVED,
+            entity_type="device",
+            entity_id=device.id,
+            details={
+                "kind": "trusted_domain_enrollment",
+                "hostname": payload.hostname,
+                "domain": domain,
+                "client_id": device.client_id,
+                "group_id": device.group_id,
+            },
+        )
 
         return AgentEnrollmentResponse(
             agent_id=agent_id,
@@ -150,7 +165,7 @@ class AgentEnrollmentService:
             "agent_id": agent_id,
             "hostname": self._normalize(payload.hostname),
             "current_user": self._normalize(payload.current_user),
-            "domain": None,
+            "domain": self._normalize(payload.domain),
             "public_ip": self._normalize(payload.public_ip),
             "local_ip": self._normalize(payload.local_ip),
             "os_name": self._normalize(payload.os_name),

@@ -85,6 +85,39 @@ class EnrollmentTokenService:
         logger.info("Regenerated default deployment token (id=%d prefix=%s)", result.id, result.token_prefix)
         return result
 
+    def ensure_internal_bootstrap_token(self, *, kind: str, expires_hours: int) -> EnrollmentToken:
+        """Create/reuse a hidden token for tokenless bootstrap auditability.
+
+        The plaintext value is intentionally not returned or embedded in scripts.
+        Trusted-domain enrollment is validated by domain at /agent/enroll.
+        """
+        normalized_kind = kind.strip().lower()[:32] or "bootstrap"
+        existing = self.repo.get_active_internal(normalized_kind)
+        if existing:
+            refreshed = self._refresh_status(existing)
+            if refreshed.status == EnrollmentTokenStatus.ACTIVE:
+                return refreshed
+
+        plaintext_token, token_hash = self._generate_unique_token()
+        expires_at = utcnow() + timedelta(hours=max(1, expires_hours))
+        token = EnrollmentToken(
+            name=f"Internal {normalized_kind} bootstrap",
+            token_hash=token_hash,
+            token_prefix=plaintext_token[:8],
+            status=EnrollmentTokenStatus.ACTIVE,
+            expires_at=expires_at,
+            max_uses=1000000,
+            use_count=0,
+            client_id=None,
+            group_id=None,
+            is_default=False,
+            is_internal=True,
+            internal_kind=normalized_kind,
+        )
+        created = self.repo.create(token)
+        logger.info("Created internal bootstrap identity kind=%s id=%d prefix=%s", normalized_kind, created.id, created.token_prefix)
+        return created
+
     def list(self, *, limit: int = 100, offset: int = 0) -> List[EnrollmentToken]:
         tokens = self.repo.list(limit=limit, offset=offset)
         for token in tokens:

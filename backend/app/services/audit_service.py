@@ -21,6 +21,7 @@ class AuditAction:
     ENROLLMENT_TOKEN_REGENERATED = "enrollment_token_regenerated"
     ENROLLMENT_TOKEN_REVOKED = "enrollment_token_revoked"
     ENROLLMENT_TOKEN_DELETED = "enrollment_token_deleted"
+    BOOTSTRAP_SCRIPT_SERVED = "bootstrap_script_served"
     AGENT_PACKAGE_ACTIVATED = "agent_package_activated"
     AGENT_PACKAGE_DEACTIVATED = "agent_package_deactivated"
     AGENT_PACKAGE_DELETED = "agent_package_deleted"
@@ -58,3 +59,25 @@ def audit_log(
         )
     except Exception:
         logger.exception("audit_log write failed action=%s operator=%s", action, operator.username)
+
+
+def system_audit_log(
+    db: Session,
+    *,
+    action: str,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    details: Optional[dict] = None,
+) -> None:
+    """Write an audit entry for unauthenticated/system flows."""
+    try:
+        AuditLogRepository(db).create(
+            operator_id=None,
+            operator_username="system",
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            details=details,
+        )
+    except Exception:
+        logger.exception("system_audit_log write failed action=%s", action)

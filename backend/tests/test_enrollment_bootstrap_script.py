@@ -376,6 +376,82 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["payload"].mode == "token"
         assert captured["payload"].platform == "windows"
 
+    def test_trusted_domain_endpoint_returns_tokenless_script(self, monkeypatch):
+        captured = {}
+
+        class FakeTokenService:
+            def __init__(self, db):
+                pass
+
+            def ensure_internal_bootstrap_token(self, *, kind: str, expires_hours: int):
+                captured["token_kind"] = kind
+                captured["expires_hours"] = expires_hours
+                return SimpleNamespace(id=99, token_prefix="hidden01")
+
+        class FakeBootstrapService:
+            def __init__(self, db):
+                pass
+
+            def generate(self, payload):
+                captured["payload"] = payload
+                return SimpleNamespace(
+                    bootstrap_script=(
+                        '$ErrorActionPreference = "Stop"\n'
+                        "# Techi Agent -- GPO / Trusted Domain deployment\n"
+                        "& $AgentPath install -config $ConfigPath\n"
+                    )
+                )
+
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentTokenService", FakeTokenService)
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentBootstrapService", FakeBootstrapService)
+        monkeypatch.setattr(bootstrap_endpoint, "system_audit_log", lambda *args, **kwargs: captured.setdefault("audited", True))
+
+        response = self.client.get("/api/v1/bootstrap/domain.ps1")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "techi-domain-bootstrap.ps1" in response.headers["content-disposition"]
+        assert "enrollment-token" not in response.text.lower()
+        assert captured["token_kind"] == "domain"
+        assert captured["payload"].mode == "gpo"
+        assert captured["payload"].enrollment_token is None
+        assert captured["payload"].enrollment_token_id is None
+        assert captured["payload"].rustdesk_manage_enabled is True
+        assert captured["audited"] is True
+
+    def test_gpo_endpoint_returns_tokenless_script(self, monkeypatch):
+        captured = {}
+
+        class FakeTokenService:
+            def __init__(self, db):
+                pass
+
+            def ensure_internal_bootstrap_token(self, *, kind: str, expires_hours: int):
+                captured["token_kind"] = kind
+                return SimpleNamespace(id=100, token_prefix="hidden02")
+
+        class FakeBootstrapService:
+            def __init__(self, db):
+                pass
+
+            def generate(self, payload):
+                captured["payload"] = payload
+                return SimpleNamespace(bootstrap_script="& $AgentPath install -config $ConfigPath\n")
+
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentTokenService", FakeTokenService)
+        monkeypatch.setattr(bootstrap_endpoint, "EnrollmentBootstrapService", FakeBootstrapService)
+        monkeypatch.setattr(bootstrap_endpoint, "system_audit_log", lambda *args, **kwargs: None)
+
+        response = self.client.get("/api/v1/bootstrap/gpo.ps1")
+
+        assert response.status_code == 200
+        assert "techi-gpo-bootstrap.ps1" in response.headers["content-disposition"]
+        assert "enrollment-token" not in response.text.lower()
+        assert captured["token_kind"] == "gpo"
+        assert captured["payload"].mode == "gpo"
+        assert captured["payload"].enrollment_token is None
+        assert captured["payload"].rustdesk_manage_enabled is True
+
 
 class TestTokenInstallerPlaintextResolution:
     def setup_method(self):

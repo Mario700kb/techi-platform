@@ -62,3 +62,5 @@ class EnrollmentToken(Base):
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True, index=True)
     is_default = Column(Boolean, default=False, nullable=False)
     token_prefix = Column(String(12), nullable=True)
+    is_internal = Column(Boolean, default=False, nullable=False, index=True)
+    internal_kind = Column(String(32), nullable=True, index=True)

@@ -60,6 +60,8 @@ REMOTE_ACTION_COLUMNS = {
 ENROLLMENT_TOKEN_COLUMNS = {
     "is_default": "BOOLEAN NOT NULL DEFAULT 0",
     "token_prefix": "VARCHAR(12)",
+    "is_internal": "BOOLEAN NOT NULL DEFAULT 0",
+    "internal_kind": "VARCHAR(32)",
 }
 
 DEV_TABLES = {
@@ -109,6 +111,16 @@ DEV_TABLES = {
             FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
         )
     """,
+    "trusted_domains": """
+        CREATE TABLE IF NOT EXISTS trusted_domains (
+            id INTEGER PRIMARY KEY,
+            domain VARCHAR(255) NOT NULL UNIQUE,
+            client_name VARCHAR(160),
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """,
 }
 
 DEV_INDEXES = [
@@ -125,6 +137,9 @@ DEV_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_device_activity_events_device_id ON device_activity_events (device_id)",
     "CREATE INDEX IF NOT EXISTS ix_device_activity_events_event_type ON device_activity_events (event_type)",
     "CREATE INDEX IF NOT EXISTS ix_device_activity_events_occurred_at ON device_activity_events (occurred_at)",
+    "CREATE INDEX IF NOT EXISTS ix_trusted_domains_id ON trusted_domains (id)",
+    "CREATE INDEX IF NOT EXISTS ix_trusted_domains_domain ON trusted_domains (domain)",
+    "CREATE INDEX IF NOT EXISTS ix_trusted_domains_is_active ON trusted_domains (is_active)",
 ]
 
 

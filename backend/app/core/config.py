@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     RUSTDESK_RESOLVER_ENABLED: bool = False
     TRUSTED_DOMAIN_AUTO_ENROLLMENT: bool = False
     TRUSTED_DOMAIN_ALLOWLIST: str = ""  # comma-separated domains; empty = any non-WORKGROUP domain
+    INTERNAL_BOOTSTRAP_TOKEN_EXPIRES_HOURS: int = 24
     DEFAULT_DEPLOYMENT_TOKEN_ENABLED: bool = True
     DEFAULT_DEPLOYMENT_TOKEN_MAX_USES: int = 500
     DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS: int = 0
