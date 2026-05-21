@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlsplit, urlunsplit
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -26,8 +27,23 @@ class EnrollmentBootstrapService:
 
     # ─── Public entry point ────────────────────────────────────────────────────
 
+    @staticmethod
+    def normalize_backend_url(backend_url: str) -> str:
+        """Return the public backend URL with an HTTPS scheme.
+
+        Bootstrap scripts download privileged binaries and write persistent
+        agent config, so generated URLs must not downgrade to HTTP even when
+        the app is reached through a proxy that reports an http base_url.
+        """
+        raw = (backend_url or "").strip().rstrip("/")
+        if not raw:
+            return raw
+        parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
+        scheme = "https"
+        return urlunsplit((scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
     def generate(self, payload: EnrollmentBootstrapRequest) -> EnrollmentBootstrapResponse:
-        backend_url = payload.backend_url.rstrip("/")
+        backend_url = self.normalize_backend_url(payload.backend_url)
 
         if payload.mode == EnrollmentBootstrapMode.GPO:
             return self._generate_gpo(payload, backend_url)
@@ -100,6 +116,7 @@ class EnrollmentBootstrapService:
         enrollment_token: str,
         payload: EnrollmentBootstrapRequest,
     ) -> str:
+        backend_url = self.normalize_backend_url(backend_url)
         cfg: dict = {
             "api_url": backend_url,
             "backend_url": f"{backend_url}/api/v1/agent/heartbeat",
@@ -707,6 +724,7 @@ class EnrollmentBootstrapService:
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
     def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
         svc = AgentPackageService()
         package = svc.latest_active("windows-amd64")
         if package is None:
@@ -721,6 +739,7 @@ class EnrollmentBootstrapService:
         enrollment_token: str,
         config_template: str,
     ) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
         binary_name = "darwin" if platform == EnrollmentBootstrapPlatform.MACOS else "linux"
         # Bash here-doc is fine: 'JSON' terminator must be at column 0,
         # which it is since we join lines ourselves.

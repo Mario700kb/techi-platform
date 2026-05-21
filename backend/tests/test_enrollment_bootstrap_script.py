@@ -38,6 +38,7 @@ class _StubService(EnrollmentBootstrapService):
         self._stub_sha256 = sha256
 
     def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
         url = f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download"
         return url, self._stub_sha256
 
@@ -200,6 +201,10 @@ class TestTokenInstallerScript:
 
     def test_rustdesk_migration_not_added_when_disabled(self):
         assert "Forcing RustDesk migration to TECHI infrastructure" not in self.script
+
+    def test_generated_script_uses_https_urls(self):
+        assert "http://10.5.50.63:8000" not in self.script
+        assert "https://10.5.50.63:8000" in self.script
 
 
 class TestRustDeskForceMigrationScript:
@@ -392,6 +397,7 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["payload"].enrollment_token == "active-token-123456"
         assert captured["payload"].mode == "token"
         assert captured["payload"].platform == "windows"
+        assert captured["payload"].backend_url == "https://api-rdp.techi.com.al"
 
     def test_trusted_domain_endpoint_returns_tokenless_script(self, monkeypatch):
         captured = {}
@@ -433,6 +439,7 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["payload"].mode == "gpo"
         assert captured["payload"].enrollment_token is None
         assert captured["payload"].enrollment_token_id is None
+        assert captured["payload"].backend_url == "https://api-rdp.techi.com.al"
         assert captured["payload"].rustdesk_manage_enabled is True
         assert captured["audited"] is True
 
@@ -467,6 +474,7 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["token_kind"] == "gpo"
         assert captured["payload"].mode == "gpo"
         assert captured["payload"].enrollment_token is None
+        assert captured["payload"].backend_url == "https://api-rdp.techi.com.al"
         assert captured["payload"].rustdesk_manage_enabled is True
 
 
@@ -481,6 +489,10 @@ class TestTokenInstallerPlaintextResolution:
 
         assert "real-token-from-backend-123" in response.bootstrap_script
         assert '"enrollment_token": "real-token-from-backend-123"' in response.config_template
+        assert '"api_url": "https://10.5.50.63:8000"' in response.config_template
+        assert '"backend_url": "https://10.5.50.63:8000/api/v1/agent/heartbeat"' in response.config_template
+        assert "http://10.5.50.63:8000" not in response.bootstrap_script
+        assert "http://10.5.50.63:8000" not in response.config_template
         assert "<ENROLLMENT_TOKEN_FOR_ID_1>" not in response.bootstrap_script
         assert "<ENROLLMENT_TOKEN_FOR_ID_1>" not in response.config_template
 
@@ -617,6 +629,28 @@ class TestConfigPSLines:
         cfg_json = json.dumps({"a": 1, "b": 2})
         lines = self.svc._config_ps_lines(cfg_json)
         assert lines[0] == "$AgentConfig = [ordered]@{"
+
+
+class TestHttpsUrlNormalization:
+    def setup_method(self):
+        self.svc = _StubService()
+
+    def test_normalize_backend_url_forces_https(self):
+        assert self.svc.normalize_backend_url("http://api-rdp.techi.com.al") == "https://api-rdp.techi.com.al"
+        assert self.svc.normalize_backend_url("api-rdp.techi.com.al") == "https://api-rdp.techi.com.al"
+        assert self.svc.normalize_backend_url("https://api-rdp.techi.com.al/") == "https://api-rdp.techi.com.al"
+
+    def test_config_template_forces_https(self):
+        req = _make_req()
+        cfg = self.svc._config_template("http://api-rdp.techi.com.al", "tok123tok123tok123", req)
+        assert "http://api-rdp.techi.com.al" not in cfg
+        assert '"api_url": "https://api-rdp.techi.com.al"' in cfg
+        assert '"backend_url": "https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in cfg
+
+    def test_package_url_forces_https(self):
+        url, _ = self.svc._windows_package_info("http://api-rdp.techi.com.al")
+        assert url.startswith("https://api-rdp.techi.com.al/")
+        assert not url.startswith("http://")
 
 
 class TestPyToPsLiteral:

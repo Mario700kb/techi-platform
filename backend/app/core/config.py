@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEV_ALLOW_RANDOM_SECRET: bool = False
     API_PREFIX: str = "/api/v1"
+    PUBLIC_BACKEND_URL: str = "https://api-rdp.techi.com.al"
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
+from urllib.parse import urlsplit, urlunsplit
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -17,8 +18,19 @@ from app.services.audit_service import AuditAction, system_audit_log
 router = APIRouter()
 
 
+def _normalize_https_url(url: str) -> str:
+    raw = (url or "").strip().rstrip("/")
+    if not raw:
+        return raw
+    parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
+    return urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
 def _public_backend_url(request: Request) -> str:
-    return str(request.base_url).rstrip("/")
+    configured_url = (settings.PUBLIC_BACKEND_URL or "").strip()
+    if configured_url:
+        return _normalize_https_url(configured_url)
+    return _normalize_https_url(str(request.base_url))
 
 
 def _trusted_domain_payload(*, request: Request, availability_profile: AvailabilityProfile) -> EnrollmentBootstrapRequest:
