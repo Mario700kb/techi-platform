@@ -48,14 +48,11 @@ class OperatorService:
         if payload.role is not None and payload.role.value != target.role:
             self._assert_can_manage_role(caller, payload.role.value, "assign role")
 
-        # Protect the last active owner from being locked out
+        # Protect the last active owner/admin-capable account from being locked out.
         if payload.is_active is False and target.is_active:
-            self._assert_not_last_active_owner(target, "deactivate")
-            self._assert_not_last_active_admin(target, "deactivate")
-        if payload.role is not None and payload.role.value != OperatorRole.OWNER.value and target.role == OperatorRole.OWNER.value:
-            self._assert_not_last_active_owner(target, "change role of")
+            self._assert_not_last_active_admin_capable(target, "deactivate")
         if payload.role is not None and payload.role.value not in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value):
-            self._assert_not_last_active_admin(target, "change role of")
+            self._assert_not_last_active_admin_capable(target, "change role of")
 
         if payload.username is not None:
             existing = self.repo.get_by_username(payload.username)
@@ -90,10 +87,7 @@ class OperatorService:
 
         self._assert_can_manage_role(caller, target.role, "delete")
 
-        if target.role == OperatorRole.OWNER.value:
-            if self.repo.count_by_role(OperatorRole.OWNER.value) <= 1:
-                raise ValueError("Cannot delete the last owner account")
-        self._assert_not_last_active_admin(target, "delete")
+        self._assert_not_last_active_admin_capable(target, "delete")
 
         return self.repo.delete(target)
 
@@ -111,26 +105,16 @@ class OperatorService:
         target.hashed_password = hash_password(payload.new_password)
         return self.repo.save(target)
 
-    def _assert_not_last_active_owner(self, target: Operator, action: str) -> None:
-        if target.role == OperatorRole.OWNER.value and target.is_active:
-            if self.repo.count_active_owners() <= 1:
-                raise ValueError(f"Cannot {action} the last active owner account")
-
-    def _assert_not_last_active_admin(self, target: Operator, action: str) -> None:
+    def _assert_not_last_active_admin_capable(self, target: Operator, action: str) -> None:
         if target.role in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value) and target.is_active:
             if self.repo.count_active_admins() <= 1:
-                raise ValueError(f"Cannot {action} the last active admin account")
+                raise ValueError(f"Cannot {action} the last active owner/admin capable account")
 
     def _assert_can_manage_role(self, caller: Operator, target_role: str, action: str) -> None:
         """
-        owner  → can manage all roles
-        admin  → can manage admin/operator/readonly only
+        owner/admin → can manage all operator roles
         others → cannot manage operators at all
         """
-        if caller.role == OperatorRole.OWNER.value:
-            return
-        if caller.role == OperatorRole.ADMIN.value:
-            if target_role == OperatorRole.OWNER.value:
-                raise PermissionError(f"Admins cannot {action} owner accounts")
+        if caller.role in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value):
             return
         raise PermissionError("Insufficient role to manage operators")

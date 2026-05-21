@@ -83,7 +83,7 @@ export default function Deployment() {
               <input
                 value={tokenName}
                 onChange={(event) => setTokenName(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                className="th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none transition focus:border-techi-orange/60"
               />
             </label>
             <label className="block">
@@ -93,7 +93,7 @@ export default function Deployment() {
                 min={1}
                 value={maxUses}
                 onChange={(event) => setMaxUses(Number(event.target.value))}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                className="th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none transition focus:border-techi-orange/60"
               />
             </label>
             {error && (
@@ -107,15 +107,15 @@ export default function Deployment() {
             </Button>
           </div>
 
-          <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/70 p-3">
+          <div className="mt-5 rounded-lg border p-3" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)" }}>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
               <Server className="h-3.5 w-3.5" />
               RustDesk Config
             </div>
-            <dl className="space-y-1 text-xs text-slate-300">
-              <div className="flex justify-between gap-3"><dt>Server</dt><dd className="font-mono">{rustdesk?.server_host ?? "loading"}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Relay</dt><dd className="font-mono">{rustdesk?.relay_host ?? "loading"}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Key</dt><dd className="max-w-[190px] truncate font-mono">{rustdesk?.public_key ?? "loading"}</dd></div>
+            <dl className="space-y-1 text-xs" style={{ color: "var(--th-text-secondary)" }}>
+              <div className="flex justify-between gap-3"><dt className="font-semibold">Server</dt><dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{rustdesk?.server_host ?? "loading"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="font-semibold">Relay</dt><dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{rustdesk?.relay_host ?? "loading"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="font-semibold">Key</dt><dd className="max-w-[190px] truncate font-mono" style={{ color: "var(--th-text-primary)" }}>{rustdesk?.public_key ?? "loading"}</dd></div>
             </dl>
           </div>
         </div>

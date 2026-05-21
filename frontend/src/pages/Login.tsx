@@ -57,7 +57,7 @@ export default function Login() {
             <LockKeyhole className="h-5 w-5 text-orange-300" />
           </div>
           <div className="mt-4">
-            <h1 className="text-xl font-semibold text-white">TECHI MSP Operator Login</h1>
+            <h1 className="text-xl font-semibold text-techi-orange">TECHI MSP Operator Login</h1>
             <p className="mt-1 text-sm font-medium text-slate-400">Secure access for TECHI operators</p>
           </div>
         </div>

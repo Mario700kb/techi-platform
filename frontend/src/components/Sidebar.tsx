@@ -2,7 +2,6 @@ import { Home, Cpu, Folder, KeyRound, Building2, Users, ClipboardList, Package, 
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { useTheme } from "../contexts/ThemeContext";
 
 const navItems = [
   { label: "Dashboard", to: "/", icon: Home, minRole: null },
@@ -25,7 +24,6 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarProps) {
   const [hovered, setHovered] = useState(false);
   const { user, can } = useAuth();
-  const { theme } = useTheme();
   const expanded = !collapsed || hovered;
 
   return (
@@ -52,7 +50,6 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
           src={expanded ? "/brand/techi-logo-dark.png" : "/brand/techi-mark-dark.png"}
           alt="techi"
           className={expanded ? "h-7 w-auto max-w-[130px] object-contain" : "h-6 w-6 object-contain"}
-          style={theme === "light" ? { filter: "brightness(0) opacity(0.72)" } : {}}
           onError={(e) => {
             const img = e.currentTarget;
             if (!img.src.endsWith("techi-mark-dark.png")) {

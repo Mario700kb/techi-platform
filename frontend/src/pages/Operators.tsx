@@ -17,7 +17,7 @@ import { useAuth } from "../auth/AuthContext";
 import { parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
 
-const ROLES: UserRole[] = ["owner", "admin", "operator", "readonly"];
+const ROLES: UserRole[] = ["owner", "admin", "operator"];
 
 const roleBadgeClass: Record<UserRole, string> = {
   owner: "th-btn-primary border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white",
@@ -102,7 +102,6 @@ function Modal({ onClose, children, title }: ModalProps) {
 
 export default function Operators() {
   const { user, can } = useAuth();
-  const isOwner = user?.role === "owner";
   const canManage = can("admin");
 
   const [operators, setOperators] = useState<OperatorRecord[]>([]);
@@ -152,16 +151,12 @@ export default function Operators() {
     void loadData();
   }, []);
 
-  const activeAdminCount = operators.filter((op) => op.is_active && (op.role === "owner" || op.role === "admin")).length;
+  const activePrivilegedCount = operators.filter((op) => op.is_active && (op.role === "owner" || op.role === "admin")).length;
 
-  const isLastActiveAdmin = (op: OperatorRecord) =>
-    op.is_active && (op.role === "owner" || op.role === "admin") && activeAdminCount <= 1;
+  const isLastActivePrivileged = (op: OperatorRecord) =>
+    op.is_active && (op.role === "owner" || op.role === "admin") && activePrivilegedCount <= 1;
 
-  const canEditRole = (targetRole: UserRole) => {
-    if (isOwner) return true;
-    if (user?.role === "admin" && targetRole === "owner") return false;
-    return canManage;
-  };
+  const canEditRole = (_targetRole: UserRole) => canManage;
 
   const handleCreate = async () => {
     const username = createForm.username.trim();
@@ -209,7 +204,7 @@ export default function Operators() {
       username: op.username,
       email: op.email,
       display_name: op.display_name ?? "",
-      role: op.role,
+      role: op.role === "readonly" ? "operator" : op.role,
       is_active: op.is_active,
     });
     setEditError(null);
@@ -217,6 +212,11 @@ export default function Operators() {
 
   const handleEdit = async () => {
     if (!editTarget) return;
+    const nextRole = editForm.role ?? editTarget.role;
+    if (isLastActivePrivileged(editTarget) && nextRole !== "owner" && nextRole !== "admin") {
+      setEditError("Cannot remove the last active owner/admin capable account");
+      return;
+    }
     try {
       setEditLoading(true);
       setEditError(null);
@@ -234,8 +234,8 @@ export default function Operators() {
   };
 
   const handleToggleActive = async (op: OperatorRecord) => {
-    if (op.is_active && isLastActiveAdmin(op)) {
-      setError("Cannot deactivate the last active admin account");
+    if (op.is_active && isLastActivePrivileged(op)) {
+      setError("Cannot deactivate the last active owner/admin capable account");
       return;
     }
     try {
@@ -264,8 +264,8 @@ export default function Operators() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    if (isLastActiveAdmin(deleteTarget)) {
-      setError("Cannot delete the last active admin account");
+    if (isLastActivePrivileged(deleteTarget)) {
+      setError("Cannot delete the last active owner/admin capable account");
       setDeleteTarget(null);
       return;
     }
@@ -283,8 +283,7 @@ export default function Operators() {
   };
 
   const availableRoles = (): UserRole[] => {
-    if (isOwner) return ROLES;
-    return ["admin", "operator", "readonly"];
+    return canManage ? ROLES : ["operator"];
   };
 
   return (
@@ -442,9 +441,9 @@ export default function Operators() {
                             type="button"
                             onClick={() => void handleToggleActive(op)}
                             title={op.is_active ? "Deactivate" : "Activate"}
-                            disabled={op.is_active && isLastActiveAdmin(op)}
+                            disabled={op.is_active && isLastActivePrivileged(op)}
                             className={`rounded-md p-1.5 text-[11px] font-bold transition hover:bg-white/[0.06] ${
-                              op.is_active && isLastActiveAdmin(op)
+                              op.is_active && isLastActivePrivileged(op)
                               ? "cursor-not-allowed text-slate-500 opacity-60"
                                 : op.is_active
                                 ? "text-slate-500 hover:text-amber-300"
@@ -459,9 +458,9 @@ export default function Operators() {
                             type="button"
                             onClick={() => setDeleteTarget(op)}
                             title="Delete operator"
-                            disabled={isLastActiveAdmin(op)}
+                            disabled={isLastActivePrivileged(op)}
                             className={`rounded-md p-1.5 transition hover:bg-white/[0.06] ${
-                              isLastActiveAdmin(op)
+                              isLastActivePrivileged(op)
                                 ? "cursor-not-allowed text-slate-500 opacity-60"
                                 : "text-slate-500 hover:text-red-300"
                             }`}

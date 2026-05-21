@@ -466,80 +466,14 @@ html.light .drawer-table-head {
     transform: translateY(-1px);
   }
 
-  .th-menu-row {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    gap: 0.625rem;
-    border-radius: 6px;
-    padding: 0.6rem 0.7rem;
-    text-align: left;
-    font-size: 0.8125rem;
-    font-weight: 650;
-    color: var(--th-text-secondary);
-    transition: background 150ms ease, color 150ms ease;
-  }
-
-  .th-menu-row:hover {
-    background: var(--th-btn-secondary-hover);
-    color: var(--th-text-primary);
-  }
-
-  .th-menu-row-disabled {
-    cursor: not-allowed;
-    color: var(--th-text-faint);
-    opacity: 0.72;
-  }
-
-  .th-menu-row-danger {
-    color: #fca5a5;
-  }
-
-  html.light .th-menu-row-danger {
-    color: #b91c1c;
-  }
-
-  .th-menu-row-danger:hover {
-    background: rgba(239, 68, 68, 0.10);
-    color: #fecaca;
-  }
-
-  html.light .th-menu-row-danger:hover {
-    color: #991b1b;
-  }
-
-  .user-menu-dark .th-menu-row {
-    color: #B8B8C2;
-  }
-
-  .user-menu-dark .th-menu-row:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: #F5F5F7;
-  }
-
-  .user-menu-dark .th-menu-row-disabled,
-  .user-menu-dark .th-menu-row-disabled:hover {
-    background: transparent;
-    color: #606068;
-  }
-
-  .user-menu-dark .th-menu-row-danger {
-    color: #FCA5A5;
-  }
-
-  .user-menu-dark .th-menu-row-danger:hover {
-    background: rgba(239, 68, 68, 0.12);
-    color: #FECACA;
-  }
-
   .th-btn-primary:disabled,
   .th-btn-secondary:disabled,
   .th-btn-ghost:disabled,
   .th-btn-danger:disabled,
   button:disabled {
     cursor: not-allowed;
-    opacity: 0.5;
-    filter: saturate(0.5);
+    opacity: 0.68;
+    filter: saturate(0.75);
     transform: none !important;
   }
 
@@ -665,13 +599,13 @@ html.light .drawer-table-head {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), inset 0 0 0 1px rgba(239, 68, 68, 0.06) !important;
   }
 
-  html.light .metric-critical { background: #fff5f5 !important; }
+  html.light .metric-critical { background: #ffffff !important; }
 
   .metric-warning {
     border-color: rgba(251, 191, 36, 0.22) !important;
   }
 
-  html.light .metric-warning { background: #fffbf0 !important; }
+  html.light .metric-warning { background: #ffffff !important; }
 
   /* ── Quick cards (hover-interactive panels) ── */
   .quick-card {
@@ -996,6 +930,21 @@ html.light .drawer-table-head {
 
   html.light .fleet-tree button[aria-current="true"] .fleet-tree-count {
     background: rgba(199, 94, 73, 0.12);
+  }
+
+  html.light .fleet-tree button[aria-current="true"] {
+    background: rgba(199, 94, 73, 0.11) !important;
+    color: #0B1220 !important;
+    box-shadow: inset 2px 0 0 var(--th-accent), inset 0 0 0 1px rgba(199, 94, 73, 0.20) !important;
+  }
+
+  html.light .fleet-tree button[aria-current="true"] span,
+  html.light .fleet-tree button[aria-current="true"] svg {
+    color: #0B1220 !important;
+  }
+
+  html.light .fleet-tree button[aria-current="true"] .fleet-tree-count {
+    color: #7C2D20 !important;
   }
 
   /* ── Headings ── */
