@@ -63,7 +63,7 @@ class DeviceHeartbeatService:
             for value in (os_name, os_version, os_caption, os_build)
             if value and value.strip()
         )
-        if "windows server" in normalized:
+        if "windows server" in normalized or "server" in normalized:
             return DeviceType.SERVER
         if "windows 10" in normalized or "windows 11" in normalized:
             return DeviceType.CLIENT

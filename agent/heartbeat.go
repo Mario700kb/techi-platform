@@ -27,7 +27,7 @@ type HeartbeatPayload struct {
 	OSVersion             string         `json:"os_version"`
 	OSCaption             string         `json:"os_caption,omitempty"`
 	OSBuild               string         `json:"os_build,omitempty"`
-	WindowsProductType    int            `json:"windows_product_type,omitempty"`
+	WindowsProductType    int            `json:"windows_product_type"`
 	Platform              string         `json:"platform"`
 	CPU                   string         `json:"cpu"`
 	RAM                   string         `json:"ram"`
