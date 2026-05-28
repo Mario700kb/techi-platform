@@ -165,7 +165,7 @@ func handleSyncRustDesk(ctx context.Context, cfg *Config) actionResult {
 		rd := discoverRustDesk(cfg)
 		done <- actionResult{
 			message: fmt.Sprintf(
-				"RustDesk sync: id=%s status=%s version=%s install_status=%s",
+				"TECHI Remote Support sync: id=%s status=%s version=%s install_status=%s",
 				rd.ID, rd.Status, rd.Version, rd.InstallStatus,
 			),
 		}

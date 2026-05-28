@@ -15,7 +15,7 @@ def read_recent_deployments():
     return [
         RecentDeployment(
             id=1,
-            title="RustDesk agent update",
+            title="TECHI Remote Support agent update",
             environment="Production",
             status="success",
             timestamp=now - timedelta(hours=1, minutes=24),

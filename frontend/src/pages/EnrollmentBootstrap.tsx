@@ -107,7 +107,7 @@ function validateBootstrapScript(script: string): string | null {
 const PROFILE_INFO: Record<AvailabilityProfile, { label: string; description: string }> = {
   server: {
     label: "Server",
-    description: "Sleep and hibernate disabled on AC. Lock screen stays enabled. RustDesk works on lock screen via service.",
+    description: "Sleep and hibernate disabled on AC. Lock screen stays enabled. TECHI Remote Support works on lock screen via service.",
   },
   workstation: {
     label: "Workstation",
@@ -419,7 +419,7 @@ export default function EnrollmentBootstrap() {
           <div className="text-sm text-blue-100">
             <span className="font-semibold">Security model: </span>
             Lock screen stays enabled at all times — remote access works through Windows services
-            (TechiAgent + RustDesk), not through logged-in user sessions.
+            (TechiAgent + TECHI Remote Support), not through logged-in user sessions.
             Sleep / hibernate makes the device unreachable unless Wake-on-LAN is used.
             Choose <strong>Server</strong> profile to prevent sleep on AC power.
           </div>
@@ -711,7 +711,7 @@ export default function EnrollmentBootstrap() {
               </div>
             )}
 
-            {/* RustDesk */}
+            {/* TECHI Remote Support */}
             <div>
               <label className="flex cursor-pointer items-center gap-2">
                 <input
@@ -721,7 +721,7 @@ export default function EnrollmentBootstrap() {
                   className="h-4 w-4 rounded accent-techi-orange"
                 />
                 <span className="text-xs font-semibold text-slate-200">
-                  RustDesk self-healing (Windows)
+                  TECHI Remote Support self-healing (Windows)
                 </span>
               </label>
 
@@ -729,12 +729,12 @@ export default function EnrollmentBootstrap() {
                 <div className="mt-3 space-y-3 rounded-lg border border-white/10 bg-slate-950/50 p-3">
                   {(
                     [
-                      { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "http://server:8081/rustdesk.msi" },
+                      { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "http://server:8081/TECHI-Remote-Support.msi" },
                       { label: "Rendezvous server", value: rustdeskRendezvous, set: setRustdeskRendezvous, placeholder: "server IP or hostname" },
                       { label: "Relay server", value: rustdeskRelay, set: setRustdeskRelay, placeholder: "relay IP or hostname" },
                       { label: "API server", value: rustdeskApi, set: setRustdeskApi, placeholder: "http://server:21114" },
                       { label: "Public key", value: rustdeskKey, set: setRustdeskKey, placeholder: "base64 key" },
-                      { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "initial RustDesk password" },
+                      { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "initial TECHI Remote Support password" },
                     ] as const
                   ).map(({ label, value, set, placeholder }) => (
                     <label key={label} className="block">

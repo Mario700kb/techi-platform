@@ -421,7 +421,7 @@ class DeviceHeartbeatService:
         DeviceActivityEventService(self.db).record(
             device_id=device.id,
             event_type="rustdesk_repaired",
-            summary="RustDesk repaired",
+            summary="TECHI Remote Support repaired",
             detail=f"Repair count: {current_count}",
             actor="agent",
             fail_silently=True,

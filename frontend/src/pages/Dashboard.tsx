@@ -445,7 +445,7 @@ export default function Dashboard() {
                 <table className="min-w-full text-left text-[10px]">
                   <thead className="bg-slate-950/90">
                     <tr className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                      <th className="px-2 py-1">RustDesk ID</th>
+                      <th className="px-2 py-1">Remote Support ID</th>
                       <th className="px-2 py-1">Hostname</th>
                       <th className="px-2 py-1">User</th>
                       <th className="px-2 py-1">Assignment</th>
@@ -699,7 +699,7 @@ export default function Dashboard() {
               <div className="premium-card-soft flex items-start gap-3 p-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 text-orange-300" />
                 <div>
-                  <p className="font-semibold text-white">RustDesk native path</p>
+                  <p className="font-semibold text-white">TECHI Remote Support native path</p>
                   <p className="mt-1">Connect action remains ready for native launch.</p>
                 </div>
               </div>

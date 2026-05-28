@@ -29,7 +29,7 @@ type Config struct {
 	CollectSoftware  bool   `json:"collect_software"`
 	CollectServices  bool   `json:"collect_services"`
 
-	// RustDesk self-healing policy (Windows only)
+	// TECHI Remote Support self-healing policy (Windows only)
 	RustDeskManageEnabled     bool   `json:"rustdesk_manage_enabled"`
 	RustDeskForceConfig       bool   `json:"rustdesk_force_config"`
 	RustDeskMSIUrl            string `json:"rustdesk_msi_url,omitempty"`

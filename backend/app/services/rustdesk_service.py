@@ -34,15 +34,15 @@ class RustDeskIdentityService:
     def validate_rustdesk_id(cls, rustdesk_id: Optional[str]) -> tuple[bool, str, Optional[str]]:
         normalized = cls.normalize_rustdesk_id(rustdesk_id or "")
         if not normalized:
-            return False, normalized, "RustDesk ID is required"
+            return False, normalized, "TECHI Remote Support ID is required"
         if normalized.lower() in PLACEHOLDER_IDS:
-            return False, normalized, "RustDesk ID is still a placeholder"
+            return False, normalized, "TECHI Remote Support ID is still a placeholder"
         if GENERATED_AGENT_ID_PATTERN.match(normalized.lower()):
-            return False, normalized, "RustDesk ID is not discovered yet"
+            return False, normalized, "TECHI Remote Support ID is not discovered yet"
         if PENDING_RUSTDESK_ID_PATTERN.match(normalized.lower()):
-            return False, normalized, "RustDesk ID is pending discovery"
+            return False, normalized, "TECHI Remote Support ID is pending discovery"
         if not RUSTDESK_ID_PATTERN.match(normalized):
-            return False, normalized, "RustDesk ID must be 6-64 characters and contain only letters, numbers, underscore, or dash"
+            return False, normalized, "TECHI Remote Support ID must be 6-64 characters and contain only letters, numbers, underscore, or dash"
         return True, normalized, None
 
     def verify(self, rustdesk_id: str, *, exclude_device_id: Optional[int] = None) -> RustDeskIdVerifyResponse:
@@ -55,11 +55,11 @@ class RustDeskIdentityService:
             return RustDeskIdVerifyResponse(
                 valid=False,
                 normalized_rustdesk_id=normalized,
-                message="RustDesk ID is already bound to another device",
+                message="TECHI Remote Support ID is already bound to another device",
                 conflict_device_id=conflict.id,
             )
 
-        return RustDeskIdVerifyResponse(valid=True, normalized_rustdesk_id=normalized, message="RustDesk ID is available")
+        return RustDeskIdVerifyResponse(valid=True, normalized_rustdesk_id=normalized, message="TECHI Remote Support ID is available")
 
     def apply_heartbeat_sync(
         self,

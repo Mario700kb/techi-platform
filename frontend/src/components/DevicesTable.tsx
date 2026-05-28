@@ -459,7 +459,7 @@ const DevicesTable = memo(function DevicesTable({
                   <th className="w-[46px] px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Status</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Hostname</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Assignment</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">RustDesk ID</th>
+                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Remote Support ID</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Sync</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">User</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Public IP</th>
@@ -531,10 +531,10 @@ const DevicesTable = memo(function DevicesTable({
                           onClick={() => launchRustDesk(device.rustdesk_id)}
                           title={
                             device.rustdesk_conflict_detected
-                              ? "RustDesk ID conflict detected"
+                              ? "TECHI Remote Support ID conflict detected"
                               : isValidRustDeskId(device.rustdesk_id)
-                              ? "Open native RustDesk"
-                              : "RustDesk ID not resolved yet"
+                              ? "Open TECHI Remote Support"
+                              : "TECHI Remote Support ID not resolved yet"
                           }
                         >
                           <ExternalLink className="h-2.5 w-2.5" />

@@ -30,7 +30,7 @@ func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 		}
 		rd := discoverRustDesk(cfg)
 		done <- actionResult{
-			message: fmt.Sprintf("RustDesk restarted — status=%s id=%s", rd.Status, rd.ID),
+			message: fmt.Sprintf("TECHI Remote Support restarted — status=%s id=%s", rd.Status, rd.ID),
 		}
 	}()
 	select {
@@ -71,7 +71,7 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 		rd := discoverRustDesk(cfg)
 		done <- actionResult{
 			message: fmt.Sprintf(
-				"RustDesk reinstalled — install_status=%s status=%s version=%s id=%s",
+				"TECHI Remote Support reinstalled — install_status=%s status=%s version=%s id=%s",
 				rd.InstallStatus, rd.Status, rd.Version, rd.ID,
 			),
 		}
@@ -89,7 +89,7 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 	go func() {
 		rd := discoverRustDesk(cfg)
 		if rd.Status == "running" {
-			done <- actionResult{message: fmt.Sprintf("RustDesk already running (id=%s)", rd.ID)}
+			done <- actionResult{message: fmt.Sprintf("TECHI Remote Support already running (id=%s)", rd.ID)}
 			return
 		}
 		log.Printf("[action] reopen_rustdesk: service not running — starting")
@@ -106,7 +106,7 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 		time.Sleep(2 * time.Second)
 		rd = discoverRustDesk(cfg)
 		done <- actionResult{
-			message: fmt.Sprintf("RustDesk reopened — status=%s id=%s", rd.Status, rd.ID),
+			message: fmt.Sprintf("TECHI Remote Support reopened — status=%s id=%s", rd.Status, rd.ID),
 		}
 	}()
 	select {

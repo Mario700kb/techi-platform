@@ -10,9 +10,9 @@ export function isValidRustDeskId(rustdeskId?: string | null): boolean {
 export function buildRustDeskLaunchUrl(rustdeskId: string): string {
   const normalized = rustdeskId.trim();
   if (!isValidRustDeskId(normalized)) {
-    throw new Error("Invalid RustDesk ID");
+    throw new Error("Invalid TECHI Remote Support ID");
   }
-  return `rustdesk://${encodeURIComponent(normalized)}`;
+  return `techi://${encodeURIComponent(normalized)}`;
 }
 
 export function launchRustDesk(rustdeskId: string): void {

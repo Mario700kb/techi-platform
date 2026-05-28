@@ -90,7 +90,7 @@ class RustDeskResolverService:
     ) -> ResolverResult:
         if not os.path.exists(db_path):
             logger.debug("[rustdesk_resolver] DB not found at %s", db_path)
-            return ResolverResult(None, "none", "RustDesk server DB not found")
+            return ResolverResult(None, "none", "TECHI Remote Support server DB not found")
 
         if not hostname:
             return ResolverResult(None, "none", "No hostname to match")
@@ -115,10 +115,10 @@ class RustDeskResolverService:
         columns = {row[1].lower() for row in cursor.fetchall()}
 
         if not columns:
-            return ResolverResult(None, "none", "RustDesk peers table not found or empty schema")
+            return ResolverResult(None, "none", "TECHI Remote Support peers table not found or empty schema")
 
         if "hostname" not in columns:
-            return ResolverResult(None, "none", "RustDesk peers table has no hostname column")
+            return ResolverResult(None, "none", "TECHI Remote Support peers table has no hostname column")
 
         # Discover which timestamp/IP columns actually exist in this schema version
         ts_col = next((c for c in _TIMESTAMP_COLUMN_CANDIDATES if c in columns), None)
@@ -175,7 +175,7 @@ class RustDeskResolverService:
                 "[rustdesk_resolver] high confidence match: hostname='%s' → id='%s'",
                 hostname, peer_id,
             )
-            return ResolverResult(peer_id, "high", "Resolved from RustDesk server")
+            return ResolverResult(peer_id, "high", "Resolved from TECHI Remote Support server")
 
         logger.info(
             "[rustdesk_resolver] medium confidence match: hostname='%s' → id='%s' (stale peer)",

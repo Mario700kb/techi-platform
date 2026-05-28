@@ -122,9 +122,9 @@ def _add_rustdesk_penalties(penalties: List[Tuple[float, str]], device: Device) 
     install_status = (getattr(device, "rustdesk_install_status", "") or "").lower()
     status = (getattr(device, "rustdesk_status", "") or "").lower()
     if install_status in {"missing", "not_installed", "not installed", "absent"}:
-        penalties.append((24.0, "RustDesk missing"))
+        penalties.append((24.0, "TECHI Remote Support missing"))
     elif status in {"offline", "stopped", "not_running", "not running"}:
-        penalties.append((16.0, "RustDesk offline"))
+        penalties.append((16.0, "TECHI Remote Support offline"))
 
 
 def _add_user_penalties(penalties: List[Tuple[float, str]], device: Device) -> None:

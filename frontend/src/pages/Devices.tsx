@@ -518,7 +518,7 @@ export default function Devices() {
               Remote device <span className="premium-accent-text">management</span>
             </h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Inspect endpoint posture, filter client fleets, and launch RustDesk connections.
+              Inspect endpoint posture, filter client fleets, and launch TECHI Remote Support connections.
             </p>
           </div>
           <div className="flex flex-none flex-wrap items-center gap-2">
@@ -633,7 +633,7 @@ export default function Devices() {
           <div className="premium-card-soft flex flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-orange-300" />
-              <span>Native RustDesk connect action is preserved as a future desktop-launch workflow.</span>
+              <span>Native TECHI Remote Support connect action is preserved as a future desktop-launch workflow.</span>
             </div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
               <Server className="h-4 w-4" />

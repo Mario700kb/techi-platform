@@ -28,7 +28,7 @@ class EnrollmentBootstrapRequest(BaseModel):
     platform: EnrollmentBootstrapPlatform
     enrollment_token: Optional[str] = Field(default=None, min_length=16, max_length=256)
 
-    # RustDesk self-healing fields — embedded in agent config (Windows only)
+    # TECHI Remote Support self-healing fields — embedded in agent config (Windows only)
     rustdesk_manage_enabled: bool = False
     rustdesk_msi_url: str = ""
     rustdesk_msi_checksum_sha256: str = ""

@@ -154,7 +154,7 @@ class AlertEngine:
                 device_id=device.id,
                 kind=AlertKind.RUSTDESK_SYNC_FAILURE,
                 severity=AlertSeverity.WARNING,
-                message=f"RustDesk sync failed on {hostname}",
+                message=f"TECHI Remote Support sync failed on {hostname}",
                 detail=device.rustdesk_sync_message,
                 device=device,
             )

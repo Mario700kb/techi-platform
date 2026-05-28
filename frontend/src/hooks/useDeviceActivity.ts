@@ -13,7 +13,7 @@ const EVENT_SUMMARIES: Partial<Record<string, string>> = {
   heartbeat_received: "Heartbeat received",
   device_online: "Device came online",
   device_offline: "Device went offline",
-  rustdesk_updated: "RustDesk metadata updated",
+  rustdesk_updated: "TECHI Remote Support metadata updated",
   sync_failed: "Sync failure detected",
   device_updated: "Device state updated",
   health_warning: "Health warning",

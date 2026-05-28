@@ -850,15 +850,15 @@ export default function DeviceDrawer({
             </div>
           </section>
 
-          {/* RustDesk */}
+          {/* TECHI Remote Support */}
           <section className="mb-5">
-            <p className="premium-kicker mb-2">RustDesk</p>
+            <p className="premium-kicker mb-2">TECHI Remote Support</p>
             <div
               className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div className="col-span-2">
-                <DetailRow label="RustDesk ID" value={device.rustdesk_id} mono />
+                <DetailRow label="Remote Support ID" value={device.rustdesk_id} mono />
               </div>
               <DetailRow label="Install Status" value={device.rustdesk_install_status} />
               <DetailRow label="Runtime" value={device.rustdesk_status} />
@@ -875,7 +875,7 @@ export default function DeviceDrawer({
               </div>
               {!isValidRustDeskId(device.rustdesk_id) && (
                 <div className="col-span-2">
-                  <p className="text-[11px] font-medium text-slate-500">RustDesk ID not resolved yet — Connect is disabled until a valid ID is confirmed.</p>
+                  <p className="text-[11px] font-medium text-slate-500">TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.</p>
                 </div>
               )}
             </div>
@@ -1005,7 +1005,7 @@ export default function DeviceDrawer({
             <ConfirmationModal
               title={
                 selectedActionType === "reinstall_rustdesk"
-                  ? "Reinstall RustDesk?"
+                  ? "Reinstall TECHI Remote Support?"
                   : "Restart device?"
               }
               confirmLabel={
@@ -1033,7 +1033,7 @@ export default function DeviceDrawer({
               }}
             >
               {selectedActionType === "reinstall_rustdesk" ? (
-                <>This will download and silently reinstall RustDesk on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
+                <>This will download and silently reinstall TECHI Remote Support on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
               ) : (
                 <>This will trigger an OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will be temporarily unreachable.</>
               )}
@@ -1106,11 +1106,11 @@ export default function DeviceDrawer({
                     <option value="restart_agent">Restart Agent</option>
                     <option value="apply_power_policy">Apply Power Policy</option>
                   </optgroup>
-                  <optgroup label="RustDesk">
-                    <option value="sync_rustdesk">Sync RustDesk</option>
-                    <option value="restart_rustdesk">Restart RustDesk</option>
-                    <option value="reopen_rustdesk">Reopen RustDesk</option>
-                    <option value="reinstall_rustdesk">Reinstall RustDesk</option>
+                  <optgroup label="TECHI Remote Support">
+                    <option value="sync_rustdesk">Sync TECHI Remote Support</option>
+                    <option value="restart_rustdesk">Restart TECHI Remote Support</option>
+                    <option value="reopen_rustdesk">Reopen TECHI Remote Support</option>
+                    <option value="reinstall_rustdesk">Reinstall TECHI Remote Support</option>
                   </optgroup>
                   <optgroup label="Device">
                     <option value="restart_device">Restart Device</option>

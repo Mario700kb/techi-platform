@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	rustdeskDefaultInstallPath = `C:\Program Files\RustDesk\rustdesk.exe`
-	rustdeskServiceName        = "RustDesk"
+	rustdeskDefaultInstallPath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
+	rustdeskServiceName        = "TECHI Remote Support"
 )
 
-// ensureRustDesk checks and heals RustDesk installation, config, and service.
+// ensureRustDesk checks and heals TECHI Remote Support installation, config, and service.
 // Returns without error even if healing steps fail so heartbeat always continues.
 func ensureRustDesk(cfg *Config, configPath string) {
 	if !cfg.RustDeskManageEnabled {
@@ -114,7 +114,7 @@ func writeRustDeskConfig(cfg *Config) (bool, error) {
 			log.Printf("[rustdesk_manage] mkdir %s: %v", dir, err)
 			continue
 		}
-		for _, name := range []string{"RustDesk2.toml", "RustDesk.toml"} {
+		for _, name := range []string{"TECHI Remote Support2.toml", "TECHI Remote Support.toml"} {
 			path := filepath.Join(dir, name)
 			if existing, err := os.ReadFile(path); err == nil {
 				if string(existing) == content {
@@ -170,9 +170,9 @@ func buildRustDeskTOML(cfg *Config) string {
 
 func rustDeskConfigDirs() []string {
 	dirs := []string{
-		`C:\ProgramData\RustDesk\config`,
-		`C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config`,
-		`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config`,
+		`C:\ProgramData\TECHI Remote Support\config`,
+		`C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support\config`,
+		`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support\config`,
 	}
 	usersRoot := os.Getenv("SystemDrive") + `\Users`
 	if entries, err := os.ReadDir(usersRoot); err == nil {
@@ -184,7 +184,7 @@ func rustDeskConfigDirs() []string {
 			if name == "Public" || name == "Default" || name == "Default User" || name == "All Users" {
 				continue
 			}
-			dirs = append(dirs, filepath.Join(usersRoot, name, `AppData\Roaming\RustDesk\config`))
+			dirs = append(dirs, filepath.Join(usersRoot, name, `AppData\Roaming\TECHI Remote Support\config`))
 		}
 	}
 	return dirs
@@ -211,7 +211,7 @@ func ensureRustDeskService() (bool, error) {
 	binPath := fmt.Sprintf(`%s --service`, rustdeskDefaultInstallPath)
 	log.Printf("[rustdesk_manage] creating service")
 	if _, err2 := runWithTimeout(15*time.Second, "sc", "create", rustdeskServiceName,
-		"binPath=", binPath, "start=", "auto", "DisplayName=", "RustDesk"); err2 != nil {
+		"binPath=", binPath, "start=", "auto", "DisplayName=", "TECHI Remote Support"); err2 != nil {
 		return false, fmt.Errorf("sc create: %w", err2)
 	}
 	if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
@@ -280,7 +280,7 @@ func cachedMSIPath(cfg *Config) (string, error) {
 	if version == "" {
 		version = "latest"
 	}
-	return filepath.Join(root, "rustdesk-"+version+".msi"), nil
+	return filepath.Join(root, "TECHI-Remote-Support-"+version+".msi"), nil
 }
 
 func sanitizeCachePart(value string) string {

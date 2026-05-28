@@ -152,7 +152,7 @@ export default function Deployment() {
           </div>
 
           <div className="mt-5 rounded-lg border p-3" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)" }}>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>RustDesk Config</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>TECHI Remote Support Config</div>
             <dl className="space-y-1 text-xs" style={{ color: "var(--th-text-secondary)" }}>
               <div className="flex justify-between gap-3"><dt className="font-semibold">Server</dt><dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{rustdesk?.server_host ?? "loading"}</dd></div>
               <div className="flex justify-between gap-3"><dt className="font-semibold">Relay</dt><dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{rustdesk?.relay_host ?? "loading"}</dd></div>
@@ -287,7 +287,7 @@ function DeploymentModal({ deployment, copied, onCopy, onDownload, onClose }: { 
           <Info label="Status" value={deployment.token_metadata.status} />
           <Info label="Uses" value={`${deployment.token_metadata.use_count} / ${deployment.token_metadata.max_uses}`} />
           <Info label="Expires" value={fmtDate(deployment.token_metadata.expires_at)} />
-          <Info label="RustDesk" value={`${deployment.rustdesk.server_host ?? "-"} / ${deployment.rustdesk.relay_host ?? "-"}`} />
+          <Info label="TECHI Remote Support" value={`${deployment.rustdesk.server_host ?? "-"} / ${deployment.rustdesk.relay_host ?? "-"}`} />
         </div>
       </div>
     </div>

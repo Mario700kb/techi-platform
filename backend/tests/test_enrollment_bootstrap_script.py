@@ -217,7 +217,7 @@ class TestTokenInstallerScript:
         assert "already installed" in self.script, "token-installer: missing idempotency check"
 
     def test_rustdesk_migration_not_added_when_disabled(self):
-        assert "Forcing RustDesk migration to TECHI infrastructure" not in self.script
+        assert "Forcing TECHI Remote Support migration to TECHI infrastructure" not in self.script
 
     def test_generated_script_uses_https_urls(self):
         assert "http://10.5.50.63:8000" not in self.script
@@ -237,21 +237,21 @@ class TestRustDeskForceMigrationScript:
         )
 
     def test_stops_service_and_process_before_config_cleanup(self):
-        service_index = self.script.index("Stopping RustDesk service")
-        process_index = self.script.index("Stopping RustDesk process")
-        cleanup_index = self.script.index("Old RustDesk config found")
+        service_index = self.script.index("Stopping TECHI Remote Support service")
+        process_index = self.script.index("Stopping TECHI Remote Support process")
+        cleanup_index = self.script.index("Old TECHI Remote Support config found")
 
         assert service_index < cleanup_index
         assert process_index < cleanup_index
 
     def test_removes_all_requested_config_locations(self):
-        assert "C:\\ProgramData\\RustDesk" in self.script
-        assert "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\RustDesk" in self.script
-        assert "Join-Path $env:APPDATA 'RustDesk'" in self.script
-        assert "Join-Path $env:LOCALAPPDATA 'RustDesk'" in self.script
+        assert "C:\\ProgramData\\TECHI Remote Support" in self.script
+        assert "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\TECHI Remote Support" in self.script
+        assert "Join-Path $env:APPDATA 'TECHI Remote Support'" in self.script
+        assert "Join-Path $env:LOCALAPPDATA 'TECHI Remote Support'" in self.script
 
     def test_removes_requested_config_files_and_config_contents(self):
-        assert "'RustDesk.toml', 'RustDesk2.toml'" in self.script
+        assert "'TECHI Remote Support.toml', 'TECHI Remote Support2.toml'" in self.script
         assert "-Filter '*.toml'" in self.script
         assert "Join-Path $Root 'config'" in self.script
         assert "Remove-Item -LiteralPath $_.FullName -Recurse -Force" in self.script
@@ -261,52 +261,52 @@ class TestRustDeskForceMigrationScript:
         assert "Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue" in self.script
         assert "function Get-ChildItemSafe" in self.script
         assert "Get-ChildItem -LiteralPath $Path" in self.script
-        assert "WARNING: RustDesk path inaccessible, skipping" in self.script
-        assert "WARNING: RustDesk profile scan inaccessible, skipping" in self.script
-        assert "RustDesk config root not present or inaccessible" in self.script
+        assert "WARNING: TECHI Remote Support path inaccessible, skipping" in self.script
+        assert "WARNING: TECHI Remote Support profile scan inaccessible, skipping" in self.script
+        assert "TECHI Remote Support config root not present or inaccessible" in self.script
 
     def test_profile_rewrite_is_access_denied_safe(self):
         assert "function New-DirectorySafe" in self.script
-        assert "function Write-RustDeskConfigSafe" in self.script
-        assert "WARNING: RustDesk directory inaccessible, skipping" in self.script
-        assert "WARNING: RustDesk config write inaccessible, skipping" in self.script
-        assert "WARNING: RustDesk TECHI config verification failed; continuing bootstrap" in self.script
-        assert "ERROR: RustDesk TECHI config verification failed" not in self.script
+        assert "function Write-TechiConfigSafe" in self.script
+        assert "WARNING: TECHI Remote Support directory inaccessible, skipping" in self.script
+        assert "WARNING: TECHI Remote Support config write inaccessible, skipping" in self.script
+        assert "WARNING: TECHI Remote Support TECHI config verification failed; continuing bootstrap" in self.script
+        assert "ERROR: TECHI Remote Support TECHI config verification failed" not in self.script
 
     def test_rewrites_techi_config_and_verifies_host(self):
-        assert "rendezvous_server = '$RustDeskRendezvous'" in self.script
-        assert "relay-server = '$RustDeskRelay'" in self.script
-        assert "key = '$RustDeskKey'" in self.script
-        assert "RustDesk config rewritten" in self.script
-        assert "$Written.Contains($RustDeskRendezvous)" in self.script
-        assert "RustDesk TECHI config verified" in self.script
+        assert "rendezvous_server = '$TechiRendezvous'" in self.script
+        assert "relay-server = '$TechiRelay'" in self.script
+        assert "key = '$TechiKey'" in self.script
+        assert "TECHI Remote Support config rewritten" in self.script
+        assert "$Written.Contains($TechiRendezvous)" in self.script
+        assert "TECHI Remote Support TECHI config verified" in self.script
 
     def test_restarts_rustdesk_and_logs_migration(self):
-        assert "Restarting RustDesk service" in self.script
-        assert "RustDesk restarted" in self.script
-        assert "RustDesk forced migration complete" in self.script
+        assert "Restarting TECHI Remote Support service" in self.script
+        assert "TECHI Remote Support restarted" in self.script
+        assert "TECHI Remote Support forced migration complete" in self.script
 
     def test_sets_unattended_password_with_cli_without_logging_secret(self):
-        assert "$RustDeskPassword = 'Durres.12'" in self.script
-        assert "'C:\\Program Files\\RustDesk\\rustdesk.exe'" in self.script
-        assert "'C:\\Program Files (x86)\\RustDesk\\rustdesk.exe'" in self.script
+        assert "$TechiPassword = 'Durres.12'" in self.script
+        assert "'C:\\Program Files\\TECHI Remote Support\\rustdesk.exe'" in self.script
+        assert "'C:\\Program Files (x86)\\TECHI Remote Support\\rustdesk.exe'" in self.script
         assert "Get-CimInstance Win32_Service" in self.script
         assert "$Service.PathName" in self.script
-        assert "Start-Process -FilePath $RustDeskExe -ArgumentList @('--password', $RustDeskPassword)" in self.script
-        assert "RustDesk unattended access password configured." in self.script
-        assert "WARNING: RustDesk password CLI failed; continuing bootstrap." in self.script
+        assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" in self.script
+        assert "TECHI Remote Support unattended access password configured." in self.script
+        assert "WARNING: TECHI Remote Support password CLI failed; continuing bootstrap." in self.script
         assert 'Write-Log "Durres.12' not in self.script
         assert "Write-Log 'Durres.12" not in self.script
 
     def test_password_set_happens_before_restart(self):
-        password_index = self.script.index("Setting RustDesk unattended access password via CLI")
-        restart_index = self.script.index("Restarting RustDesk service")
+        password_index = self.script.index("Setting TECHI Remote Support unattended access password via CLI")
+        restart_index = self.script.index("Restarting TECHI Remote Support service")
 
         assert password_index < restart_index
 
     def test_idempotent_cleanup_then_rewrite_order(self):
-        remove_index = self.script.index("RustDesk config removed")
-        rewrite_index = self.script.index("Write-RustDeskConfigSafe -Path $Path")
+        remove_index = self.script.index("TECHI Remote Support config removed")
+        rewrite_index = self.script.index("Write-TechiConfigSafe -Path $Path")
 
         assert remove_index < rewrite_index
 

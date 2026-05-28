@@ -124,9 +124,9 @@ func localRustDeskIDFromCLI(installPath string) string {
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	installPath := firstExistingPath([]string{
-		filepath.Join(os.Getenv("ProgramFiles"), "RustDesk", "rustdesk.exe"),
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), "RustDesk", "rustdesk.exe"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "RustDesk", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramFiles"), "TECHI Remote Support", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "TECHI Remote Support", "rustdesk.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "TECHI Remote Support", "rustdesk.exe"),
 	})
 
 	if installPath != "" {
@@ -219,7 +219,7 @@ func rustDeskWindowsStatus() string {
 		return "running"
 	}
 
-	output, err = exec.Command("sc", "query", "RustDesk").Output()
+	output, err = exec.Command("sc", "query", "TECHI Remote Support").Output()
 	if err == nil {
 		lower := strings.ToLower(string(output))
 		if strings.Contains(lower, "running") {
@@ -251,30 +251,30 @@ func readRustDeskFromKnownFiles() (id, encID string) {
 func rustDeskConfigCandidates() []string {
 	home, _ := os.UserHomeDir()
 	candidates := []string{
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "config", "RustDesk2.toml"),
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "config", "RustDesk.toml"),
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "config", "RustDesk2_local.toml"),
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "config", "RustDesk_local.toml"),
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "RustDesk2.toml"),
-		filepath.Join(os.Getenv("APPDATA"), "RustDesk", "RustDesk.toml"),
-		filepath.Join(os.Getenv("PROGRAMDATA"), "RustDesk", "config", "RustDesk2.toml"),
-		filepath.Join(os.Getenv("PROGRAMDATA"), "RustDesk", "config", "RustDesk.toml"),
-		filepath.Join(os.Getenv("PROGRAMDATA"), "RustDesk", "config", "RustDesk2_local.toml"),
-		filepath.Join(os.Getenv("PROGRAMDATA"), "RustDesk", "config", "RustDesk_local.toml"),
-		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "RustDesk", "config", "RustDesk2.toml"),
-		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "RustDesk", "config", "RustDesk.toml"),
-		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "RustDesk", "config", "RustDesk2_local.toml"),
-		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "RustDesk", "config", "RustDesk_local.toml"),
-		filepath.Join(home, ".config", "rustdesk", "RustDesk2.toml"),
-		filepath.Join(home, ".config", "rustdesk", "RustDesk.toml"),
-		filepath.Join(home, "Library", "Preferences", "com.carriez.RustDesk", "RustDesk2.toml"),
-		filepath.Join(home, "Library", "Preferences", "com.carriez.RustDesk", "RustDesk.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "config", "TECHI Remote Support2.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "config", "TECHI Remote Support.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "config", "TECHI Remote Support2_local.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "config", "TECHI Remote Support_local.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "TECHI Remote Support2.toml"),
+		filepath.Join(os.Getenv("APPDATA"), "TECHI Remote Support", "TECHI Remote Support.toml"),
+		filepath.Join(os.Getenv("PROGRAMDATA"), "TECHI Remote Support", "config", "TECHI Remote Support2.toml"),
+		filepath.Join(os.Getenv("PROGRAMDATA"), "TECHI Remote Support", "config", "TECHI Remote Support.toml"),
+		filepath.Join(os.Getenv("PROGRAMDATA"), "TECHI Remote Support", "config", "TECHI Remote Support2_local.toml"),
+		filepath.Join(os.Getenv("PROGRAMDATA"), "TECHI Remote Support", "config", "TECHI Remote Support_local.toml"),
+		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support2.toml"),
+		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support.toml"),
+		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support2_local.toml"),
+		filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support_local.toml"),
+		filepath.Join(home, ".config", "TECHI Remote Support", "TECHI Remote Support2.toml"),
+		filepath.Join(home, ".config", "TECHI Remote Support", "TECHI Remote Support.toml"),
+		filepath.Join(home, "Library", "Application Support", "TECHI Remote Support", "TECHI Remote Support2.toml"),
+		filepath.Join(home, "Library", "Application Support", "TECHI Remote Support", "TECHI Remote Support.toml"),
 	}
 	for _, pattern := range []string{
-		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "RustDesk", "config", "RustDesk2.toml"),
-		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "RustDesk", "config", "RustDesk.toml"),
-		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "RustDesk", "config", "RustDesk2_local.toml"),
-		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "RustDesk", "config", "RustDesk_local.toml"),
+		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support2.toml"),
+		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support.toml"),
+		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support2_local.toml"),
+		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support_local.toml"),
 	} {
 		if matches, err := filepath.Glob(pattern); err == nil {
 			candidates = append(candidates, matches...)

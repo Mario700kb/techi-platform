@@ -71,12 +71,12 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 		inventory.Hostname = cfg.AgentName
 	}
 
-	// RustDesk self-healing before discovery so the discovered state reflects any fixes
+	// TECHI Remote Support self-healing before discovery so the discovered state reflects any fixes
 	ensureRustDesk(cfg, configPath)
 
 	rustdesk := discoverRustDesk(cfg)
 	log.Printf(
-		"rustdesk discovery: id=%s install_status=%s status=%s version=%s path=%s",
+		"TECHI Remote Support discovery: id=%s install_status=%s status=%s version=%s path=%s",
 		rustdesk.ID,
 		rustdesk.InstallStatus,
 		rustdesk.Status,

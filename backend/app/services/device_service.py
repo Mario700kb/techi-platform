@@ -74,7 +74,7 @@ class DeviceService:
     def create_device(self, device_in: DeviceCreate) -> Device:
         verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id)
         if not verification.valid:
-            raise ValueError(verification.message or "Invalid RustDesk ID")
+            raise ValueError(verification.message or "Invalid TECHI Remote Support ID")
         # Check if rustdesk_id already exists
         existing = self.repository.get_by_rustdesk_id(device_in.rustdesk_id)
         if existing:
@@ -89,7 +89,7 @@ class DeviceService:
         if device_in.rustdesk_id and device_in.rustdesk_id != device.rustdesk_id:
             verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id, exclude_device_id=device_id)
             if not verification.valid:
-                raise ValueError(verification.message or "Invalid RustDesk ID")
+                raise ValueError(verification.message or "Invalid TECHI Remote Support ID")
         return self.assignment.apply_resolution(self.repository.update(device, device_in))
 
     def delete_device(self, device_id: int) -> Optional[Device]:
