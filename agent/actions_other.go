@@ -30,3 +30,7 @@ func handleReopenRustDesk(_ context.Context, _ *Config) actionResult {
 func handleApplyPowerPolicy(_ context.Context, _ *Config) actionResult {
 	return actionResult{err: fmt.Errorf("apply_power_policy: Windows-only action")}
 }
+
+func handleRepairConfigRustDesk(_ context.Context, _ *Config) actionResult {
+	return actionResult{err: fmt.Errorf("repair_config_rustdesk: Windows-only action")}
+}

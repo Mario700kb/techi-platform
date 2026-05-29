@@ -29,6 +29,7 @@ class ActionType(str, Enum):
     RESTART_RUSTDESK = "restart_rustdesk"
     REINSTALL_RUSTDESK = "reinstall_rustdesk"
     REOPEN_RUSTDESK = "reopen_rustdesk"
+    REPAIR_CONFIG_RUSTDESK = "repair_config_rustdesk"
     SYNC_INVENTORY = "sync_inventory"
     IMMEDIATE_HEARTBEAT = "immediate_heartbeat"
     APPLY_POWER_POLICY = "apply_power_policy"
@@ -43,6 +44,7 @@ ACTION_LABELS: Dict[str, str] = {
     ActionType.RESTART_RUSTDESK: "Restart TECHI Remote Support",
     ActionType.REINSTALL_RUSTDESK: "Reinstall TECHI Remote Support",
     ActionType.REOPEN_RUSTDESK: "Reopen TECHI Remote Support",
+    ActionType.REPAIR_CONFIG_RUSTDESK: "Repair TECHI Remote Support Config",
     ActionType.SYNC_INVENTORY: "Sync Inventory",
     ActionType.IMMEDIATE_HEARTBEAT: "Immediate Heartbeat",
     ActionType.APPLY_POWER_POLICY: "Apply Power Policy",
@@ -51,7 +53,7 @@ ACTION_LABELS: Dict[str, str] = {
 # Actions that conflict with each other — only one may be non-terminal at a time.
 # Each inner set is a conflict group.
 ACTION_CONFLICT_GROUPS: List[set] = [
-    {ActionType.RESTART_RUSTDESK, ActionType.REINSTALL_RUSTDESK, ActionType.REOPEN_RUSTDESK},
+    {ActionType.RESTART_RUSTDESK, ActionType.REINSTALL_RUSTDESK, ActionType.REOPEN_RUSTDESK, ActionType.REPAIR_CONFIG_RUSTDESK},
     {ActionType.RESTART_AGENT, ActionType.IMMEDIATE_HEARTBEAT},
     {ActionType.RESTART_DEVICE},
 ]

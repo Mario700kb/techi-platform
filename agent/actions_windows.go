@@ -177,6 +177,53 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 	}
 }
 
+func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
+	done := make(chan actionResult, 1)
+	go func() {
+		log.Printf("[action] repair_config_rustdesk: writing config")
+		changed, err := writeRustDeskConfig(cfg)
+		if err != nil {
+			done <- actionResult{
+				err:    fmt.Errorf("config write failed: %w", err),
+				stderr: err.Error(),
+			}
+			return
+		}
+
+		log.Printf("[action] repair_config_rustdesk: stopping service for restart")
+		_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+		time.Sleep(2 * time.Second)
+
+		log.Printf("[action] repair_config_rustdesk: starting service")
+		if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+			done <- actionResult{
+				err:    fmt.Errorf("service restart failed after config repair: %w", err2),
+				stderr: err2.Error(),
+			}
+			return
+		}
+
+		time.Sleep(2 * time.Second)
+		rd := discoverRustDesk(cfg)
+		action := "verified"
+		if changed {
+			action = "repaired"
+		}
+		done <- actionResult{
+			message: fmt.Sprintf(
+				"TECHI Remote Support config %s — service restarted, status=%s id=%s",
+				action, rd.Status, rd.ID,
+			),
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return actionResult{err: fmt.Errorf("repair_config_rustdesk timed out")}
+	case r := <-done:
+		return r
+	}
+}
+
 func handleApplyPowerPolicy(ctx context.Context, cfg *Config) actionResult {
 	if !cfg.ManagePowerPolicy {
 		return actionResult{err: fmt.Errorf("apply_power_policy: manage_power_policy is disabled in config")}

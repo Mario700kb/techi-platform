@@ -106,6 +106,8 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleReopenRustDesk(ctx, cfg)
 	case "apply_power_policy":
 		return handleApplyPowerPolicy(ctx, cfg)
+	case "repair_config_rustdesk":
+		return handleRepairConfigRustDesk(ctx, cfg)
 	default:
 		return actionResult{err: fmt.Errorf("unknown action type: %q", action.Action)}
 	}
