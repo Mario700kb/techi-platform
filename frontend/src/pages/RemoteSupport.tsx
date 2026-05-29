@@ -21,6 +21,7 @@ import {
   RemoteSupportStatus,
 } from "../api/remoteSupport";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
+import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { useAuth } from "../auth/AuthContext";
 
 // ------------------------------------------------------------------ //
@@ -152,6 +153,21 @@ export default function RemoteSupport() {
   }, []);
 
   const { runNow } = usePollingRefresh(loadDevices, { intervalMs: 30000, immediate: true });
+
+  useDeviceRealtime({
+    onEvent: useCallback(
+      (event) => {
+        if (
+          event.type === "rustdesk_updated" ||
+          event.type === "rustdesk_online" ||
+          event.type === "rustdesk_offline"
+        ) {
+          runNow();
+        }
+      },
+      [runNow]
+    ),
+  });
 
   const addToast = useCallback((message: string, ok: boolean) => {
     const id = ++toastCounter[0];

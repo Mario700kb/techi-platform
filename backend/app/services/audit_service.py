@@ -40,6 +40,7 @@ class AuditAction:
     SCOPE_ENTRY_ADDED = "scope_entry_added"
     SCOPE_ENTRY_REMOVED = "scope_entry_removed"
     SCOPE_REPLACED = "scope_replaced"
+    REMOTE_CONNECT = "remote_connect"
 
 
 def audit_log(

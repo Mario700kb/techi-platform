@@ -232,10 +232,10 @@ def get_connect_url(
     audit_log(
         db,
         operator=operator,
-        action=AuditAction.DEVICE_UPDATED,
+        action=AuditAction.REMOTE_CONNECT,
         entity_type="device",
         entity_id=device_id,
-        details={"event": "remote_connect_url_requested", "techi_remote_id": remote_id},
+        details={"techi_remote_id": remote_id},
     )
 
     return ConnectUrlResponse(
