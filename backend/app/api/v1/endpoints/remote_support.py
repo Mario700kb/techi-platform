@@ -241,7 +241,7 @@ def get_connect_url(
     return ConnectUrlResponse(
         device_id=device_id,
         techi_remote_id=remote_id,
-        connect_url=f"techi://{remote_id}",
+        connect_url=f"rustdesk://{remote_id}",
     )
 
 
