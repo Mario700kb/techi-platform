@@ -49,7 +49,7 @@ export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
 };
 
 // Actions that require a destructive confirmation before queuing.
-export const DESTRUCTIVE_ACTIONS = new Set<ActionType>(["restart_device", "reinstall_rustdesk"]);
+export const DESTRUCTIVE_ACTIONS = new Set<ActionType>(["restart_device", "restart_agent", "reinstall_rustdesk"]);
 
 // Actions that are Windows-agent-only.
 export const WINDOWS_ONLY_ACTIONS = new Set<ActionType>([

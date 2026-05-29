@@ -7,6 +7,14 @@ import (
 	"fmt"
 )
 
+func handleRestartDevice(_ context.Context) actionResult {
+	return actionResult{err: fmt.Errorf("restart_device: Windows-only action — not supported on this platform")}
+}
+
+func handleRestartAgent(_ context.Context) actionResult {
+	return actionResult{err: fmt.Errorf("restart_agent: Windows-only action — use your service manager (systemd/launchctl) to restart the agent manually")}
+}
+
 func handleRestartRustDesk(_ context.Context, _ *Config) actionResult {
 	return actionResult{err: fmt.Errorf("restart_rustdesk: Windows-only action")}
 }

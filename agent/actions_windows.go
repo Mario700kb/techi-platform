@@ -6,9 +6,69 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
+
+// Windows process-creation flags used to detach the restart-helper process so
+// it survives after the TechiAgent service itself is stopped.
+const (
+	_CREATE_NEW_PROCESS_GROUP = 0x00000200
+	_CREATE_NO_WINDOW         = 0x08000000
+)
+
+// handleRestartDevice schedules an immediate OS reboot via `shutdown /r /t 0 /f`.
+// The actual shutdown is deferred 3 seconds so the completeAction HTTP callback
+// can reach the backend before network is torn down.
+func handleRestartDevice(_ context.Context) actionResult {
+	go func() {
+		time.Sleep(3 * time.Second)
+		log.Printf("[action] restart_device: issuing shutdown /r /t 0 /f")
+		if _, err := runWithTimeout(10*time.Second, "shutdown", "/r", "/t", "0", "/f"); err != nil {
+			log.Printf("[action] restart_device: shutdown command failed: %v", err)
+		}
+	}()
+	log.Printf("[action] restart_device: OS restart scheduled — will execute in ~3 seconds")
+	return actionResult{message: "PC restart initiated — system shutting down in ~3 seconds"}
+}
+
+// handleRestartAgent launches a detached PowerShell process that waits 5 seconds
+// and then calls Restart-Service. The delay gives the completeAction callback
+// time to reach the backend before the TechiAgent service process is stopped.
+// The child process is detached (new process group, no window) so it survives
+// when Windows SCM stops the TechiAgent service.
+func handleRestartAgent(_ context.Context) actionResult {
+	// Use single-line PowerShell to avoid any quoting issues on older PS versions.
+	script := `Start-Sleep -Seconds 5; ` +
+		`try { Restart-Service -Name TechiAgent -Force -ErrorAction Stop } ` +
+		`catch { exit 1 }`
+
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+		"-Command", script,
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW,
+	}
+
+	if err := cmd.Start(); err != nil {
+		return actionResult{
+			err:    fmt.Errorf("restart_agent: failed to schedule restart: %w", err),
+			stderr: err.Error(),
+		}
+	}
+	// Release detaches the child process from this process so it is not
+	// automatically killed when the TechiAgent service process exits.
+	_ = cmd.Process.Release()
+
+	log.Printf("[action] restart_agent: detached PowerShell restart helper launched (5s delay before Restart-Service TechiAgent)")
+	return actionResult{
+		message: "Agent service restart scheduled — TechiAgent will stop and restart within ~15 seconds",
+	}
+}
 
 func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 	done := make(chan actionResult, 1)

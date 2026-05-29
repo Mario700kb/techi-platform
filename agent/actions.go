@@ -137,22 +137,6 @@ func handleRefreshInventory(ctx context.Context, cfg *Config) actionResult {
 	}
 }
 
-func handleRestartDevice(_ context.Context) actionResult {
-	// Safe-mode only: logs intent, no actual OS shutdown.
-	log.Printf("restart_device: dry-run — no actual restart performed (safe-mode)")
-	return actionResult{message: "Restart dry-run accepted. Explicit OS restart not yet enabled — contact operator to confirm intent."}
-}
-
-func handleRestartAgent(_ context.Context) actionResult {
-	// Schedule an immediate inventory + heartbeat cycle after this action
-	// cycle completes. runSingleHeartbeat checks the flag after processActions
-	// returns, rebuilds all inventory (including buildUserSession), and sends
-	// a fresh heartbeat so the dashboard updates within seconds.
-	pendingImmediateHeartbeat.Store(true)
-	log.Printf("restart_agent: immediate inventory refresh and heartbeat scheduled")
-	return actionResult{message: "Agent restarting — immediate inventory refresh and heartbeat triggered"}
-}
-
 func handleImmediateHeartbeat() actionResult {
 	pendingImmediateHeartbeat.Store(true)
 	log.Printf("immediate_heartbeat: next heartbeat forced immediately")

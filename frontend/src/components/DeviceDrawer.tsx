@@ -1006,16 +1006,18 @@ export default function DeviceDrawer({
               title={
                 selectedActionType === "reinstall_rustdesk"
                   ? "Reinstall TECHI Remote Support?"
+                  : selectedActionType === "restart_agent"
+                  ? "Restart Agent service?"
                   : "Restart device?"
               }
               confirmLabel={
-                actionBusy
-                  ? "Confirming…"
-                  : selectedActionType === "reinstall_rustdesk"
+                selectedActionType === "reinstall_rustdesk"
                   ? "Confirm reinstall"
-                  : "Confirm restart"
+                  : selectedActionType === "restart_agent"
+                  ? "Restart Agent"
+                  : "Restart device"
               }
-              destructive={false}
+              destructive={true}
               loading={actionBusy}
               onClose={() => setRestartConfirmOpen(false)}
               onConfirm={async () => {
@@ -1034,8 +1036,10 @@ export default function DeviceDrawer({
             >
               {selectedActionType === "reinstall_rustdesk" ? (
                 <>This will download and silently reinstall TECHI Remote Support on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
+              ) : selectedActionType === "restart_agent" ? (
+                <>This will stop and restart the <span className="font-semibold text-slate-200">TechiAgent</span> Windows service on <span className="font-semibold text-slate-200">{device.hostname}</span>. The agent will reconnect within ~15 seconds. Active actions will be re-queued on reconnect.</>
               ) : (
-                <>This will trigger an OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will be temporarily unreachable.</>
+                <>This will trigger an immediate OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will go offline and reconnect after boot. All unsaved work on the device will be lost.</>
               )}
             </ConfirmationModal>
           )}
@@ -1076,12 +1080,34 @@ export default function DeviceDrawer({
                   <span>Device is in maintenance. Actions will still be queued.</span>
                 </div>
               )}
-              {!device.is_archived && device.freshness_state === "offline" && (
-                <div className="mb-3 flex items-start gap-2 rounded-md bg-slate-700/30 px-3 py-2 text-[11px] text-slate-400">
-                  <WifiOff className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" />
-                  <span>Device is offline. Action will queue and deliver on next heartbeat.</span>
-                </div>
-              )}
+              {!device.is_archived && device.freshness_state === "offline" && (() => {
+                // Check if a restart action completed within the last 5 minutes
+                const RESTART_TYPES = new Set(["restart_device", "restart_agent"]);
+                const recentRestart = actions.find((a) => {
+                  if (!RESTART_TYPES.has(a.action_type)) return false;
+                  if (a.status !== "completed" && !isActiveStatus(a.status)) return false;
+                  const ref = a.completed_at ?? a.sent_at ?? a.created_at;
+                  return ref ? Date.now() - new Date(ref).getTime() < 5 * 60 * 1000 : false;
+                });
+                if (recentRestart) {
+                  return (
+                    <div className="mb-3 flex items-start gap-2 rounded-md bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
+                      <RefreshCw className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400 animate-spin" />
+                      <span>
+                        {recentRestart.action_type === "restart_device"
+                          ? "Device restart triggered — waiting for reconnect after boot."
+                          : "Agent service restart triggered — reconnect expected within ~15 seconds."}
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mb-3 flex items-start gap-2 rounded-md bg-slate-700/30 px-3 py-2 text-[11px] text-slate-400">
+                    <WifiOff className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" />
+                    <span>Device is offline. Action will queue and deliver on next heartbeat.</span>
+                  </div>
+                );
+              })()}
               {device.freshness_state === "online" && !device.is_archived && (
                 <div className="mb-3 flex items-start gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-200">
                   <Wifi className="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-400" />
