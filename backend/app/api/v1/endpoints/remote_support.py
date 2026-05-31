@@ -282,6 +282,54 @@ def restart_remote_support_service(
     return RemoteActionResponse.model_validate(action)
 
 
+@router.post("/devices/{device_id}/deploy", response_model=RemoteActionResponse)
+def deploy_remote_support(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    force_reinstall: bool = False,
+):
+    """Queue a deploy / upgrade of TECHI Remote Support on the device."""
+    _get_device(device_id, db, scope)
+
+    try:
+        action = RemoteActionService(db).queue_action(
+            device_id,
+            RemoteActionCreate(
+                action_type=ActionType.DEPLOY_REMOTE_SUPPORT,
+                parameters={
+                    "msi_url": "https://rdp.techi.com.al/downloads/TECHI-Remote-Support-1.4.6.msi",
+                    "msi_version": "1.4.6",
+                    "product_guid": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
+                    "rendezvous_server": "139.162.158.208",
+                    "key": "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=",
+                    "force_reinstall": force_reinstall,
+                },
+                created_by=operator.username,
+                execution_timeout_seconds=600,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.ACTION_QUEUED,
+        entity_type="remote_action",
+        entity_id=action.id,
+        details={
+            "device_id": device_id,
+            "action_type": action.action_type,
+            "source": "remote_support",
+            "force_reinstall": force_reinstall,
+        },
+    )
+    return RemoteActionResponse.model_validate(action)
+
+
 @router.post("/devices/{device_id}/repair-config", response_model=RemoteActionResponse)
 def repair_remote_support_config(
     *,

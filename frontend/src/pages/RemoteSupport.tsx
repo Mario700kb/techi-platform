@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ClipboardCopy,
+  Download,
   ExternalLink,
   Monitor,
   RefreshCcw,
@@ -17,6 +18,7 @@ import {
   getConnectUrl,
   restartRemoteSupportService,
   repairRemoteSupportConfig,
+  deployRemoteSupport,
   RemoteSupportDevice,
   RemoteSupportStatus,
 } from "../api/remoteSupport";
@@ -119,12 +121,14 @@ interface DeviceActionState {
   connect: ActionState;
   restart: ActionState;
   repair: ActionState;
+  deploy: ActionState;
 }
 
 const defaultActionState = (): DeviceActionState => ({
   connect: "idle",
   restart: "idle",
   repair: "idle",
+  deploy: "idle",
 });
 
 export default function RemoteSupport() {
@@ -244,6 +248,23 @@ export default function RemoteSupport() {
         addToast(e instanceof Error ? e.message : "Repair failed", false);
         setDeviceAction(device.device_id, "repair", "error");
         setTimeout(() => setDeviceAction(device.device_id, "repair", "idle"), 2000);
+      }
+    },
+    [addToast]
+  );
+
+  const handleDeploy = useCallback(
+    async (device: RemoteSupportDevice) => {
+      setDeviceAction(device.device_id, "deploy", "loading");
+      try {
+        await deployRemoteSupport(device.device_id);
+        addToast(`Deploy queued for ${device.hostname ?? device.device_id}`, true);
+        setDeviceAction(device.device_id, "deploy", "success");
+        setTimeout(() => setDeviceAction(device.device_id, "deploy", "idle"), 3000);
+      } catch (e: unknown) {
+        addToast(e instanceof Error ? e.message : "Deploy failed", false);
+        setDeviceAction(device.device_id, "deploy", "error");
+        setTimeout(() => setDeviceAction(device.device_id, "deploy", "idle"), 2000);
       }
     },
     [addToast]
@@ -653,6 +674,18 @@ export default function RemoteSupport() {
                                     loading={acts.repair === "loading"}
                                     onClick={() => handleRepair(device)}
                                     title="Repair Remote Support config (rewrites TOML + restart)"
+                                  />
+                                )}
+
+                                {/* Deploy / Upgrade — operator+ */}
+                                {isOperator && (
+                                  <ActionButton
+                                    label="Deploy"
+                                    icon={<Download className="h-3 w-3" />}
+                                    disabled={acts.deploy === "loading"}
+                                    loading={acts.deploy === "loading"}
+                                    onClick={() => handleDeploy(device)}
+                                    title="Deploy / upgrade TECHI Remote Support to latest version"
                                   />
                                 )}
                               </div>

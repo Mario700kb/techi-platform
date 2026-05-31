@@ -34,3 +34,7 @@ func handleApplyPowerPolicy(_ context.Context, _ *Config) actionResult {
 func handleRepairConfigRustDesk(_ context.Context, _ *Config) actionResult {
 	return actionResult{err: fmt.Errorf("repair_config_rustdesk: Windows-only action")}
 }
+
+func handleDeployRemoteSupport(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
+	return actionResult{err: fmt.Errorf("deploy_remote_support: Windows-only action")}
+}

@@ -3,7 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -222,6 +225,276 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 	case r := <-done:
 		return r
 	}
+}
+
+// ------------------------------------------------------------------ //
+// deploy_remote_support                                                //
+// ------------------------------------------------------------------ //
+
+type deployRemoteSupportResult struct {
+	InstalledVersion string `json:"installed_version"`
+	InstallStatus    string `json:"install_status"`
+	ConfigStatus     string `json:"config_status"`
+	ServiceStatus    string `json:"service_status"`
+	ProtocolStatus   string `json:"protocol_status"`
+	RustDeskID       string `json:"rustdesk_id"`
+	RebootRequired   bool   `json:"reboot_required"`
+}
+
+func handleDeployRemoteSupport(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
+	done := make(chan actionResult, 1)
+	go func() {
+		done <- executeDeployRemoteSupport(cfg, params)
+	}()
+	select {
+	case <-ctx.Done():
+		return actionResult{err: fmt.Errorf("deploy_remote_support timed out")}
+	case r := <-done:
+		return r
+	}
+}
+
+func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) actionResult {
+	msiURL := stringParam(params, "msi_url")
+	msiVersion := stringParam(params, "msi_version")
+	productGUID := stringParam(params, "product_guid")
+	rendezvousServer := stringParam(params, "rendezvous_server")
+	key := stringParam(params, "key")
+	forceReinstall := boolParam(params, "force_reinstall")
+
+	// Fall back to agent config values if not provided in params.
+	if msiURL == "" {
+		msiURL = cfg.RustDeskMSIUrl
+	}
+	if rendezvousServer == "" {
+		rendezvousServer = cfg.RustDeskRendezvousServer
+	}
+	if key == "" {
+		key = cfg.RustDeskKey
+	}
+
+	st := deployRemoteSupportResult{}
+
+	// Phase 1 & 2: version check via registry GUID.
+	installedVersion := getInstalledVersionByGUID(productGUID)
+	st.InstalledVersion = installedVersion
+	needsInstall := installedVersion == "" ||
+		(msiVersion != "" && installedVersion != msiVersion) ||
+		forceReinstall
+
+	if !needsInstall {
+		log.Printf("[deploy_remote_support] version %s already installed — skipping MSI install", installedVersion)
+		st.InstallStatus = "already_current"
+	} else {
+		// Phase 3: download + install.
+		if msiURL == "" {
+			return actionResult{err: fmt.Errorf("deploy_remote_support: no msi_url provided")}
+		}
+
+		// Build a temporary config copy for the download helpers.
+		dlCfg := *cfg
+		dlCfg.RustDeskMSIUrl = msiURL
+		dlCfg.RustDeskPackageVersion = msiVersion
+		dlCfg.RustDeskMSIChecksumSHA256 = ""
+
+		cachePath, err := cachedMSIPath(&dlCfg)
+		if err != nil {
+			return actionResult{err: fmt.Errorf("deploy_remote_support: cache path: %w", err)}
+		}
+		if err := ensureCachedMSI(&dlCfg, cachePath); err != nil {
+			return actionResult{err: fmt.Errorf("deploy_remote_support: download failed: %w", err)}
+		}
+
+		log.Printf("[deploy_remote_support] installing %s", cachePath)
+		var rebootReq bool
+		var installErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			rebootReq, installErr = runMSIInstall(cachePath)
+			if installErr == nil {
+				break
+			}
+			if attempt < 3 {
+				delay := time.Duration(attempt) * 10 * time.Second
+				log.Printf("[deploy_remote_support] install attempt %d failed: %v; retrying in %s", attempt, installErr, delay)
+				time.Sleep(delay)
+			}
+		}
+		if installErr != nil {
+			return actionResult{err: fmt.Errorf("deploy_remote_support: install failed: %w", installErr)}
+		}
+		st.RebootRequired = rebootReq
+
+		// Wait briefly for the installer to commit to the registry.
+		time.Sleep(3 * time.Second)
+
+		// Phase 4: verify installation is visible in registry or on disk.
+		if verified := getInstalledVersionByGUID(productGUID); verified != "" {
+			st.InstalledVersion = verified
+		} else if !isRustDeskInstalled() {
+			st.InstallStatus = "verification_failed"
+			return actionResult{
+				err:    fmt.Errorf("deploy_remote_support: MSI returned success but product not found on disk or in registry"),
+				output: marshalDeployResult(st),
+			}
+		}
+		st.InstallStatus = "installed"
+	}
+
+	// Phase 5: write TOML config using params (force=true for deploy action).
+	cfgForOps := *cfg
+	if rendezvousServer != "" {
+		cfgForOps.RustDeskRendezvousServer = rendezvousServer
+	}
+	if key != "" {
+		cfgForOps.RustDeskKey = key
+	}
+	cfgForOps.RustDeskForceConfig = true
+
+	if _, err := writeRustDeskConfig(&cfgForOps); err != nil {
+		log.Printf("[deploy_remote_support] config write failed (non-fatal): %v", err)
+		st.ConfigStatus = "failed"
+	} else {
+		st.ConfigStatus = "written"
+	}
+
+	// Phase 6: ensure service running.
+	if _, err := ensureRustDeskService(); err != nil {
+		log.Printf("[deploy_remote_support] service ensure failed (non-fatal): %v", err)
+		st.ServiceStatus = "failed"
+	} else {
+		st.ServiceStatus = "started"
+	}
+
+	// Phase 7: verify protocol handler.
+	st.ProtocolStatus = ensureRustDeskProtocolHandler()
+
+	// Phase 8: discover live RustDesk ID and final service status.
+	rd := discoverRustDesk(&cfgForOps)
+	st.RustDeskID = rd.ID
+	if rd.Status == "running" {
+		st.ServiceStatus = "running"
+	}
+
+	outputJSON := marshalDeployResult(st)
+	return actionResult{
+		message: fmt.Sprintf(
+			"deploy_remote_support: install=%s version=%s config=%s service=%s protocol=%s id=%s",
+			st.InstallStatus, st.InstalledVersion, st.ConfigStatus, st.ServiceStatus, st.ProtocolStatus, st.RustDeskID,
+		),
+		output: outputJSON,
+	}
+}
+
+// getInstalledVersionByGUID queries the uninstall registry for a product GUID
+// and returns its DisplayVersion, or "" if not found.
+func getInstalledVersionByGUID(guid string) string {
+	if guid == "" {
+		return ""
+	}
+	roots := []string{
+		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
+		`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
+	}
+	for _, root := range roots {
+		out, err := runWithTimeout(5*time.Second, "reg", "query", root, "/v", "DisplayVersion")
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.Contains(strings.ToLower(line), "displayversion") {
+				parts := strings.Fields(line)
+				if len(parts) >= 3 {
+					return parts[len(parts)-1]
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// runMSIInstall runs msiexec /i /qn /norestart and treats exit code 3010
+// (reboot required) as success rather than failure.
+func runMSIInstall(msiPath string) (rebootRequired bool, err error) {
+	cmd := exec.Command("msiexec", "/i", msiPath, "/qn", "/norestart")
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if startErr := cmd.Start(); startErr != nil {
+		return false, startErr
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case waitErr := <-done:
+		if waitErr == nil {
+			return false, nil
+		}
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) && exitErr.ExitCode() == 3010 {
+			return true, nil
+		}
+		return false, fmt.Errorf("msiexec: %w (output: %s)", waitErr, strings.TrimSpace(buf.String()))
+	case <-time.After(10 * time.Minute):
+		_ = cmd.Process.Kill()
+		return false, fmt.Errorf("msiexec timed out after 10 minutes")
+	}
+}
+
+// ensureRustDeskProtocolHandler checks that HKCR\rustdesk\shell\open\command
+// points to TECHI Remote Support.exe. If absent it writes it via PowerShell.
+func ensureRustDeskProtocolHandler() string {
+	const regKey = `HKCR\rustdesk\shell\open\command`
+	out, err := runWithTimeout(5*time.Second, "reg", "query", regKey, "/ve")
+	if err == nil && strings.Contains(strings.ToLower(string(out)), "techi remote support") {
+		return "ok"
+	}
+
+	// Write the protocol handler entries via PowerShell (handles quoting cleanly).
+	script := `$p = 'HKCR:\rustdesk'; ` +
+		`if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }; ` +
+		`New-ItemProperty -Path $p -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null; ` +
+		`$p2 = 'HKCR:\rustdesk\shell\open\command'; ` +
+		`New-Item -Path $p2 -Force | Out-Null; ` +
+		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
+		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+
+	if _, writeErr := runWithTimeout(15*time.Second, "powershell",
+		"-NoProfile", "-NonInteractive", "-Command", script); writeErr != nil {
+		log.Printf("[deploy_remote_support] protocol handler write failed: %v", writeErr)
+		return "write_failed"
+	}
+	log.Printf("[deploy_remote_support] protocol handler written")
+	return "written"
+}
+
+func marshalDeployResult(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func stringParam(params map[string]interface{}, key string) string {
+	if v, ok := params[key]; ok {
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func boolParam(params map[string]interface{}, key string) bool {
+	if v, ok := params[key]; ok {
+		switch b := v.(type) {
+		case bool:
+			return b
+		case string:
+			return strings.EqualFold(b, "true") || b == "1"
+		}
+	}
+	return false
 }
 
 func handleApplyPowerPolicy(ctx context.Context, cfg *Config) actionResult {

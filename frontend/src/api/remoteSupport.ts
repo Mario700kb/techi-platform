@@ -70,3 +70,8 @@ export async function restartRemoteSupportService(deviceId: number): Promise<voi
 export async function repairRemoteSupportConfig(deviceId: number): Promise<void> {
   await fetchJson(`/api/v1/remote-support/devices/${deviceId}/repair-config`, { method: "POST" });
 }
+
+export async function deployRemoteSupport(deviceId: number, forceReinstall = false): Promise<void> {
+  const qs = forceReinstall ? "?force_reinstall=true" : "";
+  await fetchJson(`/api/v1/remote-support/devices/${deviceId}/deploy${qs}`, { method: "POST" });
+}
