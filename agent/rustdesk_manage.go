@@ -16,8 +16,13 @@ import (
 )
 
 const (
-	rustdeskDefaultInstallPath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
-	rustdeskServiceName        = "TECHI Remote Support"
+	// rustdeskDefaultInstallPath is the primary EXE path used for service
+	// registration, password configuration, and direct-launch fallbacks.
+	rustdeskDefaultInstallPath = `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`
+	// rustdeskLegacyExePath is a fallback for installations that still carry
+	// the upstream rustdesk.exe binary name alongside the branded one.
+	rustdeskLegacyExePath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
+	rustdeskServiceName   = "TECHI Remote Support"
 )
 
 // ensureRustDesk checks and heals TECHI Remote Support installation, config, and service.
@@ -70,7 +75,11 @@ func ensureRustDesk(cfg *Config, configPath string) {
 }
 
 func isRustDeskInstalled() bool {
-	_, err := os.Stat(rustdeskDefaultInstallPath)
+	if _, err := os.Stat(rustdeskDefaultInstallPath); err == nil {
+		return true
+	}
+	// Fallback: some older builds ship rustdesk.exe alongside the branded exe.
+	_, err := os.Stat(rustdeskLegacyExePath)
 	return err == nil
 }
 
