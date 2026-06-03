@@ -436,7 +436,14 @@ class DeviceHeartbeatService:
             return
 
         telemetry_service = DeviceTelemetryService(self.heartbeat_repo.db)
-        snapshot, prev_state, new_state, reasons = telemetry_service.create_snapshot(
+
+        # Fetch the previous snapshot BEFORE creating the new one so we can compute
+        # prev_state with the same algorithm used for new_state.  Using the simple
+        # compute_health() thresholds for prev_state but DeviceHealthScoreService for
+        # new_state was the root cause of phantom health-warning events.
+        prev_snapshot = telemetry_service.repo.get_latest(device.id)
+
+        snapshot, _, _, _ = telemetry_service.create_snapshot(
             device_id=device.id,
             cpu_percent=payload.cpu_percent,
             ram_percent=payload.ram_percent,
@@ -444,7 +451,11 @@ class DeviceHeartbeatService:
             uptime_seconds=payload.uptime_seconds,
             heartbeat_latency_ms=payload.heartbeat_latency_ms,
         )
-        health_score, new_state, reasons = DeviceHealthScoreService(self.db).compute_for_device(device, snapshot)
+
+        score_service = DeviceHealthScoreService(self.db)
+        # Compute both states with the identical scoring algorithm
+        _, prev_state, _ = score_service.compute_for_device(device, prev_snapshot)
+        health_score, new_state, reasons = score_service.compute_for_device(device, snapshot)
 
         realtime_publisher.publish_threadsafe(
             build_event(
@@ -475,6 +486,8 @@ class DeviceHeartbeatService:
         if prev_state == new_state:
             return
 
+        # State genuinely changed — emit WebSocket event AND persist to DB so the
+        # activity feed shows the same event after a manual Refresh.
         if new_state == "critical":
             realtime_publisher.publish_threadsafe(
                 build_event(
@@ -482,6 +495,14 @@ class DeviceHeartbeatService:
                     data={"id": device.id, "health_state": new_state, "reasons": reasons},
                     reason="health_state_changed",
                 )
+            )
+            DeviceActivityEventService(self.db).record(
+                device_id=device.id,
+                event_type="health_critical",
+                summary="Health critical",
+                detail=", ".join(reasons) if reasons else None,
+                actor="system",
+                fail_silently=True,
             )
         elif new_state == "warning":
             realtime_publisher.publish_threadsafe(
@@ -491,6 +512,14 @@ class DeviceHeartbeatService:
                     reason="health_state_changed",
                 )
             )
+            DeviceActivityEventService(self.db).record(
+                device_id=device.id,
+                event_type="health_warning",
+                summary="Health warning",
+                detail=", ".join(reasons) if reasons else None,
+                actor="system",
+                fail_silently=True,
+            )
         elif new_state == "healthy" and prev_state in ("warning", "critical"):
             realtime_publisher.publish_threadsafe(
                 build_event(
@@ -498,6 +527,13 @@ class DeviceHeartbeatService:
                     data={"id": device.id, "health_state": new_state},
                     reason="health_recovered",
                 )
+            )
+            DeviceActivityEventService(self.db).record(
+                device_id=device.id,
+                event_type="health_recovered",
+                summary="Health recovered",
+                actor="system",
+                fail_silently=True,
             )
 
     def _process_inventory(self, payload: AgentHeartbeatPayload, device) -> None:

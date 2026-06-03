@@ -77,6 +77,13 @@ class RustDeskIdentityService:
     ) -> Device:
         now = now or utcnow()
         previous_status = device.rustdesk_status
+
+        # Capture old metadata BEFORE any modification for change detection
+        old_rustdesk_id = device.rustdesk_id
+        old_version = device.rustdesk_version
+        old_install_path = device.rustdesk_install_path
+        old_sync_state = device.rustdesk_sync_state
+
         device.rustdesk_install_status = install_status or "unknown"
         device.rustdesk_status = rustdesk_status or "unknown"
         device.rustdesk_version = version
@@ -86,7 +93,14 @@ class RustDeskIdentityService:
 
         if effective_id:
             return self._sync_from_agent_id(
-                device, effective_id=effective_id, previous_status=previous_status, now=now
+                device,
+                effective_id=effective_id,
+                previous_status=previous_status,
+                now=now,
+                old_rustdesk_id=old_rustdesk_id,
+                old_version=old_version,
+                old_install_path=old_install_path,
+                old_sync_state=old_sync_state,
             )
 
         return self._sync_via_resolver(
@@ -96,6 +110,10 @@ class RustDeskIdentityService:
             public_ip=public_ip,
             previous_status=previous_status,
             now=now,
+            old_rustdesk_id=old_rustdesk_id,
+            old_version=old_version,
+            old_install_path=old_install_path,
+            old_sync_state=old_sync_state,
         )
 
     def _sync_from_agent_id(
@@ -105,6 +123,10 @@ class RustDeskIdentityService:
         effective_id: str,
         previous_status: Optional[str],
         now: datetime,
+        old_rustdesk_id: Optional[str],
+        old_version: Optional[str],
+        old_install_path: Optional[str],
+        old_sync_state: Optional[str],
     ) -> Device:
         verification = self.verify(effective_id, exclude_device_id=device.id)
 
@@ -133,7 +155,15 @@ class RustDeskIdentityService:
         self.db.commit()
         self.db.refresh(device)
 
-        self._publish(RealtimeEventType.RUSTDESK_UPDATED, device, "rustdesk_heartbeat_sync")
+        # Only publish when rustdesk_id / version / install_path / sync_state actually changed.
+        # This prevents a spurious "TECHI Remote Support metadata updated" event every heartbeat.
+        if (
+            old_rustdesk_id != device.rustdesk_id
+            or old_sync_state != device.rustdesk_sync_state
+            or old_version != device.rustdesk_version
+            or old_install_path != device.rustdesk_install_path
+        ):
+            self._publish(RealtimeEventType.RUSTDESK_UPDATED, device, "rustdesk_heartbeat_sync")
         self._maybe_publish_status_change(device, previous_status)
         return device
 
@@ -146,6 +176,10 @@ class RustDeskIdentityService:
         public_ip: Optional[str],
         previous_status: Optional[str],
         now: datetime,
+        old_rustdesk_id: Optional[str],
+        old_version: Optional[str],
+        old_install_path: Optional[str],
+        old_sync_state: Optional[str],
     ) -> Device:
         from app.services.rustdesk_resolver_service import RustDeskResolverService
 
@@ -169,20 +203,28 @@ class RustDeskIdentityService:
             self.db.add(device)
             self.db.commit()
             self.db.refresh(device)
-            self._publish(RealtimeEventType.RUSTDESK_UPDATED, device, "rustdesk_resolver_synced")
+
+            if (
+                old_rustdesk_id != device.rustdesk_id
+                or old_sync_state != device.rustdesk_sync_state
+                or old_version != device.rustdesk_version
+                or old_install_path != device.rustdesk_install_path
+            ):
+                self._publish(RealtimeEventType.RUSTDESK_UPDATED, device, "rustdesk_resolver_synced")
             self._maybe_publish_status_change(device, previous_status)
 
         elif result.confidence in ("medium", "low"):
             # Ambiguous or stale match — do not touch rustdesk_id
-            sync_state = "degraded"
-            device.rustdesk_sync_state = sync_state
+            device.rustdesk_sync_state = "degraded"
             device.rustdesk_sync_message = result.message
             device.rustdesk_conflict_detected = False
 
             self.db.add(device)
             self.db.commit()
             self.db.refresh(device)
-            self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_resolver_degraded")
+            # Only emit when sync_state actually moved to degraded
+            if old_sync_state != device.rustdesk_sync_state:
+                self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_resolver_degraded")
 
         else:
             device.rustdesk_sync_state = "failed"
@@ -192,7 +234,9 @@ class RustDeskIdentityService:
             self.db.add(device)
             self.db.commit()
             self.db.refresh(device)
-            self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_id_unresolved")
+            # Only emit when sync_state actually moved to failed
+            if old_sync_state != device.rustdesk_sync_state:
+                self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_id_unresolved")
 
         return device
 

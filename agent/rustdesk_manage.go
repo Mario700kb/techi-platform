@@ -52,16 +52,36 @@ func ensureRustDesk(cfg *Config, configPath string) {
 	}
 
 	if installed {
-		if changed, err := writeRustDeskConfig(cfg); err != nil {
-			log.Printf("[rustdesk_manage] config write failed: %v", err)
-		} else if changed {
-			repaired = true
+		// Config repair with 30-minute cooldown.
+		// The cooldown prevents unnecessary writes on every heartbeat when the
+		// service has already updated the config with identity data.
+		skipConfigRepair := false
+		if !cfg.RustDeskForceConfig && cfg.RustDeskLastRepairAt != "" {
+			if lastRepair, err := time.Parse(time.RFC3339, cfg.RustDeskLastRepairAt); err == nil {
+				since := time.Since(lastRepair)
+				if since < 30*time.Minute {
+					log.Printf("[rustdesk_manage] cooldown active (last repair %s ago) — skipping config repair",
+						since.Round(time.Second))
+					skipConfigRepair = true
+				}
+			}
 		}
+
+		if !skipConfigRepair {
+			if changed, err := writeRustDeskConfig(cfg); err != nil {
+				log.Printf("[rustdesk_manage] config write failed: %v", err)
+			} else if changed {
+				repaired = true
+			}
+		}
+
+		// Service check always runs regardless of cooldown.
 		if changed, err := ensureRustDeskService(); err != nil {
 			log.Printf("[rustdesk_manage] service ensure failed: %v", err)
 		} else if changed {
 			repaired = true
 		}
+
 		if cfg.RustDeskDefaultPassword != "" {
 			if err := setRustDeskPassword(cfg.RustDeskDefaultPassword); err != nil {
 				log.Printf("[rustdesk_manage] password set failed: %v", err)
@@ -112,41 +132,67 @@ func installRustDeskMSI(cfg *Config) error {
 	return fmt.Errorf("msiexec failed: %w", lastErr)
 }
 
+// writeRustDeskConfig ensures managed [options] keys are correct in every
+// known config location. It operates in patch mode: existing files are updated
+// in-place so identity fields (enc_id, key_pair, etc.) are never overwritten.
+// New config files are created with a minimal base template.
+//
+// Returns (true, nil) only when at least one EXISTING file was repaired
+// (managed values were wrong and have been corrected). Creating a config file
+// that did not previously exist is initialisation, not repair, and is not
+// counted as a change.
 func writeRustDeskConfig(cfg *Config) (bool, error) {
-	content := buildRustDeskTOML(cfg)
+	managed := managedRustDeskOptions(cfg)
+	if len(managed) == 0 {
+		return false, nil
+	}
 
 	dirs := rustDeskConfigDirs()
+	repaired := false
 
-	wrote := 0
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Printf("[rustdesk_manage] mkdir %s: %v", dir, err)
 			continue
 		}
-		for _, name := range []string{"TECHI Remote Support2.toml", "TECHI Remote Support.toml"} {
-			path := filepath.Join(dir, name)
-			if existing, err := os.ReadFile(path); err == nil {
-				if string(existing) == content {
-					continue
-				}
-				if !cfg.RustDeskForceConfig && !rustDeskConfigNeedsRepair(string(existing), cfg) {
-					log.Printf("[rustdesk_manage] config exists, skipping (force_config=false): %s", path)
-					continue
-				}
+
+		// Only write TECHI Remote Support.toml (the options/config file).
+		// TECHI Remote Support2.toml is the identity file managed by the
+		// service itself — writing to it causes the repair loop.
+		path := filepath.Join(dir, "TECHI Remote Support.toml")
+
+		existing, readErr := os.ReadFile(path)
+
+		if readErr == nil {
+			// File exists: check whether managed values are already correct.
+			existingStr := string(existing)
+			if !cfg.RustDeskForceConfig && !rustDeskConfigNeedsRepair(existingStr, cfg) {
+				continue // already correct, nothing to do
 			}
-			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			// Patch in-place: update only managed keys, leave identity intact.
+			patched, changed := applyTOMLOptionPatch(existingStr, managed)
+			if !changed {
+				continue
+			}
+			if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
 				log.Printf("[rustdesk_manage] write %s: %v", path, err)
 				continue
 			}
-			log.Printf("[rustdesk_manage] configured: %s", path)
-			wrote++
+			log.Printf("[rustdesk_manage] repaired: %s", path)
+			repaired = true
+		} else {
+			// File does not exist yet: write a fresh minimal config.
+			newContent := buildRustDeskTOML(cfg)
+			if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+				log.Printf("[rustdesk_manage] init write %s: %v", path, err)
+				continue
+			}
+			log.Printf("[rustdesk_manage] initialized: %s", path)
+			// Intentionally NOT setting repaired=true for fresh files.
 		}
 	}
 
-	if wrote > 0 {
-		log.Printf("[rustdesk_manage] config written to %d locations", wrote)
-	}
-	return wrote > 0, nil
+	return repaired, nil
 }
 
 func buildRustDeskTOML(cfg *Config) string {
@@ -238,27 +284,6 @@ func setRustDeskPassword(password string) error {
 	return nil
 }
 
-func rustDeskConfigNeedsRepair(content string, cfg *Config) bool {
-	checks := []string{}
-	if cfg.RustDeskRendezvousServer != "" {
-		checks = append(checks, fmt.Sprintf("custom-rendezvous-server = '%s'", cfg.RustDeskRendezvousServer))
-	}
-	if cfg.RustDeskRelayServer != "" {
-		checks = append(checks, fmt.Sprintf("relay-server = '%s'", cfg.RustDeskRelayServer))
-	}
-	if cfg.RustDeskAPIServer != "" {
-		checks = append(checks, fmt.Sprintf("api-server = '%s'", cfg.RustDeskAPIServer))
-	}
-	if cfg.RustDeskKey != "" {
-		checks = append(checks, fmt.Sprintf("key = '%s'", cfg.RustDeskKey))
-	}
-	for _, expected := range checks {
-		if !strings.Contains(content, expected) {
-			return true
-		}
-	}
-	return len(strings.TrimSpace(content)) == 0
-}
 
 func recordRustDeskRepair(cfg *Config, configPath string) {
 	cfg.RustDeskRepairCount++
