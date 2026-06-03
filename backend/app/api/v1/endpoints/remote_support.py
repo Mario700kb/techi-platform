@@ -212,7 +212,7 @@ def get_connect_url(
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
     device_id: int,
 ):
-    """Return the techi:// protocol URL for connecting to this device."""
+    """Return the rustdesk:// protocol URL for connecting to this device."""
     device = _get_device(device_id, db, scope)
 
     remote_id = (device.rustdesk_id or "").strip()
