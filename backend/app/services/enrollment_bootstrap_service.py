@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.parse import urlsplit, urlunsplit
 from typing import Optional
 
@@ -59,10 +60,19 @@ class EnrollmentBootstrapService:
         config_template = self._config_template(backend_url, enrollment_token, payload)
 
         if payload.platform == EnrollmentBootstrapPlatform.WINDOWS:
-            command, script = self._windows_bootstrap(
-                backend_url, enrollment_token, config_template, payload
-            )
-            filename = "techi-installer.ps1"
+            msi_url, _ = self._windows_msi_package_info(backend_url)
+            token_name = getattr(token, "name", None) or "client"
+            slug = self._safe_filename_slug(token_name)
+            if msi_url:
+                command, script = self._windows_msi_bootstrap(
+                    backend_url, enrollment_token, token_name, payload
+                )
+                filename = f"TECHI-Bootstrap-{slug}.ps1"
+            else:
+                command, script = self._windows_bootstrap(
+                    backend_url, enrollment_token, config_template, payload
+                )
+                filename = "techi-installer.ps1"
         else:
             command, script = self._posix_bootstrap(
                 payload.platform, backend_url, enrollment_token, config_template
@@ -790,6 +800,160 @@ class EnrollmentBootstrapService:
         return command, script
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _safe_filename_slug(name: str) -> str:
+        slug = re.sub(r"[^\w\s-]", "", name.strip())
+        slug = re.sub(r"[\s_]+", "-", slug)
+        slug = slug.strip("-")[:40]
+        return slug or "client"
+
+    def _windows_msi_package_info(self, backend_url: str) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
+        svc = AgentPackageService()
+        package = svc.latest_active("windows")
+        if package is None:
+            return "", ""
+        url = f"{backend_url.rstrip('/')}{svc.latest_download_url('windows')}"
+        return url, package.sha256 or ""
+
+    def _windows_msi_bootstrap(
+        self,
+        backend_url: str,
+        enrollment_token: str,
+        token_name: str,
+        payload: EnrollmentBootstrapRequest,
+    ) -> tuple[str, str]:
+        msi_url, sha256 = self._windows_msi_package_info(backend_url)
+        safe_token = enrollment_token.replace("'", "''")
+        safe_url = backend_url.replace("'", "''")
+        safe_msi_url = msi_url.replace("'", "''")
+        safe_sha256 = sha256.replace("'", "''")
+        slug = self._safe_filename_slug(token_name)
+
+        L: list[str] = []
+
+        def A(*lines: str) -> None:
+            L.extend(lines)
+
+        A(
+            '$ErrorActionPreference = "Stop"',
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
+            "",
+            f"# TECHI Endpoint Bootstrap: {token_name}",
+            "# Run as Administrator:",
+            f"#   powershell -ExecutionPolicy Bypass -NoProfile -File .\\TECHI-Bootstrap-{slug}.ps1",
+            "",
+            f"$BackendUrl    = '{safe_url}'",
+            f"$MsiUrl        = '{safe_msi_url}'",
+            f"$ExpectedSha256 = '{safe_sha256}'",
+            f"$Token         = '{safe_token}'",
+            "$MsiPath       = Join-Path $env:TEMP 'techi-endpoint-setup.msi'",
+            "$LogFile       = 'C:\\Windows\\Temp\\techi-bootstrap.log'",
+            "$MsiLog        = 'C:\\Windows\\Temp\\techi-bootstrap-install.log'",
+            "",
+            "function Write-Log {",
+            "    param([string]$Msg)",
+            "    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'",
+            '    $line = "$ts  $Msg"',
+            "    Write-Host $line",
+            "    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}",
+            "}",
+            "",
+            "# -- Admin elevation check",
+            "$identity  = [System.Security.Principal.WindowsIdentity]::GetCurrent()",
+            "$principal = [System.Security.Principal.WindowsPrincipal]$identity",
+            "if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {",
+            '    Write-Log "ERROR: This script must be run as Administrator."',
+            "    exit 1",
+            "}",
+            "",
+            'Write-Log "=== TECHI Endpoint Bootstrap ==="',
+            "",
+            "# -- Download MSI",
+            'Write-Log "Downloading TECHI Endpoint package from $MsiUrl"',
+            "Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
+            "try {",
+            "    Invoke-WebRequest -Uri $MsiUrl -OutFile $MsiPath -UseBasicParsing -ErrorAction Stop",
+            '    Write-Log "Download complete: $MsiPath"',
+            "} catch {",
+            '    Write-Log "ERROR: Download failed: $_"',
+            "    exit 1",
+            "}",
+            "",
+            "# -- Verify SHA256",
+            "if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256)) {",
+            '    Write-Log "Verifying SHA256..."',
+            "    try {",
+            "        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $MsiPath -ErrorAction Stop).Hash.ToLower()",
+            "        if ($actual -ne $ExpectedSha256.ToLower()) {",
+            '            Write-Log "ERROR: SHA256 mismatch. Expected=$ExpectedSha256 Actual=$actual"',
+            "            Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
+            "            exit 1",
+            "        }",
+            '        Write-Log "SHA256 verified: $actual"',
+            "    } catch {",
+            '        Write-Log "ERROR: SHA256 check failed: $_"',
+            "        Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
+            "        exit 1",
+            "    }",
+            "} else {",
+            '    Write-Log "WARNING: No SHA256 configured -- skipping integrity check."',
+            "}",
+            "",
+            "# -- Silent MSI install",
+            'Write-Log "Installing TECHI Endpoint (msiexec)..."',
+            "$msiArgs = @(",
+            "    '/i', $MsiPath,",
+            "    ('TOKEN=' + $Token),",
+            "    ('BACKEND_URL=' + $BackendUrl),",
+            "    '/qn',",
+            "    '/L*v', $MsiLog",
+            ")",
+            "try {",
+            "    $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -PassThru",
+            "    if ($proc.ExitCode -ne 0) {",
+            '        Write-Log "ERROR: msiexec exited with code $($proc.ExitCode). See: $MsiLog"',
+            "        exit 1",
+            "    }",
+            '    Write-Log "Installation complete (exit 0)."',
+            "} catch {",
+            '    Write-Log "ERROR: msiexec launch failed: $_"',
+            "    exit 1",
+            "} finally {",
+            "    Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
+            "}",
+            "",
+            "# -- Wait for services to start",
+            "Start-Sleep -Seconds 5",
+            "",
+            "# -- Verify services",
+            '$RequiredServices = @("TechiAgent", "TECHI Remote Support")',
+            "foreach ($ServiceName in $RequiredServices) {",
+            "    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",
+            "    if ($null -eq $svc) {",
+            '        Write-Log "WARNING: Service not found after install: $ServiceName"',
+            "    } elseif ($svc.Status -ne 'Running') {",
+            '        Write-Log "WARNING: $ServiceName is $($svc.Status) -- expected Running."',
+            "    } else {",
+            '        Write-Log "OK: $ServiceName is Running."',
+            "    }",
+            "}",
+            "",
+            '$agentSvc = Get-Service -Name "TechiAgent" -ErrorAction SilentlyContinue',
+            "if ($null -eq $agentSvc -or $agentSvc.Status -ne 'Running') {",
+            '    Write-Log "ERROR: TechiAgent is not running after install."',
+            "    exit 1",
+            "}",
+            "",
+            'Write-Log "TECHI Endpoint deployed successfully."',
+            'Write-Log "Install log: $MsiLog"',
+            "exit 0",
+        )
+
+        script = "\n".join(L)
+        command = f"powershell -ExecutionPolicy Bypass -NoProfile -File .\\TECHI-Bootstrap-{slug}.ps1"
+        return command, script
 
     def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
         backend_url = self.normalize_backend_url(backend_url)

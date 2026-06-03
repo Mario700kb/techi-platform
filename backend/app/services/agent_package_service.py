@@ -14,7 +14,7 @@ from app.schemas.agent_package import AgentPackageOut, AgentPackagePlatform
 
 
 ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
-ALLOWED_EXTENSIONS = (".exe", ".zip", ".tar.gz", ".tgz")
+ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz")
 
 
 class AgentPackageService:

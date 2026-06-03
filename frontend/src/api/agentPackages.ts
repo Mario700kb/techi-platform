@@ -1,6 +1,6 @@
 import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
 
-export type AgentPackagePlatform = "windows-amd64" | "windows-arm64" | "linux-amd64" | "darwin-arm64";
+export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "darwin-arm64";
 
 export interface AgentPackage {
   id: string;
@@ -11,6 +11,7 @@ export interface AgentPackage {
   uploaded_by?: string | null;
   is_active: boolean;
   download_url: string;
+  sha256?: string | null;
 }
 
 export async function getAgentPackages(): Promise<AgentPackage[]> {
@@ -47,6 +48,10 @@ export async function deleteAgentPackage(packageId: string, confirmActive = fals
   return fetchJson<AgentPackage>(`/api/v1/agent-packages/${packageId}${suffix}`, {
     method: "DELETE",
   });
+}
+
+export async function getLatestPackage(platform: string): Promise<AgentPackage> {
+  return fetchJson<AgentPackage>(`/api/v1/packages/latest?platform=${encodeURIComponent(platform)}`);
 }
 
 export async function downloadAgentPackage(pkg: AgentPackage): Promise<void> {

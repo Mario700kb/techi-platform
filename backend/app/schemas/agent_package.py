@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class AgentPackagePlatform(str, Enum):
+    WINDOWS = "windows"
     WINDOWS_AMD64 = "windows-amd64"
     WINDOWS_ARM64 = "windows-arm64"
     LINUX_AMD64 = "linux-amd64"

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clipboard, Copy, Download, Eye, KeyRound, Loader2, Pencil, RefreshCcw, Trash2 } from "lucide-react";
+import { Check, Clipboard, Copy, Download, Eye, KeyRound, Loader2, Package, Pencil, RefreshCcw, Trash2 } from "lucide-react";
 import { API_BASE_URL, getAuthToken } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
+import { AgentPackage, getLatestPackage } from "../api/agentPackages";
 import {
   CreateTokenResponse,
   EnrollmentToken,
@@ -56,6 +57,7 @@ export default function Deployment() {
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [rustdesk, setRustdesk] = useState<RustDeskConfig | null>(null);
+  const [activePackage, setActivePackage] = useState<AgentPackage | null>(null);
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [copied, setCopied] = useState<CopyTarget>(null);
@@ -81,6 +83,7 @@ export default function Deployment() {
 
   useEffect(() => {
     getRustDeskConfig().then(setRustdesk).catch(() => setRustdesk(null));
+    getLatestPackage("windows").then(setActivePackage).catch(() => setActivePackage(null));
     void loadTokens();
   }, []);
 
@@ -175,6 +178,43 @@ export default function Deployment() {
           )}
           {token && <CommandBlock label="Bootstrap URL" value={bootstrapUrl} copied={copied === "new-url"} onCopy={() => copy("new-url", bootstrapUrl)} />}
         </div>
+      </div>
+
+      <div className="premium-card-soft p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Package className="h-4 w-4 text-techi-orange" />
+          <h2 className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>Active Deployment Package</h2>
+        </div>
+        {activePackage ? (
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Version</span>
+              <div className="mt-0.5 font-semibold" style={{ color: "var(--th-text-primary)" }}>{activePackage.version}</div>
+            </div>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Platform</span>
+              <div className="mt-0.5 font-mono text-xs" style={{ color: "var(--th-text-secondary)" }}>{activePackage.platform}</div>
+            </div>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>File</span>
+              <div className="mt-0.5 font-mono text-xs" style={{ color: "var(--th-text-secondary)" }}>{activePackage.filename}</div>
+            </div>
+            {activePackage.sha256 && (
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>SHA256</span>
+                <div className="mt-0.5 font-mono text-xs" style={{ color: "var(--th-text-secondary)" }} title={activePackage.sha256}>
+                  {activePackage.sha256.slice(0, 16)}…
+                </div>
+              </div>
+            )}
+            <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">Active</span>
+          </div>
+        ) : (
+          <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>
+            No active Windows deployment package. Upload an MSI via{" "}
+            <a href="/agent-packages" className="text-techi-orange hover:underline">Agent Packages</a>.
+          </p>
+        )}
       </div>
 
       <div className="premium-card-soft p-5">

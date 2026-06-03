@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger("techi.agent_packages")
-PUBLIC_DOWNLOAD_PLATFORMS = {"windows-amd64", "windows-arm64"}
+PUBLIC_DOWNLOAD_PLATFORMS = {"windows", "windows-amd64", "windows-arm64"}
 
 
 @router.get("", response_model=list[AgentPackageOut])

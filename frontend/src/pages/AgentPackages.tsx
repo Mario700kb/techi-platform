@@ -14,7 +14,7 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
 import { parseUTC } from "../utils/time";
 
-const PLATFORMS: AgentPackagePlatform[] = ["windows-amd64", "windows-arm64", "linux-amd64", "darwin-arm64"];
+const PLATFORMS: AgentPackagePlatform[] = ["windows", "windows-amd64", "windows-arm64", "linux-amd64", "darwin-arm64"];
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
 function formatDate(iso: string): string {
@@ -194,13 +194,14 @@ export default function AgentPackages() {
                 <th className="px-4 py-3">Uploaded</th>
                 <th className="px-4 py-3">Uploader</th>
                 <th className="px-4 py-3">File</th>
+                <th className="px-4 py-3">SHA256</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
               {packages.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
                     {loading ? "Loading..." : "No agent packages available."}
                   </td>
                 </tr>
@@ -222,6 +223,9 @@ export default function AgentPackages() {
                   <td className="whitespace-nowrap px-4 py-3 text-slate-400">{formatDate(pkg.uploaded_at)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-slate-400">{pkg.uploaded_by ?? "-"}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">{pkg.filename}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500" title={pkg.sha256 ?? undefined}>
+                    {pkg.sha256 ? `${pkg.sha256.slice(0, 12)}…` : <span className="text-slate-600">—</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <Button size="sm" onClick={() => void handleDownload(pkg)} disabled={busyId === pkg.id}>

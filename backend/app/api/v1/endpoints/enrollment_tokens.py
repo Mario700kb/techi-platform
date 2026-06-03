@@ -157,11 +157,12 @@ def get_enrollment_token_bootstrap_script(
             manage_power_policy=True,
         )
         bootstrap = EnrollmentBootstrapService(db).generate(payload)
+        filename = bootstrap.installer_filename or "techi-bootstrap.ps1"
         audit_log(db, operator=operator, action=AuditAction.ENROLLMENT_TOKEN_BOOTSTRAP_DOWNLOADED, entity_type="enrollment_token", entity_id=token.id, details={"name": token.name})
         return Response(
             content=bootstrap.bootstrap_script,
             media_type="text/plain; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="techi-bootstrap.ps1"'},
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException:
         raise
