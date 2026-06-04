@@ -477,6 +477,16 @@ export default function Devices() {
     await refreshDevices();
   };
 
+  const alertsMap = useMemo(() => {
+    const map: Record<number, { critical: number; warning: number }> = {};
+    for (const alert of alerts) {
+      if (!map[alert.device_id]) map[alert.device_id] = { critical: 0, warning: 0 };
+      if (alert.severity === "critical") map[alert.device_id].critical++;
+      else if (alert.severity === "warning") map[alert.device_id].warning++;
+    }
+    return map;
+  }, [alerts]);
+
   const statusSummary = useMemo(() => {
     const online = devices.filter((item) => item.freshness_state === "online").length;
     const stale = devices.filter((item) => item.freshness_state === "stale").length;
@@ -749,6 +759,7 @@ export default function Devices() {
             healthMap={healthMap}
 	            patchMap={patchMap}
 	            activeActionMap={activeActionMap}
+	            alertsMap={alertsMap}
 	            canOperate={can("operator")}
 	            canDelete={can("admin")}
 	            currentUser={user?.display_name ?? user?.username}

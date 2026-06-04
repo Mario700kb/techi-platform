@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Trash2, Wrench } from "lucide-react";
 import { Device, DeviceFilters } from "../api/devices";
@@ -8,7 +8,7 @@ import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
-import { parseUTC, timeAgo } from "../utils/time";
+import { parseUTC } from "../utils/time";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -33,97 +33,159 @@ interface DevicesTableProps {
   healthMap?: Record<number, DeviceHealthSummary>;
   patchMap?: Record<number, PatchStatus>;
   activeActionMap?: Record<number, ActiveActionEntry>;
+  alertsMap?: Record<number, { critical: number; warning: number }>;
   canOperate?: boolean;
   canDelete?: boolean;
   currentUser?: string;
 }
 
+type QuickFilter =
+  | "all" | "online" | "offline" | "servers" | "workstations"
+  | "needs_updates" | "reboot_required" | "warnings" | "critical";
+
+const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
+  { id: "all",           label: "All" },
+  { id: "online",        label: "Online" },
+  { id: "offline",       label: "Offline" },
+  { id: "servers",       label: "Servers" },
+  { id: "workstations",  label: "Workstations" },
+  { id: "needs_updates", label: "Needs Updates" },
+  { id: "reboot_required", label: "Reboot Required" },
+  { id: "warnings",      label: "Warnings" },
+  { id: "critical",      label: "Critical" },
+];
+
 type PendingAction = "archive" | "restore" | "delete";
 export type HealthFilter = "all" | DeviceHealthSummary["health_state"];
 
+// ─── Visual constants ────────────────────────────────────────────────────────
+
 const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[10px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
-const FILTER_INPUT_CLS = "th-input rounded-lg border px-3 py-1.5 text-xs font-medium focus:border-techi-orange/50 focus:outline-none";
+const FILTER_INPUT_CLS =
+  "th-input rounded-lg border px-3 py-1.5 text-xs font-medium focus:border-techi-orange/50 focus:outline-none";
 const ACTION_MENU_WIDTH = 192;
 const ACTION_MENU_MAX_HEIGHT = 220;
 const ACTION_MENU_GAP = 6;
 const ACTION_MENU_MARGIN = 8;
 
-const getStatusCell = (device: Device) => {
+// ─── Cell helpers ────────────────────────────────────────────────────────────
+
+/** Status dot + colored health score in the leftmost cell. */
+const renderStatusCell = (device: Device, health?: DeviceHealthSummary) => {
   const state = device.freshness_state ?? device.status;
   const isOnline = state === "online";
   const isStale = state === "stale";
+
+  const score = health?.health_score ?? null;
+  const healthState = health?.health_state ?? "healthy";
+  const scoreColor =
+    score === null
+      ? "text-slate-700"
+      : healthState === "critical"
+      ? "text-red-400"
+      : healthState === "warning"
+      ? "text-amber-400"
+      : "text-emerald-400/80";
+
   return (
-    <span
-      className="inline-flex items-center"
-      title={device.freshness_state ? `Freshness: ${device.freshness_state}` : `Status: ${device.status}`}
+    <div
+      className="flex flex-col items-center gap-0.5"
+      title={`${device.freshness_state ?? device.status}${score != null ? ` · health ${score}` : ""}`}
     >
       <span
-        className={`inline-block h-2 w-2 flex-none rounded-full ${
+        className={`inline-block h-2.5 w-2.5 flex-none rounded-full ${
           isOnline
-            ? "bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.6)]"
+            ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]"
             : isStale
-            ? "bg-amber-300 shadow-[0_0_4px_rgba(251,191,36,0.5)]"
-            : "bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.55)]"
+            ? "bg-amber-300 shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+            : "bg-slate-600"
         }`}
       />
-    </span>
+      <span className={`text-[9px] font-bold tabular-nums leading-none ${scoreColor}`}>
+        {score != null ? score : "—"}
+      </span>
+    </div>
   );
 };
 
-const getRustDeskSyncBadge = (device: Device) => {
-  if (device.rustdesk_conflict_detected || device.rustdesk_sync_state === "failed") {
-    return <Badge variant="secondary" className={compactBadgeClass}>Sync issue</Badge>;
-  }
-  if (device.rustdesk_sync_state === "degraded") {
-    return <Badge variant="ghost" className={`border-amber-400/30 bg-amber-400/10 text-amber-200 ${compactBadgeClass}`}>Degraded</Badge>;
-  }
-  if (device.rustdesk_manual_override) {
-    return <Badge variant="neutral" className={compactBadgeClass}>Manual</Badge>;
-  }
-  if (device.rustdesk_sync_state === "synced") {
-    return <Badge variant="ghost" className={compactBadgeClass}>Verified</Badge>;
-  }
-  return <Badge variant="neutral" className={compactBadgeClass}>Unknown</Badge>;
+/** Server / Workstation pill badge. */
+const getDeviceTypeBadge = (device: Device) => {
+  const cat = device.resolved_device_category;
+  const dt = device.device_type;
+  const isServer = cat === "servers" || dt === "server";
+  const isWs = cat === "clientpc" || dt === "client";
+
+  if (isServer)
+    return (
+      <span
+        className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
+        style={{
+          color: "#a78bfa",
+          background: "rgba(167,139,250,0.12)",
+          border: "1px solid rgba(167,139,250,0.22)",
+        }}
+      >
+        Server
+      </span>
+    );
+  if (isWs)
+    return (
+      <span
+        className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
+        style={{
+          color: "#60a5fa",
+          background: "rgba(96,165,250,0.1)",
+          border: "1px solid rgba(96,165,250,0.2)",
+        }}
+      >
+        WS
+      </span>
+    );
+  return null;
 };
 
-const getRustDeskRuntime = (device: Device) => {
-  if (device.rustdesk_install_status === "not_installed") return "Not installed";
-  if (device.rustdesk_status === "running") return "Running";
-  if (device.rustdesk_status === "stopped" || device.rustdesk_status === "not_running") return "Stopped";
-  return device.rustdesk_status || "Unknown";
+/** Color-coded "last seen" display. */
+const getLastSeenDisplay = (lastSeen?: string): { text: string; cls: string } => {
+  if (!lastSeen) return { text: "Never", cls: "text-slate-600" };
+  const diffMs = Date.now() - parseUTC(lastSeen).getTime();
+  const mins = diffMs / 60_000;
+  const hours = diffMs / 3_600_000;
+  const days = diffMs / 86_400_000;
+  if (mins < 5) return { text: "Just now", cls: "text-emerald-400" };
+  if (hours < 1) return { text: `${Math.floor(mins)}m ago`, cls: "text-emerald-400" };
+  if (hours < 24) return { text: `${Math.floor(hours)}h ago`, cls: "text-slate-300" };
+  if (days < 7) return { text: `${Math.floor(days)}d ago`, cls: "text-amber-400" };
+  return { text: `${Math.floor(days)}d ago`, cls: "text-red-400" };
 };
 
 const getAssignmentBadge = (device: Device) => {
-  const source = device.resolved_assignment_source || device.assignment_source || "unassigned";
-  if (source === "enrollment_token") {
+  const source =
+    device.resolved_assignment_source || device.assignment_source || "unassigned";
+  if (source === "enrollment_token")
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Enrollment token assignment">
         token
       </Badge>
     );
-  }
-  if (source === "manual" || source === "legacy_manual") {
+  if (source === "manual" || source === "legacy_manual")
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Manual assignment">
         manual
       </Badge>
     );
-  }
-  if (source === "trusted_domain") {
+  if (source === "trusted_domain")
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Domain assignment">
         domain
       </Badge>
     );
-  }
-  if (source === "auto_os" || source === "system_auto") {
+  if (source === "auto_os" || source === "system_auto")
     return (
       <Badge variant="ghost" className={subtleBadgeClass} title="Auto assigned from domain">
         auto
       </Badge>
     );
-  }
   return (
     <Badge variant="ghost" className={subtleBadgeClass} title="Unassigned">
       unassigned
@@ -131,18 +193,65 @@ const getAssignmentBadge = (device: Device) => {
   );
 };
 
-const formatLastSeen = (lastSeen?: string) => {
-  if (!lastSeen) return "Never";
-  const diffMs = Date.now() - parseUTC(lastSeen).getTime();
-  const diffHours = diffMs / (1000 * 60 * 60);
-  if (diffHours < 1) return "Just now";
-  if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
+const getUserSourceBadge = (device: Device) => {
+  if (
+    !device.user_source ||
+    device.user_source === "no_interactive_user" ||
+    device.user_source === "fallback"
+  )
+    return null;
+  const label = device.user_source === "rdp_session" ? "rdp" : "con";
+  const cls =
+    device.user_source === "rdp_session"
+      ? `border-purple-400/25 bg-purple-400/[0.08] text-purple-300 ${compactBadgeClass}`
+      : `border-sky-400/25 bg-sky-400/[0.08] text-sky-300 ${compactBadgeClass}`;
+  const stateLabel =
+    device.user_session_state && device.user_session_state !== "unknown"
+      ? ` · ${device.user_session_state}`
+      : "";
+  return (
+    <Badge variant="ghost" className={cls} title={`${device.user_source}${stateLabel}`}>
+      {label}
+    </Badge>
+  );
+};
+
+const getPatchBadge = (patch?: PatchStatus) => {
+  const state = patch?.patch_state ?? "unknown";
+  if (state === "up_to_date")
+    return (
+      <Badge variant="ghost" className={subtleBadgeClass}>
+        patched
+      </Badge>
+    );
+  if (state === "reboot_required")
+    return (
+      <Badge
+        variant="ghost"
+        className={`border-red-400/20 bg-red-400/[0.06] text-red-300 ${compactBadgeClass}`}
+      >
+        reboot
+      </Badge>
+    );
+  if (state === "updates_available") {
+    const count = patch?.pending_updates ?? 0;
+    return (
+      <Badge
+        variant="ghost"
+        className={`border-amber-400/20 bg-amber-400/[0.06] text-amber-300 ${compactBadgeClass}`}
+      >
+        {count > 0 ? `${count} upd` : "updates"}
+      </Badge>
+    );
+  }
+  return null; // skip "patch unknown" to reduce noise
 };
 
 const isSuggestedArchive = (device: Device) => {
-  if (device.is_archived || device.freshness_state !== "offline" || !device.last_seen) return false;
-  const diffDays = (Date.now() - parseUTC(device.last_seen).getTime()) / (1000 * 60 * 60 * 24);
+  if (device.is_archived || device.freshness_state !== "offline" || !device.last_seen)
+    return false;
+  const diffDays =
+    (Date.now() - parseUTC(device.last_seen).getTime()) / (1000 * 60 * 60 * 24);
   return diffDays > 30;
 };
 
@@ -160,16 +269,15 @@ const getMaintenanceBadge = (device: Device) => {
       title={title}
     >
       <Wrench className="mr-0.5 inline h-2 w-2" />
-      maintenance
+      maint.
     </Badge>
   );
 };
 
 const getDuplicateBadge = (device: Device) => {
   if (!device.duplicate_candidate) return null;
-  const scoreLabel = device.duplicate_score != null
-    ? ` ${Math.round(device.duplicate_score * 100)}%`
-    : "";
+  const scoreLabel =
+    device.duplicate_score != null ? ` ${Math.round(device.duplicate_score * 100)}%` : "";
   return (
     <Badge
       variant="ghost"
@@ -181,46 +289,23 @@ const getDuplicateBadge = (device: Device) => {
       }
     >
       <AlertTriangle className="mr-0.5 inline h-2 w-2" />
-      duplicate
+      dupe
     </Badge>
   );
-};
-
-const getUserSourceBadge = (device: Device) => {
-  if (!device.user_source || device.user_source === "no_interactive_user" || device.user_source === "fallback") return null;
-  const label = device.user_source === "rdp_session" ? "rdp" : "con";
-  const cls = device.user_source === "rdp_session"
-    ? `border-purple-400/25 bg-purple-400/[0.08] text-purple-300 ${compactBadgeClass}`
-    : `border-sky-400/25 bg-sky-400/[0.08] text-sky-300 ${compactBadgeClass}`;
-  const stateLabel = device.user_session_state && device.user_session_state !== "unknown"
-    ? ` · ${device.user_session_state}`
-    : "";
-  return (
-    <Badge variant="ghost" className={cls} title={`${device.user_source}${stateLabel}`}>
-      {label}
-    </Badge>
-  );
-};
-
-const getPatchBadge = (patch?: PatchStatus) => {
-  const state = patch?.patch_state ?? "unknown";
-  if (state === "up_to_date") {
-    return <Badge variant="ghost" className={subtleBadgeClass}>patched</Badge>;
-  }
-  if (state === "reboot_required") {
-    return <Badge variant="ghost" className={`border-red-400/20 bg-red-400/[0.06] text-red-300 ${compactBadgeClass}`}>reboot required</Badge>;
-  }
-  if (state === "updates_available") {
-    const count = patch?.pending_updates ?? 0;
-    return <Badge variant="ghost" className={`border-amber-400/20 bg-amber-400/[0.06] text-amber-300 ${compactBadgeClass}`}>{count > 0 ? `${count} updates` : "updates"}</Badge>;
-  }
-  return <Badge variant="ghost" className={subtleBadgeClass}>patch unknown</Badge>;
 };
 
 const getLifecycleSignals = (device: Device) => (
   <>
     {device.is_archived && (
-      <Badge variant="neutral" className={compactBadgeClass} title={device.archived_at ? `Archived ${parseUTC(device.archived_at).toLocaleString()}` : "Archived device"}>
+      <Badge
+        variant="neutral"
+        className={compactBadgeClass}
+        title={
+          device.archived_at
+            ? `Archived ${parseUTC(device.archived_at).toLocaleString()}`
+            : "Archived device"
+        }
+      >
         archived
       </Badge>
     )}
@@ -234,8 +319,12 @@ const getLifecycleSignals = (device: Device) => (
       </Badge>
     )}
     {isSuggestedArchive(device) && (
-      <Badge variant="ghost" className={`border-amber-300/25 bg-amber-300/10 text-amber-100 ${compactBadgeClass}`} title="Offline for more than 30 days">
-        archive suggested
+      <Badge
+        variant="ghost"
+        className={`border-amber-300/25 bg-amber-300/10 text-amber-100 ${compactBadgeClass}`}
+        title="Offline for more than 30 days"
+      >
+        archive?
       </Badge>
     )}
     {getMaintenanceBadge(device)}
@@ -243,14 +332,7 @@ const getLifecycleSignals = (device: Device) => (
   </>
 );
 
-const getCompactHealthBadge = (health?: DeviceHealthSummary) => {
-  const score = health?.health_score;
-  return (
-    <span className="min-w-[18px] text-right text-[10px] font-semibold leading-4 text-slate-200 tabular-nums">
-      {score != null ? score : "—"}
-    </span>
-  );
-};
+// ─── Main component ───────────────────────────────────────────────────────────
 
 const DevicesTable = memo(function DevicesTable({
   devices,
@@ -270,6 +352,7 @@ const DevicesTable = memo(function DevicesTable({
   healthMap = {},
   patchMap = {},
   activeActionMap = {},
+  alertsMap = {},
   canOperate = false,
   canDelete = false,
   currentUser,
@@ -277,8 +360,53 @@ const DevicesTable = memo(function DevicesTable({
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef({ left: 0, top: 0 });
+
+  // Reset selection when device list changes (e.g. filter applied from parent)
+  useEffect(() => { setSelectedIds(new Set()); }, [devices]);
+
+  // Per-pill counts (computed from the unfiltered devices prop)
+  const pillCounts = useMemo(() => ({
+    all:            devices.length,
+    online:         devices.filter(d => d.freshness_state === "online").length,
+    offline:        devices.filter(d => d.freshness_state === "offline").length,
+    servers:        devices.filter(d => d.device_type === "server" || d.resolved_device_category === "servers").length,
+    workstations:   devices.filter(d => d.device_type === "client" || d.resolved_device_category === "clientpc").length,
+    needs_updates:  devices.filter(d => patchMap[d.id]?.patch_state === "updates_available").length,
+    reboot_required:devices.filter(d => patchMap[d.id]?.patch_state === "reboot_required").length,
+    warnings:       devices.filter(d => healthMap[d.id]?.health_state === "warning").length,
+    critical:       devices.filter(d => healthMap[d.id]?.health_state === "critical").length,
+  }), [devices, patchMap, healthMap]);
+
+  // Apply quick filter on top of the parent-filtered list
+  const displayDevices = useMemo(() => {
+    if (quickFilter === "all") return devices;
+    return devices.filter(d => {
+      switch (quickFilter) {
+        case "online":          return d.freshness_state === "online";
+        case "offline":         return d.freshness_state === "offline";
+        case "servers":         return d.device_type === "server" || d.resolved_device_category === "servers";
+        case "workstations":    return d.device_type === "client" || d.resolved_device_category === "clientpc";
+        case "needs_updates":   return patchMap[d.id]?.patch_state === "updates_available";
+        case "reboot_required": return patchMap[d.id]?.patch_state === "reboot_required";
+        case "warnings":        return healthMap[d.id]?.health_state === "warning";
+        case "critical":        return healthMap[d.id]?.health_state === "critical";
+        default:                return true;
+      }
+    });
+  }, [devices, quickFilter, patchMap, healthMap]);
+
+  const allSelected = displayDevices.length > 0 && displayDevices.every(d => selectedIds.has(d.id));
+  const someSelected = !allSelected && displayDevices.some(d => selectedIds.has(d.id));
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(displayDevices.map(d => d.id)));
+  const toggleOne = (id: number) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   useLayoutEffect(() => {
     const node = scrollRef.current;
@@ -287,7 +415,6 @@ const DevicesTable = memo(function DevicesTable({
     node.scrollTop = scrollPositionRef.current.top;
   }, [devices]);
 
-  // Close portal menu when the user clicks outside both the trigger and the menu.
   useEffect(() => {
     if (openActionDeviceId === null) return;
     const closeMenu = () => {
@@ -313,19 +440,27 @@ const DevicesTable = memo(function DevicesTable({
     };
   }, [openActionDeviceId]);
 
-  const activeActionDevice = openActionDeviceId !== null
-    ? devices.find((d) => d.id === openActionDeviceId) ?? null
-    : null;
+  const activeActionDevice =
+    openActionDeviceId !== null
+      ? displayDevices.find((d) => d.id === openActionDeviceId) ?? devices.find((d) => d.id === openActionDeviceId) ?? null
+      : null;
 
   const getMenuAnchor = (trigger: HTMLElement) => {
     const rect = trigger.getBoundingClientRect();
     const availableBelow = window.innerHeight - rect.bottom - ACTION_MENU_MARGIN;
-    const opensUp = availableBelow < ACTION_MENU_MAX_HEIGHT && rect.top > availableBelow;
+    const opensUp =
+      availableBelow < ACTION_MENU_MAX_HEIGHT && rect.top > availableBelow;
     const top = opensUp
-      ? Math.max(ACTION_MENU_MARGIN, rect.top - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_GAP)
+      ? Math.max(
+          ACTION_MENU_MARGIN,
+          rect.top - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_GAP
+        )
       : Math.max(
           ACTION_MENU_MARGIN,
-          Math.min(rect.bottom + ACTION_MENU_GAP, window.innerHeight - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_MARGIN)
+          Math.min(
+            rect.bottom + ACTION_MENU_GAP,
+            window.innerHeight - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_MARGIN
+          )
         );
     const preferredLeft = rect.right - ACTION_MENU_WIDTH;
     const left = Math.min(
@@ -345,17 +480,70 @@ const DevicesTable = memo(function DevicesTable({
 
   return (
     <div className="space-y-2.5">
-      {/* Shiriti i filtrave */}
-      <div className="premium-card-soft p-2.5">
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+      {/* Filter bar */}
+      <div
+        className="rounded-xl p-3"
+        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-white">Devices catalog</h2>
-            <p className="mt-0.5 text-xs text-slate-400">Full device roster for all managed clients.</p>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              Devices catalog
+            </h2>
+            <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
+              Full device roster for all managed clients.
+            </p>
           </div>
-          <Button size="sm" onClick={onRefresh}>Refresh list</Button>
+          <Button size="sm" onClick={onRefresh}>
+            Refresh list
+          </Button>
         </div>
 
-        <div className="mt-2.5 grid gap-1.5 lg:grid-cols-[1.6fr_1fr] xl:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
+        {/* Quick filter pills */}
+        <div className="mt-2.5 flex flex-wrap gap-1">
+          {QUICK_FILTERS.map(f => {
+            const count = pillCounts[f.id];
+            const active = quickFilter === f.id;
+            const hasAlert = f.id === "critical" && count > 0;
+            const hasWarn  = f.id === "warnings"  && count > 0;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setQuickFilter(f.id)}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all"
+                style={{
+                  background: active
+                    ? hasAlert ? "rgba(248,113,113,0.18)"
+                    : hasWarn  ? "rgba(251,191,36,0.15)"
+                    : "rgba(249,115,22,0.18)"
+                    : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${active
+                    ? hasAlert ? "rgba(248,113,113,0.4)"
+                    : hasWarn  ? "rgba(251,191,36,0.35)"
+                    : "rgba(249,115,22,0.35)"
+                    : "rgba(255,255,255,0.08)"}`,
+                  color: active
+                    ? hasAlert ? "#f87171"
+                    : hasWarn  ? "#fbbf24"
+                    : "#fb923c"
+                    : count === 0 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
+                  opacity: count === 0 && f.id !== "all" ? 0.45 : 1,
+                }}
+              >
+                {f.label}
+                {f.id !== "all" && (
+                  <span className="rounded-full px-1 text-[9px] font-bold tabular-nums"
+                    style={{ background: "rgba(255,255,255,0.08)" }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 grid gap-1.5 lg:grid-cols-[1.6fr_1fr] xl:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input
@@ -396,7 +584,11 @@ const DevicesTable = memo(function DevicesTable({
             <option value="all">All devices</option>
           </select>
           <select
-            value={filters.duplicate_candidates ? "duplicate" : filters.maintenance_state || "all"}
+            value={
+              filters.duplicate_candidates
+                ? "duplicate"
+                : filters.maintenance_state || "all"
+            }
             onChange={(e) => {
               const value = e.target.value;
               if (value === "duplicate") {
@@ -405,7 +597,10 @@ const DevicesTable = memo(function DevicesTable({
                 return;
               }
               onFilterChange("duplicate_candidates", undefined);
-              onFilterChange("maintenance_state", value === "all" ? undefined : value);
+              onFilterChange(
+                "maintenance_state",
+                value === "all" ? undefined : value
+              );
             }}
             className={FILTER_INPUT_CLS}
           >
@@ -417,7 +612,7 @@ const DevicesTable = memo(function DevicesTable({
         </div>
       </div>
 
-      {/* Gjendjet */}
+      {/* States */}
       {loading ? (
         <div className="premium-card-soft py-12 text-center">
           <p className="text-[15px] font-semibold text-slate-200">Loading devices...</p>
@@ -427,18 +622,25 @@ const DevicesTable = memo(function DevicesTable({
         <div className="premium-card-soft py-12 text-center">
           <p className="text-[15px] font-semibold text-white">Unable to load devices</p>
           <p className="mt-1 text-[13px] text-red-300">{error}</p>
-          <Button onClick={onRefresh} size="sm" className="mt-4">Try again</Button>
+          <Button onClick={onRefresh} size="sm" className="mt-4">
+            Try again
+          </Button>
         </div>
       ) : devices.length === 0 ? (
         <div className="premium-card-soft flex flex-col items-center gap-3 py-14 text-center">
           <ServerOff className="h-8 w-8 text-slate-600" />
           <div>
             <p className="text-[15px] font-semibold text-slate-200">No devices found</p>
-            <p className="mt-1 text-[13px] text-slate-500">Adjust filters or search terms to reveal devices.</p>
+            <p className="mt-1 text-[13px] text-slate-500">
+              Adjust filters or search terms to reveal devices.
+            </p>
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-white/[0.1] bg-slate-950/80 th-table-row">
+        <div
+          className="overflow-hidden rounded-xl"
+          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+        >
           <div
             ref={scrollRef}
             className="overflow-x-auto"
@@ -453,187 +655,382 @@ const DevicesTable = memo(function DevicesTable({
               }
             }}
           >
-            <table className="min-w-[760px] border-separate border-spacing-0 text-left">
-              <thead className="sticky top-0 z-20">
-                <tr className="th-table-head border-b border-white/[0.06]">
-                  <th className="w-[46px] px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Status</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Hostname</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Assignment</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">User</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Domain</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">OS</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Last seen</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Actions</th>
+            <table className="min-w-[960px] w-full border-separate border-spacing-0 text-left">
+              {/* ── Header ── */}
+              <thead>
+                <tr style={{ background: "var(--th-bg-table-head, rgba(255,255,255,0.025))", borderBottom: "1px solid var(--th-border-subtle)" }}>
+                  {/* Checkbox */}
+                  <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                      onChange={toggleAll}
+                      className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                      title="Select all"
+                    />
+                  </th>
+                  {[
+                    { label: "St",            w: "w-[52px]" },
+                    { label: "Hostname" },
+                    { label: "Client / Group" },
+                    { label: "User" },
+                    { label: "Domain" },
+                    { label: "IP" },
+                    { label: "OS" },
+                    { label: "Last Seen" },
+                    { label: "Actions" },
+                  ].map(({ label, w }) => (
+                    <th
+                      key={label}
+                      className={`px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-[0.1em] ${w ?? ""}`}
+                      style={{ color: "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
+                    >
+                      {label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {devices.map((device) => (
-                  <tr
-                    key={device.id}
-                    className="group cursor-pointer"
-                    onClick={() => onDeviceSelect?.(device)}
-                  >
-                    <td className="w-[46px] px-1.5 py-1 align-middle">
-                      <div className="flex items-center gap-1">
-                        {getStatusCell(device)}
-                        {getCompactHealthBadge(healthMap[device.id])}
-                        {activeActionMap[device.id] && (
-                          <ActionIndicator entry={activeActionMap[device.id]} />
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2.5 py-1 align-middle">
-                      <div className="truncate text-[11px] font-semibold leading-4 text-white">{device.hostname || "Unknown"}</div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-0.5">
-                        <span className="text-[9px] font-medium leading-3 text-slate-500">{device.device_type}</span>
-                        {getPatchBadge(patchMap[device.id])}
-                        {getLifecycleSignals(device)}
-                      </div>
-                    </td>
-                    <td className="px-2.5 py-1 align-middle">
-                      <div className="truncate text-[11px] font-semibold leading-4 text-slate-100">{device.client_name || "No client"}</div>
-                      <div className="flex flex-wrap items-center gap-0.5">
-                        <span className="text-[9px] font-medium leading-3 text-slate-500">{device.group_name || "No group"}</span>
-                        {getAssignmentBadge(device)}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[11px] font-medium text-slate-200">{device.current_user || "—"}</span>
-                        {getUserSourceBadge(device)}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.domain || "—"}</td>
-                    <td className="px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.os_name || "—"}</td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-semibold text-slate-300">{formatLastSeen(device.last_seen)}</td>
-                    <td className="px-2.5 py-1 align-middle" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
-                          className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-transparent disabled:text-slate-600"
-                          onClick={() => launchRustDesk(device.rustdesk_id)}
-                          title={
-                            device.rustdesk_conflict_detected
-                              ? "TECHI Remote Support ID conflict detected"
-                              : isValidRustDeskId(device.rustdesk_id)
-                              ? "Open TECHI Remote Support"
-                              : "TECHI Remote Support ID not resolved yet"
-                          }
+
+              {/* ── Rows ── */}
+              <tbody>
+                {displayDevices.map((device, rowIdx) => {
+                  const health = healthMap[device.id];
+                  const ls = getLastSeenDisplay(device.last_seen);
+                  const canConnect =
+                    isValidRustDeskId(device.rustdesk_id) &&
+                    !device.rustdesk_conflict_detected;
+                  const devAlerts = alertsMap[device.id];
+
+                  return (
+                    <tr
+                      key={device.id}
+                      className="group cursor-pointer transition-colors duration-75"
+                      style={{
+                        background: rowIdx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)",
+                        borderBottom: "1px solid var(--th-border-subtle)",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.028)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = rowIdx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)")}
+                      onClick={() => onDeviceSelect?.(device)}
+                    >
+                      {/* ── Checkbox ── */}
+                      <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(device.id)}
+                          onChange={() => toggleOne(device.id)}
+                          className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                        />
+                      </td>
+
+                      {/* ── Status + Health ── */}
+                      <td className="w-[52px] px-2 py-1.5 align-middle">
+                        <div className="flex items-center justify-center gap-1">
+                          {renderStatusCell(device, health)}
+                          {activeActionMap[device.id] && (
+                            <ActionIndicator entry={activeActionMap[device.id]} />
+                          )}
+                        </div>
+                      </td>
+
+                      {/* ── Hostname ── */}
+                      <td className="px-2.5 py-1.5 align-middle">
+                        <div
+                          className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
+                          style={{ color: "var(--th-text-primary)" }}
+                          title={device.hostname || "Unknown"}
                         >
-                          <ExternalLink className="h-2.5 w-2.5" />
-                          Connect
-                        </button>
-                        {canOperate && (
+                          {device.hostname || "Unknown"}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-0.5">
+                          {getDeviceTypeBadge(device)}
+                          {getPatchBadge(patchMap[device.id])}
+                          {getLifecycleSignals(device)}
+                          {devAlerts?.critical ? (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
+                              style={{ color: "#f87171", background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.22)" }}>
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-400" style={{ boxShadow: "0 0 3px rgba(248,113,113,0.7)" }} />
+                              {devAlerts.critical}
+                            </span>
+                          ) : null}
+                          {devAlerts?.warning ? (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
+                              style={{ color: "#fbbf24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.22)" }}>
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                              {devAlerts.warning}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+
+                      {/* ── Client / Group ── */}
+                      <td className="px-2.5 py-1.5 align-middle">
+                        <div
+                          className="max-w-[160px] truncate text-[12px] font-semibold leading-[1.3]"
+                          style={{ color: "var(--th-text-primary)" }}
+                          title={device.client_name || "No client"}
+                        >
+                          {device.client_name || (
+                            <span style={{ color: "var(--th-text-muted)" }}>No client</span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <span
+                            className="max-w-[130px] truncate text-[9px] font-medium leading-3"
+                            style={{ color: "var(--th-text-muted)" }}
+                          >
+                            {device.group_name || "No group"}
+                          </span>
+                          {getAssignmentBadge(device)}
+                        </div>
+                      </td>
+
+                      {/* ── User ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        <div className="flex items-center gap-1">
+                          <span
+                            className="max-w-[120px] truncate text-[11px] font-medium"
+                            style={{ color: "var(--th-text-secondary)" }}
+                          >
+                            {device.current_user || "—"}
+                          </span>
+                          {getUserSourceBadge(device)}
+                        </div>
+                      </td>
+
+                      {/* ── Domain ── */}
+                      <td
+                        className="whitespace-nowrap px-2.5 py-1.5 align-middle text-[11px] font-medium"
+                        style={{ color: "var(--th-text-secondary)" }}
+                      >
+                        {device.domain || "—"}
+                      </td>
+
+                      {/* ── IP (public + local stacked) ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        <div className="font-mono text-[10px]" style={{ color: "var(--th-text-secondary)" }}>
+                          {device.public_ip || "—"}
+                        </div>
+                        {device.local_ip && (
+                          <div className="font-mono text-[10px]" style={{ color: "var(--th-text-muted)" }}>
+                            {device.local_ip}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* ── OS ── */}
+                      <td
+                        className="max-w-[120px] truncate px-2.5 py-1.5 align-middle text-[10px] font-medium"
+                        style={{ color: "var(--th-text-muted)" }}
+                        title={device.os_name || "—"}
+                      >
+                        {device.os_name || "—"}
+                      </td>
+
+                      {/* ── Last Seen ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        <span className={`text-[11px] font-semibold tabular-nums ${ls.cls}`}>
+                          {ls.text}
+                        </span>
+                      </td>
+
+                      {/* ── Actions ── */}
+                      <td
+                        className="px-2 py-1.5 align-middle"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {/* Connect button — styled like RS page */}
                           <button
                             type="button"
-                            data-action-trigger="true"
-                            className="th-icon-btn !min-h-8 !min-w-8"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (openActionDeviceId === device.id) {
-                                setOpenActionDeviceId(null);
-                                setMenuAnchor(null);
-                              } else {
-                                setMenuAnchor(getMenuAnchor(e.currentTarget));
-                                setOpenActionDeviceId(device.id);
-                              }
+                            disabled={!canConnect}
+                            onClick={() => launchRustDesk(device.rustdesk_id)}
+                            title={
+                              device.rustdesk_conflict_detected
+                                ? "Remote Support ID conflict"
+                                : canConnect
+                                ? "Open TECHI Remote Support"
+                                : "Remote ID not resolved yet"
+                            }
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
+                            style={{
+                              background: canConnect
+                                ? "rgba(249,115,22,0.15)"
+                                : "rgba(255,255,255,0.03)",
+                              border: `1px solid ${
+                                canConnect
+                                  ? "rgba(249,115,22,0.3)"
+                                  : "var(--th-border-subtle)"
+                              }`,
+                              color: canConnect ? "#f97316" : "var(--th-text-muted)",
+                              cursor: canConnect ? "pointer" : "not-allowed",
+                              opacity: canConnect ? 1 : 0.45,
                             }}
-                            title="More actions"
                           >
-                            <MoreHorizontal className="h-3 w-3" />
+                            <ExternalLink className="h-3 w-3" />
+                            Connect
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+
+                          {canOperate && (
+                            <button
+                              type="button"
+                              data-action-trigger="true"
+                              className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
+                              style={{
+                                border: "1px solid var(--th-border-subtle)",
+                                background: "rgba(255,255,255,0.03)",
+                                color: "var(--th-text-muted)",
+                              }}
+                              onMouseEnter={(e) => {
+                                (e.currentTarget as HTMLElement).style.background =
+                                  "rgba(255,255,255,0.07)";
+                                (e.currentTarget as HTMLElement).style.color =
+                                  "var(--th-text-secondary)";
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLElement).style.background =
+                                  "rgba(255,255,255,0.03)";
+                                (e.currentTarget as HTMLElement).style.color =
+                                  "var(--th-text-muted)";
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (openActionDeviceId === device.id) {
+                                  setOpenActionDeviceId(null);
+                                  setMenuAnchor(null);
+                                } else {
+                                  setMenuAnchor(getMenuAnchor(e.currentTarget));
+                                  setOpenActionDeviceId(device.id);
+                                }
+                              }}
+                              title="More actions"
+                            >
+                              <MoreHorizontal className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          <div className="th-table-head border-t border-white/[0.06] px-4 py-2.5 text-xs font-medium text-slate-500 sm:flex sm:items-center sm:justify-between">
-            <span>{devices.length} device{devices.length !== 1 ? "s" : ""} shown</span>
-            <span className="mt-1 sm:mt-0">Fleet operating normally</span>
+          {/* Footer */}
+          <div
+            className="flex items-center justify-between px-4 py-2"
+            style={{
+              borderTop: "1px solid var(--th-border-subtle)",
+              background: "var(--th-bg-table-head, rgba(255,255,255,0.02))",
+            }}
+          >
+            <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+              {displayDevices.length} device{displayDevices.length !== 1 ? "s" : ""} shown
+              {selectedIds.size > 0 && (
+                <span className="ml-2 font-semibold" style={{ color: "#fb923c" }}>
+                  · {selectedIds.size} selected
+                </span>
+              )}
+            </span>
+            <span
+              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--th-text-muted)", opacity: 0.6 }}
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                style={{ boxShadow: "0 0 4px rgba(52,211,153,0.5)" }}
+              />
+              Fleet active
+            </span>
           </div>
         </div>
       )}
 
-      {/* Portal action menu — rendered in document.body to escape table scroll clipping */}
-      {activeActionDevice && menuAnchor && createPortal(
-        <div
-          data-action-menu="true"
-          style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left }}
-          className="th-elevated z-[10000] max-h-[220px] w-48 overflow-y-auto rounded-lg border p-1 shadow-2xl"
-        >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-sky-100 transition hover:bg-sky-500/10"
-            onClick={() => {
-              setOpenActionDeviceId(null);
-              setMenuAnchor(null);
-              void queueDeviceAction(activeActionDevice.id, { action_type: "ping", created_by: currentUser ?? "unknown" });
-            }}
+      {/* Portal action menu */}
+      {activeActionDevice &&
+        menuAnchor &&
+        createPortal(
+          <div
+            data-action-menu="true"
+            style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left }}
+            className="th-elevated z-[10000] max-h-[220px] w-48 overflow-y-auto rounded-lg border p-1 shadow-2xl"
           >
-            <PlayCircle className="h-3.5 w-3.5" />
-            Ping device
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:bg-white/[0.05]"
-            onClick={() => {
-              setOpenActionDeviceId(null);
-              setMenuAnchor(null);
-              void queueDeviceAction(activeActionDevice.id, { action_type: "refresh_inventory", created_by: currentUser ?? "unknown" });
-            }}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Refresh inventory
-          </button>
-          {!activeActionDevice.is_archived ? (
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-sky-100 transition hover:bg-sky-500/10"
               onClick={() => {
                 setOpenActionDeviceId(null);
                 setMenuAnchor(null);
-                setPendingAction({ type: "archive", device: activeActionDevice });
+                void queueDeviceAction(activeActionDevice.id, {
+                  action_type: "ping",
+                  created_by: currentUser ?? "unknown",
+                });
               }}
             >
-              <Archive className="h-3.5 w-3.5" />
-              Archive device
+              <PlayCircle className="h-3.5 w-3.5" />
+              Ping device
             </button>
-          ) : (
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/10"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:bg-white/[0.05]"
               onClick={() => {
                 setOpenActionDeviceId(null);
                 setMenuAnchor(null);
-                setPendingAction({ type: "restore", device: activeActionDevice });
+                void queueDeviceAction(activeActionDevice.id, {
+                  action_type: "refresh_inventory",
+                  created_by: currentUser ?? "unknown",
+                });
               }}
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Restore device
+              Refresh inventory
             </button>
-          )}
-          {canDelete && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-200 transition hover:bg-red-500/10 hover:text-red-100"
-              onClick={() => {
-                setOpenActionDeviceId(null);
-                setMenuAnchor(null);
-                setPendingAction({ type: "delete", device: activeActionDevice });
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Remove permanently
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
+            {!activeActionDevice.is_archived ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
+                onClick={() => {
+                  setOpenActionDeviceId(null);
+                  setMenuAnchor(null);
+                  setPendingAction({ type: "archive", device: activeActionDevice });
+                }}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive device
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/10"
+                onClick={() => {
+                  setOpenActionDeviceId(null);
+                  setMenuAnchor(null);
+                  setPendingAction({ type: "restore", device: activeActionDevice });
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restore device
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-200 transition hover:bg-red-500/10 hover:text-red-100"
+                onClick={() => {
+                  setOpenActionDeviceId(null);
+                  setMenuAnchor(null);
+                  setPendingAction({ type: "delete", device: activeActionDevice });
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove permanently
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
 
       {pendingAction && (
         <ConfirmDeviceAction
@@ -649,25 +1046,28 @@ const DevicesTable = memo(function DevicesTable({
 
 export default DevicesTable;
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
   const isRunning = entry.status === "running";
-  const isQueued = entry.status === "queued" || entry.status === "sent" || entry.status === "acknowledged";
+  const isQueued =
+    entry.status === "queued" ||
+    entry.status === "sent" ||
+    entry.status === "acknowledged";
   const title = `${entry.action_type.replace(/_/g, " ")} — ${entry.status}`;
-  if (isRunning) {
+  if (isRunning)
     return (
       <span title={title}>
         <Loader2 className="h-2.5 w-2.5 flex-none animate-spin text-sky-400" />
       </span>
     );
-  }
-  if (isQueued) {
+  if (isQueued)
     return (
       <span
-        className="h-2 w-2 flex-none rounded-full bg-amber-400/80"
+        className="h-1.5 w-1.5 flex-none rounded-full bg-amber-400/80"
         title={title}
       />
     );
-  }
   return null;
 }
 
@@ -683,14 +1083,24 @@ function ConfirmDeviceAction({
   onConfirm: () => void;
 }) {
   const isDelete = type === "delete";
-  const title = type === "archive" ? "Archive device" : type === "restore" ? "Restore device" : "Remove permanently";
+  const title =
+    type === "archive"
+      ? "Archive device"
+      : type === "restore"
+      ? "Restore device"
+      : "Remove permanently";
   const message =
     type === "archive"
-      ? "Device do hiqet nga fleet aktiv por historia ruhet."
+      ? "Device will be removed from the active fleet. History is preserved."
       : type === "restore"
-      ? "Device do rikthehet te fleet aktiv."
-      : "Ky veprim nuk rikthehet.";
-  const actionLabel = type === "archive" ? "Archive" : type === "restore" ? "Restore" : "Remove permanently";
+      ? "Device will be returned to the active fleet."
+      : "This action cannot be undone.";
+  const actionLabel =
+    type === "archive"
+      ? "Archive"
+      : type === "restore"
+      ? "Restore"
+      : "Remove permanently";
 
   return (
     <ConfirmationModal

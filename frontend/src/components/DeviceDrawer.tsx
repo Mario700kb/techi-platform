@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
@@ -502,38 +502,75 @@ export default function DeviceDrawer({
       >
         {/* Koka */}
         <div
-          className="flex flex-none items-center justify-between px-5 py-4"
+          className="flex flex-none items-start justify-between px-5 pb-3 pt-4"
           style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}
         >
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
+            {/* Row 1 — status dot + hostname + type badge */}
             <div className="flex items-center gap-2">
               <span
                 className={`h-2.5 w-2.5 flex-none rounded-full ${
                   isOnline ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-slate-600"
                 }`}
               />
-              <h2 className="truncate text-sm font-semibold text-white">
+              <h2 className="truncate text-sm font-bold text-white">
                 {device.hostname || "Unknown host"}
               </h2>
-              <span
-                className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300"
-                style={{ background: "rgba(255,255,255,0.04)" }}
-              >
-                {device.device_type}
-              </span>
-	            </div>
-            <p className="mt-0.5 text-[11px] font-medium text-slate-500">Device #{device.id}</p>
+              {device.device_type === "server" ? (
+                <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
+                  style={{ color: "#a78bfa", background: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.22)" }}>
+                  Server
+                </span>
+              ) : device.device_type === "client" ? (
+                <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
+                  style={{ color: "#60a5fa", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.2)" }}>
+                  WS
+                </span>
+              ) : (
+                <span className="flex-none rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                  style={{ background: "rgba(255,255,255,0.04)" }}>
+                  {device.device_type}
+                </span>
+              )}
+            </div>
+            {/* Row 2 — contextual meta */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+              {(device.resolved_client_name || device.client_name) && (
+                <span className="text-[10px] font-semibold" style={{ color: "#fb923c" }}>
+                  {device.resolved_client_name || device.client_name}
+                </span>
+              )}
+              {(device.resolved_group || device.group_name) && (
+                <span className="text-[10px] font-medium text-slate-400">
+                  {device.resolved_group || device.group_name}
+                </span>
+              )}
+              {device.current_user && (
+                <span className="text-[10px] font-medium text-slate-400">
+                  <span className="text-slate-600">user </span>{device.current_user}
+                </span>
+              )}
+              {device.os_name && (
+                <span className="max-w-[130px] truncate text-[10px] font-medium text-slate-500" title={device.os_name}>
+                  {device.os_name}
+                </span>
+              )}
+              {device.domain && (
+                <span className="text-[10px] font-medium text-slate-500">{device.domain}</span>
+              )}
+            </div>
+            <p className="mt-1 text-[10px] font-medium text-slate-600">Device #{device.id}</p>
           </div>
-          <div className="ml-4 flex items-center gap-4">
-	            <WsIndicator status={wsStatus} />
-	            <button
+          <div className="ml-3 flex flex-none items-center gap-3">
+            <WsIndicator status={wsStatus} />
+            <button
               type="button"
               onClick={onClose}
               aria-label="Close"
               className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
             >
-	              <X className="h-4 w-4" />
-	            </button>
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -1154,61 +1191,68 @@ export default function DeviceDrawer({
                 </div>
               )}
 
-              {canOperate ? (
-              <div className="mb-3 flex gap-2">
-                <select
-                  value={selectedActionType}
-                  onChange={(e) => setSelectedActionType(e.target.value as ActionType)}
-                  className="flex-1 rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
-                >
-                  <optgroup label="Diagnostics">
-                    <option value="ping">Ping</option>
-                    <option value="immediate_heartbeat">Immediate Heartbeat</option>
-                    <option value="refresh_inventory">Refresh Inventory</option>
-                    <option value="sync_inventory">Sync Inventory</option>
-                  </optgroup>
-                  <optgroup label="Agent">
-                    <option value="restart_agent">Restart Agent</option>
-                    <option value="apply_power_policy">Apply Power Policy</option>
-                  </optgroup>
-                  <optgroup label="TECHI Remote Support">
-                    <option value="sync_rustdesk">Sync TECHI Remote Support</option>
-                    <option value="restart_rustdesk">Restart TECHI Remote Support</option>
-                    <option value="reopen_rustdesk">Reopen TECHI Remote Support</option>
-                    <option value="reinstall_rustdesk">Reinstall TECHI Remote Support</option>
-                  </optgroup>
-                  <optgroup label="Device">
-                    <option value="restart_device">Restart Device</option>
-                  </optgroup>
-                </select>
-                <button
-                  type="button"
-                  disabled={actionBusy}
-                  onClick={async () => {
-                    if (DESTRUCTIVE_ACTIONS.has(selectedActionType)) {
-                      setRestartConfirmOpen(true);
-                      return;
-                    }
-                    setActionBusy(true);
-                    try {
-                      const created = await queueDeviceAction(device.id, {
-                        action_type: selectedActionType,
-                        created_by: user?.username ?? "operator",
-                      });
-                      setActions((prev) => [created, ...prev]);
-                    } catch {
-                      // queue rejection is surfaced in the action list via WS update
-                    } finally {
-                      setActionBusy(false);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-techi-orange/25 bg-techi-orange/10 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <PlayCircle className="h-3 w-3" />
-                  Run
-                </button>
-              </div>
-              ) : (
+              {canOperate ? (() => {
+                const runAction = async (type: ActionType) => {
+                  if (DESTRUCTIVE_ACTIONS.has(type)) {
+                    setSelectedActionType(type);
+                    setRestartConfirmOpen(true);
+                    return;
+                  }
+                  setActionBusy(true);
+                  try {
+                    const created = await queueDeviceAction(device.id, { action_type: type, created_by: user?.username ?? "operator" });
+                    setActions((prev) => [created, ...prev]);
+                  } catch { /* surfaced via WS */ } finally { setActionBusy(false); }
+                };
+                const Btn = ({ type, label, destructive = false }: { type: ActionType; label: string; destructive?: boolean }) => (
+                  <button type="button" disabled={actionBusy}
+                    onClick={() => runAction(type)}
+                    className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{
+                      background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
+                      color: destructive ? "#f87171" : "var(--th-text-secondary)",
+                    }}>
+                    {label}
+                  </button>
+                );
+                const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
+                  <div className="mb-2">
+                    <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
+                    <div className="flex flex-wrap gap-1">{children}</div>
+                  </div>
+                );
+                return (
+                  <div className="mb-3">
+                    <Group label="Diagnostics">
+                      <Btn type="ping" label="Ping" />
+                      <Btn type="immediate_heartbeat" label="Heartbeat" />
+                      <Btn type="refresh_inventory" label="Refresh Inv." />
+                      <Btn type="sync_inventory" label="Sync Inv." />
+                    </Group>
+                    <Group label="Agent">
+                      <Btn type="restart_agent" label="Restart Agent" destructive />
+                      <Btn type="apply_power_policy" label="Power Policy" />
+                    </Group>
+                    <Group label="Remote Support">
+                      <button type="button"
+                        disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
+                        onClick={() => launchRustDesk(device.rustdesk_id!)}
+                        className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                        style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.3)", color: "#f97316" }}>
+                        Connect ↗
+                      </button>
+                      <Btn type="sync_rustdesk" label="Sync" />
+                      <Btn type="restart_rustdesk" label="Restart" />
+                      <Btn type="reopen_rustdesk" label="Reopen" />
+                      <Btn type="reinstall_rustdesk" label="Reinstall" destructive />
+                    </Group>
+                    <Group label="Device">
+                      <Btn type="restart_device" label="Restart Device" destructive />
+                    </Group>
+                  </div>
+                );
+              })() : (
                 <p className="mb-3 rounded-md bg-white/[0.03] px-3 py-2 text-[11px] font-medium text-slate-500">
                   Remote actions are read-only for this role.
                 </p>
