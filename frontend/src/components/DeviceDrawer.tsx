@@ -1234,19 +1234,6 @@ export default function DeviceDrawer({
                       <Btn type="restart_agent" label="Restart Agent" destructive />
                       <Btn type="apply_power_policy" label="Power Policy" />
                     </Group>
-                    <Group label="Remote Support">
-                      <button type="button"
-                        disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
-                        onClick={() => launchRustDesk(device.rustdesk_id!)}
-                        className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                        style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.3)", color: "#f97316" }}>
-                        Connect ↗
-                      </button>
-                      <Btn type="sync_rustdesk" label="Sync" />
-                      <Btn type="restart_rustdesk" label="Restart" />
-                      <Btn type="reopen_rustdesk" label="Reopen" />
-                      <Btn type="reinstall_rustdesk" label="Reinstall" destructive />
-                    </Group>
                     <Group label="Device">
                       <Btn type="restart_device" label="Restart Device" destructive />
                     </Group>

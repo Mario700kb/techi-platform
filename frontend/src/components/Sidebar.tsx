@@ -4,15 +4,15 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 const navItems = [
-  { label: "Dashboard", to: "/", icon: Home, minRole: null },
-  { label: "Devices", to: "/devices", icon: Folder, minRole: null },
-  { label: "Clients", to: "/clients", icon: Building2, minRole: null },
-  { label: "Deployment", to: "/deployment", icon: MonitorCog, minRole: null },
-  { label: "Enrollment", to: "/enrollment-bootstrap", icon: KeyRound, minRole: null },
-  { label: "Packages", to: "/agent-packages", icon: Package, minRole: null },
-  { label: "Inventory", to: "/inventory", icon: Cpu, minRole: null },
-  { label: "Operators", to: "/operators", icon: Users, minRole: "admin" as const },
-  { label: "Audit Log", to: "/audit", icon: ClipboardList, minRole: "admin" as const },
+  { label: "Dashboard",  to: "/",                     icon: Home,          minRole: null },
+  { label: "Devices",    to: "/devices",               icon: Folder,        minRole: null },
+  { label: "Clients",    to: "/clients",               icon: Building2,     minRole: "admin" as const },
+  { label: "Deployment", to: "/deployment",            icon: MonitorCog,    minRole: "admin" as const },
+  { label: "Enrollment", to: "/enrollment-bootstrap",  icon: KeyRound,      minRole: "admin" as const },
+  { label: "Packages",   to: "/agent-packages",        icon: Package,       minRole: "admin" as const },
+  { label: "Inventory",  to: "/inventory",             icon: Cpu,           minRole: "admin" as const },
+  { label: "Operators",  to: "/operators",             icon: Users,         minRole: "admin" as const },
+  { label: "Audit Log",  to: "/audit",                 icon: ClipboardList, minRole: "admin" as const },
 ];
 
 interface SidebarProps {

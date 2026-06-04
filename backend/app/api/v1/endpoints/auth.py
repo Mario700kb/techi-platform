@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import login_limiter
-from app.core.auth import create_operator_token, get_current_operator
+from app.core.auth import create_operator_token, get_current_operator, hash_password, verify_password
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.operator import Operator as OperatorModel
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse
 from app.schemas.operator import Operator
 from app.services.audit_service import AuditAction, audit_log
 from app.services.auth_service import AuthService
@@ -33,4 +33,22 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 @router.get("/me", response_model=Operator)
 def read_me(operator: OperatorModel = Depends(get_current_operator)):
     return operator
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+def change_password(
+    payload: ChangePasswordRequest,
+    operator: OperatorModel = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, operator.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    operator.hashed_password = hash_password(payload.new_password)
+    db.add(operator)
+    db.commit()
+    audit_log(db, operator=operator, action=AuditAction.UPDATE_OPERATOR)
+    return {"message": "Password changed successfully"}
 
