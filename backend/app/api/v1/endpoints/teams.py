@@ -48,7 +48,8 @@ def list_teams(
             member_count=stats["member_count"],
             client_count=stats["client_count"],
             group_count=stats["group_count"],
-            device_count=stats["device_count"],
+            explicit_device_count=stats["explicit_device_count"],
+            effective_device_count=stats["effective_device_count"],
             operator_ids=service.repo.get_operator_ids(t.id),
         ))
     return result

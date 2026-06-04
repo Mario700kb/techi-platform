@@ -16,7 +16,7 @@ from app.models.operator_scope import OperatorScope
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.core.scope import AllowedScope, device_in_scope
 from app.services.team_service import TeamService, TeamScopeService
-from app.core.auth import get_operator_permissions, is_unrestricted
+from app.core.auth import get_operator_permissions, get_operator_scope, is_unrestricted
 from app.services.permission_service import (
     ACTION_PERMISSION_MAP,
     DIAGNOSTICS,
@@ -401,3 +401,68 @@ def test_action_permission_map_values():
     assert ACTION_PERMISSION_MAP["restart_agent"] == RESTART_AGENT
     assert ACTION_PERMISSION_MAP["sync_rustdesk"] == REMOTE_SUPPORT_MANAGE
     assert ACTION_PERMISSION_MAP["apply_power_policy"] == MAINTENANCE_MODE
+
+
+# ── Scope leak regression ──────────────────────────────────────────────────── #
+
+def test_legacy_operator_scope_does_not_leak_into_visibility(db):
+    """Operator with a legacy operator_scopes record for Client A, who belongs
+    to a Team that only grants access to Client B, must see ONLY Client B.
+    Legacy individual scope records must NOT be merged into effective scope.
+    """
+    from app.models.operator_scope import OperatorScope
+
+    op = _operator(db, "leak_op", role="operator")
+
+    # Write a legacy operator_scopes record granting access to client_id=1 (Client A)
+    legacy = OperatorScope(operator_id=op.id, scope_type="client", scope_id=1)
+    db.add(legacy)
+    db.commit()
+
+    # Create a team that grants access only to client_id=2 (Client B)
+    svc = TeamService(db)
+    team = svc.create_team("Restricted Team")
+    svc.add_member(team.id, op.id)
+    svc.replace_client_access(team.id, [2])
+
+    # Resolve effective scope
+    scope = get_operator_scope(operator=op, db=db)
+
+    # Client B must be visible
+    assert 2 in scope.client_ids, "Client B (team access) must be visible"
+
+    # Client A must NOT be visible — legacy record must be ignored
+    assert 1 not in scope.client_ids, "Client A (legacy individual scope) must NOT leak through"
+
+
+def test_operator_with_no_teams_sees_nothing_even_with_legacy_scope(db):
+    """An operator with individual scope records but no team memberships
+    should resolve to an empty scope — sees nothing.
+    """
+    from app.models.operator_scope import OperatorScope
+
+    op = _operator(db, "no_team_op", role="operator")
+
+    # Legacy individual scope for client_id=5
+    legacy = OperatorScope(operator_id=op.id, scope_type="client", scope_id=5)
+    db.add(legacy)
+    db.commit()
+
+    scope = get_operator_scope(operator=op, db=db)
+
+    assert scope is not None, "Operator without teams must not get None (that is admin bypass)"
+    assert scope.is_empty(), "Operator with legacy scope but no teams must see nothing"
+
+
+def test_admin_still_bypasses_scope(db):
+    """Admin must continue to receive None (unrestricted) regardless of team memberships."""
+    admin = _operator(db, "admin_bypass", role="admin")
+    scope = get_operator_scope(operator=admin, db=db)
+    assert scope is None, "Admin must always receive None (bypass)"
+
+
+def test_owner_still_bypasses_scope(db):
+    """Owner must continue to receive None (unrestricted)."""
+    owner = _operator(db, "owner_bypass", role="owner")
+    scope = get_operator_scope(operator=owner, db=db)
+    assert scope is None, "Owner must always receive None (bypass)"

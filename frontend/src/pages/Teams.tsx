@@ -66,6 +66,75 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
   );
 }
 
+// ── Permission templates ──────────────────────────────────────────────────── //
+
+const PERMISSION_TEMPLATES: Record<string, { label: string; description: string; permissions: string[] }> = {
+  helpdesk_l1: {
+    label: "Helpdesk L1",
+    description: "Basic remote support and diagnostics",
+    permissions: ["view_devices", "remote_support_connect", "diagnostics", "view_notes", "view_inventory", "view_patch"],
+  },
+  helpdesk_l2: {
+    label: "Helpdesk L2",
+    description: "Helpdesk L1 + restart, maintenance, notes editing",
+    permissions: [
+      "view_devices", "remote_support_connect", "diagnostics", "view_notes", "edit_notes",
+      "view_inventory", "view_patch", "restart_agent", "restart_device", "maintenance_mode",
+    ],
+  },
+  server_admin: {
+    label: "Server Admin",
+    description: "Full operational permissions, no operator management",
+    permissions: [
+      "view_devices", "remote_support_connect", "remote_support_manage", "diagnostics",
+      "restart_device", "restart_agent", "reinstall_remote_support", "maintenance_mode",
+      "view_notes", "edit_notes", "view_inventory", "view_patch",
+      "deployment", "manage_clients", "manage_groups", "audit_log",
+    ],
+  },
+  deployment_operator: {
+    label: "Deployment Operator",
+    description: "Deploy packages, manage remote support software",
+    permissions: ["view_devices", "deployment", "reinstall_remote_support", "restart_agent", "diagnostics", "view_inventory", "view_patch"],
+  },
+  readonly: {
+    label: "Read Only",
+    description: "View-only access to devices and data",
+    permissions: ["view_devices", "view_notes", "view_inventory", "view_patch"],
+  },
+  custom: {
+    label: "Custom",
+    description: "Start with no permissions and configure manually",
+    permissions: [],
+  },
+};
+
+function TemplateSelector({ onSelect }: { onSelect: (perms: string[]) => void }) {
+  const [active, setActive] = useState<string | null>(null);
+  return (
+    <div>
+      <label className={LABEL_CLS}>Permission Template <span className="text-slate-600 normal-case font-medium">(optional)</span></label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {Object.entries(PERMISSION_TEMPLATES).map(([key, tmpl]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setActive(key); onSelect(tmpl.permissions); }}
+            className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+              active === key
+                ? "border-techi-orange/40 bg-techi-orange/10 text-orange-200"
+                : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/15 hover:text-slate-200"
+            }`}
+          >
+            <p className="font-semibold">{tmpl.label}</p>
+            <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{tmpl.description}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TeamFormFields({
   form, onChange, error,
 }: {
@@ -92,7 +161,7 @@ function TeamFormFields({
   );
 }
 
-const EMPTY_FORM = { name: "", description: "", color: "#f97316" };
+const EMPTY_FORM = { name: "", description: "", color: "#f97316", permissions: [] as string[] };
 
 function StatPill({ icon, count, title }: { icon: React.ReactNode; count: number; title: string }) {
   return (
@@ -149,8 +218,13 @@ export default function Teams() {
     if (teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) { setCreateError("A team with this name already exists"); return; }
     try {
       setCreateLoading(true); setCreateError(null);
-      const created = await createTeam({ name, description: createForm.description.trim() || null, color: createForm.color });
-      setTeams((prev) => [...prev, { ...created, member_count: 0, client_count: 0, group_count: 0, device_count: 0 }]);
+      const created = await createTeam({
+        name,
+        description: createForm.description.trim() || null,
+        color: createForm.color,
+        permissions: createForm.permissions.length > 0 ? createForm.permissions : null,
+      });
+      setTeams((prev) => [...prev, { ...created, member_count: 0, client_count: 0, group_count: 0, explicit_device_count: 0, effective_device_count: 0 }]);
       setShowCreate(false);
       setCreateForm({ ...EMPTY_FORM });
     } catch (err) {
@@ -162,7 +236,7 @@ export default function Teams() {
 
   const openEdit = (team: TeamWithStats) => {
     setEditTarget(team);
-    setEditForm({ name: team.name, description: team.description ?? "", color: team.color ?? "#f97316" });
+    setEditForm({ name: team.name, description: team.description ?? "", color: team.color ?? "#f97316", permissions: [] });
     setEditError(null);
   };
 
@@ -173,7 +247,7 @@ export default function Teams() {
     try {
       setEditLoading(true); setEditError(null);
       const updated = await updateTeam(editTarget.id, { name, description: editForm.description.trim() || null, color: editForm.color });
-      setTeams((prev) => prev.map((t) => t.id === editTarget.id ? { ...updated, member_count: editTarget.member_count, client_count: editTarget.client_count, group_count: editTarget.group_count, device_count: editTarget.device_count } : t));
+      setTeams((prev) => prev.map((t) => t.id === editTarget.id ? { ...updated, member_count: editTarget.member_count, client_count: editTarget.client_count, group_count: editTarget.group_count, explicit_device_count: editTarget.explicit_device_count, effective_device_count: editTarget.effective_device_count } : t));
       setEditTarget(null);
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Failed to update team");
@@ -248,7 +322,7 @@ export default function Teams() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Members</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Clients</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Groups</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Devices</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Eff. Devices</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Created</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
@@ -283,7 +357,7 @@ export default function Teams() {
                     <StatPill icon={<Users className="h-2.5 w-2.5" />} count={team.group_count} title="Groups" />
                   </td>
                   <td className="px-5 py-3.5">
-                    <StatPill icon={<Cpu className="h-2.5 w-2.5" />} count={team.device_count} title="Devices" />
+                    <StatPill icon={<Cpu className="h-2.5 w-2.5" />} count={team.effective_device_count} title={`Effective devices (${team.explicit_device_count} explicit)`} />
                   </td>
                   <td className="px-5 py-3.5 text-[12px] text-slate-400">
                     {parseUTC(team.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
@@ -314,7 +388,10 @@ export default function Teams() {
 
       {showCreate && (
         <Modal title="Create Team" onClose={() => setShowCreate(false)}>
-          <TeamFormFields form={createForm} onChange={(u) => setCreateForm((f) => ({ ...f, ...u }))} error={createError} />
+          <div className="space-y-4">
+            <TeamFormFields form={createForm} onChange={(u) => setCreateForm((f) => ({ ...f, ...u }))} error={createError} />
+            <TemplateSelector onSelect={(perms) => setCreateForm((f) => ({ ...f, permissions: perms }))} />
+          </div>
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setShowCreate(false)} className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]">Cancel</button>
             <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>

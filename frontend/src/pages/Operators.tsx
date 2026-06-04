@@ -109,9 +109,8 @@ export default function Operators() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // teamsByOperator: operator_id → list of team names
-  const teamsByOperator = (opId: number): string[] =>
-    teams.filter((t) => t.operator_ids?.includes(opId)).map((t) => t.name);
+  const teamsForOperator = (opId: number): TeamWithStats[] =>
+    teams.filter((t) => t.operator_ids?.includes(opId));
 
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState<OperatorCreate>({
@@ -347,7 +346,7 @@ export default function Operators() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Username</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Role</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Status</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Member Of</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Teams</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Last Login</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Created</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">Actions</th>
@@ -402,13 +401,13 @@ export default function Operators() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex flex-wrap gap-1">
-                        {teamsByOperator(op.id).length === 0 ? (
+                        {teamsForOperator(op.id).length === 0 ? (
                           <span className="text-[11px] text-slate-600">—</span>
                         ) : (
-                          teamsByOperator(op.id).map((name) => (
-                            <span key={name} className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-400">
-                              <UsersRound className="h-2.5 w-2.5" />
-                              {name}
+                          teamsForOperator(op.id).map((team) => (
+                            <span key={team.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: team.color ?? "#f97316" }} />
+                              {team.name}
                             </span>
                           ))
                         )}

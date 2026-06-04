@@ -40,7 +40,8 @@ class TeamWithStats(TeamResponse):
     member_count: int = 0
     client_count: int = 0
     group_count: int = 0
-    device_count: int = 0
+    explicit_device_count: int = 0
+    effective_device_count: int = 0
     operator_ids: List[int] = []
 
 

@@ -98,14 +98,19 @@ class TeamService:
     # ── Stats ──────────────────────────────────────────────────────────── #
 
     def team_stats(self, team_id: int) -> Dict:
-        """Return member, client, group, and device counts for a team."""
+        """Return member, client, group, explicit device, and effective device counts for a team.
+
+        effective_device_count = all non-archived devices reachable through
+        selected clients, groups, or explicit device assignments (union).
+        explicit_device_count  = only the directly assigned device IDs.
+        """
         client_ids = self.repo.list_client_ids(team_id)
         group_ids = self.repo.list_group_ids(team_id)
         device_ids = self.repo.list_device_ids(team_id)
 
         from app.models.device import Device
         from sqlalchemy import or_
-        device_count = 0
+        effective_device_count = 0
         try:
             filters = []
             if client_ids:
@@ -115,7 +120,12 @@ class TeamService:
             if device_ids:
                 filters.append(Device.id.in_(device_ids))
             if filters:
-                device_count = self.db.query(Device).filter(or_(*filters)).count()
+                effective_device_count = (
+                    self.db.query(Device)
+                    .filter(Device.is_archived == False)  # noqa: E712
+                    .filter(or_(*filters))
+                    .count()
+                )
         except Exception:
             pass
 
@@ -123,7 +133,8 @@ class TeamService:
             "member_count": len(self.repo.get_operator_ids(team_id)),
             "client_count": len(client_ids),
             "group_count": len(group_ids),
-            "device_count": device_count,
+            "explicit_device_count": len(device_ids),
+            "effective_device_count": effective_device_count,
         }
 
 

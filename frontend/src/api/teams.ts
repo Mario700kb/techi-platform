@@ -13,7 +13,8 @@ export interface TeamWithStats extends TeamRecord {
   member_count: number;
   client_count: number;
   group_count: number;
-  device_count: number;
+  explicit_device_count: number;
+  effective_device_count: number;
   operator_ids: number[];
 }
 

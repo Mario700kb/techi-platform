@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Check, CheckSquare, ChevronDown, ChevronRight,
@@ -120,9 +120,11 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
 function DashboardSummary({
   team,
   memberCount,
+  effectiveDeviceCount,
 }: {
   team: TeamDetail;
   memberCount: number;
+  effectiveDeviceCount: number;
 }) {
   const statBoxCls =
     "flex flex-col gap-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3";
@@ -131,8 +133,8 @@ function DashboardSummary({
 
   return (
     <div className="space-y-4">
-      {/* Stat grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Stat grid — 2 columns on mobile, 5 on sm+ */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className={statBoxCls}>
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Members</span>
           <span className="text-2xl font-bold text-white">{memberCount}</span>
@@ -146,8 +148,14 @@ function DashboardSummary({
           <span className="text-2xl font-bold text-white">{team.group_ids.length}</span>
         </div>
         <div className={statBoxCls}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Devices</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Explicit Devices</span>
           <span className="text-2xl font-bold text-white">{team.device_ids.length}</span>
+          <span className="text-[10px] text-slate-600">direct only</span>
+        </div>
+        <div className={`${statBoxCls} border-techi-orange/15 bg-techi-orange/[0.04]`}>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-orange-400/70">Effective Devices</span>
+          <span className="text-2xl font-bold text-orange-200">{effectiveDeviceCount}</span>
+          <span className="text-[10px] text-slate-600">via clients + groups</span>
         </div>
       </div>
 
@@ -337,6 +345,66 @@ function MembersTab({
 
 // ── Device Access tab — 3-level hierarchy ────────────────────────────────── //
 
+type CheckState = "checked" | "indeterminate" | "unchecked" | "inherited";
+
+function TreeCheckbox({
+  state,
+  onChange,
+  disabled,
+  size = "md",
+  inheritedFrom,
+}: {
+  state: CheckState;
+  onChange?: () => void;
+  disabled?: boolean;
+  size?: "md" | "sm";
+  inheritedFrom?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = state === "indeterminate";
+    }
+  }, [state]);
+
+  if (state === "inherited") {
+    return (
+      <span
+        className={`flex shrink-0 items-center justify-center ${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}`}
+        title={inheritedFrom ?? "Access inherited from parent"}
+      >
+        <span className="h-2 w-2 rounded-sm bg-orange-400/50" />
+      </span>
+    );
+  }
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={state === "checked"}
+      onChange={onChange ?? (() => {})}
+      disabled={disabled}
+      className={`shrink-0 rounded border-white/15 accent-orange-500 ${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}`}
+    />
+  );
+}
+
+function DeviceStatusDot({ device }: { device: Device }) {
+  const state = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
+  const cls =
+    state === "online"  ? "bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.5)]"
+    : state === "stale" ? "bg-amber-400"
+    : "bg-slate-600";
+  return (
+    <span
+      className={`h-2 w-2 shrink-0 rounded-full ${cls}`}
+      title={state}
+    />
+  );
+}
+
 function AccessTab({
   team,
   clients,
@@ -362,16 +430,36 @@ function AccessTab({
   const [error, setError]           = useState<string | null>(null);
   const [saved, setSaved]           = useState(false);
 
+  // Selecting a client auto-expands it; deselecting doesn't collapse
   const toggleC = (id: number) =>
-    setSelClients((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelClients((p) => {
+      const n = new Set(p);
+      if (n.has(id)) { n.delete(id); }
+      else { n.add(id); setExClients((ex) => { const e = new Set(ex); e.add(id); return e; }); }
+      return n;
+    });
+
+  // Selecting a group auto-expands it
   const toggleG = (id: number) =>
-    setSelGroups((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelGroups((p) => {
+      const n = new Set(p);
+      if (n.has(id)) { n.delete(id); }
+      else { n.add(id); setExGroups((ex) => { const e = new Set(ex); e.add(id); return e; }); }
+      return n;
+    });
+
   const toggleD = (id: number) =>
     setSelDevices((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleExC = (id: number) =>
     setExClients((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleExG = (id: number) =>
     setExGroups((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const expandAll = () => {
+    setExClients(new Set(clients.map((c) => c.id)));
+    setExGroups(new Set(groups.map((g) => g.id)));
+  };
+  const collapseAll = () => { setExClients(new Set()); setExGroups(new Set()); };
 
   const filteredClients = clients.filter(
     (c) => search === "" || c.name.toLowerCase().includes(search.toLowerCase())
@@ -386,6 +474,44 @@ function AccessTab({
     devices.filter(
       (d) => d.group_id === groupId && (search === "" || (d.hostname ?? "").toLowerCase().includes(search.toLowerCase()))
     );
+
+  const ungroupedDevicesFor = (clientId: number) =>
+    devices.filter(
+      (d) => d.client_id === clientId && d.group_id == null &&
+        (search === "" || (d.hostname ?? "").toLowerCase().includes(search.toLowerCase()))
+    );
+
+  // Count total devices that belong to a client (across all its groups + ungrouped)
+  const clientDeviceCount = (clientId: number) =>
+    devices.filter((d) => d.client_id === clientId).length;
+
+  // ── Computed check states ──────────────────────────────────────────────── //
+
+  const clientCheckState = (clientId: number): CheckState => {
+    if (selClients.has(clientId)) return "checked";
+    const clientGroups = groups.filter((g) => g.client_id === clientId);
+    const anyDescendantSelected =
+      clientGroups.some((g) => selGroups.has(g.id)) ||
+      devices.some((d) => d.client_id === clientId && selDevices.has(d.id));
+    return anyDescendantSelected ? "indeterminate" : "unchecked";
+  };
+
+  const groupCheckState = (group: DeviceGroup): CheckState => {
+    if (selClients.has(group.client_id ?? -1)) return "inherited";
+    if (selGroups.has(group.id)) return "checked";
+    const anyDeviceSelected = devices.some(
+      (d) => d.group_id === group.id && selDevices.has(d.id)
+    );
+    return anyDeviceSelected ? "indeterminate" : "unchecked";
+  };
+
+  const deviceCheckState = (device: Device): CheckState => {
+    if (selClients.has(device.client_id ?? -1)) return "inherited";
+    if (device.group_id != null && selGroups.has(device.group_id)) return "inherited";
+    return selDevices.has(device.id) ? "checked" : "unchecked";
+  };
+
+  // ── Save ──────────────────────────────────────────────────────────────── //
 
   const handleSave = async () => {
     try {
@@ -412,10 +538,14 @@ function AccessTab({
 
       <div className="rounded-lg border border-blue-400/10 bg-blue-500/[0.05] px-4 py-3 text-xs leading-5 text-slate-400">
         <span className="font-semibold text-slate-300">Three levels of access:</span>{" "}
-        <span className="font-semibold text-white">Client</span> — all devices for that client.{" "}
-        <span className="font-semibold text-white">Group</span> — all devices in that group.{" "}
-        <span className="font-semibold text-white">Device</span> — specific individual devices.
-        Access is the union of all selections.
+        <span className="font-semibold text-white">Client</span> grants all devices for that client.{" "}
+        <span className="font-semibold text-white">Group</span> grants all devices in that group.{" "}
+        <span className="font-semibold text-white">Device</span> grants specific individual devices.{" "}
+        Access is the union of all selections.{" "}
+        <span className="font-semibold text-orange-200/80">
+          <span className="inline-block h-2 w-2 rounded-sm bg-orange-400/50 align-middle" />{" "}
+          Orange squares indicate inherited access.
+        </span>
       </div>
 
       {/* Selection summary */}
@@ -440,13 +570,31 @@ function AccessTab({
         )}
       </div>
 
-      {/* Search */}
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search clients, groups, or devices…"
-        className="th-input w-full rounded-lg border py-2 px-3 text-sm outline-none focus:border-techi-orange/60"
-      />
+      {/* Search + Expand controls */}
+      <div className="flex items-center gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search clients, groups, or devices…"
+          className="th-input flex-1 rounded-lg border py-2 px-3 text-sm outline-none focus:border-techi-orange/60"
+        />
+        <button
+          type="button"
+          onClick={expandAll}
+          className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] font-semibold text-slate-400 transition hover:border-white/15 hover:text-slate-200"
+          title="Expand all"
+        >
+          Expand All
+        </button>
+        <button
+          type="button"
+          onClick={collapseAll}
+          className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] font-semibold text-slate-400 transition hover:border-white/15 hover:text-slate-200"
+          title="Collapse all"
+        >
+          Collapse
+        </button>
+      </div>
 
       {/* Tree */}
       <div className="premium-card-soft overflow-hidden rounded-lg">
@@ -457,27 +605,32 @@ function AccessTab({
             {filteredClients.map((client) => {
               const clientGroups = groupsFor(client.id);
               const isExC = exClients.has(client.id);
+              const cState = clientCheckState(client.id);
+              const devCount = clientDeviceCount(client.id);
+
               return (
                 <li key={client.id}>
-                  {/* Client row — click anywhere on row to expand */}
+                  {/* Client row — click anywhere to expand/collapse */}
                   <div
                     className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-white/[0.03]"
                     onClick={() => toggleExC(client.id)}
                   >
                     <span onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selClients.has(client.id)}
+                      <TreeCheckbox
+                        state={cState}
                         onChange={() => canManage && toggleC(client.id)}
                         disabled={!canManage}
-                        className="h-4 w-4 rounded border-white/15 accent-orange-500"
                       />
                     </span>
                     <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">{client.name}</p>
-                      {client.description && (
-                        <p className="text-[11px] text-slate-500 truncate">{client.description}</p>
+                    <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                      <p className={`text-sm font-semibold ${cState === "checked" ? "text-white" : "text-slate-200"}`}>
+                        {client.name}
+                      </p>
+                      {devCount > 0 && (
+                        <span className="shrink-0 text-[10px] text-slate-600">
+                          {devCount} device{devCount !== 1 ? "s" : ""}
+                        </span>
                       )}
                     </div>
                     {clientGroups.length > 0 && (
@@ -493,63 +646,125 @@ function AccessTab({
                       {clientGroups.map((group) => {
                         const groupDevices = devicesFor(group.id);
                         const isExG = exGroups.has(group.id);
+                        const gState = groupCheckState(group);
+                        const inherited = gState === "inherited";
+
                         return (
                           <li key={group.id}>
-                            {/* Group row */}
+                            {/* Group row — click anywhere to expand/collapse */}
                             <div
-                              className="flex cursor-pointer items-center gap-3 py-2.5 pl-9 pr-4 transition hover:bg-white/[0.02]"
+                              className={`flex cursor-pointer items-center gap-3 py-2.5 pl-9 pr-4 transition hover:bg-white/[0.02] ${inherited ? "opacity-60" : ""}`}
                               onClick={() => groupDevices.length > 0 && toggleExG(group.id)}
                             >
                               <span onClick={(e) => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  checked={selGroups.has(group.id)}
-                                  onChange={() => canManage && toggleG(group.id)}
-                                  disabled={!canManage}
-                                  className="h-3.5 w-3.5 rounded border-white/15 accent-orange-500"
+                                <TreeCheckbox
+                                  state={gState}
+                                  onChange={() => canManage && !inherited && toggleG(group.id)}
+                                  disabled={!canManage || inherited}
+                                  size="sm"
+                                  inheritedFrom="Inherited from client access"
                                 />
                               </span>
                               <Users className="h-3 w-3 shrink-0 text-slate-600" />
-                              <span className="flex-1 text-[13px] text-slate-300">{group.name}</span>
+                              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                                <span className={`text-[13px] ${inherited ? "text-orange-200/70" : "text-slate-300"}`}>
+                                  {group.name}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-slate-600">
+                                  ({groupDevices.length})
+                                </span>
+                              </div>
                               {groupDevices.length > 0 && (
-                                <>
-                                  <span className="text-[10px] text-slate-600">{groupDevices.length}</span>
-                                  {isExG
-                                    ? <ChevronDown className="h-3 w-3 shrink-0 text-slate-600" />
-                                    : <ChevronRight className="h-3 w-3 shrink-0 text-slate-600" />
-                                  }
-                                </>
+                                isExG
+                                  ? <ChevronDown className="h-3 w-3 shrink-0 text-slate-600" />
+                                  : <ChevronRight className="h-3 w-3 shrink-0 text-slate-600" />
                               )}
                             </div>
 
                             {/* Devices under group */}
                             {isExG && groupDevices.length > 0 && (
                               <ul className="border-t border-white/[0.03] bg-white/[0.01]">
-                                {groupDevices.map((device) => (
-                                  <li key={device.id}>
-                                    <label className="flex cursor-pointer items-center gap-3 py-2 pl-14 pr-4 transition hover:bg-white/[0.02]">
-                                      <input
-                                        type="checkbox"
-                                        checked={selDevices.has(device.id)}
-                                        onChange={() => canManage && toggleD(device.id)}
-                                        disabled={!canManage}
-                                        className="h-3 w-3 rounded border-white/15 accent-orange-500"
-                                      />
-                                      <Cpu className="h-2.5 w-2.5 shrink-0 text-slate-700" />
-                                      <span className="flex-1 font-mono text-[12px] text-slate-400">
-                                        {device.hostname ?? device.rustdesk_id}
-                                      </span>
-                                      <span className={`text-[10px] font-semibold ${device.status === "online" ? "text-emerald-500" : "text-slate-600"}`}>
-                                        {device.status}
-                                      </span>
-                                    </label>
-                                  </li>
-                                ))}
+                                {groupDevices.map((device) => {
+                                  const dState = deviceCheckState(device);
+                                  const dInherited = dState === "inherited";
+                                  return (
+                                    <li key={device.id}>
+                                      <div
+                                        className={`flex items-center gap-3 py-2 pl-14 pr-4 transition ${!dInherited && canManage ? "cursor-pointer hover:bg-white/[0.02]" : ""} ${dInherited ? "opacity-55" : ""}`}
+                                        onClick={() => !dInherited && canManage && toggleD(device.id)}
+                                      >
+                                        <span onClick={(e) => e.stopPropagation()}>
+                                          <TreeCheckbox
+                                            state={dState}
+                                            onChange={() => !dInherited && canManage && toggleD(device.id)}
+                                            disabled={!canManage || dInherited}
+                                            size="sm"
+                                            inheritedFrom={
+                                              selClients.has(device.client_id ?? -1)
+                                                ? "Inherited from client access"
+                                                : "Inherited from group access"
+                                            }
+                                          />
+                                        </span>
+                                        <DeviceStatusDot device={device} />
+                                        <span className={`flex-1 font-mono text-[12px] ${dInherited ? "text-orange-200/60" : "text-slate-400"}`}>
+                                          {device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`}
+                                        </span>
+                                      </div>
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             )}
                           </li>
                         );
                       })}
+
+                      {/* Ungrouped devices under this client */}
+                      {(() => {
+                        const ung = ungroupedDevicesFor(client.id);
+                        if (ung.length === 0) return null;
+                        const clientInherited = selClients.has(client.id);
+                        return (
+                          <li>
+                            <div className="flex items-center gap-3 py-2.5 pl-9 pr-4">
+                              <span className="h-3.5 w-3.5 shrink-0" />
+                              <span className="h-3 w-3 shrink-0 text-slate-700">·</span>
+                              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                                <span className="text-[12px] italic text-slate-600">(Ungrouped)</span>
+                                <span className="text-[10px] text-slate-700">{ung.length}</span>
+                              </div>
+                            </div>
+                            <ul className="border-t border-white/[0.03] bg-white/[0.01]">
+                              {ung.map((device) => {
+                                const dState = clientInherited ? "inherited" : (selDevices.has(device.id) ? "checked" : "unchecked");
+                                const dInherited = dState === "inherited";
+                                return (
+                                  <li key={device.id}>
+                                    <div
+                                      className={`flex items-center gap-3 py-2 pl-14 pr-4 transition ${!dInherited && canManage ? "cursor-pointer hover:bg-white/[0.02]" : ""} ${dInherited ? "opacity-55" : ""}`}
+                                      onClick={() => !dInherited && canManage && toggleD(device.id)}
+                                    >
+                                      <span onClick={(e) => e.stopPropagation()}>
+                                        <TreeCheckbox
+                                          state={dState}
+                                          onChange={() => !dInherited && canManage && toggleD(device.id)}
+                                          disabled={!canManage || dInherited}
+                                          size="sm"
+                                        />
+                                      </span>
+                                      <DeviceStatusDot device={device} />
+                                      <span className={`flex-1 font-mono text-[12px] ${dInherited ? "text-orange-200/60" : "text-slate-400"}`}>
+                                        {device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`}
+                                      </span>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </li>
+                        );
+                      })()}
                     </ul>
                   )}
                 </li>
@@ -766,6 +981,20 @@ export default function TeamDetailPage() {
 
   useEffect(() => { void loadAll(); }, [teamId]);
 
+  // Effective device count: all non-archived devices reachable via client, group, or explicit assignment
+  const effectiveDeviceCount = (() => {
+    if (!team) return 0;
+    const cIds = new Set(team.client_ids);
+    const gIds = new Set(team.group_ids);
+    const dIds = new Set(team.device_ids);
+    return devices.filter(
+      (d) =>
+        (d.client_id != null && cIds.has(d.client_id)) ||
+        (d.group_id != null && gIds.has(d.group_id)) ||
+        dIds.has(d.id)
+    ).length;
+  })();
+
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "overview",     label: "Overview",       icon: <Shield className="h-3.5 w-3.5" /> },
     { key: "members",      label: "Members",        icon: <Users className="h-3.5 w-3.5" /> },
@@ -813,7 +1042,7 @@ export default function TeamDetailPage() {
 
         {/* Dashboard summary */}
         <div className="mt-5">
-          <DashboardSummary team={team} memberCount={team.operator_ids.length} />
+          <DashboardSummary team={team} memberCount={team.operator_ids.length} effectiveDeviceCount={effectiveDeviceCount} />
         </div>
 
         {/* Tab bar */}
