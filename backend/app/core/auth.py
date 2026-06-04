@@ -3,7 +3,7 @@ import hmac
 import hashlib
 import secrets
 from datetime import timedelta
-from typing import Iterable
+from typing import FrozenSet, Iterable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -106,6 +106,46 @@ def role_in(operator: Operator, roles: Iterable[str]) -> bool:
 def is_unrestricted(operator: Operator) -> bool:
     """Return True for owner/admin — no scope enforcement needed."""
     return operator.role in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value)
+
+
+def get_operator_permissions(operator: Operator, db: Session):
+    """Return None (bypass) for admin/owner, else the frozenset of permissions
+    granted by the union of all teams the operator belongs to.
+
+    An operator with no teams gets an empty frozenset — they cannot perform any
+    action-gated operations until added to a team that grants those permissions.
+    """
+    if is_unrestricted(operator):
+        return None
+
+    from app.repositories.team_repository import TeamRepository, _decode_permissions
+    repo = TeamRepository(db)
+    team_ids = repo.get_team_ids_for_operator(operator.id)
+    effective: FrozenSet[str] = frozenset()
+    for tid in team_ids:
+        team = repo.get(tid)
+        if team:
+            effective = effective | frozenset(_decode_permissions(team.permissions))
+    return effective
+
+
+def require_team_permission(perm_key: str):
+    """FastAPI dependency factory — 403 if the operator's effective team
+    permissions do not include *perm_key*. Admin/owner always pass.
+    """
+    def dependency(
+        operator: Operator = Depends(get_current_operator),
+        db: Session = Depends(get_db),
+    ) -> None:
+        perms = get_operator_permissions(operator, db)
+        if perms is None:
+            return  # admin/owner bypass
+        if perm_key not in perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: {perm_key}",
+            )
+    return dependency
 
 
 def get_operator_scope(

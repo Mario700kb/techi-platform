@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeySquare, Lock, Pencil, Plus, RefreshCcw, Shield, Trash2, Users, X } from "lucide-react";
-import OperatorScopeModal from "../components/OperatorScopeModal";
+import { KeySquare, Pencil, Plus, RefreshCcw, Shield, Trash2, Users, UsersRound, X } from "lucide-react";
 import {
   OperatorRecord,
   OperatorCreate,
@@ -11,6 +10,7 @@ import {
   resetOperatorPassword,
   updateOperator,
 } from "../api/operators";
+import { listTeams, TeamWithStats } from "../api/teams";
 import { UserRole } from "../api/auth";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
@@ -105,8 +105,13 @@ export default function Operators() {
   const canManage = can("admin");
 
   const [operators, setOperators] = useState<OperatorRecord[]>([]);
+  const [teams, setTeams] = useState<TeamWithStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // teamsByOperator: operator_id → list of team names
+  const teamsByOperator = (opId: number): string[] =>
+    teams.filter((t) => t.operator_ids?.includes(opId)).map((t) => t.name);
 
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState<OperatorCreate>({
@@ -133,13 +138,13 @@ export default function Operators() {
   const [deleteTarget, setDeleteTarget] = useState<OperatorRecord | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const [scopeTarget, setScopeTarget] = useState<OperatorRecord | null>(null);
-
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      setOperators(await getOperators());
+      const [ops, tms] = await Promise.all([getOperators(), listTeams()]);
+      setOperators(ops);
+      setTeams(tms);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load operators");
     } finally {
@@ -342,6 +347,7 @@ export default function Operators() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Username</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Role</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Status</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Member Of</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Last Login</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Created</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">Actions</th>
@@ -350,7 +356,7 @@ export default function Operators() {
             <tbody className="divide-y divide-white/[0.04]">
               {operators.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-sm font-medium text-slate-500">
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm font-medium text-slate-500">
                     {loading ? "Loading…" : "No operators found."}
                   </td>
                 </tr>
@@ -394,6 +400,20 @@ export default function Operators() {
                         {op.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap gap-1">
+                        {teamsByOperator(op.id).length === 0 ? (
+                          <span className="text-[11px] text-slate-600">—</span>
+                        ) : (
+                          teamsByOperator(op.id).map((name) => (
+                            <span key={name} className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                              <UsersRound className="h-2.5 w-2.5" />
+                              {name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3.5 text-[12px] text-slate-400">
                       {formatDateTime(op.last_login_at)}
                     </td>
@@ -402,16 +422,6 @@ export default function Operators() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
-                        {canManage && (op.role === "operator" || op.role === "readonly") && (
-                          <button
-                            type="button"
-                            onClick={() => setScopeTarget(op)}
-                            title="Manage access scope"
-                            className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-violet-300"
-                          >
-                            <Lock className="h-3.5 w-3.5" />
-                          </button>
-                        )}
                         {canEdit && (
                           <button
                             type="button"
@@ -660,13 +670,6 @@ export default function Operators() {
             </div>
           </div>
         </Modal>
-      )}
-
-      {scopeTarget && (
-        <OperatorScopeModal
-          operator={scopeTarget}
-          onClose={() => setScopeTarget(null)}
-        />
       )}
 
       {deleteTarget && (

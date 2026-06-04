@@ -8,12 +8,14 @@ class TeamCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 
 class TeamUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 
 class TeamResponse(BaseModel):
@@ -23,6 +25,7 @@ class TeamResponse(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    permissions: List[str] = []
     created_at: datetime
 
 
@@ -35,7 +38,10 @@ class TeamDetailResponse(TeamResponse):
 
 class TeamWithStats(TeamResponse):
     member_count: int = 0
+    client_count: int = 0
+    group_count: int = 0
     device_count: int = 0
+    operator_ids: List[int] = []
 
 
 class MemberUpdateRequest(BaseModel):
@@ -44,3 +50,7 @@ class MemberUpdateRequest(BaseModel):
 
 class AccessUpdateRequest(BaseModel):
     ids: List[int]
+
+
+class TeamPermissionsUpdateRequest(BaseModel):
+    permissions: List[str]

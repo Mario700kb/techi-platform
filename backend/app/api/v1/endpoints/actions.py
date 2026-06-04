@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import verify_callback_token
-from app.core.auth import get_current_operator, get_operator_scope, require_min_role
+from app.core.auth import get_current_operator, get_operator_permissions, get_operator_scope, require_min_role
 from app.core.scope import AllowedScope, device_in_scope
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
@@ -20,6 +20,7 @@ from app.schemas.remote_action import (
 )
 from app.services.audit_service import AuditAction, audit_log
 from app.services.device_service import DeviceService
+from app.services.permission_service import ACTION_PERMISSION_MAP
 from app.services.remote_action_service import RemoteActionService
 
 router = APIRouter()
@@ -101,6 +102,11 @@ def queue_device_action(
     payload: RemoteActionCreate,
 ):
     _get_device_scoped(device_id, db, scope)
+    required_perm = ACTION_PERMISSION_MAP.get(payload.action_type.value)
+    if required_perm:
+        effective = get_operator_permissions(operator, db)
+        if effective is not None and required_perm not in effective:
+            raise HTTPException(status_code=403, detail=f"Permission denied: {required_perm}")
     try:
         if not payload.created_by:
             payload.created_by = operator.username

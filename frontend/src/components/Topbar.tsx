@@ -86,12 +86,6 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
               <span className="max-w-[160px] truncate text-sm font-semibold">
                 {user.display_name || user.username}
               </span>
-              <span
-                className="rounded border border-techi-orange/25 bg-techi-orange/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-200"
-                style={{ fontFamily: '"JetBrains Mono", monospace' }}
-              >
-                {user.role}
-              </span>
             </button>
 
             {/* Dropdown */}
@@ -105,9 +99,17 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
                 >
                   {/* Account label */}
                   <div className="px-3 py-2.5" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-                    <p className="text-xs font-semibold truncate" style={{ color: "var(--th-text-primary)" }}>
-                      {user.display_name || user.username}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold truncate" style={{ color: "var(--th-text-primary)" }}>
+                        {user.display_name || user.username}
+                      </p>
+                      <span
+                        className="shrink-0 rounded border border-techi-orange/25 bg-techi-orange/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-200"
+                        style={{ fontFamily: '"JetBrains Mono", monospace' }}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
                     <p className="text-[10px] font-medium" style={{ color: "var(--th-text-muted)" }}>
                       {user.email}
                     </p>

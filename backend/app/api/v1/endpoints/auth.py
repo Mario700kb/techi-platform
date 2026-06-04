@@ -7,7 +7,8 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.operator import Operator as OperatorModel
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse
-from app.services.permission_service import permissions_summary
+from app.core.auth import get_operator_permissions
+from app.services.permission_service import ALL_PERMISSIONS, permissions_summary
 from app.schemas.operator import Operator
 from app.services.audit_service import AuditAction, audit_log
 from app.services.auth_service import AuthService
@@ -58,5 +59,13 @@ def change_password(
 @router.get("/permissions/me")
 def my_permissions(
     operator: OperatorModel = Depends(get_current_operator),
+    db: Session = Depends(get_db),
 ):
-    return permissions_summary(operator.role)
+    effective = get_operator_permissions(operator, db)
+    if effective is None:
+        return permissions_summary(operator.role)
+    return {
+        "role": operator.role,
+        "permissions": sorted(effective),
+        "denied": sorted(ALL_PERMISSIONS - effective),
+    }

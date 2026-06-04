@@ -207,7 +207,7 @@ export default function DeviceDrawer({
   isFavorite = false,
   onToggleFavorite,
 }: DeviceDrawerProps) {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
@@ -968,6 +968,7 @@ export default function DeviceDrawer({
                       </div>
                     )}
                   </div>
+                  {hasPermission("maintenance_mode") && (
                   <button
                     type="button"
                     disabled={maintenanceBusy}
@@ -984,13 +985,14 @@ export default function DeviceDrawer({
                   >
                     Exit maintenance
                   </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2.5">
                   <p className="text-[11px] font-medium text-slate-500">
                     Alerts are suppressed while a device is in maintenance. Heartbeats and telemetry continue normally.
                   </p>
-	                  {canOperate && (
+	                  {canOperate && hasPermission("maintenance_mode") && (
 	                  <>
 	                  <div className="grid grid-cols-2 gap-2">
                     <label className="block">
@@ -1406,18 +1408,24 @@ export default function DeviceDrawer({
                     setActions((prev) => [created, ...prev]);
                   } catch { /* surfaced via WS */ } finally { setActionBusy(false); }
                 };
-                const Btn = ({ type, label, destructive = false }: { type: ActionType; label: string; destructive?: boolean }) => (
-                  <button type="button" disabled={actionBusy}
-                    onClick={() => runAction(type)}
-                    className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                    style={{
-                      background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
-                      color: destructive ? "#f87171" : "var(--th-text-secondary)",
-                    }}>
-                    {label}
-                  </button>
-                );
+                const Btn = ({ type, label, destructive = false, perm }: { type: ActionType; label: string; destructive?: boolean; perm: string }) => {
+                  const allowed = hasPermission(perm);
+                  if (destructive && !allowed) return null;
+                  return (
+                    <button type="button"
+                      disabled={actionBusy || !allowed}
+                      onClick={() => runAction(type)}
+                      title={!allowed ? "Permission required" : undefined}
+                      className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                      style={{
+                        background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
+                        color: destructive ? "#f87171" : "var(--th-text-secondary)",
+                      }}>
+                      {label}
+                    </button>
+                  );
+                };
                 const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
                   <div className="mb-2">
                     <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
@@ -1427,17 +1435,17 @@ export default function DeviceDrawer({
                 return (
                   <div className="mb-3">
                     <Group label="Diagnostics">
-                      <Btn type="ping" label="Ping" />
-                      <Btn type="immediate_heartbeat" label="Heartbeat" />
-                      <Btn type="refresh_inventory" label="Refresh Inv." />
-                      <Btn type="sync_inventory" label="Sync Inv." />
+                      <Btn type="ping" label="Ping" perm="diagnostics" />
+                      <Btn type="immediate_heartbeat" label="Heartbeat" perm="diagnostics" />
+                      <Btn type="refresh_inventory" label="Refresh Inv." perm="view_inventory" />
+                      <Btn type="sync_inventory" label="Sync Inv." perm="view_inventory" />
                     </Group>
                     <Group label="Agent">
-                      <Btn type="restart_agent" label="Restart Agent" destructive />
-                      <Btn type="apply_power_policy" label="Power Policy" />
+                      <Btn type="restart_agent" label="Restart Agent" destructive perm="restart_agent" />
+                      <Btn type="apply_power_policy" label="Power Policy" perm="maintenance_mode" />
                     </Group>
                     <Group label="Device">
-                      <Btn type="restart_device" label="Restart Device" destructive />
+                      <Btn type="restart_device" label="Restart Device" destructive perm="restart_device" />
                     </Group>
                   </div>
                 );
@@ -1872,10 +1880,12 @@ export default function DeviceDrawer({
                 </div>
                 <button
                   type="button"
-                  disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
+                  disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected || !hasPermission("remote_support_connect")}
                   onClick={() => launchRustDesk(device.rustdesk_id!)}
                   title={
-                    device.rustdesk_conflict_detected
+                    !hasPermission("remote_support_connect")
+                      ? "Permission required: remote_support_connect"
+                      : device.rustdesk_conflict_detected
                       ? "Remote Support ID conflict detected"
                       : isValidRustDeskId(device.rustdesk_id)
                       ? "Open TECHI Remote Support"
@@ -1982,7 +1992,7 @@ export default function DeviceDrawer({
             </section>
 
             {/* Management actions */}
-            {canOperate && (
+            {canOperate && (hasPermission("remote_support_manage") || hasPermission("reinstall_remote_support") || hasPermission("deployment")) && (
               <section className="mb-4">
                 <p className="premium-kicker mb-2">Management</p>
                 <div
@@ -1990,7 +2000,7 @@ export default function DeviceDrawer({
                   style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
                 >
                   {/* Deploy prompt when not installed */}
-                  {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && (
+                  {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && hasPermission("deployment") && (
                     <div className="mb-3">
                       <p className="mb-2 text-[11px] font-medium text-slate-400">
                         TECHI Remote Support does not appear to be installed on this device.
@@ -2025,6 +2035,7 @@ export default function DeviceDrawer({
 
                   <div className="grid grid-cols-2 gap-2">
                     {/* Sync */}
+                    {hasPermission("remote_support_manage") && (
                     <RsActionButton
                       label="Sync"
                       busy={rsBusyAction === "sync_rustdesk"}
@@ -2043,7 +2054,9 @@ export default function DeviceDrawer({
                         }
                       }}
                     />
+                    )}
                     {/* Restart */}
+                    {hasPermission("remote_support_manage") && (
                     <RsActionButton
                       label="Restart"
                       busy={rsBusyAction === "restart_rustdesk"}
@@ -2062,7 +2075,9 @@ export default function DeviceDrawer({
                         }
                       }}
                     />
+                    )}
                     {/* Reopen */}
+                    {hasPermission("remote_support_manage") && (
                     <RsActionButton
                       label="Reopen"
                       busy={rsBusyAction === "reopen_rustdesk"}
@@ -2081,7 +2096,9 @@ export default function DeviceDrawer({
                         }
                       }}
                     />
+                    )}
                     {/* Reinstall — destructive, triggers existing confirmation modal */}
+                    {hasPermission("reinstall_remote_support") && (
                     <RsActionButton
                       label="Reinstall"
                       destructive
@@ -2091,6 +2108,7 @@ export default function DeviceDrawer({
                         setRestartConfirmOpen(true);
                       }}
                     />
+                    )}
                   </div>
                 </div>
               </section>

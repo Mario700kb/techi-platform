@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.scope import AllowedScope
 from app.models.team import Team
-from app.repositories.team_repository import TeamRepository
+from app.repositories.team_repository import TeamRepository, _decode_permissions
 
 
 class TeamService:
@@ -27,8 +27,14 @@ class TeamService:
     def get_team(self, team_id: int) -> Optional[Team]:
         return self.repo.get(team_id)
 
-    def create_team(self, name: str, description: Optional[str] = None, color: Optional[str] = None) -> Team:
-        return self.repo.create(name=name, description=description, color=color)
+    def create_team(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        color: Optional[str] = None,
+        permissions: Optional[List[str]] = None,
+    ) -> Team:
+        return self.repo.create(name=name, description=description, color=color, permissions=permissions)
 
     def update_team(self, team_id: int, **kwargs) -> Optional[Team]:
         team = self.repo.get(team_id)
@@ -81,6 +87,7 @@ class TeamService:
             "name": team.name,
             "description": team.description,
             "color": team.color,
+            "permissions": _decode_permissions(team.permissions),
             "created_at": team.created_at,
             "operator_ids": self.repo.get_operator_ids(team_id),
             "client_ids": self.repo.list_client_ids(team_id),
@@ -91,7 +98,7 @@ class TeamService:
     # ── Stats ──────────────────────────────────────────────────────────── #
 
     def team_stats(self, team_id: int) -> Dict:
-        """Return member count and approximate device count for a team."""
+        """Return member, client, group, and device counts for a team."""
         client_ids = self.repo.list_client_ids(team_id)
         group_ids = self.repo.list_group_ids(team_id)
         device_ids = self.repo.list_device_ids(team_id)
@@ -114,6 +121,8 @@ class TeamService:
 
         return {
             "member_count": len(self.repo.get_operator_ids(team_id)),
+            "client_count": len(client_ids),
+            "group_count": len(group_ids),
             "device_count": device_count,
         }
 

@@ -99,24 +99,22 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         })}
       </nav>
 
-      <div className="mt-auto pt-4">
+      <div className="mt-auto">
         <div className="border-t" style={{ borderColor: "var(--th-sidebar-divider)" }} />
         {expanded && (
-          <div className="mt-3 px-2">
+          <div className="px-3 py-3">
             <p
-              className="text-[10px] font-medium"
+              className="text-[10px] font-semibold"
               style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-muted)" }}
             >
-              v1.0 · MSP Console
+              TECHI MSP Console
             </p>
-            {user && (
-              <p
-                className="mt-1 text-[10px] font-semibold uppercase tracking-wide"
-                style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-tertiary)" }}
-              >
-                {user.role}
-              </p>
-            )}
+            <p
+              className="mt-0.5 text-[9px]"
+              style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-tertiary)" }}
+            >
+              Version 1.0
+            </p>
           </div>
         )}
       </div>

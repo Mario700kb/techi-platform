@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_operator, require_min_role
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
+from app.repositories.team_repository import _decode_permissions
 from app.schemas.team import (
     AccessUpdateRequest,
     MemberUpdateRequest,
     TeamCreate,
     TeamDetailResponse,
+    TeamPermissionsUpdateRequest,
     TeamUpdate,
     TeamWithStats,
 )
@@ -42,8 +44,12 @@ def list_teams(
         result.append(TeamWithStats(
             id=t.id, name=t.name, description=t.description,
             color=t.color, created_at=t.created_at,
+            permissions=_decode_permissions(t.permissions),
             member_count=stats["member_count"],
+            client_count=stats["client_count"],
+            group_count=stats["group_count"],
             device_count=stats["device_count"],
+            operator_ids=service.repo.get_operator_ids(t.id),
         ))
     return result
 
@@ -72,7 +78,7 @@ def create_team(
     if service.get_team_detail(0) is not None:
         pass  # name uniqueness handled by DB constraint
     try:
-        team = service.create_team(name=payload.name, description=payload.description, color=payload.color)
+        team = service.create_team(name=payload.name, description=payload.description, color=payload.color, permissions=payload.permissions)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     audit_log(db, operator=operator, action=AuditAction.TEAM_CREATED, entity_type="team", entity_id=team.id, details={"name": team.name})
@@ -88,7 +94,7 @@ def update_team(
     operator: Operator = Depends(_require_admin),
 ):
     service = TeamService(db)
-    updated = service.update_team(team_id, **payload.model_dump(exclude_none=True))
+    updated = service.update_team(team_id, **payload.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Team not found")
     audit_log(db, operator=operator, action=AuditAction.TEAM_UPDATED, entity_type="team", entity_id=team_id)
@@ -183,3 +189,19 @@ def set_device_access(
     service.replace_device_access(team_id, payload.ids)
     audit_log(db, operator=operator, action=AuditAction.TEAM_ACCESS_UPDATED, entity_type="team", entity_id=team_id, details={"type": "devices", "ids": payload.ids})
     return {"message": "Device access updated", "device_ids": payload.ids}
+
+
+@router.put("/{team_id}/permissions", response_model=TeamDetailResponse)
+def set_permissions(
+    team_id: int,
+    payload: TeamPermissionsUpdateRequest,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    service = TeamService(db)
+    updated = service.update_team(team_id, permissions=payload.permissions)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Team not found")
+    audit_log(db, operator=operator, action=AuditAction.TEAM_UPDATED, entity_type="team", entity_id=team_id, details={"permissions": payload.permissions})
+    detail = service.get_team_detail(team_id)
+    return TeamDetailResponse(**detail)

@@ -5,12 +5,16 @@ export interface TeamRecord {
   name: string;
   description: string | null;
   color: string | null;
+  permissions: string[];
   created_at: string;
 }
 
 export interface TeamWithStats extends TeamRecord {
   member_count: number;
+  client_count: number;
+  group_count: number;
   device_count: number;
+  operator_ids: number[];
 }
 
 export interface TeamDetail extends TeamRecord {
@@ -24,12 +28,14 @@ export interface TeamCreate {
   name: string;
   description?: string | null;
   color?: string | null;
+  permissions?: string[] | null;
 }
 
 export interface TeamUpdate {
   name?: string;
   description?: string | null;
   color?: string | null;
+  permissions?: string[] | null;
 }
 
 export async function listTeams(): Promise<TeamWithStats[]> {
@@ -91,5 +97,13 @@ export async function updateTeamDeviceAccess(id: number, deviceIds: number[]): P
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: deviceIds }),
+  });
+}
+
+export async function updateTeamPermissions(id: number, permissions: string[]): Promise<TeamDetail> {
+  return fetchJson<TeamDetail>(`/api/v1/teams/${id}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permissions }),
   });
 }

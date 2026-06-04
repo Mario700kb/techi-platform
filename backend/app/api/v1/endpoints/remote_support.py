@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, get_operator_scope, require_min_role
+from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
 from app.core.scope import AllowedScope, device_in_scope
 from app.core.time import utcnow
 from app.db.session import get_db
@@ -14,6 +14,7 @@ from app.models.device import Device, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.remote_action import ActionType, RemoteActionCreate, RemoteActionResponse
 from app.services.audit_service import AuditAction, audit_log
+from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
 
@@ -210,6 +211,7 @@ def get_connect_url(
     db: Session = Depends(get_db),
     operator: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
     device_id: int,
 ):
     """Return the rustdesk:// protocol URL for connecting to this device."""
@@ -251,6 +253,7 @@ def restart_remote_support_service(
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
     device_id: int,
 ):
     """Queue a restart of the TECHI Remote Support service on the device."""
@@ -288,6 +291,7 @@ def deploy_remote_support(
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(DEPLOYMENT)),
     device_id: int,
     force_reinstall: bool = False,
 ):
@@ -336,6 +340,7 @@ def repair_remote_support_config(
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
     device_id: int,
 ):
     """Queue a config repair for TECHI Remote Support (rewrites TOML + restarts service)."""

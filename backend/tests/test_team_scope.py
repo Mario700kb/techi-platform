@@ -16,15 +16,22 @@ from app.models.operator_scope import OperatorScope
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.core.scope import AllowedScope, device_in_scope
 from app.services.team_service import TeamService, TeamScopeService
+from app.core.auth import get_operator_permissions, is_unrestricted
 from app.services.permission_service import (
+    ACTION_PERMISSION_MAP,
+    DIAGNOSTICS,
+    MAINTENANCE_MODE,
+    REMOTE_SUPPORT_MANAGE,
     ROLE_PERMISSIONS,
     get_permissions_for_role,
     has_permission,
     permissions_summary,
     VIEW_DEVICES,
     MANAGE_OPERATORS,
-    SYSTEM_SETTINGS,
     REMOTE_SUPPORT_CONNECT,
+    RESTART_DEVICE,
+    RESTART_AGENT,
+    SYSTEM_SETTINGS,
 )
 
 
@@ -263,3 +270,134 @@ def test_scope_union_with_individual_and_team(db):
     )
     assert 1 in combined.client_ids
     assert 2 in combined.client_ids
+
+
+# ── Team permissions ───────────────────────────────────────────────────────── #
+
+def test_team_create_with_permissions(db):
+    svc = TeamService(db)
+    perms = ["view_devices", "remote_support_connect", "restart_device"]
+    team = svc.create_team("Perm Team", permissions=perms)
+    detail = svc.get_team_detail(team.id)
+    assert set(detail["permissions"]) == set(perms)
+
+
+def test_team_permissions_default_empty(db):
+    svc = TeamService(db)
+    team = svc.create_team("No Perms Team")
+    detail = svc.get_team_detail(team.id)
+    assert detail["permissions"] == []
+
+
+def test_team_update_permissions(db):
+    svc = TeamService(db)
+    team = svc.create_team("Update Perms", permissions=["view_devices"])
+    svc.update_team(team.id, permissions=["view_devices", "restart_device", "maintenance_mode"])
+    detail = svc.get_team_detail(team.id)
+    assert "restart_device" in detail["permissions"]
+    assert "maintenance_mode" in detail["permissions"]
+    assert len(detail["permissions"]) == 3
+
+
+def test_team_clear_permissions(db):
+    svc = TeamService(db)
+    team = svc.create_team("Clear Perms", permissions=["view_devices", "restart_device"])
+    svc.update_team(team.id, permissions=[])
+    detail = svc.get_team_detail(team.id)
+    assert detail["permissions"] == []
+
+
+def test_team_stats_include_counts(db):
+    svc = TeamService(db)
+    team = svc.create_team("Stats Team")
+    svc.replace_client_access(team.id, [1, 2])
+    svc.replace_group_access(team.id, [10, 20, 30])
+    stats = svc.team_stats(team.id)
+    assert stats["client_count"] == 2
+    assert stats["group_count"] == 3
+    assert stats["member_count"] == 0
+
+
+# ── get_operator_permissions ───────────────────────────────────────────────── #
+
+def test_effective_perms_admin_returns_none(db):
+    admin = _operator(db, "admin1", role="admin")
+    assert is_unrestricted(admin) is True
+    result = get_operator_permissions(admin, db)
+    assert result is None  # bypass sentinel
+
+
+def test_effective_perms_owner_returns_none(db):
+    owner = _operator(db, "owner1", role="owner")
+    result = get_operator_permissions(owner, db)
+    assert result is None
+
+
+def test_effective_perms_operator_no_teams_is_empty(db):
+    op = _operator(db, "lone_op", role="operator")
+    result = get_operator_permissions(op, db)
+    assert result == frozenset()
+
+
+def test_effective_perms_operator_with_team_perms(db):
+    op = _operator(db, "perm_op", role="operator")
+    svc = TeamService(db)
+    team = svc.create_team("Perm Team A", permissions=["restart_device", "diagnostics"])
+    svc.add_member(team.id, op.id)
+
+    result = get_operator_permissions(op, db)
+    assert result is not None
+    assert RESTART_DEVICE in result
+    assert DIAGNOSTICS in result
+    assert MAINTENANCE_MODE not in result
+
+
+def test_effective_perms_operator_union_multiple_teams(db):
+    op = _operator(db, "multi_perm_op", role="operator")
+    svc = TeamService(db)
+    t1 = svc.create_team("Union A", permissions=["restart_device"])
+    t2 = svc.create_team("Union B", permissions=["maintenance_mode", "remote_support_connect"])
+    svc.add_member(t1.id, op.id)
+    svc.add_member(t2.id, op.id)
+
+    result = get_operator_permissions(op, db)
+    assert result is not None
+    assert RESTART_DEVICE in result
+    assert MAINTENANCE_MODE in result
+    assert REMOTE_SUPPORT_CONNECT in result
+    assert DIAGNOSTICS not in result
+
+
+def test_effective_perms_readonly_no_teams_is_empty(db):
+    ro = _operator(db, "readonly1", role="readonly")
+    result = get_operator_permissions(ro, db)
+    assert result == frozenset()
+
+
+# ── Permission constants and mapping ──────────────────────────────────────── #
+
+def test_new_permissions_in_role_definitions():
+    assert DIAGNOSTICS in get_permissions_for_role("operator")
+    assert REMOTE_SUPPORT_MANAGE in get_permissions_for_role("operator")
+    assert DIAGNOSTICS not in get_permissions_for_role("readonly")
+    assert REMOTE_SUPPORT_MANAGE not in get_permissions_for_role("readonly")
+    assert DIAGNOSTICS in get_permissions_for_role("admin")
+    assert REMOTE_SUPPORT_MANAGE in get_permissions_for_role("admin")
+
+
+def test_action_permission_map_coverage():
+    required_actions = {
+        "ping", "immediate_heartbeat", "refresh_inventory", "sync_inventory",
+        "sync_rustdesk", "restart_rustdesk", "reopen_rustdesk", "repair_config_rustdesk",
+        "reinstall_rustdesk", "deploy_remote_support", "restart_agent",
+        "restart_device", "apply_power_policy",
+    }
+    assert required_actions.issubset(set(ACTION_PERMISSION_MAP.keys()))
+
+
+def test_action_permission_map_values():
+    assert ACTION_PERMISSION_MAP["ping"] == DIAGNOSTICS
+    assert ACTION_PERMISSION_MAP["restart_device"] == RESTART_DEVICE
+    assert ACTION_PERMISSION_MAP["restart_agent"] == RESTART_AGENT
+    assert ACTION_PERMISSION_MAP["sync_rustdesk"] == REMOTE_SUPPORT_MANAGE
+    assert ACTION_PERMISSION_MAP["apply_power_policy"] == MAINTENANCE_MODE

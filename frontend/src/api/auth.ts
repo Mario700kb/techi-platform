@@ -44,3 +44,13 @@ export async function changePassword(
   });
 }
 
+export interface EffectivePermissions {
+  role: string;
+  permissions: string[];
+  denied: string[];
+}
+
+export async function getEffectivePermissions(): Promise<EffectivePermissions> {
+  return fetchJson<EffectivePermissions>("/api/v1/auth/permissions/me");
+}
+

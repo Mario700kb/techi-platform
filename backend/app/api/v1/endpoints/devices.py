@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_roles
+from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_roles, require_team_permission
 from app.core.scope import AllowedScope, device_in_scope
 from app.db.session import get_db
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
@@ -24,6 +24,7 @@ from app.schemas.device_inventory import DeviceInventoryResponse, PatchStatusSna
 from app.schemas.device_note import DeviceNoteCreate, DeviceNoteResponse, DeviceNoteUpdate
 from app.schemas.telemetry import DeviceHealth, DeviceHealthSummary, TelemetrySnapshot
 from app.services.audit_service import AuditAction, audit_log
+from app.services.permission_service import MAINTENANCE_MODE
 from app.services.device_activity_service import DeviceActivityService
 from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_note_service import DeviceNoteService
@@ -373,6 +374,7 @@ def enter_device_maintenance(
     *,
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    _perm: None = Depends(require_team_permission(MAINTENANCE_MODE)),
     device: Device = Depends(get_scoped_device),
     payload: MaintenanceEnterRequest,
 ):
@@ -390,6 +392,7 @@ def clear_device_maintenance(
     *,
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    _perm: None = Depends(require_team_permission(MAINTENANCE_MODE)),
     device: Device = Depends(get_scoped_device),
 ):
     updated = DeviceService(db).clear_maintenance(device.id)

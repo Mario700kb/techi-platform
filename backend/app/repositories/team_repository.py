@@ -1,9 +1,23 @@
+import json
 from typing import List, Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
+
+
+def _encode_permissions(perms: Optional[List[str]]) -> Optional[str]:
+    return json.dumps(perms) if perms is not None else None
+
+
+def _decode_permissions(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
 
 
 class TeamRepository:
@@ -21,16 +35,29 @@ class TeamRepository:
     def get_by_name(self, name: str) -> Optional[Team]:
         return self.db.query(Team).filter(Team.name == name).first()
 
-    def create(self, name: str, description: Optional[str] = None, color: Optional[str] = None) -> Team:
-        team = Team(name=name, description=description, color=color or "#f97316")
+    def create(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        color: Optional[str] = None,
+        permissions: Optional[List[str]] = None,
+    ) -> Team:
+        team = Team(
+            name=name,
+            description=description,
+            color=color or "#f97316",
+            permissions=_encode_permissions(permissions),
+        )
         self.db.add(team)
         self.db.commit()
         self.db.refresh(team)
         return team
 
     def update(self, team: Team, **kwargs) -> Team:
+        if "permissions" in kwargs:
+            kwargs["permissions"] = _encode_permissions(kwargs["permissions"])
         for k, v in kwargs.items():
-            if v is not None:
+            if v is not None or k == "permissions":
                 setattr(team, k, v)
         self.db.commit()
         self.db.refresh(team)
@@ -39,6 +66,9 @@ class TeamRepository:
     def delete(self, team: Team) -> None:
         self.db.delete(team)
         self.db.commit()
+
+    def get_permissions(self, team: Team) -> List[str]:
+        return _decode_permissions(team.permissions)
 
     # ── Members ────────────────────────────────────────────────────────── #
 

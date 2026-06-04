@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from app.db.base import Base
 
@@ -12,6 +12,7 @@ class Team(Base):
     name = Column(String(128), nullable=False, unique=True)
     description = Column(String(512), nullable=True)
     color = Column(String(16), nullable=True, default="#f97316")
+    permissions = Column(Text, nullable=True)  # JSON-encoded list of permission strings; NULL = no team-level overrides
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
