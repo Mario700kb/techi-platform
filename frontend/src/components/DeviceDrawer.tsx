@@ -654,6 +654,142 @@ export default function DeviceDrawer({
             </div>
           )}
 
+          {/* Health & Status */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Health &amp; Status</p>
+            <div
+              className="rounded-lg p-4"
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+            >
+              <div className="mb-3 flex items-center justify-between border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 flex-none rounded-full ${
+                      device.freshness_state === "online"
+                        ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]"
+                        : device.freshness_state === "stale"
+                        ? "bg-amber-300 shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+                        : "bg-slate-600"
+                    }`}
+                  />
+                  <span className={`text-xs font-semibold capitalize ${
+                    device.freshness_state === "online" ? "text-emerald-300"
+                    : device.freshness_state === "stale" ? "text-amber-300"
+                    : "text-slate-400"
+                  }`}>
+                    {device.freshness_state ?? device.status}
+                  </span>
+                </div>
+                <HealthBadge state={healthState} score={healthScore} showLabel />
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
+                <div>
+                  <p className="premium-kicker mb-0.5">Last Seen</p>
+                  <p className="text-xs font-medium text-slate-100">
+                    {device.last_seen
+                      ? parseUTC(device.last_seen).toLocaleString(undefined, {
+                          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                        })
+                      : <span className="text-slate-500">Never</span>}
+                  </p>
+                </div>
+                <div>
+                  <p className="premium-kicker mb-0.5">Freshness</p>
+                  <HeartbeatFreshness lastSeen={device.last_seen} />
+                </div>
+
+                {/* Offline reason — shown when device is offline and reason is known */}
+                {device.freshness_state !== "online" && device.offline_reason && (
+                  <>
+                    <div>
+                      <p className="premium-kicker mb-0.5">Offline Reason</p>
+                      <p className="text-xs font-semibold capitalize text-slate-200">
+                        {device.offline_reason.replace(/_/g, " ")}
+                      </p>
+                    </div>
+                    {device.offline_confidence && (
+                      <div>
+                        <p className="premium-kicker mb-0.5">Confidence</p>
+                        <span className={`inline-flex items-center rounded px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${
+                          device.offline_confidence === "high" ? "text-emerald-300 bg-emerald-400/10"
+                          : device.offline_confidence === "medium" ? "text-amber-300 bg-amber-400/10"
+                          : "text-slate-400 bg-white/[0.05]"
+                        }`}>
+                          {device.offline_confidence}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Health reasons */}
+                {healthReasons.length > 0 && (
+                  <div className="col-span-2 border-t border-white/5 pt-2">
+                    <p className="premium-kicker mb-1">Health Issues</p>
+                    <div className="space-y-0.5">
+                      {healthReasons.slice(0, 4).map((r) => (
+                        <p key={r} className="text-[11px] font-medium text-amber-300">⚠ {r}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Alert Center */}
+          {(openAlerts.length > 0 || resolvedAlerts.length > 0) && (
+          <section className="mb-4">
+            <div className="mb-2 flex items-center gap-2">
+              <p className="premium-kicker">Alerts</p>
+              {openAlerts.length > 0 && (
+                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+                  {openAlerts.length} active
+                </span>
+              )}
+            </div>
+            <div
+              className="rounded-lg p-3"
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+            >
+              {openAlerts.length === 0 ? (
+                <div className="flex items-center gap-2 py-1">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <p className="text-xs font-medium text-slate-400">No active alerts</p>
+                </div>
+              ) : (
+                <div className="space-y-0">
+                  {/* Group by severity */}
+                  {(["critical", "warning"] as const).map((sev) => {
+                    const group = openAlerts.filter(a => a.severity === sev);
+                    if (!group.length) return null;
+                    const isC = sev === "critical";
+                    return (
+                      <div key={sev} className="mb-2 last:mb-0">
+                        <p className={`mb-1 text-[9px] font-bold uppercase tracking-[0.1em] ${isC ? "text-red-500" : "text-amber-500"}`}>
+                          {sev} · {group.length}
+                        </p>
+                        <div className="space-y-1">
+                          {group.slice(0, 3).map(a => (
+                            <div key={a.id} className="flex items-start gap-1.5">
+                              <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${isC ? "bg-red-400" : "bg-amber-400"}`} />
+                              <p className="text-[11px] leading-4 text-slate-300">{a.message}</p>
+                            </div>
+                          ))}
+                          {group.length > 3 && (
+                            <p className="text-[10px] text-slate-500 pl-3">+{group.length - 3} more</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+          )}
+
           {/* Mirembajtja */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
@@ -898,64 +1034,7 @@ export default function DeviceDrawer({
             </div>
           </section>
 
-          {/* Heartbeat */}
-          <section className="mb-4">
-            <p className="premium-kicker mb-2">Heartbeat</p>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              <div>
-                <p className="premium-kicker mb-1">Last Seen</p>
-                <p className="text-xs font-medium text-slate-100">
-                  {device.last_seen
-                    ? parseUTC(device.last_seen).toLocaleString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })
-                    : <span className="text-slate-500">Never</span>}
-                </p>
-              </div>
-              <div>
-                <p className="premium-kicker mb-1">Freshness</p>
-                <HeartbeatFreshness lastSeen={device.last_seen} />
-              </div>
-            </div>
-          </section>
 
-          {/* TECHI Remote Support */}
-          <section className="mb-5">
-            <p className="premium-kicker mb-2">TECHI Remote Support</p>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              <div className="col-span-2">
-                <DetailRow label="Remote Support ID" value={device.rustdesk_id} mono />
-              </div>
-              <DetailRow label="Install Status" value={device.rustdesk_install_status} />
-              <DetailRow label="Runtime" value={device.rustdesk_status} />
-              <DetailRow
-                label="Version"
-                value={device.rustdesk_version ? `v${device.rustdesk_version}` : undefined}
-              />
-              <div>
-                <p className="premium-kicker mb-1">Sync State</p>
-                <p className={`text-xs font-semibold ${syncColor}`}>{syncLabel}</p>
-                {device.rustdesk_sync_message && (
-                  <p className="mt-0.5 text-[10px] leading-4 text-slate-400">{device.rustdesk_sync_message}</p>
-                )}
-              </div>
-              {!isValidRustDeskId(device.rustdesk_id) && (
-                <div className="col-span-2">
-                  <p className="text-[11px] font-medium text-slate-500">TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.</p>
-                </div>
-              )}
-            </div>
-          </section>
           </div>
 
           <div className={activeTab === "telemetry" ? "" : "hidden"}>

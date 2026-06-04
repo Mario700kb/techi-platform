@@ -68,6 +68,12 @@ class DeviceBase(BaseModel):
     duplicate_candidate: bool = False
     duplicate_of_device_id: Optional[int] = None
     duplicate_score: Optional[float] = None
+    # Offline reason engine
+    offline_reason: Optional[str] = None
+    offline_confidence: Optional[str] = None
+    last_boot_time: Optional[datetime] = None
+    last_shutdown_time: Optional[datetime] = None
+    network_disconnect_time: Optional[datetime] = None
     is_in_maintenance: bool = False
     maintenance_started_at: Optional[datetime] = None
     maintenance_ends_at: Optional[datetime] = None

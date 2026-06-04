@@ -74,7 +74,8 @@ class DeviceActivityService:
                 type=ev.event_type,
                 occurred_at=ev.occurred_at,
                 summary=ev.summary,
-                detail=ev.detail or ev.actor,
+                detail=ev.detail,
+                actor=ev.actor,
                 device_id=device_id,
             ))
 
@@ -88,14 +89,21 @@ class DeviceActivityService:
                 device_id=device_id,
             ))
 
+        offline_reason = getattr(device, "offline_reason", None) if device else None
+        offline_confidence = getattr(device, "offline_confidence", None) if device else None
         for sh in status_history:
             is_online = sh.new_status.value == "online"
+            if not is_online and offline_reason:
+                confidence_label = f" · Confidence: {offline_confidence.capitalize()}" if offline_confidence else ""
+                detail = f"Likely reason: {offline_reason.replace('_', ' ').title()}{confidence_label}"
+            else:
+                detail = _REASON_LABELS.get(sh.reason, sh.reason) if sh.reason else None
             events.append(ActivityEvent(
                 id=f"st-{sh.id}",
                 type="device_online" if is_online else "device_offline",
                 occurred_at=sh.created_at,
                 summary="Device came online" if is_online else "Device went offline",
-                detail=_REASON_LABELS.get(sh.reason, sh.reason),
+                detail=detail,
                 device_id=device_id,
             ))
 

@@ -75,6 +75,13 @@ class Device(Base):
     duplicate_of_device_id = Column(Integer, nullable=True)
     duplicate_score = Column(Float, nullable=True)
 
+    # Offline reason engine — populated by agent or inferred by backend
+    offline_reason = Column(String(64), nullable=True)        # shutdown|restart|sleep|hibernate|network_lost|agent_stopped|rs_stopped|unknown
+    offline_confidence = Column(String(16), nullable=True)    # high|medium|low
+    last_boot_time = Column(DateTime, nullable=True)
+    last_shutdown_time = Column(DateTime, nullable=True)
+    network_disconnect_time = Column(DateTime, nullable=True)
+
     is_in_maintenance = Column(Boolean, default=False, nullable=False)
     maintenance_started_at = Column(DateTime, nullable=True)
     maintenance_ends_at = Column(DateTime, nullable=True)

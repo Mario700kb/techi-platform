@@ -10,4 +10,5 @@ class ActivityEvent(BaseModel):
     occurred_at: datetime
     summary: str
     detail: Optional[str] = None
+    actor: Optional[str] = None
     device_id: int

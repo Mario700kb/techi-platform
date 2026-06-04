@@ -55,6 +55,12 @@ export interface Device {
   duplicate_candidate?: boolean;
   duplicate_of_device_id?: number | null;
   duplicate_score?: number | null;
+  // Offline reason engine
+  offline_reason?: string | null;
+  offline_confidence?: string | null;
+  last_boot_time?: string | null;
+  last_shutdown_time?: string | null;
+  network_disconnect_time?: string | null;
   is_in_maintenance?: boolean;
   maintenance_started_at?: string | null;
   maintenance_ends_at?: string | null;

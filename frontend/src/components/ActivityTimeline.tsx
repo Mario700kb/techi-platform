@@ -116,7 +116,17 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                     </span>
                   </div>
                   {event.detail && (
-                    <p className="mt-0.5 truncate text-[12px] text-slate-400">{event.detail}</p>
+                    event.type === "device_offline" ? (
+                      <p className="mt-0.5 text-[11px] font-medium text-slate-400"
+                        style={{ fontFamily: '"JetBrains Mono", monospace' }}>
+                        {event.detail}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 truncate text-[12px] text-slate-400">{event.detail}</p>
+                    )
+                  )}
+                  {event.actor && (
+                    <p className="mt-0.5 text-[10px] text-slate-600">by {event.actor}</p>
                   )}
                 </div>
               </li>

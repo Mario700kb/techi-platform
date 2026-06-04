@@ -33,5 +33,6 @@ export interface ActivityEvent {
   occurred_at: string;
   summary: string;
   detail?: string | null;
+  actor?: string | null;
   device_id: number;
 }
