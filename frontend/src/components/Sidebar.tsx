@@ -1,4 +1,4 @@
-import { Home, Cpu, Folder, KeyRound, Building2, Users, ClipboardList, Package, MonitorCog } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -12,6 +12,7 @@ const navItems = [
   { label: "Packages",   to: "/agent-packages",        icon: Package,       minRole: "admin" as const },
   { label: "Inventory",  to: "/inventory",             icon: Cpu,           minRole: "admin" as const },
   { label: "Operators",  to: "/operators",             icon: Users,         minRole: "admin" as const },
+  { label: "Teams",      to: "/teams",                 icon: UsersRound,    minRole: "admin" as const },
   { label: "Audit Log",  to: "/audit",                 icon: ClipboardList, minRole: "admin" as const },
 ];
 

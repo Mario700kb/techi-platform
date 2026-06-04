@@ -12,6 +12,8 @@ import EnrollmentBootstrap from "../pages/EnrollmentBootstrap";
 import Inventory from "../pages/Inventory";
 import Operators from "../pages/Operators";
 import RemoteSupport from "../pages/RemoteSupport";
+import Teams from "../pages/Teams";
+import TeamDetail from "../pages/TeamDetail";
 import Login from "../pages/Login";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -42,6 +44,8 @@ export default function AppRoutes() {
       <Route path="/agent-packages" element={<RequireAuth><AgentPackages /></RequireAuth>} />
       <Route path="/inventory" element={<RequireAuth><Inventory /></RequireAuth>} />
       <Route path="/operators" element={<RequireAuth><RequireAdmin><Operators /></RequireAdmin></RequireAuth>} />
+      <Route path="/teams" element={<RequireAuth><RequireAdmin><Teams /></RequireAdmin></RequireAuth>} />
+      <Route path="/teams/:id" element={<RequireAuth><RequireAdmin><TeamDetail /></RequireAdmin></RequireAuth>} />
       <Route path="/audit" element={<RequireAuth><RequireAdmin><Audit /></RequireAdmin></RequireAuth>} />
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
     </Routes>
