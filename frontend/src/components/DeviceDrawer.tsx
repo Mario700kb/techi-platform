@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis } from "../api/devices";
@@ -44,19 +44,18 @@ interface DeviceDrawerProps {
   groups?: DeviceGroup[];
   onDeviceUpdated?: (device: Device) => void;
   canOperate?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: (deviceId: number) => void;
 }
 
-type DrawerTab = "overview" | "telemetry" | "patch" | "actions" | "inventory" | "notes" | "timeline" | "remote_support";
+type DrawerTab = "overview" | "remote_support" | "management" | "notes" | "timeline";
 
-const drawerTabs: Array<{ id: DrawerTab; label: string; privacySensitive?: boolean }> = [
-  { id: "overview", label: "Overview" },
-  { id: "telemetry", label: "Telemetry" },
-  { id: "patch", label: "Patch" },
-  { id: "actions", label: "Actions" },
+const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
+  { id: "overview",       label: "Overview" },
   { id: "remote_support", label: "Remote Support" },
-  { id: "inventory", label: "Inventory", privacySensitive: true },
-  { id: "notes", label: "Notes" },
-  { id: "timeline", label: "Timeline" },
+  { id: "management",     label: "Management" },
+  { id: "notes",          label: "Notes" },
+  { id: "timeline",       label: "Timeline" },
 ];
 
 function DetailRow({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
@@ -205,6 +204,8 @@ export default function DeviceDrawer({
   groups = [],
   onDeviceUpdated,
   canOperate = false,
+  isFavorite = false,
+  onToggleFavorite,
 }: DeviceDrawerProps) {
   const { user } = useAuth();
 
@@ -439,6 +440,13 @@ export default function DeviceDrawer({
     }
   }, [activeTab, device.id, editingText, reload]);
 
+  // Auto-save when editing an existing note (1.5s debounce)
+  useEffect(() => {
+    if (!editingNoteId || !editingText.trim()) return;
+    const t = window.setTimeout(() => { void saveNote(editingNoteId); }, 1500);
+    return () => window.clearTimeout(t);
+  }, [editingText]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const removeNote = useCallback(async (noteId: number) => {
     setNoteBusy(true);
     try {
@@ -501,16 +509,9 @@ export default function DeviceDrawer({
     : device.rustdesk_sync_state;
   const hasInventoryDetails =
     Boolean(inventory && (inventory.processes.length > 0 || inventory.services.length > 0 || (inventory.software ?? []).length > 0));
-  const visibleDrawerTabs = useMemo(
-    () => drawerTabs.filter((tab) => !tab.privacySensitive || hasInventoryDetails),
-    [hasInventoryDetails]
-  );
+  const visibleDrawerTabs = drawerTabs;
 
-  useEffect(() => {
-    if (activeTab === "inventory" && !hasInventoryDetails) {
-      setActiveTab("overview");
-    }
-  }, [activeTab, hasInventoryDetails]);
+
 
   return (
     <>
@@ -595,6 +596,17 @@ export default function DeviceDrawer({
           </div>
           <div className="ml-3 flex flex-none items-center gap-3">
             <WsIndicator status={wsStatus} />
+            {onToggleFavorite && (
+              <button
+                type="button"
+                onClick={() => onToggleFavorite(device.id)}
+                title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                className="rounded-lg p-1.5 transition hover:bg-white/5"
+                style={{ color: isFavorite ? "#fbbf24" : "var(--th-text-muted)" }}
+              >
+                <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -779,6 +791,71 @@ export default function DeviceDrawer({
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Fleet Status grid */}
+          <section className="mb-4">
+            <p className="premium-kicker mb-2">Fleet Status</p>
+            <div
+              className="grid grid-cols-2 gap-2 rounded-lg p-3"
+              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+            >
+              {/* RustDesk status */}
+              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <p className="premium-kicker mb-0.5">Remote Support</p>
+                <p className={`text-xs font-semibold ${
+                  device.rustdesk_status === "running" ? "text-emerald-400"
+                  : device.rustdesk_install_status === "not_installed" ? "text-slate-500"
+                  : "text-amber-400"
+                }`}>
+                  {device.rustdesk_status === "running" ? "Running"
+                   : device.rustdesk_install_status === "not_installed" ? "Not installed"
+                   : (device.rustdesk_status ?? "Unknown")}
+                </p>
+              </div>
+              {/* Patch status */}
+              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <p className="premium-kicker mb-0.5">Patch</p>
+                <p className={`text-xs font-semibold ${
+                  snapshot == null ? "text-slate-500"
+                  : "text-slate-200"
+                }`}>
+                  {device.is_in_maintenance ? (
+                    <span className="text-sky-300">Maintenance</span>
+                  ) : (
+                    <span className="text-slate-200">Check Inventory</span>
+                  )}
+                </p>
+              </div>
+              {/* Maintenance status */}
+              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <p className="premium-kicker mb-0.5">Maintenance</p>
+                {device.is_in_maintenance ? (
+                  <div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 px-1.5 py-px text-[10px] font-semibold text-sky-400">
+                      ● Active
+                    </span>
+                    {device.maintenance_ends_at && (
+                      <p className="mt-0.5 text-[10px] text-slate-500">
+                        until {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs font-medium text-slate-400">Off</p>
+                )}
+              </div>
+              {/* Duplicate / lifecycle flags */}
+              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <p className="premium-kicker mb-0.5">Lifecycle</p>
+                <p className={`text-xs font-semibold ${device.is_archived ? "text-amber-400" : "text-emerald-400"}`}>
+                  {device.is_archived ? "Archived" : "Active"}
+                </p>
+                {device.duplicate_candidate && (
+                  <p className="mt-0.5 text-[10px] text-amber-400">Possible duplicate</p>
                 )}
               </div>
             </div>
@@ -1083,7 +1160,7 @@ export default function DeviceDrawer({
 
           </div>
 
-          <div className={activeTab === "telemetry" ? "" : "hidden"}>
+          <div className={activeTab === "overview" ? "" : "hidden"}>
           {/* Telemetria */}
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
@@ -1244,7 +1321,7 @@ export default function DeviceDrawer({
             </ConfirmationModal>
           )}
 
-          <div className={activeTab === "actions" ? "" : "hidden"}>
+          <div className={activeTab === "management" ? "" : "hidden"}>
           {/* Veprimet remote */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
@@ -1430,7 +1507,7 @@ export default function DeviceDrawer({
           </section>
           </div>
 
-          <div className={activeTab === "patch" ? "" : "hidden"}>
+          <div className={activeTab === "management" ? "" : "hidden"}>
           {/* Patch status */}
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
@@ -1466,7 +1543,7 @@ export default function DeviceDrawer({
           </div>
 
           {hasInventoryDetails && (
-          <div className={activeTab === "inventory" ? "" : "hidden"}>
+          <div className={false ? "" : "hidden"}>
           {inventory && inventory.processes.length > 0 && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">

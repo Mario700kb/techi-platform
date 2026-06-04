@@ -10,6 +10,7 @@ import DevicesTable, { type ActiveActionEntry, type HealthFilter } from "../comp
 import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
 import { useAlerts } from "../hooks/useAlerts";
+import { useFavorites } from "../hooks/useFavorites";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAuth } from "../auth/AuthContext";
@@ -30,6 +31,7 @@ const DEVICE_PATCH_EVENTS = new Set([
 
 export default function Devices() {
   const { can, user } = useAuth();
+  const { favorites, toggle: toggleFavorite } = useFavorites();
   const [devices, setDevices] = useState<Device[]>([]);
   const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -763,6 +765,9 @@ export default function Devices() {
 	            canOperate={can("operator")}
 	            canDelete={can("admin")}
 	            currentUser={user?.display_name ?? user?.username}
+	            onBulkComplete={handleRefresh}
+	            favorites={favorites}
+	            onToggleFavorite={toggleFavorite}
 	          />
         </div>
       </div>
@@ -778,6 +783,8 @@ export default function Devices() {
           groups={groups}
 	          onDeviceUpdated={handleDeviceUpdated}
 	          canOperate={can("operator")}
+	          isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
+	          onToggleFavorite={toggleFavorite}
 	        />
       )}
     </section>

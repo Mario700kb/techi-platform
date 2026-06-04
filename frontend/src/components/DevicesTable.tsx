@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Trash2, Wrench } from "lucide-react";
-import { Device, DeviceFilters } from "../api/devices";
+import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Star, Trash2, Wrench } from "lucide-react";
+import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
 import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
@@ -37,22 +37,31 @@ interface DevicesTableProps {
   canOperate?: boolean;
   canDelete?: boolean;
   currentUser?: string;
+  onBulkComplete?: () => void;
+  favorites?: Set<number>;
+  onToggleFavorite?: (deviceId: number) => void;
 }
 
 type QuickFilter =
   | "all" | "online" | "offline" | "servers" | "workstations"
-  | "needs_updates" | "reboot_required" | "warnings" | "critical";
+  | "needs_updates" | "reboot_required" | "warnings" | "critical"
+  | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites";
 
 const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
-  { id: "all",           label: "All" },
-  { id: "online",        label: "Online" },
-  { id: "offline",       label: "Offline" },
-  { id: "servers",       label: "Servers" },
-  { id: "workstations",  label: "Workstations" },
-  { id: "needs_updates", label: "Needs Updates" },
+  { id: "all",             label: "All" },
+  { id: "online",          label: "Online" },
+  { id: "offline",         label: "Offline" },
+  { id: "servers",         label: "Servers" },
+  { id: "workstations",    label: "Workstations" },
+  { id: "needs_updates",   label: "Needs Updates" },
   { id: "reboot_required", label: "Reboot Required" },
-  { id: "warnings",      label: "Warnings" },
-  { id: "critical",      label: "Critical" },
+  { id: "warnings",        label: "Warnings" },
+  { id: "critical",        label: "Critical" },
+  { id: "maintenance",     label: "Maintenance" },
+  { id: "needs_attention", label: "Needs Attention" },
+  { id: "low_health",      label: "Low Health" },
+  { id: "rustdesk_issues", label: "RustDesk Issues" },
+  { id: "favorites",       label: "★ Favorites" },
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
@@ -407,12 +416,28 @@ const DevicesTable = memo(function DevicesTable({
   canOperate = false,
   canDelete = false,
   currentUser,
+  onBulkComplete,
+  favorites = new Set<number>(),
+  onToggleFavorite,
 }: DevicesTableProps) {
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Bulk action state
+  type BulkActionType = "restart_device" | "restart_agent" | "sync_rustdesk" | "reinstall_rustdesk" | "maintenance_enter" | "maintenance_exit";
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<{ action: BulkActionType; destructive: boolean } | null>(null);
+  const [bulkMaintMinutes, setBulkMaintMinutes] = useState<number | null>(60);
+  const [bulkToast, setBulkToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const bulkToastTimer = useRef<number | undefined>();
+  const showBulkToast = (message: string, ok: boolean) => {
+    setBulkToast({ message, ok });
+    window.clearTimeout(bulkToastTimer.current);
+    bulkToastTimer.current = window.setTimeout(() => setBulkToast(null), 4000);
+  };
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef({ left: 0, top: 0 });
 
@@ -428,9 +453,21 @@ const DevicesTable = memo(function DevicesTable({
     workstations:   devices.filter(d => d.device_type === "client" || d.resolved_device_category === "clientpc").length,
     needs_updates:  devices.filter(d => patchMap[d.id]?.patch_state === "updates_available").length,
     reboot_required:devices.filter(d => patchMap[d.id]?.patch_state === "reboot_required").length,
-    warnings:       devices.filter(d => healthMap[d.id]?.health_state === "warning").length,
-    critical:       devices.filter(d => healthMap[d.id]?.health_state === "critical").length,
-  }), [devices, patchMap, healthMap]);
+    warnings:        devices.filter(d => healthMap[d.id]?.health_state === "warning").length,
+    critical:        devices.filter(d => healthMap[d.id]?.health_state === "critical").length,
+    maintenance:     devices.filter(d => d.is_in_maintenance).length,
+    needs_attention: devices.filter(d =>
+      d.freshness_state !== "online" ||
+      (alertsMap[d.id]?.critical ?? 0) > 0 ||
+      (healthMap[d.id]?.health_score ?? 100) < 60
+    ).length,
+    low_health:      devices.filter(d => (healthMap[d.id]?.health_score ?? 100) < 60).length,
+    rustdesk_issues: devices.filter(d =>
+      d.rustdesk_install_status !== "not_installed" &&
+      (d.rustdesk_status ?? "") !== "running"
+    ).length,
+    favorites: devices.filter(d => favorites.has(d.id)).length,
+  }), [devices, patchMap, healthMap, alertsMap, favorites]);
 
   // Apply quick filter on top of the parent-filtered list
   const displayDevices = useMemo(() => {
@@ -445,6 +482,18 @@ const DevicesTable = memo(function DevicesTable({
         case "reboot_required": return patchMap[d.id]?.patch_state === "reboot_required";
         case "warnings":        return healthMap[d.id]?.health_state === "warning";
         case "critical":        return healthMap[d.id]?.health_state === "critical";
+        case "maintenance":     return d.is_in_maintenance === true;
+        case "needs_attention": return (
+          d.freshness_state !== "online" ||
+          (alertsMap[d.id]?.critical ?? 0) > 0 ||
+          (healthMap[d.id]?.health_score ?? 100) < 60
+        );
+        case "low_health":      return (healthMap[d.id]?.health_score ?? 100) < 60;
+        case "rustdesk_issues": return (
+          d.rustdesk_install_status !== "not_installed" &&
+          (d.rustdesk_status ?? "") !== "running"
+        );
+        case "favorites":       return favorites.has(d.id);
         default:                return true;
       }
     });
@@ -532,6 +581,135 @@ const DevicesTable = memo(function DevicesTable({
   return (
     <div className="space-y-2.5">
       {/* Filter bar */}
+      {/* ── Fleet Health Panel ── */}
+      {devices.length > 0 && (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {([
+          {
+            id: "needs_updates" as QuickFilter,
+            label: "Updates",
+            count: pillCounts.needs_updates,
+            color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.25)",
+          },
+          {
+            id: "reboot_required" as QuickFilter,
+            label: "Reboot",
+            count: pillCounts.reboot_required,
+            color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)",
+          },
+          {
+            id: "offline" as QuickFilter,
+            label: "Offline >24h",
+            count: devices.filter(d => {
+              if (d.freshness_state !== "offline" || !d.last_seen) return false;
+              return (Date.now() - new Date(d.last_seen).getTime()) > 86_400_000;
+            }).length,
+            color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.2)",
+          },
+          {
+            id: "maintenance" as QuickFilter,
+            label: "Maintenance",
+            count: pillCounts.maintenance,
+            color: "#38bdf8", bg: "rgba(56,189,248,0.1)", border: "rgba(56,189,248,0.25)",
+          },
+          {
+            id: "rustdesk_issues" as QuickFilter,
+            label: "RS Issues",
+            count: pillCounts.rustdesk_issues,
+            color: "#f97316", bg: "rgba(249,115,22,0.1)", border: "rgba(249,115,22,0.25)",
+          },
+          {
+            id: "low_health" as QuickFilter,
+            label: "Health <60",
+            count: pillCounts.low_health,
+            color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)",
+          },
+        ] as const).map(card => (
+          <button
+            key={card.id}
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === card.id ? "all" : card.id)}
+            className="rounded-xl px-3 py-2.5 text-left transition-all hover:opacity-90"
+            style={{
+              background: quickFilter === card.id ? card.bg : "var(--th-bg-card)",
+              border: `1px solid ${quickFilter === card.id ? card.border : "var(--th-border-card)"}`,
+            }}
+          >
+            <p className="text-2xl font-bold tabular-nums" style={{ color: card.count > 0 ? card.color : "var(--th-text-muted)" }}>
+              {card.count}
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
+              {card.label}
+            </p>
+          </button>
+        ))}
+      </div>
+      )}
+
+      {/* ── Bulk Action Bar ── */}
+      {selectedIds.size > 0 && canOperate && (
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
+        style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)" }}
+      >
+        <span className="text-sm font-semibold" style={{ color: "#fb923c" }}>
+          {selectedIds.size} device{selectedIds.size !== 1 ? "s" : ""} selected
+        </span>
+        <div className="ml-2 flex flex-wrap gap-1.5">
+          {([
+            { label: "Restart Device",    action: "restart_device"   as const, destructive: true  },
+            { label: "Restart Agent",     action: "restart_agent"    as const, destructive: true  },
+            { label: "Sync RS",           action: "sync_rustdesk"    as const, destructive: false },
+            { label: "Reinstall RS",      action: "reinstall_rustdesk" as const, destructive: true },
+          ] as const).map(btn => (
+            <button
+              key={btn.action}
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => {
+                setPendingBulkAction({ action: btn.action, destructive: btn.destructive });
+                setBulkConfirmOpen(true);
+              }}
+              className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
+              style={{
+                background: btn.destructive ? "rgba(248,113,113,0.12)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${btn.destructive ? "rgba(248,113,113,0.3)" : "rgba(255,255,255,0.12)"}`,
+                color: btn.destructive ? "#f87171" : "var(--th-text-secondary)",
+              }}
+            >
+              {btn.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => { setPendingBulkAction({ action: "maintenance_enter", destructive: false }); setBulkConfirmOpen(true); }}
+            className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
+            style={{ background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8" }}
+          >
+            Enter Maintenance
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => { setPendingBulkAction({ action: "maintenance_exit", destructive: false }); setBulkConfirmOpen(true); }}
+            className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--th-text-secondary)" }}
+          >
+            Exit Maintenance
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSelectedIds(new Set())}
+          className="ml-auto text-[11px] font-medium transition hover:opacity-70"
+          style={{ color: "var(--th-text-muted)" }}
+        >
+          Clear
+        </button>
+      </div>
+      )}
+
       <div
         className="rounded-xl p-3"
         style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
@@ -555,8 +733,8 @@ const DevicesTable = memo(function DevicesTable({
           {QUICK_FILTERS.map(f => {
             const count = pillCounts[f.id];
             const active = quickFilter === f.id;
-            const hasAlert = f.id === "critical" && count > 0;
-            const hasWarn  = f.id === "warnings"  && count > 0;
+            const hasAlert = (f.id === "critical" || f.id === "needs_attention") && count > 0;
+            const hasWarn  = (f.id === "warnings" || f.id === "low_health" || f.id === "rustdesk_issues") && count > 0;
             return (
               <button
                 key={f.id}
@@ -753,6 +931,11 @@ const DevicesTable = memo(function DevicesTable({
                     !device.rustdesk_conflict_detected;
                   const devAlerts = alertsMap[device.id];
                   const offlineBadge = getOfflineReasonBadge(device, devices);
+                  const healthScore = healthMap[device.id]?.health_score;
+                  const isLowHealth = healthScore != null && healthScore < 60;
+                  const rsIssue =
+                    device.rustdesk_install_status !== "not_installed" &&
+                    (device.rustdesk_status ?? "") !== "running";
 
                   return (
                     <tr
@@ -824,6 +1007,20 @@ const DevicesTable = memo(function DevicesTable({
                               title="Offline reason (inferred)"
                             >
                               {offlineBadge.label}
+                            </span>
+                          )}
+                          {isLowHealth && (
+                            <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
+                              style={{ color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.22)" }}
+                              title={`Health score: ${healthScore}`}>
+                              H:{healthScore}
+                            </span>
+                          )}
+                          {rsIssue && !offlineBadge && (
+                            <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
+                              style={{ color: "#f97316", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.22)" }}
+                              title={`RS: ${device.rustdesk_status}`}>
+                              RS
                             </span>
                           )}
                         </div>
@@ -906,6 +1103,18 @@ const DevicesTable = memo(function DevicesTable({
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center gap-1.5">
+                          {/* Star / favourite */}
+                          {onToggleFavorite && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleFavorite(device.id)}
+                              title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                              className="flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
+                              style={{ color: favorites.has(device.id) ? "#fbbf24" : "var(--th-text-muted)" }}
+                            >
+                              <Star className={`h-3 w-3 ${favorites.has(device.id) ? "fill-current" : ""}`} />
+                            </button>
+                          )}
                           {/* Connect button — styled like RS page */}
                           <button
                             type="button"
@@ -1096,6 +1305,110 @@ const DevicesTable = memo(function DevicesTable({
           </div>,
           document.body
         )}
+
+      {/* ── Bulk toast ── */}
+      {bulkToast && (
+        <div
+          className="fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
+          style={{
+            background: bulkToast.ok ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+            border: `1px solid ${bulkToast.ok ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
+            color: bulkToast.ok ? "#22c55e" : "#ef4444",
+          }}
+        >
+          {bulkToast.message}
+        </div>
+      )}
+
+      {/* ── Bulk action confirmation modal ── */}
+      {bulkConfirmOpen && pendingBulkAction && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
+          onClick={() => !bulkBusy && setBulkConfirmOpen(false)}>
+          <div className="w-full max-w-[380px] rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}
+            style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+            <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+              <p className="text-sm font-bold" style={{ color: "var(--th-text-primary)" }}>
+                {pendingBulkAction.action === "maintenance_enter" ? "Enter Maintenance" :
+                 pendingBulkAction.action === "maintenance_exit" ? "Exit Maintenance" :
+                 `Bulk: ${pendingBulkAction.action.replace(/_/g, " ")}`}
+              </p>
+              <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
+                Applies to {selectedIds.size} device{selectedIds.size !== 1 ? "s" : ""}.
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              {pendingBulkAction.action === "maintenance_enter" && (
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Duration</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: "1 hour",        mins: 60 },
+                      { label: "4 hours",       mins: 240 },
+                      { label: "8 hours",       mins: 480 },
+                      { label: "Tomorrow",      mins: Math.round(((new Date(new Date().setHours(24,0,0,0)).getTime() - Date.now()) / 60000)) },
+                      { label: "Indefinite",    mins: null },
+                    ].map(opt => (
+                      <button key={opt.label} type="button"
+                        onClick={() => setBulkMaintMinutes(opt.mins)}
+                        className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition"
+                        style={{
+                          background: bulkMaintMinutes === opt.mins ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.04)",
+                          border: `1px solid ${bulkMaintMinutes === opt.mins ? "rgba(56,189,248,0.35)" : "rgba(255,255,255,0.1)"}`,
+                          color: bulkMaintMinutes === opt.mins ? "#38bdf8" : "var(--th-text-secondary)",
+                        }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button type="button" disabled={bulkBusy}
+                  onClick={() => setBulkConfirmOpen(false)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}>
+                  Cancel
+                </button>
+                <button type="button" disabled={bulkBusy}
+                  onClick={async () => {
+                    const action = pendingBulkAction.action;
+                    const selectedDevices = devices.filter(d => selectedIds.has(d.id));
+                    setBulkBusy(true);
+                    let ok = 0; let fail = 0;
+                    try {
+                      for (const d of selectedDevices) {
+                        try {
+                          if (action === "maintenance_enter") {
+                            await enterDeviceMaintenance(d.id, { duration_minutes: bulkMaintMinutes, started_by: currentUser ?? "operator" });
+                          } else if (action === "maintenance_exit") {
+                            await clearDeviceMaintenance(d.id);
+                          } else {
+                            await queueDeviceAction(d.id, { action_type: action as import("../api/actions").ActionType, created_by: currentUser ?? "operator" });
+                          }
+                          ok++;
+                        } catch { fail++; }
+                      }
+                      showBulkToast(`${action.replace(/_/g," ")}: ${ok} queued${fail ? `, ${fail} failed` : ""}`, fail === 0);
+                      setSelectedIds(new Set());
+                      onBulkComplete?.();
+                    } finally {
+                      setBulkBusy(false);
+                      setBulkConfirmOpen(false);
+                    }
+                  }}
+                  className="rounded-lg px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50"
+                  style={{
+                    background: pendingBulkAction.destructive ? "rgba(248,113,113,0.15)" : "rgba(249,115,22,0.15)",
+                    border: `1px solid ${pendingBulkAction.destructive ? "rgba(248,113,113,0.35)" : "rgba(249,115,22,0.35)"}`,
+                    color: pendingBulkAction.destructive ? "#f87171" : "#fb923c",
+                  }}>
+                  {bulkBusy ? "Processing…" : `Confirm (${selectedIds.size})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingAction && (
         <ConfirmDeviceAction

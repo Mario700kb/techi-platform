@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Device, getDevices, getDevicesCount } from "../api/devices";
+import { getDevicesPatchStatus } from "../api/inventory";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getDevicesHealthSummary } from "../api/telemetry";
 import { getOperators, OperatorRecord } from "../api/operators";
@@ -84,6 +85,9 @@ export default function Dashboard() {
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>([]);
   const [operators, setOperators] = useState<OperatorRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [patchCount, setPatchCount] = useState(0);
+  const [criticalCount, setCriticalCount] = useState(0);
+  const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<DeviceRealtimeEvent | null>(null);
   const firstLoadDoneRef = useRef(false);
@@ -119,6 +123,12 @@ export default function Dashboard() {
       setStale(staleCount);
       setOffline(offlineCount);
       setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
+      // Fleet operations stats
+      try {
+        const patches = await getDevicesPatchStatus();
+        setPatchCount(patches.filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
+      } catch { /* non-critical */ }
+      setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
       setRecentDevices(sortedDevices.slice(0, 5));
       setDeployments(recentDeployments.slice(0, 4));
       setRecentActions(latestActions);
@@ -362,6 +372,54 @@ export default function Dashboard() {
           <p className="mt-2 text-3xl font-bold text-slate-200">{loading ? "—" : offline}</p>
           <p className="mt-3 text-xs text-slate-400">Triage queue for unreachable devices.</p>
         </div>
+      </div>
+
+      {/* Fleet Operations Quick Access */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>My Devices</p>
+            <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "#fbbf24" }}>★ Fav</span>
+          </div>
+          <p className="mt-2 text-2xl font-bold" style={{ color: favoritesCount > 0 ? "#fbbf24" : "var(--th-text-muted)" }}>
+            {favoritesCount}
+          </p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Starred devices</p>
+        </Link>
+
+        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Critical Health</p>
+          </div>
+          <p className="mt-2 text-2xl font-bold" style={{ color: criticalCount > 0 ? "#f87171" : "var(--th-text-muted)" }}>
+            {loading ? "—" : criticalCount}
+          </p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Health score &lt; 50</p>
+        </Link>
+
+        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Offline Now</p>
+          </div>
+          <p className="mt-2 text-2xl font-bold" style={{ color: offline > 0 ? "#94a3b8" : "var(--th-text-muted)" }}>
+            {loading ? "—" : offline}
+          </p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Not responding</p>
+        </Link>
+
+        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Needs Updates</p>
+          </div>
+          <p className="mt-2 text-2xl font-bold" style={{ color: patchCount > 0 ? "#fbbf24" : "var(--th-text-muted)" }}>
+            {loading ? "—" : patchCount}
+          </p>
+          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Pending patches</p>
+        </Link>
       </div>
 
       <div className="premium-card-soft p-4">
