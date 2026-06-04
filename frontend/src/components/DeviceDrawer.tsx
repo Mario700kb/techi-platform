@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
-import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, enterDeviceMaintenance } from "../api/devices";
+import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
 import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
 import {
@@ -179,6 +179,22 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
   );
 }
 
+const OFFLINE_REASON_LABELS: Record<string, string> = {
+  site_outage:             "Site outage suspected",
+  network_lost:            "Network issue likely",
+  agent_stopped:           "Agent stopped",
+  remote_support_stopped:  "Remote Support stopped",
+  stale_heartbeat:         "Stale heartbeat",
+  possibly_power_off:      "Possibly powered off",
+  unknown:                 "Unknown",
+};
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high:   "text-emerald-300 bg-emerald-400/10 border-emerald-400/25",
+  medium: "text-amber-300 bg-amber-400/10 border-amber-400/25",
+  low:    "text-slate-400 bg-white/[0.05] border-white/10",
+};
+
 export default function DeviceDrawer({
   device,
   isOpen,
@@ -226,6 +242,10 @@ export default function DeviceDrawer({
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
   const [rsCopySuccess, setRsCopySuccess] = useState(false);
   const rsLoadedFor = useRef<number | null>(null);
+
+  // Offline analysis state
+  const [offlineAnalysis, setOfflineAnalysis] = useState<DeviceOfflineAnalysis | null>(null);
+  const offlineAnalysisLoadedFor = useRef<number | null>(null);
 
   const { events, loading, reload } = useDeviceActivity({
     deviceId: device.id,
@@ -353,7 +373,19 @@ export default function DeviceDrawer({
     setRsCopySuccess(false);
     setRsToast(null);
     setRsBusyAction(null);
+    offlineAnalysisLoadedFor.current = null;
+    setOfflineAnalysis(null);
   }, [device.id]);
+
+  // Load offline analysis when Overview tab becomes active
+  useEffect(() => {
+    if (!isOpen || activeTab !== "overview") return;
+    if (offlineAnalysisLoadedFor.current === device.id) return;
+    offlineAnalysisLoadedFor.current = device.id;
+    getDeviceOfflineAnalysis(device.id)
+      .then(setOfflineAnalysis)
+      .catch(() => { /* non-critical */ });
+  }, [isOpen, activeTab, device.id]);
 
   // Merge realtime action events without a full reload.
   useEffect(() => {
@@ -699,28 +731,42 @@ export default function DeviceDrawer({
                   <HeartbeatFreshness lastSeen={device.last_seen} />
                 </div>
 
-                {/* Offline reason — shown when device is offline and reason is known */}
-                {device.freshness_state !== "online" && device.offline_reason && (
-                  <>
-                    <div>
-                      <p className="premium-kicker mb-0.5">Offline Reason</p>
-                      <p className="text-xs font-semibold capitalize text-slate-200">
-                        {device.offline_reason.replace(/_/g, " ")}
-                      </p>
+                {/* Offline Analysis — dynamic backend inference */}
+                {device.freshness_state !== "online" && offlineAnalysis && offlineAnalysis.reason && (
+                  <div className="col-span-2 border-t border-white/5 pt-2">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <p className="premium-kicker">Offline Analysis</p>
                     </div>
-                    {device.offline_confidence && (
-                      <div>
-                        <p className="premium-kicker mb-0.5">Confidence</p>
-                        <span className={`inline-flex items-center rounded px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${
-                          device.offline_confidence === "high" ? "text-emerald-300 bg-emerald-400/10"
-                          : device.offline_confidence === "medium" ? "text-amber-300 bg-amber-400/10"
-                          : "text-slate-400 bg-white/[0.05]"
-                        }`}>
-                          {device.offline_confidence}
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      {/* Reason chip */}
+                      <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold"
+                        style={{ background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.25)", color: "#fb923c" }}>
+                        {OFFLINE_REASON_LABELS[offlineAnalysis.reason] ?? offlineAnalysis.reason}
+                      </span>
+                      {/* Confidence chip */}
+                      {offlineAnalysis.confidence && (
+                        <span className={`inline-flex items-center rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${CONFIDENCE_COLORS[offlineAnalysis.confidence] ?? ""}`}>
+                          {offlineAnalysis.confidence}
                         </span>
-                      </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] leading-4 text-slate-300 mb-1">{offlineAnalysis.explanation}</p>
+                    {offlineAnalysis.evidence.length > 0 && (
+                      <ul className="space-y-0.5">
+                        {offlineAnalysis.evidence.map((e, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-500">
+                            <span className="mt-0.5 h-1 w-1 flex-none rounded-full bg-slate-600" />
+                            {e}
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                  </>
+                  </div>
+                )}
+                {device.freshness_state === "online" && (
+                  <div className="col-span-2">
+                    <p className="text-[11px] text-slate-500">Device is currently online.</p>
+                  </div>
                 )}
 
                 {/* Health reasons */}

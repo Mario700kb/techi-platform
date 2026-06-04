@@ -1,5 +1,21 @@
 import { fetchJson } from "./client";
 
+export type OfflineReason =
+  | "site_outage"
+  | "network_lost"
+  | "agent_stopped"
+  | "remote_support_stopped"
+  | "stale_heartbeat"
+  | "possibly_power_off"
+  | "unknown";
+
+export interface DeviceOfflineAnalysis {
+  reason: OfflineReason | null;
+  confidence: "high" | "medium" | "low" | null;
+  explanation: string;
+  evidence: string[];
+}
+
 export interface Device {
   id: number;
   agent_id?: string | null;
@@ -263,4 +279,8 @@ export async function clearDeviceMaintenance(deviceId: number): Promise<Device> 
   return fetchJson<Device>(`/api/v1/devices/${deviceId}/maintenance/clear`, {
     method: "PUT",
   });
+}
+
+export async function getDeviceOfflineAnalysis(deviceId: number): Promise<DeviceOfflineAnalysis> {
+  return fetchJson<DeviceOfflineAnalysis>(`/api/v1/devices/${deviceId}/offline-analysis`);
 }

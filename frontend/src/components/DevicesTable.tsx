@@ -109,6 +109,57 @@ const renderStatusCell = (device: Device, health?: DeviceHealthSummary) => {
   );
 };
 
+/** Lightweight client-side offline reason badge (no API call). */
+const getOfflineReasonBadge = (device: Device, allDevices: Device[]) => {
+  const freshness = device.freshness_state ?? device.status;
+  if (freshness === "online") return null;
+  if (!device.last_seen) return null;
+
+  // RS stopped but device recently active
+  const rsStatus = (device.rustdesk_status ?? "").toLowerCase();
+  const rsInstall = (device.rustdesk_install_status ?? "").toLowerCase();
+  if (
+    ["stopped", "not_running", "offline"].includes(rsStatus) &&
+    !["not_installed", "unknown", ""].includes(rsInstall)
+  ) {
+    return { label: "RS stopped", color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.25)" };
+  }
+
+  // Site outage: ≥2 peers from same client offline near same time
+  if (device.client_id && device.last_seen) {
+    const t = new Date(device.last_seen).getTime();
+    const peers = allDevices.filter(
+      (p) =>
+        p.id !== device.id &&
+        p.client_id === device.client_id &&
+        (p.freshness_state === "stale" || p.freshness_state === "offline") &&
+        p.last_seen &&
+        Math.abs(new Date(p.last_seen).getTime() - t) < 10 * 60 * 1000
+    );
+    if (peers.length >= 2)
+      return { label: "Site?", color: "#f87171", bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.3)" };
+  }
+
+  // Single device offline (no other offline from same client)
+  if (freshness === "offline" && device.client_id) {
+    const otherOffline = allDevices.filter(
+      (p) => p.id !== device.id && p.client_id === device.client_id && p.freshness_state === "offline"
+    );
+    if (!otherOffline.length)
+      return { label: "Power?", color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.2)" };
+  }
+
+  // Has IP → network issue
+  if (device.public_ip || device.local_ip)
+    return { label: "Network", color: "#60a5fa", bg: "rgba(96,165,250,0.1)", border: "rgba(96,165,250,0.22)" };
+
+  // Stale only
+  if (freshness === "stale")
+    return { label: "Stale", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.22)" };
+
+  return null;
+};
+
 /** Server / Workstation pill badge. */
 const getDeviceTypeBadge = (device: Device) => {
   const cat = device.resolved_device_category;
@@ -701,6 +752,7 @@ const DevicesTable = memo(function DevicesTable({
                     isValidRustDeskId(device.rustdesk_id) &&
                     !device.rustdesk_conflict_detected;
                   const devAlerts = alertsMap[device.id];
+                  const offlineBadge = getOfflineReasonBadge(device, devices);
 
                   return (
                     <tr
@@ -761,6 +813,19 @@ const DevicesTable = memo(function DevicesTable({
                               {devAlerts.warning}
                             </span>
                           ) : null}
+                          {offlineBadge && (
+                            <span
+                              className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
+                              style={{
+                                color: offlineBadge.color,
+                                background: offlineBadge.bg,
+                                border: `1px solid ${offlineBadge.border}`,
+                              }}
+                              title="Offline reason (inferred)"
+                            >
+                              {offlineBadge.label}
+                            </span>
+                          )}
                         </div>
                       </td>
 

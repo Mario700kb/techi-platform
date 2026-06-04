@@ -29,6 +29,7 @@ from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_note_service import DeviceNoteService
 from app.services.device_service import DeviceService
 from app.services.device_telemetry_service import DeviceTelemetryService
+from app.services.device_offline_analysis_service import analyze_device
 from app.services.rustdesk_service import RustDeskIdentityService
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
@@ -439,3 +440,31 @@ def get_device_inventory(
     device: Device = Depends(get_scoped_device),
 ):
     return DeviceInventoryService(db).get_inventory(device.id)
+
+
+@router.get("/{device_id}/offline-analysis")
+def get_device_offline_analysis(
+    *,
+    db: Session = Depends(get_db),
+    device: Device = Depends(get_scoped_device),
+):
+    """Return a dynamic offline analysis for the device.
+
+    Loads peer devices from the same client to enable site-outage detection.
+    No DB writes — purely computed from existing data.
+    """
+    peer_devices: List[Device] = []
+    if device.client_id:
+        peer_devices = (
+            db.query(Device)
+            .filter(Device.client_id == device.client_id, Device.is_archived.is_(False))
+            .all()
+        )
+    elif device.public_ip:
+        # Fallback: devices sharing the same public IP (cross-client LAN)
+        peer_devices = (
+            db.query(Device)
+            .filter(Device.public_ip == device.public_ip, Device.is_archived.is_(False))
+            .all()
+        )
+    return analyze_device(device, peer_devices).as_dict()
