@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.operator import Operator as OperatorModel
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse
+from app.services.permission_service import permissions_summary
 from app.schemas.operator import Operator
 from app.services.audit_service import AuditAction, audit_log
 from app.services.auth_service import AuthService
@@ -52,3 +53,10 @@ def change_password(
     audit_log(db, operator=operator, action=AuditAction.UPDATE_OPERATOR)
     return {"message": "Password changed successfully"}
 
+
+
+@router.get("/permissions/me")
+def my_permissions(
+    operator: OperatorModel = Depends(get_current_operator),
+):
+    return permissions_summary(operator.role)

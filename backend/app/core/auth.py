@@ -113,14 +113,24 @@ def get_operator_scope(
     db: Session = Depends(get_db),
 ):
     """FastAPI dependency — returns None if the operator is unrestricted (owner/admin),
-    or an AllowedScope for operator/readonly roles.
+    or an AllowedScope that is the UNION of individual operator scope + all team scopes.
 
     Inject as: scope: Optional[AllowedScope] = Depends(get_operator_scope)
     """
     from app.core.scope import AllowedScope  # local import to avoid circular at module load
     from app.services.operator_scope_service import OperatorScopeService
+    from app.services.team_service import TeamScopeService
 
     if is_unrestricted(operator):
         return None
-    return OperatorScopeService(db).get_allowed_scope(operator.id)
+
+    individual = OperatorScopeService(db).get_allowed_scope(operator.id)
+    team_scope = TeamScopeService(db).get_team_scope_for_operator(operator.id)
+
+    # Union: operator sees anything from individual scope OR any of their teams
+    return AllowedScope(
+        client_ids=individual.client_ids | team_scope.client_ids,
+        group_ids=individual.group_ids | team_scope.group_ids,
+        device_ids=individual.device_ids | team_scope.device_ids,
+    )
 

@@ -1,0 +1,69 @@
+"""
+Centralised permission matrix.
+
+Every permission check in the application should reference ROLE_PERMISSIONS
+rather than scattering string comparisons through route handlers.
+"""
+
+from typing import Dict, FrozenSet, List
+
+# ── Permission identifiers ──────────────────────────────────────────────── #
+
+VIEW_DEVICES = "view_devices"
+REMOTE_SUPPORT_CONNECT = "remote_support_connect"
+RESTART_DEVICE = "restart_device"
+RESTART_AGENT = "restart_agent"
+REINSTALL_REMOTE_SUPPORT = "reinstall_remote_support"
+MAINTENANCE_MODE = "maintenance_mode"
+VIEW_NOTES = "view_notes"
+EDIT_NOTES = "edit_notes"
+VIEW_INVENTORY = "view_inventory"
+VIEW_PATCH = "view_patch"
+DEPLOYMENT = "deployment"
+MANAGE_CLIENTS = "manage_clients"
+MANAGE_GROUPS = "manage_groups"
+MANAGE_OPERATORS = "manage_operators"
+AUDIT_LOG = "audit_log"
+SYSTEM_SETTINGS = "system_settings"
+
+ALL_PERMISSIONS: FrozenSet[str] = frozenset({
+    VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, RESTART_DEVICE, RESTART_AGENT,
+    REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE, VIEW_NOTES, EDIT_NOTES,
+    VIEW_INVENTORY, VIEW_PATCH, DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS,
+    MANAGE_OPERATORS, AUDIT_LOG, SYSTEM_SETTINGS,
+})
+
+ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
+    "owner": ALL_PERMISSIONS,
+    "admin": frozenset({
+        VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, RESTART_DEVICE, RESTART_AGENT,
+        REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE, VIEW_NOTES, EDIT_NOTES,
+        VIEW_INVENTORY, VIEW_PATCH, DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS,
+        MANAGE_OPERATORS, AUDIT_LOG,
+    }),
+    "operator": frozenset({
+        VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, RESTART_DEVICE, RESTART_AGENT,
+        REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE, VIEW_NOTES, EDIT_NOTES,
+        VIEW_INVENTORY, VIEW_PATCH,
+    }),
+    "readonly": frozenset({
+        VIEW_DEVICES, VIEW_NOTES, VIEW_INVENTORY, VIEW_PATCH,
+    }),
+}
+
+
+def get_permissions_for_role(role: str) -> FrozenSet[str]:
+    return ROLE_PERMISSIONS.get(role, frozenset())
+
+
+def has_permission(role: str, permission: str) -> bool:
+    return permission in get_permissions_for_role(role)
+
+
+def permissions_summary(role: str) -> dict:
+    granted = get_permissions_for_role(role)
+    return {
+        "role": role,
+        "permissions": sorted(granted),
+        "denied": sorted(ALL_PERMISSIONS - granted),
+    }
