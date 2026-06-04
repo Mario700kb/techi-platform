@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { archiveDevice, deleteDevice, getDevices, restoreDevice, Device, DeviceFilters } from "../api/devices";
@@ -6,7 +7,7 @@ import { getDevicesPatchStatus, PatchStatus } from "../api/inventory";
 import { getDevicesHealthSummary } from "../api/telemetry";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
-import DevicesTable, { type ActiveActionEntry, type HealthFilter } from "../components/DevicesTable";
+import DevicesTable, { type ActiveActionEntry, type HealthFilter, type QuickFilter } from "../components/DevicesTable";
 import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
 import { useAlerts } from "../hooks/useAlerts";
@@ -32,6 +33,12 @@ const DEVICE_PATCH_EVENTS = new Set([
 export default function Devices() {
   const { can, user } = useAuth();
   const { favorites, toggle: toggleFavorite } = useFavorites();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuickFilter = (searchParams.get("filter") ?? undefined) as QuickFilter | undefined;
+
+  const handleQuickFilterChange = useCallback((f: QuickFilter) => {
+    setSearchParams(f === "all" ? {} : { filter: f }, { replace: true });
+  }, [setSearchParams]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -768,6 +775,8 @@ export default function Devices() {
 	            onBulkComplete={handleRefresh}
 	            favorites={favorites}
 	            onToggleFavorite={toggleFavorite}
+	            initialQuickFilter={urlQuickFilter}
+	            onQuickFilterChange={handleQuickFilterChange}
 	          />
         </div>
       </div>

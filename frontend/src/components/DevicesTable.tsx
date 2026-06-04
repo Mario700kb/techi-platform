@@ -40,9 +40,11 @@ interface DevicesTableProps {
   onBulkComplete?: () => void;
   favorites?: Set<number>;
   onToggleFavorite?: (deviceId: number) => void;
+  initialQuickFilter?: QuickFilter;
+  onQuickFilterChange?: (filter: QuickFilter) => void;
 }
 
-type QuickFilter =
+export type QuickFilter =
   | "all" | "online" | "offline" | "servers" | "workstations"
   | "needs_updates" | "reboot_required" | "warnings" | "critical"
   | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites";
@@ -419,11 +421,23 @@ const DevicesTable = memo(function DevicesTable({
   onBulkComplete,
   favorites = new Set<number>(),
   onToggleFavorite,
+  initialQuickFilter,
+  onQuickFilterChange,
 }: DevicesTableProps) {
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>(initialQuickFilter ?? "all");
+
+  // Sync when the URL-driven prop changes (e.g. navigating from Dashboard)
+  useEffect(() => {
+    setQuickFilter(initialQuickFilter ?? "all");
+  }, [initialQuickFilter]);
+
+  const applyQuickFilter = (f: QuickFilter) => {
+    setQuickFilter(f);
+    onQuickFilterChange?.(f);
+  };
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Bulk action state
   type BulkActionType = "restart_device" | "restart_agent" | "sync_rustdesk" | "reinstall_rustdesk" | "maintenance_enter" | "maintenance_exit";
@@ -628,7 +642,7 @@ const DevicesTable = memo(function DevicesTable({
           <button
             key={card.id}
             type="button"
-            onClick={() => setQuickFilter(quickFilter === card.id ? "all" : card.id)}
+            onClick={() => applyQuickFilter(quickFilter === card.id ? "all" : card.id)}
             className="rounded-xl px-3 py-2.5 text-left transition-all hover:opacity-90"
             style={{
               background: quickFilter === card.id ? card.bg : "var(--th-bg-card)",
@@ -739,7 +753,7 @@ const DevicesTable = memo(function DevicesTable({
               <button
                 key={f.id}
                 type="button"
-                onClick={() => setQuickFilter(f.id)}
+                onClick={() => applyQuickFilter(f.id)}
                 className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all"
                 style={{
                   background: active

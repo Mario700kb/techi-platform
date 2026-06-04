@@ -376,7 +376,7 @@ export default function Dashboard() {
 
       {/* Fleet Operations Quick Access */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+        <Link to="/devices?filter=favorites" className="group rounded-xl p-4 transition-all hover:opacity-90"
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>My Devices</p>
@@ -388,7 +388,7 @@ export default function Dashboard() {
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Starred devices</p>
         </Link>
 
-        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+        <Link to="/devices?filter=low_health" className="group rounded-xl p-4 transition-all hover:opacity-90"
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Critical Health</p>
@@ -399,7 +399,7 @@ export default function Dashboard() {
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Health score &lt; 50</p>
         </Link>
 
-        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+        <Link to="/devices?filter=offline" className="group rounded-xl p-4 transition-all hover:opacity-90"
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Offline Now</p>
@@ -410,7 +410,7 @@ export default function Dashboard() {
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Not responding</p>
         </Link>
 
-        <Link to="/devices" className="group rounded-xl p-4 transition-all hover:opacity-90"
+        <Link to="/devices?filter=needs_updates" className="group rounded-xl p-4 transition-all hover:opacity-90"
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Needs Updates</p>
