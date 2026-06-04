@@ -30,6 +30,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - agent_packages:/app/agent_packages
+      - /opt/techi/packages:/opt/techi/packages:ro
       - backend_logs:/app/logs
     restart: unless-stopped
     healthcheck:
