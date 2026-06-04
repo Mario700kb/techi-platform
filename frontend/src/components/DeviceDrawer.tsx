@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle, Edit3, Loader2, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
+import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, enterDeviceMaintenance } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
-import { isValidRustDeskId } from "../services/rustdeskLaunch";
+import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
@@ -45,13 +46,14 @@ interface DeviceDrawerProps {
   canOperate?: boolean;
 }
 
-type DrawerTab = "overview" | "telemetry" | "patch" | "actions" | "inventory" | "notes" | "timeline";
+type DrawerTab = "overview" | "telemetry" | "patch" | "actions" | "inventory" | "notes" | "timeline" | "remote_support";
 
 const drawerTabs: Array<{ id: DrawerTab; label: string; privacySensitive?: boolean }> = [
   { id: "overview", label: "Overview" },
   { id: "telemetry", label: "Telemetry" },
   { id: "patch", label: "Patch" },
   { id: "actions", label: "Actions" },
+  { id: "remote_support", label: "Remote Support" },
   { id: "inventory", label: "Inventory", privacySensitive: true },
   { id: "notes", label: "Notes" },
   { id: "timeline", label: "Timeline" },
@@ -217,6 +219,14 @@ export default function DeviceDrawer({
   const [editingText, setEditingText] = useState("");
   const notesLoadedFor = useRef<number | null>(null);
 
+  // Remote Support tab state
+  const [rsDevice, setRsDevice] = useState<RemoteSupportDevice | null>(null);
+  const [rsLoading, setRsLoading] = useState(false);
+  const [rsBusyAction, setRsBusyAction] = useState<string | null>(null);
+  const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const [rsCopySuccess, setRsCopySuccess] = useState(false);
+  const rsLoadedFor = useRef<number | null>(null);
+
   const { events, loading, reload } = useDeviceActivity({
     deviceId: device.id,
     latestEvent,
@@ -314,6 +324,35 @@ export default function DeviceDrawer({
     setEditingNoteId(null);
     setEditingText("");
     notesLoadedFor.current = null;
+  }, [device.id]);
+
+  // Remote Support data loading
+  const loadRsDevice = useCallback(async () => {
+    setRsLoading(true);
+    try {
+      const data = await getRemoteSupportDevice(device.id);
+      setRsDevice(data);
+    } catch {
+      // non-critical — device may not have RS data yet
+    } finally {
+      setRsLoading(false);
+    }
+  }, [device.id]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "remote_support") return;
+    if (rsLoadedFor.current !== device.id) {
+      rsLoadedFor.current = device.id;
+      void loadRsDevice();
+    }
+  }, [isOpen, activeTab, device.id, loadRsDevice]);
+
+  useEffect(() => {
+    rsLoadedFor.current = null;
+    setRsDevice(null);
+    setRsCopySuccess(false);
+    setRsToast(null);
+    setRsBusyAction(null);
   }, [device.id]);
 
   // Merge realtime action events without a full reload.
@@ -999,8 +1038,7 @@ export default function DeviceDrawer({
           </section>
           </div>
 
-          <div className={activeTab === "actions" ? "" : "hidden"}>
-          {/* Destructive action confirmation modal */}
+          {/* Destructive action confirmation modal — rendered outside tab panels so it works from any tab */}
           {restartConfirmOpen && (
             <ConfirmationModal
               title={
@@ -1044,6 +1082,7 @@ export default function DeviceDrawer({
             </ConfirmationModal>
           )}
 
+          <div className={activeTab === "actions" ? "" : "hidden"}>
           {/* Veprimet remote */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
@@ -1574,6 +1613,260 @@ export default function DeviceDrawer({
             <ActivityTimeline events={events} loading={loading} onReload={reload} />
           </section>
           </div>
+
+          {/* ── Remote Support tab ── */}
+          <div className={activeTab === "remote_support" ? "" : "hidden"}>
+            {/* Toast feedback */}
+            {rsToast && (
+              <div
+                className="mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
+                style={{
+                  background: rsToast.ok ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+                  border: `1px solid ${rsToast.ok ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                  color: rsToast.ok ? "#22c55e" : "#ef4444",
+                }}
+              >
+                {rsToast.message}
+              </div>
+            )}
+
+            {/* Status header + Connect */}
+            <section className="mb-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Monitor className="h-4 w-4 text-orange-400/70" />
+                  <p className="premium-kicker">TECHI Remote Support</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected}
+                  onClick={() => launchRustDesk(device.rustdesk_id!)}
+                  title={
+                    device.rustdesk_conflict_detected
+                      ? "Remote Support ID conflict detected"
+                      : isValidRustDeskId(device.rustdesk_id)
+                      ? "Open TECHI Remote Support"
+                      : "Remote ID not resolved yet"
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-orange-400/30 bg-orange-400/15 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-orange-400/25 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-transparent disabled:text-slate-600"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Connect
+                </button>
+              </div>
+
+              <div
+                className="rounded-lg p-4"
+                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+              >
+                {/* Remote ID with copy */}
+                <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+                  <p className="premium-kicker mb-1">Remote ID</p>
+                  <div className="flex items-center gap-2">
+                    {device.rustdesk_id && isValidRustDeskId(device.rustdesk_id) ? (
+                      <span className="font-mono text-sm font-semibold text-orange-300">{device.rustdesk_id}</span>
+                    ) : (
+                      <span className="text-xs font-medium text-slate-500">{device.rustdesk_id || "Not assigned"}</span>
+                    )}
+                    {device.rustdesk_id && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(device.rustdesk_id!);
+                            setRsCopySuccess(true);
+                            setTimeout(() => setRsCopySuccess(false), 2000);
+                          } catch {
+                            // clipboard may be unavailable
+                          }
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-200"
+                        title="Copy Remote ID"
+                      >
+                        {rsCopySuccess ? (
+                          <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                        ) : (
+                          <ClipboardCopy className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Details grid */}
+                <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+                  <div>
+                    <p className="premium-kicker mb-1">Service</p>
+                    <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} />
+                  </div>
+                  <div>
+                    <p className="premium-kicker mb-1">Version</p>
+                    <p className="font-mono text-xs font-medium text-slate-100">
+                      {device.rustdesk_version ? `v${device.rustdesk_version}` : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="premium-kicker mb-1">Sync State</p>
+                    <p className={`text-xs font-semibold ${syncColor}`}>{syncLabel}</p>
+                    {device.rustdesk_sync_message && (
+                      <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{device.rustdesk_sync_message}</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="premium-kicker mb-1">Last Heartbeat</p>
+                    <p className="text-xs font-medium text-slate-100">
+                      {device.last_seen
+                        ? parseUTC(device.last_seen).toLocaleString(undefined, {
+                            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                          })
+                        : <span className="text-slate-500">Never</span>}
+                    </p>
+                  </div>
+                  {rsDevice?.install_path && (
+                    <div className="col-span-2">
+                      <p className="premium-kicker mb-1">Install Path</p>
+                      <p className="break-all font-mono text-[11px] text-slate-400">{rsDevice.install_path}</p>
+                    </div>
+                  )}
+                  {rsDevice != null && (
+                    <div>
+                      <p className="premium-kicker mb-1">Repair Count</p>
+                      <p className="text-xs font-medium text-slate-100">{rsDevice.repair_count ?? 0}</p>
+                    </div>
+                  )}
+                  <div className="col-span-2">
+                    <p className="premium-kicker mb-1">Config Status</p>
+                    <p className="text-xs font-medium text-slate-500">Not available</p>
+                  </div>
+                </div>
+
+                {!isValidRustDeskId(device.rustdesk_id) && (
+                  <p className="mt-3 text-[11px] font-medium text-slate-500">
+                    TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Management actions */}
+            {canOperate && (
+              <section className="mb-4">
+                <p className="premium-kicker mb-2">Management</p>
+                <div
+                  className="rounded-lg p-4"
+                  style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+                >
+                  {/* Deploy prompt when not installed */}
+                  {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && (
+                    <div className="mb-3">
+                      <p className="mb-2 text-[11px] font-medium text-slate-400">
+                        TECHI Remote Support does not appear to be installed on this device.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={rsBusyAction === "deploy"}
+                        onClick={async () => {
+                          setRsBusyAction("deploy");
+                          try {
+                            const created = await queueDeviceAction(device.id, {
+                              action_type: "sync_rustdesk",
+                              created_by: user?.username ?? "operator",
+                            });
+                            setActions((prev) => [created, ...prev]);
+                            setRsToast({ message: "Deploy queued", ok: true });
+                            setTimeout(() => setRsToast(null), 3000);
+                          } catch (e: unknown) {
+                            setRsToast({ message: e instanceof Error ? e.message : "Deploy failed", ok: false });
+                            setTimeout(() => setRsToast(null), 3000);
+                          } finally {
+                            setRsBusyAction(null);
+                          }
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-orange-400/30 bg-orange-400/15 py-2 text-xs font-semibold text-orange-200 transition hover:bg-orange-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {rsBusyAction === "deploy" ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                        Deploy TECHI Remote Support
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Sync */}
+                    <RsActionButton
+                      label="Sync"
+                      busy={rsBusyAction === "sync_rustdesk"}
+                      onClick={async () => {
+                        setRsBusyAction("sync_rustdesk");
+                        try {
+                          const created = await queueDeviceAction(device.id, { action_type: "sync_rustdesk", created_by: user?.username ?? "operator" });
+                          setActions((prev) => [created, ...prev]);
+                          setRsToast({ message: "Sync queued", ok: true });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } catch (e: unknown) {
+                          setRsToast({ message: e instanceof Error ? e.message : "Sync failed", ok: false });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } finally {
+                          setRsBusyAction(null);
+                        }
+                      }}
+                    />
+                    {/* Restart */}
+                    <RsActionButton
+                      label="Restart"
+                      busy={rsBusyAction === "restart_rustdesk"}
+                      onClick={async () => {
+                        setRsBusyAction("restart_rustdesk");
+                        try {
+                          const created = await queueDeviceAction(device.id, { action_type: "restart_rustdesk", created_by: user?.username ?? "operator" });
+                          setActions((prev) => [created, ...prev]);
+                          setRsToast({ message: "Restart queued", ok: true });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } catch (e: unknown) {
+                          setRsToast({ message: e instanceof Error ? e.message : "Restart failed", ok: false });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } finally {
+                          setRsBusyAction(null);
+                        }
+                      }}
+                    />
+                    {/* Reopen */}
+                    <RsActionButton
+                      label="Reopen"
+                      busy={rsBusyAction === "reopen_rustdesk"}
+                      onClick={async () => {
+                        setRsBusyAction("reopen_rustdesk");
+                        try {
+                          const created = await queueDeviceAction(device.id, { action_type: "reopen_rustdesk", created_by: user?.username ?? "operator" });
+                          setActions((prev) => [created, ...prev]);
+                          setRsToast({ message: "Reopen queued", ok: true });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } catch (e: unknown) {
+                          setRsToast({ message: e instanceof Error ? e.message : "Reopen failed", ok: false });
+                          setTimeout(() => setRsToast(null), 3000);
+                        } finally {
+                          setRsBusyAction(null);
+                        }
+                      }}
+                    />
+                    {/* Reinstall — destructive, triggers existing confirmation modal */}
+                    <RsActionButton
+                      label="Reinstall"
+                      destructive
+                      busy={rsBusyAction === "reinstall_rustdesk"}
+                      onClick={() => {
+                        setSelectedActionType("reinstall_rustdesk");
+                        setRestartConfirmOpen(true);
+                      }}
+                    />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {rsLoading && (
+              <p className="text-center text-xs text-slate-500">Loading remote support details…</p>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -1681,5 +1974,57 @@ function ActionRow({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Remote Support tab helpers ────────────────────────────────────────────
+
+function RsServiceBadge({ status }: { status?: string }) {
+  const isRunning = status === "running";
+  const isStopped = status === "stopped" || status === "not_running";
+  const isNotInstalled = status === "not_installed";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{
+        color: isRunning ? "#22c55e" : isStopped || isNotInstalled ? "#6b7280" : "#94a3b8",
+        background: isRunning ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.05)",
+      }}
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ background: isRunning ? "#22c55e" : "#4b5563" }}
+      />
+      {isRunning ? "Running" : isStopped ? "Stopped" : isNotInstalled ? "Not installed" : (status ?? "Unknown")}
+    </span>
+  );
+}
+
+function RsActionButton({
+  label,
+  busy,
+  onClick,
+  destructive = false,
+}: {
+  label: string;
+  busy: boolean;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={onClick}
+      className="flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+      style={{
+        border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
+        background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
+        color: destructive ? "#f87171" : "var(--th-text-secondary)",
+      }}
+    >
+      {busy && <RefreshCw className="h-3 w-3 animate-spin" />}
+      {label}
+    </button>
   );
 }

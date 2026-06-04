@@ -573,42 +573,98 @@ export default function Devices() {
 
         <div className="min-w-0 space-y-4">
           <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="premium-metric p-5">
+            {/* Total */}
+            <button
+              type="button"
+              onClick={() => {
+                handleFilterChange("freshness_state", "all");
+                setHealthFilter("all");
+              }}
+              className="premium-metric p-5 text-left transition-all hover:opacity-90"
+              style={
+                !filters.freshness_state && healthFilter === "all"
+                  ? { outline: "2px solid rgba(249,115,22,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Total</p>
                 <Radio className="h-4 w-4 text-orange-400/70" />
               </div>
               <p className="mt-3 text-3xl font-bold text-white">{statusSummary.total}</p>
               <p className="mt-2 text-[13px] text-slate-400">Matching current selection</p>
-            </div>
-            <div className="premium-metric metric-online p-5">
+            </button>
+
+            {/* Online */}
+            <button
+              type="button"
+              onClick={() => handleFilterChange("freshness_state", "online")}
+              className="premium-metric metric-online p-5 text-left transition-all hover:opacity-90"
+              style={
+                filters.freshness_state === "online"
+                  ? { outline: "2px solid rgba(52,211,153,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Online</p>
                 <Wifi className="h-4 w-4 text-emerald-400/70" />
               </div>
               <p className="mt-3 text-3xl font-bold text-emerald-300">{statusSummary.online}</p>
               <p className="mt-2 text-[13px] text-slate-400">Active endpoints available</p>
-            </div>
-            <div className="premium-metric metric-warning p-5">
+            </button>
+
+            {/* Stale */}
+            <button
+              type="button"
+              onClick={() => handleFilterChange("freshness_state", "stale")}
+              className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
+              style={
+                filters.freshness_state === "stale"
+                  ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Stale</p>
                 <Clock3 className="h-4 w-4 text-amber-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-amber-200">{statusSummary.stale}</p>
               <p className="mt-2 text-[13px] text-slate-400">Last seen within 15 minutes</p>
-            </div>
-            <div className="premium-metric metric-offline p-5">
+            </button>
+
+            {/* Offline */}
+            <button
+              type="button"
+              onClick={() => handleFilterChange("freshness_state", "offline")}
+              className="premium-metric metric-offline p-5 text-left transition-all hover:opacity-90"
+              style={
+                filters.freshness_state === "offline"
+                  ? { outline: "2px solid rgba(148,163,184,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Offline</p>
                 <WifiOff className="h-4 w-4 text-slate-500" />
               </div>
               <p className="mt-3 text-3xl font-bold text-slate-200">{statusSummary.offline}</p>
               <p className="mt-2 text-[13px] text-slate-400">Devices not responding</p>
-            </div>
+            </button>
           </div>
 
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-            <div className="premium-metric metric-critical p-5">
+            {/* Critical Alerts */}
+            <button
+              type="button"
+              onClick={() => setHealthFilter("critical")}
+              className="premium-metric metric-critical p-5 text-left transition-all hover:opacity-90"
+              style={
+                healthFilter === "critical"
+                  ? { outline: "2px solid rgba(248,113,113,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Critical Alerts</p>
                 <ShieldAlert className="h-4 w-4 text-red-400/80" />
@@ -617,8 +673,19 @@ export default function Devices() {
                 {alertCount.by_severity["critical"] ?? 0}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Requires immediate action</p>
-            </div>
-            <div className="premium-metric metric-warning p-5">
+            </button>
+
+            {/* Warnings */}
+            <button
+              type="button"
+              onClick={() => setHealthFilter("warning")}
+              className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
+              style={
+                healthFilter === "warning"
+                  ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
+                  : undefined
+              }
+            >
               <div className="flex items-center justify-between">
                 <p className="premium-kicker">Warnings</p>
                 <AlertTriangle className="h-4 w-4 text-amber-400/80" />
@@ -627,7 +694,7 @@ export default function Devices() {
                 {alertCount.by_severity["warning"] ?? 0}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Active across fleet</p>
-            </div>
+            </button>
           </div>
 
           <div className="premium-card-soft flex flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">

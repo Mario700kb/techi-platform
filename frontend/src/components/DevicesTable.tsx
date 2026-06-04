@@ -453,17 +453,13 @@ const DevicesTable = memo(function DevicesTable({
               }
             }}
           >
-            <table className="min-w-[1120px] border-separate border-spacing-0 text-left">
+            <table className="min-w-[760px] border-separate border-spacing-0 text-left">
               <thead className="sticky top-0 z-20">
                 <tr className="th-table-head border-b border-white/[0.06]">
                   <th className="w-[46px] px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Status</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Hostname</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Assignment</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Remote Support ID</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Sync</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">User</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Public IP</th>
-                  <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Local IP</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Domain</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">OS</th>
                   <th className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-slate-300">Last seen</th>
@@ -501,24 +497,12 @@ const DevicesTable = memo(function DevicesTable({
                         {getAssignmentBadge(device)}
                       </div>
                     </td>
-                    <td className="px-2.5 py-1 align-middle">
-                      <div className="text-[11px] font-semibold leading-4 text-slate-100">{device.rustdesk_id}</div>
-                      <div className="text-[9px] font-medium leading-3 text-slate-500">{getRustDeskRuntime(device)}</div>
-                    </td>
-                    <td className="px-2.5 py-1 align-middle">
-                      {getRustDeskSyncBadge(device)}
-                      {device.rustdesk_version && (
-                        <div className="text-[9px] font-medium leading-3 text-slate-500">v{device.rustdesk_version}</div>
-                      )}
-                    </td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle">
                       <div className="flex items-center gap-1">
                         <span className="text-[11px] font-medium text-slate-200">{device.current_user || "—"}</span>
                         {getUserSourceBadge(device)}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.public_ip || "—"}</td>
-                    <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.local_ip || "—"}</td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.domain || "—"}</td>
                     <td className="px-2.5 py-1 align-middle text-[11px] font-medium text-slate-300">{device.os_name || "—"}</td>
                     <td className="whitespace-nowrap px-2.5 py-1 align-middle text-[11px] font-semibold text-slate-300">{formatLastSeen(device.last_seen)}</td>
