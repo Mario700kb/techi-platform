@@ -47,7 +47,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
 
   return (
     <aside
-      className={`flex flex-col ${expanded ? "w-[260px] p-3" : "w-[72px] p-2"}`}
+      className={`flex h-full flex-col ${expanded ? "w-[260px] p-3" : "w-[72px] p-2"}`}
       style={{
         background: "var(--th-bg-sidebar)",
         borderRight: "1px solid var(--th-border-subtle)",
@@ -88,7 +88,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         </p>
       )}
 
-      <nav className="space-y-0.5">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
         {visibleItems.map((item) => {
           const Icon = item.icon;
           return (
