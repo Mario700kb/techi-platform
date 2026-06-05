@@ -39,6 +39,19 @@ export async function getOperators(): Promise<OperatorRecord[]> {
   return fetchJson<OperatorRecord[]>("/api/v1/operators");
 }
 
+export interface OperatorPresenceRecord {
+  id: number;
+  username: string;
+  display_name: string | null;
+  role: UserRole;
+  is_online: boolean;
+  last_active_at: string | null;
+}
+
+export async function getOperatorPresence(): Promise<OperatorPresenceRecord[]> {
+  return fetchJson<OperatorPresenceRecord[]>("/api/v1/operators/presence");
+}
+
 export async function createOperator(payload: OperatorCreate): Promise<OperatorRecord> {
   return fetchJson<OperatorRecord>("/api/v1/operators", {
     method: "POST",

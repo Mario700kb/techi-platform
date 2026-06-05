@@ -20,7 +20,7 @@ import { Device, getDevices, getDevicesCount } from "../api/devices";
 import { getDevicesPatchStatus } from "../api/inventory";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getDevicesHealthSummary } from "../api/telemetry";
-import { getOperators, OperatorRecord } from "../api/operators";
+import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
 import {
   ACTION_LABELS,
@@ -72,8 +72,7 @@ const statusBadgeClass = (device: Device) => {
 };
 
 export default function Dashboard() {
-  const { user, can } = useAuth();
-  const canViewOperators = can("admin");
+  const { user, hasPermission } = useAuth();
 
   const [total, setTotal] = useState(0);
   const [online, setOnline] = useState(0);
@@ -83,7 +82,7 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>([]);
   const [deployments, setDeployments] = useState<RecentDeployment[]>([]);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>([]);
-  const [operators, setOperators] = useState<OperatorRecord[]>([]);
+  const [operators, setOperators] = useState<OperatorPresenceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [patchCount, setPatchCount] = useState(0);
   const [criticalCount, setCriticalCount] = useState(0);
@@ -96,22 +95,23 @@ export default function Dashboard() {
 
   const loadDashboard = useCallback(async () => {
     const showLoading = !firstLoadDoneRef.current;
+    const canDeployment = hasPermission("deployment");
     try {
       if (showLoading) {
         setLoading(true);
       }
       setError(null);
-      
-      const [totalCount, onlineCount, staleCount, offlineCount, healthSummary, latestDevices, recentDeployments, latestActions, allOperators] = await Promise.all([
+
+      const [totalCount, onlineCount, staleCount, offlineCount, healthSummary, latestDevices, recentDeployments, latestActions, presenceList] = await Promise.all([
         getDevicesCount().catch(err => { console.error('Total count error:', err); return 0; }),
         getDevicesCount({ freshness_state: "online" }).catch(err => { console.error('Online count error:', err); return 0; }),
         getDevicesCount({ freshness_state: "stale" }).catch(err => { console.error('Stale count error:', err); return 0; }),
         getDevicesCount({ freshness_state: "offline" }).catch(err => { console.error('Offline count error:', err); return 0; }),
         getDevicesHealthSummary().catch(err => { console.error('Health summary error:', err); return []; }),
         getDevices({ lifecycle_state: "all" }, 0, 25).catch(err => { console.error('Recent devices error:', err); return []; }),
-        getRecentDeployments().catch(err => { console.error('Deployments error:', err); return []; }),
+        canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[]),
         getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
-        canViewOperators ? getOperators().catch(() => [] as OperatorRecord[]) : Promise.resolve([] as OperatorRecord[]),
+        getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
       ]);
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
       const sortedDevices = [...latestDevices].sort(
@@ -132,7 +132,7 @@ export default function Dashboard() {
       setRecentDevices(sortedDevices.slice(0, 5));
       setDeployments(recentDeployments.slice(0, 4));
       setRecentActions(latestActions);
-      setOperators(allOperators);
+      setOperators(presenceList);
       firstLoadDoneRef.current = true;
     } catch (err) {
       console.error('Dashboard load error:', err);
@@ -142,7 +142,7 @@ export default function Dashboard() {
         setLoading(false);
       }
     }
-  }, [canViewOperators]);
+  }, [hasPermission]);
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
@@ -256,7 +256,7 @@ export default function Dashboard() {
         patchRecentDevice(event);
         scheduleDashboardRefresh();
       }
-      if (event.type === "deployment_event") {
+      if (event.type === "deployment_event" && hasPermission("deployment")) {
         void getRecentDeployments().then((items) => setDeployments(items.slice(0, 4))).catch(() => undefined);
       }
     },
@@ -296,13 +296,7 @@ export default function Dashboard() {
       : averageHealth < 80
       ? "bg-amber-400"
       : "bg-emerald-400";
-  const visibleOperators = operators.filter((op) => op.is_active);
-
-  const isOnline = (op: OperatorRecord): boolean => {
-    const ref = op.last_active_at ?? op.last_login_at;
-    if (!ref) return false;
-    return Date.now() - new Date(ref).getTime() < 90_000;
-  };
+  const canDeployment = hasPermission("deployment");
 
   return (
     <section className="premium-page space-y-4">
@@ -557,6 +551,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {canDeployment && (
           <div className="premium-card p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -569,8 +564,6 @@ export default function Dashboard() {
             <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.08]">
               {loading ? (
                 <p className="px-2.5 py-3 text-center text-xs font-medium text-slate-500">Loading deployments...</p>
-              ) : error ? (
-                <p className="px-2.5 py-3 text-center text-xs font-medium text-rose-300">{error}</p>
               ) : (
                 <table className="min-w-full text-left text-[11px]">
                   <thead className="bg-slate-950/90">
@@ -599,6 +592,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          )}
 
           <div className="premium-card p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -678,14 +672,14 @@ export default function Dashboard() {
             <div className="mt-4 space-y-2.5">
               {loading ? (
                 <p className="py-2 text-center text-xs text-slate-500">Loading…</p>
-              ) : visibleOperators.length === 0 ? (
+              ) : operators.length === 0 ? (
                 <p className="py-2 text-center text-xs text-slate-500">No active operators</p>
               ) : (
-                visibleOperators.map((op) => {
+                operators.map((op) => {
                   const label = op.display_name ?? op.username;
-                  const online = isOnline(op);
-                  const lastSeen = op.last_login_at
-                    ? new Date(op.last_login_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+                  const online = op.is_online;
+                  const lastSeen = op.last_active_at
+                    ? new Date(op.last_active_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
                     : null;
                   return (
                     <div key={op.id} className="premium-card-soft flex items-center justify-between gap-3 p-3">

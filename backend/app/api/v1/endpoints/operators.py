@@ -1,6 +1,7 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core import presence
@@ -15,6 +16,38 @@ from app.services.permission_service import MANAGE_OPERATORS
 router = APIRouter()
 
 _require_manage_operators = require_team_permission(MANAGE_OPERATORS)
+
+
+class OperatorPresenceOut(BaseModel):
+    id: int
+    username: str
+    display_name: Optional[str]
+    role: str
+    is_online: bool
+    last_active_at: Optional[str]
+
+
+@router.get("/presence", response_model=List[OperatorPresenceOut])
+def list_operator_presence(
+    db: Session = Depends(get_db),
+    _: OperatorModel = Depends(get_current_operator),
+):
+    """Read-only presence list for the Active panel. Available to all authenticated users."""
+    operators = OperatorService(db).list_operators()
+    result = []
+    for op in operators:
+        if not op.is_active:
+            continue
+        last_active = presence.get_last_active(op.id)
+        result.append(OperatorPresenceOut(
+            id=op.id,
+            username=op.username,
+            display_name=op.display_name,
+            role=op.role,
+            is_online=presence.is_online(op.id),
+            last_active_at=last_active.isoformat() if last_active else None,
+        ))
+    return result
 
 
 @router.get("", response_model=List[Operator])

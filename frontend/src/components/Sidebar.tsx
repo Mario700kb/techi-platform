@@ -1,7 +1,8 @@
-import { Home, Cpu, Folder, KeyRound, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import ChangePasswordModal from "./ChangePasswordModal";
 
 type NavItem = {
   label: string;
@@ -31,12 +32,18 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarProps) {
   const [hovered, setHovered] = useState(false);
-  const { hasPermission } = useAuth();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const { user, logout, hasPermission } = useAuth();
   const expanded = !collapsed || hovered;
 
   const visibleItems = navItems.filter(
     (item) => item.permission === null || hasPermission(item.permission),
   );
+
+  const userInitial = user
+    ? (user.display_name || user.username).charAt(0).toUpperCase()
+    : "?";
 
   return (
     <aside
@@ -49,6 +56,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       onMouseEnter={() => collapsed && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      {/* Logo / brand */}
       <button
         type="button"
         onClick={() => onCollapsedChange?.(!collapsed)}
@@ -110,25 +118,115 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
         })}
       </nav>
 
-      <div className="mt-auto">
-        <div className="border-t" style={{ borderColor: "var(--th-sidebar-divider)" }} />
-        {expanded && (
-          <div className="px-3 py-3">
-            <p
-              className="text-[10px] font-semibold"
-              style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-muted)" }}
+      {/* Sticky footer */}
+      <div className="mt-auto flex flex-col">
+
+        {/* User identity block */}
+        {user && (
+          <div
+            className="relative"
+            style={{ borderTop: "1px solid var(--th-sidebar-divider)" }}
+          >
+            <button
+              type="button"
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className={`w-full transition hover:bg-white/[0.04] ${
+                expanded ? "px-3 py-2.5 text-left" : "flex justify-center py-2.5"
+              }`}
+              title={expanded ? undefined : (user.display_name || user.username)}
+              aria-haspopup="true"
+              aria-expanded={userMenuOpen}
             >
-              TECHI MSP Console
-            </p>
-            <p
-              className="mt-0.5 text-[9px]"
-              style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-tertiary)" }}
-            >
-              Version 1.0
-            </p>
+              {expanded ? (
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                    {user.display_name || user.username}
+                  </p>
+                  <p
+                    className="mt-0.5 text-[9px] font-bold uppercase tracking-widest"
+                    style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-sidebar-label)" }}
+                  >
+                    {user.role}
+                  </p>
+                </div>
+              ) : (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-techi-orange/20 text-xs font-bold text-orange-200">
+                  {userInitial}
+                </span>
+              )}
+            </button>
+
+            {/* User dropdown */}
+            {userMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+                <div
+                  className="absolute bottom-full left-0 z-50 mb-1 min-w-[200px] overflow-hidden rounded-xl shadow-2xl"
+                  style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
+                >
+                  <div className="px-3 py-2.5" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+                    <p className="truncate text-xs font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                      {user.display_name || user.username}
+                    </p>
+                    <p className="text-[10px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                      {user.email}
+                    </p>
+                    <span
+                      className="mt-1 inline-block rounded border border-techi-orange/25 bg-techi-orange/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-200"
+                      style={{ fontFamily: '"JetBrains Mono", monospace' }}
+                    >
+                      {user.role}
+                    </span>
+                  </div>
+
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => { setUserMenuOpen(false); setShowChangePwd(true); }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition hover:bg-white/[0.05]"
+                      style={{ color: "var(--th-text-secondary)" }}
+                    >
+                      <KeyRound className="h-3.5 w-3.5 flex-none" />
+                      Change Password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setUserMenuOpen(false); logout(); }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition hover:bg-white/[0.05]"
+                      style={{ color: "var(--th-text-secondary)" }}
+                    >
+                      <LogOut className="h-3.5 w-3.5 flex-none" />
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
+
+        {/* TECHI brand footer */}
+        <div style={{ borderTop: "1px solid var(--th-sidebar-divider)" }}>
+          {expanded && (
+            <div className="px-3 py-3">
+              <p
+                className="text-[10px] font-semibold"
+                style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-muted)" }}
+              >
+                TECHI MSP Console
+              </p>
+              <p
+                className="mt-0.5 text-[9px]"
+                style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--th-text-tertiary)" }}
+              >
+                Version 1.0
+              </p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
     </aside>
   );
 }
