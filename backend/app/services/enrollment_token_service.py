@@ -245,12 +245,26 @@ class EnrollmentTokenService:
     def build_bootstrap_url(backend_url: str, plaintext_token: str) -> str:
         return f"{backend_url.strip().rstrip('/')}/api/v1/bootstrap/windows.ps1?token={quote(plaintext_token)}"
 
+    @staticmethod
+    def build_gpo_deploy_url(backend_url: str, plaintext_token: str) -> str:
+        return f"{backend_url.strip().rstrip('/')}/api/v1/bootstrap/gpo-deploy.ps1?token={quote(plaintext_token)}"
+
+    @staticmethod
+    def safe_gpo_deploy_command(gpo_deploy_url: str) -> str:
+        return (
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+            f'$f = Join-Path $env:TEMP "techi-gpo-deploy.ps1"; '
+            f'Invoke-WebRequest -Uri "{gpo_deploy_url}" -OutFile $f -UseBasicParsing; '
+            "powershell -ExecutionPolicy Bypass -NoProfile -File $f"
+        )
+
     def deployment(self, token_id: int, *, backend_url: str) -> EnrollmentTokenDeployment:
         token = self.get(token_id)
         plaintext_token = self.decrypt_token(token.token_ciphertext)
         token_available = bool(plaintext_token)
         token_value = plaintext_token or "<regenerate-token-value>"
         bootstrap_url = self.build_bootstrap_url(backend_url, token_value)
+        gpo_deploy_url = self.build_gpo_deploy_url(backend_url, token_value)
         return EnrollmentTokenDeployment(
             token_id=token.id,
             token_name=token.name,
@@ -259,6 +273,7 @@ class EnrollmentTokenService:
             bootstrap_url=bootstrap_url,
             manual_command=self.safe_manual_command(bootstrap_url),
             gpo_command=self.safe_gpo_command(bootstrap_url),
+            gpo_deploy_command=self.safe_gpo_deploy_command(gpo_deploy_url),
             token_metadata=EnrollmentTokenOut.model_validate(token),
             rustdesk={
                 "server_host": settings.RUSTDESK_SERVER_HOST,

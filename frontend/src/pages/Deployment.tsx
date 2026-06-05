@@ -321,6 +321,7 @@ function DeploymentModal({ deployment, copied, onCopy, onDownload, onClose }: { 
         {!deployment.token_available && <div className="mb-4 rounded-lg border border-yellow-400/30 bg-yellow-400/10 p-3 text-sm text-yellow-100">This token has no recoverable value. Regenerate it to copy a usable command.</div>}
         <CommandBlock label="Safe one-time/manual command" value={deployment.manual_command} copied={copied === "modal-manual"} onCopy={() => void onCopy("modal-manual", deployment.manual_command)} />
         <CommandBlock label="GPO startup command" value={deployment.gpo_command} copied={copied === "modal-gpo"} onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)} />
+        <CommandBlock label="GPO Scheduled Task Deploy (Domain Controller)" value={deployment.gpo_deploy_command} copied={copied === "modal-gpo-deploy"} onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)} />
         <CommandBlock label="Bootstrap URL" value={deployment.bootstrap_url} copied={copied === "modal-url"} onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)} />
         <Button type="button" onClick={onDownload} disabled={!deployment.token_available}><Download className="mr-2 h-4 w-4" />Download PS1</Button>
         <div className="mt-4 grid gap-3 md:grid-cols-2">

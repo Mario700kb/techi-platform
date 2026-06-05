@@ -166,3 +166,36 @@ def trusted_domain_gpo_bootstrap_script(
         availability_profile=AvailabilityProfile.WORKSTATION,
         filename="techi-gpo-bootstrap.ps1",
     )
+
+
+@router.get("/gpo-deploy.ps1", response_class=PlainTextResponse)
+def gpo_deploy_script(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PlainTextResponse:
+    token = token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="token is required")
+
+    token_service = EnrollmentTokenService(db)
+    try:
+        token_service.get_active_token_by_plaintext(token)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail in {"invalid", "expired", "revoked", "used"}:
+            raise HTTPException(status_code=400, detail=f"Enrollment token is {detail}")
+        raise HTTPException(status_code=400, detail=detail)
+
+    backend_url = _public_backend_url(request)
+    script = EnrollmentBootstrapService(db)._gpo_scheduled_task_setup(backend_url, token)
+
+    return PlainTextResponse(
+        script,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="techi-gpo-deploy.ps1"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

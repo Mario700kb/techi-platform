@@ -50,6 +50,7 @@ class EnrollmentTokenDeployment(BaseModel):
     bootstrap_url: str
     manual_command: str
     gpo_command: str
+    gpo_deploy_command: str
     token_metadata: EnrollmentTokenOut
     rustdesk: dict
 

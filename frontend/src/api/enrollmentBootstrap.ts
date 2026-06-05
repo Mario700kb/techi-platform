@@ -28,6 +28,7 @@ export interface EnrollmentTokenDeployment {
   bootstrap_url: string;
   manual_command: string;
   gpo_command: string;
+  gpo_deploy_command: string;
   token_metadata: EnrollmentToken;
   rustdesk: Record<string, string>;
 }
