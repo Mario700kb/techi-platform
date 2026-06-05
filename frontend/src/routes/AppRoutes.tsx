@@ -24,11 +24,11 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireAdmin({ children }: { children: ReactNode }) {
-  const { can, loading } = useAuth();
+function RequirePermission({ perm, children }: { perm: string; children: ReactNode }) {
+  const { hasPermission, loading } = useAuth();
   const location = useLocation();
   if (loading) return <div className="p-4 text-sm font-medium text-slate-400">Loading session...</div>;
-  if (!can("admin")) return <Navigate to="/" replace state={{ from: location }} />;
+  if (!hasPermission(perm)) return <Navigate to="/" replace state={{ from: location }} />;
   return <>{children}</>;
 }
 
@@ -37,16 +37,16 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-      <Route path="/devices" element={<RequireAuth><Devices /></RequireAuth>} />
-      <Route path="/clients" element={<RequireAuth><Clients /></RequireAuth>} />
-      <Route path="/deployment" element={<RequireAuth><RequireAdmin><Deployment /></RequireAdmin></RequireAuth>} />
-      <Route path="/enrollment-bootstrap" element={<RequireAuth><EnrollmentBootstrap /></RequireAuth>} />
-      <Route path="/agent-packages" element={<RequireAuth><AgentPackages /></RequireAuth>} />
-      <Route path="/inventory" element={<RequireAuth><Inventory /></RequireAuth>} />
-      <Route path="/operators" element={<RequireAuth><RequireAdmin><Operators /></RequireAdmin></RequireAuth>} />
-      <Route path="/teams" element={<RequireAuth><RequireAdmin><Teams /></RequireAdmin></RequireAuth>} />
-      <Route path="/teams/:id" element={<RequireAuth><RequireAdmin><TeamDetailPage /></RequireAdmin></RequireAuth>} />
-      <Route path="/audit" element={<RequireAuth><RequireAdmin><Audit /></RequireAdmin></RequireAuth>} />
+      <Route path="/devices" element={<RequireAuth><RequirePermission perm="view_devices"><Devices /></RequirePermission></RequireAuth>} />
+      <Route path="/clients" element={<RequireAuth><RequirePermission perm="manage_clients"><Clients /></RequirePermission></RequireAuth>} />
+      <Route path="/deployment" element={<RequireAuth><RequirePermission perm="deployment"><Deployment /></RequirePermission></RequireAuth>} />
+      <Route path="/enrollment-bootstrap" element={<RequireAuth><RequirePermission perm="deployment"><EnrollmentBootstrap /></RequirePermission></RequireAuth>} />
+      <Route path="/agent-packages" element={<RequireAuth><RequirePermission perm="deployment"><AgentPackages /></RequirePermission></RequireAuth>} />
+      <Route path="/inventory" element={<RequireAuth><RequirePermission perm="view_inventory"><Inventory /></RequirePermission></RequireAuth>} />
+      <Route path="/operators" element={<RequireAuth><RequirePermission perm="manage_operators"><Operators /></RequirePermission></RequireAuth>} />
+      <Route path="/teams" element={<RequireAuth><RequirePermission perm="manage_teams"><Teams /></RequirePermission></RequireAuth>} />
+      <Route path="/teams/:id" element={<RequireAuth><RequirePermission perm="manage_teams"><TeamDetailPage /></RequirePermission></RequireAuth>} />
+      <Route path="/audit" element={<RequireAuth><RequirePermission perm="audit_log"><Audit /></RequirePermission></RequireAuth>} />
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
     </Routes>
   );

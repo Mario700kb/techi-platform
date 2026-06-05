@@ -3,17 +3,24 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
-const navItems = [
-  { label: "Dashboard",  to: "/",                     icon: Home,          minRole: null },
-  { label: "Devices",    to: "/devices",               icon: Folder,        minRole: null },
-  { label: "Clients",    to: "/clients",               icon: Building2,     minRole: "admin" as const },
-  { label: "Deployment", to: "/deployment",            icon: MonitorCog,    minRole: "admin" as const },
-  { label: "Enrollment", to: "/enrollment-bootstrap",  icon: KeyRound,      minRole: "admin" as const },
-  { label: "Packages",   to: "/agent-packages",        icon: Package,       minRole: "admin" as const },
-  { label: "Inventory",  to: "/inventory",             icon: Cpu,           minRole: "admin" as const },
-  { label: "Operators",  to: "/operators",             icon: Users,         minRole: "admin" as const },
-  { label: "Teams",      to: "/teams",                 icon: UsersRound,    minRole: "admin" as const },
-  { label: "Audit Log",  to: "/audit",                 icon: ClipboardList, minRole: "admin" as const },
+type NavItem = {
+  label: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  permission: string | null; // null = always visible for authenticated users
+};
+
+const navItems: NavItem[] = [
+  { label: "Dashboard",  to: "/",                    icon: Home,          permission: null },
+  { label: "Devices",    to: "/devices",              icon: Folder,        permission: "view_devices" },
+  { label: "Clients",    to: "/clients",              icon: Building2,     permission: "manage_clients" },
+  { label: "Deployment", to: "/deployment",           icon: MonitorCog,    permission: "deployment" },
+  { label: "Enrollment", to: "/enrollment-bootstrap", icon: KeyRound,      permission: "deployment" },
+  { label: "Packages",   to: "/agent-packages",       icon: Package,       permission: "deployment" },
+  { label: "Inventory",  to: "/inventory",            icon: Cpu,           permission: "view_inventory" },
+  { label: "Operators",  to: "/operators",            icon: Users,         permission: "manage_operators" },
+  { label: "Teams",      to: "/teams",                icon: UsersRound,    permission: "manage_teams" },
+  { label: "Audit Log",  to: "/audit",                icon: ClipboardList, permission: "audit_log" },
 ];
 
 interface SidebarProps {
@@ -24,8 +31,12 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarProps) {
   const [hovered, setHovered] = useState(false);
-  const { user, can } = useAuth();
+  const { hasPermission } = useAuth();
   const expanded = !collapsed || hovered;
+
+  const visibleItems = navItems.filter(
+    (item) => item.permission === null || hasPermission(item.permission),
+  );
 
   return (
     <aside
@@ -70,7 +81,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       )}
 
       <nav className="space-y-0.5">
-        {navItems.filter((item) => !item.minRole || can(item.minRole)).map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
