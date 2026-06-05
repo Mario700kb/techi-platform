@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Check, CheckSquare, ChevronDown, ChevronRight,
-  Cpu, RefreshCcw, Save, Shield, Square, Users, UsersRound, X,
+  Cpu, Info, RefreshCcw, Save, Shield, Square, Users, UsersRound, X,
 } from "lucide-react";
 import {
   TeamDetail,
@@ -31,35 +31,36 @@ const COLOR_PRESETS = [
 // ── Team permission definitions ──────────────────────────────────────────── //
 
 export const TEAM_PERMISSION_DEFS: { key: string; label: string; description: string; category: string }[] = [
-  { key: "view_devices",             label: "View Devices",       description: "See devices in the fleet", category: "Visibility" },
-  { key: "remote_support_connect",   label: "Remote Support",     description: "Open remote support sessions", category: "Actions" },
-  { key: "restart_device",           label: "Restart Device",     description: "Send device restart command", category: "Actions" },
-  { key: "restart_agent",            label: "Restart Agent",      description: "Restart the management agent", category: "Actions" },
-  { key: "reinstall_remote_support", label: "Reinstall Remote",   description: "Reinstall remote support software", category: "Actions" },
-  { key: "maintenance_mode",         label: "Maintenance Mode",   description: "Put devices in maintenance mode", category: "Actions" },
-  { key: "view_notes",               label: "View Notes",         description: "Read device notes", category: "Content" },
-  { key: "edit_notes",               label: "Edit Notes",         description: "Create and edit device notes", category: "Content" },
-  { key: "view_inventory",           label: "View Inventory",     description: "View software inventory", category: "Content" },
-  { key: "view_patch",               label: "View Patch Status",  description: "View patch compliance data", category: "Content" },
-  { key: "deployment",               label: "Deploy Packages",    description: "Deploy software packages", category: "Admin" },
-  { key: "manage_clients",           label: "Manage Clients",     description: "Add, edit, remove clients", category: "Admin" },
-  { key: "manage_groups",            label: "Manage Groups",      description: "Add, edit, remove device groups", category: "Admin" },
-  { key: "manage_operators",         label: "Manage Operators",   description: "Create and manage operator accounts", category: "Admin" },
-  { key: "audit_log",                label: "View Audit Log",     description: "Read the system audit log", category: "Admin" },
-  { key: "system_settings",          label: "System Settings",    description: "Access system-level settings", category: "Admin" },
+  { key: "view_devices",             label: "View Devices",          description: "See devices in the fleet", category: "Visibility" },
+  { key: "remote_support_connect",   label: "Connect",               description: "Open remote support sessions", category: "Remote Support" },
+  { key: "remote_support_manage",    label: "Manage Sessions",       description: "End or transfer remote support sessions", category: "Remote Support" },
+  { key: "restart_device",           label: "Restart Device",        description: "Send device restart command", category: "Device Actions" },
+  { key: "restart_agent",            label: "Restart Agent",         description: "Restart the management agent", category: "Device Actions" },
+  { key: "reinstall_remote_support", label: "Reinstall Remote",      description: "Reinstall remote support software", category: "Device Actions" },
+  { key: "maintenance_mode",         label: "Maintenance Mode",      description: "Put devices in maintenance mode", category: "Device Actions" },
+  { key: "view_notes",               label: "View Notes",            description: "Read device notes", category: "Content" },
+  { key: "edit_notes",               label: "Edit Notes",            description: "Create and edit device notes", category: "Content" },
+  { key: "view_inventory",           label: "View Inventory",        description: "View software inventory", category: "Content" },
+  { key: "view_patch",               label: "View Patch Status",     description: "View patch compliance data", category: "Content" },
+  { key: "deployment",               label: "Deploy Packages",       description: "Deploy software packages", category: "Admin" },
+  { key: "manage_clients",           label: "Manage Clients",        description: "Add, edit, remove clients", category: "Admin" },
+  { key: "manage_groups",            label: "Manage Groups",         description: "Add, edit, remove device groups", category: "Admin" },
+  { key: "manage_operators",         label: "Manage Operators",      description: "Create and manage operator accounts", category: "Admin" },
+  { key: "audit_log",                label: "View Audit Log",        description: "Read the system audit log", category: "Admin" },
+  { key: "system_settings",          label: "System Settings",       description: "Access system-level settings", category: "Admin" },
 ];
 
-const PERM_CATEGORIES = ["Visibility", "Actions", "Content", "Admin"];
+const PERM_CATEGORIES = ["Visibility", "Remote Support", "Device Actions", "Content", "Admin"];
 
 // ── Role permission matrix (mirrors backend permission_service.py) ────────── //
 
 const ROLE_PERMS: Record<string, Set<string>> = {
   owner: new Set(TEAM_PERMISSION_DEFS.map((d) => d.key)),
   admin: new Set([
-    "view_devices", "remote_support_connect", "restart_device", "restart_agent",
-    "reinstall_remote_support", "maintenance_mode", "view_notes", "edit_notes",
-    "view_inventory", "view_patch", "deployment", "manage_clients", "manage_groups",
-    "manage_operators", "audit_log",
+    "view_devices", "remote_support_connect", "remote_support_manage",
+    "restart_device", "restart_agent", "reinstall_remote_support", "maintenance_mode",
+    "view_notes", "edit_notes", "view_inventory", "view_patch",
+    "deployment", "manage_clients", "manage_groups", "manage_operators", "audit_log",
   ]),
   operator: new Set([
     "view_devices", "remote_support_connect", "restart_device", "restart_agent",
@@ -784,14 +785,49 @@ function AccessTab({
   );
 }
 
-// ── Team Permissions editor ──────────────────────────────────────────────── //
+// ── Permission templates & dependency helpers ────────────────────────────── //
 
-const ROLE_COLUMNS = [
-  { key: "owner",    label: "Owner",    cls: "text-orange-300" },
-  { key: "admin",    label: "Admin",    cls: "text-red-300" },
-  { key: "operator", label: "Operator", cls: "text-slate-300" },
-  { key: "readonly", label: "Readonly", cls: "text-slate-500" },
+const PERM_TEMPLATES: { name: string; perms: string[] }[] = [
+  { name: "Read Only",           perms: ["view_devices", "view_notes", "view_inventory", "view_patch"] },
+  { name: "Helpdesk L1",         perms: ["view_devices", "remote_support_connect", "view_notes", "view_inventory"] },
+  { name: "Helpdesk L2",         perms: ["view_devices", "remote_support_connect", "restart_device", "restart_agent", "reinstall_remote_support", "view_notes", "edit_notes", "view_inventory", "view_patch"] },
+  { name: "Server Admin",        perms: ["view_devices", "remote_support_connect", "remote_support_manage", "restart_device", "restart_agent", "reinstall_remote_support", "maintenance_mode", "view_notes", "edit_notes", "view_inventory", "view_patch", "deployment"] },
+  { name: "Deployment Operator", perms: ["view_devices", "deployment", "view_inventory"] },
 ];
+
+const ACTION_PERM_KEYS = new Set([
+  "remote_support_connect", "remote_support_manage",
+  "restart_device", "restart_agent", "reinstall_remote_support",
+  "maintenance_mode", "deployment",
+]);
+
+function resolvePermDeps(perms: Set<string>): { resolved: Set<string>; autoAdded: string[] } {
+  const resolved = new Set(perms);
+  const autoAdded: string[] = [];
+  if ([...resolved].some((p) => ACTION_PERM_KEYS.has(p)) && !resolved.has("view_devices")) {
+    resolved.add("view_devices"); autoAdded.push("view_devices");
+  }
+  if (resolved.has("edit_notes") && !resolved.has("view_notes")) {
+    resolved.add("view_notes"); autoAdded.push("view_notes");
+  }
+  if (resolved.has("remote_support_manage") && !resolved.has("remote_support_connect")) {
+    resolved.add("remote_support_connect"); autoAdded.push("remote_support_connect");
+  }
+  return { resolved, autoAdded };
+}
+
+function catColor(cat: string): string {
+  const map: Record<string, string> = {
+    "Visibility":     "text-sky-400",
+    "Remote Support": "text-indigo-400",
+    "Device Actions": "text-amber-400",
+    "Content":        "text-emerald-400",
+    "Admin":          "text-red-400",
+  };
+  return map[cat] ?? "text-slate-400";
+}
+
+// ── Team Permissions editor ──────────────────────────────────────────────── //
 
 function PermissionsTab({
   team,
@@ -803,21 +839,37 @@ function PermissionsTab({
   onSaved: (updated: TeamDetail) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(team.permissions));
+  const [autoAdded, setAutoAdded] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const toggle = (key: string) =>
-    setSelected((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const originalPerms = useMemo(() => new Set(team.permissions), [team.permissions]);
+  const isDirty = useMemo(() => {
+    if (selected.size !== originalPerms.size) return true;
+    return [...selected].some((p) => !originalPerms.has(p));
+  }, [selected, originalPerms]);
 
-  const selectAll = () => setSelected(new Set(TEAM_PERMISSION_DEFS.map((d) => d.key)));
-  const clearAll  = () => setSelected(new Set());
+  const toggle = (key: string) => {
+    const n = new Set(selected);
+    n.has(key) ? n.delete(key) : n.add(key);
+    const { resolved, autoAdded: added } = resolvePermDeps(n);
+    setSelected(resolved);
+    setAutoAdded(added);
+  };
+
+  const applyTemplate = (perms: string[]) => {
+    const { resolved, autoAdded: added } = resolvePermDeps(new Set(perms));
+    setSelected(resolved);
+    setAutoAdded(added);
+  };
 
   const handleSave = async () => {
     try {
       setLoading(true); setError(null); setSaved(false);
       const updated = await updateTeamPermissions(team.id, Array.from(selected));
       onSaved(updated);
+      setAutoAdded([]);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -832,106 +884,184 @@ function PermissionsTab({
       {error && <ErrorBanner message={error} />}
       {saved && <SaveBanner message="Team permissions saved." />}
 
-      <div className="rounded-lg border border-indigo-400/10 bg-indigo-500/[0.05] px-4 py-3 text-xs leading-5 text-slate-400">
-        <span className="font-semibold text-slate-300">Team permissions vs role permissions:</span>{" "}
-        A user's <span className="font-semibold text-white">role</span> determines their base capabilities.
-        Permissions set here are granted <em>additionally</em> to team members, or serve as a
-        reference for what this team is expected to do.{" "}
-        <span className="font-semibold text-orange-200">Admin and Owner bypass all team restrictions.</span>
+      {/* Enforcement callout */}
+      <div className="rounded-lg border border-amber-400/15 bg-amber-500/[0.06] px-4 py-3 text-xs leading-5 text-slate-400">
+        <span className="font-semibold text-amber-300">Enforcement:</span>{" "}
+        These permissions are enforced server-side for{" "}
+        <span className="font-semibold text-white">operator</span> and{" "}
+        <span className="font-semibold text-white">readonly</span> users.{" "}
+        <span className="font-semibold text-orange-200">Owner and Admin bypass all team permission restrictions.</span>
       </div>
 
+      {/* Quick templates */}
       {canManage && (
-        <div className="flex gap-2">
-          <button type="button" onClick={selectAll} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-            <CheckSquare className="h-3.5 w-3.5" /> Select all
-          </button>
-          <button type="button" onClick={clearAll} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-            <X className="h-3.5 w-3.5" /> Clear all
-          </button>
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Quick Templates</p>
+          <div className="flex flex-wrap gap-2">
+            {PERM_TEMPLATES.map((t) => (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => applyTemplate(t.perms)}
+                className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white"
+              >
+                {t.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setSelected(new Set()); setAutoAdded([]); }}
+              className="rounded-md border border-red-400/15 bg-red-500/[0.05] px-2.5 py-1.5 text-[11px] font-semibold text-red-400/80 transition hover:border-red-400/25 hover:text-red-300"
+            >
+              Clear All
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Permission matrix with checkboxes + role reference */}
-      <div className="premium-card-soft overflow-hidden rounded-lg">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500 min-w-[220px]">
-                  Permission
-                </th>
-                <th className="px-4 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-techi-orange">
-                  Team
-                </th>
-                {ROLE_COLUMNS.map((col) => (
-                  <th key={col.key} className={`px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wide ${col.cls}`}>
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {PERM_CATEGORIES.map((cat) => {
-                const rows = TEAM_PERMISSION_DEFS.filter((d) => d.category === cat);
-                return (
-                  <>
-                    <tr key={`cat-${cat}`} className="border-b border-white/[0.04]">
-                      <td colSpan={6} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">
-                        {cat}
-                      </td>
-                    </tr>
-                    {rows.map((row) => {
-                      const isSelected = selected.has(row.key);
-                      return (
-                        <tr key={row.key} className="border-b border-white/[0.03] transition hover:bg-white/[0.02]">
-                          <td className="px-4 py-2.5">
-                            <label className={`flex items-start gap-3 ${canManage ? "cursor-pointer" : ""}`}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => canManage && toggle(row.key)}
-                                disabled={!canManage}
-                                className="mt-0.5 h-3.5 w-3.5 rounded border-white/15 accent-orange-500"
-                              />
-                              <div>
-                                <p className="text-[13px] font-semibold text-slate-200">{row.label}</p>
-                                <p className="text-[11px] text-slate-600">{row.description}</p>
-                              </div>
-                            </label>
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            {isSelected
-                              ? <Check className="inline h-3.5 w-3.5 text-techi-orange" />
-                              : <span className="text-slate-700">—</span>
-                            }
-                          </td>
-                          {ROLE_COLUMNS.map((col) => {
-                            const has = ROLE_PERMS[col.key]?.has(row.key) ?? false;
-                            return (
-                              <td key={col.key} className="px-3 py-2.5 text-center">
-                                {has
-                                  ? <Check className={`inline h-3.5 w-3.5 ${col.cls}`} />
-                                  : <X className="inline h-3 w-3 text-slate-700" />
-                                }
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Auto-dependency note */}
+      {autoAdded.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-sky-400/15 bg-sky-500/[0.05] px-3 py-2 text-[11px] font-semibold text-sky-300">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          Some required permissions were automatically selected:{" "}
+          {autoAdded.map((k) => TEAM_PERMISSION_DEFS.find((d) => d.key === k)?.label ?? k).join(", ")}
+        </div>
+      )}
+
+      {/* Two-panel layout */}
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+
+        {/* LEFT: Permission groups */}
+        <div className="space-y-3">
+          {PERM_CATEGORIES.map((cat) => {
+            const rows = TEAM_PERMISSION_DEFS.filter((d) => d.category === cat);
+            const selectedCount = rows.filter((r) => selected.has(r.key)).length;
+            const color = catColor(cat);
+            return (
+              <div key={cat} className="overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]">
+                <div className={`flex items-center gap-2 border-b border-white/[0.06] px-3 py-2 ${color}`}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide">{cat}</span>
+                  <span className="ml-auto text-[10px] font-semibold text-slate-600">
+                    {selectedCount}/{rows.length}
+                  </span>
+                </div>
+                <ul className="divide-y divide-white/[0.04]">
+                  {rows.map((row) => {
+                    const isSelected = selected.has(row.key);
+                    const wasAutoAdded = autoAdded.includes(row.key);
+                    return (
+                      <li key={row.key}>
+                        <label className={`flex items-center gap-3 px-3 py-2.5 transition ${canManage ? "cursor-pointer hover:bg-white/[0.03]" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => canManage && toggle(row.key)}
+                            disabled={!canManage}
+                            className="h-3.5 w-3.5 shrink-0 rounded border-white/15 accent-orange-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-slate-400"}`}>
+                                {row.label}
+                              </span>
+                              {wasAutoAdded && (
+                                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-sky-400">
+                                  auto
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-600">{row.description}</p>
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* RIGHT: Effective Preview */}
+        <div className="space-y-3">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-4">
+            <div>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Selected Permissions ({selected.size})
+              </p>
+              {selected.size === 0 ? (
+                <p className="text-xs text-slate-600">No permissions selected. Operators rely on role defaults.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {TEAM_PERMISSION_DEFS.filter((d) => selected.has(d.key)).map((d) => (
+                    <span
+                      key={d.key}
+                      className="rounded-full border border-techi-orange/20 bg-techi-orange/10 px-2 py-0.5 text-[10px] font-semibold text-orange-200"
+                    >
+                      {d.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/[0.06] pt-3">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Operator Capabilities
+              </p>
+              {selected.size === 0 ? (
+                <p className="text-xs text-slate-600">Operators in this team will use their role defaults.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {(
+                    [
+                      selected.has("view_devices")             && "Can see devices in the fleet",
+                      selected.has("remote_support_connect")   && "Can open remote support sessions",
+                      selected.has("remote_support_manage")    && "Can manage and end remote sessions",
+                      (selected.has("restart_device") || selected.has("restart_agent")) && "Can restart devices and agents",
+                      selected.has("reinstall_remote_support") && "Can reinstall remote support",
+                      selected.has("maintenance_mode")         && "Can set devices to maintenance mode",
+                      selected.has("view_notes")               && "Can read device notes",
+                      selected.has("edit_notes")               && "Can create and edit notes",
+                      selected.has("view_inventory")           && "Can view software inventory",
+                      selected.has("view_patch")               && "Can view patch compliance",
+                      selected.has("deployment")               && "Can deploy software packages",
+                      (selected.has("manage_clients") || selected.has("manage_groups")) && "Can manage clients and groups",
+                      selected.has("manage_operators")         && "Can manage operator accounts",
+                      selected.has("audit_log")                && "Can view the audit log",
+                      selected.has("system_settings")          && "Can access system settings",
+                    ] as (string | false)[]
+                  ).filter(Boolean).map((line, i) => (
+                    <li key={i} className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <Check className="h-3 w-3 shrink-0 text-emerald-500/70" />
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-md border border-orange-400/10 bg-orange-500/[0.05] px-3 py-2 text-[11px] leading-4 text-orange-200/70">
+              <span className="font-bold text-orange-300">Note:</span> Owner and Admin bypass all team permission restrictions regardless of this setting.
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Footer: unsaved indicator + save */}
       {canManage && (
-        <Button onClick={() => void handleSave()} disabled={loading}>
-          <Save className="h-3.5 w-3.5" />
-          {loading ? "Saving…" : `Save Permissions (${selected.size})`}
-        </Button>
+        <div className="flex items-center gap-3 pt-1">
+          {isDirty && (
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              Unsaved changes
+            </span>
+          )}
+          <Button onClick={() => void handleSave()} disabled={loading || !isDirty}>
+            <Save className="h-3.5 w-3.5" />
+            {loading ? "Saving…" : `Save Permissions (${selected.size})`}
+          </Button>
+        </div>
       )}
     </div>
   );
