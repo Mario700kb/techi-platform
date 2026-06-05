@@ -3,10 +3,11 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, get_operator_scope, require_roles
+from app.core.auth import get_current_operator, get_operator_scope, require_team_permission
 from app.core.scope import AllowedScope
 from app.db.session import get_db
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import Operator
+from app.services.permission_service import MANAGE_GROUPS
 from app.schemas.device_group import (
     DeviceGroup,
     DeviceGroupCreate,
@@ -18,6 +19,8 @@ from app.services.device_group_service import DeviceGroupService
 from app.services.operator_scope_service import OperatorScopeService
 
 router = APIRouter()
+
+_require_manage_groups = require_team_permission(MANAGE_GROUPS)
 
 
 @router.get("", response_model=List[DeviceGroup])
@@ -38,7 +41,7 @@ def list_groups(
 def create_group(
     payload: DeviceGroupCreate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_groups),
 ):
     try:
         return DeviceGroupService(db).create_group(payload)
@@ -50,7 +53,7 @@ def create_group(
 def cleanup_duplicate_groups(
     payload: DeviceGroupDuplicateCleanupRequest,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_groups),
 ):
     try:
         return DeviceGroupService(db).cleanup_duplicate_groups(payload)
@@ -63,7 +66,7 @@ def update_group(
     group_id: int,
     payload: DeviceGroupUpdate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_groups),
 ):
     try:
         group = DeviceGroupService(db).update_group(group_id, payload)
@@ -78,7 +81,7 @@ def update_group(
 def delete_group(
     group_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_groups),
 ):
     group = DeviceGroupService(db).delete_group(group_id)
     if not group:

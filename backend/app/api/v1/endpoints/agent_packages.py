@@ -3,8 +3,9 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from app.core.auth import get_current_operator, require_min_role
+from app.core.auth import get_current_operator, require_team_permission
 from app.models.operator import Operator, OperatorRole
+from app.services.permission_service import DEPLOYMENT
 from app.schemas.agent_package import AgentPackageActivationRequest, AgentPackageOut, AgentPackageUploadResponse
 from app.services.agent_package_service import AgentPackageService
 from app.services.audit_service import AuditAction, audit_log
@@ -15,9 +16,14 @@ router = APIRouter()
 logger = logging.getLogger("techi.agent_packages")
 PUBLIC_DOWNLOAD_PLATFORMS = {"windows", "windows-amd64", "windows-arm64"}
 
+_require_deployment = require_team_permission(DEPLOYMENT)
+
 
 @router.get("", response_model=list[AgentPackageOut])
-def list_agent_packages(operator: Operator = Depends(get_current_operator)):
+def list_agent_packages(
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
+):
     include_inactive = operator.role in (OperatorRole.ADMIN.value, OperatorRole.OWNER.value)
     return AgentPackageService().list_packages(include_inactive=include_inactive)
 
@@ -27,7 +33,8 @@ def upload_agent_package(
     version: str = Form(...),
     platform: str = Form(...),
     file: UploadFile = File(...),
-    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         package = AgentPackageService().upload(
@@ -46,7 +53,8 @@ def upload_agent_package(
 def set_agent_package_active(
     package_id: str,
     payload: AgentPackageActivationRequest,
-    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
     db: Session = Depends(get_db),
 ):
     try:
@@ -68,7 +76,8 @@ def set_agent_package_active(
 def delete_agent_package(
     package_id: str,
     confirm_active: bool = False,
-    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
     db: Session = Depends(get_db),
 ):
     try:

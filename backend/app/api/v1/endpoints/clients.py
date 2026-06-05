@@ -3,15 +3,18 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, get_operator_scope, require_roles
+from app.core.auth import get_current_operator, get_operator_scope, require_team_permission
 from app.core.scope import AllowedScope
 from app.db.session import get_db
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import Operator
 from app.schemas.client import Client, ClientCreate, ClientUpdate
 from app.services.client_service import ClientService
 from app.services.operator_scope_service import OperatorScopeService
+from app.services.permission_service import MANAGE_CLIENTS
 
 router = APIRouter()
+
+_require_manage_clients = require_team_permission(MANAGE_CLIENTS)
 
 
 @router.get("", response_model=List[Client])
@@ -31,7 +34,7 @@ def list_clients(
 def create_client(
     payload: ClientCreate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_clients),
 ):
     try:
         return ClientService(db).create_client(payload)
@@ -61,7 +64,7 @@ def update_client(
     client_id: int,
     payload: ClientUpdate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_clients),
 ):
     try:
         client = ClientService(db).update_client(client_id, payload)
@@ -76,7 +79,7 @@ def update_client(
 def delete_client(
     client_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_manage_clients),
 ):
     client = ClientService(db).delete_client(client_id)
     if not client:

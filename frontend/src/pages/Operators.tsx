@@ -322,12 +322,20 @@ export default function Operators() {
         </div>
       </div>
 
-      {error && (
+      {error && !/Permission denied|Insufficient role/.test(error) && (
         <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
           {error}
         </div>
       )}
 
+      {error && /Permission denied|Insufficient role/.test(error) && (
+        <div className="rounded-lg border border-amber-400/15 bg-amber-500/[0.06] px-5 py-6 text-center">
+          <p className="text-sm font-semibold text-amber-300">Access Denied</p>
+          <p className="mt-1 text-xs text-slate-400">You don't have permission to manage operators.</p>
+        </div>
+      )}
+
+      {!/Permission denied|Insufficient role/.test(error ?? "") && (
       <div className="premium-card-soft overflow-hidden">
         <div className="border-b border-white/[0.08] px-5 py-3.5">
           <div className="flex items-center gap-2">
@@ -486,6 +494,7 @@ export default function Operators() {
           </table>
         </div>
       </div>
+      )}
 
       {showCreate && (
         <Modal title="Add Operator" onClose={() => setShowCreate(false)}>

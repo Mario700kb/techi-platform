@@ -3,10 +3,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, require_roles
+from app.core.auth import get_current_operator, require_team_permission
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import Operator
+from app.services.permission_service import DEPLOYMENT
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
     EnrollmentBootstrapPlatform,
@@ -27,6 +28,8 @@ from app.services.audit_service import AuditAction, audit_log
 
 router = APIRouter()
 
+_require_deployment = require_team_permission(DEPLOYMENT)
+
 
 def _public_backend_url(request: Request) -> str:
     configured = (settings.PUBLIC_BACKEND_URL or "").strip()
@@ -39,7 +42,8 @@ def _public_backend_url(request: Request) -> str:
 def create_enrollment_token(
     payload: EnrollmentTokenCreate,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     result = EnrollmentTokenService(db).create(payload)
     audit_log(db, operator=operator, action=AuditAction.ENROLLMENT_TOKEN_UPDATED, entity_type="enrollment_token", entity_id=result.id, details={"name": result.name, "created": True})
@@ -49,7 +53,7 @@ def create_enrollment_token(
 @router.get("", response_model=List[EnrollmentTokenOut])
 def list_enrollment_tokens(
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    _: None = Depends(_require_deployment),
     limit: int = Query(default=100, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -59,7 +63,8 @@ def list_enrollment_tokens(
 @router.post("/default/regenerate", response_model=EnrollmentTokenCreateResponse)
 def regenerate_default_enrollment_token(
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     result = EnrollmentTokenService(db).regenerate_default()
     audit_log(db, operator=operator, action=AuditAction.ENROLLMENT_TOKEN_REGENERATED, entity_type="enrollment_token", entity_id=result.id, details={"name": result.name})
@@ -70,7 +75,8 @@ def regenerate_default_enrollment_token(
 def get_enrollment_token(
     token_id: int,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         token = EnrollmentTokenService(db).get(token_id)
@@ -85,7 +91,8 @@ def update_enrollment_token(
     token_id: int,
     payload: EnrollmentTokenUpdate,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         token = EnrollmentTokenService(db).update(token_id, payload)
@@ -109,7 +116,8 @@ def update_enrollment_token(
 def regenerate_enrollment_token(
     token_id: int,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         result = EnrollmentTokenService(db).regenerate(token_id)
@@ -124,7 +132,8 @@ def get_enrollment_token_deployment(
     token_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         deployment = EnrollmentTokenService(db).deployment(token_id, backend_url=_public_backend_url(request))
@@ -139,7 +148,8 @@ def get_enrollment_token_bootstrap_script(
     token_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     service = EnrollmentTokenService(db)
     try:
@@ -173,7 +183,8 @@ def get_enrollment_token_bootstrap_script(
 def revoke_enrollment_token(
     token_id: int,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         token = EnrollmentTokenService(db).revoke(token_id)
@@ -189,7 +200,8 @@ def delete_enrollment_token(
     confirm_active: bool = Query(default=False),
     confirm_default: bool = Query(default=False),
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_deployment),
 ):
     try:
         token = EnrollmentTokenService(db).delete(

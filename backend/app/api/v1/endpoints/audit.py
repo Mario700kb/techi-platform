@@ -4,11 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_min_role
+from app.core.auth import require_team_permission
 from app.db.session import get_db
-from app.models.operator import Operator, OperatorRole
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.schemas.audit_log import AuditLogOut, AuditLogPage
+from app.services.permission_service import AUDIT_LOG
 
 router = APIRouter()
 
@@ -16,7 +16,7 @@ router = APIRouter()
 @router.get("", response_model=AuditLogPage)
 def list_audit_logs(
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    _: None = Depends(require_team_permission(AUDIT_LOG)),
     operator_username: Optional[str] = Query(default=None),
     action: Optional[str] = Query(default=None),
     entity_type: Optional[str] = Query(default=None),

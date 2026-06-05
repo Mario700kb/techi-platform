@@ -4,20 +4,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core import presence
-from app.core.auth import get_current_operator, require_min_role
+from app.core.auth import get_current_operator, require_team_permission
 from app.db.session import get_db
-from app.models.operator import Operator as OperatorModel, OperatorRole
+from app.models.operator import Operator as OperatorModel
 from app.schemas.operator import Operator, OperatorCreate, OperatorPasswordReset, OperatorUpdate
 from app.services.audit_service import AuditAction, audit_log
 from app.services.operator_service import OperatorService
+from app.services.permission_service import MANAGE_OPERATORS
 
 router = APIRouter()
+
+_require_manage_operators = require_team_permission(MANAGE_OPERATORS)
 
 
 @router.get("", response_model=List[Operator])
 def list_operators(
     db: Session = Depends(get_db),
-    current: OperatorModel = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    current: OperatorModel = Depends(get_current_operator),
+    _: None = Depends(_require_manage_operators),
 ):
     operators = OperatorService(db).list_operators()
     result = []
@@ -32,7 +36,8 @@ def list_operators(
 def create_operator(
     payload: OperatorCreate,
     db: Session = Depends(get_db),
-    current: OperatorModel = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    current: OperatorModel = Depends(get_current_operator),
+    _: None = Depends(_require_manage_operators),
 ):
     try:
         created = OperatorService(db).create_operator(payload, current)
@@ -49,7 +54,8 @@ def update_operator(
     operator_id: int,
     payload: OperatorUpdate,
     db: Session = Depends(get_db),
-    current: OperatorModel = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    current: OperatorModel = Depends(get_current_operator),
+    _: None = Depends(_require_manage_operators),
 ):
     try:
         updated = OperatorService(db).update_operator(operator_id, payload, current)
@@ -65,7 +71,8 @@ def update_operator(
 def delete_operator(
     operator_id: int,
     db: Session = Depends(get_db),
-    current: OperatorModel = Depends(require_min_role(OperatorRole.ADMIN.value)),
+    current: OperatorModel = Depends(get_current_operator),
+    _: None = Depends(_require_manage_operators),
 ):
     try:
         deleted = OperatorService(db).delete_operator(operator_id, current)

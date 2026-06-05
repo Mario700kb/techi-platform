@@ -2,15 +2,17 @@ from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import require_team_permission
 from app.schemas.deployment import RecentDeployment
+from app.services.permission_service import DEPLOYMENT
 
 router = APIRouter()
 
 
 @router.get("/recent", response_model=List[RecentDeployment])
-def read_recent_deployments():
+def read_recent_deployments(_: None = Depends(require_team_permission(DEPLOYMENT))):
     now = utcnow()
     return [
         RecentDeployment(
