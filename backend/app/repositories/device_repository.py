@@ -136,7 +136,7 @@ class DeviceRepository:
             query = query.filter(search_filter)
         query = self._apply_scope_filter(query, scope)
 
-        return query.offset(skip).limit(limit).all()
+        return query.order_by(Device.registered_at.desc()).offset(skip).limit(limit).all()
 
     def _apply_maintenance_filter(self, query, maintenance_state: Optional[str]):
         if not maintenance_state:
