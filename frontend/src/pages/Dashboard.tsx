@@ -114,9 +114,7 @@ export default function Dashboard() {
         getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
       ]);
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-      const sortedDevices = [...latestDevices].sort(
-        (a, b) => new Date(b.registered_at).getTime() - new Date(a.registered_at).getTime()
-      );
+      const sortedDevices = latestDevices;
 
       setTotal(totalCount);
       setOnline(onlineCount);
@@ -186,9 +184,7 @@ export default function Dashboard() {
       if (index === -1) {
         if (!eventDevice.registered_at || event.type !== "heartbeat_received") return items;
         patched = true;
-        return [eventDevice as Device, ...items]
-          .sort((a, b) => new Date(b.registered_at).getTime() - new Date(a.registered_at).getTime())
-          .slice(0, 5);
+        return [eventDevice as Device, ...items].slice(0, 5);
       }
       const next = [...items];
       next[index] = { ...items[index], ...eventDevice } as Device;
