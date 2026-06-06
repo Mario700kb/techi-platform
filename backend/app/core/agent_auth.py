@@ -46,5 +46,5 @@ class _SlidingWindowRateLimiter:
 
 
 login_limiter = _SlidingWindowRateLimiter(limit=10, window_seconds=60)
-enroll_limiter = _SlidingWindowRateLimiter(limit=5, window_seconds=60)
+enroll_limiter = _SlidingWindowRateLimiter(limit=100, window_seconds=60)
 verify_token_limiter = _SlidingWindowRateLimiter(limit=10, window_seconds=60)
