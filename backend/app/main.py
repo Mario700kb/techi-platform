@@ -1,12 +1,14 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints.agent import agent_enroll, agent_heartbeat
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import engine, get_db
+from app.schemas.agent import AgentEnrollmentRequest, AgentHeartbeatPayload
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
 from app.services.auth_service import ensure_bootstrap_owner
 from app.services.enrollment_token_service import EnrollmentTokenService
@@ -78,3 +80,13 @@ async def stop_background_workers() -> None:
 @app.get("/health", summary="Health check")
 def health() -> dict:
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.post("/api/heartbeat")
+def heartbeat_legacy(payload: AgentHeartbeatPayload, db=Depends(get_db)):
+    return agent_heartbeat(payload, db)
+
+
+@app.post("/api/enroll")
+def enroll_legacy(payload: AgentEnrollmentRequest, request: Request, db=Depends(get_db)):
+    return agent_enroll(payload, request, db)
