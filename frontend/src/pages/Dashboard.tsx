@@ -182,9 +182,7 @@ export default function Dashboard() {
     setRecentDevices((items) => {
       const index = items.findIndex((item) => item.id === eventDevice.id);
       if (index === -1) {
-        if (!eventDevice.registered_at || event.type !== "heartbeat_received") return items;
-        patched = true;
-        return [eventDevice as Device, ...items].slice(0, 5);
+        return items;
       }
       const next = [...items];
       next[index] = { ...items[index], ...eventDevice } as Device;
