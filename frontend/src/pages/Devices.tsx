@@ -154,7 +154,7 @@ export default function Devices() {
       }
       setError(null);
       const data = await getDevices({ ...filters, search: searchQuery || undefined });
-      setDevices(data);
+      setDevices([...data].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? "")));
       devicesLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
@@ -264,7 +264,7 @@ export default function Devices() {
           const baseDevice = allDevicesRef.current.find((item) => item.id === eventDevice.id);
           const nextDevice = baseDevice ? ({ ...baseDevice, ...eventDevice } as Device) : null;
           if (nextDevice && deviceMatchesCurrentView(nextDevice)) {
-            return [nextDevice, ...items];
+            return [...items, nextDevice];
           }
           return items;
         }

@@ -167,7 +167,7 @@ export default function Dashboard() {
       return;
     }
     const elapsed = Date.now() - lastMetricRefreshRef.current;
-    const delay = Math.max(900, METRIC_REFRESH_MIN_MS - elapsed);
+    const delay = Math.max(5000, METRIC_REFRESH_MIN_MS - elapsed);
     refreshTimerRef.current = window.setTimeout(() => {
       refreshTimerRef.current = undefined;
       lastMetricRefreshRef.current = Date.now();

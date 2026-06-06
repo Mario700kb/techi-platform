@@ -428,6 +428,18 @@ const DevicesTable = memo(function DevicesTable({
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(initialQuickFilter ?? "all");
+  type SortKey = "hostname" | "client_name" | "last_seen";
+  const [sortKey, setSortKey] = useState<SortKey>("hostname");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   // Sync when the URL-driven prop changes (e.g. navigating from Dashboard)
   useEffect(() => {
@@ -483,10 +495,9 @@ const DevicesTable = memo(function DevicesTable({
     favorites: devices.filter(d => favorites.has(d.id)).length,
   }), [devices, patchMap, healthMap, alertsMap, favorites]);
 
-  // Apply quick filter on top of the parent-filtered list
+  // Apply quick filter on top of the parent-filtered list, then sort
   const displayDevices = useMemo(() => {
-    if (quickFilter === "all") return devices;
-    return devices.filter(d => {
+    const filtered = quickFilter === "all" ? devices : devices.filter(d => {
       switch (quickFilter) {
         case "online":          return d.freshness_state === "online";
         case "offline":         return d.freshness_state === "offline";
@@ -511,7 +522,18 @@ const DevicesTable = memo(function DevicesTable({
         default:                return true;
       }
     });
-  }, [devices, quickFilter, patchMap, healthMap]);
+    return [...filtered].sort((a, b) => {
+      let cmp: number;
+      if (sortKey === "hostname") {
+        cmp = (a.hostname ?? "").localeCompare(b.hostname ?? "");
+      } else if (sortKey === "client_name") {
+        cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
+      } else {
+        cmp = (a.last_seen ?? "").localeCompare(b.last_seen ?? "");
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [devices, quickFilter, patchMap, healthMap, alertsMap, favorites, sortKey, sortDir]);
 
   const allSelected = displayDevices.length > 0 && displayDevices.every(d => selectedIds.has(d.id));
   const someSelected = !allSelected && displayDevices.some(d => selectedIds.has(d.id));
@@ -914,22 +936,28 @@ const DevicesTable = memo(function DevicesTable({
                     />
                   </th>
                   {[
-                    { label: "St",            w: "w-[52px]" },
-                    { label: "Hostname" },
-                    { label: "Client / Group" },
-                    { label: "User" },
-                    { label: "Domain" },
-                    { label: "IP" },
-                    { label: "OS" },
-                    { label: "Last Seen" },
-                    { label: "Actions" },
-                  ].map(({ label, w }) => (
+                    { label: "St",            w: "w-[52px]",  sortable: null },
+                    { label: "Hostname",                       sortable: "hostname" as SortKey },
+                    { label: "Client / Group",                 sortable: "client_name" as SortKey },
+                    { label: "User",                           sortable: null },
+                    { label: "Domain",                         sortable: null },
+                    { label: "IP",                             sortable: null },
+                    { label: "OS",                             sortable: null },
+                    { label: "Last Seen",                      sortable: "last_seen" as SortKey },
+                    { label: "Actions",                        sortable: null },
+                  ].map(({ label, w, sortable }) => (
                     <th
                       key={label}
-                      className={`px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-[0.1em] ${w ?? ""}`}
-                      style={{ color: "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
+                      className={`px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-[0.1em] ${w ?? ""} ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""}`}
+                      style={{ color: sortable && sortKey === sortable ? "var(--th-text-primary, #e2e8f0)" : "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
+                      onClick={sortable ? () => handleSort(sortable) : undefined}
                     >
-                      {label}
+                      <span className="inline-flex items-center gap-1">
+                        {label}
+                        {sortable && sortKey === sortable && (
+                          <span className="text-[8px] opacity-70">{sortDir === "asc" ? "▲" : "▼"}</span>
+                        )}
+                      </span>
                     </th>
                   ))}
                 </tr>
