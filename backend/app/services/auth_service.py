@@ -45,4 +45,8 @@ def ensure_bootstrap_owner(db: Session) -> None:
     if settings.BOOTSTRAP_OWNER_PASSWORD:
         logger.warning("Bootstrap owner created from environment user=%s", settings.BOOTSTRAP_OWNER_USERNAME)
     else:
-        logger.warning("Bootstrap owner created user=%s temporary_password=%s", settings.BOOTSTRAP_OWNER_USERNAME, password)
+        logger.warning(
+            "Bootstrap owner created with random password user=%s — "
+            "retrieve the password from BOOTSTRAP_OWNER_PASSWORD env or reset via the API",
+            settings.BOOTSTRAP_OWNER_USERNAME,
+        )

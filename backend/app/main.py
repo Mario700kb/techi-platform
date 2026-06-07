@@ -1,6 +1,10 @@
 import logging
 import os
 
+from app.core.logging_config import configure_logging
+
+configure_logging()
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 

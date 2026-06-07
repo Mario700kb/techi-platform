@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-logger = logging.getLogger("techi.sql.enrollment_tokens")
+logger = logging.getLogger("techi.db")
 
 
 def _build_engine():
@@ -27,11 +27,6 @@ def _build_engine():
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
-
-    @event.listens_for(engine, "before_cursor_execute")
-    def _log_enrollment_token_sql(_conn, _cursor, statement, parameters, _context, _executemany):
-        if "enrollment_tokens" in statement:
-            logger.warning("enrollment_tokens SQL: %s | params=%r", statement, parameters)
 
     return engine
 
