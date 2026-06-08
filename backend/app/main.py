@@ -8,11 +8,12 @@ configure_logging()
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.legacy_compat import router as legacy_compat_router
 from app.api.v1.api import api_router
-from app.api.v1.endpoints.agent import agent_enroll, agent_heartbeat
+from app.api.v1.endpoints.agent import agent_enroll
 from app.core.config import settings
 from app.db.session import engine, get_db
-from app.schemas.agent import AgentEnrollmentRequest, AgentHeartbeatPayload
+from app.schemas.agent import AgentEnrollmentRequest
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
 from app.services.auth_service import ensure_bootstrap_owner
 from app.services.enrollment_token_service import EnrollmentTokenService
@@ -41,6 +42,7 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)
+app.include_router(legacy_compat_router)
 
 
 @app.on_event("startup")
@@ -84,11 +86,6 @@ async def stop_background_workers() -> None:
 @app.get("/health", summary="Health check")
 def health() -> dict:
     return {"status": "ok", "environment": settings.ENVIRONMENT}
-
-
-@app.post("/api/heartbeat")
-def heartbeat_legacy(payload: AgentHeartbeatPayload, db=Depends(get_db)):
-    return agent_heartbeat(payload, db)
 
 
 @app.post("/api/enroll")
