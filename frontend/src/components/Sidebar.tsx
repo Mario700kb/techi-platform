@@ -1,4 +1,4 @@
-import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -21,7 +21,8 @@ const navItems: NavItem[] = [
   { label: "Inventory",  to: "/inventory",            icon: Cpu,           permission: "view_inventory" },
   { label: "Operators",  to: "/operators",            icon: Users,         permission: "manage_operators" },
   { label: "Teams",      to: "/teams",                icon: UsersRound,    permission: "manage_teams" },
-  { label: "Audit Log",  to: "/audit",                icon: ClipboardList, permission: "audit_log" },
+  { label: "Audit Log",  to: "/audit",                icon: ClipboardList,      permission: "audit_log" },
+  { label: "Agent Config", to: "/agent-config",       icon: SlidersHorizontal,  permission: "system_settings" },
 ];
 
 interface SidebarProps {

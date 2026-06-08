@@ -15,6 +15,7 @@ import RemoteSupport from "../pages/RemoteSupport";
 import Teams from "../pages/Teams";
 import TeamDetailPage from "../pages/TeamDetail";
 import Login from "../pages/Login";
+import AgentConfigPage from "../pages/AgentConfig";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -48,6 +49,7 @@ export default function AppRoutes() {
       <Route path="/teams/:id" element={<RequireAuth><RequirePermission perm="manage_teams"><TeamDetailPage /></RequirePermission></RequireAuth>} />
       <Route path="/audit" element={<RequireAuth><RequirePermission perm="audit_log"><Audit /></RequirePermission></RequireAuth>} />
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
+      <Route path="/agent-config" element={<RequireAuth><RequirePermission perm="system_settings"><AgentConfigPage /></RequirePermission></RequireAuth>} />
     </Routes>
   );
 }
