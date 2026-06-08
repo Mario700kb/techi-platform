@@ -16,6 +16,8 @@ def _build_engine():
         # SQLite: disable same-thread check (FastAPI uses multiple threads via
         # thread-pool executor for sync endpoints) and keep a single connection.
         kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        kwargs.update({"pool_size": 30, "max_overflow": 50, "pool_timeout": 30, "pool_recycle": 1800})
 
     engine = create_engine(url, **kwargs)
 
