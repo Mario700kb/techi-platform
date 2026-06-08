@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, case, false, not_, or_
+from sqlalchemy import and_, case, false, func, not_, or_
 
 from app.models.alert import DeviceAlert
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType

@@ -8,10 +8,13 @@ Verifies that RealtimeConnectionManager._event_in_scope correctly:
 - Always allows non-device events (connection_ready, deployment_event, etc.).
 """
 
+import asyncio
+
 import pytest
 
 from app.core.scope import AllowedScope, device_in_scope
 from app.websocket.manager import RealtimeConnectionManager
+from app.websocket.routes import _AUTH_FAILED, _authenticate_ws
 
 
 # ── Helper — build minimal device event dict ─────────────────────────────── #
@@ -37,6 +40,25 @@ def _non_device_event(event_type: str):
 # ── Instantiate manager (no async needed for unit tests) ─────────────────── #
 
 mgr = RealtimeConnectionManager()
+
+
+def test_missing_token_is_closed_with_application_code():
+    class FakeWebSocket:
+        accepted = False
+        close_code = None
+
+        async def accept(self):
+            self.accepted = True
+
+        async def close(self, code):
+            self.close_code = code
+
+    websocket = FakeWebSocket()
+    result = asyncio.run(_authenticate_ws(websocket, None))
+
+    assert result is _AUTH_FAILED
+    assert websocket.accepted is True
+    assert websocket.close_code == 4001
 
 
 # ── Unrestricted scope (admin/owner) ─────────────────────────────────────── #

@@ -10,6 +10,8 @@ Confirms that:
 - Count endpoint is also scope-filtered.
 """
 
+from datetime import timedelta
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -25,7 +27,9 @@ from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.team import Team, TeamMember, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess
 from app.core.auth import get_current_operator
+from app.core.time import utcnow
 from app.api.v1.endpoints import devices as devices_module
+from app.services import device_service as device_service_module
 
 # ── Tables needed ─────────────────────────────────────────────────────────── #
 # Client and DeviceGroup tables are required because DeviceAssignmentService
@@ -146,6 +150,33 @@ class TestDeviceScopeByClientId:
         body_text = resp.text
         assert "RUST-IN"  in body_text
         assert "RUST-OUT" not in body_text, "Remote Support ID from out-of-scope device must never appear"
+
+    def test_stats_are_scope_filtered_and_grouped_by_freshness(self, db):
+        device_service_module._stats_cache.clear()
+        op = _operator(db, "op_stats")
+        _team_with_client(db, op, client_id=1)
+
+        online = _device(db, "RUST-ONLINE", client_id=1, hostname="online")
+        stale = _device(db, "RUST-STALE", client_id=1, hostname="stale")
+        offline = _device(db, "RUST-OFFLINE", client_id=1, hostname="offline")
+        outside = _device(db, "RUST-OUTSIDE", client_id=2, hostname="outside")
+
+        online.last_seen = utcnow() - timedelta(seconds=30)
+        stale.last_seen = utcnow() - timedelta(minutes=5)
+        offline.last_seen = utcnow() - timedelta(minutes=30)
+        outside.last_seen = utcnow() - timedelta(seconds=30)
+        db.commit()
+
+        client = _make_app(db, op)
+        resp = client.get("/devices/stats")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "total": 3,
+            "online": 1,
+            "stale": 1,
+            "offline": 1,
+        }
 
     def test_operator_in_no_team_sees_nothing(self, db):
         op = _operator(db, "op_noteam")

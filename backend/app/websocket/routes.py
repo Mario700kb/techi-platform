@@ -14,6 +14,13 @@ router = APIRouter()
 _AUTH_FAILED = object()
 
 
+async def _reject_ws(websocket: WebSocket) -> None:
+    # Accept before closing so browsers receive the application close code
+    # instead of a generic failed-handshake error and reconnect loop.
+    await websocket.accept()
+    await websocket.close(code=4001)
+
+
 async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
     """Validate JWT, resolve operator scope, and return it.
 
@@ -24,7 +31,7 @@ async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
         (the WebSocket is also closed with code 4001 in that case).
     """
     if not token:
-        await websocket.close(code=4001)
+        await _reject_ws(websocket)
         return _AUTH_FAILED
 
     db = SessionLocal()
@@ -33,12 +40,12 @@ async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
             payload = decode_access_token(token)
             operator_id = int(payload.get("sub"))
         except (JWTError, TypeError, ValueError):
-            await websocket.close(code=4001)
+            await _reject_ws(websocket)
             return _AUTH_FAILED
 
         operator = OperatorRepository(db).get(operator_id)
         if operator is None or not operator.is_active:
-            await websocket.close(code=4001)
+            await _reject_ws(websocket)
             return _AUTH_FAILED
 
         from app.core.auth import is_unrestricted

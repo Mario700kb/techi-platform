@@ -47,6 +47,50 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
   return { total: devices.length, unassigned, byClient };
 }
 
+function deviceMatchesFilters(device: Device, filters: DeviceFilters, searchQuery: string): boolean {
+  const resolvedClientId = device.resolved_client_id ?? device.client_id ?? null;
+  const resolvedCategory = device.resolved_device_category ?? "unassigned";
+  if (filters.status && device.status !== filters.status) return false;
+  if (filters.freshness_state && device.freshness_state !== filters.freshness_state) return false;
+  if (filters.device_type && device.device_type !== filters.device_type) return false;
+  if (filters.lifecycle_state === "archived" && !device.is_archived) return false;
+  if ((filters.lifecycle_state === "active" || !filters.lifecycle_state) && device.is_archived) return false;
+  if (filters.client_id === -1) {
+    if (resolvedClientId !== null) return false;
+  } else if (filters.client_id && resolvedClientId !== filters.client_id) {
+    return false;
+  }
+  if (filters.group_id && device.group_id !== filters.group_id) return false;
+  if (filters.smart_folder === "windows_server" && resolvedCategory !== "servers") return false;
+  if (filters.smart_folder === "windows_workstation" && resolvedCategory !== "clientpc") return false;
+  if (filters.maintenance_state === "maintenance" && !device.is_in_maintenance) return false;
+  if (filters.maintenance_state === "normal" && device.is_in_maintenance) return false;
+  if (filters.duplicate_candidates && !device.duplicate_candidate) return false;
+  if (filters.assignment_source) {
+    const source = device.resolved_assignment_source ?? device.assignment_source;
+    const expectedSources: Record<NonNullable<DeviceFilters["assignment_source"]>, string[]> = {
+      auto: ["system_auto", "trusted_domain", "auto_os"],
+      manual: ["manual", "legacy_manual"],
+      token: ["enrollment_token"],
+      unassigned: ["unassigned", "system_auto_unassigned"],
+    };
+    if (!expectedSources[filters.assignment_source].includes(source ?? "unassigned")) return false;
+  }
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    const searchable = [
+      device.hostname,
+      device.rustdesk_id,
+      device.current_user,
+      device.public_ip,
+      device.local_ip,
+      device.domain,
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (!searchable.includes(query)) return false;
+  }
+  return true;
+}
+
 export default function Devices() {
   const { can, user } = useAuth();
   const { favorites, toggle: toggleFavorite } = useFavorites();
@@ -133,17 +177,23 @@ export default function Devices() {
     }
   }, []);
 
-  const treeBaseFilters = useMemo<DeviceFilters>(() => {
-    // Strip navigation selectors so the tree always shows the full fleet,
-    // but keep lifecycle_state so tree counts match the current view.
-    const {
-      client_id: _clientId,
-      group_id: _groupId,
-      smart_folder: _smartFolder,
-      ...rest
-    } = filters;
-    return rest;
-  }, [filters]);
+  const treeBaseFilters = useMemo<DeviceFilters>(() => ({
+    status: filters.status,
+    freshness_state: filters.freshness_state,
+    device_type: filters.device_type,
+    assignment_source: filters.assignment_source,
+    lifecycle_state: filters.lifecycle_state,
+    duplicate_candidates: filters.duplicate_candidates,
+    maintenance_state: filters.maintenance_state,
+  }), [
+    filters.assignment_source,
+    filters.device_type,
+    filters.duplicate_candidates,
+    filters.freshness_state,
+    filters.lifecycle_state,
+    filters.maintenance_state,
+    filters.status,
+  ]);
 
   const loadAllDevices = useCallback(async () => {
     try {
@@ -189,45 +239,7 @@ export default function Devices() {
   }, [loadAllDevices, loadDevices]);
 
   const deviceMatchesCurrentView = useCallback(
-    (device: Device) => {
-      const resolvedClientId = device.resolved_client_id ?? device.client_id ?? null;
-      const resolvedCategory = device.resolved_device_category ?? "unassigned";
-      if (filters.status && device.status !== filters.status) return false;
-      if (filters.freshness_state && device.freshness_state !== filters.freshness_state) return false;
-      if (filters.lifecycle_state === "archived" && !device.is_archived) return false;
-      if ((filters.lifecycle_state === "active" || !filters.lifecycle_state) && device.is_archived) return false;
-      if (filters.client_id === -1) {
-        if (resolvedClientId) return false;
-      } else if (filters.client_id && resolvedClientId !== filters.client_id) {
-        return false;
-      }
-      if (filters.group_id && device.group_id !== filters.group_id) return false;
-      if (filters.smart_folder === "windows_server" && resolvedCategory !== "servers") {
-        return false;
-      }
-      if (filters.smart_folder === "windows_workstation" && resolvedCategory !== "clientpc") {
-        return false;
-      }
-      if (filters.maintenance_state === "maintenance" && !device.is_in_maintenance) return false;
-      if (filters.maintenance_state === "normal" && device.is_in_maintenance) return false;
-      if (filters.duplicate_candidates && !device.duplicate_candidate) return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const searchable = [
-          device.hostname,
-          device.rustdesk_id,
-          device.current_user,
-          device.public_ip,
-          device.local_ip,
-          device.domain,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!searchable.includes(query)) return false;
-      }
-      return true;
-    },
+    (device: Device) => deviceMatchesFilters(device, filters, searchQuery),
     [filters, searchQuery]
   );
 
@@ -378,15 +390,15 @@ export default function Devices() {
     },
   });
 
-  const { runNow: refreshDevices } = usePollingRefresh(refreshBoth, {
+  const { runNow: refreshDevices } = usePollingRefresh(loadDevices, {
     intervalMs: 60000,
     enabled: wsStatus !== "connected",
     immediate: !devicesLoadedRef.current,
   });
 
   useEffect(() => {
-    void refreshBoth();
-  }, [refreshBoth]);
+    void loadAllDevices();
+  }, [loadAllDevices]);
 
   useEffect(() => {
     return () => {
@@ -419,6 +431,10 @@ export default function Devices() {
         }
       }
     }
+    const nextDevices = allDevices
+      .filter((device) => deviceMatchesFilters(device, nextFilters, searchQuery))
+      .sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
+    setDevices(nextDevices);
     setFilters(nextFilters);
   };
 
@@ -445,7 +461,7 @@ export default function Devices() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([refreshDevices(), loadOrgData(), loadPatchSummary()]);
+    await Promise.all([refreshBoth(), loadOrgData(), loadPatchSummary()]);
   };
 
   const handleDeviceUpdated = (updated: Device) => {

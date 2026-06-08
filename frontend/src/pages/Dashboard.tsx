@@ -16,7 +16,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, getDevices, getDeviceStats } from "../api/devices";
+import { Device, getDevices, getDeviceStatsWithFallback } from "../api/devices";
 import { getDevicesPatchStatus } from "../api/inventory";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getDevicesHealthSummary } from "../api/telemetry";
@@ -102,9 +102,12 @@ export default function Dashboard() {
       }
       setError(null);
 
-      const fallbackStats = { total: 0, online: 0, stale: 0, offline: 0 };
       const [stats, healthSummary, latestDevices, recentDeployments, latestActions, presenceList] = await Promise.all([
-        getDeviceStats().catch(err => { console.error('Stats error:', err); return fallbackStats; }),
+        getDeviceStatsWithFallback().catch(err => {
+          console.error("Stats error:", err);
+          setError("Fleet statistics are temporarily unavailable. Other dashboard data is still shown.");
+          return null;
+        }),
         getDevicesHealthSummary().catch(err => { console.error('Health summary error:', err); return []; }),
         getDevices({ lifecycle_state: "all" }, 0, 25).catch(err => { console.error('Recent devices error:', err); return []; }),
         canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[]),
@@ -114,10 +117,12 @@ export default function Dashboard() {
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
       const sortedDevices = latestDevices;
 
-      setTotal(stats.total);
-      setOnline(stats.online);
-      setStale(stats.stale);
-      setOffline(stats.offline);
+      if (stats) {
+        setTotal(stats.total);
+        setOnline(stats.online);
+        setStale(stats.stale);
+        setOffline(stats.offline);
+      }
       setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
       // Fleet operations stats
       try {
@@ -143,14 +148,16 @@ export default function Dashboard() {
   const loadDashboardMetrics = useCallback(async () => {
     try {
       const [stats, healthSummary] = await Promise.all([
-        getDeviceStats().catch(() => ({ total, online, stale, offline })),
+        getDeviceStatsWithFallback().catch(() => null),
         getDevicesHealthSummary().catch(() => []),
       ]);
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-      setTotal(stats.total);
-      setOnline(stats.online);
-      setStale(stats.stale);
-      setOffline(stats.offline);
+      if (stats) {
+        setTotal(stats.total);
+        setOnline(stats.online);
+        setStale(stats.stale);
+        setOffline(stats.offline);
+      }
       setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
     } catch {
       // dashboard metrics are refreshed again by fallback polling/manual refresh
@@ -313,6 +320,12 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="premium-metric p-4">

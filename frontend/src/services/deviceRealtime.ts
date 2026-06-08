@@ -123,11 +123,17 @@ export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
   let wsBase: string;
   const configured = import.meta.env.VITE_WS_BASE_URL;
   if (configured) {
-    wsBase = configured;
+    wsBase = configured
+      .replace(/^https:/i, "wss:")
+      .replace(/^http:/i, "ws:");
   } else if (typeof window !== "undefined") {
-    // Mirror the same host the page was loaded from so LAN access works automatically
+    // Production reverse proxies normally expose WebSockets on the page origin.
+    // Vite development still talks directly to the backend on port 8000.
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    wsBase = `${wsProtocol}//${window.location.hostname}:8000`;
+    const isViteDev = window.location.port === "5173";
+    wsBase = isViteDev
+      ? `${wsProtocol}//${window.location.hostname}:8000`
+      : `${wsProtocol}//${window.location.host}`;
   } else {
     wsBase = "ws://localhost:8000";
   }
@@ -212,11 +218,17 @@ export class DeviceRealtimeClient {
       this.socket?.close();
     };
 
-    this.socket.onclose = () => {
+    this.socket.onclose = (event) => {
       this.clearTimers();
       this.socket = null;
       if (this.closedByClient) {
         this.emitStatus("disconnected");
+        return;
+      }
+      if (event.code === 4001) {
+        this.closedByClient = true;
+        this.lastError = "Realtime authentication expired";
+        this.emitStatus("fallback");
         return;
       }
       this.scheduleReconnect();

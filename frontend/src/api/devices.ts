@@ -187,7 +187,16 @@ export interface DeviceStats {
 }
 
 export async function getDeviceStats(): Promise<DeviceStats> {
-  return fetchJson<DeviceStats>("/api/v1/devices/stats");
+  const stats = await fetchJson<DeviceStats>("/api/v1/devices/stats");
+  if (
+    !Number.isFinite(stats.total) ||
+    !Number.isFinite(stats.online) ||
+    !Number.isFinite(stats.stale) ||
+    !Number.isFinite(stats.offline)
+  ) {
+    throw new Error("Invalid device stats response");
+  }
+  return stats;
 }
 
 export async function getDevicesCount(filters: DeviceFilters = {}): Promise<number> {
@@ -196,6 +205,20 @@ export async function getDevicesCount(filters: DeviceFilters = {}): Promise<numb
 
   const response = await fetchJson<{ count: number }>(`/api/v1/devices/count?${params.toString()}`);
   return response.count;
+}
+
+export async function getDeviceStatsWithFallback(): Promise<DeviceStats> {
+  try {
+    return await getDeviceStats();
+  } catch {
+    const [total, online, stale, offline] = await Promise.all([
+      getDevicesCount(),
+      getDevicesCount({ freshness_state: "online" }),
+      getDevicesCount({ freshness_state: "stale" }),
+      getDevicesCount({ freshness_state: "offline" }),
+    ]);
+    return { total, online, stale, offline };
+  }
 }
 
 export async function getDevice(deviceId: number): Promise<Device> {

@@ -121,7 +121,15 @@ const renderStatusCell = (device: Device, health?: DeviceHealthSummary) => {
 };
 
 /** Lightweight client-side offline reason badge (no API call). */
-const getOfflineReasonBadge = (device: Device, allDevices: Device[]) => {
+interface ClientOfflineSummary {
+  offlineCount: number;
+  inactiveLastSeen: number[];
+}
+
+const getOfflineReasonBadge = (
+  device: Device,
+  clientSummary?: ClientOfflineSummary,
+) => {
   const freshness = device.freshness_state ?? device.status;
   if (freshness === "online") return null;
   if (!device.last_seen) return null;
@@ -139,24 +147,16 @@ const getOfflineReasonBadge = (device: Device, allDevices: Device[]) => {
   // Site outage: ≥2 peers from same client offline near same time
   if (device.client_id && device.last_seen) {
     const t = new Date(device.last_seen).getTime();
-    const peers = allDevices.filter(
-      (p) =>
-        p.id !== device.id &&
-        p.client_id === device.client_id &&
-        (p.freshness_state === "stale" || p.freshness_state === "offline") &&
-        p.last_seen &&
-        Math.abs(new Date(p.last_seen).getTime() - t) < 10 * 60 * 1000
-    );
-    if (peers.length >= 2)
+    const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
+      (lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000
+    ).length ?? 0;
+    if (nearbyPeers >= 2)
       return { label: "Site?", color: "#f87171", bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.3)" };
   }
 
   // Single device offline (no other offline from same client)
   if (freshness === "offline" && device.client_id) {
-    const otherOffline = allDevices.filter(
-      (p) => p.id !== device.id && p.client_id === device.client_id && p.freshness_state === "offline"
-    );
-    if (!otherOffline.length)
+    if ((clientSummary?.offlineCount ?? 0) <= 1)
       return { label: "Power?", color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.2)" };
   }
 
@@ -534,6 +534,21 @@ const DevicesTable = memo(function DevicesTable({
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [devices, quickFilter, patchMap, healthMap, alertsMap, favorites, sortKey, sortDir]);
+
+  const offlineSummaryByClient = useMemo(() => {
+    const summaries = new Map<number, ClientOfflineSummary>();
+    for (const device of devices) {
+      if (!device.client_id) continue;
+      const freshness = device.freshness_state ?? device.status;
+      const summary = summaries.get(device.client_id) ?? { offlineCount: 0, inactiveLastSeen: [] };
+      if (freshness === "offline") summary.offlineCount += 1;
+      if ((freshness === "offline" || freshness === "stale") && device.last_seen) {
+        summary.inactiveLastSeen.push(new Date(device.last_seen).getTime());
+      }
+      summaries.set(device.client_id, summary);
+    }
+    return summaries;
+  }, [devices]);
 
   const allSelected = displayDevices.length > 0 && displayDevices.every(d => selectedIds.has(d.id));
   const someSelected = !allSelected && displayDevices.some(d => selectedIds.has(d.id));
@@ -972,7 +987,10 @@ const DevicesTable = memo(function DevicesTable({
                     isValidRustDeskId(device.rustdesk_id) &&
                     !device.rustdesk_conflict_detected;
                   const devAlerts = alertsMap[device.id];
-                  const offlineBadge = getOfflineReasonBadge(device, devices);
+                  const offlineBadge = getOfflineReasonBadge(
+                    device,
+                    device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined,
+                  );
                   const healthScore = healthMap[device.id]?.health_score;
                   const isLowHealth = healthScore != null && healthScore < 60;
                   const rsIssue =
