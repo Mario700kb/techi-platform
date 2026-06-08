@@ -169,7 +169,7 @@ class TestDeviceScopeByClientId:
         outside = _device(db, "RUST-OUTSIDE", client_id=2, hostname="outside")
 
         online.last_seen = utcnow() - timedelta(seconds=30)
-        stale.last_seen = utcnow() - timedelta(minutes=5)
+        stale.last_seen = utcnow() - timedelta(minutes=10)
         offline.last_seen = utcnow() - timedelta(minutes=30)
         outside.last_seen = utcnow() - timedelta(seconds=30)
         db.commit()

@@ -239,8 +239,8 @@ class DeviceRepository:
         if not freshness_state:
             return query
         now = utcnow()
-        online_cutoff = now - timedelta(minutes=2)
-        stale_cutoff = now - timedelta(minutes=15)
+        online_cutoff = now - timedelta(minutes=6)
+        stale_cutoff = now - timedelta(minutes=25)
         if freshness_state == DeviceFreshnessState.ONLINE:
             return query.filter(Device.last_seen >= online_cutoff)
         if freshness_state == DeviceFreshnessState.STALE:
@@ -379,8 +379,8 @@ class DeviceRepository:
     def count_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
         """Return total/online/stale/offline in one query instead of four."""
         now = utcnow()
-        online_cutoff = now - timedelta(minutes=2)
-        stale_cutoff = now - timedelta(minutes=15)
+        online_cutoff = now - timedelta(minutes=6)
+        stale_cutoff = now - timedelta(minutes=25)
         q = self.db.query(
             func.count(Device.id).label("total"),
             func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),

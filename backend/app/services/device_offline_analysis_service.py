@@ -12,8 +12,8 @@ from typing import List, Optional
 from app.core.time import ensure_utc, utcnow
 
 # ── Freshness thresholds (mirror device model) ──────────────────────────── #
-_ONLINE_MAX = timedelta(minutes=2)
-_STALE_MAX = timedelta(minutes=15)
+_ONLINE_MAX = timedelta(minutes=6)
+_STALE_MAX = timedelta(minutes=25)
 
 # How long after the device's last_seen do we still consider the agent
 # "recently" active for rule evaluation purposes.

@@ -112,8 +112,8 @@ class Device(Base):
         if not self.last_seen:
             return DeviceFreshnessState.OFFLINE.value
         age = ensure_utc(utcnow()) - ensure_utc(self.last_seen)
-        if age <= timedelta(minutes=2):
+        if age <= timedelta(minutes=6):
             return DeviceFreshnessState.ONLINE.value
-        if age <= timedelta(minutes=15):
+        if age <= timedelta(minutes=25):
             return DeviceFreshnessState.STALE.value
         return DeviceFreshnessState.OFFLINE.value
