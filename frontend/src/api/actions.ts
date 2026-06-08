@@ -19,6 +19,7 @@ export type ActionType =
   | "restart_rustdesk"
   | "reinstall_rustdesk"
   | "reopen_rustdesk"
+  | "repair_config_rustdesk"
   | "sync_inventory"
   | "immediate_heartbeat"
   | "apply_power_policy";
@@ -32,6 +33,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   restart_rustdesk: "Restart TECHI Remote Support",
   reinstall_rustdesk: "Reinstall TECHI Remote Support",
   reopen_rustdesk: "Reopen TECHI Remote Support",
+  repair_config_rustdesk: "Repair TECHI Remote Support Config",
   sync_inventory: "Sync Inventory",
   immediate_heartbeat: "Immediate Heartbeat",
   apply_power_policy: "Apply Power Policy",
@@ -53,9 +55,11 @@ export const DESTRUCTIVE_ACTIONS = new Set<ActionType>(["restart_device", "resta
 
 // Actions that are Windows-agent-only.
 export const WINDOWS_ONLY_ACTIONS = new Set<ActionType>([
+  "sync_rustdesk",
   "restart_rustdesk",
   "reinstall_rustdesk",
   "reopen_rustdesk",
+  "repair_config_rustdesk",
   "apply_power_policy",
 ]);
 

@@ -1444,6 +1444,12 @@ export default function DeviceDrawer({
                       <Btn type="restart_agent" label="Restart Agent" destructive perm="restart_agent" />
                       <Btn type="apply_power_policy" label="Power Policy" perm="maintenance_mode" />
                     </Group>
+                    <Group label="Remote Support">
+                      <Btn type="restart_rustdesk" label="Restart RS" perm="remote_support_manage" />
+                      <Btn type="sync_rustdesk" label="Sync RS" perm="remote_support_manage" />
+                      <Btn type="reopen_rustdesk" label="Reopen RS" perm="remote_support_manage" />
+                      <Btn type="repair_config_rustdesk" label="Repair Config" perm="remote_support_manage" />
+                    </Group>
                     <Group label="Device">
                       <Btn type="restart_device" label="Restart Device" destructive perm="restart_device" />
                     </Group>
@@ -1979,7 +1985,16 @@ export default function DeviceDrawer({
                   )}
                   <div className="col-span-2">
                     <p className="premium-kicker mb-1">Config Status</p>
-                    <p className="text-xs font-medium text-slate-500">Not available</p>
+                    {device.rustdesk_install_status === "not_installed"
+                      ? <p className="text-xs font-medium text-slate-500">Not installed</p>
+                      : device.rustdesk_sync_state === "synced"
+                        ? <p className="text-xs font-medium text-emerald-400">Synced</p>
+                        : device.rustdesk_sync_state === "degraded"
+                          ? <p className="text-xs font-medium text-amber-400">Degraded</p>
+                          : device.rustdesk_sync_state === "failed"
+                            ? <p className="text-xs font-medium text-red-400">Failed</p>
+                            : <p className="text-xs font-medium text-slate-500">{device.rustdesk_sync_state || "Not synced"}</p>
+                    }
                   </div>
                 </div>
 

@@ -147,3 +147,37 @@ func TestBuildHeartbeatPayloadIncludesEncID(t *testing.T) {
 		t.Fatalf("expected enc_id to be forwarded, got %q", payload.RustDeskEncID)
 	}
 }
+
+func TestRustDeskConfigCandidatesIncludesTECHIProgramDataPath(t *testing.T) {
+	// Production device #289 stores its config at:
+	// C:\ProgramData\TECHI Remote Support\config\TECHI Remote Support.toml
+	// Verify this path is always included in the candidates list.
+	const fakeRoot = "/fake/ProgramData"
+	t.Setenv("PROGRAMDATA", fakeRoot)
+
+	candidates := rustDeskConfigCandidates()
+
+	want := filepath.Join(fakeRoot, "TECHI Remote Support", "config", "TECHI Remote Support.toml")
+	for _, c := range candidates {
+		if c == want {
+			return
+		}
+	}
+	t.Errorf("config candidates do not include TECHI ProgramData path %q\ngot: %v", want, candidates)
+}
+
+func TestReadRustDeskFieldsFromTECHIProgramDataPath(t *testing.T) {
+	// Verify that the TOML reader correctly parses an ID from the TECHI
+	// Remote Support ProgramData config format found on production devices.
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "TECHI Remote Support.toml")
+	content := "id = '1234567890'\n[options]\ncustom-rendezvous-server = 'relay.techi.example'\n"
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	id, _ := readRustDeskFieldsFromFile(configPath)
+	if id != "1234567890" {
+		t.Errorf("expected ID '1234567890' from TECHI ProgramData config, got %q", id)
+	}
+}
