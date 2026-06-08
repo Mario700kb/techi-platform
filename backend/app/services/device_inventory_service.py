@@ -70,7 +70,7 @@ class DeviceInventoryService:
             except Exception:
                 logger.warning("device %d: failed to parse software_json", device_id)
 
-        patch = self._parse_patch_status(obj.patch_json, device_id)
+        patch = self.parse_patch_status(obj.patch_json, device_id)
         return DeviceInventoryResponse(
             device_id=device_id,
             processes=processes,
@@ -89,12 +89,12 @@ class DeviceInventoryService:
         result: List[PatchStatusSnapshot] = []
         for device_id in device_ids:
             row = by_device.get(device_id)
-            patch = self._parse_patch_status(row.patch_json if row else None, device_id)
+            patch = self.parse_patch_status(row.patch_json if row else None, device_id)
             patch.device_id = device_id
             result.append(patch)
         return result
 
-    def _parse_patch_status(self, raw_json: Optional[str], device_id: int) -> PatchStatusSnapshot:
+    def parse_patch_status(self, raw_json: Optional[str], device_id: int) -> PatchStatusSnapshot:
         if not raw_json:
             return PatchStatusSnapshot(device_id=device_id)
         try:

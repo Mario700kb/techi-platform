@@ -23,6 +23,7 @@ export interface TeamDetail extends TeamRecord {
   client_ids: number[];
   group_ids: number[];
   device_ids: number[];
+  effective_device_count: number;
 }
 
 export interface TeamCreate {

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.scope import AllowedScope
 from app.models.team import Team
+from app.models.team import TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.repositories.team_repository import TeamRepository, _decode_permissions
 
 
@@ -23,6 +24,67 @@ class TeamService:
 
     def list_teams(self) -> List[Team]:
         return self.repo.list_all()
+
+    def list_teams_with_stats(self) -> List[Dict]:
+        teams = self.repo.list_all()
+        if not teams:
+            return []
+
+        operator_ids: Dict[int, List[int]] = {team.id: [] for team in teams}
+        client_ids: Dict[int, set] = {team.id: set() for team in teams}
+        group_ids: Dict[int, set] = {team.id: set() for team in teams}
+        device_ids: Dict[int, set] = {team.id: set() for team in teams}
+
+        for team_id, operator_id in self.db.query(TeamMember.team_id, TeamMember.operator_id).all():
+            operator_ids[team_id].append(operator_id)
+        for team_id, client_id in self.db.query(TeamClientAccess.team_id, TeamClientAccess.client_id).all():
+            client_ids[team_id].add(client_id)
+        for team_id, group_id in self.db.query(TeamGroupAccess.team_id, TeamGroupAccess.group_id).all():
+            group_ids[team_id].add(group_id)
+        for team_id, device_id in self.db.query(TeamDeviceAccess.team_id, TeamDeviceAccess.device_id).all():
+            device_ids[team_id].add(device_id)
+
+        client_teams: Dict[int, set] = {}
+        group_teams: Dict[int, set] = {}
+        device_teams: Dict[int, set] = {}
+        for team in teams:
+            for client_id in client_ids[team.id]:
+                client_teams.setdefault(client_id, set()).add(team.id)
+            for group_id in group_ids[team.id]:
+                group_teams.setdefault(group_id, set()).add(team.id)
+            for device_id in device_ids[team.id]:
+                device_teams.setdefault(device_id, set()).add(team.id)
+
+        from app.models.device import Device
+        effective_ids: Dict[int, set] = {team.id: set() for team in teams}
+        rows = (
+            self.db.query(Device.id, Device.client_id, Device.group_id)
+            .filter(Device.is_archived == False)  # noqa: E712
+            .all()
+        )
+        for device_id, client_id, group_id in rows:
+            matched = set(device_teams.get(device_id, ()))
+            if client_id is not None:
+                matched.update(client_teams.get(client_id, ()))
+            if group_id is not None:
+                matched.update(group_teams.get(group_id, ()))
+            for team_id in matched:
+                effective_ids[team_id].add(device_id)
+
+        return [{
+            "id": team.id,
+            "name": team.name,
+            "description": team.description,
+            "color": team.color,
+            "created_at": team.created_at,
+            "permissions": _decode_permissions(team.permissions),
+            "member_count": len(operator_ids[team.id]),
+            "client_count": len(client_ids[team.id]),
+            "group_count": len(group_ids[team.id]),
+            "explicit_device_count": len(device_ids[team.id]),
+            "effective_device_count": len(effective_ids[team.id]),
+            "operator_ids": operator_ids[team.id],
+        } for team in teams]
 
     def get_team(self, team_id: int) -> Optional[Team]:
         return self.repo.get(team_id)
@@ -82,6 +144,27 @@ class TeamService:
         team = self.repo.get(team_id)
         if not team:
             return None
+        operator_ids = self.repo.get_operator_ids(team_id)
+        client_ids = self.repo.list_client_ids(team_id)
+        group_ids = self.repo.list_group_ids(team_id)
+        device_ids = self.repo.list_device_ids(team_id)
+        effective_device_count = 0
+        filters = []
+        from app.models.device import Device
+        from sqlalchemy import or_
+        if client_ids:
+            filters.append(Device.client_id.in_(client_ids))
+        if group_ids:
+            filters.append(Device.group_id.in_(group_ids))
+        if device_ids:
+            filters.append(Device.id.in_(device_ids))
+        if filters:
+            effective_device_count = (
+                self.db.query(Device)
+                .filter(Device.is_archived == False)  # noqa: E712
+                .filter(or_(*filters))
+                .count()
+            )
         return {
             "id": team.id,
             "name": team.name,
@@ -89,10 +172,11 @@ class TeamService:
             "color": team.color,
             "permissions": _decode_permissions(team.permissions),
             "created_at": team.created_at,
-            "operator_ids": self.repo.get_operator_ids(team_id),
-            "client_ids": self.repo.list_client_ids(team_id),
-            "group_ids": self.repo.list_group_ids(team_id),
-            "device_ids": self.repo.list_device_ids(team_id),
+            "operator_ids": operator_ids,
+            "client_ids": client_ids,
+            "group_ids": group_ids,
+            "device_ids": device_ids,
+            "effective_device_count": effective_device_count,
         }
 
     # ── Stats ──────────────────────────────────────────────────────────── #

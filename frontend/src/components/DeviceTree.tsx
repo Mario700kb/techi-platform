@@ -49,19 +49,26 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   const unassignedCount = treeCounts.unassigned;
   const clientCount = (clientId: number) => treeCounts.byClient.get(clientId) ?? 0;
 
-  // Folder and maintenance flags derive from devices but only re-run when an
-  // expanded client's devices actually change (called per-click, not per-render)
-  const resolvedClientId = (device: Device) => device.resolved_client_id ?? device.client_id ?? null;
-  const resolvedCategory = (device: Device) => device.resolved_device_category ?? "unassigned";
-  const folderCount = (clientId: number, folderId: string) => devices.filter((device) => {
-    if (resolvedClientId(device) !== clientId) return false;
-    return resolvedCategory(device) === folderId;
-  }).length;
-  const clientHasMaintenance = (clientId: number) => devices.some((d) => resolvedClientId(d) === clientId && d.is_in_maintenance);
-  const folderHasMaintenance = (clientId: number, folderId: string) => devices.some((device) => {
-    if (resolvedClientId(device) !== clientId || !device.is_in_maintenance) return false;
-    return resolvedCategory(device) === folderId;
-  });
+  const treeIndex = useMemo(() => {
+    const folderCounts = new Map<string, number>();
+    const maintenanceClients = new Set<number>();
+    const maintenanceFolders = new Set<string>();
+    for (const device of devices) {
+      const clientId = device.resolved_client_id ?? device.client_id ?? null;
+      if (clientId === null) continue;
+      const category = device.resolved_device_category ?? "unassigned";
+      const key = `${clientId}:${category}`;
+      folderCounts.set(key, (folderCounts.get(key) ?? 0) + 1);
+      if (device.is_in_maintenance) {
+        maintenanceClients.add(clientId);
+        maintenanceFolders.add(key);
+      }
+    }
+    return { folderCounts, maintenanceClients, maintenanceFolders };
+  }, [devices]);
+  const folderCount = (clientId: number, folderId: string) => treeIndex.folderCounts.get(`${clientId}:${folderId}`) ?? 0;
+  const clientHasMaintenance = (clientId: number) => treeIndex.maintenanceClients.has(clientId);
+  const folderHasMaintenance = (clientId: number, folderId: string) => treeIndex.maintenanceFolders.has(`${clientId}:${folderId}`);
   const sortedClients = useMemo(
     () => [...clients].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     [clients]

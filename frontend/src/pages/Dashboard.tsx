@@ -16,10 +16,8 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, getDevices, getDeviceStatsWithFallback } from "../api/devices";
-import { getDevicesPatchStatus } from "../api/inventory";
+import { Device, getDevicesSummary } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
-import { getDevicesHealthSummary } from "../api/telemetry";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -102,20 +100,20 @@ export default function Dashboard() {
       }
       setError(null);
 
-      const [stats, healthSummary, latestDevices, recentDeployments, latestActions, presenceList] = await Promise.all([
-        getDeviceStatsWithFallback().catch(err => {
-          console.error("Stats error:", err);
+      const [snapshot, recentDeployments, latestActions, presenceList] = await Promise.all([
+        getDevicesSummary().catch(err => {
+          console.error("Fleet summary error:", err);
           setError("Fleet statistics are temporarily unavailable. Other dashboard data is still shown.");
           return null;
         }),
-        getDevicesHealthSummary().catch(err => { console.error('Health summary error:', err); return []; }),
-        getDevices({ lifecycle_state: "all" }, 0, 25).catch(err => { console.error('Recent devices error:', err); return []; }),
         canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[]),
         getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
         getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
       ]);
+      const stats = snapshot?.stats;
+      const healthSummary = snapshot?.health ?? [];
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-      const sortedDevices = latestDevices;
+      const sortedDevices = snapshot?.devices ?? [];
 
       if (stats) {
         setTotal(stats.total);
@@ -124,11 +122,7 @@ export default function Dashboard() {
         setOffline(stats.offline);
       }
       setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
-      // Fleet operations stats
-      try {
-        const patches = await getDevicesPatchStatus();
-        setPatchCount(patches.filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
-      } catch { /* non-critical */ }
+      setPatchCount((snapshot?.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
       setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
       setRecentDevices(sortedDevices.slice(0, 5));
       setDeployments(recentDeployments.slice(0, 4));
@@ -147,18 +141,17 @@ export default function Dashboard() {
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
-      const [stats, healthSummary] = await Promise.all([
-        getDeviceStatsWithFallback().catch(() => null),
-        getDevicesHealthSummary().catch(() => []),
-      ]);
+      const snapshot = await getDevicesSummary();
+      const stats = snapshot.stats;
+      const healthSummary = snapshot.health;
       const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-      if (stats) {
-        setTotal(stats.total);
-        setOnline(stats.online);
-        setStale(stats.stale);
-        setOffline(stats.offline);
-      }
+      setTotal(stats.total);
+      setOnline(stats.online);
+      setStale(stats.stale);
+      setOffline(stats.offline);
       setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
+      setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
+      setPatchCount(snapshot.patches.filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
     } catch {
       // dashboard metrics are refreshed again by fallback polling/manual refresh
     }

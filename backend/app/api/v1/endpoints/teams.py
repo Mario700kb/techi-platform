@@ -36,23 +36,7 @@ def list_teams(
     db: Session = Depends(get_db),
     _operator: Operator = Depends(get_current_operator),
 ):
-    service = TeamService(db)
-    teams = service.list_teams()
-    result = []
-    for t in teams:
-        stats = service.team_stats(t.id)
-        result.append(TeamWithStats(
-            id=t.id, name=t.name, description=t.description,
-            color=t.color, created_at=t.created_at,
-            permissions=_decode_permissions(t.permissions),
-            member_count=stats["member_count"],
-            client_count=stats["client_count"],
-            group_count=stats["group_count"],
-            explicit_device_count=stats["explicit_device_count"],
-            effective_device_count=stats["effective_device_count"],
-            operator_ids=service.repo.get_operator_ids(t.id),
-        ))
-    return result
+    return [TeamWithStats(**item) for item in TeamService(db).list_teams_with_stats()]
 
 
 @router.get("/{team_id}", response_model=TeamDetailResponse)

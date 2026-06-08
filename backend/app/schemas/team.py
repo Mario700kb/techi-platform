@@ -34,6 +34,7 @@ class TeamDetailResponse(TeamResponse):
     client_ids: List[int] = []
     group_ids: List[int] = []
     device_ids: List[int] = []
+    effective_device_count: int = 0
 
 
 class TeamWithStats(TeamResponse):

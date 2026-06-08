@@ -15,7 +15,7 @@ from datetime import timedelta
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -24,12 +24,16 @@ from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
+from app.models.device_inventory import DeviceInventory
+from app.models.device_telemetry import DeviceTelemetry
+from app.models.alert import DeviceAlert
 from app.models.operator import Operator
 from app.models.team import Team, TeamMember, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess
 from app.core.auth import get_current_operator
 from app.core.time import utcnow
 from app.api.v1.endpoints import devices as devices_module
 from app.services import device_service as device_service_module
+from app.services.device_summary_service import DeviceSummaryService
 
 # ── Tables needed ─────────────────────────────────────────────────────────── #
 # Client and DeviceGroup tables are required because DeviceAssignmentService
@@ -39,6 +43,9 @@ TABLES = [
     Client.__table__,
     DeviceGroup.__table__,
     Device.__table__,
+    DeviceTelemetry.__table__,
+    DeviceInventory.__table__,
+    DeviceAlert.__table__,
     Operator.__table__,
     Team.__table__,
     TeamMember.__table__,
@@ -178,6 +185,25 @@ class TestDeviceScopeByClientId:
             "offline": 1,
         }
 
+    def test_summary_is_atomic_and_scope_filtered(self, db):
+        op = _operator(db, "op_summary")
+        _team_with_client(db, op, client_id=1)
+        visible = _device(db, "RUST-SUMMARY-IN", client_id=1, hostname="visible")
+        _device(db, "RUST-SUMMARY-OUT", client_id=2, hostname="hidden")
+        visible.last_seen = utcnow() - timedelta(seconds=30)
+        db.commit()
+
+        response = _make_app(db, op).get("/devices/summary")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["stats"] == {"total": 1, "online": 1, "stale": 0, "offline": 0}
+        assert [device["rustdesk_id"] for device in body["devices"]] == ["RUST-SUMMARY-IN"]
+        assert body["tree_counts"]["total"] == 1
+        assert body["tree_counts"]["by_client"] == {"1": 1}
+        assert [item["device_id"] for item in body["health"]] == [visible.id]
+        assert [item["device_id"] for item in body["patches"]] == [visible.id]
+
     def test_operator_in_no_team_sees_nothing(self, db):
         op = _operator(db, "op_noteam")
         _device(db, "RUST-ANY", client_id=1, hostname="any-pc")
@@ -291,3 +317,31 @@ class TestLifecycleAllWithScope:
         ids = {d["rustdesk_id"] for d in resp.json()}
         assert "RUST-LIVE"  in ids
         assert "RUST-METRO" not in ids, "lifecycle_state=all must not bypass scope"
+
+
+def test_summary_uses_bounded_queries_for_700_devices(db):
+    db.add_all([
+        Device(
+            rustdesk_id=f"PERF-{index:04d}",
+            hostname=f"device-{index:04d}",
+            status="offline",
+            device_type="client",
+        )
+        for index in range(700)
+    ])
+    db.commit()
+    statements = 0
+
+    def count_statement(*_args):
+        nonlocal statements
+        statements += 1
+
+    event.listen(db.get_bind(), "before_cursor_execute", count_statement)
+    try:
+        summary = DeviceSummaryService(db).get_summary()
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", count_statement)
+
+    assert summary.stats.total == 700
+    assert len(summary.devices) == 700
+    assert statements <= 4

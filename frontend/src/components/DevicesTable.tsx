@@ -20,11 +20,9 @@ interface DevicesTableProps {
   loading: boolean;
   error: string | null;
   filters: DeviceFilters;
-  healthFilter: HealthFilter;
   searchQuery: string;
   onSearch: (value: string) => void;
   onFilterChange: (key: keyof DeviceFilters, value: string | boolean | undefined) => void;
-  onHealthFilterChange: (value: HealthFilter) => void;
   onRefresh: () => void;
   onDeviceSelect?: (device: Device) => void;
   onDeviceDelete?: (device: Device) => void;
@@ -40,18 +38,20 @@ interface DevicesTableProps {
   onBulkComplete?: () => void;
   favorites?: Set<number>;
   onToggleFavorite?: (deviceId: number) => void;
-  initialQuickFilter?: QuickFilter;
-  onQuickFilterChange?: (filter: QuickFilter) => void;
+  quickFilter: QuickFilter;
+  onQuickFilterChange: (filter: QuickFilter) => void;
+  scopedDeviceCount: number;
 }
 
 export type QuickFilter =
-  | "all" | "online" | "offline" | "servers" | "workstations"
+  | "all" | "online" | "stale" | "offline" | "servers" | "workstations"
   | "needs_updates" | "reboot_required" | "warnings" | "critical"
-  | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites";
+  | "healthy" | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites";
 
 const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "all",             label: "All" },
   { id: "online",          label: "Online" },
+  { id: "stale",           label: "Stale" },
   { id: "offline",         label: "Offline" },
   { id: "servers",         label: "Servers" },
   { id: "workstations",    label: "Workstations" },
@@ -59,6 +59,7 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "reboot_required", label: "Reboot Required" },
   { id: "warnings",        label: "Warnings" },
   { id: "critical",        label: "Critical" },
+  { id: "healthy",         label: "Healthy" },
   { id: "maintenance",     label: "Maintenance" },
   { id: "needs_attention", label: "Needs Attention" },
   { id: "low_health",      label: "Low Health" },
@@ -401,11 +402,9 @@ const DevicesTable = memo(function DevicesTable({
   loading,
   error,
   filters,
-  healthFilter,
   searchQuery,
   onSearch,
   onFilterChange,
-  onHealthFilterChange,
   onRefresh,
   onDeviceSelect,
   onDeviceDelete,
@@ -421,13 +420,13 @@ const DevicesTable = memo(function DevicesTable({
   onBulkComplete,
   favorites = new Set<number>(),
   onToggleFavorite,
-  initialQuickFilter,
+  quickFilter,
   onQuickFilterChange,
+  scopedDeviceCount,
 }: DevicesTableProps) {
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>(initialQuickFilter ?? "all");
   type SortKey = "hostname" | "client_name" | "last_seen";
   const [sortKey, setSortKey] = useState<SortKey>("hostname");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -441,14 +440,8 @@ const DevicesTable = memo(function DevicesTable({
     }
   };
 
-  // Sync when the URL-driven prop changes (e.g. navigating from Dashboard)
-  useEffect(() => {
-    setQuickFilter(initialQuickFilter ?? "all");
-  }, [initialQuickFilter]);
-
   const applyQuickFilter = (f: QuickFilter) => {
-    setQuickFilter(f);
-    onQuickFilterChange?.(f);
+    onQuickFilterChange(f === quickFilter ? "all" : f);
   };
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Bulk action state
@@ -471,35 +464,39 @@ const DevicesTable = memo(function DevicesTable({
   useEffect(() => { setSelectedIds(new Set()); }, [devices]);
 
   // Per-pill counts (computed from the unfiltered devices prop)
-  const pillCounts = useMemo(() => ({
-    all:            devices.length,
-    online:         devices.filter(d => d.freshness_state === "online").length,
-    offline:        devices.filter(d => d.freshness_state === "offline").length,
-    servers:        devices.filter(d => d.device_type === "server" || d.resolved_device_category === "servers").length,
-    workstations:   devices.filter(d => d.device_type === "client" || d.resolved_device_category === "clientpc").length,
-    needs_updates:  devices.filter(d => patchMap[d.id]?.patch_state === "updates_available").length,
-    reboot_required:devices.filter(d => patchMap[d.id]?.patch_state === "reboot_required").length,
-    warnings:        devices.filter(d => healthMap[d.id]?.health_state === "warning").length,
-    critical:        devices.filter(d => healthMap[d.id]?.health_state === "critical").length,
-    maintenance:     devices.filter(d => d.is_in_maintenance).length,
-    needs_attention: devices.filter(d =>
-      d.freshness_state !== "online" ||
-      (alertsMap[d.id]?.critical ?? 0) > 0 ||
-      (healthMap[d.id]?.health_score ?? 100) < 60
-    ).length,
-    low_health:      devices.filter(d => (healthMap[d.id]?.health_score ?? 100) < 60).length,
-    rustdesk_issues: devices.filter(d =>
-      d.rustdesk_install_status !== "not_installed" &&
-      (d.rustdesk_status ?? "") !== "running"
-    ).length,
-    favorites: devices.filter(d => favorites.has(d.id)).length,
-  }), [devices, patchMap, healthMap, alertsMap, favorites]);
+  const pillCounts = useMemo(() => {
+    const counts: Record<QuickFilter, number> = Object.fromEntries(
+      QUICK_FILTERS.map(({ id }) => [id, 0])
+    ) as Record<QuickFilter, number>;
+    counts.all = devices.length;
+    for (const d of devices) {
+      const health = healthMap[d.id];
+      const patch = patchMap[d.id];
+      if (d.freshness_state === "online") counts.online++;
+      if (d.freshness_state === "stale") counts.stale++;
+      if (d.freshness_state === "offline") counts.offline++;
+      if (d.device_type === "server" || d.resolved_device_category === "servers") counts.servers++;
+      if (d.device_type === "client" || d.resolved_device_category === "clientpc") counts.workstations++;
+      if (patch?.patch_state === "updates_available") counts.needs_updates++;
+      if (patch?.patch_state === "reboot_required") counts.reboot_required++;
+      if (health?.health_state === "healthy") counts.healthy++;
+      if (health?.health_state === "warning") counts.warnings++;
+      if (health?.health_state === "critical") counts.critical++;
+      if (d.is_in_maintenance) counts.maintenance++;
+      if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
+      if ((health?.health_score ?? 100) < 60) counts.low_health++;
+      if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
+      if (favorites.has(d.id)) counts.favorites++;
+    }
+    return counts;
+  }, [devices, patchMap, healthMap, alertsMap, favorites]);
 
   // Apply quick filter on top of the parent-filtered list, then sort
   const displayDevices = useMemo(() => {
     const filtered = quickFilter === "all" ? devices : devices.filter(d => {
       switch (quickFilter) {
         case "online":          return d.freshness_state === "online";
+        case "stale":           return d.freshness_state === "stale";
         case "offline":         return d.freshness_state === "offline";
         case "servers":         return d.device_type === "server" || d.resolved_device_category === "servers";
         case "workstations":    return d.device_type === "client" || d.resolved_device_category === "clientpc";
@@ -507,6 +504,7 @@ const DevicesTable = memo(function DevicesTable({
         case "reboot_required": return patchMap[d.id]?.patch_state === "reboot_required";
         case "warnings":        return healthMap[d.id]?.health_state === "warning";
         case "critical":        return healthMap[d.id]?.health_state === "critical";
+        case "healthy":         return healthMap[d.id]?.health_state === "healthy";
         case "maintenance":     return d.is_in_maintenance === true;
         case "needs_attention": return (
           d.freshness_state !== "online" ||
@@ -845,13 +843,13 @@ const DevicesTable = memo(function DevicesTable({
             <option value="offline">Offline</option>
           </select>
           <select
-            value={healthFilter}
-            onChange={(e) => onHealthFilterChange(e.target.value as HealthFilter)}
+            value={["healthy", "warnings", "critical"].includes(quickFilter) ? quickFilter : "all"}
+            onChange={(e) => onQuickFilterChange(e.target.value as QuickFilter)}
             className={FILTER_INPUT_CLS}
           >
             <option value="all">All health</option>
             <option value="healthy">Healthy</option>
-            <option value="warning">Warning</option>
+            <option value="warnings">Warning</option>
             <option value="critical">Critical</option>
           </select>
           <select
@@ -1261,7 +1259,7 @@ const DevicesTable = memo(function DevicesTable({
             }}
           >
             <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-              {displayDevices.length} device{displayDevices.length !== 1 ? "s" : ""} shown
+              {displayDevices.length} shown of {scopedDeviceCount} scoped
               {selectedIds.size > 0 && (
                 <span className="ml-2 font-semibold" style={{ color: "#fb923c" }}>
                   · {selectedIds.size} selected

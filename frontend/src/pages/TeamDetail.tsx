@@ -462,47 +462,59 @@ function AccessTab({
   };
   const collapseAll = () => { setExClients(new Set()); setExGroups(new Set()); };
 
-  const filteredClients = clients.filter(
-    (c) => search === "" || c.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const accessIndex = useMemo(() => {
+    const groupsByClient = new Map<number, DeviceGroup[]>();
+    const devicesByGroup = new Map<number, Device[]>();
+    const devicesByClient = new Map<number, Device[]>();
+    const ungroupedByClient = new Map<number, Device[]>();
+    for (const group of groups) {
+      if (group.client_id == null) continue;
+      groupsByClient.set(group.client_id, [...(groupsByClient.get(group.client_id) ?? []), group]);
+    }
+    for (const device of devices) {
+      if (device.client_id != null) {
+        devicesByClient.set(device.client_id, [...(devicesByClient.get(device.client_id) ?? []), device]);
+        if (device.group_id == null) {
+          ungroupedByClient.set(device.client_id, [...(ungroupedByClient.get(device.client_id) ?? []), device]);
+        }
+      }
+      if (device.group_id != null) {
+        devicesByGroup.set(device.group_id, [...(devicesByGroup.get(device.group_id) ?? []), device]);
+      }
+    }
+    return { groupsByClient, devicesByGroup, devicesByClient, ungroupedByClient };
+  }, [devices, groups]);
 
+  const normalizedSearch = search.trim().toLowerCase();
+  const matchesSearch = (value?: string | null) => !normalizedSearch || (value ?? "").toLowerCase().includes(normalizedSearch);
   const groupsFor = (clientId: number) =>
-    groups.filter(
-      (g) => g.client_id === clientId && (search === "" || g.name.toLowerCase().includes(search.toLowerCase()))
-    );
-
+    (accessIndex.groupsByClient.get(clientId) ?? []).filter((group) => matchesSearch(group.name));
   const devicesFor = (groupId: number) =>
-    devices.filter(
-      (d) => d.group_id === groupId && (search === "" || (d.hostname ?? "").toLowerCase().includes(search.toLowerCase()))
-    );
-
+    (accessIndex.devicesByGroup.get(groupId) ?? []).filter((device) => matchesSearch(device.hostname));
   const ungroupedDevicesFor = (clientId: number) =>
-    devices.filter(
-      (d) => d.client_id === clientId && d.group_id == null &&
-        (search === "" || (d.hostname ?? "").toLowerCase().includes(search.toLowerCase()))
-    );
-
-  // Count total devices that belong to a client (across all its groups + ungrouped)
-  const clientDeviceCount = (clientId: number) =>
-    devices.filter((d) => d.client_id === clientId).length;
+    (accessIndex.ungroupedByClient.get(clientId) ?? []).filter((device) => matchesSearch(device.hostname));
+  const filteredClients = clients.filter((client) =>
+    matchesSearch(client.name) ||
+    (accessIndex.groupsByClient.get(client.id) ?? []).some((group) => matchesSearch(group.name)) ||
+    (accessIndex.devicesByClient.get(client.id) ?? []).some((device) => matchesSearch(device.hostname))
+  );
+  const clientDeviceCount = (clientId: number) => accessIndex.devicesByClient.get(clientId)?.length ?? 0;
 
   // ── Computed check states ──────────────────────────────────────────────── //
 
   const clientCheckState = (clientId: number): CheckState => {
     if (selClients.has(clientId)) return "checked";
-    const clientGroups = groups.filter((g) => g.client_id === clientId);
+    const clientGroups = accessIndex.groupsByClient.get(clientId) ?? [];
     const anyDescendantSelected =
       clientGroups.some((g) => selGroups.has(g.id)) ||
-      devices.some((d) => d.client_id === clientId && selDevices.has(d.id));
+      (accessIndex.devicesByClient.get(clientId) ?? []).some((d) => selDevices.has(d.id));
     return anyDescendantSelected ? "indeterminate" : "unchecked";
   };
 
   const groupCheckState = (group: DeviceGroup): CheckState => {
     if (selClients.has(group.client_id ?? -1)) return "inherited";
     if (selGroups.has(group.id)) return "checked";
-    const anyDeviceSelected = devices.some(
-      (d) => d.group_id === group.id && selDevices.has(d.id)
-    );
+    const anyDeviceSelected = (accessIndex.devicesByGroup.get(group.id) ?? []).some((d) => selDevices.has(d.id));
     return anyDeviceSelected ? "indeterminate" : "unchecked";
   };
 
@@ -517,9 +529,11 @@ function AccessTab({
   const handleSave = async () => {
     try {
       setLoading(true); setError(null); setSaved(false);
-      await updateTeamClientAccess(team.id, Array.from(selClients));
-      await updateTeamGroupAccess(team.id, Array.from(selGroups));
-      await updateTeamDeviceAccess(team.id, Array.from(selDevices));
+      await Promise.all([
+        updateTeamClientAccess(team.id, Array.from(selClients)),
+        updateTeamGroupAccess(team.id, Array.from(selGroups)),
+        updateTeamDeviceAccess(team.id, Array.from(selDevices)),
+      ]);
       onSaved(Array.from(selClients), Array.from(selGroups), Array.from(selDevices));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -1081,27 +1095,17 @@ export default function TeamDetailPage() {
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
 
   const teamId = id ? parseInt(id, 10) : NaN;
 
-  const loadAll = async () => {
+  const loadTeam = async () => {
     if (isNaN(teamId)) { setError("Invalid team ID"); setLoading(false); return; }
     try {
       setLoading(true); setError(null);
-      const [t, ops, cls, grps, devs] = await Promise.all([
-        getTeam(teamId),
-        getOperators(),
-        getClients(),
-        getGroups(),
-        getDevices(),
-      ]);
-      setTeam(t);
-      setOperators(ops);
-      setClients(cls);
-      setGroups(grps);
-      setDevices(devs);
+      setTeam(await getTeam(teamId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load team");
     } finally {
@@ -1109,11 +1113,30 @@ export default function TeamDetailPage() {
     }
   };
 
-  useEffect(() => { void loadAll(); }, [teamId]);
+  useEffect(() => { void loadTeam(); }, [teamId]);
+
+  useEffect(() => {
+    if (tab === "members" && operators.length === 0) {
+      setTabLoading(true);
+      getOperators().then(setOperators).catch((err) => setError(err instanceof Error ? err.message : "Failed to load operators")).finally(() => setTabLoading(false));
+    }
+    if (tab === "access" && clients.length === 0 && groups.length === 0 && devices.length === 0) {
+      setTabLoading(true);
+      Promise.all([getClients(), getGroups(), getDevices({}, 0, 1000)])
+        .then(([nextClients, nextGroups, nextDevices]) => {
+          setClients(nextClients);
+          setGroups(nextGroups);
+          setDevices(nextDevices);
+        })
+        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load device access"))
+        .finally(() => setTabLoading(false));
+    }
+  }, [tab, operators.length, clients.length, groups.length, devices.length]);
 
   // Effective device count: all non-archived devices reachable via client, group, or explicit assignment
-  const effectiveDeviceCount = (() => {
+  const effectiveDeviceCount = useMemo(() => {
     if (!team) return 0;
+    if (devices.length === 0) return team.effective_device_count;
     const cIds = new Set(team.client_ids);
     const gIds = new Set(team.group_ids);
     const dIds = new Set(team.device_ids);
@@ -1123,7 +1146,7 @@ export default function TeamDetailPage() {
         (d.group_id != null && gIds.has(d.group_id)) ||
         dIds.has(d.id)
     ).length;
-  })();
+  }, [devices, team]);
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "overview",     label: "Overview",       icon: <Shield className="h-3.5 w-3.5" /> },
@@ -1165,7 +1188,7 @@ export default function TeamDetailPage() {
               {team.description && <p className="mt-0.5 text-sm text-slate-400">{team.description}</p>}
             </div>
           </div>
-          <Button size="sm" onClick={() => void loadAll()}>
+          <Button size="sm" onClick={() => void loadTeam()}>
             <RefreshCcw className="h-3.5 w-3.5" /> Refresh
           </Button>
         </div>
@@ -1193,13 +1216,14 @@ export default function TeamDetailPage() {
 
       {/* Tab content */}
       <div className="premium-card-soft overflow-hidden p-5 md:p-6">
-        {tab === "overview" && (
+        {tabLoading && <p className="text-sm font-medium text-slate-400">Loading tab data…</p>}
+        {!tabLoading && tab === "overview" && (
           <OverviewTab team={team} canManage={canManage} onSaved={(u) => setTeam(u)} />
         )}
-        {tab === "members" && (
+        {!tabLoading && tab === "members" && (
           <MembersTab team={team} operators={operators} canManage={canManage} onSaved={(ids) => setTeam((p) => p ? { ...p, operator_ids: ids } : p)} />
         )}
-        {tab === "access" && (
+        {!tabLoading && tab === "access" && (
           <AccessTab
             team={team}
             clients={clients}
@@ -1209,7 +1233,7 @@ export default function TeamDetailPage() {
             onSaved={(c, g, d) => setTeam((p) => p ? { ...p, client_ids: c, group_ids: g, device_ids: d } : p)}
           />
         )}
-        {tab === "permissions" && (
+        {!tabLoading && tab === "permissions" && (
           <PermissionsTab team={team} canManage={canManage} onSaved={(u) => setTeam(u)} />
         )}
       </div>

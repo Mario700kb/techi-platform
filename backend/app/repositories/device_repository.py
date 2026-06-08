@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, case, false, func, not_, or_
 
 from app.models.alert import DeviceAlert
@@ -106,7 +106,7 @@ class DeviceRepository:
         smart_folder: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
-        query = self.db.query(Device)
+        query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
 
         if status:
             query = query.filter(Device.status == status)

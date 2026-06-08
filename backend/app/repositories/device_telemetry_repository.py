@@ -49,11 +49,15 @@ class DeviceTelemetryRepository:
         )
 
     def get_latest_all(self) -> List[DeviceTelemetry]:
+        return self.get_latest_for_device_ids()
+
+    def get_latest_for_device_ids(self, device_ids: Optional[List[int]] = None) -> List[DeviceTelemetry]:
         subq = (
             self.db.query(
                 DeviceTelemetry.device_id,
                 func.max(DeviceTelemetry.created_at).label("max_created_at"),
             )
+            .filter(DeviceTelemetry.device_id.in_(device_ids) if device_ids is not None else True)
             .group_by(DeviceTelemetry.device_id)
             .subquery()
         )

@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -190,6 +190,28 @@ class Device(DeviceBase):
     freshness_state: DeviceFreshnessState = DeviceFreshnessState.OFFLINE
 
 
+class DeviceStats(BaseModel):
+    total: int
+    online: int
+    stale: int
+    offline: int
+
+
+class DeviceTreeCounts(BaseModel):
+    total: int
+    unassigned: int
+    by_client: Dict[int, int]
+
+
+class DevicesSummary(BaseModel):
+    devices: List[Device]
+    stats: DeviceStats
+    health: List["DeviceHealthSummary"]
+    patches: List["PatchStatusSnapshot"]
+    tree_counts: DeviceTreeCounts
+    loaded_at: datetime
+
+
 class DeviceClientAssignment(BaseModel):
     client_id: Optional[int] = None
 
@@ -202,3 +224,9 @@ class MaintenanceEnterRequest(BaseModel):
     duration_minutes: Optional[int] = None  # None = indefinite
     note: Optional[str] = None
     started_by: Optional[str] = None
+
+
+from app.schemas.device_inventory import PatchStatusSnapshot
+from app.schemas.telemetry import DeviceHealthSummary
+
+DevicesSummary.model_rebuild()

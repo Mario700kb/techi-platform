@@ -1,4 +1,6 @@
 import { fetchJson } from "./client";
+import type { PatchStatus } from "./inventory";
+import type { DeviceHealthSummary } from "../types/telemetry";
 
 export type OfflineReason =
   | "site_outage"
@@ -184,6 +186,23 @@ export interface DeviceStats {
   online: number;
   stale: number;
   offline: number;
+}
+
+export interface DevicesSummary {
+  devices: Device[];
+  stats: DeviceStats;
+  health: DeviceHealthSummary[];
+  patches: PatchStatus[];
+  tree_counts: {
+    total: number;
+    unassigned: number;
+    by_client: Record<string, number>;
+  };
+  loaded_at: string;
+}
+
+export async function getDevicesSummary(): Promise<DevicesSummary> {
+  return fetchJson<DevicesSummary>("/api/v1/devices/summary");
 }
 
 export async function getDeviceStats(): Promise<DeviceStats> {

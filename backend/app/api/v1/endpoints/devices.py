@@ -13,6 +13,7 @@ from app.schemas.device import (
     DeviceClientAssignment,
     DeviceCreate,
     DeviceGroupAssignment,
+    DevicesSummary,
     DeviceUpdate,
     MaintenanceEnterRequest,
     RustDeskHealth,
@@ -29,6 +30,7 @@ from app.services.device_activity_service import DeviceActivityService
 from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_note_service import DeviceNoteService
 from app.services.device_service import DeviceService
+from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
 from app.services.rustdesk_service import RustDeskIdentityService
@@ -104,6 +106,14 @@ def read_devices_stats(
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
     return DeviceService(db).get_devices_stats(scope=scope)
+
+
+@router.get("/summary", response_model=DevicesSummary)
+def read_devices_summary(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    return DeviceSummaryService(db).get_summary(scope=scope)
 
 
 @router.get("/count")

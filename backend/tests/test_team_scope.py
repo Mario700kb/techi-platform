@@ -6,11 +6,13 @@ All tests are pure in-memory SQLite — no HTTP client needed.
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
 from app.models.client import Client
+from app.models.device import Device
+from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.operator_scope import OperatorScope
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
@@ -40,6 +42,8 @@ from app.services.permission_service import (
 TABLES = [
     Operator.__table__,
     Client.__table__,
+    DeviceGroup.__table__,
+    Device.__table__,
     OperatorScope.__table__,
     Team.__table__,
     TeamMember.__table__,
@@ -316,6 +320,49 @@ def test_team_stats_include_counts(db):
     assert stats["client_count"] == 2
     assert stats["group_count"] == 3
     assert stats["member_count"] == 0
+
+
+def test_list_teams_with_stats_returns_effective_union(db):
+    svc = TeamService(db)
+    first = svc.create_team("Bulk A")
+    second = svc.create_team("Bulk B")
+    svc.replace_client_access(first.id, [1])
+    svc.replace_device_access(second.id, [2])
+    db.add_all([
+        Device(rustdesk_id="BULK-1", hostname="one", client_id=1),
+        Device(rustdesk_id="BULK-2", hostname="two", client_id=2),
+    ])
+    db.commit()
+    devices = db.query(Device).order_by(Device.id).all()
+    svc.replace_device_access(second.id, [devices[1].id])
+
+    rows = {row["name"]: row for row in svc.list_teams_with_stats()}
+
+    assert rows["Bulk A"]["client_count"] == 1
+    assert rows["Bulk A"]["effective_device_count"] == 1
+    assert rows["Bulk B"]["explicit_device_count"] == 1
+    assert rows["Bulk B"]["effective_device_count"] == 1
+
+
+def test_list_teams_query_count_is_bounded(db):
+    svc = TeamService(db)
+    for index in range(20):
+        svc.create_team(f"Query Team {index:02d}")
+
+    statements = 0
+
+    def count_statement(*_args):
+        nonlocal statements
+        statements += 1
+
+    event.listen(db.get_bind(), "before_cursor_execute", count_statement)
+    try:
+        rows = svc.list_teams_with_stats()
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", count_statement)
+
+    assert len(rows) == 20
+    assert statements <= 6
 
 
 # ── get_operator_permissions ───────────────────────────────────────────────── #

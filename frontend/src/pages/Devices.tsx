@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { archiveDevice, deleteDevice, getDevices, restoreDevice, Device, DeviceFilters } from "../api/devices";
-import { getDevicesPatchStatus, PatchStatus } from "../api/inventory";
-import { getDevicesHealthSummary } from "../api/telemetry";
+import { archiveDevice, deleteDevice, getDevicesSummary, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
+import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
-import DevicesTable, { type ActiveActionEntry, type HealthFilter, type QuickFilter } from "../components/DevicesTable";
+import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
 import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
 import { useAlerts } from "../hooks/useAlerts";
@@ -95,17 +94,27 @@ export default function Devices() {
   const { can, user } = useAuth();
   const { favorites, toggle: toggleFavorite } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlQuickFilter = (searchParams.get("filter") ?? undefined) as QuickFilter | undefined;
+  const validQuickFilters = new Set<QuickFilter>([
+    "all", "online", "stale", "offline", "servers", "workstations", "needs_updates",
+    "reboot_required", "warnings", "critical", "healthy", "maintenance",
+    "needs_attention", "low_health", "rustdesk_issues", "favorites",
+  ]);
+  const requestedQuickFilter = searchParams.get("filter") as QuickFilter | null;
+  const quickFilter = requestedQuickFilter && validQuickFilters.has(requestedQuickFilter)
+    ? requestedQuickFilter
+    : "all";
 
   const handleQuickFilterChange = useCallback((f: QuickFilter) => {
-    setSearchParams(f === "all" ? {} : { filter: f }, { replace: true });
-  }, [setSearchParams]);
+    const next = new URLSearchParams(searchParams);
+    if (f === "all") next.delete("filter");
+    else next.set("filter", f);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [filters, setFilters] = useState<DeviceFilters>({});
-  const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
@@ -128,6 +137,7 @@ export default function Devices() {
   const drawerCloseTimerRef = useRef<number | undefined>();
   const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
   const [treeCounts, setTreeCounts] = useState<TreeCounts>(() => computeTreeCounts([]));
+  const [snapshotStats, setSnapshotStats] = useState<DeviceStats>({ total: 0, online: 0, stale: 0, offline: 0 });
   const [healthMap, setHealthMap] = useState<Record<number, DeviceHealthSummary>>({});
   const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
@@ -159,51 +169,30 @@ export default function Devices() {
     if (device) openDrawer(device);
   }, [allDevices, openDrawer]);
 
-  const loadHealthSummary = useCallback(async () => {
+  const loadSnapshot = useCallback(async () => {
+    const showLoading = !devicesLoadedRef.current;
     try {
-      const data = await getDevicesHealthSummary();
-      setHealthMap(Object.fromEntries(data.map((h) => [h.device_id, h])));
-    } catch {
-      // health is optional — ignore failures
+      if (showLoading) setLoading(true);
+      setError(null);
+      const snapshot = await getDevicesSummary();
+      const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
+      setAllDevices(sorted);
+      setDevices(sorted.filter((device) => deviceMatchesFilters(device, filters, searchQuery)));
+      setSnapshotStats(snapshot.stats);
+      setTreeCounts({
+        total: snapshot.tree_counts.total,
+        unassigned: snapshot.tree_counts.unassigned,
+        byClient: new Map(Object.entries(snapshot.tree_counts.by_client).map(([id, count]) => [Number(id), count])),
+      });
+      setHealthMap(Object.fromEntries(snapshot.health.map((item) => [item.device_id, item])));
+      setPatchMap(Object.fromEntries(snapshot.patches.map((item) => [item.device_id, item])));
+      devicesLoadedRef.current = true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load devices");
+    } finally {
+      if (showLoading) setLoading(false);
     }
-  }, []);
-
-  const loadPatchSummary = useCallback(async () => {
-    try {
-      const data = await getDevicesPatchStatus();
-      setPatchMap(Object.fromEntries(data.map((p) => [p.device_id, p])));
-    } catch {
-      // patch visibility is optional — ignore failures
-    }
-  }, []);
-
-  const treeBaseFilters = useMemo<DeviceFilters>(() => ({
-    status: filters.status,
-    freshness_state: filters.freshness_state,
-    device_type: filters.device_type,
-    assignment_source: filters.assignment_source,
-    lifecycle_state: filters.lifecycle_state,
-    duplicate_candidates: filters.duplicate_candidates,
-    maintenance_state: filters.maintenance_state,
-  }), [
-    filters.assignment_source,
-    filters.device_type,
-    filters.duplicate_candidates,
-    filters.freshness_state,
-    filters.lifecycle_state,
-    filters.maintenance_state,
-    filters.status,
-  ]);
-
-  const loadAllDevices = useCallback(async () => {
-    try {
-      const data = await getDevices({ ...treeBaseFilters, search: searchQuery || undefined }, 0, 1000);
-      setAllDevices(data);
-      setTreeCounts(computeTreeCounts(data));
-    } catch {
-      // ignore
-    }
-  }, [treeBaseFilters, searchQuery]);
+  }, [filters, searchQuery]);
 
   const loadOrgData = useCallback(async () => {
     try {
@@ -216,27 +205,16 @@ export default function Devices() {
   }, []);
 
   const loadDevices = useCallback(async () => {
-    const showLoading = !devicesLoadedRef.current;
-    try {
-      if (showLoading) {
-        setLoading(true);
-      }
-      setError(null);
-      const data = await getDevices({ ...filters, search: searchQuery || undefined });
-      setDevices([...data].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? "")));
-      devicesLoadedRef.current = true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load devices");
-    } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
-    }
-  }, [filters, searchQuery]);
+    setDevices(
+      allDevices
+        .filter((device) => deviceMatchesFilters(device, filters, searchQuery))
+        .sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""))
+    );
+  }, [allDevices, filters, searchQuery]);
 
   const refreshBoth = useCallback(async () => {
-    await Promise.all([loadAllDevices(), loadDevices()]);
-  }, [loadAllDevices, loadDevices]);
+    await loadSnapshot();
+  }, [loadSnapshot]);
 
   const deviceMatchesCurrentView = useCallback(
     (device: Device) => deviceMatchesFilters(device, filters, searchQuery),
@@ -320,15 +298,8 @@ export default function Devices() {
   }, [refreshBoth]);
 
   useEffect(() => {
-    void loadHealthSummary();
-    void loadPatchSummary();
     void loadOrgData();
-    const id = window.setInterval(() => {
-      void loadHealthSummary();
-      void loadPatchSummary();
-    }, 60000);
-    return () => window.clearInterval(id);
-  }, [loadHealthSummary, loadPatchSummary, loadOrgData]);
+  }, [loadOrgData]);
 
   const { alerts, alertCount } = useAlerts({ latestEvent });
 
@@ -390,15 +361,19 @@ export default function Devices() {
     },
   });
 
-  const { runNow: refreshDevices } = usePollingRefresh(loadDevices, {
+  usePollingRefresh(loadSnapshot, {
     intervalMs: 60000,
     enabled: wsStatus !== "connected",
-    immediate: !devicesLoadedRef.current,
+    immediate: false,
   });
 
   useEffect(() => {
-    void loadAllDevices();
-  }, [loadAllDevices]);
+    void loadSnapshot();
+  }, []);
+
+  useEffect(() => {
+    void loadDevices();
+  }, [loadDevices]);
 
   useEffect(() => {
     return () => {
@@ -431,10 +406,6 @@ export default function Devices() {
         }
       }
     }
-    const nextDevices = allDevices
-      .filter((device) => deviceMatchesFilters(device, nextFilters, searchQuery))
-      .sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
-    setDevices(nextDevices);
     setFilters(nextFilters);
   };
 
@@ -461,7 +432,7 @@ export default function Devices() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([refreshBoth(), loadOrgData(), loadPatchSummary()]);
+    await Promise.all([refreshBoth(), loadOrgData()]);
   };
 
   const handleDeviceUpdated = (updated: Device) => {
@@ -485,7 +456,7 @@ export default function Devices() {
     if (drawerDeviceId === device.id) {
       closeDrawer();
     }
-    await refreshDevices();
+    await loadSnapshot();
   };
 
   const handleDeviceArchive = async (device: Device) => {
@@ -495,7 +466,7 @@ export default function Devices() {
     if (drawerDeviceId === device.id && filters.lifecycle_state !== "all" && filters.lifecycle_state !== "archived") {
       closeDrawer();
     }
-    await refreshDevices();
+    await loadSnapshot();
   };
 
   const handleDeviceRestore = async (device: Device) => {
@@ -518,7 +489,7 @@ export default function Devices() {
     if (drawerDeviceId === device.id && filters.lifecycle_state === "archived") {
       closeDrawer();
     }
-    await refreshDevices();
+    await loadSnapshot();
   };
 
   const alertsMap = useMemo(() => {
@@ -531,36 +502,43 @@ export default function Devices() {
     return map;
   }, [alerts]);
 
-  const statusSummary = useMemo(() => {
-    const online = devices.filter((item) => item.freshness_state === "online").length;
-    const stale = devices.filter((item) => item.freshness_state === "stale").length;
-    const offline = devices.filter((item) => item.freshness_state === "offline").length;
-    return { online, stale, offline, total: devices.length };
-  }, [devices]);
+  const fleetQuickCounts = useMemo(() => {
+    let critical = 0;
+    let warnings = 0;
+    let updates = 0;
+    let reboot = 0;
+    let lowHealth = 0;
+    for (const device of allDevices) {
+      const health = healthMap[device.id];
+      const patch = patchMap[device.id];
+      if (health?.health_state === "critical") critical++;
+      if (health?.health_state === "warning") warnings++;
+      if (patch?.patch_state === "updates_available") updates++;
+      if (patch?.patch_state === "reboot_required") reboot++;
+      if ((health?.health_score ?? 100) < 60) lowHealth++;
+    }
+    return { critical, warnings, updates, reboot, lowHealth };
+  }, [allDevices, healthMap, patchMap]);
 
   const visibleDevices = useMemo(() => {
     const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
     return devices.filter((device) => {
-      const healthState = healthMap[device.id]?.health_state ?? "healthy";
-      if (healthFilter !== "all" && healthState !== healthFilter) return false;
       if (!hideOldOffline) return true;
       if (device.freshness_state !== "offline") return true;
       if (!device.last_seen) return false;
       return new Date(device.last_seen).getTime() >= cutoff;
     });
-  }, [devices, healthFilter, healthMap, hideOldOffline, hideOfflineDays]);
+  }, [devices, hideOldOffline, hideOfflineDays]);
 
   const treeDevices = useMemo(() => {
     const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
     return allDevices.filter((device) => {
-      const healthState = healthMap[device.id]?.health_state ?? "healthy";
-      if (healthFilter !== "all" && healthState !== healthFilter) return false;
       if (!hideOldOffline) return true;
       if (device.freshness_state !== "offline") return true;
       if (!device.last_seen) return false;
       return new Date(device.last_seen).getTime() >= cutoff;
     });
-  }, [allDevices, healthFilter, healthMap, hideOldOffline, hideOfflineDays]);
+  }, [allDevices, hideOldOffline, hideOfflineDays]);
 
   return (
     <section className="premium-page devices-premium min-w-0 space-y-5">
@@ -623,7 +601,7 @@ export default function Devices() {
             clients={clients}
             groups={groups}
             treeCounts={treeCounts}
-            onRefreshCounts={() => void loadAllDevices()}
+            onRefreshCounts={() => void loadSnapshot()}
           />
         </div>
 
@@ -632,13 +610,10 @@ export default function Devices() {
             {/* Total */}
             <button
               type="button"
-              onClick={() => {
-                handleFilterChange("freshness_state", "all");
-                setHealthFilter("all");
-              }}
+              onClick={() => handleQuickFilterChange("all")}
               className="premium-metric p-5 text-left transition-all hover:opacity-90"
               style={
-                !filters.freshness_state && healthFilter === "all"
+                quickFilter === "all"
                   ? { outline: "2px solid rgba(249,115,22,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
@@ -647,17 +622,17 @@ export default function Devices() {
                 <p className="premium-kicker">Total</p>
                 <Radio className="h-4 w-4 text-orange-400/70" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-white">{statusSummary.total}</p>
-              <p className="mt-2 text-[13px] text-slate-400">Matching current selection</p>
+              <p className="mt-3 text-3xl font-bold text-white">{snapshotStats.total}</p>
+              <p className="mt-2 text-[13px] text-slate-400">Scoped fleet snapshot</p>
             </button>
 
             {/* Online */}
             <button
               type="button"
-              onClick={() => handleFilterChange("freshness_state", "online")}
+              onClick={() => handleQuickFilterChange(quickFilter === "online" ? "all" : "online")}
               className="premium-metric metric-online p-5 text-left transition-all hover:opacity-90"
               style={
-                filters.freshness_state === "online"
+                quickFilter === "online"
                   ? { outline: "2px solid rgba(52,211,153,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
@@ -666,17 +641,17 @@ export default function Devices() {
                 <p className="premium-kicker">Online</p>
                 <Wifi className="h-4 w-4 text-emerald-400/70" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-emerald-300">{statusSummary.online}</p>
+              <p className="mt-3 text-3xl font-bold text-emerald-300">{snapshotStats.online}</p>
               <p className="mt-2 text-[13px] text-slate-400">Active endpoints available</p>
             </button>
 
             {/* Stale */}
             <button
               type="button"
-              onClick={() => handleFilterChange("freshness_state", "stale")}
+              onClick={() => handleQuickFilterChange(quickFilter === "stale" ? "all" : "stale")}
               className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
               style={
-                filters.freshness_state === "stale"
+                quickFilter === "stale"
                   ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
@@ -685,17 +660,17 @@ export default function Devices() {
                 <p className="premium-kicker">Stale</p>
                 <Clock3 className="h-4 w-4 text-amber-400/80" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-amber-200">{statusSummary.stale}</p>
+              <p className="mt-3 text-3xl font-bold text-amber-200">{snapshotStats.stale}</p>
               <p className="mt-2 text-[13px] text-slate-400">Last seen within 15 minutes</p>
             </button>
 
             {/* Offline */}
             <button
               type="button"
-              onClick={() => handleFilterChange("freshness_state", "offline")}
+              onClick={() => handleQuickFilterChange(quickFilter === "offline" ? "all" : "offline")}
               className="premium-metric metric-offline p-5 text-left transition-all hover:opacity-90"
               style={
-                filters.freshness_state === "offline"
+                quickFilter === "offline"
                   ? { outline: "2px solid rgba(148,163,184,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
@@ -704,40 +679,40 @@ export default function Devices() {
                 <p className="premium-kicker">Offline</p>
                 <WifiOff className="h-4 w-4 text-slate-500" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-slate-200">{statusSummary.offline}</p>
+              <p className="mt-3 text-3xl font-bold text-slate-200">{snapshotStats.offline}</p>
               <p className="mt-2 text-[13px] text-slate-400">Devices not responding</p>
             </button>
           </div>
 
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-            {/* Critical Alerts */}
+            {/* Critical health */}
             <button
               type="button"
-              onClick={() => setHealthFilter("critical")}
+              onClick={() => handleQuickFilterChange(quickFilter === "critical" ? "all" : "critical")}
               className="premium-metric metric-critical p-5 text-left transition-all hover:opacity-90"
               style={
-                healthFilter === "critical"
+                quickFilter === "critical"
                   ? { outline: "2px solid rgba(248,113,113,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
             >
               <div className="flex items-center justify-between">
-                <p className="premium-kicker">Critical Alerts</p>
+                <p className="premium-kicker">Critical</p>
                 <ShieldAlert className="h-4 w-4 text-red-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-red-300">
-                {alertCount.by_severity["critical"] ?? 0}
+                {fleetQuickCounts.critical}
               </p>
-              <p className="mt-2 text-[13px] text-slate-400">Requires immediate action</p>
+              <p className="mt-2 text-[13px] text-slate-400">Critical device health</p>
             </button>
 
             {/* Warnings */}
             <button
               type="button"
-              onClick={() => setHealthFilter("warning")}
+              onClick={() => handleQuickFilterChange(quickFilter === "warnings" ? "all" : "warnings")}
               className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
               style={
-                healthFilter === "warning"
+                quickFilter === "warnings"
                   ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
                   : undefined
               }
@@ -747,9 +722,9 @@ export default function Devices() {
                 <AlertTriangle className="h-4 w-4 text-amber-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-amber-200">
-                {alertCount.by_severity["warning"] ?? 0}
+                {fleetQuickCounts.warnings}
               </p>
-              <p className="mt-2 text-[13px] text-slate-400">Active across fleet</p>
+              <p className="mt-2 text-[13px] text-slate-400">Warning device health</p>
             </button>
           </div>
 
@@ -792,11 +767,9 @@ export default function Devices() {
             loading={loading}
             error={error}
             filters={filters}
-            healthFilter={healthFilter}
             searchQuery={searchQuery}
             onSearch={handleSearch}
             onFilterChange={handleFilterChange}
-            onHealthFilterChange={setHealthFilter}
             onRefresh={handleRefresh}
             onDeviceSelect={openDrawer}
             onDeviceDelete={handleDeviceDelete}
@@ -812,8 +785,9 @@ export default function Devices() {
 	            onBulkComplete={handleRefresh}
 	            favorites={favorites}
 	            onToggleFavorite={toggleFavorite}
-	            initialQuickFilter={urlQuickFilter}
+	            quickFilter={quickFilter}
 	            onQuickFilterChange={handleQuickFilterChange}
+	            scopedDeviceCount={snapshotStats.total}
 	          />
         </div>
       </div>
