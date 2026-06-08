@@ -179,6 +179,17 @@ export async function getDevices(
   return fetchJson<Device[]>(`/api/v1/devices/?${params.toString()}`);
 }
 
+export interface DeviceStats {
+  total: number;
+  online: number;
+  stale: number;
+  offline: number;
+}
+
+export async function getDeviceStats(): Promise<DeviceStats> {
+  return fetchJson<DeviceStats>("/api/v1/devices/stats");
+}
+
 export async function getDevicesCount(filters: DeviceFilters = {}): Promise<number> {
   const params = new URLSearchParams();
   appendDeviceFilterParams(params, filters);

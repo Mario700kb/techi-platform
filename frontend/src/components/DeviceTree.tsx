@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Server, Monitor, Box, LayoutGrid } from "lucide-react";
+import { ChevronRight, RefreshCcw, Server, Monitor, Box, LayoutGrid } from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
@@ -18,15 +18,23 @@ const readShowEmptyGroups = () => {
   }
 };
 
+interface TreeCounts {
+  total: number;
+  unassigned: number;
+  byClient: Map<number, number>;
+}
+
 interface DeviceTreeProps {
   selectedKey: string;
   onSelect: (key: string) => void;
   devices: Device[];
   clients: Client[];
   groups: DeviceGroup[];
+  treeCounts: TreeCounts;
+  onRefreshCounts: () => void;
 }
 
-const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups }: DeviceTreeProps) {
+const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups, treeCounts, onRefreshCounts }: DeviceTreeProps) {
   void groups;
   const activeClientFolder = useMemo(() => {
     const match = selectedKey.match(/^client-(\d+)-(servers|clientpc)$/);
@@ -35,11 +43,16 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   }, [selectedKey]);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
   const [showEmptyGroups, setShowEmptyGroups] = useState(readShowEmptyGroups);
-  const allCount = devices.length;
+
+  // Use stable treeCounts for all top-level counts — not recalculated on heartbeat
+  const allCount = treeCounts.total;
+  const unassignedCount = treeCounts.unassigned;
+  const clientCount = (clientId: number) => treeCounts.byClient.get(clientId) ?? 0;
+
+  // Folder and maintenance flags derive from devices but only re-run when an
+  // expanded client's devices actually change (called per-click, not per-render)
   const resolvedClientId = (device: Device) => device.resolved_client_id ?? device.client_id ?? null;
   const resolvedCategory = (device: Device) => device.resolved_device_category ?? "unassigned";
-  const unassignedCount = devices.filter((d) => !resolvedClientId(d)).length;
-  const clientCount = (clientId: number) => devices.filter((d) => resolvedClientId(d) === clientId).length;
   const folderCount = (clientId: number, folderId: string) => devices.filter((device) => {
     if (resolvedClientId(device) !== clientId) return false;
     return resolvedCategory(device) === folderId;
@@ -56,11 +69,11 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   const visibleClients = useMemo(() => {
     if (showEmptyGroups) return sortedClients;
     return sortedClients.filter((client) => {
-      const hasDevices = clientCount(client.id) > 0;
+      const hasDevices = (treeCounts.byClient.get(client.id) ?? 0) > 0;
       const isActive = selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id;
       return hasDevices || isActive;
     });
-  }, [activeClientFolder, devices, selectedKey, showEmptyGroups, sortedClients]);
+  }, [activeClientFolder, treeCounts, selectedKey, showEmptyGroups, sortedClients]);
 
   useEffect(() => {
     window.localStorage.setItem(SHOW_EMPTY_STORAGE_KEY, String(showEmptyGroups));
@@ -82,9 +95,19 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         <p className="premium-kicker">Device Explorer</p>
         <div className="mt-1 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-white">Fleet tree</h3>
-          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/[0.07] px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-            Live
-          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onRefreshCounts}
+              className="rounded p-0.5 text-slate-500 hover:text-slate-300 transition-colors"
+              title="Refresh tree counts"
+            >
+              <RefreshCcw className="h-3 w-3" />
+            </button>
+            <span className="rounded-full border border-emerald-400/25 bg-emerald-400/[0.07] px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+              Live
+            </span>
+          </div>
         </div>
       </div>
 

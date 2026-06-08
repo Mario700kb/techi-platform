@@ -98,6 +98,14 @@ def read_devices(
     )
 
 
+@router.get("/stats")
+def read_devices_stats(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    return DeviceService(db).get_devices_stats(scope=scope)
+
+
 @router.get("/count")
 def read_devices_count(
     db: Session = Depends(get_db),

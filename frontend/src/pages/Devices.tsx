@@ -30,6 +30,23 @@ const DEVICE_PATCH_EVENTS = new Set([
   "sync_failed",
 ]);
 
+interface TreeCounts {
+  total: number;
+  unassigned: number;
+  byClient: Map<number, number>;
+}
+
+function computeTreeCounts(devices: Device[]): TreeCounts {
+  const byClient = new Map<number, number>();
+  let unassigned = 0;
+  for (const d of devices) {
+    const cid = d.resolved_client_id ?? d.client_id ?? null;
+    if (cid === null) unassigned++;
+    else byClient.set(cid, (byClient.get(cid) ?? 0) + 1);
+  }
+  return { total: devices.length, unassigned, byClient };
+}
+
 export default function Devices() {
   const { can, user } = useAuth();
   const { favorites, toggle: toggleFavorite } = useFavorites();
@@ -66,6 +83,7 @@ export default function Devices() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerCloseTimerRef = useRef<number | undefined>();
   const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
+  const [treeCounts, setTreeCounts] = useState<TreeCounts>(() => computeTreeCounts([]));
   const [healthMap, setHealthMap] = useState<Record<number, DeviceHealthSummary>>({});
   const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
@@ -131,6 +149,7 @@ export default function Devices() {
     try {
       const data = await getDevices({ ...treeBaseFilters, search: searchQuery || undefined }, 0, 1000);
       setAllDevices(data);
+      setTreeCounts(computeTreeCounts(data));
     } catch {
       // ignore
     }
@@ -285,7 +304,7 @@ export default function Devices() {
     refreshTimerRef.current = window.setTimeout(() => {
       refreshTimerRef.current = undefined;
       void refreshBoth();
-    }, 600);
+    }, 5000);
   }, [refreshBoth]);
 
   useEffect(() => {
@@ -352,7 +371,7 @@ export default function Devices() {
 
       if (DEVICE_PATCH_EVENTS.has(event.type)) {
         const patchedExistingDevice = mergeDeviceEvent(event);
-        if (!patchedExistingDevice) {
+        if (!patchedExistingDevice && event.type === "device_updated") {
           scheduleDevicesRefresh();
         }
       }
@@ -587,6 +606,8 @@ export default function Devices() {
             devices={treeDevices}
             clients={clients}
             groups={groups}
+            treeCounts={treeCounts}
+            onRefreshCounts={() => void loadAllDevices()}
           />
         </div>
 

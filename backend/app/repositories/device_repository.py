@@ -376,6 +376,26 @@ class DeviceRepository:
 
         return query.count()
 
+    def count_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
+        """Return total/online/stale/offline in one query instead of four."""
+        now = utcnow()
+        online_cutoff = now - timedelta(minutes=2)
+        stale_cutoff = now - timedelta(minutes=15)
+        q = self.db.query(
+            func.count(Device.id).label("total"),
+            func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),
+            func.count(case((
+                and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1
+            ))).label("stale"),
+            func.count(case((
+                or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1
+            ))).label("offline"),
+        )
+        q = self._apply_lifecycle_filter(q, "active")
+        q = self._apply_scope_filter(q, scope)
+        row = q.one()
+        return {"total": row.total, "online": row.online, "stale": row.stale, "offline": row.offline}
+
     def _apply_scope_filter(self, query, scope: Optional["AllowedScope"]):
         """Restrict query to devices visible under *scope*.
 

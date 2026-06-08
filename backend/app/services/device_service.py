@@ -1,3 +1,5 @@
+import threading
+import time
 from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,11 @@ from app.services.device_maintenance_service import DeviceMaintenanceService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload
 from app.websocket.publisher import realtime_publisher
+
+
+_stats_cache: dict = {}
+_stats_cache_lock = threading.Lock()
+_STATS_TTL = 30.0
 
 
 class DeviceService:
@@ -151,6 +158,17 @@ class DeviceService:
             smart_folder=smart_folder,
             scope=scope,
         )
+
+    def get_devices_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
+        cache_key = scope  # AllowedScope is a frozen dataclass → hashable; None for admins
+        with _stats_cache_lock:
+            entry = _stats_cache.get(cache_key)
+            if entry and (time.monotonic() - entry["ts"]) < _STATS_TTL:
+                return entry["data"]
+        data = self.repository.count_stats(scope=scope)
+        with _stats_cache_lock:
+            _stats_cache[cache_key] = {"data": data, "ts": time.monotonic()}
+        return data
 
     def enter_maintenance(self, device_id: int, request: MaintenanceEnterRequest) -> Optional[Device]:
         device = self.repository.get(device_id)
