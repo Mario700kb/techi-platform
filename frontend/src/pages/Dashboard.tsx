@@ -86,7 +86,6 @@ export default function Dashboard() {
   const [criticalCount, setCriticalCount] = useState(0);
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
-  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<DeviceRealtimeEvent | null>(null);
   const [activityReady, setActivityReady] = useState(false);
   const firstLoadDoneRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
@@ -225,7 +224,6 @@ export default function Dashboard() {
       if (event.type === "connection_ready") {
         return;
       }
-      setLastRealtimeEvent(event);
       patchRecentAction(event);
       if (
         event.type === "device_online" ||
@@ -730,11 +728,7 @@ export default function Dashboard() {
                     <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
                     <div>
                       <p className="font-semibold text-white">Inventory synchronized</p>
-                      <p className="mt-1">
-                        {lastRealtimeEvent
-                          ? `${lastRealtimeEvent.type.replace(/_/g, " ")}${lastRealtimeEvent.data?.hostname ? ` from ${lastRealtimeEvent.data.hostname}` : ""}`
-                          : "Live counts refreshed from the backend."}
-                      </p>
+                      <p className="mt-1">fleet telemetry active</p>
                     </div>
                   </div>
                   <div className="premium-card-soft flex items-start gap-3 p-3">
