@@ -83,7 +83,10 @@ export default function Deployment() {
 
   useEffect(() => {
     getRustDeskConfig().then(setRustdesk).catch(() => setRustdesk(null));
-    getLatestPackage("windows").then(setActivePackage).catch(() => setActivePackage(null));
+    getLatestPackage("windows-amd64")
+      .catch(() => getLatestPackage("windows"))
+      .then(setActivePackage)
+      .catch(() => setActivePackage(null));
     void loadTokens();
   }, []);
 

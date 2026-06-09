@@ -163,7 +163,7 @@ export async function generateEnrollmentBootstrap(
 }
 
 export async function getRustDeskConfig(): Promise<RustDeskConfig> {
-  return fetchJson<RustDeskConfig>("/api/v1/rustdesk/config");
+  return fetchJson<RustDeskConfig>("/api/v1/remote-support/config");
 }
 
 export function buildWindowsBootstrapUrl(token: string): string {

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
+from app.core.config import settings
 from app.core.scope import AllowedScope, device_in_scope
 from app.core.time import utcnow
 from app.db.session import get_db
@@ -139,6 +140,21 @@ def _get_device(
 # ------------------------------------------------------------------ #
 # Endpoints                                                            #
 # ------------------------------------------------------------------ #
+
+class RustDeskConfigResponse(BaseModel):
+    server_host: str
+    relay_host: str
+    public_key: str
+
+
+@router.get("/config", response_model=RustDeskConfigResponse)
+def get_remote_support_config():
+    return RustDeskConfigResponse(
+        server_host=settings.RUSTDESK_SERVER_HOST,
+        relay_host=settings.RUSTDESK_RELAY_HOST,
+        public_key=settings.RUSTDESK_PUBLIC_KEY,
+    )
+
 
 @router.get("/devices", response_model=List[RemoteSupportDevice])
 def list_remote_support_devices(
