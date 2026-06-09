@@ -30,10 +30,16 @@ logger = logging.getLogger("techi.startup")
 
 def _run_heartbeat_cleanup() -> None:
     from app.db.session import SessionLocal
-    from app.tasks.cleanup import cleanup_old_heartbeats
+    from app.tasks.cleanup import (
+        cleanup_old_heartbeats,
+        cleanup_old_telemetry,
+        cleanup_old_activity_events,
+    )
     db = SessionLocal()
     try:
         cleanup_old_heartbeats(db)
+        cleanup_old_telemetry(db)
+        cleanup_old_activity_events(db)
     except Exception:
         logger.exception("Heartbeat cleanup failed")
     finally:
