@@ -130,6 +130,7 @@ export default function Dashboard() {
       setRecentActions(latestActions);
       setOperators(presenceList);
       firstLoadDoneRef.current = true;
+      setActivityReady(true);
     } catch (err) {
       console.error('Dashboard load error:', err);
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
