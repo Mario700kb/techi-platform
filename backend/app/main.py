@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 import logging
 import os
 
@@ -23,30 +26,34 @@ from app.workers.device_reconciliation_worker import device_reconciliation_worke
 
 logger = logging.getLogger("techi.startup")
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.PROJECT_VERSION,
-    openapi_url=f"{settings.API_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_PREFIX}/docs",
-    redoc_url=None,
-)
 
-_cors_origins = ["*"] if settings.BACKEND_CORS_ALLOW_ALL else settings.BACKEND_CORS_ORIGINS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(api_router, prefix=settings.API_PREFIX)
-app.include_router(websocket_router)
-app.include_router(legacy_compat_router)
+def _run_heartbeat_cleanup() -> None:
+    from app.db.session import SessionLocal
+    from app.tasks.cleanup import cleanup_old_heartbeats
+    db = SessionLocal()
+    try:
+        cleanup_old_heartbeats(db)
+    except Exception:
+        logger.exception("Heartbeat cleanup failed")
+    finally:
+        db.close()
 
 
-@app.on_event("startup")
-async def start_background_workers() -> None:
+async def _heartbeat_cleanup_scheduler() -> None:
+    await asyncio.to_thread(_run_heartbeat_cleanup)
+    while True:
+        now = datetime.utcnow()
+        next_03 = now.replace(hour=3, minute=0, second=0, microsecond=0)
+        if next_03 <= now:
+            next_03 += timedelta(days=1)
+        delay = (next_03 - now).total_seconds()
+        logger.info("Next heartbeat cleanup at %s UTC (in %.0fs)", next_03.isoformat(), delay)
+        await asyncio.sleep(delay)
+        await asyncio.to_thread(_run_heartbeat_cleanup)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("Starting %s v%s [env=%s]", settings.PROJECT_NAME, settings.PROJECT_VERSION, settings.ENVIRONMENT)
     if settings.BACKEND_CORS_ALLOW_ALL:
         logger.warning("CORS: allow_all=true — all origins permitted (LAN/dev mode only)")
@@ -73,14 +80,43 @@ async def start_background_workers() -> None:
         )
     finally:
         db.close()
+
     realtime_publisher.start()
     device_reconciliation_worker.start()
+    cleanup_task = asyncio.create_task(_heartbeat_cleanup_scheduler())
 
+    yield
 
-@app.on_event("shutdown")
-async def stop_background_workers() -> None:
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     await device_reconciliation_worker.stop()
     await realtime_publisher.stop()
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.PROJECT_VERSION,
+    openapi_url=f"{settings.API_PREFIX}/openapi.json",
+    docs_url=f"{settings.API_PREFIX}/docs",
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+_cors_origins = ["*"] if settings.BACKEND_CORS_ALLOW_ALL else settings.BACKEND_CORS_ORIGINS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(api_router, prefix=settings.API_PREFIX)
+app.include_router(websocket_router)
+app.include_router(legacy_compat_router)
 
 
 @app.get("/health", summary="Health check")
