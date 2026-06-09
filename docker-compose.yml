@@ -2,6 +2,7 @@
 services:
   postgres:
     image: postgres:15-alpine
+    shm_size: 256mb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-techi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techi}
