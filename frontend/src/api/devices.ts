@@ -205,6 +205,16 @@ export async function getDevicesSummary(): Promise<DevicesSummary> {
   return fetchJson<DevicesSummary>("/api/v1/devices/summary");
 }
 
+export interface DeviceTreeCounts {
+  total: number;
+  unassigned: number;
+  by_client: Record<string, number>;
+}
+
+export async function getDeviceTree(): Promise<DeviceTreeCounts> {
+  return fetchJson<DeviceTreeCounts>("/api/v1/devices/tree");
+}
+
 export async function getDeviceStats(): Promise<DeviceStats> {
   const stats = await fetchJson<DeviceStats>("/api/v1/devices/stats");
   if (

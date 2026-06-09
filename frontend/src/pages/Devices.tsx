@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { archiveDevice, deleteDevice, getDevicesSummary, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
+import { archiveDevice, deleteDevice, getDevicesSummary, getDeviceTree, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
@@ -174,19 +174,34 @@ export default function Devices() {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      const snapshot = await getDevicesSummary();
-      const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
-      setAllDevices(sorted);
-      setDevices(sorted.filter((device) => deviceMatchesFilters(device, filters, searchQuery)));
-      setSnapshotStats(snapshot.stats);
-      setTreeCounts({
-        total: snapshot.tree_counts.total,
-        unassigned: snapshot.tree_counts.unassigned,
-        byClient: new Map(Object.entries(snapshot.tree_counts.by_client).map(([id, count]) => [Number(id), count])),
+
+      // Fire a fast tree-counts query in parallel so the sidebar renders before
+      // the full 575KB summary completes (GROUP BY only, no telemetry/health).
+      const treePromise = getDeviceTree().then((tree) => {
+        setTreeCounts({
+          total: tree.total,
+          unassigned: tree.unassigned,
+          byClient: new Map(Object.entries(tree.by_client).map(([id, count]) => [Number(id), count])),
+        });
+      }).catch(() => undefined);
+
+      const snapshotPromise = getDevicesSummary().then((snapshot) => {
+        const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
+        setAllDevices(sorted);
+        setDevices(sorted.filter((device) => deviceMatchesFilters(device, filters, searchQuery)));
+        setSnapshotStats(snapshot.stats);
+        setTreeCounts({
+          total: snapshot.tree_counts.total,
+          unassigned: snapshot.tree_counts.unassigned,
+          byClient: new Map(Object.entries(snapshot.tree_counts.by_client).map(([id, count]) => [Number(id), count])),
+        });
+        setHealthMap(Object.fromEntries(snapshot.health.map((item) => [item.device_id, item])));
+        setPatchMap(Object.fromEntries(snapshot.patches.map((item) => [item.device_id, item])));
+        devicesLoadedRef.current = true;
       });
-      setHealthMap(Object.fromEntries(snapshot.health.map((item) => [item.device_id, item])));
-      setPatchMap(Object.fromEntries(snapshot.patches.map((item) => [item.device_id, item])));
-      devicesLoadedRef.current = true;
+
+      // Wait for both but don't let a slow summary block tree rendering
+      await Promise.all([treePromise, snapshotPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {

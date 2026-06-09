@@ -10,7 +10,7 @@ from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
-from app.schemas.device import DeviceCreate, DeviceUpdate
+from app.schemas.device import DeviceCreate, DeviceTreeCounts, DeviceUpdate
 
 if TYPE_CHECKING:
     from app.core.scope import AllowedScope
@@ -395,6 +395,28 @@ class DeviceRepository:
         q = self._apply_scope_filter(q, scope)
         row = q.one()
         return {"total": row.total, "online": row.online, "stale": row.stale, "offline": row.offline}
+
+    def count_by_client(self, scope: Optional["AllowedScope"] = None) -> DeviceTreeCounts:
+        """Fast GROUP BY aggregation for the Device Tree sidebar. No telemetry/health loaded."""
+        q = self.db.query(
+            Device.client_id,
+            func.count(Device.id).label("cnt"),
+        )
+        q = self._apply_lifecycle_filter(q, "active")
+        q = self._apply_scope_filter(q, scope)
+        rows = q.group_by(Device.client_id).all()
+
+        total = 0
+        unassigned = 0
+        by_client: dict[int, int] = {}
+        for client_id, cnt in rows:
+            total += cnt
+            if client_id is None:
+                unassigned += cnt
+            else:
+                by_client[client_id] = cnt
+
+        return DeviceTreeCounts(total=total, unassigned=unassigned, by_client=by_client)
 
     def _apply_scope_filter(self, query, scope: Optional["AllowedScope"]):
         """Restrict query to devices visible under *scope*.

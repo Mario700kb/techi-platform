@@ -12,7 +12,7 @@ import {
 import { Button } from "../components/ui";
 import { parseUTC, timeAgo as timeAgoUtil } from "../utils/time";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 50;
 
 function timeAgo(iso: string): string {
   const d = parseUTC(iso);

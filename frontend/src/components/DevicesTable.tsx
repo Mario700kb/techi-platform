@@ -892,9 +892,20 @@ const DevicesTable = memo(function DevicesTable({
 
       {/* States */}
       {loading ? (
-        <div className="premium-card-soft py-12 text-center">
-          <p className="text-[15px] font-semibold text-slate-200">Loading devices...</p>
-          <p className="mt-1 text-[13px] text-slate-500">Fetching inventory from backend.</p>
+        <div className="premium-card-soft overflow-hidden">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
+              style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.09 }}
+            >
+              <div className="h-2 w-2 flex-none rounded-full bg-slate-700" />
+              <div className="h-3 w-32 rounded bg-slate-700/80" />
+              <div className="h-3 w-20 rounded bg-slate-700/60 ml-4" />
+              <div className="h-3 w-24 rounded bg-slate-700/50 ml-auto" />
+              <div className="h-3 w-16 rounded bg-slate-700/40" />
+            </div>
+          ))}
         </div>
       ) : error ? (
         <div className="premium-card-soft py-12 text-center">

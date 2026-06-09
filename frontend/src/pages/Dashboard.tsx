@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<DeviceRealtimeEvent | null>(null);
+  const [activityReady, setActivityReady] = useState(false);
   const firstLoadDoneRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
   const lastMetricRefreshRef = useRef(0);
@@ -301,7 +302,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => void refreshDashboard()}>
+            <Button onClick={() => { setActivityReady(true); void refreshDashboard(); }}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
             </Button>
@@ -722,31 +723,50 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-4 space-y-2.5 text-sm font-medium text-slate-300">
-              <div className="premium-card-soft flex items-start gap-3 p-3">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
-                <div>
-                  <p className="font-semibold text-white">Inventory synchronized</p>
-                  <p className="mt-1">
-                    {lastRealtimeEvent
-                      ? `${lastRealtimeEvent.type.replace(/_/g, " ")}${lastRealtimeEvent.data?.hostname ? ` from ${lastRealtimeEvent.data.hostname}` : ""}`
-                      : "Live counts refreshed from the backend."}
+              {activityReady ? (
+                <>
+                  <div className="premium-card-soft flex items-start gap-3 p-3">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
+                    <div>
+                      <p className="font-semibold text-white">Inventory synchronized</p>
+                      <p className="mt-1">
+                        {lastRealtimeEvent
+                          ? `${lastRealtimeEvent.type.replace(/_/g, " ")}${lastRealtimeEvent.data?.hostname ? ` from ${lastRealtimeEvent.data.hostname}` : ""}`
+                          : "Live counts refreshed from the backend."}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="premium-card-soft flex items-start gap-3 p-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
+                    <div>
+                      <p className="font-semibold text-white">{offline} offline devices</p>
+                      <p className="mt-1">Review the device tree for endpoint triage.</p>
+                    </div>
+                  </div>
+                  <div className="premium-card-soft flex items-start gap-3 p-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 text-orange-300" />
+                    <div>
+                      <p className="font-semibold text-white">TECHI Remote Support native path</p>
+                      <p className="mt-1">Connect action remains ready for native launch.</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-2.5">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="premium-card-soft flex items-start gap-3 p-3 opacity-40">
+                      <div className="mt-0.5 h-5 w-5 flex-none rounded-full bg-slate-600/60" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 w-32 rounded bg-slate-600/60" />
+                        <div className="h-2.5 w-48 rounded bg-slate-700/60" />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="pt-1 text-center text-[11px] text-slate-600">
+                    Click Refresh to load activity
                   </p>
                 </div>
-              </div>
-              <div className="premium-card-soft flex items-start gap-3 p-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
-                <div>
-                  <p className="font-semibold text-white">{offline} offline devices</p>
-                  <p className="mt-1">Review the device tree for endpoint triage.</p>
-                </div>
-              </div>
-              <div className="premium-card-soft flex items-start gap-3 p-3">
-                <ShieldCheck className="mt-0.5 h-5 w-5 text-orange-300" />
-                <div>
-                  <p className="font-semibold text-white">TECHI Remote Support native path</p>
-                  <p className="mt-1">Connect action remains ready for native launch.</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </aside>

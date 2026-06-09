@@ -8,11 +8,13 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.activity import ActivityEvent
+from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import (
     Device as DeviceSchema,
     DeviceClientAssignment,
     DeviceCreate,
     DeviceGroupAssignment,
+    DeviceTreeCounts,
     DevicesSummary,
     DeviceUpdate,
     MaintenanceEnterRequest,
@@ -106,6 +108,16 @@ def read_devices_stats(
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
     return DeviceService(db).get_devices_stats(scope=scope)
+
+
+@router.get("/tree", response_model=DeviceTreeCounts)
+def read_device_tree(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Lightweight GROUP BY aggregation — returns device counts per client only.
+    Used by the Device Tree sidebar to render immediately before the full summary loads."""
+    return DeviceRepository(db).count_by_client(scope=scope)
 
 
 @router.get("/summary", response_model=DevicesSummary)
