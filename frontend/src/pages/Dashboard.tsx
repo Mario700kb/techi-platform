@@ -16,7 +16,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, getDevicesSummary } from "../api/devices";
+import { Device, getDevicesSummary, getDeviceStats } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
@@ -141,17 +141,14 @@ export default function Dashboard() {
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
-      const snapshot = await getDevicesSummary();
-      const stats = snapshot.stats;
-      const healthSummary = snapshot.health;
-      const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
+      // Use the lightweight cached stats endpoint (30s TTL, <1ms) instead of
+      // getDevicesSummary() (800ms+, 575KB) for WS-triggered counter updates.
+      // Health/patch counts refresh on full loadDashboard() runs (120s or manual).
+      const stats = await getDeviceStats();
       setTotal(stats.total);
       setOnline(stats.online);
       setStale(stats.stale);
       setOffline(stats.offline);
-      setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
-      setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
-      setPatchCount(snapshot.patches.filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
     } catch {
       // dashboard metrics are refreshed again by fallback polling/manual refresh
     }

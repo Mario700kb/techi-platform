@@ -10,6 +10,7 @@ configure_logging()
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.legacy_compat import router as legacy_compat_router
 from app.api.v1.api import api_router
@@ -113,6 +114,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)
