@@ -22,7 +22,7 @@ log = logging.getLogger("techi.agent_config")
 
 _POLICY_FILE: str = os.environ.get("AGENT_POLICY_FILE", "/app/data/agent_policy.json")
 
-HEARTBEAT_INTERVAL_DEFAULT: int = 180
+HEARTBEAT_INTERVAL_DEFAULT: int = 300
 HEARTBEAT_INTERVAL_MIN: int = 60
 HEARTBEAT_INTERVAL_MAX: int = 600
 

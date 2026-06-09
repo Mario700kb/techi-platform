@@ -71,6 +71,16 @@ class DeviceHeartbeatService:
         return DeviceType.UNASSIGNED
 
     def process_heartbeat(self, payload: AgentHeartbeatPayload):
+        """Synchronous wrapper — keeps existing callers and tests working."""
+        device, heartbeat, ctx = self.process_heartbeat_core(payload)
+        self._run_side_effects(payload, device, heartbeat.id, ctx)
+        return device, heartbeat
+
+    def process_heartbeat_core(self, payload: AgentHeartbeatPayload):
+        """
+        Fast path: resolve/create/update device record + write heartbeat row.
+        Returns (device, heartbeat, ctx) where ctx carries data needed by _run_side_effects.
+        """
         device_type = self.classify_device_type(
             payload.os_name,
             payload.domain,
@@ -189,11 +199,28 @@ class DeviceHeartbeatService:
             rustdesk_install_path=device.rustdesk_install_path,
         )
         heartbeat = self.heartbeat_repo.create(heartbeat_data)
-        current_payload = device_payload(device)
+
+        return device, heartbeat, {
+            "previous_payload": previous_payload,
+            "current_payload": device_payload(device),
+            "prev_user": prev_user,
+            "prev_repair_count": prev_repair_count,
+        }
+
+    def _run_side_effects(self, payload: AgentHeartbeatPayload, device, heartbeat_id: int, ctx: dict) -> None:
+        """
+        Realtime events, telemetry, inventory, and alerts.
+        Safe to run in a FastAPI BackgroundTask with a fresh DB session.
+        """
+        current_payload = ctx["current_payload"]
+        previous_payload = ctx["previous_payload"]
+        prev_user = ctx["prev_user"]
+        prev_repair_count = ctx["prev_repair_count"]
+
         realtime_publisher.publish_threadsafe(
             build_event(
                 RealtimeEventType.HEARTBEAT_RECEIVED,
-                data={**current_payload, "heartbeat_id": heartbeat.id},
+                data={**current_payload, "heartbeat_id": heartbeat_id},
                 reason="heartbeat_received",
             )
         )
@@ -212,7 +239,6 @@ class DeviceHeartbeatService:
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
         self._evaluate_post_heartbeat_alerts(device)
-        return device, heartbeat
 
     def _resolve_via_fingerprint(
         self, payload: AgentHeartbeatPayload, device_type: DeviceType, now: datetime

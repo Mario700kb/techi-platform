@@ -87,6 +87,7 @@ class AgentHeartbeatResponse(BaseModel):
     last_seen: Optional[datetime]
     heartbeat_at: datetime
     pending_actions: List[PendingActionDelivery] = []
+    heartbeat_interval_seconds: Optional[int] = None
 
 
 class AgentEnrollmentRequest(BaseModel):
