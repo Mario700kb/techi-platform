@@ -2,6 +2,15 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { AuthUser, getCurrentUser, getEffectivePermissions, login as loginRequest, UserRole } from "../api/auth";
 import { clearAuthSession, getAuthToken, setAuthSession } from "../api/client";
 
+// Module-level singleton — survives React unmount/remount on navigation.
+// Guarantees loading=false + permissions ready the instant AuthProvider re-mounts.
+interface AuthCacheEntry {
+  user: AuthUser;
+  token: string;
+  permissions: string[] | null;
+}
+let _authCache: AuthCacheEntry | null = null;
+
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
@@ -26,43 +35,45 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getAuthToken());
+  // Cache hit → instant state on re-mount, no API call, no loading flash
   const [user, setUser] = useState<AuthUser | null>(() => {
+    if (_authCache) return _authCache.user;
     const raw = window.localStorage.getItem("techi.auth.user");
     return raw ? JSON.parse(raw) as AuthUser : null;
   });
-  const [loading, setLoading] = useState(Boolean(token));
-  const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(() => _authCache === null && Boolean(token));
+  const [permissions, setPermissions] = useState<string[] | null>(() => _authCache?.permissions ?? null);
 
   useEffect(() => {
     if (!token) {
       setLoading(false);
       return;
     }
+    // Cache warm with same token — skip both API calls, no loading screen
+    if (_authCache?.token === token) {
+      return;
+    }
     let alive = true;
-    getCurrentUser()
-      .then((me) => {
+    (async () => {
+      try {
+        const me = await getCurrentUser();
         if (!alive) return;
         setUser(me);
         setAuthSession(token, me);
-        return getEffectivePermissions();
-      })
-      .then((perms) => {
-        if (!alive || !perms) return;
-        // null means bypass (admin/owner) — backend returns full role permissions for them,
-        // but we detect bypass by checking if permissions equals all role permissions.
-        // Simpler: backend signals bypass by returning the role's full set.
-        // We store null for admin/owner (role rank >= admin), string[] for operator/readonly.
+        const perms = await getEffectivePermissions();
+        if (!alive) return;
         setPermissions(perms.permissions);
-      })
-      .catch(() => {
+        _authCache = { user: me, token, permissions: perms.permissions };
+      } catch {
         if (!alive) return;
         clearAuthSession();
+        _authCache = null;
         setToken(null);
         setUser(null);
-      })
-      .finally(() => {
+      } finally {
         if (alive) setLoading(false);
-      });
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -71,18 +82,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const response = await loginRequest(username, password);
     setAuthSession(response.access_token, response.user);
-    setToken(response.access_token);
     setUser(response.user);
     try {
       const perms = await getEffectivePermissions();
       setPermissions(perms.permissions);
+      _authCache = { user: response.user, token: response.access_token, permissions: perms.permissions };
     } catch {
       setPermissions([]);
+      _authCache = { user: response.user, token: response.access_token, permissions: [] };
     }
+    // setToken LAST — cache is warm before useEffect([token]) re-runs, skipping /auth/me
+    setToken(response.access_token);
   }, []);
 
   const logout = useCallback(() => {
     clearAuthSession();
+    _authCache = null;
     setToken(null);
     setUser(null);
     setPermissions(null);
