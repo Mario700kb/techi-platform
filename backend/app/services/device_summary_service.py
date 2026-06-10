@@ -1,3 +1,4 @@
+import time
 from collections import defaultdict
 from typing import Optional
 
@@ -16,11 +17,40 @@ from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_service import DeviceService
 
 
+# Summary cache: scope_key → (DevicesSummary, cached_at)
+_summary_cache: dict[str, tuple["DevicesSummary", float]] = {}
+_SUMMARY_CACHE_TTL = 30.0  # seconds
+
+
+def _scope_cache_key(scope: Optional[AllowedScope]) -> str:
+    if scope is None:
+        return "global"
+    return (
+        f"c{sorted(scope.client_ids)}"
+        f"g{sorted(scope.group_ids)}"
+        f"d{sorted(scope.device_ids)}"
+    )
+
+
+def invalidate_summary_cache() -> None:
+    """Call on device enroll, delete, or archive."""
+    _summary_cache.clear()
+
+
 class DeviceSummaryService:
     def __init__(self, db: Session):
         self.db = db
 
     def get_summary(self, scope: Optional[AllowedScope] = None) -> DevicesSummary:
+        key = _scope_cache_key(scope)
+        entry = _summary_cache.get(key)
+        if entry is not None and time.monotonic() - entry[1] < _SUMMARY_CACHE_TTL:
+            return entry[0]
+        result = self._compute_summary(scope)
+        _summary_cache[key] = (result, time.monotonic())
+        return result
+
+    def _compute_summary(self, scope: Optional[AllowedScope] = None) -> DevicesSummary:
         devices = DeviceService(self.db).get_devices(limit=5000, scope=scope)
         device_ids = [device.id for device in devices]
 

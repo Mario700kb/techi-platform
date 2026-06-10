@@ -95,6 +95,32 @@ def device_payload(device: Device) -> Dict[str, Any]:
     }
 
 
+# Last-broadcast serialized payload per device_id.
+# Thread-safe for our usage: individual dict.get() / dict.__setitem__() are atomic under GIL.
+_ws_snapshot: dict[int, dict] = {}
+
+
+def device_payload_delta(current: dict) -> dict:
+    """Return only changed fields vs the last broadcast, always including id.
+    First call per device returns the full payload (no previous snapshot).
+    """
+    device_id = current["id"]
+    prev = _ws_snapshot.get(device_id)
+    _ws_snapshot[device_id] = current
+    if prev is None:
+        return current
+    delta: dict = {"id": device_id}
+    for key, val in current.items():
+        if key != "id" and prev.get(key) != val:
+            delta[key] = val
+    return delta
+
+
+def evict_ws_snapshot(device_id: int) -> None:
+    """Call on device delete so the next broadcast sends a full payload."""
+    _ws_snapshot.pop(device_id, None)
+
+
 def build_event(
     event_type: RealtimeEventType,
     *,

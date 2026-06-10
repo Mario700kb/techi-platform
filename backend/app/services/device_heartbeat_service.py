@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import Optional
@@ -19,7 +20,7 @@ from app.services.device_status_service import DeviceStatusService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.rustdesk_service import RustDeskIdentityService
-from app.websocket.events import RealtimeEventType, build_event, device_payload
+from app.websocket.events import RealtimeEventType, build_event, device_payload, device_payload_delta
 from app.websocket.publisher import realtime_publisher
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,17 @@ logger = logging.getLogger(__name__)
 # Active devices seen within this window are protected from automatic reuse
 # when they have a different rustdesk_id (prevents false merge of live machines).
 _RECENTLY_SEEN_HOURS = 24
+
+# agent_id → (device_id, cached_at): avoids per-heartbeat agent_id index scans.
+# agent_id is immutable post-enroll, so a long TTL is safe.
+_AGENT_ID_CACHE: dict[str, tuple[int, float]] = {}
+_AGENT_ID_CACHE_TTL = 300.0  # seconds
+
+
+def _evict_agent_cache(agent_id: str | None) -> None:
+    """Call on device delete/archive so the next heartbeat does a fresh lookup."""
+    if agent_id:
+        _AGENT_ID_CACHE.pop(agent_id, None)
 
 
 class DeviceHeartbeatService:
@@ -94,11 +106,19 @@ class DeviceHeartbeatService:
             payload.rustdesk_id or ""
         )
 
-        device = self.device_repo.get_by_agent_id(payload.agent_id) if payload.agent_id else None
+        device = None
+        if payload.agent_id:
+            cached = _AGENT_ID_CACHE.get(payload.agent_id)
+            if cached and time.monotonic() - cached[1] < _AGENT_ID_CACHE_TTL:
+                device = self.device_repo.get(cached[0])  # PK lookup — faster than agent_id scan
+        if device is None and payload.agent_id:
+            device = self.device_repo.get_by_agent_id(payload.agent_id)
         if device is None:
             device = self.device_repo.get(payload.device_id) if payload.device_id else None
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
+        if device is not None and payload.agent_id:
+            _AGENT_ID_CACHE[payload.agent_id] = (device.id, time.monotonic())
         if device is not None:
             device = self.maintenance_service.expire_if_needed(device)
         previous_payload = device_payload(device) if device else None
@@ -220,7 +240,7 @@ class DeviceHeartbeatService:
         realtime_publisher.publish_threadsafe(
             build_event(
                 RealtimeEventType.HEARTBEAT_RECEIVED,
-                data={**current_payload, "heartbeat_id": heartbeat_id},
+                data={**device_payload_delta(current_payload), "heartbeat_id": heartbeat_id},
                 reason="heartbeat_received",
             )
         )
