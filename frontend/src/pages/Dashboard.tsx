@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
   Activity,
   AlertTriangle,
@@ -16,7 +17,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, getDevicesSummary, getDeviceStats } from "../api/devices";
+import { Device, DevicesSummary, getDevicesSummary, getDeviceStats } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
@@ -72,73 +73,120 @@ const statusBadgeClass = (device: Device) => {
 export default function Dashboard() {
   const { user, hasPermission } = useAuth();
 
-  const [total, setTotal] = useState(0);
-  const [online, setOnline] = useState(0);
-  const [stale, setStale] = useState(0);
-  const [offline, setOffline] = useState(0);
-  const [averageHealth, setAverageHealth] = useState<number | null>(null);
-  const [recentDevices, setRecentDevices] = useState<Device[]>([]);
-  const [deployments, setDeployments] = useState<RecentDeployment[]>([]);
-  const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>([]);
-  const [operators, setOperators] = useState<OperatorPresenceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [patchCount, setPatchCount] = useState(0);
-  const [criticalCount, setCriticalCount] = useState(0);
+  // Lazy initializers from cache — instant state on navigation back, no loading flash
+  const [total, setTotal] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.total ?? 0);
+  const [online, setOnline] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.online ?? 0);
+  const [stale, setStale] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.stale ?? 0);
+  const [offline, setOffline] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.offline ?? 0);
+  const [averageHealth, setAverageHealth] = useState<number | null>(() => {
+    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
+    if (!snap) return null;
+    const h = snap.health ?? [];
+    return h.length > 0 ? Math.round(h.reduce((s, i) => s + i.health_score, 0) / h.length) : null;
+  });
+  const [recentDevices, setRecentDevices] = useState<Device[]>(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.devices.slice(0, 5) ?? []);
+  const [deployments, setDeployments] = useState<RecentDeployment[]>(() => appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments)?.slice(0, 4) ?? []);
+  const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
+  const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
+  const [loading, setLoading] = useState(() => appCache.peek(CACHE_KEYS.dashboardSnapshot) === null);
+  const [patchCount, setPatchCount] = useState(() => {
+    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
+    return snap ? (snap.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length : 0;
+  });
+  const [criticalCount, setCriticalCount] = useState(() => {
+    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
+    return snap ? (snap.health ?? []).filter(h => h.health_score < 50).length : 0;
+  });
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
-  const [activityReady, setActivityReady] = useState(false);
-  const firstLoadDoneRef = useRef(false);
+  const [activityReady, setActivityReady] = useState(() => appCache.peek(CACHE_KEYS.dashboardSnapshot) !== null);
   const refreshTimerRef = useRef<number | undefined>();
   const lastMetricRefreshRef = useRef(0);
 
+  const applySnapshot = useCallback((snapshot: DevicesSummary) => {
+    const stats = snapshot.stats;
+    const healthSummary = snapshot.health ?? [];
+    const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
+    if (stats) {
+      setTotal(stats.total);
+      setOnline(stats.online);
+      setStale(stats.stale);
+      setOffline(stats.offline);
+    }
+    setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
+    setPatchCount((snapshot.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
+    setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
+    setRecentDevices((snapshot.devices ?? []).slice(0, 5));
+  }, []);
+
   const loadDashboard = useCallback(async () => {
-    const showLoading = !firstLoadDoneRef.current;
     const canDeployment = hasPermission("deployment");
+
+    // Check TTL freshness for each cached key
+    const snapFresh    = appCache.get(CACHE_KEYS.dashboardSnapshot, CACHE_TTL.dashboardSnapshot) !== null;
+    const actionsFresh = appCache.get(CACHE_KEYS.recentActions, CACHE_TTL.recentActions) !== null;
+    const presenceFresh = appCache.get(CACHE_KEYS.operatorPresence, CACHE_TTL.operatorPresence) !== null;
+    const deployFresh  = !canDeployment || appCache.get(CACHE_KEYS.recentDeployments, CACHE_TTL.recentDeployments) !== null;
+
+    // All caches fresh — nothing to fetch
+    if (snapFresh && actionsFresh && presenceFresh && deployFresh) {
+      setActivityReady(true);
+      return;
+    }
+
+    // No cached snapshot at all → show loading spinner
+    const staleSnap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
+    const showLoading = staleSnap === null;
+
     try {
-      if (showLoading) {
-        setLoading(true);
-      }
+      if (showLoading) setLoading(true);
       setError(null);
 
       const [snapshot, recentDeployments, latestActions, presenceList] = await Promise.all([
-        getDevicesSummary().catch(err => {
-          console.error("Fleet summary error:", err);
-          setError("Fleet statistics are temporarily unavailable. Other dashboard data is still shown.");
-          return null;
-        }),
-        canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[]),
-        getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
-        getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
+        snapFresh
+          ? Promise.resolve(staleSnap!)
+          : getDevicesSummary().catch(err => {
+              console.error("Fleet summary error:", err);
+              setError("Fleet statistics are temporarily unavailable. Other dashboard data is still shown.");
+              return null;
+            }),
+        deployFresh
+          ? Promise.resolve(appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments) ?? [] as RecentDeployment[])
+          : (canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[])),
+        actionsFresh
+          ? Promise.resolve(appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [] as RemoteActionWithDevice[])
+          : getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
+        presenceFresh
+          ? Promise.resolve(appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? [] as OperatorPresenceRecord[])
+          : getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
       ]);
-      const stats = snapshot?.stats;
-      const healthSummary = snapshot?.health ?? [];
-      const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-      const sortedDevices = snapshot?.devices ?? [];
 
-      if (stats) {
-        setTotal(stats.total);
-        setOnline(stats.online);
-        setStale(stats.stale);
-        setOffline(stats.offline);
+      // Cache fresh responses and apply to state
+      if (!snapFresh && snapshot) {
+        appCache.set(CACHE_KEYS.dashboardSnapshot, snapshot);
+        applySnapshot(snapshot);
       }
-      setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
-      setPatchCount((snapshot?.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
-      setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
-      setRecentDevices(sortedDevices.slice(0, 5));
-      setDeployments(recentDeployments.slice(0, 4));
-      setRecentActions(latestActions);
-      setOperators(presenceList);
-      firstLoadDoneRef.current = true;
+      if (!actionsFresh) {
+        appCache.set(CACHE_KEYS.recentActions, latestActions);
+        setRecentActions(latestActions);
+      }
+      if (!presenceFresh) {
+        appCache.set(CACHE_KEYS.operatorPresence, presenceList);
+        setOperators(presenceList);
+      }
+      if (!deployFresh && canDeployment) {
+        appCache.set(CACHE_KEYS.recentDeployments, recentDeployments);
+        setDeployments(recentDeployments.slice(0, 4));
+      }
+
       setActivityReady(true);
     } catch (err) {
       console.error('Dashboard load error:', err);
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
     } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
+      if (showLoading) setLoading(false);
     }
-  }, [hasPermission]);
+  }, [hasPermission, applySnapshot]);
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
@@ -251,7 +299,7 @@ export default function Dashboard() {
   const { runNow: refreshDashboard } = usePollingRefresh(loadDashboard, {
     intervalMs: 120000,
     enabled: realtimeStatus !== "connected",
-    immediate: !firstLoadDoneRef.current,
+    immediate: appCache.peek(CACHE_KEYS.dashboardSnapshot) === null,
   });
 
   useEffect(() => {
@@ -301,7 +349,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => { setActivityReady(true); void refreshDashboard(); }}>
+            <Button onClick={() => { appCache.invalidate(); setActivityReady(true); void refreshDashboard(); }}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
             </Button>

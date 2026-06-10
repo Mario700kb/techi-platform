@@ -3,12 +3,13 @@ import { Building2, Pencil, Plus, RefreshCcw, Trash2, Users, X } from "lucide-re
 import { Client, DeviceGroup, createClient, createGroup, deleteClient, deleteGroup, getClients, getGroups, updateClient, updateGroup } from "../api/clients";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
+import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 
 export default function Clients() {
   const { can } = useAuth();
   const canManageClients = can("admin");
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<DeviceGroup[]>([]);
+  const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
+  const [groups, setGroups] = useState<DeviceGroup[]>(() => appCache.peek<DeviceGroup[]>(CACHE_KEYS.groupsList) ?? []);
   const [clientName, setClientName] = useState("");
   const [clientDescription, setClientDescription] = useState("");
   const [groupName, setGroupName] = useState("");
@@ -30,11 +31,15 @@ export default function Clients() {
     }, {});
   }, [groups]);
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
+    // Skip if cache is fresh and not forced (manual refresh)
+    if (!force && appCache.get(CACHE_KEYS.clientsList, CACHE_TTL.clientsList)) return;
     try {
       setLoading(true);
       setError(null);
       const [clientData, groupData] = await Promise.all([getClients(), getGroups()]);
+      appCache.set(CACHE_KEYS.clientsList, clientData);
+      appCache.set(CACHE_KEYS.groupsList, groupData);
       setClients(clientData);
       setGroups(groupData);
       if (!groupClientId && clientData[0]) {
@@ -59,7 +64,7 @@ export default function Clients() {
         name: clientName,
         description: clientDescription || undefined,
       });
-      setClients((items) => [...items, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setClients((items) => { const next = [...items, created].sort((a, b) => a.name.localeCompare(b.name)); appCache.set(CACHE_KEYS.clientsList, next); return next; });
       setClientName("");
       setClientDescription("");
       if (!groupClientId) setGroupClientId(String(created.id));
@@ -77,7 +82,7 @@ export default function Clients() {
         client_id: Number(groupClientId),
         description: groupDescription || undefined,
       });
-      setGroups((items) => [...items, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setGroups((items) => { const next = [...items, created].sort((a, b) => a.name.localeCompare(b.name)); appCache.set(CACHE_KEYS.groupsList, next); return next; });
       setGroupName("");
       setGroupDescription("");
     } catch (err) {
@@ -99,7 +104,7 @@ export default function Clients() {
         name: editClientName,
         description: editClientDescription || null,
       });
-      setClients((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setClients((items) => { const next = items.map((item) => (item.id === updated.id ? updated : item)); appCache.set(CACHE_KEYS.clientsList, next); return next; });
       setEditingClient(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update client");
@@ -114,8 +119,8 @@ export default function Clients() {
     try {
       setError(null);
       await deleteClient(client.id);
-      setClients((items) => items.filter((item) => item.id !== client.id));
-      setGroups((items) => items.filter((item) => item.client_id !== client.id));
+      setClients((items) => { const next = items.filter((item) => item.id !== client.id); appCache.set(CACHE_KEYS.clientsList, next); return next; });
+      setGroups((items) => { const next = items.filter((item) => item.client_id !== client.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
       if (groupClientId === String(client.id)) {
         const nextClient = clients.find((item) => item.id !== client.id);
         setGroupClientId(nextClient ? String(nextClient.id) : "");
@@ -133,7 +138,7 @@ export default function Clients() {
     try {
       setError(null);
       await deleteGroup(group.id);
-      setGroups((items) => items.filter((item) => item.id !== group.id));
+      setGroups((items) => { const next = items.filter((item) => item.id !== group.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete group");
     }
@@ -153,7 +158,7 @@ export default function Clients() {
         name: editGroupName,
         description: editGroupDescription || null,
       });
-      setGroups((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setGroups((items) => { const next = items.map((item) => (item.id === updated.id ? updated : item)); appCache.set(CACHE_KEYS.groupsList, next); return next; });
       setEditingGroup(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update group");
@@ -171,7 +176,7 @@ export default function Clients() {
               Create customer records and lightweight groups used by device assignment and enrollment tokens.
             </p>
           </div>
-          <Button size="sm" onClick={() => void loadData()} disabled={loading}>
+          <Button size="sm" onClick={() => void loadData(true)} disabled={loading}>
             <RefreshCcw className="h-3.5 w-3.5" />
             Refresh
           </Button>

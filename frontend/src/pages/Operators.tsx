@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import { KeySquare, Pencil, Plus, RefreshCcw, Shield, Trash2, Users, UsersRound, X } from "lucide-react";
 import {
   OperatorRecord,
@@ -104,7 +105,7 @@ export default function Operators() {
   const { user, can } = useAuth();
   const canManage = can("admin");
 
-  const [operators, setOperators] = useState<OperatorRecord[]>([]);
+  const [operators, setOperators] = useState<OperatorRecord[]>(() => appCache.peek<OperatorRecord[]>(CACHE_KEYS.operatorsList) ?? []);
   const [teams, setTeams] = useState<TeamWithStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,11 +138,13 @@ export default function Operators() {
   const [deleteTarget, setDeleteTarget] = useState<OperatorRecord | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
+    if (!force && appCache.get(CACHE_KEYS.operatorsList, CACHE_TTL.operatorsList)) return;
     try {
       setLoading(true);
       setError(null);
       const [ops, tms] = await Promise.all([getOperators(), listTeams()]);
+      appCache.set(CACHE_KEYS.operatorsList, ops);
       setOperators(ops);
       setTeams(tms);
     } catch (err) {
@@ -192,7 +195,7 @@ export default function Operators() {
         email,
         display_name: displayName,
       });
-      setOperators((prev) => [...prev, created]);
+      setOperators((prev) => { const next = [...prev, created]; appCache.set(CACHE_KEYS.operatorsList, next); return next; });
       setShowCreate(false);
       setCreateForm({ username: "", email: "", display_name: "", password: "", role: "operator", is_active: true });
     } catch (err) {
@@ -228,7 +231,7 @@ export default function Operators() {
         ...editForm,
         display_name: editForm.display_name || null,
       });
-      setOperators((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setOperators((prev) => { const next = prev.map((o) => (o.id === updated.id ? updated : o)); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
       setEditTarget(null);
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Failed to update operator");
@@ -245,7 +248,7 @@ export default function Operators() {
     try {
       setError(null);
       const updated = await updateOperator(op.id, { is_active: !op.is_active });
-      setOperators((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setOperators((prev) => { const next = prev.map((o) => (o.id === updated.id ? updated : o)); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");
     }
@@ -276,7 +279,7 @@ export default function Operators() {
     try {
       setDeleteLoading(true);
       await deleteOperator(deleteTarget.id);
-      setOperators((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      setOperators((prev) => { const next = prev.filter((o) => o.id !== deleteTarget.id); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
       setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete operator");
@@ -302,7 +305,7 @@ export default function Operators() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void loadData()} disabled={loading}>
+            <Button size="sm" onClick={() => void loadData(true)} disabled={loading}>
               <RefreshCcw className="h-3.5 w-3.5" />
               Refresh
             </Button>
