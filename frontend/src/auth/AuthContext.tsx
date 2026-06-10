@@ -35,13 +35,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getAuthToken());
-  // Cache hit → instant state on re-mount, no API call, no loading flash
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (_authCache) return _authCache.user;
-    const raw = window.localStorage.getItem("techi.auth.user");
-    return raw ? JSON.parse(raw) as AuthUser : null;
-  });
-  const [loading, setLoading] = useState(() => _authCache === null && Boolean(token));
+  // Cache hit → loading=false on first render, no "Loading session..." on navigation
+  const [user, setUser] = useState<AuthUser | null>(() => _authCache?.user ?? null);
+  const [loading, setLoading] = useState(() => _authCache === null);
   const [permissions, setPermissions] = useState<string[] | null>(() => _authCache?.permissions ?? null);
 
   useEffect(() => {
@@ -51,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     // Cache warm with same token — skip both API calls, no loading screen
     if (_authCache?.token === token) {
+      setLoading(false);  // Safety net: correct loading even if React re-initialized state as true
       return;
     }
     let alive = true;
