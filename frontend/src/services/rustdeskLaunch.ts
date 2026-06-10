@@ -12,7 +12,7 @@ export function buildRustDeskLaunchUrl(rustdeskId: string): string {
   if (!isValidRustDeskId(normalized)) {
     throw new Error("Invalid TECHI Remote Support ID");
   }
-  return `rustdesk://${encodeURIComponent(normalized)}`;
+  return `techiremotesupport://${encodeURIComponent(normalized)}`;
 }
 
 export function launchRustDesk(rustdeskId: string): void {

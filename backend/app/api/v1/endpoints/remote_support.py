@@ -230,7 +230,7 @@ def get_connect_url(
     _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
     device_id: int,
 ):
-    """Return the rustdesk:// protocol URL for connecting to this device."""
+    """Return the techiremotesupport:// protocol URL for connecting to this device."""
     device = _get_device(device_id, db, scope)
 
     remote_id = (device.rustdesk_id or "").strip()
@@ -259,7 +259,7 @@ def get_connect_url(
     return ConnectUrlResponse(
         device_id=device_id,
         techi_remote_id=remote_id,
-        connect_url=f"rustdesk://{remote_id}",
+        connect_url=f"techiremotesupport://{remote_id}",
     )
 
 
