@@ -14,8 +14,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # CONCURRENTLY not used: remote_actions has ~30 rows, lock is sub-millisecond.
     op.execute("""
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_remote_actions_device_pending
+        CREATE INDEX IF NOT EXISTS ix_remote_actions_device_pending
         ON remote_actions (device_id, status)
         WHERE status = 'pending'
     """)
