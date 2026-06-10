@@ -354,16 +354,16 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
       <div className="w-full max-w-lg rounded-lg border p-5" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)" }}>
         <h3 className="mb-4 text-lg font-semibold" style={{ color: "var(--th-text-primary)" }}>Edit token</h3>
         <div className="space-y-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Token name" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} aria-label="Maximum uses" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} aria-label="Expiration date and time" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <select value={clientId} onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : "")} aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <input value={name} onChange={(e) => setName(e.target.value)} id="token-name" name="token-name" aria-label="Token name" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
+          <input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} id="token-max-uses" name="token-max-uses" aria-label="Maximum uses" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
+          <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} id="token-expires-at" name="token-expires-at" aria-label="Expiration date and time" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
+          <select value={clientId} onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : "")} id="token-client" name="token-client" aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">No client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <select value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} id="token-group" name="token-group" aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">No group</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value as "active" | "revoked")} aria-label="Token status" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <select value={status} onChange={(e) => setStatus(e.target.value as "active" | "revoked")} id="token-status" name="token-status" aria-label="Token status" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="active">active</option><option value="revoked">revoked</option>
           </select>
         </div>

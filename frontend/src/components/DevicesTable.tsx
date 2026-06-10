@@ -848,6 +848,8 @@ const DevicesTable = memo(function DevicesTable({
             value={filters.freshness_state || "all"}
             onChange={(e) => onFilterChange("freshness_state", e.target.value)}
             className={FILTER_INPUT_CLS}
+            id="filter-device-status"
+            name="filter-device-status"
             aria-label="Filter by device status"
           >
             <option value="all">All statuses</option>
@@ -859,6 +861,8 @@ const DevicesTable = memo(function DevicesTable({
             value={["healthy", "warnings", "critical"].includes(quickFilter) ? quickFilter : "all"}
             onChange={(e) => onQuickFilterChange(e.target.value as QuickFilter)}
             className={FILTER_INPUT_CLS}
+            id="filter-health"
+            name="filter-health"
             aria-label="Filter by health"
           >
             <option value="all">All health</option>
@@ -870,6 +874,8 @@ const DevicesTable = memo(function DevicesTable({
             value={filters.lifecycle_state || "active"}
             onChange={(e) => onFilterChange("lifecycle_state", e.target.value)}
             className={FILTER_INPUT_CLS}
+            id="filter-lifecycle-state"
+            name="filter-lifecycle-state"
             aria-label="Filter by lifecycle state"
           >
             <option value="active">Active devices</option>
@@ -896,6 +902,8 @@ const DevicesTable = memo(function DevicesTable({
               );
             }}
             className={FILTER_INPUT_CLS}
+            id="filter-maintenance-state"
+            name="filter-maintenance-state"
             aria-label="Filter by maintenance state"
           >
             <option value="all">All signals</option>
@@ -1040,6 +1048,8 @@ const DevicesTable = memo(function DevicesTable({
                           type="checkbox"
                           checked={selectedIds.has(device.id)}
                           onChange={() => toggleOne(device.id)}
+                          id={`select-device-${device.id}`}
+                          name="select-device"
                           aria-label={`Select ${device.hostname}`}
                           className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
                         />
@@ -1302,6 +1312,8 @@ const DevicesTable = memo(function DevicesTable({
                 <select
                   value={limit}
                   onChange={(e) => onLimitChange?.(Number(e.target.value))}
+                  id="rows-per-page"
+                  name="rows-per-page"
                   aria-label="Rows per page"
                   className="rounded border px-2 py-0.5 text-[11px] font-medium focus:outline-none"
                   style={{

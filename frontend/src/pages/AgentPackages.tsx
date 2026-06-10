@@ -149,6 +149,8 @@ export default function AgentPackages() {
             <select
               value={platform}
               onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
+              id="package-platform"
+              name="package-platform"
               aria-label="Platform"
               className={INPUT_CLS}
             >
@@ -158,6 +160,8 @@ export default function AgentPackages() {
             </select>
             <input
               type="file"
+              id="package-file"
+              name="package-file"
               aria-label="Package file"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}

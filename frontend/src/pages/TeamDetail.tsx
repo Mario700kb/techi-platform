@@ -223,7 +223,7 @@ function OverviewTab({
       {saved && <SaveBanner message="Team details saved." />}
       <div>
         <label className={LABEL_CLS}>Team name *</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} aria-label="Team name" className={INPUT_CLS} />
+        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} id="team-name" name="team-name" aria-label="Team name" className={INPUT_CLS} />
       </div>
       <div>
         <label className={LABEL_CLS}>Description</label>
@@ -387,6 +387,7 @@ function TreeCheckbox({
       checked={state === "checked"}
       onChange={onChange ?? (() => {})}
       disabled={disabled}
+      name="toggle-access"
       aria-label="Toggle access"
       className={`shrink-0 rounded border-white/15 accent-orange-500 ${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}`}
     />

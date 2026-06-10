@@ -895,6 +895,8 @@ export default function Devices() {
                 type="number"
                 min={1}
                 max={365}
+                id="hide-offline-days"
+                name="hide-offline-days"
                 aria-label="Days offline before hiding"
                 value={hideOfflineDays}
                 onChange={(event) => setHideOfflineDays(Math.max(1, Number(event.target.value) || 1))}

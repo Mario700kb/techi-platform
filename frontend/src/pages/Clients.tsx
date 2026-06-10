@@ -309,6 +309,8 @@ export default function Clients() {
               <select
                 value={groupClientId}
                 onChange={(event) => setGroupClientId(event.target.value)}
+                id="group-client"
+                name="group-client"
                 aria-label="Client for new group"
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               >
@@ -355,6 +357,8 @@ export default function Clients() {
               <input
                 value={editGroupName}
                 onChange={(event) => setEditGroupName(event.target.value)}
+                id="edit-group-name"
+                name="edit-group-name"
                 aria-label="Group name"
                 className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
@@ -399,6 +403,8 @@ export default function Clients() {
               <input
                 value={editClientName}
                 onChange={(event) => setEditClientName(event.target.value)}
+                id="edit-client-name"
+                name="edit-client-name"
                 aria-label="Client name"
                 className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />

@@ -140,6 +140,8 @@ export default function AgentConfigPage() {
                   type="number"
                   min={60}
                   max={600}
+                  id="heartbeat-interval"
+                  name="heartbeat-interval"
                   aria-label="Heartbeat interval in seconds"
                   value={intervalInput}
                   onChange={(e) => {

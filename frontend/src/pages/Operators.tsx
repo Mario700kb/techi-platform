@@ -551,6 +551,8 @@ export default function Operators() {
               <select
                 value={createForm.role}
                 onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+                id="create-role"
+                name="create-role"
                 aria-label="Role"
                 className={INPUT_CLS}
               >
@@ -606,6 +608,8 @@ export default function Operators() {
               <input
                 value={editForm.username ?? ""}
                 onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+                id="edit-username"
+                name="edit-username"
                 aria-label="Username"
                 className={INPUT_CLS}
               />
@@ -616,6 +620,8 @@ export default function Operators() {
                 type="email"
                 value={editForm.email ?? ""}
                 onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                id="edit-email"
+                name="edit-email"
                 aria-label="Email"
                 className={INPUT_CLS}
               />
@@ -625,6 +631,8 @@ export default function Operators() {
               <select
                 value={editForm.role ?? editTarget.role}
                 onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+                id="edit-role"
+                name="edit-role"
                 aria-label="Role"
                 className={INPUT_CLS}
                 disabled={!canEditRole(editTarget.role)}
