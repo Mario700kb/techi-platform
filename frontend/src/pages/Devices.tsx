@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { archiveDevice, deleteDevice, getDevicesSummary, getDeviceTree, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
+import { archiveDevice, deleteDevice, getDevices, getDevicesSummary, getDeviceTree, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
@@ -46,48 +46,18 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
   return { total: devices.length, unassigned, byClient };
 }
 
-function deviceMatchesFilters(device: Device, filters: DeviceFilters, searchQuery: string): boolean {
-  const resolvedClientId = device.resolved_client_id ?? device.client_id ?? null;
-  const resolvedCategory = device.resolved_device_category ?? "unassigned";
-  if (filters.status && device.status !== filters.status) return false;
-  if (filters.freshness_state && device.freshness_state !== filters.freshness_state) return false;
-  if (filters.device_type && device.device_type !== filters.device_type) return false;
-  if (filters.lifecycle_state === "archived" && !device.is_archived) return false;
-  if ((filters.lifecycle_state === "active" || !filters.lifecycle_state) && device.is_archived) return false;
-  if (filters.client_id === -1) {
-    if (resolvedClientId !== null) return false;
-  } else if (filters.client_id && resolvedClientId !== filters.client_id) {
-    return false;
+// Map quick filter pills to backend API params where possible.
+// Health-based pills (critical, warnings, etc.) remain client-side in DevicesTable.
+function quickFilterToApiFilters(qf: QuickFilter): Partial<DeviceFilters> {
+  switch (qf) {
+    case "online": return { freshness_state: "online" };
+    case "stale": return { freshness_state: "stale" };
+    case "offline": return { freshness_state: "offline" };
+    case "servers": return { smart_folder: "windows_server" };
+    case "workstations": return { smart_folder: "windows_workstation" };
+    case "maintenance": return { maintenance_state: "maintenance" };
+    default: return {};
   }
-  if (filters.group_id && device.group_id !== filters.group_id) return false;
-  if (filters.smart_folder === "windows_server" && resolvedCategory !== "servers") return false;
-  if (filters.smart_folder === "windows_workstation" && resolvedCategory !== "clientpc") return false;
-  if (filters.maintenance_state === "maintenance" && !device.is_in_maintenance) return false;
-  if (filters.maintenance_state === "normal" && device.is_in_maintenance) return false;
-  if (filters.duplicate_candidates && !device.duplicate_candidate) return false;
-  if (filters.assignment_source) {
-    const source = device.resolved_assignment_source ?? device.assignment_source;
-    const expectedSources: Record<NonNullable<DeviceFilters["assignment_source"]>, string[]> = {
-      auto: ["system_auto", "trusted_domain", "auto_os"],
-      manual: ["manual", "legacy_manual"],
-      token: ["enrollment_token"],
-      unassigned: ["unassigned", "system_auto_unassigned"],
-    };
-    if (!expectedSources[filters.assignment_source].includes(source ?? "unassigned")) return false;
-  }
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    const searchable = [
-      device.hostname,
-      device.rustdesk_id,
-      device.current_user,
-      device.public_ip,
-      device.local_ip,
-      device.domain,
-    ].filter(Boolean).join(" ").toLowerCase();
-    if (!searchable.includes(query)) return false;
-  }
-  return true;
 }
 
 export default function Devices() {
@@ -104,18 +74,37 @@ export default function Devices() {
     ? requestedQuickFilter
     : "all";
 
+  // Pagination from URL
+  const tablePage = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+  const tableLimit = (() => {
+    const v = parseInt(searchParams.get("limit") || "20", 10);
+    return [10, 20, 50].includes(v) ? v : 20;
+  })();
+
   const handleQuickFilterChange = useCallback((f: QuickFilter) => {
     const next = new URLSearchParams(searchParams);
     if (f === "all") next.delete("filter");
     else next.set("filter", f);
+    next.delete("page");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
-  const [devices, setDevices] = useState<Device[]>([]);
+
+  // tableDevices: the current page from the API
+  const [tableDevices, setTableDevices] = useState<Device[]>([]);
+  const [tableTotal, setTableTotal] = useState(0);
+  const [tableLoading, setTableLoading] = useState(false);
+
+  // allDevices: full snapshot from summary (used for stats, health, patches, tree, drawer)
   const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [filters, setFilters] = useState<DeviceFilters>({});
-  const [searchQuery, setSearchQuery] = useState("");
+
+  // Two-tier search: immediate (input display) vs. debounced (API trigger)
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get("q") || "");
+  const searchTimerRef = useRef<number | undefined>();
+
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
   const [hideOfflineDays, setHideOfflineDays] = useState(30);
@@ -123,14 +112,12 @@ export default function Devices() {
   const [error, setError] = useState<string | null>(null);
   const devicesLoadedRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
-  // Stable refs so mergeDeviceEvent can synchronously check device existence
-  // without relying on React 18 state-updater side-effects (which run async).
+
+  // Stable refs for WS callbacks (avoids stale closures)
   const allDevicesRef = useRef<Device[]>([]);
-  const devicesRef = useRef<Device[]>([]);
-  // Keep refs in sync with state so callbacks see the latest values without
-  // needing them in their dependency arrays.
+  const tableDevicesRef = useRef<Device[]>([]);
   allDevicesRef.current = allDevices;
-  devicesRef.current = devices;
+  tableDevicesRef.current = tableDevices;
 
   const [drawerDeviceId, setDrawerDeviceId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -142,14 +129,15 @@ export default function Devices() {
   const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
 
+  // Drawer lookup: prefer allDevices (full snapshot), fall back to current page
   const drawerDevice = useMemo(
     () =>
       drawerDeviceId != null
         ? (allDevices.find((d) => d.id === drawerDeviceId) ??
-           devices.find((d) => d.id === drawerDeviceId) ??
+           tableDevices.find((d) => d.id === drawerDeviceId) ??
            null)
         : null,
-    [drawerDeviceId, allDevices, devices]
+    [drawerDeviceId, allDevices, tableDevices]
   );
 
   const openDrawer = useCallback((device: Device) => {
@@ -169,14 +157,14 @@ export default function Devices() {
     if (device) openDrawer(device);
   }, [allDevices, openDrawer]);
 
+  // loadSnapshot loads the full summary for stats/health/patch cards.
+  // The table data comes separately from loadTableData.
   const loadSnapshot = useCallback(async () => {
     const showLoading = !devicesLoadedRef.current;
     try {
       if (showLoading) setLoading(true);
       setError(null);
 
-      // Fire a fast tree-counts query in parallel so the sidebar renders before
-      // the full 575KB summary completes (GROUP BY only, no telemetry/health).
       const treePromise = getDeviceTree().then((tree) => {
         setTreeCounts({
           total: tree.total,
@@ -188,7 +176,6 @@ export default function Devices() {
       const snapshotPromise = getDevicesSummary().then((snapshot) => {
         const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
         setAllDevices(sorted);
-        setDevices(sorted.filter((device) => deviceMatchesFilters(device, filters, searchQuery)));
         setSnapshotStats(snapshot.stats);
         setTreeCounts({
           total: snapshot.tree_counts.total,
@@ -200,14 +187,31 @@ export default function Devices() {
         devicesLoadedRef.current = true;
       });
 
-      // Wait for both but don't let a slow summary block tree rendering
       await Promise.all([treePromise, snapshotPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [filters, searchQuery]);
+  }, []);
+
+  // loadTableData fetches the paginated table data from the API
+  const loadTableData = useCallback(async () => {
+    setTableLoading(true);
+    try {
+      const skip = (tablePage - 1) * tableLimit;
+      const qfExtra = quickFilterToApiFilters(quickFilter);
+      const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
+      if (debouncedSearch) apiFilters.search = debouncedSearch;
+      const result = await getDevices(apiFilters, skip, tableLimit);
+      setTableDevices(result.devices);
+      setTableTotal(result.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load devices");
+    } finally {
+      setTableLoading(false);
+    }
+  }, [tablePage, tableLimit, quickFilter, filters, debouncedSearch]);
 
   const loadOrgData = useCallback(async () => {
     try {
@@ -219,22 +223,9 @@ export default function Devices() {
     }
   }, []);
 
-  const loadDevices = useCallback(async () => {
-    setDevices(
-      allDevices
-        .filter((device) => deviceMatchesFilters(device, filters, searchQuery))
-        .sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""))
-    );
-  }, [allDevices, filters, searchQuery]);
-
   const refreshBoth = useCallback(async () => {
-    await loadSnapshot();
-  }, [loadSnapshot]);
-
-  const deviceMatchesCurrentView = useCallback(
-    (device: Device) => deviceMatchesFilters(device, filters, searchQuery),
-    [filters, searchQuery]
-  );
+    await Promise.all([loadSnapshot(), loadTableData()]);
+  }, [loadSnapshot, loadTableData]);
 
   const mergeDeviceEvent = useCallback(
     (event: DeviceRealtimeEvent) => {
@@ -273,33 +264,16 @@ export default function Devices() {
         return { nextItems, found: true, nextDevice };
       };
 
-      // Check existence synchronously against the stable refs BEFORE scheduling
-      // any setState calls.  React 18 batches state updates so the updater
-      // functions run asynchronously; reading the found flag from inside them
-      // always yields false at return time.
       const foundInAll = allDevicesRef.current.some((d) => d.id === eventDevice.id);
-      const foundInVisible = devicesRef.current.some((d) => d.id === eventDevice.id);
+      const foundInTable = tableDevicesRef.current.some((d) => d.id === eventDevice.id);
 
       setAllDevices((items) => applyPatch(items).nextItems);
+      // In-place patch for the current page only (no add/remove — pagination handles that)
+      setTableDevices((items) => applyPatch(items).nextItems);
 
-      setDevices((items) => {
-        const result = applyPatch(items);
-        if (!result.found) {
-          const baseDevice = allDevicesRef.current.find((item) => item.id === eventDevice.id);
-          const nextDevice = baseDevice ? ({ ...baseDevice, ...eventDevice } as Device) : null;
-          if (nextDevice && deviceMatchesCurrentView(nextDevice)) {
-            return [...items, nextDevice];
-          }
-          return items;
-        }
-        return result.nextDevice && deviceMatchesCurrentView(result.nextDevice)
-          ? result.nextItems
-          : result.nextItems.filter((item) => item.id !== eventDevice.id);
-      });
-
-      return foundInAll || foundInVisible;
+      return foundInAll || foundInTable;
     },
-    [deviceMatchesCurrentView]
+    []
   );
 
   const scheduleDevicesRefresh = useCallback(() => {
@@ -354,7 +328,6 @@ export default function Devices() {
             if (isActiveStatus(status as Parameters<typeof isActiveStatus>[0])) {
               return { ...prev, [deviceId]: { action_type: actionType, status: status as ActiveActionEntry["status"] } };
             }
-            // Action reached terminal state — remove from map only if it was the tracked one.
             const existing = prev[deviceId];
             if (existing?.action_type === actionType) {
               const next = { ...prev };
@@ -376,24 +349,27 @@ export default function Devices() {
     },
   });
 
-  usePollingRefresh(loadSnapshot, {
+  usePollingRefresh(refreshBoth, {
     intervalMs: 60000,
     enabled: wsStatus !== "connected",
     immediate: false,
   });
 
+  // Initial load
   useEffect(() => {
     void loadSnapshot();
   }, []);
 
+  // Load/reload paginated table whenever page, limit, filter, quick filter, or debounced search changes
   useEffect(() => {
-    void loadDevices();
-  }, [loadDevices]);
+    void loadTableData();
+  }, [loadTableData]);
 
   useEffect(() => {
     return () => {
       window.clearTimeout(refreshTimerRef.current);
       window.clearTimeout(drawerCloseTimerRef.current);
+      window.clearTimeout(searchTimerRef.current);
     };
   }, []);
 
@@ -422,11 +398,23 @@ export default function Devices() {
       }
     }
     setFilters(nextFilters);
+    // Reset to page 1 when tree selection changes
+    const next = new URLSearchParams(searchParams);
+    next.delete("page");
+    setSearchParams(next, { replace: true });
   };
 
-  const handleSearch = (value: string) => {
+  const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
-  };
+    window.clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = window.setTimeout(() => {
+      setDebouncedSearch(value);
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set("q", value); else next.delete("q");
+      next.delete("page");
+      setSearchParams(next, { replace: true });
+    }, 300);
+  }, [searchParams, setSearchParams]);
 
   const handleFilterChange = (key: keyof DeviceFilters, value: string | boolean | undefined) => {
     let nextValue: string | number | boolean | undefined;
@@ -444,7 +432,24 @@ export default function Devices() {
       [key]: nextValue,
       ...(key === "client_id" ? { group_id: undefined } : {}),
     }));
+    // Reset to page 1 when filter changes
+    const next = new URLSearchParams(searchParams);
+    next.delete("page");
+    setSearchParams(next, { replace: true });
   };
+
+  const handlePageChange = useCallback((page: number) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("page", String(page));
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const handleLimitChange = useCallback((limit: number) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("limit", String(limit));
+    next.delete("page");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleRefresh = async () => {
     await Promise.all([refreshBoth(), loadOrgData()]);
@@ -458,45 +463,38 @@ export default function Devices() {
         : [updated, ...items];
     };
     setAllDevices(upsert);
-    setDevices((items) => {
-      const nextItems = upsert(items);
-      return nextItems.filter(deviceMatchesCurrentView);
-    });
+    setTableDevices(upsert);
   };
 
   const handleDeviceDelete = async (device: Device) => {
     await deleteDevice(device.id, true);
     setAllDevices((items) => items.filter((item) => item.id !== device.id));
-    setDevices((items) => items.filter((item) => item.id !== device.id));
+    setTableDevices((items) => items.filter((item) => item.id !== device.id));
     if (drawerDeviceId === device.id) {
       closeDrawer();
     }
-    await loadSnapshot();
+    await refreshBoth();
   };
 
   const handleDeviceArchive = async (device: Device) => {
     const updated = await archiveDevice(device.id);
     setAllDevices((items) => items.map((item) => (item.id === device.id ? updated : item)).filter((item) => filters.lifecycle_state === "all" || filters.lifecycle_state === "archived" || !item.is_archived));
-    setDevices((items) => items.map((item) => (item.id === device.id ? updated : item)).filter((item) => filters.lifecycle_state === "all" || filters.lifecycle_state === "archived" || !item.is_archived));
+    setTableDevices((items) => items.map((item) => (item.id === device.id ? updated : item)).filter((item) => filters.lifecycle_state === "all" || filters.lifecycle_state === "archived" || !item.is_archived));
     if (drawerDeviceId === device.id && filters.lifecycle_state !== "all" && filters.lifecycle_state !== "archived") {
       closeDrawer();
     }
-    await loadSnapshot();
+    await refreshBoth();
   };
 
   const handleDeviceRestore = async (device: Device) => {
     const updated = await restoreDevice(device.id);
-    // allDevices holds only active devices; the restored device was absent (archived),
-    // so add it now that it is active again.
     setAllDevices((items) => {
       const exists = items.some((item) => item.id === device.id);
       return exists
         ? items.map((item) => (item.id === device.id ? updated : item))
         : [...items, updated];
     });
-    // In the archived view the restored device should disappear from the list;
-    // in any other view update it in place.
-    setDevices((items) =>
+    setTableDevices((items) =>
       filters.lifecycle_state === "archived"
         ? items.filter((item) => item.id !== device.id)
         : items.map((item) => (item.id === device.id ? updated : item))
@@ -504,7 +502,7 @@ export default function Devices() {
     if (drawerDeviceId === device.id && filters.lifecycle_state === "archived") {
       closeDrawer();
     }
-    await loadSnapshot();
+    await refreshBoth();
   };
 
   const alertsMap = useMemo(() => {
@@ -537,13 +535,13 @@ export default function Devices() {
 
   const visibleDevices = useMemo(() => {
     const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
-    return devices.filter((device) => {
+    return tableDevices.filter((device) => {
       if (!hideOldOffline) return true;
       if (device.freshness_state !== "offline") return true;
       if (!device.last_seen) return false;
       return new Date(device.last_seen).getTime() >= cutoff;
     });
-  }, [devices, hideOldOffline, hideOfflineDays]);
+  }, [tableDevices, hideOldOffline, hideOfflineDays]);
 
   const treeDevices = useMemo(() => {
     const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
@@ -602,7 +600,7 @@ export default function Devices() {
             </span>
           )}
           <span className="op-pill op-pill-neutral ml-auto">
-            {visibleDevices.length} devices shown
+            {tableTotal > 0 ? `${tableTotal} devices` : `${visibleDevices.length} devices`}
           </span>
         </div>
       </div>
@@ -780,6 +778,7 @@ export default function Devices() {
           <DevicesTable
             devices={visibleDevices}
             loading={loading}
+            tableLoading={tableLoading}
             error={error}
             filters={filters}
             searchQuery={searchQuery}
@@ -791,19 +790,24 @@ export default function Devices() {
             onDeviceArchive={handleDeviceArchive}
             onDeviceRestore={handleDeviceRestore}
             healthMap={healthMap}
-	            patchMap={patchMap}
-	            activeActionMap={activeActionMap}
-	            alertsMap={alertsMap}
-	            canOperate={can("operator")}
-	            canDelete={can("admin")}
-	            currentUser={user?.display_name ?? user?.username}
-	            onBulkComplete={handleRefresh}
-	            favorites={favorites}
-	            onToggleFavorite={toggleFavorite}
-	            quickFilter={quickFilter}
-	            onQuickFilterChange={handleQuickFilterChange}
-	            scopedDeviceCount={snapshotStats.total}
-	          />
+            patchMap={patchMap}
+            activeActionMap={activeActionMap}
+            alertsMap={alertsMap}
+            canOperate={can("operator")}
+            canDelete={can("admin")}
+            currentUser={user?.display_name ?? user?.username}
+            onBulkComplete={handleRefresh}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            quickFilter={quickFilter}
+            onQuickFilterChange={handleQuickFilterChange}
+            scopedDeviceCount={snapshotStats.total}
+            page={tablePage}
+            limit={tableLimit}
+            total={tableTotal}
+            onPageChange={handlePageChange}
+            onLimitChange={handleLimitChange}
+          />
         </div>
       </div>
 
@@ -816,11 +820,11 @@ export default function Devices() {
           latestEvent={latestEvent}
           clients={clients}
           groups={groups}
-	          onDeviceUpdated={handleDeviceUpdated}
-	          canOperate={can("operator")}
-	          isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
-	          onToggleFavorite={toggleFavorite}
-	        />
+          onDeviceUpdated={handleDeviceUpdated}
+          canOperate={can("operator")}
+          isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
+          onToggleFavorite={toggleFavorite}
+        />
       )}
     </section>
   );

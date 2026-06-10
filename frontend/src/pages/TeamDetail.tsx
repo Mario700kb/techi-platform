@@ -1123,10 +1123,10 @@ export default function TeamDetailPage() {
     if (tab === "access" && clients.length === 0 && groups.length === 0 && devices.length === 0) {
       setTabLoading(true);
       Promise.all([getClients(), getGroups(), getDevices({}, 0, 1000)])
-        .then(([nextClients, nextGroups, nextDevices]) => {
+        .then(([nextClients, nextGroups, nextDevicesResp]) => {
           setClients(nextClients);
           setGroups(nextGroups);
-          setDevices(nextDevices);
+          setDevices(nextDevicesResp.devices);
         })
         .catch((err) => setError(err instanceof Error ? err.message : "Failed to load device access"))
         .finally(() => setTabLoading(false));

@@ -169,8 +169,8 @@ export interface RustDeskVerifyResponse {
 export async function getDevices(
   filters: DeviceFilters = {},
   skip: number = 0,
-  limit: number = 100
-): Promise<Device[]> {
+  limit: number = 20
+): Promise<DevicesResponse> {
   const params = new URLSearchParams({
     skip: skip.toString(),
     limit: limit.toString(),
@@ -178,7 +178,7 @@ export async function getDevices(
 
   appendDeviceFilterParams(params, filters);
 
-  return fetchJson<Device[]>(`/api/v1/devices/?${params.toString()}`);
+  return fetchJson<DevicesResponse>(`/api/v1/devices/?${params.toString()}`);
 }
 
 export interface DeviceStats {

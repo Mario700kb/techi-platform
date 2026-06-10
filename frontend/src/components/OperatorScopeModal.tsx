@@ -93,7 +93,7 @@ export default function OperatorScopeModal({ operator, onClose }: Props) {
         ]);
         setClients(clientList);
         setGroups(groupList);
-        setDevices(deviceList);
+        setDevices(deviceList.devices);
 
         const sc = new Set<number>();
         const sg = new Set<number>();

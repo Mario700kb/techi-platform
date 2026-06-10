@@ -14,6 +14,7 @@ from app.schemas.device import (
     DeviceClientAssignment,
     DeviceCreate,
     DeviceGroupAssignment,
+    DeviceListResponse,
     DeviceTreeCounts,
     DevicesSummary,
     DeviceUpdate,
@@ -66,12 +67,12 @@ def get_scoped_device(
 # List / count / bulk                                                  #
 # ------------------------------------------------------------------ #
 
-@router.get("/", response_model=List[DeviceSchema])
+@router.get("/", response_model=DeviceListResponse)
 def read_devices(
     db: Session = Depends(get_db),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
     skip: int = 0,
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=20, le=1000),
     status: Optional[DeviceStatus] = None,
     device_type: Optional[DeviceType] = None,
     freshness_state: Optional[DeviceFreshnessState] = None,
@@ -84,9 +85,8 @@ def read_devices(
     maintenance_state: Optional[str] = None,
     smart_folder: Optional[str] = None,
 ):
-    return DeviceService(db).get_devices(
-        skip=skip,
-        limit=limit,
+    svc = DeviceService(db)
+    filter_kwargs = dict(
         status=status,
         device_type=device_type,
         freshness_state=freshness_state,
@@ -100,6 +100,9 @@ def read_devices(
         smart_folder=smart_folder,
         scope=scope,
     )
+    devices = svc.get_devices(skip=skip, limit=limit, **filter_kwargs)
+    total = svc.get_devices_count(**filter_kwargs)
+    return DeviceListResponse(devices=devices, total=total)
 
 
 @router.get("/stats")

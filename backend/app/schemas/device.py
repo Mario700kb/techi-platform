@@ -212,6 +212,11 @@ class DevicesSummary(BaseModel):
     loaded_at: datetime
 
 
+class DeviceListResponse(BaseModel):
+    devices: List[Device]
+    total: int
+
+
 class DeviceClientAssignment(BaseModel):
     client_id: Optional[int] = None
 

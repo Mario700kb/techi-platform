@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Star, Trash2, Wrench } from "lucide-react";
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
@@ -41,6 +41,12 @@ interface DevicesTableProps {
   quickFilter: QuickFilter;
   onQuickFilterChange: (filter: QuickFilter) => void;
   scopedDeviceCount: number;
+  tableLoading?: boolean;
+  page?: number;
+  limit?: number;
+  total?: number;
+  onPageChange?: (page: number) => void;
+  onLimitChange?: (limit: number) => void;
 }
 
 export type QuickFilter =
@@ -423,6 +429,12 @@ const DevicesTable = memo(function DevicesTable({
   quickFilter,
   onQuickFilterChange,
   scopedDeviceCount,
+  tableLoading = false,
+  page = 1,
+  limit = 20,
+  total = 0,
+  onPageChange,
+  onLimitChange,
 }: DevicesTableProps) {
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -1263,30 +1275,63 @@ const DevicesTable = memo(function DevicesTable({
 
           {/* Footer */}
           <div
-            className="flex items-center justify-between px-4 py-2"
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
             style={{
               borderTop: "1px solid var(--th-border-subtle)",
               background: "var(--th-bg-table-head, rgba(255,255,255,0.02))",
             }}
           >
-            <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-              {displayDevices.length} shown of {scopedDeviceCount} scoped
-              {selectedIds.size > 0 && (
-                <span className="ml-2 font-semibold" style={{ color: "#fb923c" }}>
-                  · {selectedIds.size} selected
-                </span>
+            {/* Left: count + page size + loading */}
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                {total > 0
+                  ? `Showing ${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total} devices`
+                  : `${displayDevices.length} devices`}
+                {selectedIds.size > 0 && (
+                  <span className="ml-2 font-semibold" style={{ color: "#fb923c" }}>
+                    · {selectedIds.size} selected
+                  </span>
+                )}
+              </span>
+              {total > 0 && (
+                <select
+                  value={limit}
+                  onChange={(e) => onLimitChange?.(Number(e.target.value))}
+                  className="rounded border px-2 py-0.5 text-[11px] font-medium focus:outline-none"
+                  style={{
+                    borderColor: "var(--th-border-subtle)",
+                    background: "rgba(15,23,42,0.7)",
+                    color: "var(--th-text-secondary)",
+                  }}
+                >
+                  <option value={10}>10 / page</option>
+                  <option value={20}>20 / page</option>
+                  <option value={50}>50 / page</option>
+                </select>
               )}
-            </span>
-            <span
-              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
-              style={{ color: "var(--th-text-muted)", opacity: 0.6 }}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-                style={{ boxShadow: "0 0 4px rgba(52,211,153,0.5)" }}
+              {tableLoading && <Loader2 className="h-3 w-3 animate-spin text-orange-400/70" />}
+            </div>
+
+            {/* Right: pagination or Fleet active */}
+            {total > limit ? (
+              <PaginationControls
+                page={page}
+                total={total}
+                limit={limit}
+                onPageChange={onPageChange}
               />
-              Fleet active
-            </span>
+            ) : (
+              <span
+                className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: "var(--th-text-muted)", opacity: 0.6 }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                  style={{ boxShadow: "0 0 4px rgba(52,211,153,0.5)" }}
+                />
+                Fleet active
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -1494,6 +1539,103 @@ const DevicesTable = memo(function DevicesTable({
 export default DevicesTable;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function PaginationControls({
+  page,
+  total,
+  limit,
+  onPageChange,
+}: {
+  page: number;
+  total: number;
+  limit: number;
+  onPageChange?: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(total / limit);
+
+  const getPageNums = (): (number | null)[] => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const nums: (number | null)[] = [1];
+    if (page > 3) nums.push(null);
+    const lo = Math.max(2, page - 1);
+    const hi = Math.min(totalPages - 1, page + 1);
+    for (let p = lo; p <= hi; p++) nums.push(p);
+    if (page < totalPages - 2) nums.push(null);
+    nums.push(totalPages);
+    return nums;
+  };
+
+  const btnBase: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "1.5rem",
+    height: "1.5rem",
+    borderRadius: "0.25rem",
+    fontSize: "11px",
+    fontWeight: 600,
+    lineHeight: 1,
+    padding: "0 4px",
+    transition: "background 0.15s",
+    cursor: "pointer",
+  };
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPageChange?.(page - 1)}
+        style={{
+          ...btnBase,
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid var(--th-border-subtle)",
+          color: page <= 1 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
+          opacity: page <= 1 ? 0.4 : 1,
+        }}
+      >
+        ‹
+      </button>
+
+      {getPageNums().map((p, i) =>
+        p === null ? (
+          <span key={`e-${i}`} className="px-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPageChange?.(p)}
+            style={{
+              ...btnBase,
+              background: p === page ? "rgba(249,115,22,0.18)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${p === page ? "rgba(249,115,22,0.4)" : "var(--th-border-subtle)"}`,
+              color: p === page ? "#fb923c" : "var(--th-text-secondary)",
+            }}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPageChange?.(page + 1)}
+        style={{
+          ...btnBase,
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid var(--th-border-subtle)",
+          color: page >= totalPages ? "var(--th-text-muted)" : "var(--th-text-secondary)",
+          opacity: page >= totalPages ? 0.4 : 1,
+        }}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
 
 function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
   const isRunning = entry.status === "running";
