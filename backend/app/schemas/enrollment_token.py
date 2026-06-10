@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -66,3 +66,42 @@ class EnrollmentTokenVerifyResponse(BaseModel):
     client_id: Optional[int] = None
     group_id: Optional[int] = None
     message: str
+
+
+class EnrollmentAuditEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    token_id: Optional[int] = None
+    token_name: Optional[str] = None
+    token_prefix: Optional[str] = None
+    client_id: Optional[int] = None
+    group_id: Optional[int] = None
+    device_id: Optional[int] = None
+    hostname: Optional[str] = None
+    username: Optional[str] = None
+    domain: Optional[str] = None
+    rustdesk_id: Optional[str] = None
+    public_ip: Optional[str] = None
+    local_ip: Optional[str] = None
+    result: str
+    reason: Optional[str] = None
+    raw_error: Optional[str] = None
+    fingerprint: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class EnrollmentTokenDiagnostics(BaseModel):
+    token: EnrollmentTokenOut
+    uses: int
+    max_uses: int
+    unique_devices: Optional[int] = None
+    duplicate_enrollments: Optional[int] = None
+    successful_events: Optional[int] = None
+    failed_events: Optional[int] = None
+    archived_devices: Optional[int] = None
+    orphaned_uses: Optional[int] = None
+    inferred: bool
+    inference_note: Optional[str] = None
+    last_events: List[EnrollmentAuditEventOut]

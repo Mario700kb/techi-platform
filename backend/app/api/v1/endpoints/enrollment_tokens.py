@@ -3,10 +3,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, require_team_permission
+from app.core.auth import get_current_operator, require_min_role, require_team_permission
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.operator import Operator
+from app.models.operator import Operator, OperatorRole
 from app.services.permission_service import DEPLOYMENT
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
@@ -16,19 +16,23 @@ from app.schemas.enrollment_bootstrap import (
 from app.schemas.enrollment_token import (
     EnrollmentTokenCreate,
     EnrollmentTokenCreateResponse,
+    EnrollmentAuditEventOut,
     EnrollmentTokenDeployment,
+    EnrollmentTokenDiagnostics,
     EnrollmentTokenOut,
     EnrollmentTokenUpdate,
     EnrollmentTokenVerifyRequest,
     EnrollmentTokenVerifyResponse,
 )
 from app.services.enrollment_bootstrap_service import EnrollmentBootstrapService
+from app.services.enrollment_audit_service import EnrollmentAuditService
 from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.audit_service import AuditAction, audit_log
 
 router = APIRouter()
 
 _require_deployment = require_team_permission(DEPLOYMENT)
+_require_admin = require_min_role(OperatorRole.ADMIN.value)
 
 
 def _public_backend_url(request: Request) -> str:
@@ -58,6 +62,40 @@ def list_enrollment_tokens(
     offset: int = Query(default=0, ge=0),
 ):
     return EnrollmentTokenService(db).list(limit=limit, offset=offset)
+
+
+@router.get("/{token_id}/diagnostics", response_model=EnrollmentTokenDiagnostics)
+def get_enrollment_token_diagnostics(
+    token_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(_require_admin),
+):
+    try:
+        token = EnrollmentTokenService(db).get(token_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    diagnostics = EnrollmentAuditService(db).diagnostics(token)
+    return {
+        "token": token,
+        "uses": token.use_count,
+        "max_uses": token.max_uses,
+        **diagnostics,
+    }
+
+
+@router.get("/{token_id}/events", response_model=List[EnrollmentAuditEventOut])
+def get_enrollment_token_events(
+    token_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(_require_admin),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    try:
+        EnrollmentTokenService(db).get(token_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return EnrollmentAuditService(db).events(token_id, limit=limit, offset=offset)
 
 
 @router.post("/default/regenerate", response_model=EnrollmentTokenCreateResponse)

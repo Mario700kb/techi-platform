@@ -5,7 +5,9 @@ import {
   Clipboard,
   Copy,
   Download,
+  Eye,
   Info,
+  LoaderCircle,
   Plus,
   RefreshCcw,
   RotateCcw,
@@ -22,10 +24,14 @@ import {
   EnrollmentBootstrapMode,
   EnrollmentBootstrapPlatform,
   EnrollmentBootstrapResponse,
+  EnrollmentAuditEvent,
   EnrollmentToken,
+  EnrollmentTokenDiagnostics,
   createEnrollmentToken,
   deleteEnrollmentToken,
   generateEnrollmentBootstrap,
+  getEnrollmentTokenDiagnostics,
+  getEnrollmentTokenEvents,
   getEnrollmentTokens,
   regenerateDefaultToken,
   revokeEnrollmentToken,
@@ -171,6 +177,13 @@ export default function EnrollmentBootstrap() {
   const [deleteTarget, setDeleteTarget] = useState<EnrollmentToken | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [diagnosticsToken, setDiagnosticsToken] = useState<EnrollmentToken | null>(null);
+  const [diagnostics, setDiagnostics] = useState<EnrollmentTokenDiagnostics | null>(null);
+  const [diagnosticsCache, setDiagnosticsCache] = useState<Record<number, EnrollmentTokenDiagnostics>>({});
+  const [diagnosticsEvents, setDiagnosticsEvents] = useState<EnrollmentAuditEvent[]>([]);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // ── toasts ───────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -210,6 +223,43 @@ export default function EnrollmentBootstrap() {
       setError(err instanceof Error ? err.message : "Failed to load tokens");
     } finally {
       setTokensLoading(false);
+    }
+  };
+
+  const openDiagnostics = async (token: EnrollmentToken) => {
+    setDiagnosticsToken(token);
+    setDiagnostics(null);
+    setDiagnosticsEvents([]);
+    setDiagnosticsError(null);
+    setDiagnosticsLoading(true);
+    try {
+      const [summary, events] = await Promise.all([
+        getEnrollmentTokenDiagnostics(token.id),
+        getEnrollmentTokenEvents(token.id, { limit: 50 }),
+      ]);
+      setDiagnostics(summary);
+      setDiagnosticsEvents(events);
+      setDiagnosticsCache((current) => ({ ...current, [token.id]: summary }));
+    } catch (err) {
+      setDiagnosticsError(err instanceof Error ? err.message : "Failed to load token diagnostics");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const loadMoreEvents = async () => {
+    if (!diagnosticsToken || eventsLoading) return;
+    setEventsLoading(true);
+    try {
+      const next = await getEnrollmentTokenEvents(diagnosticsToken.id, {
+        limit: 50,
+        offset: diagnosticsEvents.length,
+      });
+      setDiagnosticsEvents((current) => [...current, ...next]);
+    } catch (err) {
+      setDiagnosticsError(err instanceof Error ? err.message : "Failed to load more enrollment events");
+    } finally {
+      setEventsLoading(false);
     }
   };
 
@@ -955,6 +1005,9 @@ export default function EnrollmentBootstrap() {
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Uses</th>
+                {canManage && <th className="px-4 py-3">Unique</th>}
+                {canManage && <th className="px-4 py-3">Duplicates</th>}
+                {canManage && <th className="px-4 py-3">Failed</th>}
                 <th className="px-4 py-3">Assignment</th>
                 <th className="px-4 py-3">Expires</th>
                 <th className="px-4 py-3">Last used</th>
@@ -965,7 +1018,7 @@ export default function EnrollmentBootstrap() {
             <tbody className="divide-y divide-white/[0.04]">
               {tokens.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 9 : 8} className="px-4 py-10 text-center text-sm font-medium text-slate-500">
+                  <td colSpan={canManage ? 12 : 8} className="px-4 py-10 text-center text-sm font-medium text-slate-500">
                     {tokensLoading ? "Loading…" : "No enrollment tokens yet."}
                   </td>
                 </tr>
@@ -985,11 +1038,32 @@ export default function EnrollmentBootstrap() {
                       </code>
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">{token.name}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">
+                    {canManage ? (
+                      <button type="button" onClick={() => void openDiagnostics(token)} className="hover:text-techi-orange">
+                        {token.name}
+                      </button>
+                    ) : token.name}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-3">{tokenStatusBadge(token)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-400">
                     {token.use_count}/{token.max_uses}
                   </td>
+                  {canManage && (
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                      {diagnosticsCache[token.id]?.unique_devices ?? "—"}
+                    </td>
+                  )}
+                  {canManage && (
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                      {diagnosticsCache[token.id]?.duplicate_enrollments ?? "—"}
+                    </td>
+                  )}
+                  {canManage && (
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                      {diagnosticsCache[token.id]?.failed_events ?? "—"}
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-4 py-3 text-slate-400">
                     {token.client_id ? (
                       <span className="rounded-md bg-slate-800 px-2 py-0.5 text-xs">
@@ -1012,6 +1086,10 @@ export default function EnrollmentBootstrap() {
                   {canManage && (
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
+                        <Button size="sm" onClick={() => void openDiagnostics(token)} className="th-btn-secondary">
+                          <Eye className="mr-1 h-3 w-3" />
+                          Diagnostics
+                        </Button>
                         {flashToken?.id === token.id && (
                           <button
                             type="button"
@@ -1062,6 +1140,24 @@ export default function EnrollmentBootstrap() {
           </table>
         </div>
       </div>
+
+      {diagnosticsToken && (
+        <TokenDiagnosticsDrawer
+          token={diagnosticsToken}
+          diagnostics={diagnostics}
+          events={diagnosticsEvents}
+          loading={diagnosticsLoading}
+          eventsLoading={eventsLoading}
+          error={diagnosticsError}
+          onLoadMore={() => void loadMoreEvents()}
+          onClose={() => {
+            setDiagnosticsToken(null);
+            setDiagnostics(null);
+            setDiagnosticsEvents([]);
+            setDiagnosticsError(null);
+          }}
+        />
+      )}
 
       {/* ── Create Token Modal ────────────────────────────────────────────────── */}
       {createOpen && (
@@ -1219,6 +1315,152 @@ export default function EnrollmentBootstrap() {
         ))}
       </div>
     </section>
+  );
+}
+
+function diagnosticValue(value?: number | null): string {
+  return value === null || value === undefined ? "Unknown" : String(value);
+}
+
+function resultBadgeClass(result: EnrollmentAuditEvent["result"]): string {
+  if (result === "failed") return "border-red-400/25 bg-red-400/10 text-red-300";
+  if (result === "duplicate" || result === "updated_existing") {
+    return "border-amber-400/25 bg-amber-400/10 text-amber-300";
+  }
+  if (result === "ignored") return "border-slate-500/25 bg-slate-500/10 text-slate-400";
+  return "border-emerald-400/25 bg-emerald-400/10 text-emerald-300";
+}
+
+function TokenDiagnosticsDrawer({
+  token,
+  diagnostics,
+  events,
+  loading,
+  eventsLoading,
+  error,
+  onLoadMore,
+  onClose,
+}: {
+  token: EnrollmentToken;
+  diagnostics: EnrollmentTokenDiagnostics | null;
+  events: EnrollmentAuditEvent[];
+  loading: boolean;
+  eventsLoading: boolean;
+  error: string | null;
+  onLoadMore: () => void;
+  onClose: () => void;
+}) {
+  const metrics = [
+    ["Uses", `${token.use_count} / ${token.max_uses}`],
+    ["Unique devices", diagnosticValue(diagnostics?.unique_devices)],
+    ["Duplicate / re-enrollments", diagnosticValue(diagnostics?.duplicate_enrollments)],
+    ["Failed attempts", diagnosticValue(diagnostics?.failed_events)],
+    ["Orphaned uses", diagnosticValue(diagnostics?.orphaned_uses)],
+    ["Archived devices", diagnosticValue(diagnostics?.archived_devices)],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm" onMouseDown={onClose}>
+      <aside
+        className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[#0b1019] shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-techi-orange">Token Diagnostics</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">{token.name}</h2>
+            <p className="mt-1 font-mono text-xs text-slate-500">{formatTokenPrefix(token.token_prefix)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-400">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Loading diagnostics…
+            </div>
+          )}
+          {error && <div className="mb-4 rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+          {!loading && diagnostics && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {metrics.map(([label, value]) => (
+                  <div key={label} className="premium-card-soft p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+                    <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {diagnostics.inference_note && (
+                <div className="mt-4 flex gap-2 rounded-lg border border-blue-400/15 bg-blue-400/[0.06] p-3 text-xs leading-5 text-blue-100">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />
+                  <span>
+                    {diagnostics.inferred && <strong className="mr-1">Inferred:</strong>}
+                    {diagnostics.inference_note}
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-6 overflow-hidden rounded-xl border border-white/[0.08]">
+                <div className="border-b border-white/[0.08] px-4 py-3">
+                  <h3 className="text-sm font-semibold text-white">Enrollment History</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1050px] text-left text-xs">
+                    <thead className="th-table-head">
+                      <tr className="uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-3">Time</th>
+                        <th className="px-3 py-3">Hostname</th>
+                        <th className="px-3 py-3">User</th>
+                        <th className="px-3 py-3">Device</th>
+                        <th className="px-3 py-3">RustDesk ID</th>
+                        <th className="px-3 py-3">Result</th>
+                        <th className="px-3 py-3">Reason</th>
+                        <th className="px-3 py-3">IP</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.05]">
+                      {!events.length && (
+                        <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-500">No enrollment audit events recorded.</td></tr>
+                      )}
+                      {events.map((event) => (
+                        <tr key={event.id} className="text-slate-300">
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatLocalDateTime(event.created_at)}</td>
+                          <td className="px-3 py-3 font-semibold text-white">{event.hostname || "—"}</td>
+                          <td className="px-3 py-3">{event.username || "—"}</td>
+                          <td className="px-3 py-3">{event.device_id ? `#${event.device_id}` : "—"}</td>
+                          <td className="px-3 py-3 font-mono">{event.rustdesk_id || "—"}</td>
+                          <td className="px-3 py-3">
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${resultBadgeClass(event.result)}`}>
+                              {event.result.replace("_", " ")}
+                            </span>
+                          </td>
+                          <td className="max-w-[240px] truncate px-3 py-3" title={event.raw_error || event.reason || ""}>
+                            {event.reason || event.raw_error || "—"}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-slate-400">{event.public_ip || event.local_ip || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {events.length > 0 && events.length % 50 === 0 && (
+                  <div className="flex justify-center border-t border-white/[0.08] p-3">
+                    <Button size="sm" onClick={onLoadMore} disabled={eventsLoading} className="th-btn-secondary">
+                      {eventsLoading ? "Loading…" : "Load more"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 

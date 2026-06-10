@@ -33,6 +33,45 @@ export interface EnrollmentTokenDeployment {
   rustdesk: Record<string, string>;
 }
 
+export type EnrollmentAuditResult = "success" | "duplicate" | "updated_existing" | "failed" | "ignored";
+
+export interface EnrollmentAuditEvent {
+  id: number;
+  created_at: string;
+  token_id?: number | null;
+  token_name?: string | null;
+  token_prefix?: string | null;
+  client_id?: number | null;
+  group_id?: number | null;
+  device_id?: number | null;
+  hostname?: string | null;
+  username?: string | null;
+  domain?: string | null;
+  rustdesk_id?: string | null;
+  public_ip?: string | null;
+  local_ip?: string | null;
+  result: EnrollmentAuditResult;
+  reason?: string | null;
+  raw_error?: string | null;
+  fingerprint?: string | null;
+  agent_id?: string | null;
+}
+
+export interface EnrollmentTokenDiagnostics {
+  token: EnrollmentToken;
+  uses: number;
+  max_uses: number;
+  unique_devices?: number | null;
+  duplicate_enrollments?: number | null;
+  successful_events?: number | null;
+  failed_events?: number | null;
+  archived_devices?: number | null;
+  orphaned_uses?: number | null;
+  inferred: boolean;
+  inference_note?: string | null;
+  last_events: EnrollmentAuditEvent[];
+}
+
 export interface EnrollmentBootstrapRequest {
   mode: EnrollmentBootstrapMode;
   enrollment_token_id?: number;
@@ -101,6 +140,21 @@ export async function getEnrollmentTokens(): Promise<EnrollmentToken[]> {
 
 export async function getEnrollmentTokenDeployment(tokenId: number): Promise<EnrollmentTokenDeployment> {
   return fetchJson<EnrollmentTokenDeployment>(`/api/v1/enrollment-tokens/${tokenId}/deployment`);
+}
+
+export async function getEnrollmentTokenDiagnostics(tokenId: number): Promise<EnrollmentTokenDiagnostics> {
+  return fetchJson<EnrollmentTokenDiagnostics>(`/api/v1/enrollment-tokens/${tokenId}/diagnostics`);
+}
+
+export async function getEnrollmentTokenEvents(
+  tokenId: number,
+  options: { limit?: number; offset?: number } = {}
+): Promise<EnrollmentAuditEvent[]> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
+  return fetchJson<EnrollmentAuditEvent[]>(`/api/v1/enrollment-tokens/${tokenId}/events?${params.toString()}`);
 }
 
 export async function createEnrollmentToken(

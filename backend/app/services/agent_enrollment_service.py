@@ -12,6 +12,7 @@ from app.schemas.agent import AgentEnrollmentRequest, AgentEnrollmentResponse
 from app.schemas.device import DeviceCreate, DeviceStatus, DeviceUpdate
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_activity_event_service import DeviceActivityEventService
+from app.services.enrollment_audit_service import EnrollmentAuditService
 from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.services.trusted_domain_service import TrustedDomainService
@@ -27,6 +28,7 @@ class AgentEnrollmentService:
         self.token_service = EnrollmentTokenService(db)
         self.assignment_service = DeviceAssignmentService(db)
         self.activity_service = DeviceActivityEventService(db)
+        self.enrollment_audit = EnrollmentAuditService(db)
 
     def enroll(
         self,
@@ -43,9 +45,32 @@ class AgentEnrollmentService:
             )
 
         if not payload.enrollment_token:
+            self._record_audit(
+                payload=payload,
+                result="failed",
+                reason="token_required",
+                raw_error="enrollment_token is required",
+            )
             raise ValueError("enrollment_token is required when trusted domain auto-enrollment is disabled or domain is not trusted")
 
-        token = self.token_service.validate_for_enrollment(payload.enrollment_token)
+        token = None
+        try:
+            token = self.token_service.validate_for_enrollment(payload.enrollment_token)
+        except ValueError as exc:
+            try:
+                token_hash = self.token_service.hash_token(payload.enrollment_token)
+                token = self.token_service.repo.get_by_hash(token_hash)
+            except Exception:
+                token = None
+            self._record_audit(
+                payload=payload,
+                token=token,
+                result="failed",
+                reason=f"token_{str(exc)}",
+                raw_error=str(exc),
+            )
+            raise
+
         incoming_agent_id = self._normalize(payload.agent_id)
         agent_id = incoming_agent_id or self._new_agent_id()
         valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
@@ -53,32 +78,53 @@ class AgentEnrollmentService:
         )
         identity_rustdesk_id = normalized_rustdesk_id if valid_rustdesk_id else None
 
-        device = self._upsert_device(
-            payload,
-            agent_id=agent_id,
-            rustdesk_id=identity_rustdesk_id,
-            client_id=token.client_id,
-            group_id=token.group_id,
-        )
-        if not getattr(device, "_reenrollment_matched", False):
-            device = self.assignment_service.apply_enrollment_assignment(
-                device,
+        device = None
+        try:
+            device = self._upsert_device(
+                payload,
+                agent_id=agent_id,
+                rustdesk_id=identity_rustdesk_id,
                 client_id=token.client_id,
                 group_id=token.group_id,
-                signal=AssignmentSignal(
-                    hostname=payload.hostname,
-                    domain=domain or None,
-                    public_ip=payload.public_ip,
-                    os_name=payload.os_name,
-                    os_version=payload.os_version,
-                    os_caption=payload.os_caption,
-                    os_build=payload.os_build,
-                    windows_product_type=payload.windows_product_type,
-                    platform=payload.platform,
-                ),
             )
-        device = self.assignment_service.apply_resolution(device)
-        self.token_service.mark_enrollment_used(token)
+            reenrollment_matched = bool(getattr(device, "_reenrollment_matched", False))
+            if not reenrollment_matched:
+                device = self.assignment_service.apply_enrollment_assignment(
+                    device,
+                    client_id=token.client_id,
+                    group_id=token.group_id,
+                    signal=AssignmentSignal(
+                        hostname=payload.hostname,
+                        domain=domain or None,
+                        public_ip=payload.public_ip,
+                        os_name=payload.os_name,
+                        os_version=payload.os_version,
+                        os_caption=payload.os_caption,
+                        os_build=payload.os_build,
+                        windows_product_type=payload.windows_product_type,
+                        platform=payload.platform,
+                    ),
+                )
+            device = self.assignment_service.apply_resolution(device)
+            self.token_service.mark_enrollment_used(token)
+        except Exception as exc:
+            self._record_audit(
+                payload=payload,
+                token=token,
+                device=device,
+                result="failed",
+                reason="enrollment_processing_failed",
+                raw_error=str(exc),
+            )
+            raise
+
+        self._record_audit(
+            payload=payload,
+            token=token,
+            device=device,
+            result="updated_existing" if reenrollment_matched else "success",
+            reason="reenrollment_match" if reenrollment_matched else "device_created",
+        )
 
         return AgentEnrollmentResponse(
             agent_id=agent_id,
@@ -243,6 +289,12 @@ class AgentEnrollmentService:
     @staticmethod
     def _new_agent_id() -> str:
         return f"agent_{secrets.token_urlsafe(18)}"
+
+    def _record_audit(self, **values) -> None:
+        try:
+            self.enrollment_audit.record(**values)
+        except Exception:
+            logger.exception("Enrollment audit failed outside best-effort service boundary")
 
     @staticmethod
     def _normalize(value: Optional[str]) -> Optional[str]:
