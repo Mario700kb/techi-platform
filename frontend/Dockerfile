@@ -13,9 +13,11 @@ COPY ./tsconfig.json ./
 COPY ./tsconfig.node.json ./
 COPY ./vite.config.ts ./
 COPY ./public ./public
+# .env.production is committed to git and carries the production API/WS URLs.
+# loadEnv() in vite.config.ts reads this file — without it the guard plugin aborts the build.
+COPY .env.production .env.production
 
-# Bake API/WS URLs into the static build at image build time.
-# Pass via docker-compose build.args or --build-arg.
+# Build args are kept for override flexibility but .env.production takes precedence.
 ARG VITE_API_BASE_URL=""
 ARG VITE_WS_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
