@@ -28,6 +28,12 @@ class AppCache {
     if (key) this.store.delete(key);
     else this.store.clear();
   }
+
+  invalidatePrefix(prefix: string): void {
+    for (const key of [...this.store.keys()]) {
+      if (key.startsWith(prefix)) this.store.delete(key);
+    }
+  }
 }
 
 export const appCache = new AppCache();
@@ -40,6 +46,7 @@ export const CACHE_KEYS = {
   clientsList:        "clients.list",            // Client[]
   groupsList:         "clients.groups",          // DeviceGroup[]
   operatorsList:      "operators.list",          // OperatorRecord[]
+  devicesStats:       "devices.stats",           // DevicesSnapshotCache
 } as const;
 
 export const CACHE_TTL = {
@@ -50,4 +57,22 @@ export const CACHE_TTL = {
   clientsList:        120_000,
   groupsList:         120_000,
   operatorsList:      120_000,
+  devicesStats:       60_000,
+  devicesTable:       30_000,
 } as const;
+
+export function deviceTableCacheKey(
+  page: number,
+  limit: number,
+  search: string,
+  quickFilter: string,
+  filters: Record<string, unknown>,
+): string {
+  return [
+    "devices-table", page, limit, search, quickFilter,
+    filters.status ?? "", filters.freshness_state ?? "",
+    filters.maintenance_state ?? "", filters.client_id ?? "",
+    filters.group_id ?? "", filters.smart_folder ?? "",
+    filters.duplicate_candidates ?? "", filters.lifecycle_state ?? "",
+  ].join("|");
+}
