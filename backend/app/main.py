@@ -11,6 +11,7 @@ configure_logging()
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.legacy_compat import router as legacy_compat_router
 from app.api.v1.api import api_router
@@ -112,6 +113,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        content_type = response.headers.get("content-type", "")
+        if content_type == "application/json":
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
+
 _cors_origins = ["*"] if settings.BACKEND_CORS_ALLOW_ALL else settings.BACKEND_CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
@@ -121,6 +133,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)

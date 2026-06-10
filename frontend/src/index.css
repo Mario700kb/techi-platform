@@ -187,6 +187,14 @@ body,
   min-height: 100%;
 }
 
+html {
+  /* Tailwind preflight only emits the -webkit- prefixed form; the standard
+     property silences the DevTools compatibility warning. */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   background-color: #0A0A0B;
   color: var(--th-text-primary);

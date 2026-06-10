@@ -167,6 +167,7 @@ export default function Audit() {
           />
           <select
             className={SELECT_CLS}
+            aria-label="Filter by action"
             value={draft.action ?? ""}
             onChange={(e) => setDraft((d) => ({ ...d, action: e.target.value || undefined }))}
           >
@@ -177,6 +178,7 @@ export default function Audit() {
           </select>
           <select
             className={SELECT_CLS}
+            aria-label="Filter by entity type"
             value={draft.entity_type ?? ""}
             onChange={(e) => setDraft((d) => ({ ...d, entity_type: e.target.value || undefined }))}
           >

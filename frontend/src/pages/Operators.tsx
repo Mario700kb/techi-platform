@@ -551,6 +551,7 @@ export default function Operators() {
               <select
                 value={createForm.role}
                 onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+                aria-label="Role"
                 className={INPUT_CLS}
               >
                 {availableRoles().map((r) => (
@@ -605,6 +606,7 @@ export default function Operators() {
               <input
                 value={editForm.username ?? ""}
                 onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+                aria-label="Username"
                 className={INPUT_CLS}
               />
             </div>
@@ -614,6 +616,7 @@ export default function Operators() {
                 type="email"
                 value={editForm.email ?? ""}
                 onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                aria-label="Email"
                 className={INPUT_CLS}
               />
             </div>
@@ -622,6 +625,7 @@ export default function Operators() {
               <select
                 value={editForm.role ?? editTarget.role}
                 onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+                aria-label="Role"
                 className={INPUT_CLS}
                 disabled={!canEditRole(editTarget.role)}
               >

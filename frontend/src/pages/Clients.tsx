@@ -309,6 +309,7 @@ export default function Clients() {
               <select
                 value={groupClientId}
                 onChange={(event) => setGroupClientId(event.target.value)}
+                aria-label="Client for new group"
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               >
                 {clients.map((client) => (
@@ -354,6 +355,7 @@ export default function Clients() {
               <input
                 value={editGroupName}
                 onChange={(event) => setEditGroupName(event.target.value)}
+                aria-label="Group name"
                 className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
               <textarea
@@ -397,6 +399,7 @@ export default function Clients() {
               <input
                 value={editClientName}
                 onChange={(event) => setEditClientName(event.target.value)}
+                aria-label="Client name"
                 className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
               <textarea

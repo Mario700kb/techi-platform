@@ -565,6 +565,7 @@ export default function EnrollmentBootstrap() {
                   <select
                     value={tokenId}
                     onChange={(e) => { setTokenId(e.target.value); setPlaintextToken(""); }}
+                    aria-label="Deployment token"
                     className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
                   >
                     {activeTokens.length === 0 && (
