@@ -108,7 +108,9 @@ export default function Devices() {
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
   const [hideOfflineDays, setHideOfflineDays] = useState(30);
-  const [loading, setLoading] = useState(false);
+  // snapshotLoading: true while getDevicesSummary() is in flight (stats cards, health, patches).
+  // Does NOT block the table — table skeleton is driven by tableLoading only.
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const devicesLoadedRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
@@ -160,9 +162,7 @@ export default function Devices() {
   // loadSnapshot loads the full summary for stats/health/patch cards.
   // The table data comes separately from loadTableData.
   const loadSnapshot = useCallback(async () => {
-    const showLoading = !devicesLoadedRef.current;
     try {
-      if (showLoading) setLoading(true);
       setError(null);
 
       const treePromise = getDeviceTree().then((tree) => {
@@ -191,7 +191,7 @@ export default function Devices() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {
-      if (showLoading) setLoading(false);
+      setSnapshotLoading(false);
     }
   }, []);
 
@@ -635,7 +635,9 @@ export default function Devices() {
                 <p className="premium-kicker">Total</p>
                 <Radio className="h-4 w-4 text-orange-400/70" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-white">{snapshotStats.total}</p>
+              <p className="mt-3 text-3xl font-bold text-white">
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.total}
+              </p>
               <p className="mt-2 text-[13px] text-slate-400">Scoped fleet snapshot</p>
             </button>
 
@@ -654,7 +656,9 @@ export default function Devices() {
                 <p className="premium-kicker">Online</p>
                 <Wifi className="h-4 w-4 text-emerald-400/70" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-emerald-300">{snapshotStats.online}</p>
+              <p className="mt-3 text-3xl font-bold text-emerald-300">
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.online}
+              </p>
               <p className="mt-2 text-[13px] text-slate-400">Active endpoints available</p>
             </button>
 
@@ -673,7 +677,9 @@ export default function Devices() {
                 <p className="premium-kicker">Stale</p>
                 <Clock3 className="h-4 w-4 text-amber-400/80" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-amber-200">{snapshotStats.stale}</p>
+              <p className="mt-3 text-3xl font-bold text-amber-200">
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.stale}
+              </p>
               <p className="mt-2 text-[13px] text-slate-400">Last seen within 15 minutes</p>
             </button>
 
@@ -692,7 +698,9 @@ export default function Devices() {
                 <p className="premium-kicker">Offline</p>
                 <WifiOff className="h-4 w-4 text-slate-500" />
               </div>
-              <p className="mt-3 text-3xl font-bold text-slate-200">{snapshotStats.offline}</p>
+              <p className="mt-3 text-3xl font-bold text-slate-200">
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.offline}
+              </p>
               <p className="mt-2 text-[13px] text-slate-400">Devices not responding</p>
             </button>
           </div>
@@ -714,7 +722,7 @@ export default function Devices() {
                 <ShieldAlert className="h-4 w-4 text-red-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-red-300">
-                {fleetQuickCounts.critical}
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : fleetQuickCounts.critical}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Critical device health</p>
             </button>
@@ -735,7 +743,7 @@ export default function Devices() {
                 <AlertTriangle className="h-4 w-4 text-amber-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-amber-200">
-                {fleetQuickCounts.warnings}
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : fleetQuickCounts.warnings}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Warning device health</p>
             </button>
@@ -777,7 +785,7 @@ export default function Devices() {
 
           <DevicesTable
             devices={visibleDevices}
-            loading={loading}
+            loading={tableLoading && tableDevices.length === 0}
             tableLoading={tableLoading}
             error={error}
             filters={filters}
