@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -96,8 +97,9 @@ def device_payload(device: Device) -> Dict[str, Any]:
 
 
 # Last-broadcast serialized payload per device_id.
-# Thread-safe for our usage: individual dict.get() / dict.__setitem__() are atomic under GIL.
-_ws_snapshot: dict[int, dict] = {}
+# Insertion order supports bounded LRU-style eviction.
+_ws_snapshot: OrderedDict[int, dict] = OrderedDict()
+_WS_SNAPSHOT_MAX_SIZE = 2000
 
 
 def device_payload_delta(current: dict) -> dict:
@@ -106,7 +108,10 @@ def device_payload_delta(current: dict) -> dict:
     """
     device_id = current["id"]
     prev = _ws_snapshot.get(device_id)
+    _ws_snapshot.pop(device_id, None)
     _ws_snapshot[device_id] = current
+    while len(_ws_snapshot) > _WS_SNAPSHOT_MAX_SIZE:
+        _ws_snapshot.popitem(last=False)
     if prev is None:
         return current
     delta: dict = {"id": device_id}

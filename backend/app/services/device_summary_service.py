@@ -1,5 +1,5 @@
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -18,8 +18,9 @@ from app.services.device_service import DeviceService
 
 
 # Summary cache: scope_key → (DevicesSummary, cached_at)
-_summary_cache: dict[str, tuple["DevicesSummary", float]] = {}
-_SUMMARY_CACHE_TTL = 30.0  # seconds
+_summary_cache: OrderedDict[str, tuple["DevicesSummary", float]] = OrderedDict()
+_SUMMARY_CACHE_TTL = 15.0  # seconds
+_SUMMARY_CACHE_MAX_SIZE = 10
 
 
 def _scope_cache_key(scope: Optional[AllowedScope]) -> str:
@@ -45,9 +46,15 @@ class DeviceSummaryService:
         key = _scope_cache_key(scope)
         entry = _summary_cache.get(key)
         if entry is not None and time.monotonic() - entry[1] < _SUMMARY_CACHE_TTL:
+            _summary_cache.move_to_end(key)
             return entry[0]
+        if entry is not None:
+            _summary_cache.pop(key, None)
         result = self._compute_summary(scope)
+        _summary_cache.pop(key, None)
         _summary_cache[key] = (result, time.monotonic())
+        while len(_summary_cache) > _SUMMARY_CACHE_MAX_SIZE:
+            _summary_cache.popitem(last=False)
         return result
 
     def _compute_summary(self, scope: Optional[AllowedScope] = None) -> DevicesSummary:

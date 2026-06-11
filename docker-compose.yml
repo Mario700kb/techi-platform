@@ -30,6 +30,8 @@ services:
         condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    mem_limit: 800m
+    memswap_limit: 800m
     volumes:
       - agent_packages:/app/agent_packages
       - /opt/techi/packages:/opt/techi/packages:ro

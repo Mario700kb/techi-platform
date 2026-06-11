@@ -1,5 +1,6 @@
 import logging
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import Optional
@@ -31,8 +32,18 @@ _RECENTLY_SEEN_HOURS = 24
 
 # agent_id → (device_id, cached_at): avoids per-heartbeat agent_id index scans.
 # agent_id is immutable post-enroll, so a long TTL is safe.
-_AGENT_ID_CACHE: dict[str, tuple[int, float]] = {}
+_AGENT_ID_CACHE: OrderedDict[str, tuple[int, float]] = OrderedDict()
 _AGENT_ID_CACHE_TTL = 300.0  # seconds
+_AGENT_ID_CACHE_MAX_SIZE = 1000
+_AGENT_ID_CACHE_EVICT_COUNT = 100
+
+
+def _cache_agent_device(agent_id: str, device_id: int) -> None:
+    _AGENT_ID_CACHE.pop(agent_id, None)
+    _AGENT_ID_CACHE[agent_id] = (device_id, time.monotonic())
+    if len(_AGENT_ID_CACHE) > _AGENT_ID_CACHE_MAX_SIZE:
+        for _ in range(min(_AGENT_ID_CACHE_EVICT_COUNT, len(_AGENT_ID_CACHE))):
+            _AGENT_ID_CACHE.popitem(last=False)
 
 
 def _evict_agent_cache(agent_id: str | None) -> None:
@@ -110,7 +121,10 @@ class DeviceHeartbeatService:
         if payload.agent_id:
             cached = _AGENT_ID_CACHE.get(payload.agent_id)
             if cached and time.monotonic() - cached[1] < _AGENT_ID_CACHE_TTL:
+                _AGENT_ID_CACHE.move_to_end(payload.agent_id)
                 device = self.device_repo.get(cached[0])  # PK lookup — faster than agent_id scan
+            elif cached:
+                _AGENT_ID_CACHE.pop(payload.agent_id, None)
         if device is None and payload.agent_id:
             device = self.device_repo.get_by_agent_id(payload.agent_id)
         if device is None:
@@ -118,7 +132,7 @@ class DeviceHeartbeatService:
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
         if device is not None and payload.agent_id:
-            _AGENT_ID_CACHE[payload.agent_id] = (device.id, time.monotonic())
+            _cache_agent_device(payload.agent_id, device.id)
         if device is not None:
             device = self.maintenance_service.expire_if_needed(device)
         previous_payload = device_payload(device) if device else None
