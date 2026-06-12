@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { archiveDevice, deleteDevice, getDevices, getDevicesSummary, getDeviceTree, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
+import { archiveDevice, deleteDevice, getDevices, getDevicesSummary, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
@@ -234,14 +234,6 @@ export default function Devices() {
     try {
       setError(null);
 
-      const treePromise = getDeviceTree().then((tree) => {
-        setTreeCounts({
-          total: tree.total,
-          unassigned: tree.unassigned,
-          byClient: new Map(Object.entries(tree.by_client).map(([id, count]) => [Number(id), count])),
-        });
-      }).catch(() => undefined);
-
       const snapshotPromise = getDevicesSummary().then((snapshot) => {
         const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
         const newHealthMap = Object.fromEntries(snapshot.health.map((item) => [item.device_id, item]));
@@ -271,7 +263,7 @@ export default function Devices() {
         });
       });
 
-      await Promise.all([treePromise, snapshotPromise]);
+      await snapshotPromise;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {
