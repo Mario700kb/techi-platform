@@ -89,6 +89,34 @@ def test_audit_event_written_for_successful_enrollment():
     assert db.get(EnrollmentToken, token.id).use_count == 1
 
 
+def test_reenrollment_does_not_increment_use_count():
+    db = _db()
+    token, plaintext = _token(db)
+    service = AgentEnrollmentService(db)
+
+    first = service.enroll(
+        _payload(plaintext),
+        heartbeat_url="https://example.test/heartbeat",
+        websocket_url="wss://example.test/ws",
+    )
+    assert db.get(EnrollmentToken, token.id).use_count == 1
+
+    second = service.enroll(
+        _payload(plaintext),
+        heartbeat_url="https://example.test/heartbeat",
+        websocket_url="wss://example.test/ws",
+    )
+
+    assert second.device_id == first.device_id
+    assert db.get(EnrollmentToken, token.id).use_count == 1
+    reenroll_event = (
+        db.query(EnrollmentAudit)
+        .filter(EnrollmentAudit.result == "updated_existing")
+        .one()
+    )
+    assert reenroll_event.reason == "reenrollment_match"
+
+
 def test_audit_event_written_for_invalid_token():
     db = _db()
 

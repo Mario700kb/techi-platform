@@ -106,7 +106,10 @@ class AgentEnrollmentService:
                     ),
                 )
             device = self.assignment_service.apply_resolution(device)
-            self.token_service.mark_enrollment_used(token)
+            # Token uses are consumed only by first-time enrollments; re-enrollments
+            # of an existing device must not eat into max_uses.
+            if not reenrollment_matched:
+                self.token_service.mark_enrollment_used(token)
         except Exception as exc:
             self._record_audit(
                 payload=payload,

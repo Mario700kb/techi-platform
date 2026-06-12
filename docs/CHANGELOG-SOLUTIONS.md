@@ -3,7 +3,45 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
-## 2026-06-12 - Device Tree subgroup counts use the full fleet snapshot
+## 2026-06-12 - Enrollment token use_count no longer increments on re-enrollment
+
+### Problem
+
+Every agent `POST /api/v1/agent/enroll` incremented the enrollment token's
+`use_count`, including re-enrollments that matched an existing device
+(`reenrollment_match`). A single physical PC could consume 2-7 token uses over
+its lifetime, so tokens approached `max_uses` far ahead of real deployments.
+Production audit data showed the inflation clearly: "Global Fast Food Albania"
+had `use_count` 251 against 38 distinct devices and only 1 `device_created`
+audit event in the audited window; "Metropol" had 181 against 31 devices.
+
+### Root cause and solution
+
+In `AgentEnrollmentService.enroll`, `mark_enrollment_used(token)` ran
+unconditionally after `_upsert_device`, regardless of whether the upsert
+created a new device or reconciled to an existing one via
+`find_reenrollment_match` (agent_id/rustdesk_id/hostname/IP matching). The
+trusted-domain path was unaffected because it never touches a token, and the
+operator-facing `/enrollment-tokens/verify` endpoint already used the
+non-incrementing `peek()`.
+
+The fix gates the increment on the existing `reenrollment_matched` flag:
+`mark_enrollment_used` is now called only when a new device record was
+created. Re-enrollments still update the device, write the
+`updated_existing`/`reenrollment_match` audit event, and bump the device's
+own `enrollment_count`.
+
+### Verification
+
+New regression test `test_reenrollment_does_not_increment_use_count` enrolls
+the same payload twice and asserts the second call reconciles to the same
+device with `use_count` still 1. Full enrollment test files (12 tests) pass
+under Python 3.12 in a throwaway backend container on techi-server with the
+patched files volume-mounted; the production container was not modified.
+
+Existing inflated `use_count` values in production were not reset; audit data
+is incomplete for older history, so any correction needs an operator decision
+on the baseline (for example distinct audited devices per token).
 
 ### Problem
 
