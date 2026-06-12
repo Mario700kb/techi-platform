@@ -117,6 +117,64 @@ def test_reenrollment_does_not_increment_use_count():
     assert reenroll_event.reason == "reenrollment_match"
 
 
+def test_exhausted_token_still_allows_reenrollment_of_existing_device():
+    db = _db()
+    token, plaintext = _token(db)
+    service = AgentEnrollmentService(db)
+
+    first = service.enroll(
+        _payload(plaintext),
+        heartbeat_url="https://example.test/heartbeat",
+        websocket_url="wss://example.test/ws",
+    )
+
+    token.use_count = token.max_uses
+    token.status = EnrollmentTokenStatus.USED
+    db.commit()
+
+    second = service.enroll(
+        _payload(plaintext),
+        heartbeat_url="https://example.test/heartbeat",
+        websocket_url="wss://example.test/ws",
+    )
+
+    refreshed = db.get(EnrollmentToken, token.id)
+    assert second.device_id == first.device_id
+    assert refreshed.use_count == refreshed.max_uses
+    assert refreshed.status == EnrollmentTokenStatus.USED
+
+
+def test_exhausted_token_rejects_new_device():
+    db = _db()
+    token, plaintext = _token(db)
+    token.use_count = token.max_uses
+    token.status = EnrollmentTokenStatus.USED
+    db.commit()
+
+    payload = AgentEnrollmentRequest(
+        enrollment_token=plaintext,
+        hostname="BRAND-NEW-PC",
+        local_ip="10.0.0.99",
+        public_ip="198.51.100.99",
+        platform="windows",
+    )
+
+    try:
+        AgentEnrollmentService(db).enroll(
+            payload,
+            heartbeat_url="https://example.test/heartbeat",
+            websocket_url="wss://example.test/ws",
+        )
+        assert False, "exhausted token should reject a new device"
+    except ValueError as exc:
+        assert str(exc) == "used"
+
+    event = db.query(EnrollmentAudit).one()
+    assert event.result == "failed"
+    assert event.reason == "token_used"
+    assert db.get(EnrollmentToken, token.id).use_count == token.max_uses
+
+
 def test_audit_event_written_for_invalid_token():
     db = _db()
 

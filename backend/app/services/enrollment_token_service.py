@@ -401,13 +401,18 @@ class EnrollmentTokenService:
             message="Enrollment token is valid",
         )
 
-    def validate_for_enrollment(self, plaintext_token: str) -> EnrollmentToken:
+    def get_for_enrollment(self, plaintext_token: str) -> EnrollmentToken:
+        """Resolve a token for enrollment without enforcing its status."""
         token_hash = self.hash_token(plaintext_token)
         token = self.repo.get_by_hash(token_hash)
         if not token:
             raise ValueError("invalid")
 
         self._refresh_status(token)
+        return token
+
+    def validate_for_enrollment(self, plaintext_token: str) -> EnrollmentToken:
+        token = self.get_for_enrollment(plaintext_token)
         if token.status != EnrollmentTokenStatus.ACTIVE:
             raise ValueError(token.status.value)
         return token

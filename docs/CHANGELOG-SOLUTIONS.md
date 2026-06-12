@@ -3,6 +3,40 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-12 - Exhausted enrollment tokens no longer block re-enrollment of existing devices
+
+### Problem
+
+Once a token reached `max_uses` (status `used`), every enrollment with it was
+rejected at `validate_for_enrollment` — including re-enrollments of devices
+that were originally enrolled with that token. Since the previous fix made
+re-enrollments free (they no longer consume a use slot), rejecting them on an
+exhausted token was inconsistent: a PC that reinstalled its agent could be
+locked out even though it claimed no new capacity.
+
+### Root cause and solution
+
+`AgentEnrollmentService.enroll` enforced token status before it knew whether
+the request matched an existing device; `find_reenrollment_match` only ran
+later, inside `_upsert_device`. The order is now: resolve the token without a
+status check (`get_for_enrollment`, new method that still rejects unknown
+tokens), run the device match on the payload's agent_id / rustdesk_id /
+hostname / IPs, and only then enforce status. A matched device accepts
+`active` or `used` tokens; a genuinely new device still requires `active`.
+Revoked and expired tokens remain rejected on both paths so revocation stays
+an effective kill switch. The `/enroll` endpoint now returns "Enrollment
+token exhausted, max_uses reached" for the `used` rejection; audit reasons
+(`token_used`, `token_invalid`, ...) are unchanged.
+
+### Verification
+
+New regression tests: `test_exhausted_token_still_allows_reenrollment_of_existing_device`
+(token forced to `use_count == max_uses`, status `used`; the same payload
+re-enrolls to the same device and `use_count` stays at max) and
+`test_exhausted_token_rejects_new_device` (unmatched payload on the same
+exhausted token fails with `token_used` audit). All 14 enrollment tests pass
+under Python 3.12 in a throwaway backend container on techi-server.
+
 ## 2026-06-12 - Enrollment token use_count no longer increments on re-enrollment
 
 ### Problem

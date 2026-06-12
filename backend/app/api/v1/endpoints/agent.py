@@ -64,7 +64,9 @@ def agent_enroll(
         )
     except ValueError as exc:
         detail = str(exc)
-        if detail in {"invalid", "expired", "revoked", "used"}:
+        if detail == "used":
+            raise HTTPException(status_code=400, detail="Enrollment token exhausted, max_uses reached")
+        if detail in {"invalid", "expired", "revoked"}:
             raise HTTPException(status_code=400, detail=f"Enrollment token is {detail}")
         if "enrollment_token is required" in detail or "not trusted" in detail:
             raise HTTPException(status_code=403, detail=detail)

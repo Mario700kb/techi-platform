@@ -13,6 +13,7 @@ from app.schemas.device import DeviceCreate, DeviceStatus, DeviceUpdate
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.enrollment_audit_service import EnrollmentAuditService
+from app.models.enrollment_token import EnrollmentTokenStatus
 from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.services.trusted_domain_service import TrustedDomainService
@@ -53,18 +54,11 @@ class AgentEnrollmentService:
             )
             raise ValueError("enrollment_token is required when trusted domain auto-enrollment is disabled or domain is not trusted")
 
-        token = None
         try:
-            token = self.token_service.validate_for_enrollment(payload.enrollment_token)
+            token = self.token_service.get_for_enrollment(payload.enrollment_token)
         except ValueError as exc:
-            try:
-                token_hash = self.token_service.hash_token(payload.enrollment_token)
-                token = self.token_service.repo.get_by_hash(token_hash)
-            except Exception:
-                token = None
             self._record_audit(
                 payload=payload,
-                token=token,
                 result="failed",
                 reason=f"token_{str(exc)}",
                 raw_error=str(exc),
@@ -78,6 +72,27 @@ class AgentEnrollmentService:
         )
         identity_rustdesk_id = normalized_rustdesk_id if valid_rustdesk_id else None
 
+        existing = self._find_existing_device(payload, rustdesk_id=identity_rustdesk_id)
+
+        # Token status is enforced only for first-time enrollments. An existing
+        # device may re-enroll on an exhausted (USED) token because it does not
+        # consume a use slot; revoked and expired tokens stay rejected for both.
+        allowed_statuses = (
+            (EnrollmentTokenStatus.ACTIVE, EnrollmentTokenStatus.USED)
+            if existing is not None
+            else (EnrollmentTokenStatus.ACTIVE,)
+        )
+        if token.status not in allowed_statuses:
+            reason = token.status.value
+            self._record_audit(
+                payload=payload,
+                token=token,
+                result="failed",
+                reason=f"token_{reason}",
+                raw_error=reason,
+            )
+            raise ValueError(reason)
+
         device = None
         try:
             device = self._upsert_device(
@@ -86,6 +101,7 @@ class AgentEnrollmentService:
                 rustdesk_id=identity_rustdesk_id,
                 client_id=token.client_id,
                 group_id=token.group_id,
+                existing=existing,
             )
             reenrollment_matched = bool(getattr(device, "_reenrollment_matched", False))
             if not reenrollment_matched:
@@ -158,7 +174,14 @@ class AgentEnrollmentService:
         )
         identity_rustdesk_id = normalized_rustdesk_id if valid_rustdesk_id else None
 
-        device = self._upsert_device(payload, agent_id=agent_id, rustdesk_id=identity_rustdesk_id, client_id=None, group_id=None)
+        device = self._upsert_device(
+            payload,
+            agent_id=agent_id,
+            rustdesk_id=identity_rustdesk_id,
+            client_id=None,
+            group_id=None,
+            existing=self._find_existing_device(payload, rustdesk_id=identity_rustdesk_id),
+        )
         if not getattr(device, "_reenrollment_matched", False):
             device = self.assignment_service.apply_trusted_domain_assignment(
                 device,
@@ -200,6 +223,20 @@ class AgentEnrollmentService:
             assigned_group_id=device.group_id,
         )
 
+    def _find_existing_device(
+        self,
+        payload: AgentEnrollmentRequest,
+        *,
+        rustdesk_id: Optional[str],
+    ) -> Optional[Device]:
+        return self.device_repo.find_reenrollment_match(
+            agent_id=self._normalize(payload.agent_id),
+            rustdesk_id=rustdesk_id,
+            hostname=self._normalize(payload.hostname),
+            local_ip=self._normalize(payload.local_ip),
+            public_ip=self._normalize(payload.public_ip),
+        )
+
     def _upsert_device(
         self,
         payload: AgentEnrollmentRequest,
@@ -208,15 +245,9 @@ class AgentEnrollmentService:
         rustdesk_id: Optional[str],
         client_id: Optional[int],
         group_id: Optional[int],
+        existing: Optional[Device],
     ) -> Device:
         now = utcnow()
-        existing = self.device_repo.find_reenrollment_match(
-            agent_id=self._normalize(payload.agent_id),
-            rustdesk_id=rustdesk_id,
-            hostname=self._normalize(payload.hostname),
-            local_ip=self._normalize(payload.local_ip),
-            public_ip=self._normalize(payload.public_ip),
-        )
         previous_agent_id = existing.agent_id if existing else None
         data = {
             "agent_id": agent_id,
