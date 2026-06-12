@@ -135,6 +135,7 @@ export default function Devices() {
   );
   const [error, setError] = useState<string | null>(null);
   const devicesLoadedRef = useRef(false);
+  const initialSnapshotLoadStartedRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
 
   // Stable refs for WS callbacks (avoids stale closures)
@@ -475,8 +476,10 @@ export default function Devices() {
 
   // Initial load
   useEffect(() => {
+    if (initialSnapshotLoadStartedRef.current) return;
+    initialSnapshotLoadStartedRef.current = true;
     void loadSnapshot();
-  }, []);
+  }, [loadSnapshot]);
 
   // Load/reload paginated table whenever page, limit, filter, quick filter, or debounced search changes
   useEffect(() => {
