@@ -100,7 +100,8 @@ class DeviceTelemetryService:
         return [TelemetrySnapshot.model_validate(s) for s in self.repo.get_recent_by_device(device_id, limit=limit)]
 
     def get_health_summary_all(self, devices: list) -> List[DeviceHealthSummary]:
-        all_latest = self.repo.get_latest_all()
+        device_ids = [device.id for device in devices]
+        all_latest = self.repo.get_latest_for_device_ids(device_ids)
         latest_by_device = {t.device_id: t for t in all_latest}
         scores = self.score_service.compute_for_devices(devices)
         result = []

@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { archiveDevice, deleteDevice, getDevices, getDevicesSummary, restoreDevice, Device, DeviceFilters, DeviceStats } from "../api/devices";
+import {
+  archiveDevice,
+  deleteDevice,
+  getDevices,
+  getDeviceTableDetails,
+  restoreDevice,
+  Device,
+  DeviceFilters,
+} from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
@@ -11,13 +19,13 @@ import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
 import { useAlerts } from "../hooks/useAlerts";
 import { useFavorites } from "../hooks/useFavorites";
-import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAuth } from "../auth/AuthContext";
+import { useAppData } from "../contexts/AppDataContext";
 import { isActiveStatus } from "../api/actions";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { appCache, CACHE_KEYS, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
+import { appCache, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
 
 const DEVICE_PATCH_EVENTS = new Set([
   "device_online",
@@ -34,14 +42,6 @@ interface TreeCounts {
   total: number;
   unassigned: number;
   byClient: Map<number, number>;
-}
-
-interface DevicesSnapshotCache {
-  allDevices: Device[];
-  stats: DeviceStats;
-  treeCounts: { total: number; unassigned: number; byClient: Record<number, number> };
-  healthMap: Record<number, DeviceHealthSummary>;
-  patchMap: Record<number, PatchStatus>;
 }
 
 function computeTreeCounts(devices: Device[]): TreeCounts {
@@ -71,6 +71,13 @@ function quickFilterToApiFilters(qf: QuickFilter): Partial<DeviceFilters> {
 
 export default function Devices() {
   const { can, user } = useAuth();
+  const {
+    fleetOverview,
+    fleetOverviewLoading,
+    latestEvent,
+    realtimeStatus,
+    refreshFleetOverview,
+  } = useAppData();
   const { favorites, toggle: toggleFavorite } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
   const validQuickFilters = new Set<QuickFilter>([
@@ -112,10 +119,6 @@ export default function Devices() {
     return appCache.get(k, CACHE_TTL.devicesTable) === null && appCache.peek(k) === null;
   });
 
-  // allDevices: full snapshot from summary (used for stats, health, patches, tree, drawer)
-  const [allDevices, setAllDevices] = useState<Device[]>(() =>
-    appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats)?.allDevices ?? []
-  );
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [filters, setFilters] = useState<DeviceFilters>({});
@@ -128,55 +131,39 @@ export default function Devices() {
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
   const [hideOfflineDays, setHideOfflineDays] = useState(30);
-  // snapshotLoading: true while getDevicesSummary() is in flight (stats cards, health, patches).
-  // Does NOT block the table — table skeleton is driven by tableLoading only.
-  const [snapshotLoading, setSnapshotLoading] = useState<boolean>(() =>
-    appCache.peek(CACHE_KEYS.devicesStats) === null
-  );
+  const snapshotLoading = fleetOverviewLoading && fleetOverview === null;
   const [error, setError] = useState<string | null>(null);
-  const devicesLoadedRef = useRef(false);
-  const initialSnapshotLoadStartedRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>();
 
   // Stable refs for WS callbacks (avoids stale closures)
-  const allDevicesRef = useRef<Device[]>([]);
   const tableDevicesRef = useRef<Device[]>([]);
-  allDevicesRef.current = allDevices;
+  const detailsRequestRef = useRef(0);
   tableDevicesRef.current = tableDevices;
 
   const [drawerDeviceId, setDrawerDeviceId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerCloseTimerRef = useRef<number | undefined>();
-  const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
-  const [treeCounts, setTreeCounts] = useState<TreeCounts>(() => {
-    const snap = appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats);
-    if (!snap) return computeTreeCounts([]);
+  const treeCounts = useMemo<TreeCounts>(() => {
+    if (!fleetOverview) return computeTreeCounts([]);
     return {
-      total: snap.treeCounts.total,
-      unassigned: snap.treeCounts.unassigned,
-      byClient: new Map(Object.entries(snap.treeCounts.byClient).map(([k, v]) => [Number(k), v])),
+      total: fleetOverview.tree_counts.total,
+      unassigned: fleetOverview.tree_counts.unassigned,
+      byClient: new Map(
+        Object.entries(fleetOverview.tree_counts.by_client).map(([id, count]) => [Number(id), count]),
+      ),
     };
-  });
-  const [snapshotStats, setSnapshotStats] = useState<DeviceStats>(() =>
-    appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats)?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 }
-  );
-  const [healthMap, setHealthMap] = useState<Record<number, DeviceHealthSummary>>(() =>
-    appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats)?.healthMap ?? {}
-  );
-  const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>(() =>
-    appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats)?.patchMap ?? {}
-  );
+  }, [fleetOverview]);
+  const snapshotStats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
+  const [healthMap, setHealthMap] = useState<Record<number, DeviceHealthSummary>>({});
+  const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
 
-  // Drawer lookup: prefer allDevices (full snapshot), fall back to current page
   const drawerDevice = useMemo(
     () =>
       drawerDeviceId != null
-        ? (allDevices.find((d) => d.id === drawerDeviceId) ??
-           tableDevices.find((d) => d.id === drawerDeviceId) ??
-           null)
+        ? (tableDevices.find((d) => d.id === drawerDeviceId) ?? null)
         : null,
-    [drawerDeviceId, allDevices, tableDevices]
+    [drawerDeviceId, tableDevices]
   );
 
   const openDrawer = useCallback((device: Device) => {
@@ -192,84 +179,9 @@ export default function Devices() {
   }, []);
 
   const jumpToDevice = useCallback((deviceId: number) => {
-    const device = allDevices.find((d) => d.id === deviceId);
+    const device = tableDevices.find((d) => d.id === deviceId);
     if (device) openDrawer(device);
-  }, [allDevices, openDrawer]);
-
-  // loadSnapshot loads the full summary for stats/health/patch cards.
-  // The table data comes separately from loadTableData.
-  const loadSnapshot = useCallback(async () => {
-    // Fresh cache → instant, skip fetch
-    const fresh = appCache.get<DevicesSnapshotCache>(CACHE_KEYS.devicesStats, CACHE_TTL.devicesStats);
-    if (fresh) {
-      setAllDevices(fresh.allDevices);
-      setSnapshotStats(fresh.stats);
-      setTreeCounts({
-        total: fresh.treeCounts.total,
-        unassigned: fresh.treeCounts.unassigned,
-        byClient: new Map(Object.entries(fresh.treeCounts.byClient).map(([k, v]) => [Number(k), v])),
-      });
-      setHealthMap(fresh.healthMap);
-      setPatchMap(fresh.patchMap);
-      setSnapshotLoading(false);
-      devicesLoadedRef.current = true;
-      return;
-    }
-    // Stale cache → show immediately, then revalidate in background
-    const stale = appCache.peek<DevicesSnapshotCache>(CACHE_KEYS.devicesStats);
-    if (stale) {
-      setAllDevices(stale.allDevices);
-      setSnapshotStats(stale.stats);
-      setTreeCounts({
-        total: stale.treeCounts.total,
-        unassigned: stale.treeCounts.unassigned,
-        byClient: new Map(Object.entries(stale.treeCounts.byClient).map(([k, v]) => [Number(k), v])),
-      });
-      setHealthMap(stale.healthMap);
-      setPatchMap(stale.patchMap);
-      setSnapshotLoading(false);
-      devicesLoadedRef.current = true;
-    }
-
-    try {
-      setError(null);
-
-      const snapshotPromise = getDevicesSummary().then((snapshot) => {
-        const sorted = [...snapshot.devices].sort((a, b) => (a.hostname ?? "").localeCompare(b.hostname ?? ""));
-        const newHealthMap = Object.fromEntries(snapshot.health.map((item) => [item.device_id, item]));
-        const newPatchMap = Object.fromEntries(snapshot.patches.map((item) => [item.device_id, item]));
-        const newTreeCounts = {
-          total: snapshot.tree_counts.total,
-          unassigned: snapshot.tree_counts.unassigned,
-          byClient: Object.fromEntries(
-            Object.entries(snapshot.tree_counts.by_client).map(([id, count]) => [Number(id), count])
-          ),
-        };
-        setAllDevices(sorted);
-        setSnapshotStats(snapshot.stats);
-        setTreeCounts({
-          ...newTreeCounts,
-          byClient: new Map(Object.entries(newTreeCounts.byClient).map(([k, v]) => [Number(k), v])),
-        });
-        setHealthMap(newHealthMap);
-        setPatchMap(newPatchMap);
-        devicesLoadedRef.current = true;
-        appCache.set(CACHE_KEYS.devicesStats, {
-          allDevices: sorted,
-          stats: snapshot.stats,
-          treeCounts: newTreeCounts,
-          healthMap: newHealthMap,
-          patchMap: newPatchMap,
-        });
-      });
-
-      await snapshotPromise;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load devices");
-    } finally {
-      setSnapshotLoading(false);
-    }
-  }, []);
+  }, [tableDevices, openDrawer]);
 
   // loadTableData fetches the paginated table data from the API (stale-while-revalidate cache)
   const loadTableData = useCallback(async () => {
@@ -278,12 +190,30 @@ export default function Devices() {
       filters as Record<string, unknown>,
     );
 
+    const loadDetails = async (devices: Device[]) => {
+      const requestId = ++detailsRequestRef.current;
+      if (devices.length === 0) {
+        setHealthMap({});
+        setPatchMap({});
+        return;
+      }
+      try {
+        const details = await getDeviceTableDetails(devices.map((device) => device.id));
+        if (detailsRequestRef.current !== requestId) return;
+        setHealthMap(Object.fromEntries(details.health.map((item) => [item.device_id, item])));
+        setPatchMap(Object.fromEntries(details.patches.map((item) => [item.device_id, item])));
+      } catch {
+        // Optional row details must not block the paginated table.
+      }
+    };
+
     // Fresh cache → instant, no fetch
     const fresh = appCache.get<{ devices: Device[]; total: number }>(cacheKey, CACHE_TTL.devicesTable);
     if (fresh) {
       setTableDevices(fresh.devices);
       setTableTotal(fresh.total);
       setTableLoading(false);
+      void loadDetails(fresh.devices);
       return;
     }
 
@@ -293,6 +223,7 @@ export default function Devices() {
       setTableDevices(stale.devices);
       setTableTotal(stale.total);
       setTableLoading(false);
+      void loadDetails(stale.devices);
       try {
         const skip = (tablePage - 1) * tableLimit;
         const qfExtra = quickFilterToApiFilters(quickFilter);
@@ -302,6 +233,7 @@ export default function Devices() {
         setTableDevices(result.devices);
         setTableTotal(result.total);
         appCache.set(cacheKey, { devices: result.devices, total: result.total });
+        void loadDetails(result.devices);
       } catch { /* keep stale data on background refresh failure */ }
       return;
     }
@@ -317,6 +249,7 @@ export default function Devices() {
       setTableDevices(result.devices);
       setTableTotal(result.total);
       appCache.set(cacheKey, { devices: result.devices, total: result.total });
+      void loadDetails(result.devices);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {
@@ -335,8 +268,8 @@ export default function Devices() {
   }, []);
 
   const refreshBoth = useCallback(async () => {
-    await Promise.all([loadSnapshot(), loadTableData()]);
-  }, [loadSnapshot, loadTableData]);
+    await Promise.all([refreshFleetOverview(true), loadTableData()]);
+  }, [refreshFleetOverview, loadTableData]);
 
   const mergeDeviceEvent = useCallback(
     (event: DeviceRealtimeEvent) => {
@@ -375,14 +308,12 @@ export default function Devices() {
         return { nextItems, found: true, nextDevice };
       };
 
-      const foundInAll = allDevicesRef.current.some((d) => d.id === eventDevice.id);
       const foundInTable = tableDevicesRef.current.some((d) => d.id === eventDevice.id);
 
-      setAllDevices((items) => applyPatch(items).nextItems);
       // In-place patch for the current page only (no add/remove — pagination handles that)
       setTableDevices((items) => applyPatch(items).nextItems);
 
-      return foundInAll || foundInTable;
+      return foundInTable;
     },
     []
   );
@@ -403,12 +334,11 @@ export default function Devices() {
 
   const { alerts, alertCount } = useAlerts({ latestEvent });
 
-  const wsStatus = useDeviceRealtime({
-    onEvent: (event) => {
-      if (event.type === "connection_ready") {
-        return;
-      }
-      setLatestEvent(event);
+  useEffect(() => {
+    const event = latestEvent;
+    if (!event || event.type === "connection_ready") {
+      return;
+    }
       if (event.type === "telemetry_updated" && event.data?.id) {
         const deviceId = event.data.id;
         const d = event.data;
@@ -457,21 +387,13 @@ export default function Devices() {
           scheduleDevicesRefresh();
         }
       }
-    },
-  });
+  }, [latestEvent, mergeDeviceEvent, scheduleDevicesRefresh]);
 
   usePollingRefresh(refreshBoth, {
     intervalMs: 60000,
-    enabled: wsStatus !== "connected",
+    enabled: realtimeStatus !== "connected",
     immediate: false,
   });
-
-  // Initial load
-  useEffect(() => {
-    if (initialSnapshotLoadStartedRef.current) return;
-    initialSnapshotLoadStartedRef.current = true;
-    void loadSnapshot();
-  }, [loadSnapshot]);
 
   // Load/reload paginated table whenever page, limit, filter, quick filter, or debounced search changes
   useEffect(() => {
@@ -566,7 +488,6 @@ export default function Devices() {
 
   const handleRefresh = async () => {
     appCache.invalidatePrefix("devices-table");
-    appCache.invalidate(CACHE_KEYS.devicesStats);
     await Promise.all([refreshBoth(), loadOrgData()]);
   };
 
@@ -577,13 +498,11 @@ export default function Devices() {
         ? items.map((item) => (item.id === updated.id ? updated : item))
         : [updated, ...items];
     };
-    setAllDevices(upsert);
     setTableDevices(upsert);
   };
 
   const handleDeviceDelete = async (device: Device) => {
     await deleteDevice(device.id, true);
-    setAllDevices((items) => items.filter((item) => item.id !== device.id));
     setTableDevices((items) => items.filter((item) => item.id !== device.id));
     if (drawerDeviceId === device.id) {
       closeDrawer();
@@ -593,7 +512,6 @@ export default function Devices() {
 
   const handleDeviceArchive = async (device: Device) => {
     const updated = await archiveDevice(device.id);
-    setAllDevices((items) => items.map((item) => (item.id === device.id ? updated : item)).filter((item) => filters.lifecycle_state === "all" || filters.lifecycle_state === "archived" || !item.is_archived));
     setTableDevices((items) => items.map((item) => (item.id === device.id ? updated : item)).filter((item) => filters.lifecycle_state === "all" || filters.lifecycle_state === "archived" || !item.is_archived));
     if (drawerDeviceId === device.id && filters.lifecycle_state !== "all" && filters.lifecycle_state !== "archived") {
       closeDrawer();
@@ -603,12 +521,6 @@ export default function Devices() {
 
   const handleDeviceRestore = async (device: Device) => {
     const updated = await restoreDevice(device.id);
-    setAllDevices((items) => {
-      const exists = items.some((item) => item.id === device.id);
-      return exists
-        ? items.map((item) => (item.id === device.id ? updated : item))
-        : [...items, updated];
-    });
     setTableDevices((items) =>
       filters.lifecycle_state === "archived"
         ? items.filter((item) => item.id !== device.id)
@@ -630,24 +542,6 @@ export default function Devices() {
     return map;
   }, [alerts]);
 
-  const fleetQuickCounts = useMemo(() => {
-    let critical = 0;
-    let warnings = 0;
-    let updates = 0;
-    let reboot = 0;
-    let lowHealth = 0;
-    for (const device of allDevices) {
-      const health = healthMap[device.id];
-      const patch = patchMap[device.id];
-      if (health?.health_state === "critical") critical++;
-      if (health?.health_state === "warning") warnings++;
-      if (patch?.patch_state === "updates_available") updates++;
-      if (patch?.patch_state === "reboot_required") reboot++;
-      if ((health?.health_score ?? 100) < 60) lowHealth++;
-    }
-    return { critical, warnings, updates, reboot, lowHealth };
-  }, [allDevices, healthMap, patchMap]);
-
   const visibleDevices = useMemo(() => {
     const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
     return tableDevices.filter((device) => {
@@ -657,16 +551,6 @@ export default function Devices() {
       return new Date(device.last_seen).getTime() >= cutoff;
     });
   }, [tableDevices, hideOldOffline, hideOfflineDays]);
-
-  const treeDevices = useMemo(() => {
-    const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
-    return allDevices.filter((device) => {
-      if (!hideOldOffline) return true;
-      if (device.freshness_state !== "offline") return true;
-      if (!device.last_seen) return false;
-      return new Date(device.last_seen).getTime() >= cutoff;
-    });
-  }, [allDevices, hideOldOffline, hideOfflineDays]);
 
   return (
     <section className="premium-page devices-premium min-w-0 space-y-5">
@@ -696,9 +580,9 @@ export default function Devices() {
 
         {/* Operational status strip */}
         <div className="op-strip">
-          <span className={`op-pill ${wsStatus === "connected" ? "op-pill-ok" : wsStatus === "fallback" ? "op-pill-warn" : "op-pill-err"}`}>
+          <span className={`op-pill ${realtimeStatus === "connected" ? "op-pill-ok" : realtimeStatus === "fallback" ? "op-pill-warn" : "op-pill-err"}`}>
             <span className="op-dot" />
-            {wsStatus === "connected" ? "WS Connected" : wsStatus === "fallback" ? "WS Fallback" : "WS Offline"}
+            {realtimeStatus === "connected" ? "WS Connected" : realtimeStatus === "fallback" ? "WS Fallback" : "WS Offline"}
           </span>
           <span className="op-pill op-pill-ok">
             <span className="op-dot" />
@@ -725,11 +609,11 @@ export default function Devices() {
           <DeviceTree
             selectedKey={selectedTreeKey}
             onSelect={handleTreeSelect}
-            devices={treeDevices}
+            devices={tableDevices}
             clients={clients}
             groups={groups}
             treeCounts={treeCounts}
-            onRefreshCounts={() => void loadSnapshot()}
+            onRefreshCounts={() => void refreshFleetOverview(true)}
           />
         </div>
 
@@ -837,7 +721,7 @@ export default function Devices() {
                 <ShieldAlert className="h-4 w-4 text-red-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-red-300">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : fleetQuickCounts.critical}
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : (fleetOverview?.critical ?? 0)}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Critical device health</p>
             </button>
@@ -858,7 +742,7 @@ export default function Devices() {
                 <AlertTriangle className="h-4 w-4 text-amber-400/80" />
               </div>
               <p className="mt-3 text-3xl font-bold text-amber-200">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : fleetQuickCounts.warnings}
+                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : (fleetOverview?.warnings ?? 0)}
               </p>
               <p className="mt-2 text-[13px] text-slate-400">Warning device health</p>
             </button>
@@ -942,7 +826,7 @@ export default function Devices() {
           device={drawerDevice}
           isOpen={drawerOpen}
           onClose={closeDrawer}
-          wsStatus={wsStatus}
+          wsStatus={realtimeStatus}
           latestEvent={latestEvent}
           clients={clients}
           groups={groups}

@@ -212,6 +212,21 @@ class DevicesSummary(BaseModel):
     loaded_at: datetime
 
 
+class DeviceFleetOverview(BaseModel):
+    stats: DeviceStats
+    tree_counts: DeviceTreeCounts
+    critical: int
+    warnings: int
+    average_health: Optional[int] = None
+    needs_updates: int
+    loaded_at: datetime
+
+
+class DeviceTableDetails(BaseModel):
+    health: List["DeviceHealthSummary"]
+    patches: List["PatchStatusSnapshot"]
+
+
 class DeviceListResponse(BaseModel):
     devices: List[Device]
     total: int
@@ -235,3 +250,4 @@ from app.schemas.device_inventory import PatchStatusSnapshot
 from app.schemas.telemetry import DeviceHealthSummary
 
 DevicesSummary.model_rebuild()
+DeviceTableDetails.model_rebuild()

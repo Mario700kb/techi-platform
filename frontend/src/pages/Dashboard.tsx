@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
   Activity,
@@ -17,7 +17,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, DevicesSummary, getDevicesSummary, getDeviceStats } from "../api/devices";
+import { Device, getDevices } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
@@ -32,9 +32,9 @@ import {
 } from "../api/actions";
 import { Badge, Button } from "../components/ui";
 import { parseUTC, timeAgo } from "../utils/time";
-import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
+import { useAppData } from "../contexts/AppDataContext";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
@@ -53,8 +53,6 @@ function actionTimeAgo(iso?: string | null): string {
 
 const compactBadgeClass = "!px-1 !py-0 !text-[8px] !leading-3";
 const assignmentBadgeClass = `${compactBadgeClass} !border-slate-500/30 !bg-slate-500/10 !text-slate-500`;
-const METRIC_REFRESH_MIN_MS = 10000;
-
 const assignmentSourceLabel = (device: Device) => {
   const source = device.assignment_source || "system_auto_unassigned";
   if (source === "enrollment_token") return "token";
@@ -72,84 +70,55 @@ const statusBadgeClass = (device: Device) => {
 
 export default function Dashboard() {
   const { user, hasPermission } = useAuth();
+  const {
+    fleetOverview,
+    fleetOverviewLoading,
+    latestEvent,
+    realtimeStatus,
+    refreshFleetOverview,
+  } = useAppData();
 
-  // Lazy initializers from cache — instant state on navigation back, no loading flash
-  const [total, setTotal] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.total ?? 0);
-  const [online, setOnline] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.online ?? 0);
-  const [stale, setStale] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.stale ?? 0);
-  const [offline, setOffline] = useState(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.stats.offline ?? 0);
-  const [averageHealth, setAverageHealth] = useState<number | null>(() => {
-    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
-    if (!snap) return null;
-    const h = snap.health ?? [];
-    return h.length > 0 ? Math.round(h.reduce((s, i) => s + i.health_score, 0) / h.length) : null;
-  });
-  const [recentDevices, setRecentDevices] = useState<Device[]>(() => appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot)?.devices.slice(0, 5) ?? []);
+  const stats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
+  const total = stats.total;
+  const online = stats.online;
+  const stale = stats.stale;
+  const offline = stats.offline;
+  const averageHealth = fleetOverview?.average_health ?? null;
+  const patchCount = fleetOverview?.needs_updates ?? 0;
+  const criticalCount = fleetOverview?.critical ?? 0;
+  const loading = fleetOverviewLoading && fleetOverview === null;
+  const [recentDevices, setRecentDevices] = useState<Device[]>(
+    () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
+  );
   const [deployments, setDeployments] = useState<RecentDeployment[]>(() => appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments)?.slice(0, 4) ?? []);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
   const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
-  const [loading, setLoading] = useState(() => appCache.peek(CACHE_KEYS.dashboardSnapshot) === null);
-  const [patchCount, setPatchCount] = useState(() => {
-    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
-    return snap ? (snap.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length : 0;
-  });
-  const [criticalCount, setCriticalCount] = useState(() => {
-    const snap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
-    return snap ? (snap.health ?? []).filter(h => h.health_score < 50).length : 0;
-  });
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
-  const [activityReady, setActivityReady] = useState(() => appCache.peek(CACHE_KEYS.dashboardSnapshot) !== null);
-  const refreshTimerRef = useRef<number | undefined>();
-  const lastMetricRefreshRef = useRef(0);
-
-  const applySnapshot = useCallback((snapshot: DevicesSummary) => {
-    const stats = snapshot.stats;
-    const healthSummary = snapshot.health ?? [];
-    const scoreTotal = healthSummary.reduce((sum, item) => sum + item.health_score, 0);
-    if (stats) {
-      setTotal(stats.total);
-      setOnline(stats.online);
-      setStale(stats.stale);
-      setOffline(stats.offline);
-    }
-    setAverageHealth(healthSummary.length > 0 ? Math.round(scoreTotal / healthSummary.length) : null);
-    setPatchCount((snapshot.patches ?? []).filter(p => p.patch_state === "updates_available" || p.patch_state === "reboot_required").length);
-    setCriticalCount(healthSummary.filter(h => h.health_score < 50).length);
-    setRecentDevices((snapshot.devices ?? []).slice(0, 5));
-  }, []);
+  const [activityReady, setActivityReady] = useState(
+    () => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null,
+  );
 
   const loadDashboard = useCallback(async () => {
     const canDeployment = hasPermission("deployment");
 
-    // Check TTL freshness for each cached key
-    const snapFresh    = appCache.get(CACHE_KEYS.dashboardSnapshot, CACHE_TTL.dashboardSnapshot) !== null;
+    const devicesFresh = appCache.get(CACHE_KEYS.dashboardRecentDevices, CACHE_TTL.dashboardRecentDevices) !== null;
     const actionsFresh = appCache.get(CACHE_KEYS.recentActions, CACHE_TTL.recentActions) !== null;
     const presenceFresh = appCache.get(CACHE_KEYS.operatorPresence, CACHE_TTL.operatorPresence) !== null;
     const deployFresh  = !canDeployment || appCache.get(CACHE_KEYS.recentDeployments, CACHE_TTL.recentDeployments) !== null;
 
-    // All caches fresh — nothing to fetch
-    if (snapFresh && actionsFresh && presenceFresh && deployFresh) {
+    if (devicesFresh && actionsFresh && presenceFresh && deployFresh) {
       setActivityReady(true);
       return;
     }
 
-    // No cached snapshot at all → show loading spinner
-    const staleSnap = appCache.peek<DevicesSummary>(CACHE_KEYS.dashboardSnapshot);
-    const showLoading = staleSnap === null;
-
     try {
-      if (showLoading) setLoading(true);
       setError(null);
 
-      const [snapshot, recentDeployments, latestActions, presenceList] = await Promise.all([
-        snapFresh
-          ? Promise.resolve(staleSnap!)
-          : getDevicesSummary().catch(err => {
-              console.error("Fleet summary error:", err);
-              setError("Fleet statistics are temporarily unavailable. Other dashboard data is still shown.");
-              return null;
-            }),
+      const [deviceResponse, recentDeployments, latestActions, presenceList] = await Promise.all([
+        devicesFresh
+          ? Promise.resolve({ devices: appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [] })
+          : getDevices({}, 0, 5).catch(() => ({ devices: [] as Device[], total: 0 })),
         deployFresh
           ? Promise.resolve(appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments) ?? [] as RecentDeployment[])
           : (canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[])),
@@ -161,10 +130,9 @@ export default function Dashboard() {
           : getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
       ]);
 
-      // Cache fresh responses and apply to state
-      if (!snapFresh && snapshot) {
-        appCache.set(CACHE_KEYS.dashboardSnapshot, snapshot);
-        applySnapshot(snapshot);
+      if (!devicesFresh) {
+        appCache.set(CACHE_KEYS.dashboardRecentDevices, deviceResponse.devices);
+        setRecentDevices(deviceResponse.devices);
       }
       if (!actionsFresh) {
         appCache.set(CACHE_KEYS.recentActions, latestActions);
@@ -184,37 +152,9 @@ export default function Dashboard() {
       console.error('Dashboard load error:', err);
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
     } finally {
-      if (showLoading) setLoading(false);
+      setActivityReady(true);
     }
-  }, [hasPermission, applySnapshot]);
-
-  const loadDashboardMetrics = useCallback(async () => {
-    try {
-      // Use the lightweight cached stats endpoint (30s TTL, <1ms) instead of
-      // getDevicesSummary() (800ms+, 575KB) for WS-triggered counter updates.
-      // Health/patch counts refresh on full loadDashboard() runs (120s or manual).
-      const stats = await getDeviceStats();
-      setTotal(stats.total);
-      setOnline(stats.online);
-      setStale(stats.stale);
-      setOffline(stats.offline);
-    } catch {
-      // dashboard metrics are refreshed again by fallback polling/manual refresh
-    }
-  }, []);
-
-  const scheduleDashboardRefresh = useCallback(() => {
-    if (refreshTimerRef.current) {
-      return;
-    }
-    const elapsed = Date.now() - lastMetricRefreshRef.current;
-    const delay = Math.max(5000, METRIC_REFRESH_MIN_MS - elapsed);
-    refreshTimerRef.current = window.setTimeout(() => {
-      refreshTimerRef.current = undefined;
-      lastMetricRefreshRef.current = Date.now();
-      void loadDashboardMetrics();
-    }, delay);
-  }, [loadDashboardMetrics]);
+  }, [hasPermission]);
 
   const patchRecentDevice = useCallback((event: DeviceRealtimeEvent) => {
     const eventDevice = event.data;
@@ -267,48 +207,36 @@ export default function Dashboard() {
     });
   }, []);
 
-  const realtimeStatus = useDeviceRealtime({
-    onEvent: (event) => {
-      if (event.type === "connection_ready") {
-        return;
-      }
-      patchRecentAction(event);
-      if (
-        event.type === "device_online" ||
-        event.type === "device_offline" ||
-        event.type === "device_updated" ||
-        event.type === "heartbeat_received" ||
-        event.type === "rustdesk_updated" ||
-        event.type === "rustdesk_online" ||
-        event.type === "rustdesk_offline" ||
-        event.type === "sync_failed" ||
-        event.type === "telemetry_updated" ||
-        event.type === "health_warning" ||
-        event.type === "health_critical" ||
-        event.type === "health_recovered"
-      ) {
-        patchRecentDevice(event);
-        scheduleDashboardRefresh();
-      }
-      if (event.type === "deployment_event" && hasPermission("deployment")) {
-        void getRecentDeployments().then((items) => setDeployments(items.slice(0, 4))).catch(() => undefined);
-      }
-    },
-  });
+  useEffect(() => {
+    const event = latestEvent;
+    if (!event || event.type === "connection_ready") return;
+    patchRecentAction(event);
+    if (
+      event.type === "device_online" ||
+      event.type === "device_offline" ||
+      event.type === "device_updated" ||
+      event.type === "heartbeat_received" ||
+      event.type === "rustdesk_updated" ||
+      event.type === "rustdesk_online" ||
+      event.type === "rustdesk_offline" ||
+      event.type === "sync_failed" ||
+      event.type === "telemetry_updated" ||
+      event.type === "health_warning" ||
+      event.type === "health_critical" ||
+      event.type === "health_recovered"
+    ) {
+      patchRecentDevice(event);
+    }
+    if (event.type === "deployment_event" && hasPermission("deployment")) {
+      void getRecentDeployments().then((items) => setDeployments(items.slice(0, 4))).catch(() => undefined);
+    }
+  }, [hasPermission, latestEvent, patchRecentAction, patchRecentDevice]);
 
   const { runNow: refreshDashboard } = usePollingRefresh(loadDashboard, {
     intervalMs: 120000,
     enabled: realtimeStatus !== "connected",
-    immediate: appCache.peek(CACHE_KEYS.dashboardSnapshot) === null,
+    immediate: !activityReady,
   });
-
-  useEffect(() => {
-    return () => {
-      if (refreshTimerRef.current) {
-        window.clearTimeout(refreshTimerRef.current);
-      }
-    };
-  }, []);
 
   const availability = total > 0 ? Math.round((online / total) * 100) : 0;
   const onlinePct = total > 0 ? (online / total) * 100 : 0;
@@ -349,7 +277,11 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => { appCache.invalidate(); setActivityReady(true); void refreshDashboard(); }}>
+            <Button onClick={() => {
+              appCache.invalidate();
+              setActivityReady(false);
+              void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
+            }}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
             </Button>

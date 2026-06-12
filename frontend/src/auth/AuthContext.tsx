@@ -1,15 +1,11 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { AuthUser, getCurrentUser, getEffectivePermissions, login as loginRequest, UserRole } from "../api/auth";
-import { clearAuthSession, getAuthToken, setAuthSession } from "../api/client";
-
-// Module-level singleton — survives React unmount/remount on navigation.
-// Guarantees loading=false + permissions ready the instant AuthProvider re-mounts.
-interface AuthCacheEntry {
-  user: AuthUser;
-  token: string;
-  permissions: string[] | null;
-}
-let _authCache: AuthCacheEntry | null = null;
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
+import { AuthUser, UserRole } from "../api/auth";
+import {
+  bootstrapSession,
+  clearSession,
+  loginSession,
+  useSessionStore,
+} from "../store/sessionStore";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -34,70 +30,18 @@ const roleRank: Record<UserRole, number> = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => getAuthToken());
-  // Cache hit → loading=false on first render, no "Loading session..." on navigation
-  const [user, setUser] = useState<AuthUser | null>(() => _authCache?.user ?? null);
-  const [loading, setLoading] = useState(() => _authCache === null);
-  const [permissions, setPermissions] = useState<string[] | null>(() => _authCache?.permissions ?? null);
+  const { token, user, loading, permissions } = useSessionStore();
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    // Cache warm with same token — skip both API calls, no loading screen
-    if (_authCache?.token === token) {
-      setLoading(false);  // Safety net: correct loading even if React re-initialized state as true
-      return;
-    }
-    let alive = true;
-    (async () => {
-      try {
-        const me = await getCurrentUser();
-        if (!alive) return;
-        setUser(me);
-        setAuthSession(token, me);
-        const perms = await getEffectivePermissions();
-        if (!alive) return;
-        setPermissions(perms.permissions);
-        _authCache = { user: me, token, permissions: perms.permissions };
-      } catch {
-        if (!alive) return;
-        clearAuthSession();
-        _authCache = null;
-        setToken(null);
-        setUser(null);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [token]);
+    void bootstrapSession();
+  }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await loginRequest(username, password);
-    setAuthSession(response.access_token, response.user);
-    setUser(response.user);
-    try {
-      const perms = await getEffectivePermissions();
-      setPermissions(perms.permissions);
-      _authCache = { user: response.user, token: response.access_token, permissions: perms.permissions };
-    } catch {
-      setPermissions([]);
-      _authCache = { user: response.user, token: response.access_token, permissions: [] };
-    }
-    // setToken LAST — cache is warm before useEffect([token]) re-runs, skipping /auth/me
-    setToken(response.access_token);
+    await loginSession(username, password);
   }, []);
 
   const logout = useCallback(() => {
-    clearAuthSession();
-    _authCache = null;
-    setToken(null);
-    setUser(null);
-    setPermissions(null);
+    clearSession();
   }, []);
 
   const can = useCallback((role: UserRole) => {
@@ -129,4 +73,3 @@ export function useAuth() {
   if (!value) throw new Error("useAuth must be used inside AuthProvider");
   return value;
 }
-

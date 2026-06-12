@@ -50,7 +50,16 @@ export interface EffectivePermissions {
   denied: string[];
 }
 
+export interface AuthSession {
+  user: AuthUser;
+  permissions: string[];
+  denied: string[];
+}
+
+export async function getAuthSession(): Promise<AuthSession> {
+  return fetchJson<AuthSession>("/api/v1/auth/session");
+}
+
 export async function getEffectivePermissions(): Promise<EffectivePermissions> {
   return fetchJson<EffectivePermissions>("/api/v1/auth/permissions/me");
 }
-

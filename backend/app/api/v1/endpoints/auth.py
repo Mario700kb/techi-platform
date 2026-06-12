@@ -6,7 +6,7 @@ from app.core.auth import create_operator_token, get_current_operator, hash_pass
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.operator import Operator as OperatorModel
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse
+from app.schemas.auth import AuthSession, ChangePasswordRequest, LoginRequest, TokenResponse
 from app.core.auth import get_operator_permissions
 from app.services.permission_service import ALL_PERMISSIONS, permissions_summary
 from app.schemas.operator import Operator
@@ -35,6 +35,23 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 @router.get("/me", response_model=Operator)
 def read_me(operator: OperatorModel = Depends(get_current_operator)):
     return operator
+
+
+@router.get("/session", response_model=AuthSession)
+def read_session(
+    operator: OperatorModel = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    effective = get_operator_permissions(operator, db)
+    permission_data = permissions_summary(operator.role) if effective is None else {
+        "permissions": sorted(effective),
+        "denied": sorted(ALL_PERMISSIONS - effective),
+    }
+    return AuthSession(
+        user=Operator.model_validate(operator),
+        permissions=permission_data["permissions"],
+        denied=permission_data["denied"],
+    )
 
 
 @router.post("/change-password", status_code=status.HTTP_200_OK)

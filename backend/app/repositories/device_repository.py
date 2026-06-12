@@ -8,6 +8,7 @@ from app.models.alert import DeviceAlert
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
+from app.models.device_inventory import DeviceInventory
 from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
 from app.schemas.device import DeviceCreate, DeviceTreeCounts, DeviceUpdate
@@ -417,6 +418,63 @@ class DeviceRepository:
                 by_client[client_id] = cnt
 
         return DeviceTreeCounts(total=total, unassigned=unassigned, by_client=by_client)
+
+    def get_overview_inputs(self, scope: Optional["AllowedScope"] = None):
+        """Return fleet counts and health inputs in two database queries."""
+        now = utcnow()
+        online_cutoff = now - timedelta(minutes=6)
+        stale_cutoff = now - timedelta(minutes=25)
+
+        counts_query = self.db.query(
+            Device.client_id,
+            func.count(Device.id).label("total"),
+            func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),
+            func.count(case((
+                and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1
+            ))).label("stale"),
+            func.count(case((
+                or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1
+            ))).label("offline"),
+        )
+        counts_query = self._apply_lifecycle_filter(counts_query, "active")
+        counts_query = self._apply_scope_filter(counts_query, scope)
+        count_rows = counts_query.group_by(Device.client_id).all()
+
+        latest_telemetry = (
+            self.db.query(
+                DeviceTelemetry.device_id.label("device_id"),
+                func.max(DeviceTelemetry.id).label("telemetry_id"),
+            )
+            .group_by(DeviceTelemetry.device_id)
+            .subquery()
+        )
+        alert_counts = (
+            self.db.query(
+                DeviceAlert.device_id.label("device_id"),
+                DeviceAlert.severity.label("severity"),
+                func.count(DeviceAlert.id).label("count"),
+            )
+            .filter(DeviceAlert.state == "open")
+            .group_by(DeviceAlert.device_id, DeviceAlert.severity)
+            .subquery()
+        )
+        health_query = (
+            self.db.query(
+                Device,
+                DeviceTelemetry,
+                DeviceInventory,
+                alert_counts.c.severity,
+                alert_counts.c.count,
+            )
+            .outerjoin(latest_telemetry, latest_telemetry.c.device_id == Device.id)
+            .outerjoin(DeviceTelemetry, DeviceTelemetry.id == latest_telemetry.c.telemetry_id)
+            .outerjoin(DeviceInventory, DeviceInventory.device_id == Device.id)
+            .outerjoin(alert_counts, alert_counts.c.device_id == Device.id)
+        )
+        health_query = self._apply_lifecycle_filter(health_query, "active")
+        health_query = self._apply_scope_filter(health_query, scope)
+
+        return count_rows, health_query.all()
 
     def _apply_scope_filter(self, query, scope: Optional["AllowedScope"]):
         """Restrict query to devices visible under *scope*.

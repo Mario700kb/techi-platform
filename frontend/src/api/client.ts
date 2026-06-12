@@ -29,6 +29,21 @@ export const API_BASE_URL = normalizeBaseUrl(configuredApiBaseUrl || localApiBas
 const API_BASE_URLS = uniqueUrls([API_BASE_URL, ...localApiBaseUrls()]);
 const TOKEN_KEY = "techi.auth.token";
 const USER_KEY = "techi.auth.user";
+let unauthorizedHandler: (() => void) | null = null;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -76,7 +91,10 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
         // Keep the HTTP status message when the response is not JSON.
       }
 
-      throw new Error(message);
+      if (response.status === 401) {
+        unauthorizedHandler?.();
+      }
+      throw new ApiError(message, response.status);
     }
 
     return response.json() as Promise<T>;

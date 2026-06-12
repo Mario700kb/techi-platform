@@ -14,7 +14,9 @@ from app.schemas.device import (
     DeviceClientAssignment,
     DeviceCreate,
     DeviceGroupAssignment,
+    DeviceFleetOverview,
     DeviceListResponse,
+    DeviceTableDetails,
     DeviceTreeCounts,
     DevicesSummary,
     DeviceUpdate,
@@ -33,6 +35,7 @@ from app.services.device_activity_service import DeviceActivityService
 from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_note_service import DeviceNoteService
 from app.services.device_service import DeviceService
+from app.services.device_overview_service import DeviceOverviewService
 from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
@@ -131,6 +134,14 @@ def read_devices_summary(
     return DeviceSummaryService(db).get_summary(scope=scope)
 
 
+@router.get("/overview", response_model=DeviceFleetOverview)
+def read_devices_overview(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    return DeviceOverviewService(db).get_overview(scope=scope)
+
+
 @router.get("/count")
 def read_devices_count(
     db: Session = Depends(get_db),
@@ -180,6 +191,31 @@ def read_devices_patch_status(
 ):
     devices = DeviceService(db).get_devices(limit=1000, scope=scope)
     return DeviceInventoryService(db).get_patch_status_many([d.id for d in devices])
+
+
+@router.get("/table-details", response_model=DeviceTableDetails)
+def read_device_table_details(
+    ids: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    try:
+        device_ids = list(dict.fromkeys(int(value) for value in ids.split(",") if value.strip()))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid device IDs")
+    if not device_ids or len(device_ids) > 100:
+        raise HTTPException(status_code=400, detail="Provide between 1 and 100 device IDs")
+
+    devices = db.query(Device).filter(Device.id.in_(device_ids)).all()
+    devices = [
+        device for device in devices
+        if device_in_scope(device.client_id, device.group_id, device.id, scope)
+    ]
+    scoped_ids = [device.id for device in devices]
+    return DeviceTableDetails(
+        health=DeviceTelemetryService(db).get_health_summary_all(devices),
+        patches=DeviceInventoryService(db).get_patch_status_many(scoped_ids),
+    )
 
 
 # ------------------------------------------------------------------ #

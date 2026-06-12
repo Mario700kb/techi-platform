@@ -33,6 +33,7 @@ from app.core.auth import get_current_operator
 from app.core.time import utcnow
 from app.api.v1.endpoints import devices as devices_module
 from app.services import device_service as device_service_module
+from app.services.device_overview_service import DeviceOverviewService, _overview_cache
 from app.services.device_summary_service import DeviceSummaryService
 
 # ── Tables needed ─────────────────────────────────────────────────────────── #
@@ -204,6 +205,31 @@ class TestDeviceScopeByClientId:
         assert [item["device_id"] for item in body["health"]] == [visible.id]
         assert [item["device_id"] for item in body["patches"]] == [visible.id]
 
+    def test_overview_is_scope_filtered_and_compact(self, db):
+        _overview_cache.clear()
+        op = _operator(db, "op_overview")
+        _team_with_client(db, op, client_id=1)
+        visible = _device(db, "RUST-OVERVIEW-IN", client_id=1, hostname="visible")
+        _device(db, "RUST-OVERVIEW-OUT", client_id=2, hostname="hidden")
+        visible.last_seen = utcnow() - timedelta(seconds=30)
+        db.commit()
+
+        response = _make_app(db, op).get("/devices/overview")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["stats"] == {"total": 1, "online": 1, "stale": 0, "offline": 0}
+        assert body["tree_counts"] == {
+            "total": 1,
+            "unassigned": 0,
+            "by_client": {"1": 1},
+        }
+        assert body["critical"] == 0
+        assert body["warnings"] == 0
+        assert body["average_health"] == 94
+        assert body["needs_updates"] == 0
+        assert len(response.content) < 5000
+
     def test_operator_in_no_team_sees_nothing(self, db):
         op = _operator(db, "op_noteam")
         _device(db, "RUST-ANY", client_id=1, hostname="any-pc")
@@ -345,3 +371,38 @@ def test_summary_uses_bounded_queries_for_700_devices(db):
     assert summary.stats.total == 700
     assert len(summary.devices) == 700
     assert statements <= 4
+
+
+def test_overview_uses_two_queries_and_cache(db):
+    _overview_cache.clear()
+    db.add_all([
+        Device(
+            rustdesk_id=f"OVERVIEW-{index:04d}",
+            hostname=f"device-{index:04d}",
+            status="offline",
+            device_type="client",
+            rustdesk_install_status="unknown",
+            rustdesk_status="unknown",
+            rustdesk_sync_state="unknown",
+            assignment_source="manual",
+        )
+        for index in range(700)
+    ])
+    db.commit()
+    statements = 0
+
+    def count_statement(*_args):
+        nonlocal statements
+        statements += 1
+
+    event.listen(db.get_bind(), "before_cursor_execute", count_statement)
+    try:
+        service = DeviceOverviewService(db)
+        overview = service.get_overview()
+        cached = service.get_overview()
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", count_statement)
+
+    assert overview.stats.total == 700
+    assert cached == overview
+    assert statements == 2

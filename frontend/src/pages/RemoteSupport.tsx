@@ -23,7 +23,7 @@ import {
   RemoteSupportStatus,
 } from "../api/remoteSupport";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
-import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
+import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
 
 // ------------------------------------------------------------------ //
@@ -133,6 +133,7 @@ const defaultActionState = (): DeviceActionState => ({
 
 export default function RemoteSupport() {
   const { can } = useAuth();
+  const { latestEvent } = useAppData();
   const isOperator = can("operator");
 
   const [devices, setDevices] = useState<RemoteSupportDevice[]>([]);
@@ -158,20 +159,15 @@ export default function RemoteSupport() {
 
   const { runNow } = usePollingRefresh(loadDevices, { intervalMs: 30000, immediate: true });
 
-  useDeviceRealtime({
-    onEvent: useCallback(
-      (event) => {
-        if (
-          event.type === "rustdesk_updated" ||
-          event.type === "rustdesk_online" ||
-          event.type === "rustdesk_offline"
-        ) {
-          runNow();
-        }
-      },
-      [runNow]
-    ),
-  });
+  useEffect(() => {
+    if (
+      latestEvent?.type === "rustdesk_updated" ||
+      latestEvent?.type === "rustdesk_online" ||
+      latestEvent?.type === "rustdesk_offline"
+    ) {
+      void runNow();
+    }
+  }, [latestEvent, runNow]);
 
   const addToast = useCallback((message: string, ok: boolean) => {
     const id = ++toastCounter[0];

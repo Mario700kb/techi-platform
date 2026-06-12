@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import BaseModel, field_validator
 
 from app.schemas.operator import Operator
@@ -15,6 +17,12 @@ class TokenResponse(BaseModel):
     user: Operator
 
 
+class AuthSession(BaseModel):
+    user: Operator
+    permissions: List[str]
+    denied: List[str]
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -25,4 +33,3 @@ class ChangePasswordRequest(BaseModel):
         if len(v.strip()) < 8:
             raise ValueError("New password must be at least 8 characters")
         return v
-

@@ -39,25 +39,23 @@ class AppCache {
 export const appCache = new AppCache();
 
 export const CACHE_KEYS = {
-  dashboardSnapshot:  "dashboard.snapshot",     // DevicesSummary
+  dashboardRecentDevices: "dashboard.recent-devices", // Device[]
   recentActions:      "dashboard.actions",       // RemoteActionWithDevice[]
   operatorPresence:   "dashboard.op-presence",   // OperatorPresenceRecord[]
   recentDeployments:  "dashboard.deployments",   // RecentDeployment[]
   clientsList:        "clients.list",            // Client[]
   groupsList:         "clients.groups",          // DeviceGroup[]
   operatorsList:      "operators.list",          // OperatorRecord[]
-  devicesStats:       "devices.stats",           // DevicesSnapshotCache
 } as const;
 
 export const CACHE_TTL = {
-  dashboardSnapshot:  60_000,
+  dashboardRecentDevices: 60_000,
   recentActions:      30_000,
   operatorPresence:   30_000,
   recentDeployments:  60_000,
   clientsList:        120_000,
   groupsList:         120_000,
   operatorsList:      120_000,
-  devicesStats:       60_000,
   devicesTable:       30_000,
 } as const;
 

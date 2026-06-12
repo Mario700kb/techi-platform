@@ -31,9 +31,14 @@ class DeviceHealthScoreService:
         return compute_device_health_score(device, snapshot, alert_counts, inventory)
 
     def compute_for_devices(self, devices: List[Device]) -> Dict[int, Tuple[int, str, List[str]]]:
-        latest_by_device = {t.device_id: t for t in self.telemetry_repo.get_latest_all()}
-        inventory_by_device = {i.device_id: i for i in self.inventory_repo.get_many_by_device_ids([device.id for device in devices])}
-        alert_counts = self.alert_repo.count_open_by_device_and_severity([device.id for device in devices])
+        device_ids = [device.id for device in devices]
+        latest_by_device = {
+            t.device_id: t for t in self.telemetry_repo.get_latest_for_device_ids(device_ids)
+        }
+        inventory_by_device = {
+            i.device_id: i for i in self.inventory_repo.get_many_by_device_ids(device_ids)
+        }
+        alert_counts = self.alert_repo.count_open_by_device_and_severity(device_ids)
         return {
             device.id: compute_device_health_score(
                 device,

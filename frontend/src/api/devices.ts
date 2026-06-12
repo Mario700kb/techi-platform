@@ -201,6 +201,34 @@ export interface DevicesSummary {
   loaded_at: string;
 }
 
+export interface DeviceFleetOverview {
+  stats: DeviceStats;
+  tree_counts: {
+    total: number;
+    unassigned: number;
+    by_client: Record<string, number>;
+  };
+  critical: number;
+  warnings: number;
+  average_health: number | null;
+  needs_updates: number;
+  loaded_at: string;
+}
+
+export async function getDevicesOverview(): Promise<DeviceFleetOverview> {
+  return fetchJson<DeviceFleetOverview>("/api/v1/devices/overview");
+}
+
+export interface DeviceTableDetails {
+  health: DeviceHealthSummary[];
+  patches: PatchStatus[];
+}
+
+export async function getDeviceTableDetails(deviceIds: number[]): Promise<DeviceTableDetails> {
+  const ids = deviceIds.join(",");
+  return fetchJson<DeviceTableDetails>(`/api/v1/devices/table-details?ids=${encodeURIComponent(ids)}`);
+}
+
 export async function getDevicesSummary(): Promise<DevicesSummary> {
   return fetchJson<DevicesSummary>("/api/v1/devices/summary");
 }
