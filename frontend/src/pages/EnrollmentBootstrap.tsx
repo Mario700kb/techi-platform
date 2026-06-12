@@ -35,6 +35,7 @@ import {
   getEnrollmentTokens,
   regenerateDefaultToken,
   revokeEnrollmentToken,
+  updateEnrollmentToken,
 } from "../api/enrollmentBootstrap";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
@@ -75,6 +76,35 @@ function tokenStatusBadge(token: EnrollmentToken) {
 
 function isRevocable(token: EnrollmentToken): boolean {
   return token.status === "active" || token.status === "used";
+}
+
+function usagePercent(token: EnrollmentToken): number {
+  if (!token.max_uses) return 0;
+  return Math.round((100 * token.use_count) / token.max_uses);
+}
+
+function usageWarningBadge(token: EnrollmentToken, onClick?: () => void) {
+  if (!token.usage_warning) return null;
+  const critical = token.usage_warning === "critical";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      title={
+        critical
+          ? `Token exhausted (${token.use_count}/${token.max_uses})${onClick ? " — click to raise max uses" : ""}`
+          : `Token at ${usagePercent(token)}% of max uses${onClick ? " — click to raise max uses" : ""}`
+      }
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+        critical
+          ? "border-red-400/30 bg-red-500/15 text-red-300"
+          : "border-amber-400/30 bg-amber-400/15 text-amber-300"
+      } ${onClick ? "cursor-pointer transition hover:brightness-125" : "cursor-default"}`}
+    >
+      {critical ? "🔴 FULL" : `⚠️ ${usagePercent(token)}%`}
+    </button>
+  );
 }
 
 function formatTokenPrefix(tokenPrefix: EnrollmentToken["token_prefix"]): string {
@@ -177,6 +207,9 @@ export default function EnrollmentBootstrap() {
   const [deleteTarget, setDeleteTarget] = useState<EnrollmentToken | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [editMaxUsesTarget, setEditMaxUsesTarget] = useState<EnrollmentToken | null>(null);
+  const [editMaxUses, setEditMaxUses] = useState(0);
+  const [savingMaxUses, setSavingMaxUses] = useState(false);
   const [diagnosticsToken, setDiagnosticsToken] = useState<EnrollmentToken | null>(null);
   const [diagnostics, setDiagnostics] = useState<EnrollmentTokenDiagnostics | null>(null);
   const [diagnosticsCache, setDiagnosticsCache] = useState<Record<number, EnrollmentTokenDiagnostics>>({});
@@ -196,6 +229,7 @@ export default function EnrollmentBootstrap() {
 
   // ── derived ──────────────────────────────────────────────────────────────
   const activeTokens = useMemo(() => tokens.filter((t) => t.status === "active"), [tokens]);
+  const warningTokens = useMemo(() => tokens.filter((t) => t.usage_warning), [tokens]);
   const defaultToken = useMemo(() => tokens.find((t) => t.is_default) ?? null, [tokens]);
   const activeDefault = useMemo(() => tokens.find((t) => t.is_default && t.status === "active") ?? null, [tokens]);
   const selectedToken = useMemo(
@@ -318,6 +352,29 @@ export default function EnrollmentBootstrap() {
       showToast(err instanceof Error ? err.message : "Failed to create token", "error");
     } finally {
       setCreating(false);
+    }
+  };
+
+  // ── raise max_uses (quick action from usage warnings) ───────────────────
+  const openMaxUsesEditor = (token: EnrollmentToken) => {
+    setEditMaxUses(token.max_uses);
+    setEditMaxUsesTarget(token);
+  };
+
+  const handleSaveMaxUses = async () => {
+    if (!editMaxUsesTarget) return;
+    setSavingMaxUses(true);
+    try {
+      await updateEnrollmentToken(editMaxUsesTarget.id, {
+        max_uses: Math.max(1, Number(editMaxUses) || 1),
+      });
+      await loadTokens();
+      showToast(`Token "${editMaxUsesTarget.name}" max uses set to ${Math.max(1, Number(editMaxUses) || 1)}`);
+      setEditMaxUsesTarget(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to update max uses", "error");
+    } finally {
+      setSavingMaxUses(false);
     }
   };
 
@@ -461,6 +518,43 @@ export default function EnrollmentBootstrap() {
           </Button>
         </div>
       </div>
+
+      {/* ── token usage warnings ──────────────────────────────────────────── */}
+      {warningTokens.length > 0 && (
+        <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-4">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-amber-200">
+                {warningTokens.length} token{warningTokens.length === 1 ? "" : "s"} need
+                {warningTokens.length === 1 ? "s" : ""} attention
+                {canManage && " — click a token to raise its limit"}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {warningTokens.map((token) => (
+                  <li key={token.id} className="flex flex-wrap items-center gap-2 text-xs text-amber-100/90">
+                    {usageWarningBadge(token, canManage ? () => openMaxUsesEditor(token) : undefined)}
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => openMaxUsesEditor(token)}
+                        className="font-semibold text-white transition hover:text-amber-200"
+                      >
+                        {token.name}
+                      </button>
+                    ) : (
+                      <span className="font-semibold text-white">{token.name}</span>
+                    )}
+                    <span className="font-mono text-amber-200/80">
+                      {token.use_count}/{token.max_uses} ({usagePercent(token)}%)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── security model notice ─────────────────────────────────────────── */}
       <div className="rounded-xl border border-blue-400/15 bg-blue-400/[0.05] p-4">
@@ -1047,7 +1141,10 @@ export default function EnrollmentBootstrap() {
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">{tokenStatusBadge(token)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-400">
-                    {token.use_count}/{token.max_uses}
+                    <span className="inline-flex items-center gap-1.5">
+                      {token.use_count}/{token.max_uses}
+                      {usageWarningBadge(token, canManage ? () => openMaxUsesEditor(token) : undefined)}
+                    </span>
                   </td>
                   {canManage && (
                     <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
@@ -1261,6 +1358,67 @@ export default function EnrollmentBootstrap() {
                 type="button"
                 onClick={() => setCreateOpen(false)}
                 disabled={creating}
+                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:border-white/20 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Raise Max Uses Modal ─────────────────────────────────────────────── */}
+      {editMaxUsesTarget && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-md p-5">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white">Raise Max Uses</h3>
+              <button
+                type="button"
+                onClick={() => setEditMaxUsesTarget(null)}
+                className="rounded-md p-1 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="mb-4 text-sm text-slate-300">
+              <span className="font-semibold text-white">{editMaxUsesTarget.name}</span> is at{" "}
+              <span className="font-mono">
+                {editMaxUsesTarget.use_count}/{editMaxUsesTarget.max_uses}
+              </span>{" "}
+              ({usagePercent(editMaxUsesTarget)}%) of its enrollment limit.
+              {editMaxUsesTarget.status === "used" &&
+                " Raising the limit above the current use count reactivates the token."}
+            </p>
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-200">Max uses</span>
+              <input
+                type="number"
+                min={1}
+                max={1000000}
+                value={editMaxUses}
+                autoFocus
+                onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))}
+                onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()}
+                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+              />
+            </label>
+
+            <div className="mt-5 flex gap-2">
+              <Button
+                type="button"
+                className="flex-1"
+                onClick={() => void handleSaveMaxUses()}
+                disabled={savingMaxUses}
+              >
+                {savingMaxUses ? "Saving…" : "Save"}
+              </Button>
+              <button
+                type="button"
+                onClick={() => setEditMaxUsesTarget(null)}
+                disabled={savingMaxUses}
                 className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:border-white/20 disabled:opacity-50"
               >
                 Cancel

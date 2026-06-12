@@ -27,6 +27,7 @@ class EnrollmentTokenOut(BaseModel):
     is_default: bool = False
     token_prefix: Optional[str] = None
     has_recoverable_token: bool = False
+    usage_warning: Optional[str] = None
 
 
 class EnrollmentTokenCreateResponse(EnrollmentTokenOut):

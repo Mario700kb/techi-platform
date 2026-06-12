@@ -12,6 +12,7 @@ from app.repositories.alert_repository import AlertRepository
 from app.schemas.alert import AlertCountResponse, AlertOut
 from app.services.alert_engine import _alert_payload
 from app.services.device_service import DeviceService
+from app.services.token_usage_alert_service import build_token_usage_alerts
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
 
@@ -27,17 +28,24 @@ def list_alerts(
     offset: int = Query(default=0, ge=0),
 ):
     repo = AlertRepository(db)
+    # Token usage alerts are synthetic (computed on read, negative ids) and
+    # always "open" — they resolve themselves once max_uses is raised.
+    token_alerts = build_token_usage_alerts(db) if offset == 0 else []
     if state == "open":
-        return repo.get_recent_open(limit=limit)
-    return repo.get_recent_all(limit=limit, offset=offset)
+        return token_alerts + repo.get_recent_open(limit=limit)
+    return token_alerts + repo.get_recent_all(limit=limit, offset=offset)
 
 
 @router.get("/count", response_model=AlertCountResponse)
 def alert_count(db: Session = Depends(get_db), _: Operator = Depends(get_current_operator)):
     repo = AlertRepository(db)
+    by_severity = repo.count_open_by_severity()
+    token_alerts = build_token_usage_alerts(db)
+    for alert in token_alerts:
+        by_severity[alert["severity"]] = by_severity.get(alert["severity"], 0) + 1
     return AlertCountResponse(
-        total_open=repo.count_open(),
-        by_severity=repo.count_open_by_severity(),
+        total_open=repo.count_open() + len(token_alerts),
+        by_severity=by_severity,
     )
 
 

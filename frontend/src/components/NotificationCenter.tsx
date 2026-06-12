@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { Bell, CheckCircle, XCircle } from "lucide-react";
 import { Alert, AlertSeverity } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
@@ -36,6 +37,12 @@ function kindLabel(kind: string): string {
   return kind.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Synthetic computed-on-read alerts (negative id); they cannot be resolved
+// manually — they clear once the token's max_uses is raised.
+function isTokenUsageAlert(alert: Alert): boolean {
+  return alert.kind === "token_usage_warning" || alert.kind === "token_usage_critical";
+}
+
 const PANEL_MAX_WIDTH = 360;
 const PANEL_MARGIN = 8;
 const PANEL_GAP = 6;
@@ -52,6 +59,7 @@ export default function NotificationCenter({
   onDeviceJump,
   onAlertResolved,
 }: NotificationCenterProps) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [resolving, setResolving] = useState<Set<number>>(new Set());
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({
@@ -164,7 +172,7 @@ export default function NotificationCenter({
   };
 
   const handleResolveAll = async () => {
-    for (const alert of alerts) {
+    for (const alert of alerts.filter((a) => !isTokenUsageAlert(a))) {
       setResolving((prev) => new Set(prev).add(alert.id));
       try {
         await resolveAlert(alert.id);
@@ -267,7 +275,14 @@ export default function NotificationCenter({
                   key={alert.id}
                   className="group flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors"
                   style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-                  onClick={() => { onDeviceJump?.(alert.device_id); setOpen(false); }}
+                  onClick={() => {
+                    if (isTokenUsageAlert(alert)) {
+                      navigate("/enrollment-bootstrap");
+                    } else if (alert.device_id != null) {
+                      onDeviceJump?.(alert.device_id);
+                    }
+                    setOpen(false);
+                  }}
                 >
                   <span className={`mt-[5px] h-1.5 w-1.5 flex-none rounded-full ${severityDot(alert.severity)}`} />
                   <div className="min-w-0 flex-1">
@@ -282,6 +297,7 @@ export default function NotificationCenter({
                   </div>
                   <div className="flex flex-none flex-col items-end gap-1.5">
                     <span className="text-[10px] font-medium tabular-nums" style={{ color: "var(--th-text-tertiary)" }}>{timeAgo(alert.created_at)} ago</span>
+                    {!isTokenUsageAlert(alert) && (
                     <button
                       type="button"
                       title="Resolve"
@@ -292,6 +308,7 @@ export default function NotificationCenter({
                     >
                       <XCircle className="h-3 w-3" />
                     </button>
+                    )}
                   </div>
                 </li>
               ))}

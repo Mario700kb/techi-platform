@@ -42,6 +42,10 @@ class EnrollmentTokenStatusType(TypeDecorator):
             return EnrollmentTokenStatus(normalized.lower())
 
 
+# Fraction of max_uses at which a token starts surfacing a usage warning.
+TOKEN_USAGE_WARNING_THRESHOLD = 0.9
+
+
 class EnrollmentToken(Base):
     __tablename__ = "enrollment_tokens"
     __table_args__ = (
@@ -69,3 +73,22 @@ class EnrollmentToken(Base):
     @property
     def has_recoverable_token(self) -> bool:
         return bool(self.token_ciphertext)
+
+    @property
+    def usage_warning(self) -> Optional[str]:
+        """"critical" when use_count has hit max_uses, "warning" at 90%+, else None.
+
+        Only meaningful for tokens that can still be handed to agents (active)
+        or were exhausted by use (used); revoked/expired tokens stay silent.
+        """
+        status = self.status.value if hasattr(self.status, "value") else self.status
+        if status not in (EnrollmentTokenStatus.ACTIVE.value, EnrollmentTokenStatus.USED.value):
+            return None
+        if not self.max_uses:
+            return None
+        used = self.use_count or 0
+        if used >= self.max_uses:
+            return "critical"
+        if used >= TOKEN_USAGE_WARNING_THRESHOLD * self.max_uses:
+            return "warning"
+        return None

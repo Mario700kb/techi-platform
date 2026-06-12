@@ -8,11 +8,15 @@ export type AlertKind =
   | "low_disk"
   | "rustdesk_sync_failure"
   | "heartbeat_stale"
-  | "telemetry_missing";
+  | "telemetry_missing"
+  | "token_usage_warning"
+  | "token_usage_critical";
 
 export interface Alert {
   id: number;
-  device_id: number;
+  // null for synthetic token-usage alerts (negative id, token_id set)
+  device_id: number | null;
+  token_id?: number | null;
   kind: AlertKind;
   severity: AlertSeverity;
   state: AlertState;

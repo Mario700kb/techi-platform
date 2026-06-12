@@ -8,7 +8,8 @@ class AlertOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    device_id: int
+    device_id: Optional[int] = None
+    token_id: Optional[int] = None
     kind: str
     severity: str
     state: str

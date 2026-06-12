@@ -542,9 +542,11 @@ export default function Devices() {
   const alertsMap = useMemo(() => {
     const map: Record<number, { critical: number; warning: number }> = {};
     for (const alert of alerts) {
-      if (!map[alert.device_id]) map[alert.device_id] = { critical: 0, warning: 0 };
-      if (alert.severity === "critical") map[alert.device_id].critical++;
-      else if (alert.severity === "warning") map[alert.device_id].warning++;
+      const deviceId = alert.device_id;
+      if (deviceId == null) continue; // synthetic token-usage alerts have no device
+      if (!map[deviceId]) map[deviceId] = { critical: 0, warning: 0 };
+      if (alert.severity === "critical") map[deviceId].critical++;
+      else if (alert.severity === "warning") map[deviceId].warning++;
     }
     return map;
   }, [alerts]);

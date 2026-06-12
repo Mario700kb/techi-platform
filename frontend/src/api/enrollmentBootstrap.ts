@@ -18,6 +18,7 @@ export interface EnrollmentToken {
   is_default: boolean;
   token_prefix?: string | null;
   has_recoverable_token: boolean;
+  usage_warning?: "warning" | "critical" | null;
 }
 
 export interface EnrollmentTokenDeployment {

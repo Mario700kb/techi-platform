@@ -3,6 +3,49 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-12 - Token usage warnings: page banner, table badges, and alerts feed
+
+### Problem
+
+Nothing surfaced a token approaching its enrollment limit. Operators found
+out only when agents started failing with "token exhausted" — historically
+made worse by the (now fixed) re-enrollment inflation.
+
+### Solution
+
+`EnrollmentToken` gained a computed `usage_warning` property: `critical` when
+`use_count >= max_uses`, `warning` at 90%+ (constant
+`TOKEN_USAGE_WARNING_THRESHOLD = 0.9` in the model), `null` otherwise. Only
+`active`/`used` tokens report it; revoked/expired stay silent. The field
+rides along on every endpoint that serializes a token, including the list the
+Enrollment Bootstrap page loads.
+
+The alerts feed integration is computed on read — no new table, no background
+job. `device_alerts.device_id` is NOT NULL, so instead of a migration, the
+new `token_usage_alert_service.build_token_usage_alerts` synthesizes alert
+rows (kind `token_usage_warning`/`token_usage_critical`, negative ids equal
+to `-token_id`, `device_id` null, internal bootstrap tokens excluded) and the
+`/alerts/` and `/alerts/count` endpoints merge them in. They cannot be
+resolved manually and disappear on their own once `max_uses` is raised.
+
+Enrollment Bootstrap page: an amber banner at the top lists affected tokens
+with `use_count/max_uses (percent%)`, the Uses column shows a "⚠️ 90%" or
+"🔴 FULL" badge, and clicking either opens a new "Raise Max Uses" modal — the
+first UI for the existing PATCH endpoint, whose service layer already
+reactivates a `used` token when the limit rises above the use count. The
+notification bell (Devices page) routes token alerts to
+`/enrollment-bootstrap` instead of a device drawer and hides their resolve
+button.
+
+### Verification
+
+New backend tests `test_usage_warning_thresholds` and
+`test_build_token_usage_alerts` (thresholds, internal/revoked exclusion,
+message format, negative ids); all 16 enrollment tests pass under Python 3.12
+in a throwaway backend container. Frontend `tsc --noEmit` is clean — the
+nullable `device_id` on alerts required a guard in the Devices page alert
+map, which now skips synthetic alerts.
+
 ## 2026-06-12 - Exhausted enrollment tokens no longer block re-enrollment of existing devices
 
 ### Problem
