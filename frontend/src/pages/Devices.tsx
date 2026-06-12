@@ -42,6 +42,7 @@ interface TreeCounts {
   total: number;
   unassigned: number;
   byClient: Map<number, number>;
+  byClientCategory: Map<number, Map<string, number>>;
 }
 
 function computeTreeCounts(devices: Device[]): TreeCounts {
@@ -52,7 +53,7 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
     if (cid === null) unassigned++;
     else byClient.set(cid, (byClient.get(cid) ?? 0) + 1);
   }
-  return { total: devices.length, unassigned, byClient };
+  return { total: devices.length, unassigned, byClient, byClientCategory: new Map() };
 }
 
 // Map quick filter pills to backend API params where possible.
@@ -150,6 +151,12 @@ export default function Devices() {
       unassigned: fleetOverview.tree_counts.unassigned,
       byClient: new Map(
         Object.entries(fleetOverview.tree_counts.by_client).map(([id, count]) => [Number(id), count]),
+      ),
+      byClientCategory: new Map(
+        Object.entries(fleetOverview.tree_counts.by_client_category ?? {}).map(([clientId, counts]) => [
+          Number(clientId),
+          new Map(Object.entries(counts)),
+        ]),
       ),
     };
   }, [fleetOverview]);

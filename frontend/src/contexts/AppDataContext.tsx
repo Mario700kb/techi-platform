@@ -59,6 +59,7 @@ function readPersistedOverview(userId: number | undefined): PersistedOverview | 
     const raw = window.sessionStorage.getItem(OVERVIEW_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedOverview;
+    if (!parsed.data?.tree_counts?.by_client_category) return null;
     return parsed.userId === userId ? parsed : null;
   } catch {
     return null;

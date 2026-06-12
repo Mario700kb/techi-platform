@@ -55,8 +55,9 @@ class DeviceOverviewService:
 
         stats = {"total": 0, "online": 0, "stale": 0, "offline": 0}
         by_client: dict[int, int] = {}
+        by_client_category: dict[int, dict[str, int]] = {}
         unassigned = 0
-        for client_id, total, online, stale, offline in count_rows:
+        for client_id, category, total, online, stale, offline in count_rows:
             stats["total"] += total
             stats["online"] += online
             stats["stale"] += stale
@@ -64,7 +65,8 @@ class DeviceOverviewService:
             if client_id is None:
                 unassigned += total
             else:
-                by_client[client_id] = total
+                by_client[client_id] = by_client.get(client_id, 0) + total
+                by_client_category.setdefault(client_id, {})[category] = total
 
         health_inputs = {}
         for device, telemetry, inventory, severity, count in health_rows:
@@ -112,6 +114,7 @@ class DeviceOverviewService:
                 total=stats["total"],
                 unassigned=unassigned,
                 by_client=by_client,
+                by_client_category=by_client_category,
             ),
             critical=critical,
             warnings=warnings,

@@ -201,6 +201,7 @@ class DeviceTreeCounts(BaseModel):
     total: int
     unassigned: int
     by_client: Dict[int, int]
+    by_client_category: Dict[int, Dict[str, int]] = Field(default_factory=dict)
 
 
 class DevicesSummary(BaseModel):

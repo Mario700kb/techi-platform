@@ -223,6 +223,7 @@ class TestDeviceScopeByClientId:
             "total": 1,
             "unassigned": 0,
             "by_client": {"1": 1},
+            "by_client_category": {"1": {"clientpc": 1}},
         }
         assert body["critical"] == 0
         assert body["warnings"] == 0
@@ -404,5 +405,6 @@ def test_overview_uses_two_queries_and_cache(db):
         event.remove(db.get_bind(), "before_cursor_execute", count_statement)
 
     assert overview.stats.total == 700
+    assert overview.tree_counts.by_client_category == {}
     assert cached == overview
     assert statements == 2

@@ -424,9 +424,33 @@ class DeviceRepository:
         now = utcnow()
         online_cutoff = now - timedelta(minutes=6)
         stale_cutoff = now - timedelta(minutes=25)
+        server_group = or_(
+            DeviceGroup.name.ilike("servers"),
+            DeviceGroup.name.ilike("server"),
+        )
+        client_pc_group = or_(
+            DeviceGroup.name.ilike("client pc"),
+            DeviceGroup.name.ilike("client pcs"),
+            DeviceGroup.name.ilike("workstation"),
+            DeviceGroup.name.ilike("workstations"),
+        )
+        server_os = or_(
+            Device.device_type == DeviceType.SERVER,
+            Device.windows_product_type.in_([2, 3]),
+            Device.os_name.ilike("%windows server%"),
+            Device.os_version.ilike("%windows server%"),
+            Device.os_caption.ilike("%windows server%"),
+        )
+        category = case(
+            (server_group, "servers"),
+            (client_pc_group, "clientpc"),
+            (server_os, "servers"),
+            else_="clientpc",
+        ).label("category")
 
         counts_query = self.db.query(
             Device.client_id,
+            category,
             func.count(Device.id).label("total"),
             func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),
             func.count(case((
@@ -435,10 +459,10 @@ class DeviceRepository:
             func.count(case((
                 or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1
             ))).label("offline"),
-        )
+        ).outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
         counts_query = self._apply_lifecycle_filter(counts_query, "active")
         counts_query = self._apply_scope_filter(counts_query, scope)
-        count_rows = counts_query.group_by(Device.client_id).all()
+        count_rows = counts_query.group_by(Device.client_id, category).all()
 
         latest_telemetry = (
             self.db.query(

@@ -197,6 +197,7 @@ export interface DevicesSummary {
     total: number;
     unassigned: number;
     by_client: Record<string, number>;
+    by_client_category?: Record<string, Record<string, number>>;
   };
   loaded_at: string;
 }
@@ -207,6 +208,7 @@ export interface DeviceFleetOverview {
     total: number;
     unassigned: number;
     by_client: Record<string, number>;
+    by_client_category?: Record<string, Record<string, number>>;
   };
   critical: number;
   warnings: number;

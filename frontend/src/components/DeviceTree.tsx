@@ -22,6 +22,7 @@ interface TreeCounts {
   total: number;
   unassigned: number;
   byClient: Map<number, number>;
+  byClientCategory: Map<number, Map<string, number>>;
 }
 
 interface DeviceTreeProps {
@@ -50,7 +51,6 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   const clientCount = (clientId: number) => treeCounts.byClient.get(clientId) ?? 0;
 
   const treeIndex = useMemo(() => {
-    const folderCounts = new Map<string, number>();
     const maintenanceClients = new Set<number>();
     const maintenanceFolders = new Set<string>();
     for (const device of devices) {
@@ -58,15 +58,15 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
       if (clientId === null) continue;
       const category = device.resolved_device_category ?? "unassigned";
       const key = `${clientId}:${category}`;
-      folderCounts.set(key, (folderCounts.get(key) ?? 0) + 1);
       if (device.is_in_maintenance) {
         maintenanceClients.add(clientId);
         maintenanceFolders.add(key);
       }
     }
-    return { folderCounts, maintenanceClients, maintenanceFolders };
+    return { maintenanceClients, maintenanceFolders };
   }, [devices]);
-  const folderCount = (clientId: number, folderId: string) => treeIndex.folderCounts.get(`${clientId}:${folderId}`) ?? 0;
+  const folderCount = (clientId: number, folderId: string) =>
+    treeCounts.byClientCategory.get(clientId)?.get(folderId) ?? 0;
   const clientHasMaintenance = (clientId: number) => treeIndex.maintenanceClients.has(clientId);
   const folderHasMaintenance = (clientId: number, folderId: string) => treeIndex.maintenanceFolders.has(`${clientId}:${folderId}`);
   const sortedClients = useMemo(

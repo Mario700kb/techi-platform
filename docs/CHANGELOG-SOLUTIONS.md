@@ -3,6 +3,35 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-12 - Device Tree subgroup counts use the full fleet snapshot
+
+### Problem
+
+Top-level client counts came from `/api/v1/devices/overview`, but the nested
+`Servers` and `Client PC` counts were calculated from the currently loaded,
+paginated Devices table. A client with 122 devices could therefore initially
+show `Client PC: 1` or `0`. Clicking the folder changed the table filter and
+made the number appear to correct itself from the newly loaded page.
+
+The same partial dataset caused `Show empty groups` to display populated
+folders with a zero count.
+
+### Root cause and solution
+
+`DeviceTree` mixed two count sources: complete overview counts for clients and
+partial page data for child folders. The overview aggregation now includes a
+`by_client_category` breakdown using the same canonical group and OS rules as
+the server/workstation filters. It remains part of the existing count query,
+so the overview still uses two database statements.
+
+All tree levels now render from the same cached overview snapshot. Paginated
+table data is retained only for row rendering and realtime maintenance
+indicators, never for folder counts.
+
+Persisted overview snapshots from the older response format are discarded
+once, ensuring the first reload after deployment fetches the category
+breakdown instead of briefly rendering zero subgroup counts.
+
 ## 2026-06-12 - Persistent session and shared fleet overview architecture
 
 ### Problem
