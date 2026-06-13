@@ -3,6 +3,44 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-13 - Connect button: iOS bypass — shkoni direkt te RustDesk, pa alert
+
+### Problem
+
+Në iOS Safari, butoni Connect provonte `techiremotesupport://` si hap të parë.
+Meqë TECHI Remote Support nuk ekziston si app iOS, Safari shfaqte alertin nativ
+"Cannot Open Page — the address is invalid". Fallback-i i vonuar (`setTimeout`
+1200 ms) për `rustdesk://` nuk ekzekutohej kurrë: iOS Safari kërkon që çdo
+navigim me custom scheme të jetë rezultat DIREKT i një user gesture (tap) —
+navigimi nga `setTimeout` konsiderohet jashtë stack-ut të gestit dhe bllokohet
+në heshtje pa asnjë gabim.
+
+### Zgjidhja
+
+`rustdeskLaunch.ts` fitoi dy shtesa:
+
+- `isIOS()` — helper privat që kontrollon `navigator.userAgent` dhe detekton
+  edhe iPadOS (shumë touch points + MacIntel platform).
+- `launchConnect(techiUrl, rustdeskUrl, onFallback?)` — wrapper i ri i
+  eksportuar që bëhet `entry point` i vetëm për butonin Connect:
+  - **iOS**: kapërcen plotësisht `techiremotesupport://`, thërret
+    `clickProtocolUrl(rustdeskUrl)` brenda stack-ut të gestit (pa delay), pastaj
+    thërret `onFallback?.()` për toast-in "Opening with RustDesk instead".
+  - **Çdo platformë tjetër**: delegon te `launchWithFallback()` — sjellja
+    ekzistuese me blur-detection nuk preket fare.
+
+`DevicesTable.tsx` dhe `DeviceDrawer.tsx` ndërruan vetëm emrin e thirrjes:
+`launchWithFallback` → `launchConnect`. Parametrat identikë.
+
+### Testim manual
+
+- **iPhone/iPad Safari**: kliko Connect → RustDesk hapet menjëherë (pa asnjë
+  alert "Cannot Open Page"), shfaqet toast "Opening with RustDesk instead".
+- **PC me TECHI Remote Support**: kliko Connect → TECHI Remote Support hapet
+  brenda ~300 ms, nuk shfaqet RustDesk, nuk shfaqet toast.
+- **PC pa TECHI Remote Support / Android**: kliko Connect → pas ~1200 ms hapet
+  RustDesk, shfaqet toast.
+
 ## 2026-06-13 - Connect button: TECHI Remote Support first, RustDesk fallback
 
 ### Problem

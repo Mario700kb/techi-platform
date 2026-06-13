@@ -56,6 +56,11 @@ function clickProtocolUrl(url: string): void {
   document.body.removeChild(a);
 }
 
+function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS
+}
+
 /**
  * Attempts techiremotesupport:// first. If the OS doesn't handle it (no window
  * blur within ~1200 ms), falls back to rustdesk://.
@@ -112,4 +117,33 @@ export function launchWithFallback(
   clickProtocolUrl(techiUrl);
 
   pendingFallbackTimer = setTimeout(handleFallback, 1200);
+}
+
+/**
+ * Entry point for the Connect button on all platforms.
+ *
+ * iOS Safari enforces that custom-protocol navigation must occur synchronously
+ * within the user-gesture call stack (the tap event). A navigation triggered
+ * from setTimeout is silently blocked. Additionally techiremotesupport:// is
+ * not registered on iOS (no iOS app exists), so attempting it first would show
+ * a native "Cannot Open Page" alert with no way to suppress it.
+ *
+ * For iOS we therefore skip techiremotesupport:// entirely and call
+ * clickProtocolUrl(rustdeskUrl) directly — same user-gesture stack, no alert,
+ * no delay. The onFallback toast fires immediately so the user sees feedback.
+ *
+ * On all other platforms the blur-detection heuristic in launchWithFallback
+ * handles the techiremotesupport → rustdesk fallback as before.
+ */
+export function launchConnect(
+  techiUrl: string,
+  rustdeskUrl: string,
+  onFallback?: () => void
+): void {
+  if (isIOS()) {
+    clickProtocolUrl(rustdeskUrl);
+    onFallback?.();
+    return;
+  }
+  launchWithFallback(techiUrl, rustdeskUrl, onFallback);
 }

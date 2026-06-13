@@ -4,7 +4,7 @@ import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCirc
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
-import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchWithFallback } from "../services/rustdeskLaunch";
+import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
@@ -1217,7 +1217,7 @@ const DevicesTable = memo(function DevicesTable({
                             disabled={!canConnect}
                             onClick={() => {
                               const id = device.rustdesk_id!;
-                              launchWithFallback(
+                              launchConnect(
                                 buildRustDeskLaunchUrl(id),
                                 buildRustDeskFallbackUrl(id),
                                 () => showBulkToast("Opening with RustDesk instead", true)
