@@ -17,7 +17,6 @@ import DeviceTree from "../components/DeviceTree";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
 import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
-import { useAlerts } from "../hooks/useAlerts";
 import { useFavorites } from "../hooks/useFavorites";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAuth } from "../auth/AuthContext";
@@ -78,6 +77,8 @@ export default function Devices() {
     latestEvent,
     realtimeStatus,
     refreshFleetOverview,
+    alerts,
+    alertCount,
   } = useAppData();
   const { favorites, toggle: toggleFavorite } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -339,8 +340,6 @@ export default function Devices() {
     void loadOrgData();
   }, [loadOrgData]);
 
-  const { alerts, alertCount } = useAlerts({ latestEvent });
-
   useEffect(() => {
     const event = latestEvent;
     if (!event || event.type === "connection_ready") {
@@ -539,6 +538,33 @@ export default function Devices() {
     await refreshBoth();
   };
 
+  // Mobile "Load More" — grows the limit without touching URL-based desktop pagination
+  const mobileExtraLimitRef = useRef(0);
+  const [mobileLoadingMore, setMobileLoadingMore] = useState(false);
+
+  const handleMobileLoadMore = useCallback(async () => {
+    mobileExtraLimitRef.current += 20;
+    const effectiveLimit = tableLimit + mobileExtraLimitRef.current;
+    setMobileLoadingMore(true);
+    try {
+      const qfExtra = quickFilterToApiFilters(quickFilter);
+      const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
+      if (debouncedSearch) apiFilters.search = debouncedSearch;
+      const result = await getDevices(apiFilters, 0, effectiveLimit);
+      setTableDevices(result.devices);
+      setTableTotal(result.total);
+    } catch {
+      // keep existing data on error
+    } finally {
+      setMobileLoadingMore(false);
+    }
+  }, [tableLimit, quickFilter, filters, debouncedSearch]);
+
+  // Reset mobile extra limit when filters/search change
+  useEffect(() => {
+    mobileExtraLimitRef.current = 0;
+  }, [quickFilter, filters, debouncedSearch]);
+
   const alertsMap = useMemo(() => {
     const map: Record<number, { critical: number; warning: number }> = {};
     for (const alert of alerts) {
@@ -563,7 +589,27 @@ export default function Devices() {
 
   return (
     <section className="premium-page devices-premium min-w-0 space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
+      {/* Mobile header — minimal, shown below md only */}
+      <div className="md:hidden flex items-center justify-between px-1">
+        <h1 className="text-xl font-bold" style={{ color: "var(--th-text-primary)" }}>
+          Devices
+        </h1>
+        {alertCount.total_open > 0 && (
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-bold"
+            style={{
+              background: "rgba(239,68,68,0.15)",
+              border: "1px solid rgba(239,68,68,0.3)",
+              color: "#f87171",
+            }}
+          >
+            {alertCount.total_open} alert{alertCount.total_open !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Desktop header card — hidden on mobile */}
+      <div className="hidden md:block premium-card overflow-hidden p-5 md:p-6">
         <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <p className="premium-kicker">TECHI Devices Hub</p>
@@ -614,7 +660,8 @@ export default function Devices() {
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
-        <div className="min-w-0">
+        {/* DeviceTree — desktop only */}
+        <div className="hidden md:block min-w-0">
           <DeviceTree
             selectedKey={selectedTreeKey}
             onSelect={handleTreeSelect}
@@ -627,7 +674,8 @@ export default function Devices() {
         </div>
 
         <div className="min-w-0 space-y-4">
-          <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {/* Stat cards — desktop only */}
+          <div className="hidden md:grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {/* Total */}
             <button
               type="button"
@@ -713,7 +761,8 @@ export default function Devices() {
             </button>
           </div>
 
-          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          {/* Health metric cards — desktop only */}
+          <div className="hidden md:grid min-w-0 gap-4 sm:grid-cols-2">
             {/* Critical health */}
             <button
               type="button"
@@ -757,7 +806,8 @@ export default function Devices() {
             </button>
           </div>
 
-          <div className="premium-card-soft flex flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
+          {/* Info panels — desktop only */}
+          <div className="hidden md:flex premium-card-soft flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-orange-300" />
               <span>Native TECHI Remote Support connect action is preserved as a future desktop-launch workflow.</span>
@@ -768,7 +818,7 @@ export default function Devices() {
             </div>
           </div>
 
-          <div className="premium-card-soft flex flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
+          <div className="hidden md:flex premium-card-soft flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -826,6 +876,10 @@ export default function Devices() {
             total={tableTotal}
             onPageChange={handlePageChange}
             onLimitChange={handleLimitChange}
+            clients={clients}
+            onMobileLoadMore={handleMobileLoadMore}
+            mobileHasMore={tableTotal > tableDevices.length}
+            mobileLoadingMore={mobileLoadingMore}
           />
         </div>
       </div>

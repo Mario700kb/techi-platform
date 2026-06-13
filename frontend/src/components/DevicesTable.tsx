@@ -1,7 +1,9 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, Star, Trash2, Wrench } from "lucide-react";
+import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench } from "lucide-react";
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
+import { Client } from "../api/clients";
+import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
 import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchConnect } from "../services/rustdeskLaunch";
@@ -48,6 +50,10 @@ interface DevicesTableProps {
   total?: number;
   onPageChange?: (page: number) => void;
   onLimitChange?: (limit: number) => void;
+  clients?: Client[];
+  onMobileLoadMore?: () => void;
+  mobileHasMore?: boolean;
+  mobileLoadingMore?: boolean;
 }
 
 export type QuickFilter =
@@ -436,7 +442,12 @@ const DevicesTable = memo(function DevicesTable({
   total = 0,
   onPageChange,
   onLimitChange,
+  clients,
+  onMobileLoadMore,
+  mobileHasMore = false,
+  mobileLoadingMore = false,
 }: DevicesTableProps) {
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
@@ -645,7 +656,7 @@ const DevicesTable = memo(function DevicesTable({
       {/* Filter bar */}
       {/* ── Fleet Health Panel ── */}
       {devices.length > 0 && (
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="hidden md:grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {([
           {
             id: "needs_updates" as QuickFilter,
@@ -773,7 +784,7 @@ const DevicesTable = memo(function DevicesTable({
       )}
 
       <div
-        className="rounded-xl p-3"
+        className="hidden md:block rounded-xl p-3"
         style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -957,6 +968,70 @@ const DevicesTable = memo(function DevicesTable({
         >
           {/* ── Mobile card list (< 768px) ── */}
           <div className="md:hidden">
+            {/* Sticky search + active filter chip + Filters button */}
+            <div
+              className="sticky top-0 z-10"
+              style={{
+                background: "var(--th-bg-card)",
+                borderBottom: "1px solid var(--th-border-subtle)",
+              }}
+            >
+              <div className="p-3">
+                <div className="relative">
+                  <Search
+                    className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                    style={{ color: "var(--th-text-muted)" }}
+                  />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => onSearch(e.target.value)}
+                    placeholder="Search devices..."
+                    className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-[13px] font-medium focus:outline-none"
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      borderColor: "var(--th-border-subtle)",
+                      color: "var(--th-text-primary)",
+                    }}
+                  />
+                </div>
+              </div>
+              <div
+                className="flex items-center gap-2 overflow-x-auto px-3 pb-2.5"
+                style={{ scrollbarWidth: "none" }}
+              >
+                {quickFilter !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => onQuickFilterChange("all")}
+                    className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                    style={{
+                      background: "rgba(249,115,22,0.15)",
+                      border: "1px solid rgba(249,115,22,0.3)",
+                      color: "#fb923c",
+                    }}
+                  >
+                    {QUICK_FILTERS.find((f) => f.id === quickFilter)?.label}
+                    <span className="ml-0.5 text-[13px] leading-none">×</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setFilterSheetOpen(true)}
+                  className="ml-auto inline-flex flex-none items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold"
+                  style={{
+                    border: "1px solid var(--th-border-subtle)",
+                    color: "var(--th-text-secondary)",
+                    background: "rgba(255,255,255,0.04)",
+                  }}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  Filters
+                </button>
+              </div>
+            </div>
+
+            {/* Device cards */}
             {displayDevices.map((device) => {
               const canConnect =
                 isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
@@ -986,6 +1061,29 @@ const DevicesTable = memo(function DevicesTable({
                 />
               );
             })}
+
+            {/* Load More button */}
+            {mobileHasMore && !loading && (
+              <div className="p-4">
+                <button
+                  type="button"
+                  onClick={onMobileLoadMore}
+                  disabled={mobileLoadingMore}
+                  className="w-full rounded-xl py-3 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+                  style={{
+                    background: "rgba(249,115,22,0.08)",
+                    border: "1px solid rgba(249,115,22,0.2)",
+                    color: "#fb923c",
+                  }}
+                >
+                  {mobileLoadingMore ? (
+                    <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                  ) : (
+                    `Load more (${Math.max(0, (total ?? 0) - displayDevices.length)} remaining)`
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Desktop table (≥ 768px) — layout unchanged ── */}
@@ -1332,9 +1430,9 @@ const DevicesTable = memo(function DevicesTable({
           </div>
           </div>{/* end hidden md:block */}
 
-          {/* Footer */}
+          {/* Footer — hidden on mobile (Load More replaces pagination) */}
           <div
-            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
+            className="hidden md:flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
             style={{
               borderTop: "1px solid var(--th-border-subtle)",
               background: "var(--th-bg-table-head, rgba(255,255,255,0.02))",
@@ -1397,6 +1495,17 @@ const DevicesTable = memo(function DevicesTable({
           </div>
         </div>
       )}
+
+      {/* Mobile filter sheet */}
+      <FilterSheet
+        open={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        quickFilter={quickFilter}
+        onQuickFilterChange={onQuickFilterChange}
+        clients={clients}
+        filters={filters}
+        onFilterChange={onFilterChange}
+      />
 
       {/* Portal action menu */}
       {activeActionDevice &&

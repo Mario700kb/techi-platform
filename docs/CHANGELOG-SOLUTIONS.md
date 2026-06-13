@@ -3,6 +3,94 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-13 - Mobile "Command Center" Redesign — BottomNav, DashboardMobile, FilterSheet, Load More
+
+### Problem
+
+Mobile UX (<768px) ishte i papërdorshëm: Dashboard shfaqte tabela me 10 kolona,
+`/devices` kishte DeviceTree + 6 stats cards + filter dropdowns që zinin gjithë
+ekranin. Nuk kishte navigim persistent në fund (BottomNav). Filter-at ishin
+të paarritshëm pa scroll.
+
+### Zgjidhja
+
+**Arkitekturë e ndryshuar (breakpoint shift):**
+- `AppShell.tsx`: kalim nga `sm:` (640px) te `md:` (768px) për sidebar dhe
+  grid layout. Range 640–767px tani shfaq mobile layout (BottomNav) jo desktop
+  sidebar. `<main>` merr `pb-16 md:pb-0` për hapësirë mbi BottomNav.
+
+**Komponentë të rinj:**
+
+1. `components/BottomNav.tsx` — nav i fiksuar poshtë (4 tabs: Dashboard, Devices,
+   Alerts me badge, Menu). `md:hidden`. Alert badge nga `useAppData()`. Active
+   state sipas `useLocation()`. `env(safe-area-inset-bottom)` padding.
+   "Menu" tab → hap mobile sidebar ekzistues (callback nga AppShell).
+
+2. `pages/DashboardMobile.tsx` — SVG health ring (% online, ngjyrë sipas
+   threshold: emerald ≥90% / amber ≥70% / red <70%), grid 2×2 stat tiles
+   (Total/Online/Critical/Alerts, çdo tile Link → /devices?filter=...), seksioni
+   "Needs Attention" (listë çështjesh me count + link, ose "✅ All systems healthy").
+   Nuk bën fetch shtesë — konsumon të dhëna nga `fleetOverview` + `alertCount`
+   të AppDataContext-it.
+
+3. `components/FilterSheet.tsx` — bottom sheet slide-up (82vh max), `md:hidden`.
+   Kapaku (backdrop) mbyll me tap. Permban: quick filter pills (9 opsione),
+   connection state pills, listë klientësh tap-able → aplikon `client_id` filter.
+   `body.style.overflow = hidden` kur është hapur.
+
+**Ndryshime ekzistuese:**
+
+4. `contexts/AppDataContext.tsx` — shtohen `alertCount`, `totalOpenAlerts`,
+   `alerts` duke integruar `useAlerts` brenda providerit. Kjo shmang double-polling
+   (ishte i thirrur veçmas në `Devices.tsx`, tani 1 instancë globale).
+   `Devices.tsx` tani konsumon `alerts`/`alertCount` nga `useAppData()`.
+
+5. `pages/Dashboard.tsx` — split `md:hidden` (DashboardMobile) /
+   `hidden md:block space-y-4` (desktop layout i paprekur).
+
+6. `pages/Devices.tsx` — mobile header minimal (titull + alert badge `md:hidden`);
+   desktop header card, DeviceTree, stat cards (4+2), info panels → `hidden md:block`
+   / `hidden md:grid` / `hidden md:flex`. `mobileExtraLimit` ref + `handleMobileLoadMore`
+   callback: rrit limitin e API call-it (20→40→60) pa prek URL pagination.
+
+7. `components/DevicesTable.tsx`:
+   - Fleet health mini-cards (6 butonë): `hidden md:grid`
+   - "Devices catalog" card (search + filter dropdowns): `hidden md:block`
+   - Mobile branch: shtohet sticky search bar (top-0 z-10) + active filter chip
+     + "⚙ Filters" buton → FilterSheet
+   - Load More buton poshtë kartave (shfaqet kur `mobileHasMore`)
+   - Footer (pagination) → `hidden md:flex`
+   - Props të reja: `clients`, `onMobileLoadMore`, `mobileHasMore`, `mobileLoadingMore`
+
+### Vendime arkitekturore
+
+- **Single polling**: `useAlerts` zhvendoset te `AppDataContext` — jo më thirrje
+  dyfishe. `Devices.tsx` fsheh `import { useAlerts }`.
+- **Load More si limit-growth**: jo accumulator array, jo URL param ndryshim.
+  Desktop pagination mbetet e paprekur (konsumon URL `?page=N&limit=N`).
+  Mobile konsumon tërë `tableDevices` me limit në rritje.
+- **Breakpoint md: (768px)**: konsistente me deklaratën e userit "mobile <768px".
+  Range 640-767px: ishte desktop (sidebar), tani: mobile (BottomNav).
+- **FilterSheet**: vetëm client list (pa DeviceTree me subgroups) — DeviceTree
+  mbetet desktop-only për kompleksitet të reduktuar.
+- **"Needs Attention"**: listë çështjesh sipas kategorive (offline/critical/updates
+  /alerts) pa fetch shtesë — të dhënat nga `fleetOverview`.
+
+### Testim Manual
+
+**Mobile (390px viewport):**
+1. Dashboard → shihen: SVG ring + 2×2 tiles + Needs Attention lista; nuk shihen: tabela, cards
+2. BottomNav → 4 tabs të dukshëm fixed poshtë; Alerts tab ka badge nëse ka alerts
+3. Devices → shihet: sticky search + "Filters" buton, kartat e device-ve; nuk shihen: DeviceTree, stat cards, filter dropdowns
+4. "Filters" tap → FilterSheet slide-up me client list dhe quick filters
+5. "Load More" → shfaqet kur ka devices shtesë, rrit listën pa reload
+6. "Menu" tab → hap mobile sidebar me të gjithë nav items
+
+**Desktop (1440px viewport):**
+1. Dashboard → identik me para (nuk ka ndryshim)
+2. Devices → sidebar, stat cards, DeviceTree, DevicesTable identike
+3. Filter dropdowns, pagination → të paprekura
+
 ## 2026-06-13 - Mobile responsive DevicesTable (card view) + PWA "Add to Home Screen"
 
 ### Problem

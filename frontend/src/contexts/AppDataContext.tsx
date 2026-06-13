@@ -15,6 +15,8 @@ import {
   DeviceRealtimeEvent,
   DeviceRealtimeStatus,
 } from "../services/deviceRealtime";
+import { useAlerts } from "../hooks/useAlerts";
+import { Alert, AlertCount } from "../types/alert";
 
 const OVERVIEW_STORAGE_KEY = "techi.fleet.overview";
 const OVERVIEW_TTL_MS = 30_000;
@@ -49,6 +51,9 @@ interface AppDataContextValue {
   refreshFleetOverview: (force?: boolean) => Promise<void>;
   latestEvent: DeviceRealtimeEvent | null;
   realtimeStatus: DeviceRealtimeStatus;
+  alertCount: AlertCount;
+  totalOpenAlerts: number;
+  alerts: Alert[];
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -160,6 +165,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     void refreshFleetOverview();
   }, [refreshFleetOverview, userId]);
 
+  const { alerts, alertCount } = useAlerts({ latestEvent });
+
   const realtimeStatus = useDeviceRealtime({
     enabled: Boolean(userId),
     onEvent: (event) => {
@@ -185,6 +192,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     refreshFleetOverview,
     latestEvent,
     realtimeStatus,
+    alertCount,
+    totalOpenAlerts: alertCount.total_open,
+    alerts,
   }), [
     fleetOverview,
     fleetOverviewLoading,
@@ -193,6 +203,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     refreshFleetOverview,
     latestEvent,
     realtimeStatus,
+    alertCount,
+    alerts,
   ]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

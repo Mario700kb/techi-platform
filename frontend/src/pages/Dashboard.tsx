@@ -35,6 +35,7 @@ import { parseUTC, timeAgo } from "../utils/time";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
+import { DashboardMobile } from "./DashboardMobile";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
@@ -76,6 +77,7 @@ export default function Dashboard() {
     latestEvent,
     realtimeStatus,
     refreshFleetOverview,
+    totalOpenAlerts,
   } = useAppData();
 
   const stats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
@@ -262,6 +264,22 @@ export default function Dashboard() {
 
   return (
     <section className="premium-page space-y-4">
+      {/* Mobile dashboard — shown only below md (768px) */}
+      <div className="md:hidden">
+        <DashboardMobile
+          total={total}
+          online={online}
+          stale={stale}
+          offline={offline}
+          criticalCount={criticalCount}
+          patchCount={patchCount}
+          alertsTotal={totalOpenAlerts}
+          loading={loading}
+        />
+      </div>
+
+      {/* Desktop dashboard — shown only at md+ (768px) */}
+      <div className="hidden md:block space-y-4">
       <div className="premium-card overflow-hidden p-4 md:p-5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -746,6 +764,7 @@ export default function Dashboard() {
           </div>
         </aside>
       </div>
+      </div>{/* end hidden md:block */}
     </section>
   );
 }
