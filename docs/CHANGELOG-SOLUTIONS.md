@@ -3,6 +3,61 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-13 - Mobile responsive DevicesTable (card view) + PWA "Add to Home Screen"
+
+### Problem
+
+`/devices` në mobile (~390px) shfaqte tabelën e plotë me 10 kolona duke
+shkaktuar scroll horizontal. Butoni Connect ishte i fshehur jashtë ekranit.
+Gjithashtu nuk kishte asnjë manifest PWA, kështu që iPhone Safari nuk ofronte
+"Add to Home Screen" me ikonë dhe emër korrekt — hapej si faqe web normale.
+
+### Zgjidhja
+
+**DevicesTable responsive:**
+- Krijohet `DeviceMobileCard.tsx` — komponent i veçantë, ripërdor të gjithë
+  logjikën badge/status/health nga DevicesTable pa duplikim fetch/filter.
+  Karta: status dot + hostname + Connect (40×40 px touch target) inline djathtas,
+  pastaj badges, Client/Group · Domain, User · IP · Last seen.
+- Në `DevicesTable.tsx`: shtuar `<div className="md:hidden">` me listën e
+  kartave dhe `<div className="hidden md:block">` që wraps tabelën ekzistuese.
+  **Zero ndryshime** në desktop layout — tabela mbetet identike bit-për-bit.
+- Checkbox bulk-select hiqet në mobile (nuk ka kuptim pa hover/selection).
+- Footer (pagination) mbetet i përbashkët dhe i dukshëm në të dyja.
+
+**PWA:**
+- `public/manifest.json` me name/short_name/theme_color/icons.
+- 3 ikona PNG të gjeneruara nga `apple-touch-icon.png` me Pillow: 192×192,
+  512×512, dhe maskable-512 (ikonë në 80% canvas #0a0a0a për safe-zone Android).
+- `index.html`: `<link rel="manifest">`, `<meta name="theme-color">`, dhe meta
+  tags iOS (`apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`,
+  `apple-mobile-web-app-title`).
+- `public/sw.js`: service worker minimal network-first, pa cache agresiv të API
+  (dashboard live data). Fallback te cache vetëm nëse rrjeti është plotësisht
+  i padisponueshëm.
+- `main.tsx`: regjistrim SW pas `window load`.
+- `nginx.conf`: location blocks të dedikuara — `manifest.json` dhe `/icons/`
+  me `max-age=86400`, `/sw.js` me `no-cache` (browser duhet ta kontrollojë
+  çdo herë). Shtuar `worker-src 'self'` në CSP për Firefox.
+
+### Testim manual
+
+1. **iPhone Safari / mobile 390px** — hap `/devices`, verifiko:
+   - Secili device shfaqet si kartë, pa scroll horizontal
+   - Butoni Connect është gjithmonë i dukshëm inline djathtas hostname
+   - Tap kartë → hapet DeviceDrawer
+   - Tap Connect → hapet RustDesk (direkt, pa alert)
+
+2. **PWA — iPhone Safari** — hap `https://rdp.techi.com.al`, Share →
+   "Add to Home Screen":
+   - Ikona TECHI shfaqet saktë
+   - Emri tregon "TECHI"
+   - Hapja nga Home Screen → standalone mode (pa adresë bar)
+
+3. **Desktop ≥ 768px** — hap `/devices`:
+   - Tabela identike si para ndryshimit
+   - Asnjë ndryshim vizual a funksional
+
 ## 2026-06-13 - Connect button: iOS bypass — shkoni direkt te RustDesk, pa alert
 
 ### Problem

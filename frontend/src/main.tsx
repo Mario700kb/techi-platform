@@ -7,6 +7,12 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppDataProvider } from "./contexts/AppDataContext";
 import "./index.css";
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {/* SW is optional */});
+  });
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ThemeProvider>

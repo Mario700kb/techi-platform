@@ -9,6 +9,7 @@ import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
 import { parseUTC } from "../utils/time";
+import { DeviceMobileCard } from "./DeviceMobileCard";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -954,6 +955,41 @@ const DevicesTable = memo(function DevicesTable({
           className="overflow-hidden rounded-xl"
           style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
         >
+          {/* ── Mobile card list (< 768px) ── */}
+          <div className="md:hidden">
+            {displayDevices.map((device) => {
+              const canConnect =
+                isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+              return (
+                <DeviceMobileCard
+                  key={device.id}
+                  device={device}
+                  health={healthMap[device.id]}
+                  patch={patchMap[device.id]}
+                  activeAction={activeActionMap[device.id]}
+                  alerts={alertsMap[device.id]}
+                  offlineSummary={
+                    device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined
+                  }
+                  canConnect={canConnect}
+                  isFavorite={favorites.has(device.id)}
+                  onSelect={() => onDeviceSelect?.(device)}
+                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
+                  onConnect={() => {
+                    const id = device.rustdesk_id!;
+                    launchConnect(
+                      buildRustDeskLaunchUrl(id),
+                      buildRustDeskFallbackUrl(id),
+                      () => showBulkToast("Opening with RustDesk instead", true)
+                    );
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          {/* ── Desktop table (≥ 768px) — layout unchanged ── */}
+          <div className="hidden md:block">
           <div
             ref={scrollRef}
             className="overflow-x-auto"
@@ -1294,6 +1330,7 @@ const DevicesTable = memo(function DevicesTable({
               </tbody>
             </table>
           </div>
+          </div>{/* end hidden md:block */}
 
           {/* Footer */}
           <div
