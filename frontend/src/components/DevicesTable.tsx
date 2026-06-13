@@ -4,7 +4,7 @@ import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCirc
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
-import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
+import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchWithFallback } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
@@ -1215,7 +1215,14 @@ const DevicesTable = memo(function DevicesTable({
                           <button
                             type="button"
                             disabled={!canConnect}
-                            onClick={() => launchRustDesk(device.rustdesk_id)}
+                            onClick={() => {
+                              const id = device.rustdesk_id!;
+                              launchWithFallback(
+                                buildRustDeskLaunchUrl(id),
+                                buildRustDeskFallbackUrl(id),
+                                () => showBulkToast("Opening with RustDesk instead", true)
+                              );
+                            }}
                             title={
                               device.rustdesk_conflict_detected
                                 ? "Remote Support ID conflict"

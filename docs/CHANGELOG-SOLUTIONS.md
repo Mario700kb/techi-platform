@@ -3,6 +3,49 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## 2026-06-13 - Connect button: TECHI Remote Support first, RustDesk fallback
+
+### Problem
+
+The Connect button always launched `techiremotesupport://` via `window.open()`.
+On mobile devices (and any PC without TECHI Remote Support installed) nothing
+happened — the protocol was not registered and the browser silently did nothing.
+Users on mobile had to use RustDesk manually.
+
+### Solution
+
+`rustdeskLaunch.ts` gained two new exports:
+
+- `buildRustDeskFallbackUrl(id)` — builds `rustdesk://{id}` (same RustDesk ID,
+  different scheme).
+- `launchWithFallback(techiUrl, rustdeskUrl, onFallback?)` — attempts
+  `techiremotesupport://` first via a hidden anchor click (no page navigation),
+  then listens for a window `blur` event within 1200 ms. If the OS accepted the
+  protocol it hands app focus over and the tab blurs — the listener fires and
+  the fallback is suppressed. If no blur arrives the tab remained focused,
+  meaning no app handled the protocol, so `rustdesk://` is attempted and the
+  optional `onFallback` callback fires (used for toasts). Module-level
+  timer/listener state ensures rapid re-clicks cancel any in-flight attempt.
+
+`DevicesTable.tsx` and `DeviceDrawer.tsx` both switched their Connect button
+`onClick` from `launchRustDesk()` to `launchWithFallback()` with the
+appropriate toast callback (bulk toast / `rsToast`) so users see "Opening with
+RustDesk instead" when the fallback fires.
+
+### Manual verification
+
+1. On a PC with TECHI Remote Support installed: click Connect — TECHI Remote
+   Support opens within ~100–300 ms, no RustDesk, no toast.
+2. On a mobile device or a PC without TECHI Remote Support: click Connect —
+   after ~1200 ms RustDesk opens and a brief toast "Opening with RustDesk
+   instead" appears.
+3. Rapid double-click: only one protocol launch occurs (the second click cancels
+   the first attempt's pending timer).
+
+Note: on first use browsers may show an "Open this link in [App]?" confirmation
+dialog before handing off — the dialog itself triggers a blur so the heuristic
+correctly treats this as success and no fallback fires.
+
 ## 2026-06-12 - Token usage warnings: page banner, table badges, and alerts feed
 
 ### Problem

@@ -4,7 +4,7 @@ import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSuppor
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
-import { isValidRustDeskId, launchRustDesk } from "../services/rustdeskLaunch";
+import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchWithFallback } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
@@ -1887,7 +1887,14 @@ export default function DeviceDrawer({
                 <button
                   type="button"
                   disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected || !hasPermission("remote_support_connect")}
-                  onClick={() => launchRustDesk(device.rustdesk_id!)}
+                  onClick={() => {
+                    const id = device.rustdesk_id!;
+                    launchWithFallback(
+                      buildRustDeskLaunchUrl(id),
+                      buildRustDeskFallbackUrl(id),
+                      () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
+                    );
+                  }}
                   title={
                     !hasPermission("remote_support_connect")
                       ? "Permission required: remote_support_connect"
