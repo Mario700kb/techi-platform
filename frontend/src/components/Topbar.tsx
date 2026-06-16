@@ -40,10 +40,6 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
               e.currentTarget.src = "/brand/techi-mark-dark.png";
             }}
           />
-          <span className="h-3 w-px" style={{ background: "var(--th-border-default)" }} />
-          <span className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            Remote Dashboard
-          </span>
         </div>
       </div>
 
