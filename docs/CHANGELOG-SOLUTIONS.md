@@ -3,6 +3,12 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-16] Agent Update Plan — Dokumentuar
+
+- Krijuar `docs/AGENT-UPDATE-PLAN.md` me planin e plotë teknik
+- Filozofia: MSI instalohet 1 herë, gjithçka tjetër kontrollohet nga UI
+- 3 faza: Backend/UI Command Center → Agent v2.0 Golang → MSI final deploy via GPO
+
 ## 2026-06-13 - Mobile "Command Center" Redesign — BottomNav, DashboardMobile, FilterSheet, Load More
 
 ### Problem
