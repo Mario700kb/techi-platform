@@ -88,6 +88,8 @@ class Device(Base):
     maintenance_note = Column(String(255), nullable=True)
     maintenance_started_by = Column(String(128), nullable=True)
 
+    agent_version = Column(String(20), nullable=True)
+
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)
     auto_assigned = Column(Boolean, default=False, nullable=False)

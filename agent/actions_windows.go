@@ -468,6 +468,192 @@ func ensureRustDeskProtocolHandler() string {
 	return "written"
 }
 
+// ------------------------------------------------------------------ //
+// set_remote_password                                                  //
+// ------------------------------------------------------------------ //
+
+func handleSetRemotePassword(_ context.Context, _ *Config, params map[string]interface{}) actionResult {
+	password := stringParam(params, "password")
+	if password == "" {
+		return actionResult{err: fmt.Errorf("set_remote_password: missing 'password' parameter")}
+	}
+
+	// setRustDeskPassword runs the TECHI Remote Support exe with --password flag.
+	if err := setRustDeskPassword(password); err != nil {
+		return actionResult{
+			err:    fmt.Errorf("set_remote_password: %w", err),
+			stderr: err.Error(),
+		}
+	}
+
+	// Restart service so the new password takes effect immediately.
+	_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+	time.Sleep(2 * time.Second)
+	if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
+		log.Printf("[action] set_remote_password: service restart failed (non-fatal): %v", err)
+	}
+
+	log.Printf("[action] set_remote_password: password updated and service restarted")
+	return actionResult{message: "Remote password changed successfully"}
+}
+
+// ------------------------------------------------------------------ //
+// register_protocol                                                    //
+// ------------------------------------------------------------------ //
+
+func handleRegisterTechiProtocol(_ context.Context) actionResult {
+	script := `$p = 'HKLM:\SOFTWARE\Classes\techiremotesupport'; ` +
+		`if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }; ` +
+		`Set-ItemProperty -Path $p -Name '(Default)' -Value 'URL:TECHI Remote Support Protocol' -Force; ` +
+		`New-ItemProperty -Path $p -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null; ` +
+		`$p2 = "$p\shell\open\command"; ` +
+		`New-Item -Path $p2 -Force | Out-Null; ` +
+		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
+		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+
+	if _, err := runWithTimeout(15*time.Second, "powershell",
+		"-NoProfile", "-NonInteractive", "-Command", script); err != nil {
+		return actionResult{
+			err:    fmt.Errorf("register_protocol: registry write failed: %w", err),
+			stderr: err.Error(),
+		}
+	}
+	log.Printf("[action] register_protocol: techiremotesupport:// registered in HKLM")
+	return actionResult{message: "Protocol techiremotesupport:// registered successfully"}
+}
+
+// ------------------------------------------------------------------ //
+// reboot_pc                                                            //
+// ------------------------------------------------------------------ //
+
+func handleRebootPC(_ context.Context, params map[string]interface{}) actionResult {
+	delay := 60
+	if v, ok := params["delay_seconds"]; ok {
+		switch n := v.(type) {
+		case float64:
+			delay = int(n)
+		case int:
+			delay = n
+		}
+	}
+	if delay < 30 {
+		delay = 30
+	}
+	if delay > 3600 {
+		delay = 3600
+	}
+
+	comment := fmt.Sprintf("TECHI Platform initiated reboot (delay=%ds)", delay)
+	if _, err := runWithTimeout(10*time.Second,
+		"shutdown", "/r", "/t", fmt.Sprintf("%d", delay), "/c", comment, "/f"); err != nil {
+		return actionResult{
+			err:    fmt.Errorf("reboot_pc: shutdown command failed: %w", err),
+			stderr: err.Error(),
+		}
+	}
+	log.Printf("[action] reboot_pc: reboot scheduled in %ds", delay)
+	return actionResult{message: fmt.Sprintf("Reboot scheduled in %ds", delay)}
+}
+
+// ------------------------------------------------------------------ //
+// run_powershell                                                       //
+// ------------------------------------------------------------------ //
+
+func handleRunPowerShell(ctx context.Context, params map[string]interface{}) actionResult {
+	script := stringParam(params, "script")
+	if script == "" {
+		return actionResult{err: fmt.Errorf("run_powershell: missing 'script' parameter")}
+	}
+
+	timeoutSecs := 30
+	if v, ok := params["timeout_seconds"]; ok {
+		switch n := v.(type) {
+		case float64:
+			timeoutSecs = int(n)
+		case int:
+			timeoutSecs = n
+		}
+	}
+	if timeoutSecs < 1 {
+		timeoutSecs = 1
+	}
+	if timeoutSecs > 300 {
+		timeoutSecs = 300
+	}
+
+	log.Printf("[action] run_powershell: executing script (timeout=%ds, len=%d)", timeoutSecs, len(script))
+
+	psCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(psCtx,
+		"powershell.exe",
+		"-NonInteractive", "-NoProfile", "-ExecutionPolicy", "Bypass",
+		"-Command", script,
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+
+	outStr := stdout.String()
+	errStr := stderr.String()
+
+	// Truncate to 4096 chars each to avoid huge callback payloads.
+	const maxOut = 4096
+	if len(outStr) > maxOut {
+		outStr = outStr[:maxOut] + "\n[truncated]"
+	}
+	if len(errStr) > maxOut {
+		errStr = errStr[:maxOut] + "\n[truncated]"
+	}
+
+	if psCtx.Err() == context.DeadlineExceeded {
+		return actionResult{
+			err:    fmt.Errorf("run_powershell: timed out after %ds", timeoutSecs),
+			output: outStr,
+			stderr: errStr,
+		}
+	}
+	if runErr != nil {
+		return actionResult{
+			err:    fmt.Errorf("run_powershell: exit error: %w", runErr),
+			output: outStr,
+			stderr: errStr,
+		}
+	}
+
+	log.Printf("[action] run_powershell: completed, output_len=%d", len(outStr))
+	return actionResult{
+		message: fmt.Sprintf("PowerShell completed (output_len=%d)", len(outStr)),
+		output:  outStr,
+		stderr:  errStr,
+	}
+}
+
+// ------------------------------------------------------------------ //
+// self_update (manual trigger via pending_action)                      //
+// ------------------------------------------------------------------ //
+
+func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionResult {
+	url := stringParam(params, "download_url")
+	version := stringParam(params, "version")
+	checksum := stringParam(params, "sha256")
+	if url == "" {
+		return actionResult{err: fmt.Errorf("self_update: missing 'download_url' parameter")}
+	}
+	update := &AgentUpdate{
+		Available: true,
+		Version:   version,
+		URL:       url,
+		Checksum:  checksum,
+	}
+	go performSelfUpdate(update)
+	return actionResult{message: fmt.Sprintf("Self-update to v%s initiated in background", version)}
+}
+
 func marshalDeployResult(v interface{}) string {
 	b, err := json.Marshal(v)
 	if err != nil {

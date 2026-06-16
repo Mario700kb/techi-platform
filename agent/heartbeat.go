@@ -47,6 +47,7 @@ type HeartbeatPayload struct {
 	Services              []ServiceInfo  `json:"services,omitempty"`
 	Software              []SoftwareInfo `json:"software,omitempty"`
 	PatchStatus           *PatchStatus   `json:"patch_status,omitempty"`
+	AgentVersion          string         `json:"agent_version,omitempty"`
 }
 
 func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, tel *Telemetry, procs []ProcessInfo, svcs []ServiceInfo, software []SoftwareInfo, patchStatus *PatchStatus) *HeartbeatPayload {
@@ -93,6 +94,7 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		p.UptimeSeconds = tel.UptimeSeconds
 		p.HeartbeatLatencyMs = tel.HeartbeatLatencyMs
 	}
+	p.AgentVersion = agentVersion
 	return p
 }
 

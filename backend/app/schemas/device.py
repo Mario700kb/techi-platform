@@ -139,6 +139,7 @@ class DeviceUpdate(BaseModel):
     maintenance_ends_at: Optional[datetime] = None
     maintenance_note: Optional[str] = None
     maintenance_started_by: Optional[str] = None
+    agent_version: Optional[str] = None
 
 
 class RustDeskIdVerifyRequest(BaseModel):

@@ -104,4 +104,5 @@ def agent_heartbeat(
         "heartbeat_at": heartbeat.created_at,
         "pending_actions": [a.model_dump() for a in pending_actions],
         "heartbeat_interval_seconds": interval,
+        "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
     }

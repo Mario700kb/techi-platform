@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const agentVersion = "1.0.0"
+const agentVersion = "2.0.0"
 
 type EnrollmentRequest struct {
 	AgentID            string `json:"agent_id,omitempty"`

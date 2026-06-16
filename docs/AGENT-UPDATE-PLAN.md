@@ -320,19 +320,28 @@ ping, restart_agent, restart_device, reboot_pc, collect_inventory,
 sync_rustdesk, restart_rustdesk, set_remote_password,
 change_heartbeat_interval, run_powershell, register_protocol
 
-### FAZA 2 — Agent Golang v2.0 (3-4 ditë)
+### FAZA 2 — Agent Golang v2.0 (3-4 ditë) ✅ KOMPLETUAR
 **Qëllimi:** Agjent i modifikuar (jo nga e para) me command execution + self-update.
 
 Skedarët e modifikuar:
-- [ ] actions.go — HeartbeatResponse struct + dispatch() shtesa
-- [ ] agent.go — heartbeat_interval_seconds dinamik + update check
-- [ ] enrollment.go — agentVersion konstante → "1.1.0"
-- [ ] heartbeat.go — shto agent_version në payload
-- [ ] actions_windows.go — set_remote_password, reboot_pc, run_powershell, self_update, register_protocol
+- [x] actions.go — HeartbeatResponse struct + dispatch() shtesa
+- [x] agent.go — heartbeat_interval_seconds dinamik + update check
+- [x] enrollment.go — agentVersion konstante → "2.0.0"
+- [x] heartbeat.go — shto agent_version në payload
+- [x] actions_windows.go — set_remote_password, reboot_pc, run_powershell, self_update, register_protocol
 
 Skedarët e rinj:
-- [ ] update.go — downloadAndInstall() logjika
-- [ ] installer/installer.wxs — WiX MSI manifest
+- [x] update.go — performSelfUpdate() me SHA256 + retry
+- [x] update_other.go — stub për non-Windows
+- [x] installer/installer.wxs — WiX v4 MSI manifest
+- [x] installer/build.bat — MSI build script (Windows)
+- [x] installer/build.sh — MSI build script (macOS cross-compile)
+
+Backend shtesa:
+- [x] alembic migration c4d5e6f7a8b9 — devices.agent_version VARCHAR(20)
+- [x] AgentHeartbeatPayload — agent_version field
+- [x] AgentUpdateInfo schema + AgentHeartbeatResponse.agent_update
+- [x] DeviceUpdate.agent_version — ruhet nga çdo heartbeat
 
 ### FAZA 3 — MSI Build + Deploy Final (1-2 ditë)
 **Qëllimi:** MSI i ri, deploy VETËM 1 HERË via GPO ekzistues.
@@ -370,10 +379,10 @@ Skedarët e rinj:
 | GET /commands/{batch_id}/progress | ✅ Done | 1 |
 | Heartbeat delivery via pending_actions[] | ✅ Done | 1 |
 | Command Center UI (Send/Progress/History) | ✅ Done | 1 |
-| HeartbeatResponse v2 struct | ⏳ Pending | 2 |
-| Actions të reja (set_password, reboot, etc) | ⏳ Pending | 2 |
-| self_update logjika | ⏳ Pending | 2 |
-| protocol registration | ⏳ Pending | 2 |
+| HeartbeatResponse v2 struct | ✅ Done | 2 |
+| Actions të reja (set_password, reboot, etc) | ✅ Done | 2 |
+| self_update logjika | ✅ Done | 2 |
+| protocol registration | ✅ Done | 2 |
 | WiX MSI builder | ⏳ Pending | 3 |
 | Deploy final via GPO | ⏳ Pending | 3 |
 

@@ -132,6 +132,18 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)
 
+	// Apply dynamic interval from server response (change_heartbeat_interval action
+	// may also have written pendingIntervalChange; this only overrides if the server
+	// explicitly sends a non-zero value).
+	if hbResp.HeartbeatIntervalSecs > 0 {
+		pendingIntervalChange.Store(int64(hbResp.HeartbeatIntervalSecs))
+	}
+
+	// Trigger self-update in background goroutine if server signals a new version.
+	if hbResp.AgentUpdate != nil && hbResp.AgentUpdate.Available {
+		go performSelfUpdate(hbResp.AgentUpdate)
+	}
+
 	// If restart_agent was dispatched, fire an immediate follow-up heartbeat
 	// with fresh inventory (including updated current user) so the dashboard
 	// reflects the new state within seconds rather than waiting for the next

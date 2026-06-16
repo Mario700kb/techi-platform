@@ -16,6 +16,11 @@ import (
 // heartbeat runs immediately instead of waiting for the next ticker tick.
 var pendingImmediateHeartbeat atomic.Bool
 
+// pendingIntervalChange carries a new heartbeat interval (seconds) requested by
+// the server via HeartbeatResponse.HeartbeatIntervalSecs or the
+// change_heartbeat_interval action. runAgent reads and applies it after each cycle.
+var pendingIntervalChange atomic.Int64
+
 type PendingAction struct {
 	ActionID       int                    `json:"action_id"`
 	Action         string                 `json:"action"`
@@ -24,8 +29,17 @@ type PendingAction struct {
 	CallbackSecret string                 `json:"callback_secret,omitempty"`
 }
 
+type AgentUpdate struct {
+	Available bool   `json:"available"`
+	Version   string `json:"version"`
+	URL       string `json:"download_url"`
+	Checksum  string `json:"sha256,omitempty"`
+}
+
 type HeartbeatResponse struct {
-	PendingActions []PendingAction `json:"pending_actions"`
+	PendingActions        []PendingAction `json:"pending_actions"`
+	HeartbeatIntervalSecs int             `json:"heartbeat_interval_seconds,omitempty"`
+	AgentUpdate           *AgentUpdate    `json:"agent_update,omitempty"`
 }
 
 type actionResult struct {
@@ -88,7 +102,7 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 	switch action.Action {
 	case "ping":
 		return handlePing(ctx)
-	case "refresh_inventory", "sync_inventory":
+	case "refresh_inventory", "sync_inventory", "collect_inventory":
 		return handleRefreshInventory(ctx, cfg)
 	case "restart_device":
 		return handleRestartDevice(ctx)
@@ -110,9 +124,43 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleRepairConfigRustDesk(ctx, cfg)
 	case "deploy_remote_support":
 		return handleDeployRemoteSupport(ctx, cfg, action.Parameters)
+	case "change_heartbeat_interval":
+		return handleChangeHeartbeatInterval(action.Parameters)
+	case "set_remote_password":
+		return handleSetRemotePassword(ctx, cfg, action.Parameters)
+	case "register_protocol":
+		return handleRegisterTechiProtocol(ctx)
+	case "reboot_pc":
+		return handleRebootPC(ctx, action.Parameters)
+	case "run_powershell":
+		return handleRunPowerShell(ctx, action.Parameters)
+	case "self_update":
+		return handleSelfUpdate(ctx, action.Parameters)
 	default:
 		return actionResult{err: fmt.Errorf("unknown action type: %q", action.Action)}
 	}
+}
+
+// handleChangeHeartbeatInterval is cross-platform: it stores the new interval
+// in pendingIntervalChange so runAgent can apply it after the current cycle.
+func handleChangeHeartbeatInterval(params map[string]interface{}) actionResult {
+	secs := 60
+	if v, ok := params["seconds"]; ok {
+		switch n := v.(type) {
+		case float64:
+			secs = int(n)
+		case int:
+			secs = n
+		}
+	}
+	if secs < 30 {
+		secs = 30
+	}
+	if secs > 3600 {
+		secs = 3600
+	}
+	pendingIntervalChange.Store(int64(secs))
+	return actionResult{message: fmt.Sprintf("Heartbeat interval updated to %ds", secs)}
 }
 
 func handlePing(_ context.Context) actionResult {

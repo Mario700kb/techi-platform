@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TECHI Agent v2.0 — WiX v4 MSI Installer
+  Upgrade GUID: A1B2C3D4-E5F6-7890-ABCD-EF1234567890 (KONSTANT — mos ndrysho kurrë)
+  Build: wix build installer.wxs -d SourceDir=. -o TECHI-Endpoint-Deployment-2.0.0.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="TECHI Agent"
+           Version="2.0.0"
+           Manufacturer="TECHI"
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           Scope="perMachine">
+
+    <!-- Replace older versions silently without requiring manual uninstall -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of TECHI Agent is already installed."
+                  Schedule="afterInstallInitialize"/>
+
+    <MediaTemplate EmbedCab="yes"/>
+
+    <Feature Id="ProductFeature" Title="TECHI Agent" Level="1">
+      <ComponentGroupRef Id="ProductComponents"/>
+    </Feature>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <!-- Main executable -->
+      <Component Id="AgentExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+        <File Id="TechiAgentExe"
+              Source="$(var.SourceDir)\techi-agent.exe"
+              Name="techi-agent.exe"
+              KeyPath="yes"/>
+      </Component>
+
+      <!-- Windows Service: create, start on install, stop+remove on uninstall -->
+      <Component Id="AgentService" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
+        <ServiceInstall Id="TechiAgentService"
+                        Name="TechiAgent"
+                        DisplayName="TECHI Agent"
+                        Description="TECHI Platform endpoint monitoring and management agent"
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"/>
+        <!-- Auto-recovery: restart after 1m / 1m / 5m -->
+        <util:ServiceConfig xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+                            ServiceName="TechiAgent"
+                            FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="60"/>
+        <ServiceControl Id="StartTechiAgent"
+                        Name="TechiAgent"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes"/>
+      </Component>
+
+      <!-- Protocol registration: techiremotesupport:// in HKLM (all users) -->
+      <Component Id="ProtocolReg" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport">
+          <RegistryValue Type="string" Value="URL:TECHI Remote Support Protocol"/>
+          <RegistryValue Name="URL Protocol" Type="string" Value=""/>
+        </RegistryKey>
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
+          <RegistryValue Type="string"
+                         Value="&quot;[ProgramFilesFolder]TECHI Remote Support\TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
+        </RegistryKey>
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- Install to: C:\Program Files\TECHI Agent\ -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="TECHI Agent"/>
+    </StandardDirectory>
+
+  </Package>
+</Wix>

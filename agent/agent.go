@@ -34,6 +34,7 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 		log.Printf("heartbeat cycle failed: %v", err)
 	}
+	applyPendingInterval(&interval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -50,6 +51,26 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 			if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 				log.Printf("heartbeat cycle failed: %v", err)
 			}
+			if changed := applyPendingInterval(&interval); changed {
+				ticker.Reset(interval)
+			}
 		}
 	}
+}
+
+// applyPendingInterval reads pendingIntervalChange (set by server response or
+// change_heartbeat_interval action) and updates interval in-place.
+// Returns true if the interval actually changed.
+func applyPendingInterval(interval *time.Duration) bool {
+	newSecs := pendingIntervalChange.Swap(0)
+	if newSecs <= 0 {
+		return false
+	}
+	newDur := time.Duration(newSecs) * time.Second
+	if newDur == *interval {
+		return false
+	}
+	log.Printf("heartbeat interval changed: %s → %s", *interval, newDur)
+	*interval = newDur
+	return true
 }

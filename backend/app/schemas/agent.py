@@ -47,6 +47,7 @@ class AgentHeartbeatPayload(BaseModel):
     services: Optional[List[Dict[str, Any]]] = None
     software: Optional[List[Dict[str, Any]]] = None
     patch_status: Optional[Dict[str, Any]] = None
+    agent_version: Optional[str] = None
 
 
 class DeviceHeartbeatCreate(BaseModel):
@@ -76,6 +77,13 @@ class DeviceHeartbeatCreate(BaseModel):
     rustdesk_install_path: Optional[str] = None
 
 
+class AgentUpdateInfo(BaseModel):
+    available: bool
+    version: Optional[str] = None
+    download_url: Optional[str] = None
+    sha256: Optional[str] = None
+
+
 class AgentHeartbeatResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,6 +96,7 @@ class AgentHeartbeatResponse(BaseModel):
     heartbeat_at: datetime
     pending_actions: List[PendingActionDelivery] = []
     heartbeat_interval_seconds: Optional[int] = None
+    agent_update: Optional[AgentUpdateInfo] = None
 
 
 class AgentEnrollmentRequest(BaseModel):
