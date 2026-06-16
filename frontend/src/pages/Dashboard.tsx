@@ -92,6 +92,7 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
+  const [enrollmentLimit, setEnrollmentLimit] = useState(10);
   const [deployments, setDeployments] = useState<RecentDeployment[]>(() => appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments)?.slice(0, 4) ?? []);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
   const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
@@ -120,7 +121,7 @@ export default function Dashboard() {
       const [deviceResponse, recentDeployments, latestActions, presenceList] = await Promise.all([
         devicesFresh
           ? Promise.resolve({ devices: appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [] })
-          : getDevices({}, 0, 5).catch(() => ({ devices: [] as Device[], total: 0 })),
+          : getDevices({}, 0, enrollmentLimit).catch(() => ({ devices: [] as Device[], total: 0 })),
         deployFresh
           ? Promise.resolve(appCache.peek<RecentDeployment[]>(CACHE_KEYS.recentDeployments) ?? [] as RecentDeployment[])
           : (canDeployment ? getRecentDeployments().catch(() => [] as RecentDeployment[]) : Promise.resolve([] as RecentDeployment[])),
@@ -156,7 +157,7 @@ export default function Dashboard() {
     } finally {
       setActivityReady(true);
     }
-  }, [hasPermission]);
+  }, [hasPermission, enrollmentLimit]);
 
   const patchRecentDevice = useCallback((event: DeviceRealtimeEvent) => {
     const eventDevice = event.data;
@@ -239,6 +240,12 @@ export default function Dashboard() {
     enabled: realtimeStatus !== "connected",
     immediate: !activityReady,
   });
+
+  // Re-fetch devices when limit selector changes
+  useEffect(() => {
+    appCache.invalidate(CACHE_KEYS.dashboardRecentDevices);
+    void refreshDashboard();
+  }, [enrollmentLimit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const availability = total > 0 ? Math.round((online / total) * 100) : 0;
   const onlinePct = total > 0 ? (online / total) * 100 : 0;
@@ -444,12 +451,23 @@ export default function Dashboard() {
                 <p className="premium-kicker">Recent Devices</p>
                 <h2 className="mt-1.5 text-xl font-semibold text-white">Latest enrollments</h2>
               </div>
-              <Link
-                to="/devices"
-                className="inline-flex items-center rounded-md border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
-              >
-                View all
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={enrollmentLimit}
+                  onChange={(e) => setEnrollmentLimit(Number(e.target.value))}
+                  className="rounded-md border border-white/10 bg-slate-900/70 px-2.5 py-1 text-xs font-semibold text-slate-200 focus:border-orange-400/50 focus:outline-none"
+                >
+                  {[10, 20, 50].map((n) => (
+                    <option key={n} value={n}>{n} rows</option>
+                  ))}
+                </select>
+                <Link
+                  to="/devices"
+                  className="inline-flex items-center rounded-md border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+                >
+                  View all
+                </Link>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)]">
@@ -483,7 +501,7 @@ export default function Dashboard() {
               </div>
 
             <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-              <div className="overflow-x-auto">
+              <div className="max-h-[400px] overflow-x-auto overflow-y-auto">
                 <table className="min-w-full text-left text-[10px]">
                   <thead className="bg-slate-950/90">
                     <tr className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
