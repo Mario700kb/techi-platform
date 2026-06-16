@@ -54,6 +54,7 @@ interface AppDataContextValue {
   alertCount: AlertCount;
   totalOpenAlerts: number;
   alerts: Alert[];
+  reloadAlerts: () => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -165,7 +166,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     void refreshFleetOverview();
   }, [refreshFleetOverview, userId]);
 
-  const { alerts, alertCount } = useAlerts({ latestEvent });
+  const { alerts, alertCount, reload: reloadAlerts } = useAlerts({ latestEvent });
 
   const realtimeStatus = useDeviceRealtime({
     enabled: Boolean(userId),
@@ -195,6 +196,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     alertCount,
     totalOpenAlerts: alertCount.total_open,
     alerts,
+    reloadAlerts,
   }), [
     fleetOverview,
     fleetOverviewLoading,
@@ -205,6 +207,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     realtimeStatus,
     alertCount,
     alerts,
+    reloadAlerts,
   ]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

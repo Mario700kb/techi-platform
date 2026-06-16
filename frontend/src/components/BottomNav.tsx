@@ -32,8 +32,8 @@ export function BottomNav({ onOpenMenu }: BottomNavProps) {
     {
       label: "Alerts",
       icon: Bell,
-      to: "/devices?filter=needs_attention",
-      exact: false,
+      to: "/alerts",
+      exact: true,
       badge: totalAlerts,
       action: undefined as (() => void) | undefined,
     },

@@ -155,6 +155,19 @@ function getOfflineReasonBadge(device: Device, clientSummary?: ClientOfflineSumm
   return null;
 }
 
+function getOsShort(osName?: string): string | null {
+  if (!osName) return null;
+  const s = osName.toLowerCase();
+  if (s.includes("windows server")) {
+    const year = osName.match(/20\d{2}/)?.[0];
+    return year ? `Server ${year}` : "Server";
+  }
+  if (s.includes("windows 11")) return "Win 11";
+  if (s.includes("windows 10")) return "Win 10";
+  if (s.includes("windows")) return "Windows";
+  return null;
+}
+
 function getLastSeenDisplay(lastSeen?: string): { text: string; cls: string } {
   if (!lastSeen) return { text: "Never", cls: "text-slate-600" };
   const diffMs = Date.now() - parseUTC(lastSeen).getTime();
@@ -195,6 +208,7 @@ export function DeviceMobileCard({
   onConnect,
 }: DeviceMobileCardProps) {
   const ls = getLastSeenDisplay(device.last_seen);
+  const osShort = getOsShort(device.os_name);
   const offlineBadge = getOfflineReasonBadge(device, offlineSummary);
   const healthScore = health?.health_score;
   const isLowHealth = healthScore != null && healthScore < 60;
@@ -316,12 +330,13 @@ export function DeviceMobileCard({
             )}
           </div>
 
-          {/* Row 4: User · IP · Last seen */}
+          {/* Row 4: User · IP · OS · Last seen */}
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[10px]" style={{ color: "var(--th-text-muted)" }}>
             {device.current_user && <span>{device.current_user}</span>}
             {(device.public_ip || device.local_ip) && (
               <span className="font-mono">{device.public_ip || device.local_ip}</span>
             )}
+            {osShort && <span>{osShort}</span>}
             <span className={`ml-auto font-semibold tabular-nums ${ls.cls}`}>{ls.text}</span>
           </div>
         </div>
