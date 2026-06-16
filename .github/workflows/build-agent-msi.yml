@@ -1,0 +1,84 @@
+name: Build TECHI Agent MSI
+
+on:
+  push:
+    branches:
+      - stable/phase-2-heartbeat
+    paths:
+      - 'agent/**'
+  workflow_dispatch:
+
+jobs:
+  build-msi:
+    name: Build MSI (windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # 1. Checkout                                                          #
+      # ------------------------------------------------------------------ #
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------ #
+      # 2. Go 1.21                                                           #
+      # ------------------------------------------------------------------ #
+      - name: Setup Go 1.21
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: agent/go.sum
+
+      # ------------------------------------------------------------------ #
+      # 3. WiX v4 + Util extension (për util:ServiceConfig)                 #
+      # ------------------------------------------------------------------ #
+      - name: Install WiX v4 + Util extension
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          wix extension add --global WixToolset.Util.wixext/4.0.5
+
+      # ------------------------------------------------------------------ #
+      # 4. Build techi-agent.exe (native Windows — nuk nevojitet GOOS)      #
+      # ------------------------------------------------------------------ #
+      - name: Build techi-agent.exe
+        shell: pwsh
+        working-directory: agent
+        run: go build -ldflags="-s -w" -o installer/techi-agent.exe .
+
+      # ------------------------------------------------------------------ #
+      # 5. Build MSI me WiX v4                                              #
+      # ------------------------------------------------------------------ #
+      - name: Build MSI
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          wix build installer.wxs `
+            -ext WixToolset.Util.wixext `
+            -d SourceDir=. `
+            -o TECHI-Endpoint-Deployment-2.0.0.msi
+
+      # ------------------------------------------------------------------ #
+      # 6. SHA256 checksum                                                   #
+      # ------------------------------------------------------------------ #
+      - name: Compute SHA256
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $hash = (Get-FileHash "TECHI-Endpoint-Deployment-2.0.0.msi" -Algorithm SHA256).Hash.ToLower()
+          "$hash  TECHI-Endpoint-Deployment-2.0.0.msi" |
+            Out-File "TECHI-Endpoint-Deployment-2.0.0.msi.sha256" -Encoding utf8NoBOM
+          Write-Host "SHA256: $hash"
+
+      # ------------------------------------------------------------------ #
+      # 7. Upload artifact (30 ditë)                                         #
+      # ------------------------------------------------------------------ #
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TECHI-Endpoint-Deployment-2.0.0
+          path: |
+            agent/installer/TECHI-Endpoint-Deployment-2.0.0.msi
+            agent/installer/TECHI-Endpoint-Deployment-2.0.0.msi.sha256
+          retention-days: 30
+          if-no-files-found: error

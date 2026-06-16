@@ -343,14 +343,38 @@ Backend shtesa:
 - [x] AgentUpdateInfo schema + AgentHeartbeatResponse.agent_update
 - [x] DeviceUpdate.agent_version — ruhet nga çdo heartbeat
 
-### FAZA 3 — MSI Build + Deploy Final (1-2 ditë)
-**Qëllimi:** MSI i ri, deploy VETËM 1 HERË via GPO ekzistues.
+### MSI Build Process (GitHub Actions — automatik)
 
-- [ ] go build -o techi-agent.exe ./... (Windows cross-compile)
-- [ ] WiX build → TECHI-Endpoint-Deployment-2.0.0.msi
-- [ ] Ngarko MSI te /api/v1/agent-packages nga UI
+**Workflow**: `.github/workflows/build-agent-msi.yml`
+**Trigger**: push te `stable/phase-2-heartbeat` kur ndryshohet ndonjë skedar `agent/`
+**Runner**: `windows-latest` (Windows Server 2022, native — pa cross-compile)
+
+Hapat e workflow:
+1. Checkout repo
+2. Setup Go 1.21 me cache `agent/go.sum`
+3. `dotnet tool install --global wix --version 4.0.5`
+4. `wix extension add --global WixToolset.Util.wixext/4.0.5` (për `util:ServiceConfig`)
+5. `go build -ldflags="-s -w" -o installer/techi-agent.exe .` (nga `agent/`)
+6. `wix build installer.wxs -ext WixToolset.Util.wixext -d SourceDir=. -o TECHI-Endpoint-Deployment-2.0.0.msi`
+7. SHA256 checksum → skedar `.sha256` bashkë me MSI-n
+8. Upload artifact `TECHI-Endpoint-Deployment-2.0.0` (30 ditë, tab Actions → Artifacts)
+
+**Si të shkarkosh MSI-n:**
+1. GitHub → repo → tab **Actions**
+2. Kliko run → seksioni **Artifacts**
+3. Shkarko `TECHI-Endpoint-Deployment-2.0.0` (ZIP me MSI + SHA256)
+
+**Trigger manual**: Actions → "Build TECHI Agent MSI" → **Run workflow**
+
+---
+
+### FAZA 3 — MSI Deploy Final (1-2 ditë)
+**Qëllimi:** MSI i ndërtuar nga CI, deploy VETËM 1 HERË via GPO ekzistues.
+
+- [x] MSI build automatik via GitHub Actions (CI/CD)
+- [ ] Ngarko MSI te /api/v1/agent-packages nga UI (backend + UI për package upload)
 - [ ] GPO ekzistues shpërndan MSI-n e ri (hera e fundit e ndërhyrjes GPO)
-- [ ] Monitoring: verifikoji 556 device-t si updatojnë via dashboard
+- [ ] Monitoring: verifikoji 556 device-t si updatojnë via dashboard (agent_version në UI)
 
 ### Pas FAZA 3 — Gjithçka nga UI
 - Komanda të reja → shtohen vetëm në backend
