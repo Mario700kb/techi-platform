@@ -20,6 +20,22 @@ class ActionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+# Action types supported by agent v2.0 bulk commands
+BULK_ACTION_TYPES = frozenset({
+    "ping",
+    "restart_agent",
+    "restart_device",
+    "reboot_pc",
+    "collect_inventory",
+    "sync_rustdesk",
+    "restart_rustdesk",
+    "set_remote_password",
+    "change_heartbeat_interval",
+    "run_powershell",
+    "register_protocol",
+})
+
+
 # Terminal statuses — no further transitions allowed.
 TERMINAL_STATUSES = {
     ActionStatus.COMPLETED,
@@ -60,8 +76,10 @@ class RemoteAction(Base):
     output = Column(Text, nullable=True)
     stderr_output = Column(Text, nullable=True)
     execution_timeout_seconds = Column(Integer, default=300, nullable=False)
+    batch_id = Column(String(36), ForeignKey("agent_command_batches.id", ondelete="SET NULL"), nullable=True, index=True)
 
     device = relationship("Device", back_populates="remote_actions")
+    batch = relationship("AgentCommandBatch", back_populates="remote_actions", foreign_keys=[batch_id])
 
     @property
     def payload_dict(self) -> dict:

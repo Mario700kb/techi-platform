@@ -1,3 +1,4 @@
+from app.models.agent_command_batch import AgentCommandBatch
 from app.models.alert import DeviceAlert
 from app.models.client import Client
 from app.models.device import Device
@@ -16,6 +17,7 @@ from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupA
 from app.models.trusted_domain import TrustedDomain
 
 __all__ = [
+    "AgentCommandBatch",
     "Client",
     "Device",
     "DeviceAlert",

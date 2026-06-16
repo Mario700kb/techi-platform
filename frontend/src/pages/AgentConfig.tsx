@@ -6,6 +6,7 @@ import {
   getHeartbeatScript,
   putAgentConfig,
 } from "../api/agentConfig";
+import AgentCommandsPanel from "../components/AgentCommandsPanel";
 
 type CopyTarget = "rollout" | "rollback" | null;
 
@@ -84,8 +85,7 @@ export default function AgentConfigPage() {
           Agent Configuration
         </h1>
         <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>
-          Platform-wide heartbeat policy. Changes take effect after agents are restarted with the
-          rollout script.
+          Platform-wide heartbeat policy and bulk command center.
         </p>
       </div>
 
@@ -286,6 +286,21 @@ export default function AgentConfigPage() {
             Scheduled Task (run script as SYSTEM). Agents re-read the config on next service start.
           </span>
         </div>
+      </div>
+
+      {/* Command Center */}
+      <div>
+        <h2
+          className="mb-1 text-base font-bold tracking-tight"
+          style={{ color: "var(--th-text-primary)" }}
+        >
+          Command Center
+        </h2>
+        <p className="mb-4 text-xs" style={{ color: "var(--th-text-muted)" }}>
+          Send bulk commands to all devices or a specific target. Commands are delivered via the
+          next heartbeat and executed by agent v2.0+.
+        </p>
+        <AgentCommandsPanel />
       </div>
     </div>
   );

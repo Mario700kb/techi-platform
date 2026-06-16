@@ -289,20 +289,36 @@ Version string në MSI: nga agentVersion konstante
 
 ## Faza e Zhvillimit
 
-### FAZA 1 — Backend + UI Command Center (pa MSI, 2-3 ditë)
+### FAZA 1 — Backend + UI Command Center (pa MSI, 2-3 ditë) ✅ KOMPLETUAR
 **Qëllimi:** UI e plotë për dërgimin e komandave, para ndryshimit të agjentit.
 
 Backend:
-- [ ] DB migration: tabela agent_commands
-- [ ] POST /api/v1/commands/bulk
-- [ ] GET /api/v1/commands/{batch_id}/progress (WebSocket)
-- [ ] Backend mbart komandat te pending_actions[] në heartbeat response
+- [x] DB migration: tabela agent_command_batches + batch_id në remote_actions
+- [x] POST /api/v1/commands/bulk
+- [x] GET /api/v1/commands/{batch_id}/progress
+- [x] GET /api/v1/commands/history
+- [x] DELETE /api/v1/commands/{batch_id}
+- [x] Backend mbart komandat te pending_actions[] në heartbeat response
+  — automatikisht via remote_actions tabela ekzistuese (collect_pending_for_delivery)
 
 UI (Agent Config tab):
-- [ ] Panel "Send Command" me target selector
-- [ ] Progress bar real-time 0-100%
-- [ ] Status per device: queued/delivered/executing/completed/failed/timeout
-- [ ] History e komandave
+- [x] Panel "Send Command" me target selector (all/client/group/devices)
+- [x] Payload fields dinamike për çdo command type
+  — set_remote_password: password + confirm + show/hide
+  — change_heartbeat_interval: number 60–3600s
+  — reboot_pc: delay_seconds + warning
+  — run_powershell: textarea + timeout + owner warning
+  — register_protocol: info text
+- [x] Confirm modal (2-hap për reboot_pc — type device count)
+- [x] Progress bar real-time 0–100% (poll çdo 3s)
+- [x] Status per device: queued/delivered/executing/completed/failed/timeout
+- [x] History e komandave (collapsible, click për re-open batch)
+- [x] Permission gates: admin/owner për set_remote_password/reboot_pc; owner-only për run_powershell
+
+Command types të suportuar (Faza 1 backend):
+ping, restart_agent, restart_device, reboot_pc, collect_inventory,
+sync_rustdesk, restart_rustdesk, set_remote_password,
+change_heartbeat_interval, run_powershell, register_protocol
 
 ### FAZA 2 — Agent Golang v2.0 (3-4 ditë)
 **Qëllimi:** Agjent i modifikuar (jo nga e para) me command execution + self-update.
@@ -349,9 +365,11 @@ Skedarët e rinj:
 
 | Detyrë | Statusi | Faza |
 |--------|---------|------|
-| Backend agent_commands table | ⏳ Pending | 1 |
-| POST /commands/bulk API | ⏳ Pending | 1 |
-| Command Center UI | ⏳ Pending | 1 |
+| Backend agent_command_batches table | ✅ Done | 1 |
+| POST /commands/bulk API | ✅ Done | 1 |
+| GET /commands/{batch_id}/progress | ✅ Done | 1 |
+| Heartbeat delivery via pending_actions[] | ✅ Done | 1 |
+| Command Center UI (Send/Progress/History) | ✅ Done | 1 |
 | HeartbeatResponse v2 struct | ⏳ Pending | 2 |
 | Actions të reja (set_password, reboot, etc) | ⏳ Pending | 2 |
 | self_update logjika | ⏳ Pending | 2 |
