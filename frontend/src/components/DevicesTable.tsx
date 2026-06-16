@@ -51,6 +51,7 @@ interface DevicesTableProps {
   onPageChange?: (page: number) => void;
   onLimitChange?: (limit: number) => void;
   clients?: Client[];
+  clientGroups?: Record<string, Record<string, number>>;
   onMobileLoadMore?: () => void;
   mobileHasMore?: boolean;
   mobileLoadingMore?: boolean;
@@ -443,6 +444,7 @@ const DevicesTable = memo(function DevicesTable({
   onPageChange,
   onLimitChange,
   clients,
+  clientGroups,
   onMobileLoadMore,
   mobileHasMore = false,
   mobileLoadingMore = false,
@@ -1503,6 +1505,7 @@ const DevicesTable = memo(function DevicesTable({
         quickFilter={quickFilter}
         onQuickFilterChange={onQuickFilterChange}
         clients={clients}
+        clientGroups={clientGroups}
         filters={filters}
         onFilterChange={onFilterChange}
       />

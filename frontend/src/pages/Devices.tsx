@@ -877,6 +877,7 @@ export default function Devices() {
             onPageChange={handlePageChange}
             onLimitChange={handleLimitChange}
             clients={clients}
+            clientGroups={fleetOverview?.tree_counts.by_client_category}
             onMobileLoadMore={handleMobileLoadMore}
             mobileHasMore={tableTotal > tableDevices.length}
             mobileLoadingMore={mobileLoadingMore}

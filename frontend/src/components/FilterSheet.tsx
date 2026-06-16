@@ -16,12 +16,18 @@ const MOBILE_QUICK_FILTERS: { id: QuickFilter; label: string; color?: string }[]
   { id: "favorites", label: "Starred" },
 ];
 
+const SUBGROUP_CONFIG: Record<string, { label: string; deviceType: "server" | "client" }> = {
+  servers: { label: "Servers", deviceType: "server" },
+  clientpc: { label: "Client PC", deviceType: "client" },
+};
+
 interface FilterSheetProps {
   open: boolean;
   onClose: () => void;
   quickFilter: QuickFilter;
   onQuickFilterChange: (f: QuickFilter) => void;
   clients?: Client[];
+  clientGroups?: Record<string, Record<string, number>>;
   filters: DeviceFilters;
   onFilterChange: (key: keyof DeviceFilters, value: string | boolean | undefined) => void;
 }
@@ -32,6 +38,7 @@ export function FilterSheet({
   quickFilter,
   onQuickFilterChange,
   clients = [],
+  clientGroups,
   filters,
   onFilterChange,
 }: FilterSheetProps) {
@@ -46,6 +53,10 @@ export function FilterSheet({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  const validClients = clients.filter(
+    (c) => c.id && c.name && c.name !== "User" && c.name.trim() !== "",
+  );
 
   return (
     <>
@@ -181,8 +192,8 @@ export function FilterSheet({
             </div>
           </div>
 
-          {/* Client list */}
-          {clients.length > 0 && (
+          {/* Client list with subgroups */}
+          {validClients.length > 0 && (
             <div>
               <p
                 className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.1em]"
@@ -191,10 +202,12 @@ export function FilterSheet({
                 Client
               </p>
               <div className="space-y-1">
+                {/* All clients */}
                 <button
                   type="button"
                   onClick={() => {
                     onFilterChange("client_id", undefined);
+                    onFilterChange("device_type", undefined);
                     onClose();
                   }}
                   className="flex w-full items-center rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-colors active:opacity-75"
@@ -208,32 +221,92 @@ export function FilterSheet({
                 >
                   All clients
                 </button>
-                {clients
-                  .filter((c) => c.id && c.name && c.name !== "User" && c.name.trim() !== "")
-                  .map((client) => (
-                  <button
-                    key={client.id}
-                    type="button"
-                    onClick={() => {
-                      onFilterChange("client_id", String(client.id));
-                      onClose();
-                    }}
-                    className="flex w-full items-center rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-colors active:opacity-75"
-                    style={{
-                      background:
-                        filters.client_id === client.id
-                          ? "rgba(249,115,22,0.1)"
-                          : "rgba(255,255,255,0.03)",
-                      border: `1px solid ${filters.client_id === client.id ? "rgba(249,115,22,0.25)" : "var(--th-border-subtle)"}`,
-                      color:
-                        filters.client_id === client.id
-                          ? "#fb923c"
-                          : "var(--th-text-primary)",
-                    }}
-                  >
-                    {client.name}
-                  </button>
-                ))}
+
+                {/* Per-client rows with subgroups */}
+                {validClients.map((client) => {
+                  const clientActive = filters.client_id === client.id;
+                  const subgroups = clientGroups?.[String(client.id)];
+                  const hasSubgroups =
+                    subgroups &&
+                    Object.keys(subgroups).some((k) => k in SUBGROUP_CONFIG && subgroups[k] > 0);
+
+                  return (
+                    <div key={client.id}>
+                      {/* Client row */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onFilterChange("client_id", String(client.id));
+                          onFilterChange("device_type", undefined);
+                          onClose();
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-colors active:opacity-75"
+                        style={{
+                          background: clientActive
+                            ? "rgba(249,115,22,0.1)"
+                            : "rgba(255,255,255,0.03)",
+                          border: `1px solid ${clientActive ? "rgba(249,115,22,0.25)" : "var(--th-border-subtle)"}`,
+                          color: clientActive ? "#fb923c" : "var(--th-text-primary)",
+                        }}
+                      >
+                        <span>{client.name}</span>
+                        {subgroups && (
+                          <span
+                            className="text-[11px] font-normal tabular-nums"
+                            style={{ color: "var(--th-text-muted)" }}
+                          >
+                            {Object.values(subgroups).reduce((a, b) => a + b, 0)}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Subgroups — always visible when data present */}
+                      {hasSubgroups && (
+                        <div
+                          className="ml-3 mt-0.5 space-y-0.5 pl-3"
+                          style={{ borderLeft: "2px solid var(--th-border-subtle)" }}
+                        >
+                          {Object.entries(SUBGROUP_CONFIG).map(([catKey, { label, deviceType }]) => {
+                            const count = subgroups?.[catKey] ?? 0;
+                            if (count === 0) return null;
+                            const subActive =
+                              clientActive && filters.device_type === deviceType;
+                            return (
+                              <button
+                                key={catKey}
+                                type="button"
+                                onClick={() => {
+                                  onFilterChange("client_id", String(client.id));
+                                  onFilterChange("device_type", deviceType);
+                                  onClose();
+                                }}
+                                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-[12px] font-semibold transition-colors active:opacity-75"
+                                style={{
+                                  background: subActive
+                                    ? "rgba(249,115,22,0.08)"
+                                    : "rgba(255,255,255,0.02)",
+                                  color: subActive
+                                    ? "#fb923c"
+                                    : "var(--th-text-secondary)",
+                                }}
+                              >
+                                <span>{label}</span>
+                                <span
+                                  className="text-[11px] tabular-nums"
+                                  style={{
+                                    color: subActive ? "#fb923c" : "var(--th-text-muted)",
+                                  }}
+                                >
+                                  {count}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
