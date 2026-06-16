@@ -23,17 +23,19 @@ export function useAlerts({ latestEvent }: UseAlertsOptions = {}): UseAlertsResu
   const seenIds = useRef(new Set<number>());
 
   const loadAlerts = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [feed, count] = await Promise.all([getAlerts({ state: "open", limit: 50 }), getAlertCount()]);
-      seenIds.current = new Set(feed.map((a) => a.id));
-      setAlerts(feed);
-      setAlertCount(count);
-    } catch {
-      // alerts are non-critical — fail silently
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    const [feedResult, countResult] = await Promise.allSettled([
+      getAlerts({ state: "open", limit: 50 }),
+      getAlertCount(),
+    ]);
+    if (feedResult.status === "fulfilled") {
+      seenIds.current = new Set(feedResult.value.map((a) => a.id));
+      setAlerts(feedResult.value);
     }
+    if (countResult.status === "fulfilled") {
+      setAlertCount(countResult.value);
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {

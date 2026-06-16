@@ -208,7 +208,9 @@ export function FilterSheet({
                 >
                   All clients
                 </button>
-                {clients.map((client) => (
+                {clients
+                  .filter((c) => c.id && c.name && c.name !== "User" && c.name.trim() !== "")
+                  .map((client) => (
                   <button
                     key={client.id}
                     type="button"
