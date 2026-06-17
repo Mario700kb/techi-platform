@@ -627,9 +627,13 @@ class TestGPOScheduledDeployScript:
 
         assert upgrade < fresh_install
         assert "net stop TechiAgent 2>nul" in self.script
+        assert "taskkill /f /im techi-agent.exe 2>nul" in self.script
         assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in self.script
         assert 'msiexec /i "%MSI_PATH%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in self.script
         assert 'if not "%MSI_EXIT%"=="0" goto :manual_replace' in self.script
+        assert 'for /f "tokens=*" %%i in (\'"%AGENT_EXE%" --version 2^>nul\') do set INSTALLED_VERSION=%%i' in self.script
+        assert "if not defined INSTALLED_VERSION goto :manual_replace" in self.script
+        assert 'if /i NOT "%INSTALLED_VERSION%"=="%ACTIVE_VERSION%" goto :manual_replace' in self.script
         assert "net start TechiAgent 2>nul" in self.script
         assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN% /quiet /norestart' in self.script
 
@@ -637,6 +641,12 @@ class TestGPOScheduledDeployScript:
         assert ":manual_replace" in self.script
         assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
         assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe) do set EXTRACTED_AGENT=%%f' in self.script
+        manual_replace = self.script.index(":manual_replace")
+        copy_exe = self.script.index('copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1', manual_replace)
+        stop_service = self.script.index("net stop TechiAgent 2>nul", manual_replace)
+        kill_agent = self.script.index("taskkill /f /im techi-agent.exe 2>nul", manual_replace)
+        assert stop_service < copy_exe
+        assert kill_agent < copy_exe
         assert 'copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1' in self.script
         assert ":cleanup_fail" in self.script
         assert ":cleanup_success" in self.script

@@ -3,6 +3,36 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] GPO Deploy — Verify Installed EXE After MSI Upgrade
+
+### Root cause
+
+`msiexec /i ... REINSTALL=ALL REINSTALLMODE=vomus` mund të kthente exit code
+`0`, por të linte versionin e vjetër të
+`C:\ProgramData\TechiAgent\techi-agent.exe`. MSI e përmbante executable-in e
+ri, sepse administrative extract + manual copy funksiononte.
+
+### Fix
+
+- `:do_upgrade` tani ekzekuton `taskkill /f /im techi-agent.exe` pasi ndalon
+  service-in dhe para `msiexec`.
+- Pas një MSI exit `0`, script-i lexon përsëri versionin real nga
+  `%AGENT_EXE% --version`.
+- Nëse versioni mungon ose nuk përputhet me `ACTIVE_VERSION`, rrjedha kalon te
+  `:manual_replace`.
+- Manual fallback:
+  - ekstrakton MSI-n me `msiexec /a`;
+  - gjen `techi-agent.exe`;
+  - ndalon service-in dhe vret çdo proces të mbetur;
+  - kopjon executable-in e ri mbi `%AGENT_EXE%`;
+  - rinis `TechiAgent`.
+
+### Checks
+
+- Test strukturor për `taskkill` para MSI.
+- Test strukturor për version verification pas MSI exit `0`.
+- Test strukturor që stop/taskkill ndodhin para manual copy.
+
 ## [2026-06-17] GPO Deploy — Robust Outdated-Agent Upgrade Path
 
 ### Root cause
