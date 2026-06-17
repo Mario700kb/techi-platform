@@ -66,6 +66,43 @@ def test_public_download_without_authentication_works(monkeypatch, tmp_path):
     assert response.content == b"arm64-agent-binary"
 
 
+def test_public_active_windows_version_returns_plain_text(monkeypatch):
+    package = SimpleNamespace(
+        id="pkg-active",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="techi-agent.msi",
+        version="2.0.0",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str):
+            assert platform == "windows-amd64"
+            return package
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/active-version")
+
+    assert response.status_code == 200
+    assert response.text == "2.0.0"
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_active_windows_version_returns_404_when_missing(monkeypatch):
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str):
+            assert platform == "windows-amd64"
+            return None
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/active-version")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No active package for platform"
+
+
 def test_public_inactive_package_returns_404(monkeypatch):
     class FakeAgentPackageService:
         def latest_active(self, platform: str):

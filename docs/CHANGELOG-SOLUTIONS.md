@@ -3,6 +3,37 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-17] GPO Deploy — Agent MSI Upgrade When Installed Agent Is Outdated
+
+### Root cause
+
+`techi-deploy.cmd` dilte me `exit /b 0` kur `agent.config.json` kishte
+`device_id` dhe `TechiAgent` ishte `RUNNING`. Kjo e bënte GPO deployment
+idempotent, por bllokonte upgrade-in e agjentëve ekzistues p.sh. nga `1.0.4`
+në paketën aktive `2.0.0`.
+
+### Fix
+
+- Shtuar endpoint publik plain-text:
+  `GET /api/v1/agent-packages/active-version`.
+- Endpoint-i kthen versionin aktiv të paketës `windows-amd64`, p.sh. `2.0.0`,
+  me `Cache-Control: no-store`.
+- `techi-deploy.cmd` i gjeneruar nga `gpo-deploy.ps1` tani ka **Case 0** para
+  idempotency exit:
+  - lexon versionin aktual nga `techi-agent.exe --version`;
+  - fallback: lexon `agent_version` nga config nëse ekziston;
+  - merr versionin aktiv nga serveri;
+  - nëse versionet ndryshojnë, shkarkon MSI dhe bën upgrade silent.
+- Fresh install vazhdon të kalojë `TOKEN=%TOKEN%`; upgrade ruan konfigurimin
+  ekzistues dhe nuk e ri-enroll-on pajisjen.
+
+### Checks
+
+- Test për `active-version` plain-text success/404.
+- Test strukturor që `Case 0` shfaqet para `Case 1` në script-in e GPO deploy.
+- Test strukturor që ekzistojnë të dy path-et: upgrade MSI pa token dhe fresh
+  install MSI me token.
+
 ## [2026-06-17] Agent Version UI — Kolona, Filter, Dashboard, Command Center
 
 ### Çfarë u shtua

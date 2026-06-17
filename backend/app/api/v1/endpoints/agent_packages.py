@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
 from app.core.auth import get_current_operator, require_team_permission
 from app.models.operator import Operator, OperatorRole
@@ -96,6 +96,21 @@ def delete_agent_package(
         if "not found" in detail.lower():
             raise HTTPException(status_code=404, detail=detail)
         raise HTTPException(status_code=400, detail=detail)
+
+
+@router.get("/active-version", response_class=PlainTextResponse)
+def get_active_windows_agent_version() -> PlainTextResponse:
+    package = AgentPackageService().latest_active("windows-amd64")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active package for platform")
+    return PlainTextResponse(
+        package.version,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/{package_id}/download")

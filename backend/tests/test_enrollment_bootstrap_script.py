@@ -37,10 +37,10 @@ class _StubService(EnrollmentBootstrapService):
     def __init__(self, sha256: str = "aabbccdd" * 8):
         self._stub_sha256 = sha256
 
-    def _windows_package_info(self, backend_url: str) -> tuple[str, str]:
+    def _windows_package_info(self, backend_url: str) -> tuple[str, str, str]:
         backend_url = self.normalize_backend_url(backend_url)
         url = f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download"
-        return url, self._stub_sha256
+        return url, self._stub_sha256, "techi-agent.msi"
 
 
 class _StubTokenService:
@@ -603,6 +603,33 @@ class TestGPOInstallerScript:
         _check_agent_self_update_flow(self.script, "gpo-installer")
 
 
+class TestGPOScheduledDeployScript:
+    def setup_method(self):
+        self.svc = _StubService()
+        self.script = self.svc._gpo_scheduled_task_setup(
+            "https://api-rdp.techi.com.al",
+            "deploy-token-123",
+        )
+
+    def test_deploy_cmd_checks_active_agent_version_before_idempotency_exit(self):
+        case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
+        case1 = self.script.index(":: Case 1: I regjistruar, Running dhe version i azhurnuar - kalo")
+
+        assert case0 < case1
+        assert "set ACTIVE_VERSION_URL=%BACKEND_URL%/api/v1/agent-packages/active-version" in self.script
+        assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
+        assert 'if /i NOT "%CURRENT_VERSION%"=="%ACTIVE_VERSION%" goto :do_upgrade' in self.script
+
+    def test_deploy_cmd_has_silent_upgrade_path_before_fresh_install(self):
+        upgrade = self.script.index(":do_upgrade")
+        fresh_install = self.script.index(":fresh_install")
+
+        assert upgrade < fresh_install
+        assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in self.script
+        assert 'msiexec /i "%MSI_PATH%" /quiet /norestart' in self.script
+        assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN% /quiet /norestart' in self.script
+
+
 class TestConfigPSLines:
     """Unit tests for the PowerShell config writer."""
 
@@ -675,7 +702,7 @@ class TestHttpsUrlNormalization:
         assert '"backend_url": "https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in cfg
 
     def test_package_url_forces_https(self):
-        url, _ = self.svc._windows_package_info("http://api-rdp.techi.com.al")
+        url, _, _ = self.svc._windows_package_info("http://api-rdp.techi.com.al")
         assert url.startswith("https://api-rdp.techi.com.al/")
         assert not url.startswith("http://")
 
