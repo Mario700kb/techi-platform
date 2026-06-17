@@ -3,6 +3,39 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-17] GPO Deploy — Robust Outdated-Agent Upgrade Path
+
+### Root cause
+
+Pas shtimit të version check në `techi-deploy.cmd`, dy raste mbetën të
+rrezikshme:
+
+- Nëse versioni lokal nuk lexohej nga `--version` ose `agent.config.json`,
+  `CURRENT_VERSION` mbetej bosh dhe krahasimi CMD nuk e detyronte upgrade-in
+  në mënyrë të besueshme.
+- Upgrade MSI mbi një instalim ekzistues mund të dështonte me `1603` kur
+  `TechiAgent` ishte ende `RUNNING`.
+
+### Fix
+
+- `CURRENT_VERSION` bosh trajtohet si `0.0.0`, kështu çdo paketë aktive më e
+  re shkakton upgrade.
+- `:do_upgrade` ndalon `TechiAgent` para `msiexec`.
+- Upgrade MSI përdor:
+  `REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart`.
+- Pas upgrade-it, script-i tenton `net start TechiAgent`.
+- Nëse `msiexec` dështon, script-i bën fallback manual:
+  - ekstrakton MSI-n me `/a`;
+  - gjen `techi-agent.exe` në extract dir;
+  - kopjon executable-in mbi path-in ekzistues;
+  - rinis service-in.
+
+### Checks
+
+- Test strukturor për fallback `CURRENT_VERSION=0.0.0`.
+- Test strukturor për stop/start service dhe `REINSTALLMODE=vomus`.
+- Test strukturor për fallback manual `msiexec /a` + copy të `techi-agent.exe`.
+
 ## [2026-06-17] GPO Deploy — Agent MSI Upgrade When Installed Agent Is Outdated
 
 ### Root cause

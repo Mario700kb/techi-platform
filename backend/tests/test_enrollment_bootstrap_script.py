@@ -618,6 +618,7 @@ class TestGPOScheduledDeployScript:
         assert case0 < case1
         assert "set ACTIVE_VERSION_URL=%BACKEND_URL%/api/v1/agent-packages/active-version" in self.script
         assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
+        assert "if not defined CURRENT_VERSION set CURRENT_VERSION=0.0.0" in self.script
         assert 'if /i NOT "%CURRENT_VERSION%"=="%ACTIVE_VERSION%" goto :do_upgrade' in self.script
 
     def test_deploy_cmd_has_silent_upgrade_path_before_fresh_install(self):
@@ -625,9 +626,20 @@ class TestGPOScheduledDeployScript:
         fresh_install = self.script.index(":fresh_install")
 
         assert upgrade < fresh_install
+        assert "net stop TechiAgent 2>nul" in self.script
         assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in self.script
-        assert 'msiexec /i "%MSI_PATH%" /quiet /norestart' in self.script
+        assert 'msiexec /i "%MSI_PATH%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in self.script
+        assert 'if not "%MSI_EXIT%"=="0" goto :manual_replace' in self.script
+        assert "net start TechiAgent 2>nul" in self.script
         assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN% /quiet /norestart' in self.script
+
+    def test_deploy_cmd_has_manual_exe_replace_fallback(self):
+        assert ":manual_replace" in self.script
+        assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
+        assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe) do set EXTRACTED_AGENT=%%f' in self.script
+        assert 'copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1' in self.script
+        assert ":cleanup_fail" in self.script
+        assert ":cleanup_success" in self.script
 
 
 class TestConfigPSLines:
