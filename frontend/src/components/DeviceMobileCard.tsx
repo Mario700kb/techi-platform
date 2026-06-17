@@ -23,6 +23,7 @@ export interface DeviceMobileCardProps {
   offlineSummary?: ClientOfflineSummary;
   canConnect: boolean;
   isFavorite: boolean;
+  activePackageVersion?: string | null;
   onSelect: () => void;
   onToggleFavorite?: () => void;
   onConnect: () => void;
@@ -203,6 +204,7 @@ export function DeviceMobileCard({
   offlineSummary,
   canConnect,
   isFavorite,
+  activePackageVersion,
   onSelect,
   onToggleFavorite,
   onConnect,
@@ -330,13 +332,25 @@ export function DeviceMobileCard({
             )}
           </div>
 
-          {/* Row 4: User · IP · OS · Last seen */}
+          {/* Row 4: User · IP · OS · Agent version · Last seen */}
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[10px]" style={{ color: "var(--th-text-muted)" }}>
             {device.current_user && <span>{device.current_user}</span>}
             {(device.public_ip || device.local_ip) && (
               <span className="font-mono">{device.public_ip || device.local_ip}</span>
             )}
             {osShort && <span>{osShort}</span>}
+            {device.agent_version ? (
+              <span
+                style={
+                  activePackageVersion && device.agent_version === activePackageVersion
+                    ? { color: "#34d399" }
+                    : { color: "#f97316" }
+                }
+              >
+                Agent v{device.agent_version}
+                {activePackageVersion && device.agent_version !== activePackageVersion && " ⚠️"}
+              </span>
+            ) : null}
             <span className={`ml-auto font-semibold tabular-nums ${ls.cls}`}>{ls.text}</span>
           </div>
         </div>

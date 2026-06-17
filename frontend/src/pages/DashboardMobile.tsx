@@ -9,6 +9,7 @@ interface DashboardMobileProps {
   criticalCount: number;
   patchCount: number;
   alertsTotal: number;
+  agentsOutdated?: number;
   loading: boolean;
 }
 
@@ -86,6 +87,7 @@ export function DashboardMobile({
   criticalCount,
   patchCount,
   alertsTotal,
+  agentsOutdated = 0,
   loading,
 }: DashboardMobileProps) {
   const pct = total > 0 ? Math.round((online / total) * 100) : 0;
@@ -114,6 +116,12 @@ export function DashboardMobile({
       count: alertsTotal,
       to: "/devices?filter=needs_attention",
       color: "#fb923c",
+    },
+    {
+      label: "Agent updates pending",
+      count: agentsOutdated,
+      to: "/devices?filter=needs_agent_update",
+      color: "#a78bfa",
     },
   ].filter((i) => i.count > 0);
 

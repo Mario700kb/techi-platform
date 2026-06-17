@@ -10,6 +10,7 @@ Confirms that:
 - Count endpoint is also scope-filtered.
 """
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -99,6 +100,25 @@ def _device(db, rustdesk_id: str, client_id: int, hostname: str) -> Device:
     return d
 
 
+def _write_agent_manifest(tmp_path, items):
+    package_dir = tmp_path / "agent-packages"
+    package_dir.mkdir()
+    manifest = []
+    for item in items:
+        manifest.append({
+            "id": item["id"],
+            "version": item["version"],
+            "platform": item["platform"],
+            "filename": item.get("filename", "agent.msi"),
+            "uploaded_at": item.get("uploaded_at", "2026-06-17T09:00:00+00:00"),
+            "uploaded_by": item.get("uploaded_by", "pytest"),
+            "is_active": item.get("is_active", True),
+            "sha256": item.get("sha256", "abc123"),
+        })
+    (package_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return package_dir
+
+
 def _team_with_client(db, operator: Operator, client_id: int) -> Team:
     team = Team(name=f"Team-{client_id}-{operator.id}", color="#f97316")
     db.add(team); db.commit(); db.refresh(team)
@@ -126,6 +146,11 @@ def _make_app(db, operator: Operator) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _devices_payload(resp):
+    body = resp.json()
+    return body["devices"] if isinstance(body, dict) and "devices" in body else body
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────── #
 
 class TestDeviceScopeByClientId:
@@ -140,7 +165,7 @@ class TestDeviceScopeByClientId:
         resp = client.get("/devices/")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-001" in ids, "In-scope device must be returned"
         assert "RUST-999" not in ids, "Out-of-scope device must NOT be returned"
 
@@ -231,6 +256,84 @@ class TestDeviceScopeByClientId:
         assert body["needs_updates"] == 0
         assert len(response.content) < 5000
 
+    def test_overview_agent_outdated_is_zero_when_versions_match(self, db, tmp_path, monkeypatch):
+        _overview_cache.clear()
+        from app.core.config import settings
+
+        package_dir = _write_agent_manifest(tmp_path, [
+            {"id": "windows-active", "version": "2.4.0", "platform": "windows-amd64"},
+        ])
+        monkeypatch.setattr(settings, "AGENT_PACKAGE_STORAGE_DIR", str(package_dir))
+
+        first = _device(db, "RUST-AGENT-1", client_id=1, hostname="agent-current-1")
+        second = _device(db, "RUST-AGENT-2", client_id=1, hostname="agent-current-2")
+        first.agent_version = "2.4.0"
+        second.agent_version = "2.4.0"
+        db.commit()
+
+        overview = DeviceOverviewService(db).get_overview()
+
+        assert overview.active_agent_version == "2.4.0"
+        assert overview.agents_outdated == 0
+
+    def test_overview_agent_outdated_counts_mismatch_and_missing_versions(self, db, tmp_path, monkeypatch):
+        _overview_cache.clear()
+        from app.core.config import settings
+
+        package_dir = _write_agent_manifest(tmp_path, [
+            {"id": "windows-active", "version": "2.4.0", "platform": "windows-amd64"},
+        ])
+        monkeypatch.setattr(settings, "AGENT_PACKAGE_STORAGE_DIR", str(package_dir))
+
+        current = _device(db, "RUST-AGENT-CURRENT", client_id=1, hostname="agent-current")
+        stale = _device(db, "RUST-AGENT-STALE", client_id=1, hostname="agent-stale")
+        missing = _device(db, "RUST-AGENT-MISSING", client_id=1, hostname="agent-missing")
+        current.agent_version = "2.4.0"
+        stale.agent_version = "2.3.9"
+        missing.agent_version = None
+        db.commit()
+
+        overview = DeviceOverviewService(db).get_overview()
+
+        assert overview.active_agent_version == "2.4.0"
+        assert overview.agents_outdated == 2
+
+    def test_overview_active_agent_version_uses_active_windows_amd64_package(self, db, tmp_path, monkeypatch):
+        _overview_cache.clear()
+        from app.core.config import settings
+
+        package_dir = _write_agent_manifest(tmp_path, [
+            {
+                "id": "linux-active",
+                "version": "9.9.9",
+                "platform": "linux-amd64",
+                "uploaded_at": "2026-06-17T10:00:00+00:00",
+            },
+            {
+                "id": "windows-inactive",
+                "version": "2.3.0",
+                "platform": "windows-amd64",
+                "is_active": False,
+                "uploaded_at": "2026-06-17T11:00:00+00:00",
+            },
+            {
+                "id": "windows-active",
+                "version": "2.4.0",
+                "platform": "windows-amd64",
+                "uploaded_at": "2026-06-17T09:00:00+00:00",
+            },
+        ])
+        monkeypatch.setattr(settings, "AGENT_PACKAGE_STORAGE_DIR", str(package_dir))
+
+        device = _device(db, "RUST-AGENT-WIN", client_id=1, hostname="agent-win")
+        device.agent_version = "2.4.0"
+        db.commit()
+
+        overview = DeviceOverviewService(db).get_overview()
+
+        assert overview.active_agent_version == "2.4.0"
+        assert overview.agents_outdated == 0
+
     def test_operator_in_no_team_sees_nothing(self, db):
         op = _operator(db, "op_noteam")
         _device(db, "RUST-ANY", client_id=1, hostname="any-pc")
@@ -238,7 +341,7 @@ class TestDeviceScopeByClientId:
         client = _make_app(db, op)
         resp = client.get("/devices/")
         assert resp.status_code == 200
-        assert resp.json() == [], "Operator with no teams must see no devices"
+        assert _devices_payload(resp) == [], "Operator with no teams must see no devices"
 
     def test_admin_bypass_sees_all(self, db):
         admin = _operator(db, "admin1", role="admin")
@@ -249,7 +352,7 @@ class TestDeviceScopeByClientId:
         resp = client.get("/devices/")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-C1" in ids
         assert "RUST-C2" in ids, "Admin must see all devices"
 
@@ -262,7 +365,7 @@ class TestDeviceScopeByClientId:
         resp = client.get("/devices/")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-O1" in ids
         assert "RUST-O2" in ids, "Owner must see all devices"
 
@@ -281,7 +384,7 @@ class TestDeviceScopeWithMultipleClients:
         resp = client.get("/devices/")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-T1" in ids
         assert "RUST-T3" in ids
         assert "RUST-T2" not in ids, "Client 2 device must not be visible"
@@ -298,7 +401,7 @@ class TestDeviceScopeByDeviceId:
         resp = client.get("/devices/")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-EXPLICIT" in ids
         assert "RUST-OTHER" not in ids, "Only explicitly scoped device must appear"
 
@@ -341,7 +444,7 @@ class TestLifecycleAllWithScope:
         resp = client.get("/devices/?lifecycle_state=all")
         assert resp.status_code == 200
 
-        ids = {d["rustdesk_id"] for d in resp.json()}
+        ids = {d["rustdesk_id"] for d in _devices_payload(resp)}
         assert "RUST-LIVE"  in ids
         assert "RUST-METRO" not in ids, "lifecycle_state=all must not bypass scope"
 

@@ -79,6 +79,7 @@ class DeviceBase(BaseModel):
     maintenance_ends_at: Optional[datetime] = None
     maintenance_note: Optional[str] = None
     maintenance_started_by: Optional[str] = None
+    agent_version: Optional[str] = None
 
 
 class DeviceCreate(DeviceBase):
@@ -221,6 +222,8 @@ class DeviceFleetOverview(BaseModel):
     warnings: int
     average_health: Optional[int] = None
     needs_updates: int
+    agents_outdated: int = 0
+    active_agent_version: Optional[str] = None
     loaded_at: datetime
 
 

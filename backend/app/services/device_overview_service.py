@@ -9,6 +9,7 @@ from app.core.scope import AllowedScope
 from app.core.time import utcnow
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import DeviceFleetOverview, DeviceStats, DeviceTreeCounts
+from app.services.agent_package_service import AgentPackageService
 from app.services.device_health_score_service import compute_device_health_score
 
 
@@ -51,6 +52,9 @@ class DeviceOverviewService:
         return overview
 
     def _compute_overview(self, scope: Optional[AllowedScope]) -> DeviceFleetOverview:
+        active_pkg = AgentPackageService().latest_active("windows-amd64")
+        active_agent_version = active_pkg.version if active_pkg else None
+
         count_rows, health_rows = self.repository.get_overview_inputs(scope=scope)
 
         stats = {"total": 0, "online": 0, "stale": 0, "offline": 0}
@@ -87,6 +91,7 @@ class DeviceOverviewService:
         warnings = 0
         score_total = 0
         needs_updates = 0
+        agents_outdated = 0
         for entry in health_inputs.values():
             score, state, _ = compute_device_health_score(
                 entry["device"],
@@ -107,6 +112,11 @@ class DeviceOverviewService:
                         needs_updates += 1
                 except (TypeError, ValueError, json.JSONDecodeError):
                     pass
+            device = entry["device"]
+            if active_agent_version and (
+                not device.agent_version or device.agent_version != active_agent_version
+            ):
+                agents_outdated += 1
 
         return DeviceFleetOverview(
             stats=DeviceStats(**stats),
@@ -120,5 +130,7 @@ class DeviceOverviewService:
             warnings=warnings,
             average_health=round(score_total / len(health_inputs)) if health_inputs else None,
             needs_updates=needs_updates,
+            agents_outdated=agents_outdated,
+            active_agent_version=active_agent_version,
             loaded_at=utcnow(),
         )

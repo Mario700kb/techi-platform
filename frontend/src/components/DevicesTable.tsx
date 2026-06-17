@@ -55,30 +55,34 @@ interface DevicesTableProps {
   onMobileLoadMore?: () => void;
   mobileHasMore?: boolean;
   mobileLoadingMore?: boolean;
+  activePackageVersion?: string | null;
+  agentsOutdated?: number;
 }
 
 export type QuickFilter =
   | "all" | "online" | "stale" | "offline" | "servers" | "workstations"
   | "needs_updates" | "reboot_required" | "warnings" | "critical"
-  | "healthy" | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites";
+  | "healthy" | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites"
+  | "needs_agent_update";
 
 const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
-  { id: "all",             label: "All" },
-  { id: "online",          label: "Online" },
-  { id: "stale",           label: "Stale" },
-  { id: "offline",         label: "Offline" },
-  { id: "servers",         label: "Servers" },
-  { id: "workstations",    label: "Workstations" },
-  { id: "needs_updates",   label: "Needs Updates" },
-  { id: "reboot_required", label: "Reboot Required" },
-  { id: "warnings",        label: "Warnings" },
-  { id: "critical",        label: "Critical" },
-  { id: "healthy",         label: "Healthy" },
-  { id: "maintenance",     label: "Maintenance" },
-  { id: "needs_attention", label: "Needs Attention" },
-  { id: "low_health",      label: "Low Health" },
-  { id: "rustdesk_issues", label: "RustDesk Issues" },
-  { id: "favorites",       label: "★ Favorites" },
+  { id: "all",               label: "All" },
+  { id: "online",            label: "Online" },
+  { id: "stale",             label: "Stale" },
+  { id: "offline",           label: "Offline" },
+  { id: "servers",           label: "Servers" },
+  { id: "workstations",      label: "Workstations" },
+  { id: "needs_updates",     label: "Needs Updates" },
+  { id: "reboot_required",   label: "Reboot Required" },
+  { id: "warnings",          label: "Warnings" },
+  { id: "critical",          label: "Critical" },
+  { id: "healthy",           label: "Healthy" },
+  { id: "maintenance",       label: "Maintenance" },
+  { id: "needs_attention",   label: "Needs Attention" },
+  { id: "low_health",        label: "Low Health" },
+  { id: "rustdesk_issues",   label: "RustDesk Issues" },
+  { id: "needs_agent_update", label: "Needs Agent Update" },
+  { id: "favorites",         label: "★ Favorites" },
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
@@ -448,6 +452,8 @@ const DevicesTable = memo(function DevicesTable({
   onMobileLoadMore,
   mobileHasMore = false,
   mobileLoadingMore = false,
+  activePackageVersion,
+  agentsOutdated = 0,
 }: DevicesTableProps) {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
@@ -512,10 +518,11 @@ const DevicesTable = memo(function DevicesTable({
       if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
       if ((health?.health_score ?? 100) < 60) counts.low_health++;
       if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
+      if (activePackageVersion && (!d.agent_version || d.agent_version !== activePackageVersion)) counts.needs_agent_update++;
       if (favorites.has(d.id)) counts.favorites++;
     }
     return counts;
-  }, [devices, patchMap, healthMap, alertsMap, favorites]);
+  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion]);
 
   // Apply quick filter on top of the parent-filtered list, then sort
   const displayDevices = useMemo(() => {
@@ -542,6 +549,9 @@ const DevicesTable = memo(function DevicesTable({
           d.rustdesk_install_status !== "not_installed" &&
           (d.rustdesk_status ?? "") !== "running"
         );
+        case "needs_agent_update": return (
+          !!activePackageVersion && (!d.agent_version || d.agent_version !== activePackageVersion)
+        );
         case "favorites":       return favorites.has(d.id);
         default:                return true;
       }
@@ -557,7 +567,7 @@ const DevicesTable = memo(function DevicesTable({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [devices, quickFilter, patchMap, healthMap, alertsMap, favorites, sortKey, sortDir]);
+  }, [devices, quickFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, sortKey, sortDir]);
 
   const offlineSummaryByClient = useMemo(() => {
     const summaries = new Map<number, ClientOfflineSummary>();
@@ -658,7 +668,7 @@ const DevicesTable = memo(function DevicesTable({
       {/* Filter bar */}
       {/* ── Fleet Health Panel ── */}
       {devices.length > 0 && (
-      <div className="hidden md:grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="hidden md:grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
         {([
           {
             id: "needs_updates" as QuickFilter,
@@ -698,6 +708,12 @@ const DevicesTable = memo(function DevicesTable({
             label: "Health <60",
             count: pillCounts.low_health,
             color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)",
+          },
+          {
+            id: "needs_agent_update" as QuickFilter,
+            label: "Agent Update",
+            count: agentsOutdated || pillCounts.needs_agent_update,
+            color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.25)",
           },
         ] as const).map(card => (
           <button
@@ -1050,6 +1066,7 @@ const DevicesTable = memo(function DevicesTable({
                   }
                   canConnect={canConnect}
                   isFavorite={favorites.has(device.id)}
+                  activePackageVersion={activePackageVersion}
                   onSelect={() => onDeviceSelect?.(device)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
                   onConnect={() => {
@@ -1127,6 +1144,7 @@ const DevicesTable = memo(function DevicesTable({
                     { label: "Domain",                         sortable: null },
                     { label: "IP",                             sortable: null },
                     { label: "OS",                             sortable: null },
+                    { label: "Agent",                          sortable: null },
                     { label: "Last Seen",                      sortable: "last_seen" as SortKey },
                     { label: "Actions",                        sortable: null },
                   ].map(({ label, w, sortable }) => (
@@ -1320,6 +1338,25 @@ const DevicesTable = memo(function DevicesTable({
                         title={device.os_name || "—"}
                       >
                         {device.os_name || "—"}
+                      </td>
+
+                      {/* ── Agent version ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        {device.agent_version ? (
+                          <span
+                            className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
+                            style={
+                              activePackageVersion && device.agent_version === activePackageVersion
+                                ? { color: "#34d399", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)" }
+                                : { color: "#f97316", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.25)" }
+                            }
+                            title={activePackageVersion ? `Active: ${activePackageVersion}` : undefined}
+                          >
+                            {device.agent_version}
+                          </span>
+                        ) : (
+                          <span className="text-[9px]" style={{ color: "var(--th-text-muted)" }}>—</span>
+                        )}
                       </td>
 
                       {/* ── Last Seen ── */}

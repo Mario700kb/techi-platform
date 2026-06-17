@@ -396,7 +396,7 @@ export default function AgentCommandsPanel() {
 
   // Send form
   const [commandType, setCommandType] = useState<BulkCommandType>("ping");
-  const [target, setTarget] = useState<"all" | "client" | "group" | "devices">("all");
+  const [target, setTarget] = useState<"all" | "client" | "group" | "devices" | "outdated_agents">("all");
   const [clientId, setClientId] = useState<number | null>(null);
   const [groupId, setGroupId] = useState<number | null>(null);
   const [deviceIdsInput, setDeviceIdsInput] = useState("");
@@ -517,13 +517,15 @@ export default function AgentCommandsPanel() {
         .map((s) => parseInt(s.trim(), 10))
         .filter((n) => !isNaN(n));
 
+      const resolvedTarget = target === "outdated_agents" ? "all" : target;
+
       const result = await sendBulkCommand({
         command_type: commandType,
         payload: buildPayload(),
-        target,
-        client_id: target === "client" ? (clientId ?? undefined) : undefined,
-        group_id: target === "group" ? (groupId ?? undefined) : undefined,
-        device_ids: target === "devices" ? deviceIds : undefined,
+        target: resolvedTarget,
+        client_id: resolvedTarget === "client" ? (clientId ?? undefined) : undefined,
+        group_id: resolvedTarget === "group" ? (groupId ?? undefined) : undefined,
+        device_ids: resolvedTarget === "devices" ? deviceIds : undefined,
         timeout_seconds: timeoutSecs,
       });
 
@@ -576,6 +578,7 @@ export default function AgentCommandsPanel() {
 
   const targetLabel =
     target === "all" ? "All devices"
+    : target === "outdated_agents" ? "Devices needing agent update"
     : target === "client" ? (clients.find((c) => c.id === clientId)?.name ?? `Client #${clientId}`)
     : target === "group" ? (groups.find((g) => g.id === groupId)?.name ?? `Group #${groupId}`)
     : `${deviceIdsInput || "…"} (device IDs)`;
@@ -644,6 +647,7 @@ export default function AgentCommandsPanel() {
                 style={inputStyle}
               >
                 <option value="all">All devices</option>
+                <option value="outdated_agents">Devices needing agent update</option>
                 <option value="client">By client</option>
                 <option value="group">By group</option>
                 <option value="devices">Specific device IDs</option>
@@ -709,6 +713,14 @@ export default function AgentCommandsPanel() {
                 style={{ ...inputStyle, fontFamily: "monospace" }}
               />
             </div>
+          )}
+
+          {/* Outdated agents target note */}
+          {target === "outdated_agents" && (
+            <InfoNote>
+              Targets all active devices. Each agent will self-update only if its installed version
+              differs from the active package — devices already up-to-date will skip the update.
+            </InfoNote>
           )}
 
           {/* Per-command payload fields */}

@@ -84,6 +84,7 @@ export interface Device {
   maintenance_ends_at?: string | null;
   maintenance_note?: string | null;
   maintenance_started_by?: string | null;
+  agent_version?: string | null;
 }
 
 export interface DeviceFilters {
@@ -214,6 +215,8 @@ export interface DeviceFleetOverview {
   warnings: number;
   average_health: number | null;
   needs_updates: number;
+  agents_outdated: number;
+  active_agent_version: string | null;
   loaded_at: string;
 }
 

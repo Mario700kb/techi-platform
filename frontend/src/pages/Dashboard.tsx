@@ -281,6 +281,7 @@ export default function Dashboard() {
           criticalCount={criticalCount}
           patchCount={patchCount}
           alertsTotal={totalOpenAlerts}
+          agentsOutdated={fleetOverview?.agents_outdated ?? 0}
           loading={loading}
         />
       </div>

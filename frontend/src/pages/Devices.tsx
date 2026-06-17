@@ -85,7 +85,7 @@ export default function Devices() {
   const validQuickFilters = new Set<QuickFilter>([
     "all", "online", "stale", "offline", "servers", "workstations", "needs_updates",
     "reboot_required", "warnings", "critical", "healthy", "maintenance",
-    "needs_attention", "low_health", "rustdesk_issues", "favorites",
+    "needs_attention", "low_health", "rustdesk_issues", "needs_agent_update", "favorites",
   ]);
   const requestedQuickFilter = searchParams.get("filter") as QuickFilter | null;
   const quickFilter = requestedQuickFilter && validQuickFilters.has(requestedQuickFilter)
@@ -881,6 +881,8 @@ export default function Devices() {
             onMobileLoadMore={handleMobileLoadMore}
             mobileHasMore={tableTotal > tableDevices.length}
             mobileLoadingMore={mobileLoadingMore}
+            activePackageVersion={fleetOverview?.active_agent_version}
+            agentsOutdated={fleetOverview?.agents_outdated ?? 0}
           />
         </div>
       </div>

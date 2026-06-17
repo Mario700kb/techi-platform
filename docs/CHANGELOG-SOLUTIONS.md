@@ -3,6 +3,51 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-17] Agent Version UI — Kolona, Filter, Dashboard, Command Center
+
+### Çfarë u shtua
+
+**Backend:**
+- `DeviceBase` schema merr `agent_version: Optional[str] = None` — ekspozohet
+  automatikisht nga `/api/v1/devices/` response.
+- `DeviceFleetOverview` merr dy fusha të reja: `agents_outdated: int` dhe
+  `active_agent_version: Optional[str]`.
+- `DeviceOverviewService._compute_overview()` llogarit `agents_outdated` duke
+  krahasuar `device.agent_version` me versionin aktiv nga `AgentPackageService
+  .latest_active("windows-amd64")`.
+
+**Frontend — DevicesTable:**
+- Tip `QuickFilter` dhe array `QUICK_FILTERS` marrin `"needs_agent_update"`.
+- Props të reja: `activePackageVersion` dhe `agentsOutdated`.
+- Fleet Health Panel zgjerohet nga 6 → 7 karta; karta "Agent Update" (vjollcë)
+  filtroi sipas `needs_agent_update`.
+- Kolona "Agent" (desktop-only) shfaqet pas kolonës "OS":
+  - Badge jeshile nëse `agent_version === activePackageVersion`
+  - Badge portokalli nëse versioni është i vjetër
+  - "—" gri nëse null
+- `DeviceMobileCard` merr prop `activePackageVersion` dhe shfaq
+  `Agent v{version} ⚠️` (portokalli) ose `Agent v{version}` (jeshile) në Row 4.
+
+**Frontend — DashboardMobile:**
+- Prop `agentsOutdated` i ri; shfaqet si `"Agent updates pending: N →"` në
+  seksionin "Needs Attention" (link → `/devices?filter=needs_agent_update`).
+
+**Frontend — AgentCommandsPanel:**
+- Target select merr opsionin `"Devices needing agent update"`.
+- Zgjidhet si `"all"` në API call (agjentët vetë kontrollojnë versionin).
+- InfoNote shpjegon sjelljen.
+
+### Files
+- `backend/app/schemas/device.py`
+- `backend/app/services/device_overview_service.py`
+- `frontend/src/api/devices.ts`
+- `frontend/src/components/DevicesTable.tsx`
+- `frontend/src/components/DeviceMobileCard.tsx`
+- `frontend/src/pages/DashboardMobile.tsx`
+- `frontend/src/components/AgentCommandsPanel.tsx`
+- `frontend/src/pages/Devices.tsx`
+- `frontend/src/pages/Dashboard.tsx`
+
 ## [2026-06-16] Agent Update Plan — Dokumentuar
 
 - Krijuar `docs/AGENT-UPDATE-PLAN.md` me planin e plotë teknik
