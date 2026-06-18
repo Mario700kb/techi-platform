@@ -48,7 +48,6 @@ def _run_heartbeat_cleanup() -> None:
 
 
 async def _heartbeat_cleanup_scheduler() -> None:
-    await asyncio.to_thread(_run_heartbeat_cleanup)
     while True:
         now = datetime.utcnow()
         next_03 = now.replace(hour=3, minute=0, second=0, microsecond=0)

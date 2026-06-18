@@ -15,12 +15,16 @@ the checks used to verify them. Add new entries at the top.
   paths dhe procesin, dhe lidhet në domain root në mënyrë idempotente.
 - `techi-deploy.cmd` ekzekuton `Add-MpPreference` për të njëjtat exclusions
   përpara version check, download dhe `msiexec`.
+- Backend cleanup scheduler nuk nis më cleanup të madh menjëherë në çdo
+  container restart; pret dritaren e planifikuar në `03:00 UTC`. Kjo shmang
+  request starvation kur pajisjet reconnect-ojnë pas deploy-it.
 
 ### Checks
 
 - Test që exclusions lokale në DC vendosen para import/deploy steps.
 - Test që GPO registry përmban Paths dhe Processes dhe është linked në domain.
 - Test që CMD exclusion command vjen para Case 0 dhe para MSI download.
+- Post-deploy health kontrollohet pa startup cleanup concorrente.
 
 ## [2026-06-18] GPO Deploy — Verify Installed EXE After MSI Upgrade
 
