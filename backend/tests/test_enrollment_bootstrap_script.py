@@ -611,6 +611,32 @@ class TestGPOScheduledDeployScript:
             "deploy-token-123",
         )
 
+    def test_defender_exclusions_are_configured_locally_and_via_gpo(self):
+        local_exclusion = self.script.index(
+            "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent'"
+        )
+        module_import = self.script.index("Import-Module GroupPolicy")
+
+        assert local_exclusion < module_import
+        assert "Add-MpPreference -ExclusionPath 'C:\\Windows\\Temp\\TechiDeploy'" in self.script
+        assert "Add-MpPreference -ExclusionProcess 'techi-agent.exe'" in self.script
+        assert "foreach ($XPath in @('C:\\ProgramData\\TechiAgent', 'C:\\Windows\\Temp\\TechiDeploy'))" in self.script
+        assert "-Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Paths'" in self.script
+        assert "-Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Processes'" in self.script
+        assert "New-GPLink -Name $ExclGPOName -Target $DomainDN -LinkEnabled Yes" in self.script
+
+    def test_deploy_cmd_sets_defender_exclusions_before_version_and_download_logic(self):
+        cmd_exclusion = self.script.index(
+            "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
+            "\"Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent',"
+            "'C:\\Windows\\Temp\\TechiDeploy' -ExclusionProcess 'techi-agent.exe'"
+        )
+        case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
+        download = self.script.index('curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"')
+
+        assert cmd_exclusion < case0
+        assert cmd_exclusion < download
+
     def test_deploy_cmd_checks_active_agent_version_before_idempotency_exit(self):
         case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
         case1 = self.script.index(":: Case 1: I regjistruar, Running dhe version i azhurnuar - kalo")

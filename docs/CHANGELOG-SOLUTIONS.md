@@ -3,6 +3,25 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] GPO Deploy — Defender Exclusions Before Agent Deployment
+
+### Fix
+
+- `gpo-deploy.ps1` shton menjëherë në Domain Controller exclusions lokale për:
+  - `C:\ProgramData\TechiAgent`;
+  - `C:\Windows\Temp\TechiDeploy`;
+  - procesin `techi-agent.exe`.
+- GPO `TECHI Agent - Defender Exclusions` vendos registry policy për të dy
+  paths dhe procesin, dhe lidhet në domain root në mënyrë idempotente.
+- `techi-deploy.cmd` ekzekuton `Add-MpPreference` për të njëjtat exclusions
+  përpara version check, download dhe `msiexec`.
+
+### Checks
+
+- Test që exclusions lokale në DC vendosen para import/deploy steps.
+- Test që GPO registry përmban Paths dhe Processes dhe është linked në domain.
+- Test që CMD exclusion command vjen para Case 0 dhe para MSI download.
+
 ## [2026-06-18] GPO Deploy — Verify Installed EXE After MSI Upgrade
 
 ### Root cause
