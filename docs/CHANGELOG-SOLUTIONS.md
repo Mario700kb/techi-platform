@@ -3,16 +3,28 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
-## [2026-06-18] GPO deploy CMD uses MSI enrollment property names
+## [2026-06-18] MSI Deploy — Use ENROLLMENT_TOKEN and API_URL Properties
 
 ### Root cause
 
-`techi-deploy.cmd` passed the token as `TOKEN`, which the MSI does not consume.
+Bootstrap scripts kalonin MSI properties `TOKEN` dhe `BACKEND_URL`, ndërsa
+installer-i pret `ENROLLMENT_TOKEN` dhe `API_URL`. Fresh install mund të
+dështonte me `AbortNoToken` / MSI error `1603`.
 
 ### Fix
 
-The generated fresh-install command now passes `ENROLLMENT_TOKEN=%TOKEN%` and
-`API_URL=%BACKEND_URL%` to `msiexec`.
+Të tre MSI install paths tani përdorin:
+
+- `ENROLLMENT_TOKEN=<token>`
+- `API_URL=<backend-url>`
+
+Kjo përfshin token bootstrap PowerShell, GPO bootstrap PowerShell dhe
+`techi-deploy.cmd` fresh install. Upgrade path nuk kalon token.
+
+### Checks
+
+- Teste strukturore për property names në të tre generatorët.
+- Test që MSI invocation i vjetër `TOKEN=%TOKEN%` nuk gjenerohet më.
 
 ## [2026-06-18] GPO Deploy — Prioritize CommApp Agent Path
 
@@ -157,8 +169,8 @@ në paketën aktive `2.0.0`.
   - fallback: lexon `agent_version` nga config nëse ekziston;
   - merr versionin aktiv nga serveri;
   - nëse versionet ndryshojnë, shkarkon MSI dhe bën upgrade silent.
-- Fresh install vazhdon të kalojë `TOKEN=%TOKEN%`; upgrade ruan konfigurimin
-  ekzistues dhe nuk e ri-enroll-on pajisjen.
+- Fresh install kalon `ENROLLMENT_TOKEN=%TOKEN%` dhe `API_URL=%BACKEND_URL%`;
+  upgrade ruan konfigurimin ekzistues dhe nuk e ri-enroll-on pajisjen.
 
 ### Checks
 

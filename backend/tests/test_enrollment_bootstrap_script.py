@@ -213,6 +213,11 @@ class TestTokenInstallerScript:
     def test_enrollment_token_in_script(self):
         assert "tok123tok123tok123" in self.script, "token-installer: enrollment token missing"
 
+    def test_msi_uses_installer_property_names(self):
+        assert "ENROLLMENT_TOKEN=tok123tok123tok123" in self.script
+        assert "API_URL=https://10.5.50.63:8000" in self.script
+        assert "'TOKEN=tok123tok123tok123'" not in self.script
+
     def test_idempotent_service_install(self):
         assert "already installed" in self.script, "token-installer: missing idempotency check"
 
@@ -602,6 +607,12 @@ class TestGPOInstallerScript:
     def test_agent_self_update_flow(self):
         _check_agent_self_update_flow(self.script, "gpo-installer")
 
+    def test_msi_uses_installer_property_names(self):
+        assert "('ENROLLMENT_TOKEN=' + $Token)" in self.script
+        assert "('API_URL=' + $BackendUrl)" in self.script
+        assert "('TOKEN=' + $Token)" not in self.script
+        assert "('BACKEND_URL=' + $BackendUrl)" not in self.script
+
 
 class TestGPOScheduledDeployScript:
     def setup_method(self):
@@ -661,7 +672,8 @@ class TestGPOScheduledDeployScript:
         assert "if not defined INSTALLED_VERSION goto :manual_replace" in self.script
         assert 'if /i NOT "%INSTALLED_VERSION%"=="%ACTIVE_VERSION%" goto :manual_replace' in self.script
         assert "net start TechiAgent 2>nul" in self.script
-        assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN% /quiet /norestart' in self.script
+        assert 'msiexec /i "%MSI_PATH%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in self.script
+        assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN%' not in self.script
 
     def test_deploy_cmd_has_manual_exe_replace_fallback(self):
         assert ":manual_replace" in self.script
