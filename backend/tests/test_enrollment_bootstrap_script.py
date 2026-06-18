@@ -675,6 +675,21 @@ class TestGPOScheduledDeployScript:
         assert 'msiexec /i "%MSI_PATH%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in self.script
         assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN%' not in self.script
 
+    def test_deploy_cmd_do_upgrade_detects_product_installed(self):
+        """do_upgrade checks registry before choosing msiexec flags (fix: EXIT 1603 on fresh PC)."""
+        upgrade_pos = self.script.index(":do_upgrade")
+        manual_replace_pos = self.script.index(":manual_replace")
+        upgrade_section = self.script[upgrade_pos:manual_replace_pos]
+
+        assert "set PRODUCT_INSTALLED=" in upgrade_section
+        assert 'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"' in upgrade_section
+        assert "findstr /i" in upgrade_section
+        assert "if defined PRODUCT_INSTALLED (" in upgrade_section
+        # Upgrade branch: product already installed → REINSTALL flags
+        assert "REINSTALL=ALL REINSTALLMODE=vomus" in upgrade_section
+        # Fresh PC branch: product not installed → enroll with token
+        assert "ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL%" in upgrade_section
+
     def test_deploy_cmd_has_manual_exe_replace_fallback(self):
         assert ":manual_replace" in self.script
         assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script

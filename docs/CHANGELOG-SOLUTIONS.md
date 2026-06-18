@@ -3,6 +3,32 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] MSI Deploy — Fresh PC Fix: EXIT 1603 in do_upgrade on Uninstalled Product
+
+### Root cause
+
+`:do_upgrade` përdorte `REINSTALL=ALL REINSTALLMODE=vomus` në çdo rast, duke
+përfshirë PC-të e reja ku produkti nuk ishte instaluar fare. Windows MSI kthen
+`EXIT 1603` kur `REINSTALL=ALL` zbatohet mbi një produkt të painstaluar.
+
+### Fix
+
+Para `msiexec`, `:do_upgrade` tani:
+
+1. Kontrollon regjistrin `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
+   me `reg query /s /f "TECHI Agent" /d` për të zbuluar nëse produkti ekziston.
+2. Nëse `PRODUCT_INSTALLED` është i definuar → upgrade path me
+   `REINSTALL=ALL REINSTALLMODE=vomus` (sjellja e mëparshme).
+3. Nëse `PRODUCT_INSTALLED` nuk është i definuar → fresh install path me
+   `ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL%` (e njëjta si `:fresh_install`).
+
+### Checks
+
+- Test strukturor `test_deploy_cmd_do_upgrade_detects_product_installed` verifikon:
+  - `set PRODUCT_INSTALLED=` dhe `reg query ... findstr` janë brenda `:do_upgrade`
+  - `if defined PRODUCT_INSTALLED (` bloku ekziston
+  - Të dy path-et (REINSTALL dhe ENROLLMENT_TOKEN) janë brenda `:do_upgrade`
+
 ## [2026-06-18] MSI Deploy — Use ENROLLMENT_TOKEN and API_URL Properties
 
 ### Root cause
