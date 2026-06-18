@@ -658,6 +658,14 @@ class TestGPOScheduledDeployScript:
         assert "if not defined CURRENT_VERSION set CURRENT_VERSION=0.0.0" in self.script
         assert 'if /i NOT "%CURRENT_VERSION%"=="%ACTIVE_VERSION%" goto :do_upgrade' in self.script
 
+    def test_deploy_cmd_active_version_has_powershell_fallback(self):
+        """Version check falls back to PowerShell Net.WebClient when curl.exe is absent (e.g. Server 2016)."""
+        assert "where curl.exe >nul 2>&1" in self.script
+        assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "(New-Object Net.WebClient).DownloadString' in self.script
+        assert "%ACTIVE_VERSION_URL%" in self.script
+        # curl path still present (used when available)
+        assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
+
     def test_deploy_cmd_has_silent_upgrade_path_before_fresh_install(self):
         upgrade = self.script.index(":do_upgrade")
         fresh_install = self.script.index(":fresh_install")
@@ -674,6 +682,23 @@ class TestGPOScheduledDeployScript:
         assert "net start TechiAgent 2>nul" in self.script
         assert 'msiexec /i "%MSI_PATH%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in self.script
         assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN%' not in self.script
+
+    def test_deploy_cmd_msi_download_has_powershell_fallback(self):
+        """MSI download falls back to PowerShell when curl.exe is absent (e.g. Server 2016)."""
+        upgrade_pos = self.script.index(":do_upgrade")
+        fresh_install_pos = self.script.index(":fresh_install")
+
+        for label, section_start, section_end in [
+            ("do_upgrade", upgrade_pos, fresh_install_pos),
+            ("fresh_install", fresh_install_pos, len(self.script)),
+        ]:
+            section = self.script[section_start:section_end]
+            assert "set DOWNLOAD_OK=0" in section, f"{label}: missing DOWNLOAD_OK init"
+            assert "where curl.exe >nul 2>&1" in section, f"{label}: missing curl.exe check"
+            assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in section, f"{label}: missing curl download"
+            assert "(New-Object Net.WebClient).DownloadFile(" in section, f"{label}: missing Net.WebClient fallback"
+            assert "Invoke-WebRequest" in section, f"{label}: missing Invoke-WebRequest fallback"
+            assert 'if "%DOWNLOAD_OK%"=="0" goto :cleanup_fail' in section, f"{label}: missing failure guard"
 
     def test_deploy_cmd_do_upgrade_detects_product_installed(self):
         """do_upgrade checks registry before choosing msiexec flags (fix: EXIT 1603 on fresh PC)."""

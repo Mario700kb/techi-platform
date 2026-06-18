@@ -3,6 +3,51 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] MSI Deploy — curl.exe Fallback for Windows Server 2016 and Older
+
+### Root cause
+
+`techi-deploy.cmd` i gjeneruar përdorte `curl.exe` si i vetmi mjet download.
+`curl.exe` nuk ekziston si built-in në Windows Server 2016 dhe versione
+më të vjetra (u shtua si built-in vetëm në Windows 10 1803+). Rezultati:
+silent fail pa download MSI dhe pa feedback.
+
+### Fix
+
+Tre check-e të reja, të gjitha brenda `techi-deploy.cmd` të gjeneruar:
+
+**1. Active-version check — `where` guard + PowerShell fallback:**
+```cmd
+set ACTIVE_VERSION=
+where curl.exe >nul 2>&1
+if not errorlevel 1 (
+    for /f ... curl.exe -s -f "%ACTIVE_VERSION_URL%" ...
+)
+if not defined ACTIVE_VERSION (
+    for /f ... powershell.exe ... DownloadString("%ACTIVE_VERSION_URL%") ...
+)
+```
+
+**2. MSI download (`:do_upgrade` dhe `:fresh_install`) — tre-shtresa fallback:**
+```cmd
+set DOWNLOAD_OK=0
+where curl.exe >nul 2>&1
+if not errorlevel 1 ( curl.exe ... && set DOWNLOAD_OK=1 )
+if "%DOWNLOAD_OK%"=="0" ( Net.WebClient.DownloadFile ... && set DOWNLOAD_OK=1 )
+if "%DOWNLOAD_OK%"=="0" ( Invoke-WebRequest ... && set DOWNLOAD_OK=1 )
+if "%DOWNLOAD_OK%"=="0" goto :cleanup_fail
+```
+
+Rendi: `curl.exe` (nëse ekziston) → `Net.WebClient` → `Invoke-WebRequest`.
+
+### Checks
+
+- `test_deploy_cmd_active_version_has_powershell_fallback`: verifikon `where` guard
+  dhe `DownloadString` fallback për version check.
+- `test_deploy_cmd_msi_download_has_powershell_fallback`: verifikon tri shtresat
+  e download (`curl`, `DownloadFile`, `Invoke-WebRequest`) dhe `DOWNLOAD_OK` guard
+  në të dy seksionet `:do_upgrade` dhe `:fresh_install`.
+
 ## [2026-06-18] MSI Deploy — Fresh PC Fix: EXIT 1603 in do_upgrade on Uninstalled Product
 
 ### Root cause
