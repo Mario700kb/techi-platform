@@ -667,7 +667,10 @@ class TestGPOScheduledDeployScript:
         assert ":manual_replace" in self.script
         assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
         assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe)' not in self.script
-        assert 'if exist "%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe" (' in self.script
+        comm_app = self.script.index('if exist "%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe" (')
+        pfiles64 = self.script.index('else if exist "%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe" (')
+        assert comm_app < pfiles64
+        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe"' in self.script
         assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe"' in self.script
         assert 'else if exist "%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe" (' in self.script
         assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe"' in self.script

@@ -3,6 +3,15 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] GPO Deploy — Prioritize CommApp Agent Path
+
+MSI administrative extract vendos agentin real te:
+`CommApp\TechiAgent\techi-agent.exe`.
+
+Manual fallback në `techi-deploy.cmd` tani kontrollon këtë path si zgjedhjen e
+parë, përpara fallback-eve `PFiles64`, `CommonAppData` dhe `TechiAgent`.
+Testi strukturor verifikon praninë dhe prioritetin e `CommApp`.
+
 ## [2026-06-18] GPO Deploy — Select Agent EXE from Known MSI Paths
 
 ### Root cause
@@ -17,9 +26,10 @@ mund të kopjonte executable-in e gabuar.
 Kërkimi recursive u hoq. `techi-deploy.cmd` zgjedh vetëm path-et e njohura,
 në këtë rend:
 
-1. `PFiles64\TECHI Agent\techi-agent.exe`
-2. `CommonAppData\TechiAgent\techi-agent.exe`
-3. `TechiAgent\techi-agent.exe`
+1. `CommApp\TechiAgent\techi-agent.exe`
+2. `PFiles64\TECHI Agent\techi-agent.exe`
+3. `CommonAppData\TechiAgent\techi-agent.exe`
+4. `TechiAgent\techi-agent.exe`
 
 Nëse asnjë nuk ekziston, manual fallback dështon pa kopjuar një binary të
 pasaktë.
