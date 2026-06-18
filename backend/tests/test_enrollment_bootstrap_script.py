@@ -666,7 +666,13 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_has_manual_exe_replace_fallback(self):
         assert ":manual_replace" in self.script
         assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
-        assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe) do set EXTRACTED_AGENT=%%f' in self.script
+        assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe)' not in self.script
+        assert 'if exist "%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe" (' in self.script
+        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe"' in self.script
+        assert 'else if exist "%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe" (' in self.script
+        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe"' in self.script
+        assert 'else if exist "%EXTRACT_DIR%\\TechiAgent\\techi-agent.exe" (' in self.script
+        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\TechiAgent\\techi-agent.exe"' in self.script
         manual_replace = self.script.index(":manual_replace")
         copy_exe = self.script.index('copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1', manual_replace)
         stop_service = self.script.index("net stop TechiAgent 2>nul", manual_replace)

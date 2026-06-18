@@ -3,6 +3,32 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] GPO Deploy — Select Agent EXE from Known MSI Paths
+
+### Root cause
+
+Manual MSI fallback përdorte `for /R` për të kërkuar `techi-agent.exe`.
+Kur MSI extract përmbante kopje të tjera brenda TECHI Remote Support
+`flutter_assets`, variabla `EXTRACTED_AGENT` merrte rezultatin e fundit dhe
+mund të kopjonte executable-in e gabuar.
+
+### Fix
+
+Kërkimi recursive u hoq. `techi-deploy.cmd` zgjedh vetëm path-et e njohura,
+në këtë rend:
+
+1. `PFiles64\TECHI Agent\techi-agent.exe`
+2. `CommonAppData\TechiAgent\techi-agent.exe`
+3. `TechiAgent\techi-agent.exe`
+
+Nëse asnjë nuk ekziston, manual fallback dështon pa kopjuar një binary të
+pasaktë.
+
+### Checks
+
+- Test që `for /R` nuk gjenerohet më.
+- Test për të tre path-et specifike dhe rendin e tyre.
+
 ## [2026-06-18] GPO Deploy — Defender Exclusions Before Agent Deployment
 
 ### Fix
