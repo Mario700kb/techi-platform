@@ -3,6 +3,17 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] GPO deploy CMD uses MSI enrollment property names
+
+### Root cause
+
+`techi-deploy.cmd` passed the token as `TOKEN`, which the MSI does not consume.
+
+### Fix
+
+The generated fresh-install command now passes `ENROLLMENT_TOKEN=%TOKEN%` and
+`API_URL=%BACKEND_URL%` to `msiexec`.
+
 ## [2026-06-18] GPO Deploy — Prioritize CommApp Agent Path
 
 MSI administrative extract vendos agentin real te:

@@ -1019,7 +1019,7 @@ class EnrollmentBootstrapService:
             "    exit /b 1",
             ")",
             "",
-            'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN% /quiet /norestart',
+            'msiexec /i "%MSI_PATH%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart',
             "timeout /t 10 /nobreak >nul",
             "",
             'rd /s /q "%TMP_DIR%" 2>nul',
