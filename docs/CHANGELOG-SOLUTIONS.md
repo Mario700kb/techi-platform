@@ -3,6 +3,43 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-18] MSI Deploy — Force TLS 1.2 for Windows Server 2016 (.NET WebClient)
+
+### Root cause
+
+Windows Server 2016 (dhe versione më të vjetra) nuk aktivizojnë automatikisht
+TLS 1.2 për `.NET WebClient` në CMD/PowerShell context. Rezultati:
+`"Could not create SSL/TLS secure channel"` kur `DownloadFile`, `DownloadString`
+ose `Invoke-WebRequest` tenton të lidhej me HTTPS endpoints.
+
+### Fix
+
+**1. TLS force block** — shtohet pas Defender exclusions dhe para çdo download:
+```cmd
+:: Force TLS 1.2 per .NET WebClient (Windows Server 2016)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ...
+    Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319'
+    -Name SchUseStrongCrypto -Value 1 ..." >nul 2>&1
+```
+Vendos `SchUseStrongCrypto=1` në dy regjistrat (64-bit dhe 32-bit WoW64).
+
+**2. TLS prefix në çdo PowerShell fallback command:**
+- `DownloadString` (active-version check)
+- `DownloadFile` (MSI download, `:do_upgrade` dhe `:fresh_install`)
+- `Invoke-WebRequest` (MSI download, `:do_upgrade` dhe `:fresh_install`)
+
+Secili tani fillon me:
+`[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;`
+
+### Checks
+
+- `test_deploy_cmd_forces_tls12_after_exclusions_before_downloads`: verifikon
+  praninë e TLS block, rendin (pas exclusions, para Case 0) dhe `SchUseStrongCrypto`/`Wow6432Node`.
+- `test_deploy_cmd_active_version_fallback_has_tls12`: TLS prefix në `DownloadString`.
+- `test_deploy_cmd_msi_download_has_powershell_fallback`: TLS prefix në
+  `DownloadFile` dhe `Invoke-WebRequest` për të dy seksionet.
+
 ## [2026-06-18] MSI Deploy — curl.exe Fallback for Windows Server 2016 and Older
 
 ### Root cause

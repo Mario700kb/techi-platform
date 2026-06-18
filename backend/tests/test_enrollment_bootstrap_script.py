@@ -648,6 +648,20 @@ class TestGPOScheduledDeployScript:
         assert cmd_exclusion < case0
         assert cmd_exclusion < download
 
+    def test_deploy_cmd_forces_tls12_after_exclusions_before_downloads(self):
+        """TLS 1.2 registry fix runs after Defender exclusions and before any download (Server 2016 fix)."""
+        tls_block = ":: Force TLS 1.2 per .NET WebClient"
+        assert tls_block in self.script
+
+        exclusion_pos = self.script.index(":: Defender exclusions lokale para download dhe MSI")
+        tls_pos = self.script.index(tls_block)
+        case0_pos = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
+
+        assert exclusion_pos < tls_pos < case0_pos
+        assert "SchUseStrongCrypto" in self.script
+        assert "NETFramework\\\\v4.0.30319" in self.script or "NETFramework\\v4.0.30319" in self.script
+        assert "Wow6432Node" in self.script
+
     def test_deploy_cmd_checks_active_agent_version_before_idempotency_exit(self):
         case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
         case1 = self.script.index(":: Case 1: I regjistruar, Running dhe version i azhurnuar - kalo")
@@ -661,7 +675,7 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_active_version_has_powershell_fallback(self):
         """Version check falls back to PowerShell Net.WebClient when curl.exe is absent (e.g. Server 2016)."""
         assert "where curl.exe >nul 2>&1" in self.script
-        assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "(New-Object Net.WebClient).DownloadString' in self.script
+        assert '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadString' in self.script
         assert "%ACTIVE_VERSION_URL%" in self.script
         # curl path still present (used when available)
         assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
@@ -699,6 +713,15 @@ class TestGPOScheduledDeployScript:
             assert "(New-Object Net.WebClient).DownloadFile(" in section, f"{label}: missing Net.WebClient fallback"
             assert "Invoke-WebRequest" in section, f"{label}: missing Invoke-WebRequest fallback"
             assert 'if "%DOWNLOAD_OK%"=="0" goto :cleanup_fail' in section, f"{label}: missing failure guard"
+            # TLS 1.2 must be set inside each PS fallback call
+            assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadFile(" in section, \
+                f"{label}: DownloadFile missing TLS 1.2 prefix"
+            assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest" in section, \
+                f"{label}: Invoke-WebRequest missing TLS 1.2 prefix"
+
+    def test_deploy_cmd_active_version_fallback_has_tls12(self):
+        """DownloadString fallback for active-version check includes TLS 1.2 prefix."""
+        assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadString(" in self.script
 
     def test_deploy_cmd_do_upgrade_detects_product_installed(self):
         """do_upgrade checks registry before choosing msiexec flags (fix: EXIT 1603 on fresh PC)."""
