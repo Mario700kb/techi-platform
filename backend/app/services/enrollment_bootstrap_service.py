@@ -39,6 +39,7 @@ class EnrollmentBootstrapService:
         raw = (backend_url or "").strip().rstrip("/")
         if not raw:
             return raw
+        raw = raw.replace("http://", "https://")
         parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
         scheme = "https"
         return urlunsplit((scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
@@ -831,7 +832,7 @@ class EnrollmentBootstrapService:
         return pkg.version if pkg else "0.0.0"
 
     def _gpo_scheduled_task_setup(self, backend_url: str, enrollment_token: str) -> str:
-        safe_url = backend_url.rstrip("/")
+        safe_url = self.normalize_backend_url(backend_url)
         token_prefix = enrollment_token[:8] if len(enrollment_token) >= 8 else enrollment_token
         active_version = self._active_windows_version()
 
