@@ -42,6 +42,9 @@ class _StubService(EnrollmentBootstrapService):
         url = f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download"
         return url, self._stub_sha256, "techi-agent.msi"
 
+    def _active_windows_version(self) -> str:
+        return "2.0.0"
+
 
 class _StubTokenService:
     def __init__(self, issued_token: str = "real-token-from-backend-123"):
@@ -615,12 +618,20 @@ class TestGPOInstallerScript:
 
 
 class TestGPOScheduledDeployScript:
+    """
+    Arkitektura e re: MSI vendoset në NETLOGON nga PS1 (admin, 1 herë).
+    PC-të instalojnë nga LAN (\\DOMAIN\\NETLOGON\\) — zero download nga internet,
+    zero suspicious pattern, zero AV detection.
+    """
+
     def setup_method(self):
         self.svc = _StubService()
         self.script = self.svc._gpo_scheduled_task_setup(
             "https://api-rdp.techi.com.al",
             "deploy-token-123",
         )
+
+    # ── PS1-level: Defender exclusions GPO ────────────────────────────────────
 
     def test_defender_exclusions_are_configured_locally_and_via_gpo(self):
         local_exclusion = self.script.index(
@@ -636,130 +647,165 @@ class TestGPOScheduledDeployScript:
         assert "-Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Processes'" in self.script
         assert "New-GPLink -Name $ExclGPOName -Target $DomainDN -LinkEnabled Yes" in self.script
 
-    def test_deploy_cmd_sets_defender_exclusions_before_version_and_download_logic(self):
-        cmd_exclusion = self.script.index(
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
-            "\"Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent',"
-            "'C:\\Windows\\Temp\\TechiDeploy' -ExclusionProcess 'techi-agent.exe'"
-        )
-        case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
-        download = self.script.index('curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"')
+    # ── CMD content: zero internet downloads ──────────────────────────────────
 
-        assert cmd_exclusion < case0
-        assert cmd_exclusion < download
+    def test_deploy_cmd_has_no_internet_download_commands(self):
+        """CMD nuk duhet të ketë asnjë download nga internet."""
+        # Gjej CMD content (brenda here-string)
+        cmd_start = self.script.index("@echo off")
+        # Shiko CMD content para PS1 step 4b
+        step4b_start = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        cmd_section = self.script[cmd_start:step4b_start]
 
-    def test_deploy_cmd_forces_tls12_after_exclusions_before_downloads(self):
-        """TLS 1.2 registry fix runs after Defender exclusions and before any download (Server 2016 fix)."""
-        tls_block = ":: Force TLS 1.2 per .NET WebClient"
-        assert tls_block in self.script
+        assert "curl.exe" not in cmd_section
+        assert "Net.WebClient" not in cmd_section
+        assert "Invoke-WebRequest" not in cmd_section
+        assert "DownloadFile" not in cmd_section
+        assert "DownloadString" not in cmd_section
 
-        exclusion_pos = self.script.index(":: Defender exclusions lokale para download dhe MSI")
-        tls_pos = self.script.index(tls_block)
-        case0_pos = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
+    def test_deploy_cmd_reads_version_from_netlogon(self):
+        """CMD lexon techi-version.txt nga NETLOGON (LAN) jo nga interneti."""
+        assert "set NETLOGON_VERSION=\\\\%DOMAIN%\\NETLOGON\\techi-version.txt" in self.script
+        assert "for /f \"tokens=*\" %%i in ('type \"%NETLOGON_VERSION%\" 2^>nul') do set ACTIVE_VERSION=%%i" in self.script
+        assert "if not defined ACTIVE_VERSION goto :fresh_install" in self.script
 
-        assert exclusion_pos < tls_pos < case0_pos
-        assert "SchUseStrongCrypto" in self.script
-        assert "NETFramework\\\\v4.0.30319" in self.script or "NETFramework\\v4.0.30319" in self.script
-        assert "Wow6432Node" in self.script
+    def test_deploy_cmd_installs_from_netlogon_lan_path(self):
+        """CMD instalom MSI nga \\DOMAIN\\NETLOGON\\ (LAN), jo nga URL interneti."""
+        assert "set NETLOGON_MSI=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ACTIVE_VERSION%.msi" in self.script
+        assert 'msiexec /i "%NETLOGON_MSI%"' in self.script
+        # Versioni fallback i baked-in i gjenerimit
+        assert "TECHI-Agent-2.0.0.msi" in self.script
 
-    def test_deploy_cmd_checks_active_agent_version_before_idempotency_exit(self):
-        case0 = self.script.index(":: Case 0: I regjistruar me version te vjeter - bej upgrade MSI")
-        case1 = self.script.index(":: Case 1: I regjistruar, Running dhe version i azhurnuar - kalo")
+    def test_deploy_cmd_has_correct_label_structure(self):
+        """Labels: :do_install para :already_uptodate para :fresh_install."""
+        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        fresh = re.search(r"^:fresh_install\b", self.script, re.MULTILINE).start()
+        assert do_install < already < fresh
 
-        assert case0 < case1
-        assert "set ACTIVE_VERSION_URL=%BACKEND_URL%/api/v1/agent-packages/active-version" in self.script
-        assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
-        assert "if not defined CURRENT_VERSION set CURRENT_VERSION=0.0.0" in self.script
-        assert 'if /i NOT "%CURRENT_VERSION%"=="%ACTIVE_VERSION%" goto :do_upgrade' in self.script
+    def test_deploy_cmd_install_detects_product_before_choosing_msi_flags(self):
+        """do_install kontrollon registry para msiexec — REINSTALL vs ENROLLMENT_TOKEN."""
+        do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        section = self.script[do_install_pos:already_pos]
 
-    def test_deploy_cmd_active_version_has_powershell_fallback(self):
-        """Version check falls back to PowerShell Net.WebClient when curl.exe is absent (e.g. Server 2016)."""
-        assert "where curl.exe >nul 2>&1" in self.script
-        assert '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadString' in self.script
-        assert "%ACTIVE_VERSION_URL%" in self.script
-        # curl path still present (used when available)
-        assert 'for /f "tokens=*" %%i in (\'curl.exe -s -f "%ACTIVE_VERSION_URL%" 2^>nul\') do set ACTIVE_VERSION=%%i' in self.script
+        assert "set PRODUCT_INSTALLED=" in section
+        assert 'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"' in section
+        assert "if defined PRODUCT_INSTALLED (" in section
+        assert 'msiexec /i "%NETLOGON_MSI%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in section
+        assert 'msiexec /i "%NETLOGON_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
+        assert 'msiexec /i "%NETLOGON_MSI%" TOKEN=%TOKEN%' not in self.script
 
-    def test_deploy_cmd_has_silent_upgrade_path_before_fresh_install(self):
-        upgrade = self.script.index(":do_upgrade")
-        fresh_install = self.script.index(":fresh_install")
-
-        assert upgrade < fresh_install
+    def test_deploy_cmd_stops_service_before_install(self):
+        """Shërbimi ndalet para instalimit."""
         assert "net stop TechiAgent 2>nul" in self.script
         assert "taskkill /f /im techi-agent.exe 2>nul" in self.script
-        assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in self.script
-        assert 'msiexec /i "%MSI_PATH%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in self.script
-        assert 'if not "%MSI_EXIT%"=="0" goto :manual_replace' in self.script
-        assert 'for /f "tokens=*" %%i in (\'"%AGENT_EXE%" --version 2^>nul\') do set INSTALLED_VERSION=%%i' in self.script
-        assert "if not defined INSTALLED_VERSION goto :manual_replace" in self.script
-        assert 'if /i NOT "%INSTALLED_VERSION%"=="%ACTIVE_VERSION%" goto :manual_replace' in self.script
-        assert "net start TechiAgent 2>nul" in self.script
-        assert 'msiexec /i "%MSI_PATH%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in self.script
-        assert 'msiexec /i "%MSI_PATH%" TOKEN=%TOKEN%' not in self.script
 
-    def test_deploy_cmd_msi_download_has_powershell_fallback(self):
-        """MSI download falls back to PowerShell when curl.exe is absent (e.g. Server 2016)."""
-        upgrade_pos = self.script.index(":do_upgrade")
-        fresh_install_pos = self.script.index(":fresh_install")
+    def test_deploy_cmd_has_deploy_log(self):
+        """CMD shkruan deploy.log me timestamp, result dhe version."""
+        assert 'set LOG=%INSTALL_DIR%\\deploy.log' in self.script
+        assert 'result=%INSTALL_EXIT% version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=uptodate version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=%INSTALL_EXIT% version=fresh >> "%LOG%"' in self.script
 
-        for label, section_start, section_end in [
-            ("do_upgrade", upgrade_pos, fresh_install_pos),
-            ("fresh_install", fresh_install_pos, len(self.script)),
-        ]:
-            section = self.script[section_start:section_end]
-            assert "set DOWNLOAD_OK=0" in section, f"{label}: missing DOWNLOAD_OK init"
-            assert "where curl.exe >nul 2>&1" in section, f"{label}: missing curl.exe check"
-            assert 'curl.exe -L -f -s -o "%MSI_PATH%" "%MSI_URL%"' in section, f"{label}: missing curl download"
-            assert "(New-Object Net.WebClient).DownloadFile(" in section, f"{label}: missing Net.WebClient fallback"
-            assert "Invoke-WebRequest" in section, f"{label}: missing Invoke-WebRequest fallback"
-            assert 'if "%DOWNLOAD_OK%"=="0" goto :cleanup_fail' in section, f"{label}: missing failure guard"
-            # TLS 1.2 must be set inside each PS fallback call
-            assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadFile(" in section, \
-                f"{label}: DownloadFile missing TLS 1.2 prefix"
-            assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest" in section, \
-                f"{label}: Invoke-WebRequest missing TLS 1.2 prefix"
+    def test_deploy_cmd_already_uptodate_starts_service_if_stopped(self):
+        """:already_uptodate kontrollon nëse shërbimi ecën, nëse jo e starton."""
+        assert 'sc query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
+        already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        fresh_pos = re.search(r"^:fresh_install\b", self.script, re.MULTILINE).start()
+        section = self.script[already_pos:fresh_pos]
+        assert "net start TechiAgent 2>nul" in section
 
-    def test_deploy_cmd_active_version_fallback_has_tls12(self):
-        """DownloadString fallback for active-version check includes TLS 1.2 prefix."""
-        assert "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(New-Object Net.WebClient).DownloadString(" in self.script
+    # ── PS1-level Step 4b: MSI download te NETLOGON ───────────────────────────
 
-    def test_deploy_cmd_do_upgrade_detects_product_installed(self):
-        """do_upgrade checks registry before choosing msiexec flags (fix: EXIT 1603 on fresh PC)."""
-        upgrade_pos = self.script.index(":do_upgrade")
-        manual_replace_pos = self.script.index(":manual_replace")
-        upgrade_section = self.script[upgrade_pos:manual_replace_pos]
+    def test_ps1_has_backend_url_and_msi_download_url_variables(self):
+        """PS1 ka $BackendUrl dhe $MsiDownloadUrl para hapi 1."""
+        backend_var = self.script.index("$BackendUrl    = 'https://api-rdp.techi.com.al'")
+        msi_var = self.script.index("$MsiDownloadUrl = 'https://api-rdp.techi.com.al/api/v1/agent-packages/platform/windows-amd64/download'")
+        hapi1 = self.script.index("Hapi 1: Importimi i moduleve")
+        assert backend_var < hapi1
+        assert msi_var < hapi1
 
-        assert "set PRODUCT_INSTALLED=" in upgrade_section
-        assert 'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"' in upgrade_section
-        assert "findstr /i" in upgrade_section
-        assert "if defined PRODUCT_INSTALLED (" in upgrade_section
-        # Upgrade branch: product already installed → REINSTALL flags
-        assert "REINSTALL=ALL REINSTALLMODE=vomus" in upgrade_section
-        # Fresh PC branch: product not installed → enroll with token
-        assert "ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL%" in upgrade_section
+    def test_ps1_step4b_downloads_msi_to_netlogon(self):
+        """PS1 Hapi 4b shkarkon MSI tek NETLOGON."""
+        assert "Hapi 4b: Shkarkimi i MSI ne NETLOGON" in self.script
+        assert "$MsiNetlogonPath = Join-Path $NetlogonPath" in self.script
+        assert "(New-Object Net.WebClient).DownloadFile($MsiDownloadUrl, $MsiNetlogonPath)" in self.script
 
-    def test_deploy_cmd_has_manual_exe_replace_fallback(self):
-        assert ":manual_replace" in self.script
-        assert 'msiexec /a "%MSI_PATH%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
-        assert 'for /r "%EXTRACT_DIR%" %%f in (techi-agent.exe)' not in self.script
-        comm_app = self.script.index('if exist "%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe" (')
-        pfiles64 = self.script.index('else if exist "%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe" (')
-        assert comm_app < pfiles64
-        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe"' in self.script
-        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\PFiles64\\TECHI Agent\\techi-agent.exe"' in self.script
-        assert 'else if exist "%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe" (' in self.script
-        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\CommonAppData\\TechiAgent\\techi-agent.exe"' in self.script
-        assert 'else if exist "%EXTRACT_DIR%\\TechiAgent\\techi-agent.exe" (' in self.script
-        assert 'set "EXTRACTED_AGENT=%EXTRACT_DIR%\\TechiAgent\\techi-agent.exe"' in self.script
-        manual_replace = self.script.index(":manual_replace")
-        copy_exe = self.script.index('copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1', manual_replace)
-        stop_service = self.script.index("net stop TechiAgent 2>nul", manual_replace)
-        kill_agent = self.script.index("taskkill /f /im techi-agent.exe 2>nul", manual_replace)
-        assert stop_service < copy_exe
-        assert kill_agent < copy_exe
-        assert 'copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1' in self.script
-        assert ":cleanup_fail" in self.script
-        assert ":cleanup_success" in self.script
+    def test_ps1_step4b_has_retry_loop(self):
+        """PS1 Hapi 4b ka retry loop me 3 tentativa."""
+        assert "for ($i = 1; $i -le 3; $i++) {" in self.script
+        assert "$downloaded = $false" in self.script
+        assert "$downloaded = $true" in self.script
+        assert "3 tentativave" in self.script
+
+    def test_ps1_step4b_uses_tls12_for_msi_download(self):
+        """PS1 Hapi 4b aktivizon TLS 1.2 para download."""
+        step4b = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        section = self.script[step4b:]
+        assert "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12" in section
+
+    def test_ps1_step4b_writes_version_file(self):
+        """PS1 Hapi 4b shkruan techi-version.txt pas download."""
+        assert "$VersionFilePath = Join-Path $NetlogonPath" in self.script
+        assert "Out-File $VersionFilePath -Encoding ASCII -NoNewline" in self.script
+
+    def test_ps1_step4b_skips_download_if_msi_exists(self):
+        """PS1 Hapi 4b kalon download nëse MSI i njëjtë ekziston."""
+        assert "tashme ekziston ne NETLOGON -- skip download" in self.script
+
+    def test_ps1_step4b_cleans_old_msi_versions(self):
+        """PS1 Hapi 4b fshin versione të vjetra MSI para download."""
+        assert "Get-ChildItem $NetlogonPath -Filter 'TECHI-Agent-*.msi'" in self.script
+        assert "Remove-Item -Force -ErrorAction SilentlyContinue" in self.script
+
+    def test_ps1_step4b_displays_sha256(self):
+        """PS1 Hapi 4b shfaq SHA256 hash të MSI-t pas download."""
+        assert "Get-FileHash $MsiNetlogonPath -Algorithm SHA256" in self.script
+        assert 'Write-Host "   MSI SHA256: $LocalHash"' in self.script
+
+    # ── PS1-level: Test-Path verifikime post-write ────────────────────────────
+
+    def test_ps1_has_test_path_after_deploy_cmd_write(self):
+        """PS1 verifikon me Test-Path se techi-deploy.cmd u shkrua."""
+        write_pos = self.script.index(
+            "[System.IO.File]::WriteAllText($DeployScriptPath, $DeployContent"
+        )
+        step4b_pos = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        section = self.script[write_pos:step4b_pos]
+        assert "Test-Path $DeployScriptPath" in section
+        assert "GABIM KRITIK" in section
+
+    def test_ps1_has_test_path_after_msi_download(self):
+        """PS1 verifikon me Test-Path se MSI u shkarkua."""
+        assert "GABIM KRITIK: MSI nuk u gjend pas download" in self.script
+
+    def test_ps1_has_test_path_after_version_file_write(self):
+        """PS1 verifikon me Test-Path se techi-version.txt u shkrua."""
+        assert "GABIM KRITIK: techi-version.txt nuk u shkrua" in self.script
+
+    def test_ps1_has_test_path_after_task_xml_write(self):
+        """PS1 verifikon me Test-Path se ScheduledTasks.xml u shkrua."""
+        write_pos = self.script.index(
+            "[System.IO.File]::WriteAllText($TaskXmlPath, $TaskXml"
+        )
+        hapi7_pos = self.script.index("Hapi 7: Perditesimi i gPCMachineExtensionNames")
+        section = self.script[write_pos:hapi7_pos]
+        assert "Test-Path $TaskXmlPath" in section
+        assert "GABIM KRITIK" in section
+
+    def test_ps1_has_test_path_after_scripts_ini_write(self):
+        """PS1 verifikon me Test-Path se scripts.ini dhe kopja e CMD u shkruan."""
+        assert "GABIM KRITIK: techi-deploy.cmd nuk u kopjua te Startup Scripts!" in self.script
+        assert "GABIM KRITIK: $ScriptsIniPath nuk u shkrua! Ndalim." in self.script
+
+    # ── PS1-level: banner PERFUNDOI ───────────────────────────────────────────
+
+    def test_ps1_banner_shows_msi_netlogon_path(self):
+        """Baneri final tregon rrugën e MSI-t dhe versionin aktiv."""
+        assert 'Write-Host "  MSI       : $MsiNetlogonPath"' in self.script
+        assert 'Write-Host "  Version   : $ActiveVersion"' in self.script
+        assert "zero download, zero AV detection" in self.script
 
 
 class TestConfigPSLines:
