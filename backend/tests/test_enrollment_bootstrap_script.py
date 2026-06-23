@@ -691,7 +691,7 @@ class TestGPOScheduledDeployScript:
 
         assert "set PRODUCT_INSTALLED=" in section
         assert 'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"' in section
-        assert "if defined PRODUCT_INSTALLED (" in section
+        assert "if defined PRODUCT_INSTALLED goto :do_reinstall_lan" in section
         assert 'msiexec /i "%NETLOGON_MSI%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in section
         assert 'msiexec /i "%NETLOGON_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
         assert 'msiexec /i "%NETLOGON_MSI%" TOKEN=%TOKEN%' not in self.script
@@ -704,7 +704,9 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""
         assert 'set LOG=%INSTALL_DIR%\\deploy.log' in self.script
-        assert 'result=%INSTALL_EXIT% version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=0 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=0-manual version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
         assert 'result=%INSTALL_EXIT% version=fresh >> "%LOG%"' in self.script
 
@@ -715,6 +717,40 @@ class TestGPOScheduledDeployScript:
         fresh_pos = re.search(r"^:fresh_install\b", self.script, re.MULTILINE).start()
         section = self.script[already_pos:fresh_pos]
         assert "net start TechiAgent 2>nul" in section
+
+    def test_deploy_cmd_manual_replace_lan_triggered_on_reinstall_failure(self):
+        """:manual_replace_lan aktivizohet kur REINSTALL=ALL kthen error (1603 file lock)."""
+        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        section = self.script[do_install:already]
+        assert ":do_reinstall_lan" in section
+        assert "if not \"%MSI_EXIT%\"==\"0\" goto :manual_replace_lan" in section
+
+    def test_deploy_cmd_manual_replace_lan_extracts_from_netlogon_msi(self):
+        """:manual_replace_lan ekstrakton MSI nga NETLOGON me msiexec /a."""
+        assert 'msiexec /a "%NETLOGON_MSI%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
+        assert 'set EXTRACT_DIR=%TEMP%\\TechiExtract' in self.script
+
+    def test_deploy_cmd_manual_replace_lan_uses_committed_agent_path(self):
+        """:manual_replace_lan kopjon techi-agent.exe nga CommApp\\TechiAgent."""
+        assert '%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe' in self.script
+        assert 'copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1' in self.script
+
+    def test_deploy_cmd_manual_replace_lan_falls_back_to_install_failed(self):
+        """:manual_replace_lan shkon te :install_failed nëse copy dështon."""
+        assert "if not defined EXTRACTED_AGENT goto :install_failed" in self.script
+        assert "if errorlevel 1 goto :install_failed" in self.script
+
+    def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
+        """:install_failed regjistron result=1603 dhe del me exit /b 1."""
+        assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert "exit /b 1" in self.script
+
+    def test_deploy_cmd_done_label_before_already_uptodate(self):
+        """:done ekziston dhe vjen para :already_uptodate."""
+        done_pos = re.search(r"^:done\b", self.script, re.MULTILINE).start()
+        already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        assert done_pos < already_pos
 
     # ── PS1-level Step 4b: MSI download te NETLOGON ───────────────────────────
 

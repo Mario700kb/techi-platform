@@ -4,6 +4,44 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-23 — manual_replace_lan fallback në :do_install kur msiexec REINSTALL kthen 1603
+
+**Skedarë:**
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+
+**Problem:** `techi-deploy.cmd` (arkitektura LAN) dështonte me `exit /b 1` kur `msiexec /i REINSTALL=ALL` kthente error 1603 (file lock gjatë upgrade — shërbimi aktiv mban `techi-agent.exe` të bllokuar). Nuk kishte asnjë fallback.
+
+**Zgjidhje:** Shtohet `:manual_replace_lan` fallback pas REINSTALL=ALL:
+1. Msiexec REINSTALL=ALL dështon → `goto :manual_replace_lan`
+2. `:manual_replace_lan`: ekstrakton MSI nga NETLOGON me `msiexec /a /qn TARGETDIR=%EXTRACT_DIR%`
+3. Ndalon shërbimin + `taskkill`, kopjon `CommApp\TechiAgent\techi-agent.exe` me `copy /y`
+4. Rinis shërbimin, log `result=0-manual`
+5. Nëse copy dështon → `:install_failed` → `result=1603`, `exit /b 1`
+
+**Ndryshim CMD strukturor:** Hiqet `if/else` me kllapa (për shkak të `%ERRORLEVEL%` expansion bug-it të CMD brenda kllaPave). Struktura e re me goto:
+```bat
+if defined PRODUCT_INSTALLED goto :do_reinstall_lan
+msiexec ... ENROLLMENT_TOKEN...
+set MSI_EXIT=%ERRORLEVEL%
+if not "%MSI_EXIT%"=="0" goto :install_failed
+goto :install_done
+
+:do_reinstall_lan
+msiexec ... REINSTALL=ALL...
+set MSI_EXIT=%ERRORLEVEL%
+if not "%MSI_EXIT%"=="0" goto :manual_replace_lan
+
+:install_done → :done
+:manual_replace_lan → :done ose :install_failed
+:install_failed → exit /b 1
+:done → exit /b 0
+```
+
+**Teste:** 29 passed (6 teste të reja).
+
+---
+
 ## 2026-06-23 — Eliminim i false positive-ve AV (Kaspersky/Symantec) në GPO deploy
 
 **Skedarë:**
