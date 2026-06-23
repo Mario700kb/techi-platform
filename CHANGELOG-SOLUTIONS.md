@@ -4,6 +4,77 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-23 — Agent Path Consistency & HTTPS/WSS Fix
+
+**Skedarë:**
+- `agent/paths.go`
+- `agent/agent.go`
+- `agent/config.go`
+- `agent/main.go`
+- `agent/service_windows.go`
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/app/api/v1/endpoints/agent.py`
+- `backend/app/api/v1/endpoints/agent_config.py`
+- `backend/tests/test_agent_config.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `backend/tests/test_agent_enroll_urls.py`
+- `agent/config_test.go`
+
+**Problem:** Deployment/GPO/MSI bootstrap shkruante ose kontrollonte config/log te
+`C:\ProgramData\TechiAgent`, ndërsa `techi-agent.exe` në runtime lexonte
+config nga `C:\ProgramData\TECHI`. Si rezultat, agent-i nisej me config bosh
+ose default dhe heartbeat dështonte gjatë enrollment-it edhe pse install/service
+ishin OK.
+
+**Root cause:** Path-et e agent runtime dhe script-eve të deployment-it kishin
+devijuar:
+- Runtime: `C:\ProgramData\TECHI\agent.config.json`
+- Deployment legacy: `C:\ProgramData\TechiAgent\agent.config.json`
+
+Ky mismatch fshihte token-in real të enrollment-it nga runtime. Në të njëjtën
+kohë, disa rrugë bootstrap/enrollment mund të gjeneronin URL me `http://` ose
+`ws://` kur request-i kalonte përmes proxy/HTTP.
+
+**Zgjidhje:**
+- Standardizohet storage zyrtar i agent-it:
+  - `C:\ProgramData\TECHI\agent.config.json`
+  - `C:\ProgramData\TECHI\logs\agent.log`
+- Shtohet migrim automatik në startup/install:
+  - nga `C:\ProgramData\TechiAgent\agent.config.json`
+  - te `C:\ProgramData\TECHI\agent.config.json`
+  - krijohet `C:\ProgramData\TECHI\logs` nëse mungon
+  - log-ohet migrimi pa ekspozuar secrets
+- Bootstrap/GPO/rollout scripts shkruajnë te path-i zyrtar dhe mbajnë legacy
+  fallback vetëm për migrim/compatibility.
+- Heartbeat URL gjenerohet me HTTPS:
+  - `https://api-rdp.techi.com.al/api/v1/agent/heartbeat`
+- WebSocket URL gjenerohet me WSS:
+  - `wss://api-rdp.techi.com.al/ws/devices?tenant_id=default`
+- Runtime normalizon endpoint-et production:
+  - `http://api-rdp.techi.com.al` → `https://api-rdp.techi.com.al`
+  - `ws://api-rdp.techi.com.al` → `wss://api-rdp.techi.com.al`
+- Startup diagnostics shtohen për:
+  - resolved config path
+  - resolved log path
+  - backend URL
+  - API URL
+  - device ID
+  - agent ID present/missing
+  - enrollment token present/missing
+
+**Validation:**
+- Agent tests: `go test ./...`
+- Backend targeted tests:
+  - `backend/tests/test_agent_config.py`
+  - `backend/tests/test_enrollment_bootstrap_script.py`
+  - `backend/tests/test_agent_enroll_urls.py`
+- Verifikuar që config template gjeneron HTTPS heartbeat URL dhe WSS websocket URL.
+- Verifikuar migrimi automatik nga legacy path te path-i zyrtar.
+- Verifikuar në production machine ku heartbeat dështonte më parë; heartbeat
+  funksionoi pas migrimit të path-it.
+
+---
+
 ## 2026-06-23 — gpo-deploy.ps1 download: Invoke-WebRequest → WebClient.DownloadFile
 
 **Skedarë:**

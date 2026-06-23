@@ -184,7 +184,9 @@ class TestHeartbeatScript:
     def test_script_contains_config_path(self):
         client = _make_client("admin")
         resp = client.get("/agent-config/heartbeat-script?seconds=180")
+        assert "C:\\ProgramData\\TECHI\\agent.config.json" in resp.text
         assert "C:\\ProgramData\\TechiAgent\\agent.config.json" in resp.text
+        assert "Migrated legacy config to $ConfigPath" in resp.text
 
     def test_script_contains_service_name(self):
         client = _make_client("admin")

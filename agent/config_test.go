@@ -45,3 +45,59 @@ func TestLoadConfigHandlesUTF8BOM(t *testing.T) {
 		t.Fatalf("unexpected api_url: %s", cfg.APIURL)
 	}
 }
+
+func TestLoadConfigNormalizesProductionURLs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.config.json")
+	data := []byte(`{
+		"api_url":"http://api-rdp.techi.com.al",
+		"backend_url":"http://api-rdp.techi.com.al/api/v1/agent/heartbeat",
+		"websocket_url":"ws://api-rdp.techi.com.al/ws/devices?tenant_id=default"
+	}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.APIURL != "https://api-rdp.techi.com.al" {
+		t.Fatalf("unexpected api_url: %s", cfg.APIURL)
+	}
+	if cfg.BackendURL != "https://api-rdp.techi.com.al/api/v1/agent/heartbeat" {
+		t.Fatalf("unexpected backend_url: %s", cfg.BackendURL)
+	}
+	if cfg.WebSocketURL != "wss://api-rdp.techi.com.al/ws/devices?tenant_id=default" {
+		t.Fatalf("unexpected websocket_url: %s", cfg.WebSocketURL)
+	}
+}
+
+func TestMigrateConfigIfNeededCopiesLegacyConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "TECHI", "agent.config.json")
+	legacyPath := filepath.Join(dir, "TechiAgent", "agent.config.json")
+	logPath := filepath.Join(dir, "TECHI", "logs", "agent.log")
+
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"enrollment_token":"secret-token"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateConfigIfNeeded(configPath, legacyPath, logPath); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"enrollment_token":"secret-token"}` {
+		t.Fatalf("unexpected migrated config: %s", data)
+	}
+	if _, err := os.Stat(filepath.Dir(logPath)); err != nil {
+		t.Fatalf("expected log directory to be created: %v", err)
+	}
+}

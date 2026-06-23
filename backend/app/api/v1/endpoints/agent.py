@@ -1,9 +1,11 @@
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import enroll_limiter
+from app.core.config import settings
 from app.db.session import get_db, SessionLocal
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.agent import (
@@ -20,6 +22,18 @@ from app.services.remote_action_service import RemoteActionService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _normalize_public_backend_url(request: Request) -> str:
+    configured_url = (settings.PUBLIC_BACKEND_URL or "").strip().rstrip("/")
+    raw = configured_url or str(request.base_url).strip().rstrip("/")
+    parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
+    return urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def _public_websocket_url(base_url: str) -> str:
+    parsed = urlsplit(base_url if "://" in base_url else f"https://{base_url}")
+    return urlunsplit(("wss", parsed.netloc, "/ws/devices", "tenant_id=default", ""))
 
 
 def _heartbeat_side_effects(
@@ -52,9 +66,8 @@ def agent_enroll(
     client_ip = request.client.host if request.client else "unknown"
     if not enroll_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many enrollment attempts")
-    base_url = str(request.base_url).rstrip("/")
-    websocket_scheme = "wss" if request.url.scheme == "https" else "ws"
-    websocket_url = f"{websocket_scheme}://{request.url.netloc}/ws/devices?tenant_id=default"
+    base_url = _normalize_public_backend_url(request)
+    websocket_url = _public_websocket_url(base_url)
     service = AgentEnrollmentService(db)
     try:
         return service.enroll(

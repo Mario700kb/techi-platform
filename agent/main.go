@@ -44,6 +44,9 @@ func main() {
 	if err := configureLogging(defaultLogPath(), false); err != nil {
 		log.Printf("file logging disabled: %v", err)
 	}
+	if err := migrateLegacyConfigIfNeeded(*configPath); err != nil {
+		log.Fatalf("config migration failed: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

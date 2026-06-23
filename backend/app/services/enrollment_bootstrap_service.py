@@ -131,6 +131,7 @@ class EnrollmentBootstrapService:
         cfg: dict = {
             "api_url": backend_url,
             "backend_url": f"{backend_url}/api/v1/agent/heartbeat",
+            "websocket_url": self.websocket_url_for_backend(backend_url),
             "agent_name": "<HOSTNAME>",
             "public_ip_service": "https://api.ipify.org?format=text",
             "timeout_seconds": 10,
@@ -177,6 +178,12 @@ class EnrollmentBootstrapService:
             cfg["rustdesk_manage_enabled"] = False
 
         return json.dumps(cfg, indent=2)
+
+    @staticmethod
+    def websocket_url_for_backend(backend_url: str) -> str:
+        backend_url = EnrollmentBootstrapService.normalize_backend_url(backend_url)
+        parsed = urlsplit(backend_url if "://" in backend_url else f"https://{backend_url}")
+        return urlunsplit(("wss", parsed.netloc, "/ws/devices", "tenant_id=default", ""))
 
     # ─── PowerShell config writer (no here-string) ────────────────────────────
 
@@ -575,6 +582,7 @@ class EnrollmentBootstrapService:
         config_template: str,
         payload: EnrollmentBootstrapRequest,
     ) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
         package_url, sha256, pkg_filename = self._windows_package_info(backend_url)
         is_msi = pkg_filename.lower().endswith(".msi")
         config_lines = self._config_ps_lines(config_template)
@@ -596,7 +604,7 @@ class EnrollmentBootstrapService:
             "# Run as Administrator:",
             "#   powershell -ExecutionPolicy Bypass -NoProfile -File .\\techi-installer.ps1",
             "",
-            '$InstallDir = "C:\\ProgramData\\TechiAgent"',
+            '$InstallDir = "C:\\ProgramData\\TECHI"',
             "$LogDir     = Join-Path $InstallDir 'logs'",
             "$LogFile    = Join-Path $LogDir 'installer.log'",
             f"$AgentUrl   = '{package_url}'",
@@ -712,6 +720,7 @@ class EnrollmentBootstrapService:
         config_template: str,
         payload: EnrollmentBootstrapRequest,
     ) -> tuple[str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
         package_url, sha256, _pkg_filename = self._windows_package_info(backend_url)
         config_lines = self._config_ps_lines(config_template)
         rustdesk_migration_lines = self._rustdesk_force_migration_ps_lines(payload)
@@ -730,7 +739,7 @@ class EnrollmentBootstrapService:
             "# Idempotent: safe to run at every PC startup via GPO.",
             "# No prompts, no Read-Host. Exits 0 on success, 1 on error.",
             "",
-            '$InstallDir = "C:\\ProgramData\\TechiAgent"',
+            '$InstallDir = "C:\\ProgramData\\TECHI"',
             "$LogDir     = Join-Path $InstallDir 'logs'",
             "$LogFile    = Join-Path $LogDir 'installer.log'",
             f"$AgentUrl   = '{package_url}'",
@@ -847,6 +856,7 @@ class EnrollmentBootstrapService:
             "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
             "",
             "# Defender exclusions lokale ne Domain Controller (menjehere)",
+            "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TECHI' -ErrorAction SilentlyContinue",
             "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent' -ErrorAction SilentlyContinue",
             "Add-MpPreference -ExclusionPath 'C:\\Windows\\Temp\\TechiDeploy' -ErrorAction SilentlyContinue",
             "Add-MpPreference -ExclusionProcess 'techi-agent.exe' -ErrorAction SilentlyContinue",
@@ -890,7 +900,7 @@ class EnrollmentBootstrapService:
             "} else {",
             '    Write-Host "   GPO ekziston, perditesim..." -ForegroundColor Cyan',
             "}",
-            "foreach ($XPath in @('C:\\ProgramData\\TechiAgent', 'C:\\Windows\\Temp\\TechiDeploy')) {",
+            "foreach ($XPath in @('C:\\ProgramData\\TECHI', 'C:\\ProgramData\\TechiAgent', 'C:\\Windows\\Temp\\TechiDeploy')) {",
             "    Set-GPRegistryValue -Name $ExclGPOName `",
             "        -Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Paths' `",
             "        -ValueName $XPath -Type String -Value '0' | Out-Null",
@@ -908,13 +918,17 @@ class EnrollmentBootstrapService:
             "@echo off",
             "setlocal EnableExtensions",
             "",
-            "set INSTALL_DIR=C:\\ProgramData\\TechiAgent",
+            "set INSTALL_DIR=C:\\ProgramData\\TECHI",
+            "set LEGACY_INSTALL_DIR=C:\\ProgramData\\TechiAgent",
             "set AGENT_EXE=%INSTALL_DIR%\\techi-agent.exe",
             "set CONFIG=%INSTALL_DIR%\\agent.config.json",
+            "set LEGACY_CONFIG=%LEGACY_INSTALL_DIR%\\agent.config.json",
             "set LOG=%INSTALL_DIR%\\deploy.log",
             f"set TOKEN={enrollment_token}",
             f"set BACKEND_URL={safe_url}",
             "set DOMAIN=%USERDOMAIN%",
+            "if not exist \"%INSTALL_DIR%\" md \"%INSTALL_DIR%\" 2>nul",
+            "if not exist \"%CONFIG%\" if exist \"%LEGACY_CONFIG%\" copy /y \"%LEGACY_CONFIG%\" \"%CONFIG%\" >nul 2>&1",
             "set NETLOGON_VERSION=\\\\%DOMAIN%\\NETLOGON\\techi-version.txt",
             "",
             ":: Lexo version aktiv nga NETLOGON (LAN -- jo internet)",

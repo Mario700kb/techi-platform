@@ -74,7 +74,8 @@ def get_heartbeat_script(
     Returns a PowerShell script suitable for direct execution or GPO deployment.
 
     The script:
-    1. Reads C:\\ProgramData\\TechiAgent\\agent.config.json
+    1. Reads C:\\ProgramData\\TECHI\\agent.config.json
+       (migrates C:\\ProgramData\\TechiAgent\\agent.config.json if needed)
     2. Updates heartbeat_interval_seconds (all other keys preserved)
     3. Restarts the TechiAgent Windows service
     4. Logs each step to C:\\Windows\\Temp\\techi-heartbeat-config.log
@@ -114,7 +115,8 @@ def _build_ps_script(seconds: int, generated_at: str) -> str:
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ConfigPath = "C:\\ProgramData\\TechiAgent\\agent.config.json"
+$ConfigPath = "C:\\ProgramData\\TECHI\\agent.config.json"
+$LegacyConfigPath = "C:\\ProgramData\\TechiAgent\\agent.config.json"
 $LogPath    = "C:\\Windows\\Temp\\techi-heartbeat-config.log"
 $TargetSec  = {seconds}
 
@@ -132,8 +134,19 @@ Write-Log "==================================================="
 
 # ── 1. Verify config file exists ────────────────────────────
 if (-not (Test-Path $ConfigPath)) {{
-    Write-Log "ERROR: $ConfigPath not found. Is TechiAgent installed?"
-    exit 1
+    if (Test-Path $LegacyConfigPath) {{
+        try {{
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ConfigPath) | Out-Null
+            Copy-Item -LiteralPath $LegacyConfigPath -Destination $ConfigPath -Force
+            Write-Log "Migrated legacy config to $ConfigPath"
+        }} catch {{
+            Write-Log "ERROR migrating legacy config: $_"
+            exit 1
+        }}
+    }} else {{
+        Write-Log "ERROR: $ConfigPath not found. Is TechiAgent installed?"
+        exit 1
+    }}
 }}
 
 # ── 2. Read, update, write ───────────────────────────────────

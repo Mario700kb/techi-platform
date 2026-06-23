@@ -115,6 +115,9 @@ func installService(configPath string, enrollmentToken string) error {
 	if err := os.MkdirAll(filepath.Dir(defaultLogPath()), 0700); err != nil {
 		return err
 	}
+	if err := migrateLegacyConfigIfNeeded(configPath); err != nil {
+		return err
+	}
 	if strings.TrimSpace(enrollmentToken) != "" {
 		cfg, err := loadConfig(configPath)
 		if err != nil {

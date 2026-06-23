@@ -8,8 +8,8 @@ import (
 )
 
 func runAgent(ctx context.Context, configPath string, enrollmentToken string, once bool) error {
-	if once {
-		return runSingleHeartbeat(configPath, enrollmentToken)
+	if err := migrateLegacyConfigIfNeeded(configPath); err != nil {
+		return err
 	}
 
 	cfg, err := loadConfig(configPath)
@@ -19,6 +19,11 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	applyEnvironment(cfg)
 	if enrollmentToken != "" {
 		cfg.EnrollmentToken = enrollmentToken
+	}
+	logStartupDiagnostics(configPath, defaultLogPath(), cfg)
+
+	if once {
+		return runSingleHeartbeat(configPath, enrollmentToken)
 	}
 
 	interval := time.Duration(cfg.HeartbeatSeconds) * time.Second
@@ -56,6 +61,27 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 			}
 		}
 	}
+}
+
+func logStartupDiagnostics(configPath string, logPath string, cfg *Config) {
+	agentIDState := "missing"
+	if cfg.AgentID != "" {
+		agentIDState = "present"
+	}
+	enrollmentTokenState := "missing"
+	if cfg.EnrollmentToken != "" {
+		enrollmentTokenState = "present"
+	}
+	log.Printf(
+		"startup diagnostics: config_path=%s log_path=%s backend_url=%s api_url=%s device_id=%d agent_id=%s enrollment_token=%s",
+		configPath,
+		logPath,
+		cfg.BackendURL,
+		cfg.APIURL,
+		cfg.DeviceID,
+		agentIDState,
+		enrollmentTokenState,
+	)
 }
 
 // applyPendingInterval reads pendingIntervalChange (set by server response or

@@ -230,6 +230,11 @@ class TestTokenInstallerScript:
     def test_generated_script_uses_https_urls(self):
         assert "http://10.5.50.63:8000" not in self.script
         assert "https://10.5.50.63:8000" in self.script
+        assert "'wss://10.5.50.63:8000/ws/devices?tenant_id=default'" in self.script
+
+    def test_generated_script_uses_official_programdata_path(self):
+        assert '$InstallDir = "C:\\ProgramData\\TECHI"' in self.script
+        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' not in self.script
 
     def test_agent_self_update_flow(self):
         _check_agent_self_update_flow(self.script, "token-installer")
@@ -598,6 +603,10 @@ class TestGPOInstallerScript:
     def test_idempotent_service_install(self):
         assert "already installed" in self.script, "gpo-installer: missing idempotency check"
 
+    def test_generated_script_uses_official_programdata_path(self):
+        assert '$InstallDir = "C:\\ProgramData\\TECHI"' in self.script
+        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' not in self.script
+
     def test_no_read_host(self):
         # Ignore comment lines; only fail if Read-Host appears as actual code
         code_lines = [l for l in self.script.splitlines() if not l.strip().startswith("#")]
@@ -610,9 +619,9 @@ class TestGPOInstallerScript:
     def test_agent_self_update_flow(self):
         _check_agent_self_update_flow(self.script, "gpo-installer")
 
-    def test_msi_uses_installer_property_names(self):
-        assert "('ENROLLMENT_TOKEN=' + $Token)" in self.script
-        assert "('API_URL=' + $BackendUrl)" in self.script
+    def test_service_install_uses_official_config_path(self):
+        assert "& $AgentPath install -config $ConfigPath" in self.script
+        assert "$ConfigPath = Join-Path $InstallDir 'agent.config.json'" in self.script
         assert "('TOKEN=' + $Token)" not in self.script
         assert "('BACKEND_URL=' + $BackendUrl)" not in self.script
 
@@ -635,14 +644,15 @@ class TestGPOScheduledDeployScript:
 
     def test_defender_exclusions_are_configured_locally_and_via_gpo(self):
         local_exclusion = self.script.index(
-            "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent'"
+            "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TECHI'"
         )
         module_import = self.script.index("Import-Module GroupPolicy")
 
         assert local_exclusion < module_import
+        assert "Add-MpPreference -ExclusionPath 'C:\\ProgramData\\TechiAgent'" in self.script
         assert "Add-MpPreference -ExclusionPath 'C:\\Windows\\Temp\\TechiDeploy'" in self.script
         assert "Add-MpPreference -ExclusionProcess 'techi-agent.exe'" in self.script
-        assert "foreach ($XPath in @('C:\\ProgramData\\TechiAgent', 'C:\\Windows\\Temp\\TechiDeploy'))" in self.script
+        assert "foreach ($XPath in @('C:\\ProgramData\\TECHI', 'C:\\ProgramData\\TechiAgent', 'C:\\Windows\\Temp\\TechiDeploy'))" in self.script
         assert "-Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Paths'" in self.script
         assert "-Key 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Processes'" in self.script
         assert "New-GPLink -Name $ExclGPOName -Target $DomainDN -LinkEnabled Yes" in self.script
@@ -727,6 +737,13 @@ class TestGPOScheduledDeployScript:
         assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
         assert 'result=%INSTALL_EXIT% version=fresh >> "%LOG%"' in self.script
+
+    def test_deploy_cmd_uses_official_config_path_and_migrates_legacy(self):
+        assert "set INSTALL_DIR=C:\\ProgramData\\TECHI" in self.script
+        assert "set LEGACY_INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
+        assert "set CONFIG=%INSTALL_DIR%\\agent.config.json" in self.script
+        assert "set LEGACY_CONFIG=%LEGACY_INSTALL_DIR%\\agent.config.json" in self.script
+        assert 'if not exist "%CONFIG%" if exist "%LEGACY_CONFIG%" copy /y "%LEGACY_CONFIG%" "%CONFIG%"' in self.script
 
     def test_deploy_cmd_already_uptodate_starts_service_if_stopped(self):
         """:already_uptodate kontrollon nëse shërbimi ecën, nëse jo e starton."""
@@ -939,6 +956,7 @@ class TestHttpsUrlNormalization:
         assert "http://api-rdp.techi.com.al" not in cfg
         assert '"api_url": "https://api-rdp.techi.com.al"' in cfg
         assert '"backend_url": "https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in cfg
+        assert '"websocket_url": "wss://api-rdp.techi.com.al/ws/devices?tenant_id=default"' in cfg
 
     def test_package_url_forces_https(self):
         url, _, _ = self.svc._windows_package_info("http://api-rdp.techi.com.al")
