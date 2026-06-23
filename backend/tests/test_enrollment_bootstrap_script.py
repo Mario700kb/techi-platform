@@ -741,6 +741,13 @@ class TestGPOScheduledDeployScript:
         assert "if not defined EXTRACTED_AGENT goto :install_failed" in self.script
         assert "if errorlevel 1 goto :install_failed" in self.script
 
+    def test_deploy_cmd_manual_replace_lan_creates_service_if_missing(self):
+        """:manual_replace_lan krijon service me sc.exe nëse nuk ekziston (v1.0.4 skip-install bug)."""
+        assert 'sc query TechiAgent >nul 2>&1' in self.script
+        assert 'sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
+        assert 'sc.exe description TechiAgent "TECHI Solutions endpoint monitoring and management service"' in self.script
+        assert 'sc.exe failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000' in self.script
+
     def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
         """:install_failed regjistron result=1603 dhe del me exit /b 1."""
         assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script

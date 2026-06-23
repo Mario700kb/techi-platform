@@ -4,6 +4,27 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-23 — :manual_replace_lan krijon Windows Service nëse mungon (v1.0.4 skip-install bug)
+
+**Skedar:** `backend/app/services/enrollment_bootstrap_service.py`
+
+**Problem:** Disa PC me v1.0.4 kishin kaluar nëpër upgrade të mëparshëm ku `ServiceInstall` u skip-ua — skedari `techi-agent.exe` ekzistonte por Windows Service `TechiAgent` nuk ekzistonte fare. Rrjedhimisht `:manual_replace_lan` kopjonte executable-in me `copy /y` dhe pastaj `net start TechiAgent` dështonte me "service not found".
+
+**Zgjidhje:** Shtohen 4 rreshta pas `copy /y`, para `net start`:
+```bat
+sc query TechiAgent >nul 2>&1
+if errorlevel 1 (
+    sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"
+    sc.exe description TechiAgent "TECHI Solutions endpoint monitoring and management service"
+    sc.exe failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000
+)
+```
+`sc query` kthen errorlevel 1 nëse service nuk ekziston → krijimi bëhet vetëm kur nevojitet (idempotent).
+
+**Teste:** 30 passed (1 test i ri: `test_deploy_cmd_manual_replace_lan_creates_service_if_missing`).
+
+---
+
 ## 2026-06-23 — manual_replace_lan fallback në :do_install kur msiexec REINSTALL kthen 1603
 
 **Skedarë:**
