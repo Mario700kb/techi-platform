@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clipboard, Copy, Download, Eye, KeyRound, Loader2, Package, Pencil, RefreshCcw, Trash2 } from "lucide-react";
+import { Check, Clipboard, Copy, Download, Eye, KeyRound, Loader2, Package, Pencil, RefreshCcw, Search, Trash2 } from "lucide-react";
 import { API_BASE_URL, getAuthToken } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { AgentPackage, getLatestPackage } from "../api/agentPackages";
@@ -65,9 +65,15 @@ export default function Deployment() {
   const [viewDeployment, setViewDeployment] = useState<EnrollmentTokenDeployment | null>(null);
   const [editToken, setEditToken] = useState<EnrollmentToken | null>(null);
   const [oneTimeToken, setOneTimeToken] = useState<CreateTokenResponse | null>(null);
+  const [tokenSearch, setTokenSearch] = useState("");
 
   const bootstrapUrl = useMemo(() => token ? buildWindowsBootstrapUrl(token.token) : "", [token]);
   const bootstrapCommand = useMemo(() => token ? buildWindowsBootstrapCommand(token.token) : "", [token]);
+  const filteredTokens = useMemo(() => {
+    const q = tokenSearch.trim().toLowerCase();
+    if (!q) return tokens;
+    return tokens.filter((t) => t.name.toLowerCase().includes(q));
+  }, [tokens, tokenSearch]);
 
   const loadTokens = async () => {
     setTableLoading(true);
@@ -226,10 +232,22 @@ export default function Deployment() {
             <h2 className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>Enrollment Tokens</h2>
             <p className="mt-1 text-xs font-medium" style={{ color: "var(--th-text-muted)" }}>Persistent deployment workflow for technicians and per-company GPO tokens.</p>
           </div>
-          <Button type="button" size="sm" onClick={() => void loadTokens()} disabled={tableLoading}>
-            {tableLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />}
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="relative flex items-center">
+              <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
+              <input
+                className="th-input rounded-lg py-1.5 pl-8 pr-3 text-xs"
+                placeholder="Kërko token sipas emrit..."
+                value={tokenSearch}
+                onChange={(e) => setTokenSearch(e.target.value)}
+                style={{ width: 220 }}
+              />
+            </div>
+            <Button type="button" size="sm" onClick={() => void loadTokens()} disabled={tableLoading}>
+              {tableLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="th-table min-w-full">
@@ -239,7 +257,7 @@ export default function Deployment() {
               </tr>
             </thead>
             <tbody>
-              {tokens.map((row) => (
+              {filteredTokens.map((row) => (
                 <tr key={row.id}>
                   <td className="font-semibold">{row.name}</td>
                   <td className="font-mono">{row.token_prefix ?? "-"}</td>
@@ -261,7 +279,13 @@ export default function Deployment() {
                   </td>
                 </tr>
               ))}
-              {!tokens.length && <tr><td colSpan={9} className="py-8 text-center" style={{ color: "var(--th-text-muted)" }}>No enrollment tokens yet.</td></tr>}
+              {!filteredTokens.length && (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center" style={{ color: "var(--th-text-muted)" }}>
+                    {tokenSearch.trim() ? "Asnjë token nuk u gjet." : "No enrollment tokens yet."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
