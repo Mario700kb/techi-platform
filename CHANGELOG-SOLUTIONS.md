@@ -4,6 +4,43 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-23 — Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.0.0
+
+**Skedar:** `backend/app/services/enrollment_bootstrap_service.py`
+
+**Root cause i konfirmuar:** PC-të me v1.0.4 kishin `UpgradeCode` identik me v2.0.0 (`{E6AD0A88-5F26-5665-9B1F-70B8C5EE8363}`) por MSI nuk mund ta uninstalonte v1.0.4 automatikisht gjatë upgrade kur shërbimi ishte running + file locked. Rezultati: `msiexec REINSTALL=ALL` kthente 1603.
+
+**Zgjidhja — tre shtresa në `:do_install`, para `set PRODUCT_INSTALLED=`:**
+
+**1. Fshi service para uninstall** (eliminon file-lock dhe service-conflict):
+```bat
+sc.exe stop TechiAgent 2>nul
+sc.exe delete TechiAgent 2>nul
+timeout /t 3 /nobreak >nul
+```
+
+**2. Uninstall registry-based** (dinamik — gjen çdo paketë "TECHI Endpoint Deployment"):
+```bat
+for /f "tokens=*" %%i in ('reg query ... "TECHI Endpoint Deployment" ...') do (
+    for /f "tokens=2 delims={}" %%j in ('... findstr /i "HKEY"') do (
+        msiexec /x "{%%j}" /quiet /norestart 2>nul
+    )
+)
+```
+
+**3. Uninstall direkt me ProductCode** (failsafe — ProductCode-et e njohura të v1.0.4):
+```bat
+msiexec /x "{134568B7-BCB0-4341-933B-C24DA78DEF6E}" /quiet /norestart 2>nul
+msiexec /x "{110919C6-83C4-444F-821F-61F755FE5081}" /quiet /norestart 2>nul
+timeout /t 10 /nobreak >nul
+```
+
+Pas këtij blloku, `set PRODUCT_INSTALLED=` kërkon "TECHI Agent" (v2.0.0) — nëse u uninstalua, do ta instalojë si fresh. Nëse UpgradeCode u gjet ende, bën REINSTALL=ALL.
+
+**Teste:** 32 passed (2 teste të reja: `test_deploy_cmd_deletes_service_before_uninstall`, `test_deploy_cmd_uninstalls_old_v104_before_install`).
+
+---
+
 ## 2026-06-23 — :manual_replace_lan krijon Windows Service nëse mungon (v1.0.4 skip-install bug)
 
 **Skedar:** `backend/app/services/enrollment_bootstrap_service.py`

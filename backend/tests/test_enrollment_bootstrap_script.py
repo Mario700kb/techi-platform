@@ -701,6 +701,24 @@ class TestGPOScheduledDeployScript:
         assert "net stop TechiAgent 2>nul" in self.script
         assert "taskkill /f /im techi-agent.exe 2>nul" in self.script
 
+    def test_deploy_cmd_deletes_service_before_uninstall(self):
+        """sc.exe delete TechiAgent para uninstall — shmang konflikte service gjatë upgrade."""
+        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        section = self.script[do_install:already]
+        assert "sc.exe stop TechiAgent 2>nul" in section
+        assert "sc.exe delete TechiAgent 2>nul" in section
+
+    def test_deploy_cmd_uninstalls_old_v104_before_install(self):
+        """Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.0.0."""
+        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
+        section = self.script[do_install:already]
+        assert '"TECHI Endpoint Deployment"' in section
+        assert 'msiexec /x "{%%j}" /quiet /norestart 2>nul' in section
+        assert 'msiexec /x "{134568B7-BCB0-4341-933B-C24DA78DEF6E}" /quiet /norestart 2>nul' in section
+        assert 'msiexec /x "{110919C6-83C4-444F-821F-61F755FE5081}" /quiet /norestart 2>nul' in section
+
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""
         assert 'set LOG=%INSTALL_DIR%\\deploy.log' in self.script
