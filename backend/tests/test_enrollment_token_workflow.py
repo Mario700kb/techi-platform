@@ -62,6 +62,8 @@ def test_deployment_command_is_safe_and_has_no_irm_iex():
     assert "-File $BootstrapFile" in deployment.manual_command
     assert "Invoke-WebRequest" in deployment.gpo_command
     assert 'C:\\Windows\\Temp\\techi-bootstrap.ps1' in deployment.gpo_command
+    assert "DownloadFile" in deployment.gpo_deploy_command
+    assert "Invoke-WebRequest" not in deployment.gpo_deploy_command
     assert deployment.token_available is True
 
 

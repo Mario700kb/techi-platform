@@ -254,7 +254,7 @@ class EnrollmentTokenService:
         return (
             "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
             f'$f = Join-Path $env:TEMP "techi-gpo-deploy.ps1"; '
-            f'Invoke-WebRequest -Uri "{gpo_deploy_url}" -OutFile $f -UseBasicParsing; '
+            f'(New-Object Net.WebClient).DownloadFile("{gpo_deploy_url}", $f); '
             "powershell -ExecutionPolicy Bypass -NoProfile -File $f"
         )
 

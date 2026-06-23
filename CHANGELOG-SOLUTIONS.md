@@ -4,6 +4,25 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-23 — gpo-deploy.ps1 download: Invoke-WebRequest → WebClient.DownloadFile
+
+**Skedarë:**
+- `backend/app/services/enrollment_token_service.py`
+- `backend/tests/test_enrollment_token_workflow.py`
+
+**Problem:** Komanda e gjeneruar nga UI për shkarkimin e `gpo-deploy.ps1` përdorte `Invoke-WebRequest` i cili dështon në Windows Server 2016 pa WMF 5.1 të plotë ose me proxy settings të caktuara.
+
+**Zgjidhje:** Zëvendëso në `safe_gpo_deploy_command()`:
+```
+Para:  Invoke-WebRequest -Uri "{url}" -OutFile $f -UseBasicParsing
+Pas:   (New-Object Net.WebClient).DownloadFile("{url}", $f)
+```
+`Net.WebClient.DownloadFile` funksionon në .NET 3.5+ (Windows Server 2008+) dhe nuk varet nga cmdlet-et e PowerShell.
+
+**Teste:** 5 passed (1 assertion e re: `DownloadFile in gpo_deploy_command` + `Invoke-WebRequest not in gpo_deploy_command`).
+
+---
+
 ## 2026-06-23 — Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.0.0
 
 **Skedar:** `backend/app/services/enrollment_bootstrap_service.py`
