@@ -4,6 +4,59 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-24 — Command Center /agent-config: Faza B — gate konfirmimi para dërgimit
+
+**Skedarë:**
+- `frontend/src/api/agentCommands.ts`
+- `frontend/src/components/AgentCommandsPanel.tsx`
+
+**Qëllimi:** Shtresë sigurie UI para se Command Center të dërgojë komanda që
+ekzekutohen si SYSTEM te ~605 PC. **`handleSend`, `sendBulkCommand`,
+`buildPayload`, `startPolling`, `getBatchProgress`, çdo endpoint dhe çdo
+komandë mbetën plotësisht të paprekura** — modal-i ndërhyn vetëm mes klikut
+"Send" dhe thirrjes ekzistuese `handleSend()`.
+
+**Ndryshime:**
+1. **Lista e komandave "të rrezikshme" u zgjerua** (`DESTRUCTIVE_BULK_COMMANDS`,
+   vetëm klasifikim UI — vendos kur hapet `ConfirmModal`, jo logjikë dërgimi):
+   shtohen `set_remote_password`, `restart_rustdesk`, `change_heartbeat_interval`
+   pranë 4 ekzistuesve (`restart_device`, `restart_agent`, `reboot_pc`,
+   `run_powershell`) → 7 gjithsej. `ping`, `collect_inventory`, `sync_rustdesk`,
+   `register_protocol` dërgohen direkt, pa modal, si më parë.
+2. **Numër pajisjesh real PARA dërgimit** — `deviceCount` te `AgentCommandsPanel.tsx`
+   nuk vjen më nga `activeBatch?.total` (që ishte `null` në dërgimin e parë,
+   para çdo batch-i), por nga `fleetOverview` (AppDataContext, **zero fetch i
+   ri**): `stats.total` për "All devices", `agents_outdated` për "Devices
+   needing agent update", `tree_counts.by_client[clientId]` për "By client",
+   numërim i ID-ve të parsuara për "Specific device IDs". "By group" mbetet
+   `null` (s'ka count të para-llogaritur client-side pa endpoint të ri — jashtë
+   scope).
+3. **Theksim vizual "All devices" + komandë e rrezikshme** — `ConfirmModal`
+   merr prop të ri `target`; kur `target === "all"`, bordura bëhet e kuqe
+   (2px) dhe shfaqet banner i dedikuar me numrin e madh + "Kjo do dërgohet te
+   të gjitha pajisjet".
+4. **Script preview për `run_powershell`** — `ConfirmModal` merr prop të ri
+   `scriptPreview` (= `payload["script"]`), shfaqur read-only në `<pre>`
+   scroll-ueshëm brenda modal-it, përpara konfirmimit.
+5. **Butona të riemërtuar**: "Send command" → **"Konfirmo dërgimin"**,
+   "Cancel" → **"Anulo"**.
+6. **Mbyllje universale me Escape** — `ConfirmModal` tani ka `window`
+   keydown-listener (si `OutputModal` i Faza A.1), në vend të vetëm
+   `onKeyDown` te input-i i step 2 (që s'funksiononte në step 1 ose pa focus).
+
+**Bug-fix sigurie i zbuluar gjatë punës (jashtë kërkesës fillestare, por brenda
+frymës "Faza B"):** te konfirmimi 2-hapësh i `reboot_pc`, nëse `deviceCount`
+ishte `null` (numër i panjohur), fusha "shkruaj numrin" me input bosh **e
+kalonte automatikisht kontrollin** (`"" === ""`). Tani `canConfirm` kërkon
+domosdoshmërisht një numër real (`expectedText !== ""`) përpara se input-i i
+përdoruesit të mund të përputhet.
+
+**Validim:** `npx tsc --noEmit` kalon pa gabime. Pa build/deploy ende —
+verifikim manual te `/agent-config` (provo `reboot_pc`/`run_powershell` me
+target "All devices" dhe me një klient specifik) mbetet për review.
+
+---
+
 ## 2026-06-24 — Command Center /agent-config: Faza A.1 — progress bar live + full output modal
 
 **Skedar:** `frontend/src/components/AgentCommandsPanel.tsx` (vetëm frontend, asnjë ndryshim backend/agjent).

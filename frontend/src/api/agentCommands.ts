@@ -79,6 +79,9 @@ export const DESTRUCTIVE_BULK_COMMANDS = new Set<BulkCommandType>([
   "restart_agent",
   "reboot_pc",
   "run_powershell",
+  "set_remote_password",
+  "restart_rustdesk",
+  "change_heartbeat_interval",
 ]);
 
 /** Commands that require a hard 2-step confirmation (type device count) */

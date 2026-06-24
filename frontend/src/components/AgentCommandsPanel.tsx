@@ -33,6 +33,7 @@ import {
 } from "../api/agentCommands";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
+import { useAppData } from "../contexts/AppDataContext";
 
 const POLL_INTERVAL = 3000;
 
@@ -119,19 +120,35 @@ function WarnNote({ children }: { children: React.ReactNode }) {
 interface ConfirmModalProps {
   commandType: BulkCommandType;
   targetLabel: string;
+  target: "all" | "client" | "group" | "devices" | "outdated_agents";
   deviceCount: number | null;
   twoStep: boolean;
   sending: boolean;
+  scriptPreview?: string;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending, onConfirm, onClose }: ConfirmModalProps) {
+function ConfirmModal({
+  commandType, targetLabel, target, deviceCount, twoStep, sending, scriptPreview, onConfirm, onClose,
+}: ConfirmModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmInput, setConfirmInput] = useState("");
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const isAllDevices = target === "all";
   const expectedText = deviceCount !== null ? String(deviceCount) : "";
-  const canConfirm = !twoStep || step === 1 || confirmInput === expectedText;
+  // Require a real, known device count before allowing the type-to-confirm
+  // step to pass — previously an empty expectedText (unknown count) made an
+  // empty input trivially match, defeating the confirmation.
+  const canConfirm = !twoStep || step === 1 || (expectedText !== "" && confirmInput === expectedText);
 
   return (
     <div
@@ -143,7 +160,7 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
         className="w-full max-w-sm rounded-xl p-5 space-y-4 shadow-2xl"
         style={{
           background: "var(--th-bg-drawer, var(--th-bg-shell))",
-          border: "1px solid var(--th-border-drawer-section)",
+          border: isAllDevices ? "2px solid rgba(239,68,68,0.6)" : "1px solid var(--th-border-drawer-section)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -159,7 +176,7 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
             <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
               <strong className="text-amber-400">{BULK_COMMAND_LABELS[commandType]}</strong>{" "}
               → <strong style={{ color: "var(--th-text-primary)" }}>{targetLabel}</strong>
-              {deviceCount !== null && (
+              {deviceCount !== null && !isAllDevices && (
                 <span> ({deviceCount} device{deviceCount !== 1 ? "s" : ""})</span>
               )}
             </p>
@@ -168,6 +185,32 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* All-devices emphasis */}
+        {isAllDevices && (
+          <div
+            className="rounded-lg px-3 py-2.5 text-center"
+            style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)" }}
+          >
+            <p className="text-2xl font-bold text-red-400">{deviceCount ?? "?"}</p>
+            <p className="text-xs font-medium text-red-300">Kjo do dërgohet te të gjitha pajisjet</p>
+          </div>
+        )}
+
+        {/* run_powershell script preview */}
+        {scriptPreview && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
+              Script Preview
+            </p>
+            <pre
+              className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md p-2.5 text-xs font-mono"
+              style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
+            >
+              {scriptPreview}
+            </pre>
+          </div>
+        )}
 
         {/* Step 1 warning */}
         {step === 1 && (
@@ -194,8 +237,7 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
               className={inputCls}
               style={inputStyle}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && confirmInput === expectedText) onConfirm();
-                if (e.key === "Escape") onClose();
+                if (e.key === "Enter" && canConfirm) onConfirm();
               }}
             />
           </div>
@@ -220,7 +262,7 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: "#ef4444" }}
             >
-              {sending ? "Sending…" : "Send command"}
+              {sending ? "Sending…" : "Konfirmo dërgimin"}
             </button>
           )}
           <button
@@ -229,7 +271,7 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
             className="rounded-md px-4 py-1.5 text-sm font-semibold"
             style={{ background: "var(--th-bg-shell)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-primary)" }}
           >
-            Cancel
+            Anulo
           </button>
         </div>
       </div>
@@ -470,6 +512,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
 
 export default function AgentCommandsPanel() {
   const { user } = useAuth();
+  const { fleetOverview } = useAppData();
   const isAdmin = user?.role === "admin" || user?.role === "owner";
   const isOwner = user?.role === "owner";
 
@@ -666,7 +709,16 @@ export default function AgentCommandsPanel() {
     : target === "group" ? (groups.find((g) => g.id === groupId)?.name ?? `Group #${groupId}`)
     : `${deviceIdsInput || "…"} (device IDs)`;
 
-  const deviceCount = activeBatch?.total ?? null;
+  // Best-effort device count shown in the confirm modal, before anything is
+  // sent — uses fleetOverview already fetched by AppDataContext, no new
+  // network calls. "group" has no precomputed count available client-side
+  // without a new endpoint (out of scope for this UI-only change).
+  const deviceCount =
+    target === "all" ? (fleetOverview?.stats.total ?? null)
+    : target === "outdated_agents" ? (fleetOverview?.agents_outdated ?? null)
+    : target === "client" ? (clientId != null ? fleetOverview?.tree_counts.by_client[String(clientId)] ?? null : null)
+    : target === "devices" ? (deviceIdsInput.split(",").map((s) => s.trim()).filter(Boolean).length || null)
+    : null;
   const finalStatus = activeBatch ? batchOverallStatus(activeBatch) : null;
 
   // Which commands this user can see
@@ -683,9 +735,11 @@ export default function AgentCommandsPanel() {
         <ConfirmModal
           commandType={commandType}
           targetLabel={targetLabel}
+          target={target}
           deviceCount={deviceCount}
           twoStep={needsTwoStep}
           sending={sending}
+          scriptPreview={commandType === "run_powershell" ? payload["script"] : undefined}
           onConfirm={handleSend}
           onClose={() => { if (!sending) setConfirmOpen(false); }}
         />
