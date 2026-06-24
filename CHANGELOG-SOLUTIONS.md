@@ -4,6 +4,41 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-24 — Command Center /agent-config: Faza A.1 — progress bar live + full output modal
+
+**Skedar:** `frontend/src/components/AgentCommandsPanel.tsx` (vetëm frontend, asnjë ndryshim backend/agjent).
+
+**Qëllimi:** Vizualizim mbi të dhëna që tashmë vinin nga API (diagnoza e
+konfirmoi: `/commands/{batch_id}/progress` poll-ohet çdo 3s dhe rikthen
+`completed/failed/total/percent` live; `action.output`/`error` përmbajnë
+PowerShell stdout/stderr të plotë, vetëm UI i fshihte pas tooltip 160px).
+**`getBatchProgress`, `startPolling`, `POLL_INTERVAL`, `sendBulkCommand`, dhe
+çdo endpoint/komandë mbetën plotësisht të paprekura.**
+
+**Ndryshime:**
+1. **Progress bar me tekst live** — nën `<ProgressBar>`, shtohet rresht i ri
+   `"X/Y completed · Z failed · W timeout"` (krahas `percent%`), llogaritur
+   direkt nga fushat ekzistuese të `activeBatch` (`completed/failed/timeout/total`),
+   përditësohet automatikisht me çdo poll 3s ekzistues.
+2. **Status final i diferencuar** kur `finished===true` — `batchOverallStatus()`
+   (helper ekzistues, përdorur tashmë te tabela e History) u **gjeneralizua në
+   tip** (`{finished, failed, timeout}` në vend të `BatchSummary` specifik) që
+   të ripërdoret edhe për `activeBatch` (`BatchProgressResponse`) — sjellja për
+   History mbetet identike. "Batch complete" tani bëhet "Batch complete" (gjelbër)
+   / "Batch failed (n)" (kuq) / "Batch timeout (n)" (gri), në vend të një teksti
+   të vetëm gjithmonë gjelbër.
+3. **Modal "view full output"** (`OutputModal`, i ri, pranë `ConfirmModal`) —
+   te per-device list, output/error i shkurtuar (160px) tani është buton me
+   ikonë `Eye`; klikimi hap modal me `<pre>` monospace + scroll, stdout dhe
+   stderr ndarë qartë (jo më i prerë te 160px/tooltip). Mbyllet me X, klik
+   jashtë, **ose Escape** (`keydown` listener, hequr në cleanup).
+
+**Validim:** `npx tsc --noEmit` kalon pa gabime. Pa build/deploy ende —
+verifikim manual te `/agent-config` (dërgo `run_powershell`, p.sh. `ipconfig`,
+kontrollo progress bar live + modal output) mbetet për review.
+
+---
+
 ## 2026-06-24 — Command Center /agent-config: Ridizajn Faza A (strukturë + grupim, pa logjikë)
 
 **Skedarë:**

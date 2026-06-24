@@ -72,8 +72,8 @@ function StatusPill({ status, count }: { status: string; count: number }) {
   );
 }
 
-/** Pure UI derivation from existing BatchSummary fields — no new business logic. */
-function batchOverallStatus(b: BatchSummary): { label: string; className: string } {
+/** Pure UI derivation from existing batch count fields — no new business logic. */
+function batchOverallStatus(b: { finished: boolean; failed: number; timeout: number }): { label: string; className: string } {
   if (!b.finished) return { label: "Running", className: "text-sky-400" };
   if (b.failed > 0) return { label: `Failed (${b.failed})`, className: "text-red-400" };
   if (b.timeout > 0) return { label: `Timeout (${b.timeout})`, className: "text-slate-500" };
@@ -231,6 +231,78 @@ function ConfirmModal({ commandType, targetLabel, deviceCount, twoStep, sending,
           >
             Cancel
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Full output modal ──────────────────────────────────────────────────── //
+
+interface OutputModalProps {
+  hostname: string;
+  output: string | null;
+  error: string | null;
+  onClose: () => void;
+}
+
+function OutputModal({ hostname, output, error, onClose }: OutputModalProps) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.65)" }}
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col space-y-3 rounded-xl p-5 shadow-2xl"
+        style={{
+          background: "var(--th-bg-drawer, var(--th-bg-shell))",
+          border: "1px solid var(--th-border-drawer-section)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-mono font-semibold" style={{ color: "var(--th-text-primary)" }}>{hostname}</p>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:opacity-70" style={{ color: "var(--th-text-muted)" }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 space-y-3 overflow-y-auto">
+          {output && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
+                Output
+              </p>
+              <pre
+                className="whitespace-pre-wrap rounded-md p-3 text-xs font-mono"
+                style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
+              >
+                {output}
+              </pre>
+            </div>
+          )}
+          {error && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">Error</p>
+              <pre
+                className="whitespace-pre-wrap rounded-md p-3 text-xs font-mono text-red-400"
+                style={{ background: "rgba(239,68,68,0.08)" }}
+              >
+                {error}
+              </pre>
+            </div>
+          )}
+          {!output && !error && (
+            <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>No output captured.</p>
+          )}
         </div>
       </div>
     </div>
@@ -428,6 +500,7 @@ export default function AgentCommandsPanel() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [cancelling, setCancelling] = useState(false);
+  const [outputModal, setOutputModal] = useState<{ hostname: string; output: string | null; error: string | null } | null>(null);
 
   useEffect(() => {
     getClients().then(setClients).catch(() => {});
@@ -594,6 +667,7 @@ export default function AgentCommandsPanel() {
     : `${deviceIdsInput || "…"} (device IDs)`;
 
   const deviceCount = activeBatch?.total ?? null;
+  const finalStatus = activeBatch ? batchOverallStatus(activeBatch) : null;
 
   // Which commands this user can see
   const visibleCommands = BULK_COMMAND_TYPES.filter((t) => {
@@ -614,6 +688,16 @@ export default function AgentCommandsPanel() {
           sending={sending}
           onConfirm={handleSend}
           onClose={() => { if (!sending) setConfirmOpen(false); }}
+        />
+      )}
+
+      {/* ── Full output modal ─────────────────────────────────────── */}
+      {outputModal && (
+        <OutputModal
+          hostname={outputModal.hostname}
+          output={outputModal.output}
+          error={outputModal.error}
+          onClose={() => setOutputModal(null)}
         />
       )}
 
@@ -845,9 +929,14 @@ export default function AgentCommandsPanel() {
             {/* Progress bar */}
             <div className="space-y-1.5">
               <ProgressBar percent={activeBatch.percent} />
-              <p className="text-right text-xs font-mono" style={{ color: "var(--th-text-muted)" }}>
-                {activeBatch.percent}%
-              </p>
+              <div className="flex items-center justify-between text-xs font-mono" style={{ color: "var(--th-text-muted)" }}>
+                <span>
+                  {activeBatch.completed}/{activeBatch.total} completed
+                  {activeBatch.failed > 0 && <span className="text-red-400"> · {activeBatch.failed} failed</span>}
+                  {activeBatch.timeout > 0 && <span className="text-slate-500"> · {activeBatch.timeout} timeout</span>}
+                </span>
+                <span>{activeBatch.percent}%</span>
+              </div>
             </div>
 
             {/* Counters */}
@@ -873,9 +962,16 @@ export default function AgentCommandsPanel() {
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     {(d.output || d.error) && (
-                      <span className="max-w-[160px] truncate text-right" style={{ color: "var(--th-text-muted)" }} title={d.output ?? d.error ?? ""}>
-                        {d.output ?? d.error}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOutputModal({ hostname: d.hostname ?? `#${d.device_id}`, output: d.output, error: d.error })}
+                        className="flex max-w-[160px] items-center gap-1 border-0 bg-transparent p-0 text-right hover:opacity-80"
+                        style={{ color: "var(--th-text-muted)" }}
+                        title="View full output"
+                      >
+                        <span className="truncate">{d.output ?? d.error}</span>
+                        <Eye className="h-3 w-3 shrink-0" />
+                      </button>
                     )}
                     <span className={`shrink-0 font-medium ${commandStatusColor(d.status as Parameters<typeof commandStatusColor>[0])}`}>
                       {COMMAND_STATUS_LABELS[d.status as keyof typeof COMMAND_STATUS_LABELS] ?? d.status}
@@ -885,8 +981,10 @@ export default function AgentCommandsPanel() {
               ))}
             </div>
 
-            {activeBatch.finished && (
-              <p className="text-center text-xs font-semibold text-emerald-400">Batch complete</p>
+            {activeBatch.finished && finalStatus && (
+              <p className={`text-center text-xs font-semibold ${finalStatus.className}`}>
+                Batch {finalStatus.label === "Completed" ? "complete" : finalStatus.label.toLowerCase()}
+              </p>
             )}
           </div>
         )}
