@@ -75,6 +75,9 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
         },
       });
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
       networkError = error;
       continue;
     }

@@ -4,6 +4,66 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-24 — Race condition në /devices: device catalog rikthehet te "All" pas zgjedhjes së klientit
+
+**Skedarë:**
+- `frontend/src/pages/Devices.tsx`
+- `frontend/src/api/devices.ts`
+- `frontend/src/api/client.ts`
+
+**Problem:** Te `/devices`, kur klikohej një klient/grup në Fleet tree, tabela e
+device-ve riorientohej pas disa sekondash te "All" ose te një klient tjetër.
+Konfirmuar live në network trace: requests për `client_id=7` dhe `client_id=3`
+të mbivendosura, përgjigja që mbërrin e fundit fitonte pavarësisht cilës
+selektim i përkiste — zero console errors (jo crash, race e pastër).
+
+**Root cause:**
+1. `loadTableData()` (te `Devices.tsx`) thërriste `getDevices(...)` pa
+   `AbortController` — request-i i mëparshëm (p.sh. për `client_id=3`) vazhdonte
+   në background edhe pasi përdoruesi kishte zgjedhur `client_id=7`, dhe çfarëdo
+   që mbërrinte e fundit mbishkruante `tableDevices`.
+2. `scheduleDevicesRefresh()` krijonte një `setTimeout` një-herësh (5s debounce
+   pas event-eve WS "Live") që mbante closure stale mbi `refreshBoth` —
+   nëse përdoruesi ndërronte selektimin brenda atyre 5s, timeout-i ekzekutohej
+   sërish me `filters`/`client_id` e VJETËR (closure i kapur në momentin e
+   planifikimit, jo në momentin e ekzekutimit).
+3. Klikë të shpeshtë në fleet tree shumëzonin numrin e request-ve konkurrente.
+
+**Zgjidhje (vetëm request lifecycle, pa prekur backend/layout/Command Center):**
+- **AbortController**: `loadTableData()` anulon request-in paraardhës
+  (`tableAbortRef`) para se të nisë një të ri; `getDevices()` (te `devices.ts`)
+  pranon tani `signal?: AbortSignal` opsional dhe ia kalon `fetchJson`.
+  `AbortError` trajtohet në heshtje (mos e trajto si gabim të rrjetit).
+- **Fallback fix te `client.ts`**: `fetchJson` rihedh `AbortError`-in
+  menjëherë te `catch`, në vend që të provojë base URL-in tjetër (loop-i
+  ekzistues fallback mes disa base URLs do ta anashkalonte abort-in).
+- **Selection guard (latest-selection-wins)**: `tableRequestKeyRef` ruan
+  `cacheKey` e selektimit aktual (page+limit+search+quickFilter+filters,
+  pra përfshin `client_id`/`smart_folder`); pas çdo `await getDevices(...)`,
+  nëse `tableRequestKeyRef.current !== cacheKey` (selektimi ka ndryshuar
+  ndërkohë), përgjigja hidhet poshtë pa shkruar state. I zbatuar gjithashtu
+  te `finally` (mos e fik skeleton loading-un e selektimit të ri për shkak
+  të një request-i të vjetër që po mbyllet).
+- **Ref për polling "Live"**: `refreshBothRef` mban referencën më të fundit
+  të `refreshBoth`; `scheduleDevicesRefresh`'s `setTimeout` thërret tani
+  `refreshBothRef.current()` (lexim në kohën e ekzekutimit) në vend të
+  `refreshBoth()` direkt (closure i kapur në kohën e planifikimit).
+  `usePollingRefresh` (60s fallback) NUK u prek — ai hook rikrijon interval-in
+  vetë kur identiteti i `refreshBoth` ndryshon, pra s'kishte bug stale-closure.
+- **Debounce 200ms te Fleet tree**: `handleTreeSelect` jep feedback vizual
+  menjëherë (`setSelectedTreeKey`), por debouncon (200ms, `treeSelectTimerRef`)
+  pjesën që prek `setFilters`/URL/fetch, që klikë të shpeshtë të kolapsohen
+  në një fetch të vetëm. Timer-i pastrohet te cleanup effect-i ekzistues
+  (krahas `refreshTimerRef`/`drawerCloseTimerRef`/`searchTimerRef`).
+
+**`getDeviceTableDetails` (table-details) NUK u prek** — tashmë i mbrojtur
+me `detailsRequestRef` (request id incremental).
+
+**Validim:** `npx tsc --noEmit` kalon pa gabime. Pa build/deploy — verifikim
+manual te `/devices` (klikim i shpeshtë mes klientëve) mbetet për review.
+
+---
+
 ## 2026-06-23 — Agent Path Consistency & HTTPS/WSS Fix
 
 **Skedarë:**

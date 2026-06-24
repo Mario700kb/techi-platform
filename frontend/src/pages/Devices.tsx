@@ -129,6 +129,7 @@ export default function Devices() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get("q") || "");
   const searchTimerRef = useRef<number | undefined>();
+  const treeSelectTimerRef = useRef<number | undefined>();
 
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
@@ -140,6 +141,14 @@ export default function Devices() {
   // Stable refs for WS callbacks (avoids stale closures)
   const tableDevicesRef = useRef<Device[]>([]);
   const detailsRequestRef = useRef(0);
+  // In-flight device list request: aborted when a new one starts, and
+  // its cache key is checked on resolve so a stale response (from a
+  // selection the user already navigated away from) never overwrites state.
+  const tableAbortRef = useRef<AbortController | null>(null);
+  const tableRequestKeyRef = useRef<string>("");
+  // Always points at the latest refreshBoth so the one-shot setTimeout in
+  // scheduleDevicesRefresh never fires against a stale client_id/folder closure.
+  const refreshBothRef = useRef<() => Promise<void>>(async () => {});
   tableDevicesRef.current = tableDevices;
 
   const [drawerDeviceId, setDrawerDeviceId] = useState<number | null>(null);
@@ -197,6 +206,9 @@ export default function Devices() {
       tablePage, tableLimit, debouncedSearch, quickFilter,
       filters as Record<string, unknown>,
     );
+    // Records the selection this call was made for; checked after each
+    // await below so a response for an old client_id/folder is discarded.
+    tableRequestKeyRef.current = cacheKey;
 
     const loadDetails = async (devices: Device[]) => {
       const requestId = ++detailsRequestRef.current;
@@ -225,6 +237,11 @@ export default function Devices() {
       return;
     }
 
+    // Cancel any in-flight request for a previous selection before starting a new one.
+    tableAbortRef.current?.abort();
+    const controller = new AbortController();
+    tableAbortRef.current = controller;
+
     // Stale cache → show stale immediately, revalidate silently in background
     const stale = appCache.peek<{ devices: Device[]; total: number }>(cacheKey);
     if (stale) {
@@ -237,12 +254,16 @@ export default function Devices() {
         const qfExtra = quickFilterToApiFilters(quickFilter);
         const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
         if (debouncedSearch) apiFilters.search = debouncedSearch;
-        const result = await getDevices(apiFilters, skip, tableLimit);
+        const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
+        if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
         setTableDevices(result.devices);
         setTableTotal(result.total);
         appCache.set(cacheKey, { devices: result.devices, total: result.total });
         void loadDetails(result.devices);
-      } catch { /* keep stale data on background refresh failure */ }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        /* keep stale data on background refresh failure */
+      }
       return;
     }
 
@@ -253,15 +274,17 @@ export default function Devices() {
       const qfExtra = quickFilterToApiFilters(quickFilter);
       const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
       if (debouncedSearch) apiFilters.search = debouncedSearch;
-      const result = await getDevices(apiFilters, skip, tableLimit);
+      const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
+      if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
       setTableDevices(result.devices);
       setTableTotal(result.total);
       appCache.set(cacheKey, { devices: result.devices, total: result.total });
       void loadDetails(result.devices);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load devices");
     } finally {
-      setTableLoading(false);
+      if (tableRequestKeyRef.current === cacheKey) setTableLoading(false);
     }
   }, [tablePage, tableLimit, quickFilter, filters, debouncedSearch]);
 
@@ -278,6 +301,7 @@ export default function Devices() {
   const refreshBoth = useCallback(async () => {
     await Promise.all([refreshFleetOverview(true), loadTableData()]);
   }, [refreshFleetOverview, loadTableData]);
+  refreshBothRef.current = refreshBoth;
 
   const mergeDeviceEvent = useCallback(
     (event: DeviceRealtimeEvent) => {
@@ -332,9 +356,11 @@ export default function Devices() {
     }
     refreshTimerRef.current = window.setTimeout(() => {
       refreshTimerRef.current = undefined;
-      void refreshBoth();
+      // Read via ref so this always targets the current client_id/folder,
+      // not the one in scope when this timeout was scheduled 5s ago.
+      void refreshBothRef.current();
     }, 5000);
-  }, [refreshBoth]);
+  }, []);
 
   useEffect(() => {
     void loadOrgData();
@@ -411,38 +437,44 @@ export default function Devices() {
       window.clearTimeout(refreshTimerRef.current);
       window.clearTimeout(drawerCloseTimerRef.current);
       window.clearTimeout(searchTimerRef.current);
+      window.clearTimeout(treeSelectTimerRef.current);
     };
   }, []);
 
   const handleTreeSelect = (key: string) => {
+    // Immediate visual feedback; the actual filter/fetch is debounced below
+    // so a burst of rapid clicks across the fleet tree only triggers one fetch.
     setSelectedTreeKey(key);
-    const nextFilters: DeviceFilters = {
-      status: filters.status,
-      freshness_state: filters.freshness_state,
-      maintenance_state: filters.maintenance_state,
-      duplicate_candidates: filters.duplicate_candidates,
-      smart_folder: undefined,
-    };
-    if (key === "unassigned") {
-      nextFilters.client_id = -1;
-      nextFilters.group_id = undefined;
-    } else if (key.startsWith("client-")) {
-      const match = key.match(/^client-(\d+)(?:-(servers|clientpc))?$/);
-      if (match) {
-        nextFilters.client_id = Number(match[1]);
+    window.clearTimeout(treeSelectTimerRef.current);
+    treeSelectTimerRef.current = window.setTimeout(() => {
+      const nextFilters: DeviceFilters = {
+        status: filters.status,
+        freshness_state: filters.freshness_state,
+        maintenance_state: filters.maintenance_state,
+        duplicate_candidates: filters.duplicate_candidates,
+        smart_folder: undefined,
+      };
+      if (key === "unassigned") {
+        nextFilters.client_id = -1;
         nextFilters.group_id = undefined;
-        if (match[2] === "servers") {
-          nextFilters.smart_folder = "windows_server";
-        } else if (match[2] === "clientpc") {
-          nextFilters.smart_folder = "windows_workstation";
+      } else if (key.startsWith("client-")) {
+        const match = key.match(/^client-(\d+)(?:-(servers|clientpc))?$/);
+        if (match) {
+          nextFilters.client_id = Number(match[1]);
+          nextFilters.group_id = undefined;
+          if (match[2] === "servers") {
+            nextFilters.smart_folder = "windows_server";
+          } else if (match[2] === "clientpc") {
+            nextFilters.smart_folder = "windows_workstation";
+          }
         }
       }
-    }
-    setFilters(nextFilters);
-    // Reset to page 1 when tree selection changes
-    const next = new URLSearchParams(searchParams);
-    next.delete("page");
-    setSearchParams(next, { replace: true });
+      setFilters(nextFilters);
+      // Reset to page 1 when tree selection changes
+      const next = new URLSearchParams(searchParams);
+      next.delete("page");
+      setSearchParams(next, { replace: true });
+    }, 200);
   };
 
   const handleSearch = useCallback((value: string) => {
