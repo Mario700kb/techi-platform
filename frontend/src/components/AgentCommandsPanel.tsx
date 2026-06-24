@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Clock,
   Eye,
   EyeOff,
   History,
@@ -18,6 +15,8 @@ import {
   ADMIN_ONLY_BULK_COMMANDS,
   BatchProgressResponse,
   BatchSummary,
+  BULK_COMMAND_CATEGORIES,
+  BULK_COMMAND_DESCRIPTIONS,
   BULK_COMMAND_LABELS,
   BULK_COMMAND_TYPES,
   BulkCommandType,
@@ -71,6 +70,14 @@ function StatusPill({ status, count }: { status: string; count: number }) {
       </span>
     </div>
   );
+}
+
+/** Pure UI derivation from existing BatchSummary fields — no new business logic. */
+function batchOverallStatus(b: BatchSummary): { label: string; className: string } {
+  if (!b.finished) return { label: "Running", className: "text-sky-400" };
+  if (b.failed > 0) return { label: `Failed (${b.failed})`, className: "text-red-400" };
+  if (b.timeout > 0) return { label: `Timeout (${b.timeout})`, className: "text-slate-500" };
+  return { label: "Completed", className: "text-emerald-400" };
 }
 
 const inputCls =
@@ -418,7 +425,6 @@ export default function AgentCommandsPanel() {
 
   // History
   const [history, setHistory] = useState<BatchSummary[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [cancelling, setCancelling] = useState(false);
@@ -564,12 +570,16 @@ export default function AgentCommandsPanel() {
     }
   }
 
+  // History is visible by default now — load it once on mount instead of on accordion expand.
+  useEffect(() => {
+    void loadHistory();
+  }, []);
+
   async function loadBatchFromHistory(batchId: string) {
     try {
       const progress = await getBatchProgress(batchId);
       setActiveBatch(progress);
       if (!progress.finished) startPolling(batchId);
-      setHistoryOpen(false);
     } catch {}
   }
 
@@ -607,7 +617,8 @@ export default function AgentCommandsPanel() {
         />
       )}
 
-      <div className="space-y-5">
+      <div className="grid gap-5 items-start xl:grid-cols-2">
+        <div className="space-y-5">
         {/* ── Send Command panel ────────────────────────────────────── */}
         <div
           className="rounded-xl p-5 space-y-4"
@@ -633,10 +644,21 @@ export default function AgentCommandsPanel() {
                 className={inputCls}
                 style={inputStyle}
               >
-                {visibleCommands.map((t) => (
-                  <option key={t} value={t}>{BULK_COMMAND_LABELS[t]}</option>
-                ))}
+                {BULK_COMMAND_CATEGORIES.map((cat) => {
+                  const opts = cat.commands.filter((t) => visibleCommands.includes(t));
+                  if (opts.length === 0) return null;
+                  return (
+                    <optgroup key={cat.label} label={cat.label}>
+                      {opts.map((t) => (
+                        <option key={t} value={t}>{BULK_COMMAND_LABELS[t]}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
+              <p className="mt-1.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
+                {BULK_COMMAND_DESCRIPTIONS[commandType]}
+              </p>
             </div>
             <div>
               <FieldLabel>Target</FieldLabel>
@@ -868,66 +890,66 @@ export default function AgentCommandsPanel() {
             )}
           </div>
         )}
+        </div>
 
         {/* ── History ───────────────────────────────────────────────── */}
         <div
           className="rounded-xl overflow-hidden"
           style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)" }}
         >
-          <button
-            type="button"
-            onClick={() => { setHistoryOpen((o) => !o); if (!historyOpen) loadHistory(); }}
-            className="flex w-full items-center justify-between px-5 py-3.5 transition hover:opacity-80"
-          >
-            <div className="flex items-center gap-2">
-              <History className="h-4 w-4" style={{ color: "var(--th-accent-orange, #ff553f)" }} />
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-                Command History
-              </p>
-            </div>
-            {historyOpen
-              ? <ChevronUp className="h-4 w-4" style={{ color: "var(--th-text-muted)" }} />
-              : <ChevronDown className="h-4 w-4" style={{ color: "var(--th-text-muted)" }} />
-            }
-          </button>
+          <div className="flex items-center gap-2 px-5 py-3.5">
+            <History className="h-4 w-4" style={{ color: "var(--th-accent-orange, #ff553f)" }} />
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
+              Command History
+            </p>
+          </div>
 
-          {historyOpen && (
-            <div className="px-5 pb-4 space-y-2">
-              {historyLoading ? (
-                <p className="py-4 text-center text-xs" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
-              ) : history.length === 0 ? (
-                <p className="py-4 text-center text-xs" style={{ color: "var(--th-text-muted)" }}>No command history yet.</p>
-              ) : (
-                history.map((b) => (
-                  <button
-                    key={b.batch_id}
-                    type="button"
-                    onClick={() => loadBatchFromHistory(b.batch_id)}
-                    className="w-full rounded-md px-3 py-2.5 text-left text-xs transition hover:opacity-80"
-                    style={{ background: "var(--th-bg-shell)", border: "1px solid var(--th-border-subtle)" }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                        {BULK_COMMAND_LABELS[b.command_type as BulkCommandType] ?? b.command_type}
-                      </span>
-                      <div className="flex items-center gap-1.5 shrink-0" style={{ color: "var(--th-text-muted)" }}>
-                        <Clock className="h-3 w-3" />
-                        <RelativeTime ts={b.created_at} />
-                      </div>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5" style={{ color: "var(--th-text-muted)" }}>
-                      <span className="capitalize">{b.target}</span>
-                      <span>{b.total} device{b.total !== 1 ? "s" : ""}</span>
-                      {b.completed > 0 && <span className="text-emerald-400">{b.completed} ok</span>}
-                      {b.failed > 0 && <span className="text-red-400">{b.failed} failed</span>}
-                      {b.timeout > 0 && <span className="text-slate-500">{b.timeout} timeout</span>}
-                      {b.finished && <span className="font-medium text-emerald-400">✓ Done</span>}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
+          <div className="px-5 pb-4">
+            {historyLoading ? (
+              <p className="py-4 text-center text-xs" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+            ) : history.length === 0 ? (
+              <p className="py-4 text-center text-xs" style={{ color: "var(--th-text-muted)" }}>No command history yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ color: "var(--th-text-muted)" }}>
+                      <th className="pb-2 pr-3 text-left font-semibold uppercase tracking-wide">Time</th>
+                      <th className="pb-2 pr-3 text-left font-semibold uppercase tracking-wide">Command</th>
+                      <th className="pb-2 pr-3 text-left font-semibold uppercase tracking-wide">Target</th>
+                      <th className="pb-2 pr-3 text-left font-semibold uppercase tracking-wide">Status</th>
+                      <th className="pb-2 text-left font-semibold uppercase tracking-wide">By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((b) => {
+                      const st = batchOverallStatus(b);
+                      return (
+                        <tr
+                          key={b.batch_id}
+                          onClick={() => loadBatchFromHistory(b.batch_id)}
+                          className="cursor-pointer transition hover:opacity-80"
+                          style={{ borderTop: "1px solid var(--th-border-subtle)" }}
+                        >
+                          <td className="whitespace-nowrap py-2 pr-3" style={{ color: "var(--th-text-muted)" }}>
+                            <RelativeTime ts={b.created_at} />
+                          </td>
+                          <td className="py-2 pr-3 font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                            {BULK_COMMAND_LABELS[b.command_type as BulkCommandType] ?? b.command_type}
+                          </td>
+                          <td className="py-2 pr-3 capitalize" style={{ color: "var(--th-text-muted)" }}>
+                            {b.target} · {b.total}
+                          </td>
+                          <td className={`py-2 pr-3 font-medium ${st.className}`}>{st.label}</td>
+                          <td className="py-2" style={{ color: "var(--th-text-muted)" }}>{b.created_by_name ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>

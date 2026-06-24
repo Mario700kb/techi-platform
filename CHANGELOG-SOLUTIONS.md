@@ -4,6 +4,65 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-24 — Command Center /agent-config: Ridizajn Faza A (strukturë + grupim, pa logjikë)
+
+**Skedarë:**
+- `frontend/src/api/agentCommands.ts`
+- `frontend/src/components/AgentCommandsPanel.tsx`
+- `frontend/src/pages/AgentConfig.tsx`
+- `backend/app/schemas/agent_command.py`
+- `backend/app/services/agent_command_service.py`
+
+**Qëllimi:** Ridizajn vizual i Command Center te `/agent-config` (Faza A) —
+grupim i komandave, përshkrime, Command History i dukshëm by-default, layout
+2-kolonësh. **Logjika e dërgimit të komandave (endpoint, payload, target,
+konfirmimet ekzistuese) mbeti plotësisht e paprekur.**
+
+**Ndryshime:**
+1. **Grupim vizual i 11 komandave** (`BULK_COMMAND_CATEGORIES` te `agentCommands.ts`)
+   në 4 kategori, render-uar si `<optgroup>` te `<select>` ekzistues (vlerat/
+   `value=` identike me ato ekzistuese):
+   - Diagnostikë: `ping`, `collect_inventory`
+   - Agent: `restart_agent`, `change_heartbeat_interval`, `run_powershell`
+   - Pajisje: `reboot_pc`, `restart_device`
+   - RustDesk / Remote: `sync_rustdesk`, `restart_rustdesk`, `set_remote_password`, `register_protocol`
+2. **Përshkrim 1-rresht për çdo komandë** (`BULK_COMMAND_DESCRIPTIONS`,
+   anglisht për tani) — shfaqet nën select-in e Command-it, sipas komandës
+   aktualisht të zgjedhur.
+3. **Command History i dukshëm by-default** — hiqet accordion-i i mbyllur
+   (`historyOpen`, `ChevronDown`/`ChevronUp`); ngarkohet automatikisht në mount
+   (i njëjti `getCommandHistory(20)` ekzistues, vetëm thirrur më herët, pa
+   polling të ri). Riorganizohet si tabelë: Time, Command, Target, Status, By.
+   - Kolona "Status" vjen nga `batchOverallStatus()` — derivim UI i ri, vetëm
+     nga fushat ekzistuese `finished/failed/timeout` (Running / Completed /
+     Failed (n) / Timeout (n)), pa logjikë biznesi të re.
+   - Kolona "By" vjen nga `created_by_name` (shih ndryshimin backend poshtë).
+4. **Layout 2-kolonësh** (`grid xl:grid-cols-2`): majtas Send Command + Active
+   Batch (e pandryshuar), djathtas Command History (tabela e re).
+5. **Gjerësia e faqes** (`AgentConfig.tsx`): containeri kryesor `max-w-2xl` →
+   `max-w-6xl`; Header/Agent notice/Heartbeat Policy/Rollout Scripts u
+   mbështjellën në një `<div className="mx-auto max-w-2xl">` të brendshëm —
+   **përmbajtja e tyre mbetet 100% e pandryshuar**, vetëm Command Center
+   përdor gjerësinë e re.
+
+**Backend (minimal, read-only, vetëm history — jo endpoint-i i dërgimit):**
+- `backend/app/schemas/agent_command.py`: shtohet `created_by_name: Optional[str]`
+  te `BatchSummary`.
+- `backend/app/services/agent_command_service.py`: te `get_history()`, bashkon
+  `operators` për `batch.created_by` (FK ekzistuese në `agent_command_batches`,
+  s'ishte e ekspozuar më parë) → `display_name or username`. **`create_bulk()`
+  (endpoint-i `/api/v1/commands/bulk`, dërgimi real i komandave) NUK u prek.**
+
+**Jashtë scope (qëllimisht, Faza B):** asnjë konfirmim i ri për komanda të
+rrezikshme, asnjë ndryshim te Heartbeat Policy/Rollout Scripts, asnjë ndryshim
+te endpoint/payload/target i dërgimit.
+
+**Validim:** `npx tsc --noEmit` kalon pa gabime; `python3 -m py_compile`
+(ast parse) OK për 2 skedarët backend. Pa build/deploy ende në këtë hap —
+verifikim manual te `/agent-config` mbetet për review.
+
+---
+
 ## 2026-06-24 — Race condition në /devices: device catalog rikthehet te "All" pas zgjedhjes së klientit
 
 **Skedarë:**

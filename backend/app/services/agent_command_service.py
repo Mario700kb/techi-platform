@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.models.device import Device
+from app.models.operator import Operator
 from app.models.remote_action import ActionStatus, RemoteAction
 from app.repositories.agent_command_repository import AgentCommandRepository
 from app.repositories.device_repository import DeviceRepository
@@ -145,6 +146,12 @@ class AgentCommandService:
         batches = self.batch_repo.get_history(limit=limit, skip=skip)
         result: List[BatchSummary] = []
 
+        operator_ids = {batch.created_by for batch in batches if batch.created_by is not None}
+        operator_names = {}
+        if operator_ids:
+            operators = self.db.query(Operator).filter(Operator.id.in_(operator_ids)).all()
+            operator_names = {op.id: (op.display_name or op.username) for op in operators}
+
         for batch in batches:
             actions = self.batch_repo.get_batch_actions(batch.id)
             for action in actions:
@@ -169,6 +176,7 @@ class AgentCommandService:
                 timeout=counts["timeout"],
                 finished=total > 0 and done == total,
                 created_at=batch.created_at,
+                created_by_name=operator_names.get(batch.created_by),
             ))
 
         return result

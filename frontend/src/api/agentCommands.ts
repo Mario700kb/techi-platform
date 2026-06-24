@@ -43,6 +43,36 @@ export const BULK_COMMAND_TYPES: BulkCommandType[] = [
   "register_protocol",
 ];
 
+export interface BulkCommandCategory {
+  label: string;
+  commands: BulkCommandType[];
+}
+
+/** Visual grouping only — command values/payloads below are untouched. */
+export const BULK_COMMAND_CATEGORIES: BulkCommandCategory[] = [
+  { label: "Diagnostikë", commands: ["ping", "collect_inventory"] },
+  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell"] },
+  { label: "Pajisje", commands: ["reboot_pc", "restart_device"] },
+  {
+    label: "RustDesk / Remote",
+    commands: ["sync_rustdesk", "restart_rustdesk", "set_remote_password", "register_protocol"],
+  },
+];
+
+export const BULK_COMMAND_DESCRIPTIONS: Record<BulkCommandType, string> = {
+  ping: "Quick connectivity check — confirms the agent is alive and responsive.",
+  collect_inventory: "Refreshes hardware, software, and OS inventory from the device.",
+  restart_agent: "Restarts the TechiAgent Windows service — no device reboot.",
+  change_heartbeat_interval: "Changes how often targeted devices send heartbeats, live, for this session.",
+  run_powershell: "Runs a custom PowerShell script as SYSTEM on each targeted device.",
+  reboot_pc: "Reboots the physical device after an optional delay.",
+  restart_device: "Forces an immediate OS restart (shutdown /r, no delay).",
+  sync_rustdesk: "Re-checks and repairs the RustDesk/TECHI Remote install and ID on the device.",
+  restart_rustdesk: "Stops and restarts the RustDesk/TECHI Remote Windows service.",
+  set_remote_password: "Sets the TECHI Remote Support password on all targeted devices.",
+  register_protocol: "Registers the techiremotesupport:// URL scheme in the Windows Registry.",
+};
+
 /** Commands that require a destructive confirmation dialog (2-step for reboot_pc) */
 export const DESTRUCTIVE_BULK_COMMANDS = new Set<BulkCommandType>([
   "restart_device",
@@ -116,6 +146,7 @@ export interface BatchSummary {
   timeout: number;
   finished: boolean;
   created_at: string;
+  created_by_name?: string | null;
 }
 
 export async function sendBulkCommand(payload: BulkCommandCreate): Promise<BatchCreateResponse> {

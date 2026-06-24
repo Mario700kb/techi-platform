@@ -75,7 +75,8 @@ export default function AgentConfigPage() {
   const dirty = config !== null && parseInt(intervalInput, 10) !== currentInterval;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
+      <div className="mx-auto max-w-2xl space-y-6">
       {/* Header */}
       <div>
         <h1
@@ -286,6 +287,7 @@ export default function AgentConfigPage() {
             Scheduled Task (run script as SYSTEM). Agents re-read the config on next service start.
           </span>
         </div>
+      </div>
       </div>
 
       {/* Command Center */}

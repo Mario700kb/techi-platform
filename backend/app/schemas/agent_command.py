@@ -101,3 +101,4 @@ class BatchSummary(BaseModel):
     timeout: int
     finished: bool
     created_at: datetime
+    created_by_name: Optional[str] = None
