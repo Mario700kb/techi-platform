@@ -13,7 +13,8 @@ export type BulkCommandType =
   | "set_remote_password"
   | "change_heartbeat_interval"
   | "run_powershell"
-  | "register_protocol";
+  | "register_protocol"
+  | "self_update";
 
 export const BULK_COMMAND_LABELS: Record<BulkCommandType, string> = {
   ping: "Ping",
@@ -27,6 +28,7 @@ export const BULK_COMMAND_LABELS: Record<BulkCommandType, string> = {
   change_heartbeat_interval: "Change Heartbeat Interval",
   run_powershell: "Run PowerShell Script",
   register_protocol: "Register Protocol",
+  self_update: "Përditëso Agjentin",
 };
 
 export const BULK_COMMAND_TYPES: BulkCommandType[] = [
@@ -41,6 +43,7 @@ export const BULK_COMMAND_TYPES: BulkCommandType[] = [
   "change_heartbeat_interval",
   "run_powershell",
   "register_protocol",
+  "self_update",
 ];
 
 export interface BulkCommandCategory {
@@ -51,7 +54,7 @@ export interface BulkCommandCategory {
 /** Visual grouping only — command values/payloads below are untouched. */
 export const BULK_COMMAND_CATEGORIES: BulkCommandCategory[] = [
   { label: "Diagnostikë", commands: ["ping", "collect_inventory"] },
-  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell"] },
+  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "self_update"] },
   { label: "Pajisje", commands: ["reboot_pc", "restart_device"] },
   {
     label: "RustDesk / Remote",
@@ -71,6 +74,9 @@ export const BULK_COMMAND_DESCRIPTIONS: Record<BulkCommandType, string> = {
   restart_rustdesk: "Stops and restarts the RustDesk/TECHI Remote Windows service.",
   set_remote_password: "Sets the TECHI Remote Support password on all targeted devices.",
   register_protocol: "Registers the techiremotesupport:// URL scheme in the Windows Registry.",
+  self_update:
+    "Shkarkon dhe instalon versionin e ri të agjentit automatikisht. Nuk kërkon ndërhyrje manuale. " +
+    "PC mund të dalë offline ~2 minuta gjatë instalimit.",
 };
 
 /** Commands that require a destructive confirmation dialog (2-step for reboot_pc) */
@@ -82,6 +88,7 @@ export const DESTRUCTIVE_BULK_COMMANDS = new Set<BulkCommandType>([
   "set_remote_password",
   "restart_rustdesk",
   "change_heartbeat_interval",
+  "self_update",
 ]);
 
 /** Commands that require a hard 2-step confirmation (type device count) */
@@ -92,6 +99,7 @@ export const ADMIN_ONLY_BULK_COMMANDS = new Set<BulkCommandType>([
   "set_remote_password",
   "reboot_pc",
   "run_powershell",
+  "self_update",
 ]);
 
 /** Commands only available to owner */

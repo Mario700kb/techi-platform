@@ -31,6 +31,7 @@ import {
   getCommandHistory,
   sendBulkCommand,
 } from "../api/agentCommands";
+import { AgentPackage, getAgentPackages } from "../api/agentPackages";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
@@ -125,12 +126,13 @@ interface ConfirmModalProps {
   twoStep: boolean;
   sending: boolean;
   scriptPreview?: string;
+  selfUpdatePackage?: AgentPackage | null;
   onConfirm: () => void;
   onClose: () => void;
 }
 
 function ConfirmModal({
-  commandType, targetLabel, target, deviceCount, twoStep, sending, scriptPreview, onConfirm, onClose,
+  commandType, targetLabel, target, deviceCount, twoStep, sending, scriptPreview, selfUpdatePackage, onConfirm, onClose,
 }: ConfirmModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmInput, setConfirmInput] = useState("");
@@ -144,6 +146,7 @@ function ConfirmModal({
   }, [onClose]);
 
   const isAllDevices = target === "all";
+  const isSelfUpdate = commandType === "self_update";
   const expectedText = deviceCount !== null ? String(deviceCount) : "";
   // Require a real, known device count before allowing the type-to-confirm
   // step to pass — previously an empty expectedText (unknown count) made an
@@ -171,7 +174,7 @@ function ConfirmModal({
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              {twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
+              {isSelfUpdate ? "Përditëso Agjentin" : twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
             </p>
             <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
               <strong className="text-amber-400">{BULK_COMMAND_LABELS[commandType]}</strong>{" "}
@@ -185,6 +188,30 @@ function ConfirmModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* self_update — agent restart warning + active package info */}
+        {isSelfUpdate && (
+          <>
+            <div
+              className="rounded-lg px-3 py-2 text-xs text-red-400"
+              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}
+            >
+              Agjenti do të riniset gjatë instalimit. PC mund të dalë offline përkohësisht (~2 minuta).
+            </div>
+            {selfUpdatePackage && (
+              <div className="space-y-1 rounded-md px-3 py-2 text-xs" style={{ background: "var(--th-bg-shell)" }}>
+                <p style={{ color: "var(--th-text-muted)" }}>
+                  Version aktual → <strong style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.version}</strong>
+                </p>
+                {selfUpdatePackage.sha256 && (
+                  <p style={{ color: "var(--th-text-muted)" }}>
+                    SHA256 → <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.sha256.slice(0, 8)}…</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
 
         {/* All-devices emphasis */}
         {isAllDevices && (
@@ -262,7 +289,7 @@ function ConfirmModal({
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: "#ef4444" }}
             >
-              {sending ? "Sending…" : "Konfirmo dërgimin"}
+              {sending ? "Sending…" : isSelfUpdate ? "Konfirmo përditësimin" : "Konfirmo dërgimin"}
             </button>
           )}
           <button
@@ -505,6 +532,15 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
     );
   }
 
+  if (commandType === "self_update") {
+    return (
+      <InfoNote>
+        Download URL, version dhe SHA256 merren automatikisht nga paketa aktive te Agent Packages —
+        nuk ka fusha për t'u plotësuar me dorë.
+      </InfoNote>
+    );
+  }
+
   return null;
 }
 
@@ -545,6 +581,10 @@ export default function AgentCommandsPanel() {
   const [cancelling, setCancelling] = useState(false);
   const [outputModal, setOutputModal] = useState<{ hostname: string; output: string | null; error: string | null } | null>(null);
 
+  // Active windows-amd64 package — shown in the self_update confirm modal
+  // (Version aktual / SHA256). Lazy-loaded only when that command is selected.
+  const [selfUpdatePackage, setSelfUpdatePackage] = useState<AgentPackage | null>(null);
+
   useEffect(() => {
     getClients().then(setClients).catch(() => {});
   }, []);
@@ -557,6 +597,16 @@ export default function AgentCommandsPanel() {
       setGroupId(null);
     }
   }, [clientId]);
+
+  useEffect(() => {
+    if (commandType !== "self_update") return;
+    getAgentPackages()
+      .then((packages) => {
+        const active = packages.find((p) => p.is_active && p.platform === "windows-amd64");
+        setSelfUpdatePackage(active ?? null);
+      })
+      .catch(() => setSelfUpdatePackage(null));
+  }, [commandType]);
 
   useEffect(() => {
     setPayload({});
@@ -573,6 +623,7 @@ export default function AgentCommandsPanel() {
       change_heartbeat_interval: 20,
       run_powershell: 60,
       register_protocol: 20,
+      self_update: 180,
     };
     setTimeoutSecs(defaults[commandType] ?? 30);
   }, [commandType]);
@@ -740,6 +791,7 @@ export default function AgentCommandsPanel() {
           twoStep={needsTwoStep}
           sending={sending}
           scriptPreview={commandType === "run_powershell" ? payload["script"] : undefined}
+          selfUpdatePackage={commandType === "self_update" ? selfUpdatePackage : undefined}
           onConfirm={handleSend}
           onClose={() => { if (!sending) setConfirmOpen(false); }}
         />
