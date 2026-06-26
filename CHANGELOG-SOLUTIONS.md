@@ -4,6 +4,41 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-26 — techi-deploy.cmd: fix bug kritik — service fshihej para verifikimit të MSI
+
+**Skedar:** `backend/app/services/enrollment_bootstrap_service.py`
+(gjeneron `techi-deploy.cmd` te NETLOGON brenda PowerShell here-string-it).
+
+**Bug i konfirmuar live:** te `:do_install` (rrugë e përbashkët për instalim
+të freskët **dhe** për `:do_reinstall_lan`), `sc.exe delete TechiAgent`
+ekzekutohej **para** se script-i të verifikonte nëse `%NETLOGON_MSI%`
+ekziston në të vërtetë. Nëse MSI-ja mungonte nga NETLOGON (version i
+fshirë/i papërditësuar), `msiexec` dështonte, rruga e fallback-ut
+(`:manual_replace_lan`) dështonte gjithashtu (MSI nuk ekziston për ta
+ekstraktuar), dhe `:install_failed` thërriste `net start TechiAgent` mbi
+një service që **tashmë ishte fshirë** — PC mbetej përgjithmonë pa
+TechiAgent të instaluar, edhe pse versioni i mëparshëm po punonte.
+
+**Fix:**
+1. Shtohet kontroll `if not exist "%NETLOGON_MSI%"` **para** rreshtit
+   `sc.exe stop TechiAgent` te `:do_install` — nëse MSI mungon, loget
+   `result=msi-not-found-abort` dhe kërcen te `:ensure_service_running`
+   pa prekur service-in ekzistues.
+2. Label i ri `:ensure_service_running` (para `:install_done`) — rikrijon
+   service-in TechiAgent (`sc.exe create` + `description` + `failure`
+   restart policy, si te `:manual_replace_lan`) **vetëm nëse** nuk
+   ekziston më, pastaj `net start`. Kjo garanton që asnjë rrugë e re
+   dështimi nuk e lë PC-në pa service, qoftë instalim i freskët apo
+   reinstall.
+
+**Validim:** `pytest backend/tests/test_enrollment_bootstrap_script.py
+backend/tests/test_enrollment_token_workflow.py` — **101 + 5 = 106 teste
+PASS** (asnjë test ekzistues prekur, vetëm shtim rreshtash në script).
+
+**Deploy:** direkt në `stable/phase-2-heartbeat` pas testeve.
+
+---
+
 ## 2026-06-24 — Command Center /agent-config: Faza B — gate konfirmimi para dërgimit
 
 **Skedarë:**
