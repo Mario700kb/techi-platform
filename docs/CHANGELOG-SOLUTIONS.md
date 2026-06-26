@@ -3,6 +3,39 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] GPO Deploy — Registry-Driven MSI Upgrade When ProductCode Changes
+
+### Root cause
+
+`techi-deploy.cmd` treated `msiexec /i ... REINSTALL=ALL REINSTALLMODE=vomus`
+with exit code `0` as a successful upgrade. On Windows clients with TECHI Agent
+2.0.0.0 installed under ProductCode
+`{0460426B-FC27-41E3-9EAC-1272F9941D30}`, installing MSI 2.1.0.0 with a
+different ProductCode did not update the registry product entry. The service
+could remain running while `HKLM\...\Uninstall` still reported version 2.0.0.0.
+
+### Fix
+
+`techi-deploy.cmd` now treats MSI registry as the source of truth:
+
+- reads `DisplayName = TECHI Agent` from both native and WOW6432Node uninstall
+  registry hives;
+- extracts `DisplayVersion` and ProductCode from `UninstallString`;
+- if registry is missing, runs fresh install;
+- if registry version equals `ACTIVE_VERSION`, skips install and only ensures
+  `TechiAgent` is running;
+- if registry version is older, stops `TechiAgent`, uninstalls the discovered
+  ProductCode with `msiexec /x`, waits until the registry entry is removed,
+  then installs the new NETLOGON MSI;
+- no longer uses `REINSTALL=ALL` / `REINSTALLMODE=vomus`;
+- considers deploy successful only when registry version matches
+  `ACTIVE_VERSION` and service state is `RUNNING`.
+
+### Checks
+
+- `env PYTHONPATH=backend python3 -m pytest backend/tests/test_enrollment_bootstrap_script.py backend/tests/test_agent_config.py`
+- `cd agent && env GOCACHE=/private/tmp/techi-go-build-cache go test ./...`
+
 ## [2026-06-27] Windows Agent Bootstrap/GPO — Standardize TechiAgent ProgramData Path
 
 ### Root cause

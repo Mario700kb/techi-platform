@@ -711,56 +711,81 @@ class TestGPOScheduledDeployScript:
         already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         assert do_install < already
 
-    def test_deploy_cmd_install_detects_product_before_choosing_msi_flags(self):
-        """do_install kontrollon registry para msiexec — REINSTALL vs ENROLLMENT_TOKEN."""
+    def test_deploy_cmd_reads_msi_registry_from_hklm_and_wow6432node(self):
+        """Deploy lexon registry MSI per TECHI Agent, jo exe/service si burim versioni."""
+        assert "function NV($v)" in self.script
+        assert "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in self.script
+        assert "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in self.script
+        assert "$p.DisplayName -eq ''TECHI Agent''" in self.script
+        assert "REG_VERSION=" in self.script
+        assert "REG_PRODUCT_CODE=" in self.script
+        assert "VERSION_STATE=" in self.script
+        assert "installed_registry_version=%REG_VERSION%" in self.script
+        assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
+
+    def test_deploy_cmd_routes_registry_missing_to_fresh_install(self):
+        """Fresh install ndodh vetem kur registry entry mungon."""
+        assert 'if /i "%VERSION_STATE%"=="missing" goto :do_install' in self.script
         do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[do_install_pos:already_pos]
-
-        assert "set PRODUCT_INSTALLED=" in section
-        assert 'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"' in section
-        assert "if defined PRODUCT_INSTALLED goto :do_reinstall_lan" in section
-        assert 'msiexec /i "%NETLOGON_MSI%" REINSTALL=ALL REINSTALLMODE=vomus /quiet /norestart' in section
         assert 'msiexec /i "%NETLOGON_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
+        assert "installing_product_version=%ACTIVE_VERSION%" in section
+        assert "mode=fresh" in section
         assert 'msiexec /i "%NETLOGON_MSI%" TOKEN=%TOKEN%' not in self.script
+        assert "REINSTALL=ALL" not in self.script
+        assert "REINSTALLMODE=vomus" not in self.script
 
     def test_deploy_cmd_stops_service_before_install(self):
         """Shërbimi ndalet para instalimit."""
         assert "net stop TechiAgent 2>nul" in self.script
         assert "taskkill /f /im techi-agent.exe 2>nul" in self.script
 
-    def test_deploy_cmd_deletes_service_before_uninstall(self):
-        """sc.exe delete TechiAgent para uninstall — shmang konflikte service gjatë upgrade."""
+    def test_deploy_cmd_upgrade_uninstalls_existing_product_code(self):
+        """2.0.0 -> 2.1.0: upgrade ndalon service dhe ben msiexec /x ProductCode."""
+        assert 'if /i "%VERSION_STATE%"=="older" goto :do_upgrade' in self.script
         do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[do_install:already]
-        assert "sc.exe stop TechiAgent 2>nul" in section
-        assert "sc.exe delete TechiAgent 2>nul" in section
+        assert ":do_upgrade" in section
+        assert "net stop TechiAgent 2>nul" in section
+        assert "taskkill /f /im techi-agent.exe 2>nul" in section
+        assert 'msiexec /x "%REG_PRODUCT_CODE%" /qn /norestart' in section
+        assert "mode=uninstall product_code=%REG_PRODUCT_CODE%" in section
+        assert "call :wait_registry_removed" in section
+        assert "registry_removed_ok=1" in section
+        assert "mode=install-after-uninstall" in section
+        assert "sc.exe delete TechiAgent" not in section
 
-    def test_deploy_cmd_uninstalls_old_v104_before_install(self):
-        """Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.1.0."""
-        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
-        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
-        section = self.script[do_install:already]
-        assert '"TECHI Endpoint Deployment"' in section
-        assert 'msiexec /x "{%%j}" /quiet /norestart 2>nul' in section
-        assert 'msiexec /x "{134568B7-BCB0-4341-933B-C24DA78DEF6E}" /quiet /norestart 2>nul' in section
-        assert 'msiexec /x "{110919C6-83C4-444F-821F-61F755FE5081}" /quiet /norestart 2>nul' in section
+    def test_deploy_cmd_handles_product_code_changed(self):
+        """ProductCode i ndryshuar merret nga UninstallString dhe perdoret per uninstall."""
+        assert "$item.UninstallString -match ''\\{[0-9A-Fa-f-]{36}\\}''" in self.script
+        assert "$code=$Matches[0]" in self.script
+        assert 'msiexec /x "%REG_PRODUCT_CODE%" /qn /norestart' in self.script
+
+    def test_deploy_cmd_registry_removed_is_required_after_uninstall(self):
+        """Upgrade nuk vazhdon pa u hequr registry entry i vjeter."""
+        assert ":wait_registry_removed" in self.script
+        assert "set REGISTRY_REMOVED_OK=0" in self.script
+        assert "call :read_registry" in self.script
+        assert 'if /i "!VERSION_STATE!"=="missing"' in self.script
+        assert 'if not "%REGISTRY_REMOVED_OK%"=="1" goto :install_failed' in self.script
 
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""
         assert 'set LOG=%INSTALL_DIR%\\deploy.log' in self.script
         assert "start domain=%DOMAIN% install_dir=%INSTALL_DIR% agent=%AGENT_EXE%" in self.script
-        assert "current_version=%CURRENT_VERSION%" in self.script
+        assert "installed_registry_version=%REG_VERSION%" in self.script
+        assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
         assert "active_version=%ACTIVE_VERSION% source=%VERSION_SOURCE%" in self.script
         assert "msi_path=%NETLOGON_MSI%" in self.script
         assert "msi_exit_code=%MSI_EXIT%" in self.script
         assert "service_before=%SERVICE_STATUS_BEFORE%" in self.script
-        assert "service_after=%SERVICE_STATUS_AFTER%" in self.script
-        assert 'result=0 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
-        assert 'result=0-manual version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
-        assert 'result=1603 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
-        assert 'result=uptodate version=%ACTIVE_VERSION% current_version=%CURRENT_VERSION% >> "%LOG%"' in self.script
+        assert "registry_version_after_install=%REG_VERSION%" in self.script
+        assert "installed_product_code_after_install=%REG_PRODUCT_CODE%" in self.script
+        assert "service_state_after_install=%SERVICE_STATUS_AFTER%" in self.script
+        assert 'result=0 version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
+        assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% >> "%LOG%"' in self.script
 
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
@@ -774,41 +799,38 @@ class TestGPOScheduledDeployScript:
         assert 'sc query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[already_pos:]
-        assert "net start TechiAgent 2>nul" in section
+        assert "call :ensure_service_running" in section
+        assert "call :validate_success" in section
+        assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in section
+        assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER%' in section
 
-    def test_deploy_cmd_manual_replace_lan_triggered_on_reinstall_failure(self):
-        """:manual_replace_lan aktivizohet kur REINSTALL=ALL kthen error (1603 file lock)."""
-        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
-        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
-        section = self.script[do_install:already]
-        assert ":do_reinstall_lan" in section
-        assert "if not \"%MSI_EXIT%\"==\"0\" goto :manual_replace_lan" in section
+    def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
+        """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""
+        assert ":ensure_service_running" in self.script
+        assert 'sc query TechiAgent >nul 2>&1' in self.script
+        assert 'if exist "%AGENT_EXE%" (' in self.script
+        assert 'sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
+        assert 'net start TechiAgent 2>nul' in self.script
 
-    def test_deploy_cmd_manual_replace_lan_extracts_from_netlogon_msi(self):
-        """:manual_replace_lan ekstrakton MSI nga NETLOGON me msiexec /a."""
-        assert 'msiexec /a "%NETLOGON_MSI%" /qn TARGETDIR="%EXTRACT_DIR%"' in self.script
-        assert 'set EXTRACT_DIR=%TEMP%\\TechiExtract' in self.script
-
-    def test_deploy_cmd_manual_replace_lan_uses_committed_agent_path(self):
-        """:manual_replace_lan kopjon techi-agent.exe nga CommApp\\TechiAgent."""
-        assert '%EXTRACT_DIR%\\CommApp\\TechiAgent\\techi-agent.exe' in self.script
-        assert 'copy /y "%EXTRACTED_AGENT%" "%AGENT_EXE%" >nul 2>&1' in self.script
-
-    def test_deploy_cmd_manual_replace_lan_falls_back_to_install_failed(self):
-        """:manual_replace_lan shkon te :install_failed nëse copy dështon."""
-        assert "if not defined EXTRACTED_AGENT goto :install_failed" in self.script
-        assert "if errorlevel 1 goto :install_failed" in self.script
+    def test_deploy_cmd_success_requires_registry_version_and_running_service(self):
+        """SUCCESS nuk bazohet vetem te exit code; kerkon registry equal + service RUNNING."""
+        assert ":validate_success" in self.script
+        assert "set DEPLOY_VALID=0" in self.script
+        assert "call :read_registry" in self.script
+        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" set DEPLOY_VALID=1' in self.script
+        assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script
 
     def test_deploy_cmd_manual_replace_lan_creates_service_if_missing(self):
-        """:manual_replace_lan krijon service me sc.exe nëse nuk ekziston (v1.0.4 skip-install bug)."""
+        """Legacy test name: deploy krijon service me sc.exe nëse nuk ekziston."""
         assert 'sc query TechiAgent >nul 2>&1' in self.script
         assert 'sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
         assert 'sc.exe description TechiAgent "TECHI Solutions endpoint monitoring and management service"' in self.script
         assert 'sc.exe failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000' in self.script
 
     def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
-        """:install_failed regjistron result=1603 dhe del me exit /b 1."""
-        assert 'result=1603 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
+        """:install_failed regjistron detaje dhe del me exit /b 1."""
+        assert "result=failed active_version=%ACTIVE_VERSION%" in self.script
+        assert "uninstall_exit=%UNINSTALL_EXIT%" in self.script
         assert "exit /b 1" in self.script
 
     def test_deploy_cmd_done_label_before_already_uptodate(self):
