@@ -462,6 +462,7 @@ const DevicesTable = memo(function DevicesTable({
   type SortKey = "hostname" | "client_name" | "last_seen";
   const [sortKey, setSortKey] = useState<SortKey>("hostname");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [agentVersionFilter, setAgentVersionFilter] = useState<string>("all");
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -524,6 +525,15 @@ const DevicesTable = memo(function DevicesTable({
     return counts;
   }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion]);
 
+  // Distinct agent versions present in the current device list, newest first
+  const agentVersionOptions = useMemo(() => {
+    const versions = new Set<string>();
+    for (const d of devices) {
+      if (d.agent_version) versions.add(d.agent_version);
+    }
+    return Array.from(versions).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  }, [devices]);
+
   // Apply quick filter on top of the parent-filtered list, then sort
   const displayDevices = useMemo(() => {
     const filtered = quickFilter === "all" ? devices : devices.filter(d => {
@@ -556,7 +566,10 @@ const DevicesTable = memo(function DevicesTable({
         default:                return true;
       }
     });
-    return [...filtered].sort((a, b) => {
+    const versionFiltered = agentVersionFilter === "all" ? filtered : filtered.filter(d =>
+      agentVersionFilter === "unknown" ? !d.agent_version : d.agent_version === agentVersionFilter
+    );
+    return [...versionFiltered].sort((a, b) => {
       let cmp: number;
       if (sortKey === "hostname") {
         cmp = (a.hostname ?? "").localeCompare(b.hostname ?? "");
@@ -567,7 +580,7 @@ const DevicesTable = memo(function DevicesTable({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [devices, quickFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, sortKey, sortDir]);
+  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, sortKey, sortDir]);
 
   const offlineSummaryByClient = useMemo(() => {
     const summaries = new Map<number, ClientOfflineSummary>();
@@ -863,7 +876,7 @@ const DevicesTable = memo(function DevicesTable({
           })}
         </div>
 
-        <div className="mt-2 grid gap-1.5 lg:grid-cols-[1.6fr_1fr] xl:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
+        <div className="mt-2 grid gap-1.5 lg:grid-cols-[1.6fr_1fr] xl:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input
@@ -940,6 +953,20 @@ const DevicesTable = memo(function DevicesTable({
             <option value="maintenance">In maintenance</option>
             <option value="normal">Normal only</option>
             <option value="duplicate">Duplicates only</option>
+          </select>
+          <select
+            value={agentVersionFilter}
+            onChange={(e) => setAgentVersionFilter(e.target.value)}
+            className={FILTER_INPUT_CLS}
+            id="filter-agent-version"
+            name="filter-agent-version"
+            aria-label="Filter by agent version"
+          >
+            <option value="all">All versions</option>
+            {agentVersionOptions.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+            <option value="unknown">Unknown</option>
           </select>
         </div>
       </div>
@@ -1347,15 +1374,20 @@ const DevicesTable = memo(function DevicesTable({
                             className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
                             style={
                               activePackageVersion && device.agent_version === activePackageVersion
-                                ? { color: "#34d399", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)" }
-                                : { color: "#f97316", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.25)" }
+                                ? { color: "#22c55e", background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.35)" }
+                                : { color: "#f97316", background: "rgba(249,115,22,0.2)", border: "1px solid rgba(249,115,22,0.35)" }
                             }
                             title={activePackageVersion ? `Active: ${activePackageVersion}` : undefined}
                           >
                             {device.agent_version}
                           </span>
                         ) : (
-                          <span className="text-[9px]" style={{ color: "var(--th-text-muted)" }}>—</span>
+                          <span
+                            className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
+                            style={{ color: "var(--th-text-muted)", background: "rgba(148,163,184,0.12)", border: "1px solid rgba(148,163,184,0.22)" }}
+                          >
+                            —
+                          </span>
                         )}
                       </td>
 

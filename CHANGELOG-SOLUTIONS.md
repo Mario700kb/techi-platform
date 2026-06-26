@@ -4,6 +4,46 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-26 — Devices: kolonë "Agent" me badge versioni + filtër i shpejtë
+
+**Skedar:** `frontend/src/components/DevicesTable.tsx`
+
+**Qëllimi:** Të shihet menjëherë versioni i agjentit për çdo PC te lista
+`/devices`, pa hyrë në detajet e device-it.
+
+**Ndryshime:**
+1. Kolona "Agent" (mes "OS" dhe "Last Seen", ekzistonte pjesërisht) tani
+   përdor saktësisht ngjyrat e specifikuara: badge jeshil `#22c55e/20`
+   kur `device.agent_version` përputhet me `active_agent_version` nga
+   fleet overview, badge portokalli `#f97316/20` kur është i ndryshëm/i
+   vjetër, dhe badge gri (jo më tekst i thjeshtë) me "—" kur
+   `agent_version` është null/bosh.
+2. Dropdown i ri "Agent version" te rreshti i filtrave (krahas Status /
+   Health / Lifecycle / Signals): "All versions" + çdo version distinkt
+   i pranishëm te devices (p.sh. "2.1.0", "2.0.0") + "Unknown". Filtron
+   `displayDevices` lokalisht (state i ri `agentVersionFilter`, brenda
+   komponentit) — **nuk kryen fetch të ri** drejt backend-it.
+3. Paneli "Device Groups" (`DeviceTree.tsx`) është thjesht pemë
+   client/grup me numërues, jo lista e device-ve individuale — nuk ka
+   rresht "emër device-i" ku të vendosej badge, kështu që ndryshimi
+   mbetet vetëm te lista e plotë `/devices`, sipas rrugës alternative
+   të kërkuar.
+4. Logjika e heartbeat/enrollment/komandave nuk u prek.
+
+**Validim (lokal, Playwright + backend lokal me SQLite):**
+- Dropdown gjeneron saktë `["All versions","2.1.0","2.0.0","Unknown"]`
+  nga 4 devices testues (1 me `2.1.0`, 1 me `2.0.0`, 2 me `agent_version`
+  null).
+- Badge-et e tabelës: jeshil për `2.1.0` (= active), portokalli për
+  `2.0.0`, gri "—" për null — verifikuar me screenshot.
+- Ndërrimi i filtrit nuk gjeneron asnjë XHR/fetch të ri (Network tab —
+  0 requests të reja për secilin ndryshim filtri).
+- `npx tsc --noEmit` pa gabime.
+
+**Deploy:** frontend-only, pas konfirmimit të userit.
+
+---
+
 ## 2026-06-26 — techi-deploy.cmd: fix bug kritik — service fshihej para verifikimit të MSI
 
 **Skedar:** `backend/app/services/enrollment_bootstrap_service.py`
