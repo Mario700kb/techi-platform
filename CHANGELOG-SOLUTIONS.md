@@ -4,6 +4,82 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-06-26 — Command Center: komanda "self_update" (backend + frontend)
+
+**Qëllimi:** Të mund të dërgohet nga Command Center komanda `self_update`
+që e bën agjentin v2.1.0 (i mbështetur te `agent/update.go`) të shkarkojë
+dhe instalojë vetë versionin aktiv, pa operatorin ta shkruajë me dorë
+URL-në/version-in/sha256-in.
+
+### Backend
+**Skedarë:** `backend/app/schemas/agent_command.py`,
+`backend/app/schemas/remote_action.py`, `backend/app/services/agent_command_service.py`
+
+1. `"self_update"` shtohet te `BULK_COMMAND_TYPES` dhe te
+   `ADMIN_ONLY_COMMAND_TYPES` (kërkon admin/owner — si `reboot_pc`/`run_powershell`,
+   pasi prek binarin e agjentit).
+2. `ActionType.SELF_UPDATE` shtohet te enum-i (për konsistencë me
+   sistemin e single-device actions), me label "Self Update Agent" dhe
+   konflikt-grup me `RESTART_AGENT`/`IMMEDIATE_HEARTBEAT` (që të dy
+   rinisin agjentin).
+3. **`AgentCommandService._build_self_update_payload()`** (e re): kur
+   `command_type == "self_update"`, payload-i i klientit injorohet
+   plotësisht — backend merr paketën aktive nga `AgentPackageService
+   .latest_active("windows-amd64")` dhe ndërton:
+   `{"download_url": f"{PUBLIC_BACKEND_URL}{latest_download_url(...)}",
+   "version": pkg.version, "sha256": pkg.sha256}`. Operatori nuk e shkruan
+   kurrë me dorë. Nëse nuk ka paketë aktive → `ValueError` → HTTP 400.
+
+**Validim:** 324 teste backend (1 dështim para-ekzistues i paalidhur,
+`test_legacy_compat`, i konfirmuar edhe pa ndryshimet tona). `curl -X POST
+/api/v1/commands/bulk` lokal me `command_type=self_update` → payload i
+ruajtur në DB përputhet ekzakt me paketën aktive (2.1.0,
+sha256 `cd7a6d3d...`).
+
+**Deploy:** push → `git pull` + `docker compose build backend && up -d
+backend` te `techi-server` (`/opt/techi/techi-platform`). Kontejneri healthy.
+
+### Frontend
+**Skedarë:** `frontend/src/api/agentCommands.ts`,
+`frontend/src/components/AgentCommandsPanel.tsx`
+
+1. `"self_update"` shtohet te `BulkCommandType`, `BULK_COMMAND_LABELS`
+   ("Përditëso Agjentin"), `BULK_COMMAND_TYPES`, kategoria "Agent" te
+   `BULK_COMMAND_CATEGORIES`, `BULK_COMMAND_DESCRIPTIONS`,
+   `DESTRUCTIVE_BULK_COMMANDS` (hap modalin Faza B), dhe
+   `ADMIN_ONLY_BULK_COMMANDS` (mirror i backend-it — komanda fshihet
+   automatikisht te dropdown për jo-admin).
+2. Modali i konfirmimit (`ConfirmModal`) për `self_update`: titull
+   "Përditëso Agjentin", kuti paralajmërimi e kuqe ("Agjenti do të
+   riniset gjatë instalimit. PC mund të dalë offline përkohësisht (~2
+   minuta)."), kuti info "Version aktual → X.X.X" + "SHA256 → 8
+   karaktere të para" (lazy-fetch nga `getAgentPackages()`, vetëm kur
+   komanda është e zgjedhur), buton "Konfirmo përditësimin" (në vend
+   të "Konfirmo dërgimin" gjenerik). Kutia e madhe "All devices" mbetet
+   trajtimi ekzistues i përbashkët, automatikisht i vlefshëm.
+3. `handleSend`, `sendBulkCommand`, `buildPayload` — **të paprekura**;
+   `self_update` nuk ka fusha payload (backend e mbush vetë), `PayloadEditor`
+   shfaq vetëm një `InfoNote` shpjeguese.
+4. Timeout default 180s (si `reboot_pc`, pasi shkarkim+instalim+rinisje
+   zgjat më shumë se komandat e thjeshta).
+
+**Validim:** `tsc --noEmit` pa gabime. Playwright lokal (backend lokal
+SQLite + paketë test 2.1.0): komanda shfaqet te dropdown te kategoria
+"Agent", klikimi "Send" hap modalin me titull/paralajmërim/version/sha256
+korrekte, "Konfirmo përditësimin" dërgon batch-in (DB konfirmon payload
+ekzakt me `download_url`/`version`/`sha256`), veprimi shfaqet te Command
+History.
+
+**Kufizime respektuara:** `self_update` nuk prek TECHI Remote Support.exe
+(payload-i prek vetëm agjentin); testuar fillimisht vetëm me
+`device_ids` specifik, jo `target=all`; heartbeat/enrollment/komanda
+ekzistuese të paprekura.
+
+**Deploy:** push → `git pull` + `docker compose build frontend && up -d
+frontend` te `techi-server`. Kontejneri healthy.
+
+---
+
 ## 2026-06-26 — Devices: kolonë "Agent" me badge versioni + filtër i shpejtë
 
 **Skedar:** `frontend/src/components/DevicesTable.tsx`
