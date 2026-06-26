@@ -43,7 +43,7 @@ class _StubService(EnrollmentBootstrapService):
         return url, self._stub_sha256, "techi-agent.msi"
 
     def _active_windows_version(self) -> str:
-        return "2.0.0"
+        return "2.1.0"
 
 
 class _StubTokenService:
@@ -677,21 +677,21 @@ class TestGPOScheduledDeployScript:
         """CMD lexon techi-version.txt nga NETLOGON (LAN) jo nga interneti."""
         assert "set NETLOGON_VERSION=\\\\%DOMAIN%\\NETLOGON\\techi-version.txt" in self.script
         assert "for /f \"tokens=*\" %%i in ('type \"%NETLOGON_VERSION%\" 2^>nul') do set ACTIVE_VERSION=%%i" in self.script
-        assert "if not defined ACTIVE_VERSION goto :fresh_install" in self.script
+        assert "if not defined ACTIVE_VERSION set ACTIVE_VERSION=2.1.0" in self.script
+        assert "if not exist \"%NETLOGON_VERSION%\" set VERSION_SOURCE=fallback" in self.script
 
     def test_deploy_cmd_installs_from_netlogon_lan_path(self):
         """CMD instalom MSI nga \\DOMAIN\\NETLOGON\\ (LAN), jo nga URL interneti."""
         assert "set NETLOGON_MSI=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ACTIVE_VERSION%.msi" in self.script
         assert 'msiexec /i "%NETLOGON_MSI%"' in self.script
         # Versioni fallback i baked-in i gjenerimit
-        assert "TECHI-Agent-2.0.0.msi" in self.script
+        assert "if not defined ACTIVE_VERSION set ACTIVE_VERSION=2.1.0" in self.script
 
     def test_deploy_cmd_has_correct_label_structure(self):
-        """Labels: :do_install para :already_uptodate para :fresh_install."""
+        """Labels: :do_install para :already_uptodate."""
         do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
-        fresh = re.search(r"^:fresh_install\b", self.script, re.MULTILINE).start()
-        assert do_install < already < fresh
+        assert do_install < already
 
     def test_deploy_cmd_install_detects_product_before_choosing_msi_flags(self):
         """do_install kontrollon registry para msiexec — REINSTALL vs ENROLLMENT_TOKEN."""
@@ -720,7 +720,7 @@ class TestGPOScheduledDeployScript:
         assert "sc.exe delete TechiAgent 2>nul" in section
 
     def test_deploy_cmd_uninstalls_old_v104_before_install(self):
-        """Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.0.0."""
+        """Uninstall eksplicit i v1.0.4 (TECHI Endpoint Deployment) para install v2.1.0."""
         do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[do_install:already]
@@ -732,15 +732,21 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""
         assert 'set LOG=%INSTALL_DIR%\\deploy.log' in self.script
-        assert 'result=0 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
-        assert 'result=0-manual version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
-        assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
-        assert 'result=uptodate version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
-        assert 'result=%INSTALL_EXIT% version=fresh >> "%LOG%"' in self.script
+        assert "start domain=%DOMAIN% install_dir=%INSTALL_DIR% agent=%AGENT_EXE%" in self.script
+        assert "current_version=%CURRENT_VERSION%" in self.script
+        assert "active_version=%ACTIVE_VERSION% source=%VERSION_SOURCE%" in self.script
+        assert "msi_path=%NETLOGON_MSI%" in self.script
+        assert "msi_exit_code=%MSI_EXIT%" in self.script
+        assert "service_before=%SERVICE_STATUS_BEFORE%" in self.script
+        assert "service_after=%SERVICE_STATUS_AFTER%" in self.script
+        assert 'result=0 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
+        assert 'result=0-manual version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
+        assert 'result=1603 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
+        assert 'result=uptodate version=%ACTIVE_VERSION% current_version=%CURRENT_VERSION% >> "%LOG%"' in self.script
 
-    def test_deploy_cmd_uses_official_config_path_and_migrates_legacy(self):
-        assert "set INSTALL_DIR=C:\\ProgramData\\TECHI" in self.script
-        assert "set LEGACY_INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
+    def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
+        assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
+        assert "set LEGACY_INSTALL_DIR=C:\\ProgramData\\TECHI" in self.script
         assert "set CONFIG=%INSTALL_DIR%\\agent.config.json" in self.script
         assert "set LEGACY_CONFIG=%LEGACY_INSTALL_DIR%\\agent.config.json" in self.script
         assert 'if not exist "%CONFIG%" if exist "%LEGACY_CONFIG%" copy /y "%LEGACY_CONFIG%" "%CONFIG%"' in self.script
@@ -749,8 +755,7 @@ class TestGPOScheduledDeployScript:
         """:already_uptodate kontrollon nëse shërbimi ecën, nëse jo e starton."""
         assert 'sc query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
-        fresh_pos = re.search(r"^:fresh_install\b", self.script, re.MULTILINE).start()
-        section = self.script[already_pos:fresh_pos]
+        section = self.script[already_pos:]
         assert "net start TechiAgent 2>nul" in section
 
     def test_deploy_cmd_manual_replace_lan_triggered_on_reinstall_failure(self):
@@ -785,7 +790,7 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
         """:install_failed regjistron result=1603 dhe del me exit /b 1."""
-        assert 'result=1603 version=%ACTIVE_VERSION% >> "%LOG%"' in self.script
+        assert 'result=1603 version=%ACTIVE_VERSION% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
         assert "exit /b 1" in self.script
 
     def test_deploy_cmd_done_label_before_already_uptodate(self):
@@ -871,6 +876,27 @@ class TestGPOScheduledDeployScript:
         section = self.script[write_pos:hapi7_pos]
         assert "Test-Path $TaskXmlPath" in section
         assert "GABIM KRITIK" in section
+
+    def test_ps1_scheduled_task_runs_as_system_highest_privileges(self):
+        """Scheduled Task krijohet si SYSTEM dhe me privilegje te larta."""
+        assert 'runAs="NT AUTHORITY\\System"' in self.script
+        assert "<UserId>NT AUTHORITY\\System</UserId>" in self.script
+        assert "<LogonType>ServiceAccount</LogonType>" in self.script
+        assert "<RunLevel>HighestAvailable</RunLevel>" in self.script
+
+    def test_ps1_scheduled_task_uses_cmd_exe_netlogon_action(self):
+        """Scheduled Task action perdor cmd.exe /c per techi-deploy.cmd ne NETLOGON."""
+        assert "$NetlogonScr = \"\\\\$DomainDNS\\NETLOGON\\techi-deploy.cmd\"" in self.script
+        assert "<Command>cmd.exe</Command>" in self.script
+        assert '<Arguments>/c "$NetlogonScr"</Arguments>' in self.script
+        assert "<Command>$NetlogonScr</Command>" not in self.script
+
+    def test_ps1_scheduled_task_has_daily_13_and_21_triggers(self):
+        """Scheduled Task ka trigger-et ditore 13:00 dhe 21:00."""
+        assert '$ScheduleTime1 = "13:00"' in self.script
+        assert '$ScheduleTime2 = "21:00"' in self.script
+        assert "<CalendarTrigger>" in self.script
+        assert "<DaysInterval>1</DaysInterval>" in self.script
 
     def test_ps1_has_test_path_after_scripts_ini_write(self):
         """PS1 verifikon me Test-Path se scripts.ini dhe kopja e CMD u shkruan."""
