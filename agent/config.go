@@ -74,9 +74,7 @@ func loadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "config file not found at %s, using defaults\n", path)
-			cfg := defaultConfig()
-			return &cfg, nil
+			return nil, fmt.Errorf("required config file not found at %s; install the agent MSI or create agent.config.json with api_url and enrollment settings", path)
 		}
 		return nil, err
 	}
@@ -91,9 +89,6 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func applyConfigDefaults(cfg *Config) {
-	cfg.APIURL = normalizeProductionHTTPS(cfg.APIURL)
-	cfg.BackendURL = normalizeProductionHTTPS(cfg.BackendURL)
-	cfg.WebSocketURL = normalizeProductionWSS(cfg.WebSocketURL)
 	if cfg.APIURL == "" {
 		cfg.APIURL = backendBaseURL(cfg.BackendURL)
 	}
@@ -116,9 +111,6 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.PublicIPService == "" {
 		cfg.PublicIPService = "https://api.ipify.org?format=text"
 	}
-	if cfg.WebSocketURL == "" && strings.Contains(cfg.APIURL, "api-rdp.techi.com.al") {
-		cfg.WebSocketURL = "wss://api-rdp.techi.com.al/ws/devices?tenant_id=default"
-	}
 	if cfg.TimeoutSeconds <= 0 {
 		cfg.TimeoutSeconds = 10
 	}
@@ -135,14 +127,14 @@ func applyConfigDefaults(cfg *Config) {
 
 func applyEnvironment(cfg *Config) {
 	if value := os.Getenv("TECHI_API_URL"); value != "" {
-		apiURL := normalizeProductionHTTPS(strings.TrimRight(value, "/"))
+		apiURL := strings.TrimRight(value, "/")
 		if cfg.BackendURL == "" || strings.HasPrefix(cfg.BackendURL, defaultLocalAPIURL) {
 			cfg.APIURL = apiURL
 			cfg.BackendURL = apiURL + heartbeatPath
 		}
 	}
 	if value := os.Getenv("TECHI_BACKEND_URL"); value != "" {
-		cfg.BackendURL = normalizeHeartbeatURL(normalizeProductionHTTPS(value))
+		cfg.BackendURL = normalizeHeartbeatURL(value)
 		if base := backendBaseURL(cfg.BackendURL); base != "" {
 			cfg.APIURL = base
 		}
@@ -160,7 +152,7 @@ func trimUTF8BOM(data []byte) []byte {
 }
 
 func normalizeHeartbeatURL(value string) string {
-	url := normalizeProductionHTTPS(strings.TrimRight(strings.TrimSpace(value), "/"))
+	url := strings.TrimRight(strings.TrimSpace(value), "/")
 	if url == "" {
 		return ""
 	}
@@ -168,22 +160,6 @@ func normalizeHeartbeatURL(value string) string {
 		return url
 	}
 	return url + heartbeatPath
-}
-
-func normalizeProductionHTTPS(value string) string {
-	url := strings.TrimSpace(value)
-	if strings.HasPrefix(url, "http://api-rdp.techi.com.al") {
-		return "https://" + strings.TrimPrefix(url, "http://")
-	}
-	return url
-}
-
-func normalizeProductionWSS(value string) string {
-	url := strings.TrimSpace(value)
-	if strings.HasPrefix(url, "ws://api-rdp.techi.com.al") {
-		return "wss://" + strings.TrimPrefix(url, "ws://")
-	}
-	return url
 }
 
 func backendBaseURL(backendURL string) string {

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const agentVersion = "2.0.0"
+var AgentVersion = "0.0.0-dev"
 
 type EnrollmentRequest struct {
 	AgentID            string `json:"agent_id,omitempty"`
@@ -95,7 +95,7 @@ func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*Enrollmen
 		LocalIP:            inv.LocalIP,
 		PublicIP:           inv.PublicIP,
 		RustDeskID:         configuredRustDeskID(&Config{RustDeskID: rustdesk.ID}),
-		AgentVersion:       agentVersion,
+		AgentVersion:       AgentVersion,
 	}
 	data, err := json.Marshal(requestPayload)
 	if err != nil {

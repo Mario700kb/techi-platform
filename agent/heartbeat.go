@@ -94,7 +94,7 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		p.UptimeSeconds = tel.UptimeSeconds
 		p.HeartbeatLatencyMs = tel.HeartbeatLatencyMs
 	}
-	p.AgentVersion = agentVersion
+	p.AgentVersion = AgentVersion
 	return p
 }
 
