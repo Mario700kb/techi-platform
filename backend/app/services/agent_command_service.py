@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.time import utcnow
 from app.models.device import Device
 from app.models.operator import Operator
@@ -20,8 +21,12 @@ from app.schemas.agent_command import (
     BulkCommandTarget,
     DeviceCommandStatus,
 )
+from app.services.agent_package_service import AgentPackageService
 
 logger = logging.getLogger(__name__)
+
+# Agent fleet is Windows-only today — self_update always targets this platform.
+SELF_UPDATE_PLATFORM = "windows-amd64"
 
 # Maps remote_action status → agent command concept
 _STATUS_MAP = {
@@ -54,7 +59,10 @@ class AgentCommandService:
             raise ValueError("No active devices found for the specified target")
 
         batch_id = str(uuid.uuid4())
-        payload_json = json.dumps(create_in.payload)
+        if create_in.command_type == "self_update":
+            payload_json = json.dumps(self._build_self_update_payload())
+        else:
+            payload_json = json.dumps(create_in.payload)
 
         batch = self.batch_repo.create_batch(
             batch_id=batch_id,
@@ -195,6 +203,24 @@ class AgentCommandService:
 
         logger.info("[command_batch] cancelled batch=%s (cancelled=%d)", batch_id, cancelled)
         return {"cancelled": cancelled}
+
+    @staticmethod
+    def _build_self_update_payload() -> dict:
+        """Operators never type the MSI URL/version/hash by hand — pull them
+        from the active agent package so the command always ships the
+        package currently marked active in Agent Packages."""
+        package = AgentPackageService().latest_active(SELF_UPDATE_PLATFORM)
+        if package is None:
+            raise ValueError(
+                f"No active agent package found for platform '{SELF_UPDATE_PLATFORM}'"
+            )
+        backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
+        download_path = AgentPackageService().latest_download_url(SELF_UPDATE_PLATFORM)
+        return {
+            "download_url": f"{backend_url}{download_path}",
+            "version": package.version,
+            "sha256": package.sha256,
+        }
 
     def _resolve_devices(self, create_in: BulkCommandCreate) -> List[Device]:
         query = self.db.query(Device).filter(

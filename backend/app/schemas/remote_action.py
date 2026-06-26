@@ -34,6 +34,7 @@ class ActionType(str, Enum):
     IMMEDIATE_HEARTBEAT = "immediate_heartbeat"
     APPLY_POWER_POLICY = "apply_power_policy"
     DEPLOY_REMOTE_SUPPORT = "deploy_remote_support"
+    SELF_UPDATE = "self_update"
 
 
 ACTION_LABELS: Dict[str, str] = {
@@ -50,13 +51,14 @@ ACTION_LABELS: Dict[str, str] = {
     ActionType.IMMEDIATE_HEARTBEAT: "Immediate Heartbeat",
     ActionType.APPLY_POWER_POLICY: "Apply Power Policy",
     ActionType.DEPLOY_REMOTE_SUPPORT: "Deploy / Upgrade TECHI Remote Support",
+    ActionType.SELF_UPDATE: "Self Update Agent",
 }
 
 # Actions that conflict with each other — only one may be non-terminal at a time.
 # Each inner set is a conflict group.
 ACTION_CONFLICT_GROUPS: List[set] = [
     {ActionType.RESTART_RUSTDESK, ActionType.REINSTALL_RUSTDESK, ActionType.REOPEN_RUSTDESK, ActionType.REPAIR_CONFIG_RUSTDESK, ActionType.DEPLOY_REMOTE_SUPPORT},
-    {ActionType.RESTART_AGENT, ActionType.IMMEDIATE_HEARTBEAT},
+    {ActionType.RESTART_AGENT, ActionType.IMMEDIATE_HEARTBEAT, ActionType.SELF_UPDATE},
     {ActionType.RESTART_DEVICE},
 ]
 

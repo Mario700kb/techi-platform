@@ -24,10 +24,11 @@ BULK_COMMAND_TYPES = frozenset({
     "change_heartbeat_interval",
     "run_powershell",
     "register_protocol",
+    "self_update",
 })
 
 # Requires admin or owner role
-ADMIN_ONLY_COMMAND_TYPES = frozenset({"set_remote_password", "reboot_pc", "run_powershell"})
+ADMIN_ONLY_COMMAND_TYPES = frozenset({"set_remote_password", "reboot_pc", "run_powershell", "self_update"})
 
 # Requires owner role only
 OWNER_ONLY_COMMAND_TYPES = frozenset({"run_powershell"})
