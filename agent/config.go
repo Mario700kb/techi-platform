@@ -89,6 +89,9 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func applyConfigDefaults(cfg *Config) {
+	cfg.APIURL = normalizeProductionURL(cfg.APIURL)
+	cfg.BackendURL = normalizeProductionURL(cfg.BackendURL)
+	cfg.WebSocketURL = normalizeProductionURL(cfg.WebSocketURL)
 	if cfg.APIURL == "" {
 		cfg.APIURL = backendBaseURL(cfg.BackendURL)
 	}
@@ -123,6 +126,17 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.RetryDelaySecond <= 0 {
 		cfg.RetryDelaySecond = 5
 	}
+}
+
+func normalizeProductionURL(value string) string {
+	url := strings.TrimSpace(value)
+	if strings.HasPrefix(url, "http://api-rdp.techi.com.al") {
+		return "https://" + strings.TrimPrefix(url, "http://")
+	}
+	if strings.HasPrefix(url, "ws://api-rdp.techi.com.al") {
+		return "wss://" + strings.TrimPrefix(url, "ws://")
+	}
+	return value
 }
 
 func applyEnvironment(cfg *Config) {

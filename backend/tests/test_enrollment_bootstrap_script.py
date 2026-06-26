@@ -232,9 +232,18 @@ class TestTokenInstallerScript:
         assert "https://10.5.50.63:8000" in self.script
         assert "'wss://10.5.50.63:8000/ws/devices?tenant_id=default'" in self.script
 
-    def test_generated_script_uses_official_programdata_path(self):
-        assert '$InstallDir = "C:\\ProgramData\\TECHI"' in self.script
-        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' not in self.script
+    def test_generated_script_uses_techiagent_programdata_path(self):
+        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' in self.script
+        assert '$LegacyInstallDir = "C:\\ProgramData\\TECHI"' in self.script
+        assert "$StandardAgentPath = Join-Path $InstallDir 'techi-agent.exe'" in self.script
+        assert "C:\\ProgramData\\TECHI\\techi-agent.exe" not in self.script
+
+    def test_agent_path_resolves_from_service_and_is_guarded(self):
+        assert "function Get-TechiAgentServicePath" in self.script
+        assert "Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\"" in self.script
+        assert "function Resolve-TechiAgentPath" in self.script
+        assert "function Assert-TechiAgentPath" in self.script
+        assert "Assert-TechiAgentPath -Path $AgentPath" in self.script
 
     def test_agent_self_update_flow(self):
         _check_agent_self_update_flow(self.script, "token-installer")
@@ -603,9 +612,18 @@ class TestGPOInstallerScript:
     def test_idempotent_service_install(self):
         assert "already installed" in self.script, "gpo-installer: missing idempotency check"
 
-    def test_generated_script_uses_official_programdata_path(self):
-        assert '$InstallDir = "C:\\ProgramData\\TECHI"' in self.script
-        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' not in self.script
+    def test_generated_script_uses_techiagent_programdata_path(self):
+        assert '$InstallDir = "C:\\ProgramData\\TechiAgent"' in self.script
+        assert '$LegacyInstallDir = "C:\\ProgramData\\TECHI"' in self.script
+        assert "$StandardAgentPath = Join-Path $InstallDir 'techi-agent.exe'" in self.script
+        assert "C:\\ProgramData\\TECHI\\techi-agent.exe" not in self.script
+
+    def test_agent_path_resolves_from_service_and_is_guarded(self):
+        assert "function Get-TechiAgentServicePath" in self.script
+        assert "Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\"" in self.script
+        assert "function Resolve-TechiAgentPath" in self.script
+        assert "function Assert-TechiAgentPath" in self.script
+        assert "Assert-TechiAgentPath -Path $AgentPath" in self.script
 
     def test_no_read_host(self):
         # Ignore comment lines; only fail if Read-Host appears as actual code
@@ -880,6 +898,7 @@ class TestGPOScheduledDeployScript:
     def test_ps1_scheduled_task_runs_as_system_highest_privileges(self):
         """Scheduled Task krijohet si SYSTEM dhe me privilegje te larta."""
         assert 'runAs="NT AUTHORITY\\System"' in self.script
+        assert 'logonType="ServiceAccount"' in self.script
         assert "<UserId>NT AUTHORITY\\System</UserId>" in self.script
         assert "<LogonType>ServiceAccount</LogonType>" in self.script
         assert "<RunLevel>HighestAvailable</RunLevel>" in self.script
@@ -892,9 +911,10 @@ class TestGPOScheduledDeployScript:
         assert "<Command>$NetlogonScr</Command>" not in self.script
 
     def test_ps1_scheduled_task_has_daily_13_and_21_triggers(self):
-        """Scheduled Task ka trigger-et ditore 13:00 dhe 21:00."""
+        """Scheduled Task ka boot trigger dhe trigger-et ditore 13:00 dhe 21:00."""
         assert '$ScheduleTime1 = "13:00"' in self.script
         assert '$ScheduleTime2 = "21:00"' in self.script
+        assert "<BootTrigger>" in self.script
         assert "<CalendarTrigger>" in self.script
         assert "<DaysInterval>1</DaysInterval>" in self.script
 

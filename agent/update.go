@@ -118,7 +118,7 @@ func selfUpdateHelperScript() string {
 
 $ErrorActionPreference = 'Continue'
 
-$deployLog = Join-Path $env:ProgramData 'TECHI\logs\deploy.log'
+$deployLog = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
 $agentExe = Join-Path $env:ProgramData 'TechiAgent\techi-agent.exe'
 $serviceName = 'TechiAgent'
 

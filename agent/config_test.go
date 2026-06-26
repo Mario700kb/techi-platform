@@ -73,11 +73,23 @@ func TestLoadConfigNormalizesProductionURLs(t *testing.T) {
 	}
 }
 
+func TestWindowsDefaultPathsUseTechiAgentProgramData(t *testing.T) {
+	if windowsConfigPath != `C:\ProgramData\TechiAgent\agent.config.json` {
+		t.Fatalf("unexpected windows config path: %s", windowsConfigPath)
+	}
+	if windowsLegacyConfigPath != `C:\ProgramData\TECHI\agent.config.json` {
+		t.Fatalf("unexpected windows legacy config path: %s", windowsLegacyConfigPath)
+	}
+	if windowsLogPath != `C:\ProgramData\TechiAgent\logs\agent.log` {
+		t.Fatalf("unexpected windows log path: %s", windowsLogPath)
+	}
+}
+
 func TestMigrateConfigIfNeededCopiesLegacyConfig(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "TECHI", "agent.config.json")
-	legacyPath := filepath.Join(dir, "TechiAgent", "agent.config.json")
-	logPath := filepath.Join(dir, "TECHI", "logs", "agent.log")
+	configPath := filepath.Join(dir, "TechiAgent", "agent.config.json")
+	legacyPath := filepath.Join(dir, "TECHI", "agent.config.json")
+	logPath := filepath.Join(dir, "TechiAgent", "logs", "agent.log")
 
 	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
 		t.Fatal(err)

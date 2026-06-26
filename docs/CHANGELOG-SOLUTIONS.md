@@ -3,6 +3,38 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Windows Agent Bootstrap/GPO — Standardize TechiAgent ProgramData Path
+
+### Root cause
+
+Windows MSI 2.1.0 installs and runs `TechiAgent` from
+`C:\ProgramData\TechiAgent\techi-agent.exe`, but some bootstrap paths still used
+`C:\ProgramData\TECHI` as the primary agent/config/log location. This could make
+one-step bootstrap logs reference the wrong binary and could make generated GPO
+startup/scheduled deploy flows miss the real agent path.
+
+### Fix
+
+- One-step/token bootstrap and trusted-domain bootstrap now use
+  `C:\ProgramData\TechiAgent` as the primary install/config/log root.
+- `C:\ProgramData\TECHI` remains only as legacy config fallback/migration.
+- Bootstrap scripts resolve `TechiAgent` executable from `Win32_Service.PathName`
+  when the service already exists, then fall back to
+  `C:\ProgramData\TechiAgent\techi-agent.exe`.
+- Bootstrap scripts verify `Test-Path $AgentPath` before `install`, `start`, or
+  `status`, logging a clear error instead of falling into `CommandNotFoundException`.
+- GPO `ScheduledTasks.xml` now uses SYSTEM/ServiceAccount, highest privileges,
+  `cmd.exe /c "\\domain\NETLOGON\techi-deploy.cmd"`, a boot trigger, and daily
+  13:00/21:00 triggers.
+- Agent runtime defaults now read/write config and logs under
+  `C:\ProgramData\TechiAgent`; `C:\ProgramData\TECHI` is legacy fallback.
+
+### Checks
+
+- `env PYTHONPATH=backend python3 -m pytest backend/tests/test_enrollment_bootstrap_script.py`
+- `env PYTHONPATH=backend python3 -m pytest backend/tests/test_agent_config.py`
+- `cd agent && env GOCACHE=/private/tmp/techi-go-build-cache go test ./...`
+
 ## [2026-06-18] MSI Deploy — Force TLS 1.2 for Windows Server 2016 (.NET WebClient)
 
 ### Root cause
