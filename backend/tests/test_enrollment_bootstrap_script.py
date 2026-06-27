@@ -320,28 +320,29 @@ class TestRustDeskForceMigrationScript:
         assert "Removing orphaned TECHI Remote Support service registration" in self.script
         assert "Start-Process -FilePath 'sc.exe' -ArgumentList @('delete', $ServiceName)" in self.script
 
-    def test_sets_unattended_password_with_cli_without_logging_secret(self):
+    def test_sets_unattended_password_by_writing_identity_toml(self):
+        # --password (CLI/IPC) silently no-ops when no daemon is running --
+        # exits 0 having done nothing, which read as a false "configured" in
+        # earlier testing. Writing the plaintext password directly into the
+        # suffix-less identity TOML works without any daemon: RustDesk hashes
+        # it automatically the next time it loads/stores that file.
         assert "$TechiPassword = 'Durres.12'" in self.script
-        assert "'C:\\Program Files\\TECHI Remote Support\\TECHI Remote Support.exe'" in self.script
-        assert "'C:\\Program Files (x86)\\TECHI Remote Support\\TECHI Remote Support.exe'" in self.script
-        assert "'C:\\Program Files\\TECHI Remote Support\\rustdesk.exe'" in self.script
-        assert "'C:\\Program Files (x86)\\TECHI Remote Support\\rustdesk.exe'" in self.script
-        assert "Get-CimInstance Win32_Service" in self.script
-        assert "$Service.PathName" in self.script
-        assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" in self.script
-        assert "TECHI Remote Support password CLI exited 0" in self.script
-        assert "WARNING: TECHI Remote Support password CLI failed; continuing bootstrap." in self.script
+        assert "function Set-TechiPermanentPasswordSafe" in self.script
+        assert "password = '$Password'" in self.script
+        assert "Join-Path $Root 'TECHI Remote Support.toml'" in self.script
+        assert "TECHI Remote Support password written" in self.script
+        assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" not in self.script
+        assert "function Get-TechiExecutable" not in self.script
         assert 'Write-Log "Durres.12' not in self.script
         assert "Write-Log 'Durres.12" not in self.script
 
-    def test_restart_happens_before_password_set(self):
-        # --password talks to the running daemon over IPC (RustDesk source:
-        # ipc.rs set_permanent_password_with_ack_async) -- it must already be
-        # running, so the Scheduled Task has to start before the CLI call.
+    def test_password_written_before_tray_restart(self):
+        # Restart after writing so an already-running tray instance picks up
+        # the new password from disk instead of keeping the old one in memory.
+        password_index = self.script.index("function Set-TechiPermanentPasswordSafe")
         restart_index = self.script.index("Starting TECHI Remote Support via Scheduled Task")
-        password_index = self.script.index("Setting TECHI Remote Support unattended access password via CLI")
 
-        assert restart_index < password_index
+        assert password_index < restart_index
 
     def test_idempotent_cleanup_then_rewrite_order(self):
         remove_index = self.script.index("TECHI Remote Support config removed")

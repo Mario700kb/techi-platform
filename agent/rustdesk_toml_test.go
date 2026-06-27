@@ -263,3 +263,76 @@ key = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
 		t.Error("rendezvous value disappeared")
 	}
 }
+
+// ------------------------------------------------------------------ //
+// applyTOMLTopLevelPatch                                               //
+// ------------------------------------------------------------------ //
+
+// Test 10: Fushë top-level ekzistuese me vlerë të gabuar → korrigjohet, identiteti ruhet.
+func TestApplyTOMLTopLevelPatchUpdatesExistingKey(t *testing.T) {
+	original := `id = '9876543210'
+enc_id = 'AbCdEfGhIjKlMnOp=='
+password = 'oldhash=='
+key_pair = ['pub', 'priv']
+`
+	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+
+	if !changed {
+		t.Fatal("different password value should report changed")
+	}
+	if !strings.Contains(result, "password = 'Durres.12'") {
+		t.Error("password not updated")
+	}
+	for _, field := range []string{"id = '9876543210'", "enc_id = 'AbCdEfGhIjKlMnOp=='", "key_pair = ['pub', 'priv']"} {
+		if !strings.Contains(result, field) {
+			t.Errorf("identity field missing after patch: %q", field)
+		}
+	}
+}
+
+// Test 11: Vlerë identike → changed=false, asnjë shkrim i panevojshëm.
+func TestApplyTOMLTopLevelPatchNoChangeWhenSame(t *testing.T) {
+	original := "password = 'Durres.12'\n"
+	_, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	if changed {
+		t.Fatal("identical value should report changed=false")
+	}
+}
+
+// Test 12: Fusha mungon dhe ka [section] më poshtë → shtohet PARA section-it të parë.
+func TestApplyTOMLTopLevelPatchInsertsBeforeFirstSection(t *testing.T) {
+	original := `id = '123'
+
+[options]
+key = 'x'
+`
+	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	if !changed {
+		t.Fatal("missing key should report changed")
+	}
+	passwordIdx := strings.Index(result, "password = 'Durres.12'")
+	sectionIdx := strings.Index(result, "[options]")
+	if passwordIdx < 0 || sectionIdx < 0 || passwordIdx > sectionIdx {
+		t.Errorf("password must be inserted before [options], got:\n%s", result)
+	}
+	if !strings.Contains(result, "key = 'x'") {
+		t.Error("existing [options] content lost")
+	}
+}
+
+// Test 13: Fushë brenda një [section] me të njëjtin emër s'duhet prekur (vetëm top-level).
+func TestApplyTOMLTopLevelPatchIgnoresKeyInsideSection(t *testing.T) {
+	original := `[options]
+password = 'should-not-be-touched'
+`
+	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	if !changed {
+		t.Fatal("missing top-level password should report changed (key inside [options] doesn't count)")
+	}
+	if !strings.Contains(result, "password = 'should-not-be-touched'") {
+		t.Error("value inside [options] must be left untouched")
+	}
+	if !strings.Contains(result, "password = 'Durres.12'") {
+		t.Error("top-level password not inserted")
+	}
+}

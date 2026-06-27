@@ -94,21 +94,13 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		}
 
 		// Tray-running check always runs regardless of cooldown.
-		justStarted := false
 		if changed, err := ensureRustDeskTrayRunning(); err != nil {
 			log.Printf("[rustdesk_manage] tray ensure failed: %v", err)
 		} else if changed {
 			repaired = true
-			justStarted = true
 		}
 
 		if cfg.RustDeskDefaultPassword != "" {
-			if justStarted {
-				// --password talks to the running daemon over IPC; give it a
-				// moment to finish starting and start listening, or the CLI
-				// call exits 0 having silently failed (no daemon to ACK).
-				time.Sleep(4 * time.Second)
-			}
 			if err := setRustDeskPassword(cfg.RustDeskDefaultPassword); err != nil {
 				log.Printf("[rustdesk_manage] password set failed: %v", err)
 			}
@@ -324,11 +316,45 @@ func ensureRustDeskTrayRunning() (bool, error) {
 	return true, nil
 }
 
+// setRustDeskPassword writes the plaintext password directly into the
+// identity config file (the suffix-less "TECHI Remote Support.toml" --
+// hbb_common/src/config.rs: Config::load_("") holds id/enc_id/password/salt/
+// key_pair; the "2"-suffixed file is Config2/options, a different file).
+// RustDesk hashes a plaintext password automatically the next time it loads
+// or stores this file (migrate_permanent_password_to_hashed_storage), so
+// this does not require a running daemon -- unlike the `--password` CLI
+// flag, which talks to the daemon over IPC and silently no-ops (still exits
+// 0) if nothing is listening.
 func setRustDeskPassword(password string) error {
-	if _, err := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath, "--password", password); err != nil {
-		return fmt.Errorf("set password: %w", err)
+	dirs := rustDeskConfigDirs()
+	wrote := false
+	var lastErr error
+	for _, dir := range dirs {
+		path := filepath.Join(dir, "TECHI Remote Support.toml")
+		existing, readErr := os.ReadFile(path)
+		if readErr != nil {
+			// Identity file doesn't exist here yet -- nothing to patch; it's
+			// created by RustDesk itself on first run, not by us.
+			continue
+		}
+		patched, changed := applyTOMLTopLevelPatch(string(existing), "password", password)
+		if !changed {
+			wrote = true
+			continue
+		}
+		if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
+			lastErr = err
+			continue
+		}
+		log.Printf("[rustdesk_manage] password written to %s", path)
+		wrote = true
 	}
-	log.Printf("[rustdesk_manage] password configured")
+	if !wrote {
+		if lastErr != nil {
+			return fmt.Errorf("set password: %w", lastErr)
+		}
+		return fmt.Errorf("set password: no identity config file found in any known location")
+	}
 	return nil
 }
 

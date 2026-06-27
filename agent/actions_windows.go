@@ -472,7 +472,7 @@ func handleSetRemotePassword(_ context.Context, _ *Config, params map[string]int
 		return actionResult{err: fmt.Errorf("set_remote_password: missing 'password' parameter")}
 	}
 
-	// setRustDeskPassword runs the TECHI Remote Support exe with --password flag.
+	// setRustDeskPassword writes the password directly into the identity TOML.
 	if err := setRustDeskPassword(password); err != nil {
 		return actionResult{
 			err:    fmt.Errorf("set_remote_password: %w", err),

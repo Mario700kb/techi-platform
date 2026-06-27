@@ -3,6 +3,76 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] Set the Remote Support Password by Writing the Identity TOML Directly, Not via --password CLI
+
+### Root cause
+
+Third real-machine test: the Scheduled Task now registers and runs (the
+GroupId/logging fix worked), but the password still didn't take effect.
+Re-reading the actual RustDesk source (vendored locally) settled this
+properly instead of guessing further:
+
+- `--tray` (`core_main.rs`) only ever calls `tray::start_tray()` -- a thin
+  UI client. The actual daemon only starts via `--service` (SCM) or
+  `--server`. `tray.rs` even says outright: "The tray icon is only shown
+  when the service is running." So today's earlier architecture change
+  (dropping the Windows Service in favor of Scheduled-Task-launched
+  `--tray`) left no daemon for the `--password` CLI to talk to over IPC
+  at all -- explaining why it kept failing regardless of timing fixes.
+  (Whether to bring the Service back is a separate, bigger decision the
+  user wants to defer; not done in this entry.)
+- Separately, and independent of the service question:
+  `hbb_common/src/config.rs` shows `Config` (id/enc_id/password/salt/
+  key_pair) loads from the **suffix-less** file
+  (`Config::load_::<Config>("")`), while `Config2` (rendezvous_server/
+  nat_type/serial/options) loads from the **"2"-suffixed** file
+  (`Config::load_::<Config2>("2")`). Critically,
+  `migrate_permanent_password_to_hashed_storage` runs on every config
+  load/store: if `password` is plaintext (not already a recognized
+  hashed/encrypted format), it computes the proper hash using `salt` and
+  rewrites it -- meaning a plaintext password written directly into the
+  TOML file gets picked up and hashed correctly the next time RustDesk
+  loads or saves that file, with **no daemon and no IPC required**.
+
+### Fix
+
+- `agent/rustdesk_toml.go`: added `applyTOMLTopLevelPatch(content, key,
+  value)` -- patches a single top-level `key = 'value'` pair that lives
+  before any `[section]`, preserving everything else (including any
+  `[options]` section). Inserts before the first section if the key is
+  missing.
+- `agent/rustdesk_manage.go`: `setRustDeskPassword` rewritten to use this
+  to patch `password` into the suffix-less identity TOML across all of
+  `rustDeskConfigDirs()`'s candidate locations, instead of shelling out to
+  `<exe> --password <value>`.
+- `backend/app/services/enrollment_bootstrap_service.py`: removed
+  `Get-TechiExecutable` and the CLI-based password block entirely (no
+  longer needed); added `Set-TechiPermanentPasswordSafe`, the PowerShell
+  equivalent in-place patch, run against `TECHI Remote Support.toml`
+  (not the "2" file) under every `$TechiRoots` candidate.
+
+### Checks
+
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -- clean. Added 4 new tests for
+  `applyTOMLTopLevelPatch` (update existing key, no-op when unchanged,
+  insert before first section, ignore a same-named key inside a
+  `[section]`).
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py -q`
+  -- 105 passed (CLI-based password assertions replaced with the new
+  TOML-write ones); `pytest tests/ -k "bootstrap or enrollment"` -- 119
+  passed.
+- Not yet verified on a real machine for this specific change.
+- Flagged but explicitly deferred per user request: `rustdesk_manage.go`'s
+  config-repair (`managedRustDeskOptions`/`writeRustDeskConfig`) writes
+  `rendezvous_server`/`[options]` into the suffix-less file too, but per
+  the source mapping above those fields belong in the **"2"-suffixed**
+  file (`Config2`) -- the agent's own repair pass may have been
+  inert/no-op against a file RustDesk's `Config` struct doesn't define
+  those fields on. The backend bootstrap script already targets the
+  correct "2" file for those fields. Worth a dedicated look in a future
+  session; out of scope here.
+
 ## [2026-06-27] Scheduled Task Silently Failed to Register; Password CLI Needs the Daemon Already Running
 
 ### Root cause

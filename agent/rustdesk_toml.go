@@ -15,6 +15,69 @@ import (
 // whatever cooldown window happened to already be in progress.
 const rustDeskOptionsSchemaVersion = 2
 
+// applyTOMLTopLevelPatch updates (or inserts) a single top-level key="value"
+// pair that lives BEFORE any [section] header -- e.g. "password" in
+// RustDesk's identity config (hbb_common/src/config.rs: Config::load_(""),
+// the suffix-less file, holds id/enc_id/password/salt/key_pair; NOT the
+// "2"-suffixed file, which is Config2/options). Everything else in the file,
+// including any [section], is preserved verbatim. If the key is missing it
+// is inserted right before the first section header (or appended at the end
+// if there is no section at all).
+func applyTOMLTopLevelPatch(content string, key, value string) (string, bool) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+
+	inSection := false
+	found := false
+	changed := false
+	firstSectionIdx := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			if firstSectionIdx == -1 {
+				firstSectionIdx = i
+			}
+			inSection = true
+			continue
+		}
+		if inSection || trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		idx := strings.IndexByte(trimmed, '=')
+		if idx < 0 {
+			continue
+		}
+		k := strings.TrimSpace(trimmed[:idx])
+		if k != key {
+			continue
+		}
+		found = true
+		oldVal := stripTOMLQuotes(strings.TrimSpace(trimmed[idx+1:]))
+		if oldVal == value {
+			continue
+		}
+		lines[i] = key + " = '" + value + "'"
+		changed = true
+	}
+
+	if !found {
+		newLine := key + " = '" + value + "'"
+		if firstSectionIdx >= 0 {
+			updated := make([]string, 0, len(lines)+1)
+			updated = append(updated, lines[:firstSectionIdx]...)
+			updated = append(updated, newLine)
+			updated = append(updated, lines[firstSectionIdx:]...)
+			lines = updated
+		} else {
+			lines = append(lines, newLine)
+		}
+		changed = true
+	}
+
+	return strings.Join(lines, "\n"), changed
+}
+
 // stripTOMLQuotes removes surrounding single or double quotes from a TOML value
 // and trims whitespace. "value" and 'value' both become value.
 func stripTOMLQuotes(s string) string {
