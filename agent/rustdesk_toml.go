@@ -6,6 +6,15 @@ import (
 	"strings"
 )
 
+// rustDeskOptionsSchemaVersion must be bumped every time the set of keys
+// managedRustDeskOptions writes changes. ensureRustDesk compares this
+// against the per-device cfg.RustDeskOptionsSchemaVer to bypass the normal
+// 30-minute repair cooldown once, so a newly-added managed key (e.g.
+// enable-remote-config-modification) reaches already-enrolled devices on
+// their very next heartbeat after an agent upgrade instead of waiting out
+// whatever cooldown window happened to already be in progress.
+const rustDeskOptionsSchemaVersion = 2
+
 // stripTOMLQuotes removes surrounding single or double quotes from a TOML value
 // and trims whitespace. "value" and 'value' both become value.
 func stripTOMLQuotes(s string) string {

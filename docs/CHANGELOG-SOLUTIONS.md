@@ -3,6 +3,43 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] New Managed RustDesk Options Were Blocked by the 30-Minute Repair Cooldown
+
+### Root cause
+
+The previous entry added `enable-remote-config-modification = 'Y'` to
+`managedRustDeskOptions`, but the user reported it had no effect after
+upgrading and retesting. `ensureRustDesk`'s config-repair cooldown
+(`cfg.RustDeskLastRepairAt`, 30 minutes) is persisted in
+`agent.config.json` and survives MSI upgrades by design (so device_id and
+other identity data aren't disturbed). Since this device had been
+repaired/upgraded repeatedly within the same hour during testing, the
+timestamp was always recent, so the cooldown silently skipped
+`writeRustDeskConfig` every time -- the new agent code was correct and
+deployed, but never actually got to run on this device. This is a real
+bug, not just a testing artifact: it means *any* future change to
+`managedRustDeskOptions` would take up to 30 minutes to reach
+already-enrolled devices, fleet-wide, even in production.
+
+### Fix
+
+- `agent/rustdesk_toml.go`: added `rustDeskOptionsSchemaVersion` constant
+  (bump whenever the managed-keys set changes).
+- `agent/config.go`: added `Config.RustDeskOptionsSchemaVer` (persisted).
+- `agent/rustdesk_manage.go`: `ensureRustDesk` now bypasses the cooldown
+  once whenever `cfg.RustDeskOptionsSchemaVer != rustDeskOptionsSchemaVersion`
+  (i.e. right after an agent upgrade that changed the managed-keys set),
+  then persists the new schema version once the repair succeeds.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+- `cd agent && GOOS=windows GOARCH=amd64 go build .` (cross-compile pass)
+- Immediate workaround for retesting on the affected device without
+  waiting for this fix to ship: edit
+  `C:\ProgramData\TECHI\agent.config.json`, clear
+  `rustdesk_last_repair_at` to `""`, restart the `TechiAgent` service.
+
 ## [2026-06-27] Always Enable "Remote Configuration Modification" Permission
 
 ### Root cause

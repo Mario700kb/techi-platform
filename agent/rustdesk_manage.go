@@ -57,8 +57,9 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		// Config repair with 30-minute cooldown.
 		// The cooldown prevents unnecessary writes on every heartbeat when the
 		// service has already updated the config with identity data.
+		schemaChanged := cfg.RustDeskOptionsSchemaVer != rustDeskOptionsSchemaVersion
 		skipConfigRepair := false
-		if !cfg.RustDeskForceConfig && cfg.RustDeskLastRepairAt != "" {
+		if !cfg.RustDeskForceConfig && !schemaChanged && cfg.RustDeskLastRepairAt != "" {
 			if lastRepair, err := time.Parse(time.RFC3339, cfg.RustDeskLastRepairAt); err == nil {
 				since := time.Since(lastRepair)
 				if since < 30*time.Minute {
@@ -68,6 +69,10 @@ func ensureRustDesk(cfg *Config, configPath string) {
 				}
 			}
 		}
+		if schemaChanged {
+			log.Printf("[rustdesk_manage] managed options schema changed (%d -> %d) — bypassing cooldown",
+				cfg.RustDeskOptionsSchemaVer, rustDeskOptionsSchemaVersion)
+		}
 
 		if !skipConfigRepair {
 			if changed, err := writeRustDeskConfig(cfg); err != nil {
@@ -75,6 +80,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 			} else if changed {
 				repaired = true
 			}
+			cfg.RustDeskOptionsSchemaVer = rustDeskOptionsSchemaVersion
 		}
 
 		// Service check always runs regardless of cooldown.
