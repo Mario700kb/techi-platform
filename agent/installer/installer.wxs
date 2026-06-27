@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   TECHI Agent - WiX 7 MSI Installer
-  UpgradeCode: E6AD0A88-5F26-5665-9B1F-70B8C5EE8363 (mos ndrysho kurrë -- duhet
+  UpgradeCode: E6AD0A88-5F26-5665-9B1F-70B8C5EE8363 (mos ndrysho kurrë, duhet
   te perputhet me prodhimin per te aktivizuar MajorUpgrade)
-  Version vjen nga agent/VERSION, jo hardcoded -- shih build.sh / CI workflow.
+  Version vjen nga agent/VERSION, jo hardcoded; shih build.sh / CI workflow.
   Build:   wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=. -d Version=2.1.0.0 -o TECHI-Endpoint-Deployment-2.1.0.msi
   GPO:     msiexec /i TECHI-Endpoint-Deployment-2.1.0.msi /qn ENROLLMENT_TOKEN="xxx"
   Manual:  double-click MSI → dialog kërkon token → Install
