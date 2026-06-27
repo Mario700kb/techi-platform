@@ -457,7 +457,7 @@ func ensureRustDeskProtocolHandler() string {
 		`$p2 = 'HKCR:\rustdesk\shell\open\command'; ` +
 		`New-Item -Path $p2 -Force | Out-Null; ` +
 		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
-		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+		`-Value '"C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
 
 	if _, writeErr := runWithTimeout(15*time.Second, "powershell",
 		"-NoProfile", "-NonInteractive", "-Command", script); writeErr != nil {
@@ -509,7 +509,7 @@ func handleRegisterTechiProtocol(_ context.Context) actionResult {
 		`$p2 = "$p\shell\open\command"; ` +
 		`New-Item -Path $p2 -Force | Out-Null; ` +
 		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
-		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+		`-Value '"C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
 
 	if _, err := runWithTimeout(15*time.Second, "powershell",
 		"-NoProfile", "-NonInteractive", "-Command", script); err != nil {

@@ -2,7 +2,10 @@
 setlocal
 
 REM TECHI Agent MSI Builder (Windows)
-REM Requires: WiX Toolset v4, Go 1.21+, goversioninfo
+REM Requires: WiX Toolset v7, Go 1.21+, goversioninfo
+REM   dotnet tool install --global wix --version 7.0.0
+REM   wix eula accept wix7   (kerkohet nje here per OSMF -- https://docs.firegiant.com/wix/osmf/)
+REM   wix extension add --global WixToolset.UI.wixext/7.0.0
 REM Usage: build.bat [version]   -- nese mungon, lexon nga agent\VERSION
 
 set SRCDIR=%~dp0
@@ -53,10 +56,10 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-echo [4/5] Building MSI with WiX v4...
+echo [4/5] Building MSI with WiX v7...
 pushd "%~dp0"
 wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=%SRCDIR% -d Version=%VERSION4% -o "%OUTPUT%"
-REM Requires: wix extension add WixToolset.UI.wixext
+REM Requires: wix extension add --global WixToolset.UI.wixext/7.0.0
 if %ERRORLEVEL% neq 0 (
     popd
     echo ERROR: wix build failed

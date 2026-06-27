@@ -18,10 +18,12 @@ import (
 const (
 	// rustdeskDefaultInstallPath is the primary EXE path used for service
 	// registration, password configuration, and direct-launch fallbacks.
-	rustdeskDefaultInstallPath = `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`
+	// ProgramData (not Program Files) to match installer.wxs and the
+	// existing fleet's install location.
+	rustdeskDefaultInstallPath = `C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe`
 	// rustdeskLegacyExePath is a fallback for installations that still carry
 	// the upstream rustdesk.exe binary name alongside the branded one.
-	rustdeskLegacyExePath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
+	rustdeskLegacyExePath = `C:\ProgramData\TECHI Remote Support\rustdesk.exe`
 	rustdeskServiceName   = "TECHI Remote Support"
 )
 

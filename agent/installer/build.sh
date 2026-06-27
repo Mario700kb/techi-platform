@@ -2,9 +2,10 @@
 # TECHI Agent MSI Builder (macOS / Linux cross-compile)
 # Kërkon: Go 1.21+    →  https://go.dev/dl/
 #          goversioninfo: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
-#          WiX v4 via dotnet tool:
-#            dotnet tool install --global wix
-#            wix extension add WixToolset.UI.wixext
+#          WiX v7 via dotnet tool:
+#            dotnet tool install --global wix --version 7.0.0
+#            wix eula accept wix7   (kerkohet nje here per OSMF -- https://docs.firegiant.com/wix/osmf/)
+#            wix extension add --global WixToolset.UI.wixext/7.0.0
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,7 +52,7 @@ echo "[3/5] Cross-compiling techi-agent.exe (Windows/amd64) v$VERSION..."
 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.AgentVersion=$VERSION" -trimpath -o "$SCRIPT_DIR/techi-agent.exe" .
 rm -f resource.syso
 
-echo "[4/5] Building MSI with WiX v4..."
+echo "[4/5] Building MSI with WiX v7..."
 cd "$SCRIPT_DIR"
 wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d "SourceDir=$SCRIPT_DIR" -d "Version=$VERSION4" -o "$OUTPUT"
 

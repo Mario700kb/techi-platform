@@ -44,7 +44,7 @@
     <!-- Kontrollon nëse TECHI Remote Support.exe ekziston tashmë -->
     <Property Id="TECHI_RS_EXE">
       <DirectorySearch Id="SearchTechiRS"
-                       Path="[ProgramFiles64Folder]TECHI Remote Support">
+                       Path="[CommonAppDataFolder]TECHI Remote Support">
         <FileSearch Name="TECHI Remote Support.exe"/>
       </DirectorySearch>
     </Property>
@@ -132,19 +132,20 @@
     </UI>
 
     <!-- ===== DIREKTORITË ===== -->
-    <!-- INSTALLFOLDER  = C:\ProgramData\TechiAgent\        (CommonAppDataFolder → "CommApp" në admin extract)
-         TECHIDATADIR   = C:\ProgramData\TECHI\             (konfig + logs)
-         INSTALLFOLDER është nën CommonAppDataFolder — MOS e ndrysho në ProgramFiles64Folder:
-           ndryshimi i StandardDirectory parent do të ndryshonte admin-install path
-           nga CommApp\TechiAgent\ → PFiles64\... dhe do të thyente techi-deploy.cmd manual_replace.
+    <!-- INSTALLFOLDER        = C:\ProgramData\TechiAgent\         (CommonAppDataFolder → "CommApp" në admin extract)
+         TECHIDATADIR         = C:\ProgramData\TECHI\              (konfig + logs)
+         REMOTESUPPORTFOLDER  = C:\ProgramData\TECHI Remote Support\  (ne ProgramData, jo Program Files;
+           agent/rustdesk_manage.go dhe agent/rustdesk.go presin rustdeskDefaultInstallPath ne ProgramData, dhe
+           flota ekzistuese (480+ PC) e ka instaluar Remote Support aty; mospërputhja shkakton lidhje jo-stabile
+           te RustDesk, sepse agent-i s'gjen/menaxhon kopjen e duhur).
+         Te treja jane nen CommonAppDataFolder — MOS e ndrysho parent te StandardDirectory:
+           ndryshimi do te thyente admin-install path (msiexec /a) qe techi-deploy.cmd manual_replace pret.
          ADMIN INSTALL PATH I GARANTUAR (msiexec /a):
            [TARGETDIR]\CommApp\TechiAgent\techi-agent.exe  ← ky path DUHET hardcoded në techi-deploy.cmd
-           [TARGETDIR]\PFiles64\TECHI Remote Support\TECHI Remote Support.exe -->
+           [TARGETDIR]\CommApp\TECHI Remote Support\TECHI Remote Support.exe -->
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="TechiAgent"/>
       <Directory Id="TECHIDATADIR" Name="TECHI"/>
-    </StandardDirectory>
-    <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="REMOTESUPPORTFOLDER" Name="TECHI Remote Support"/>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
@@ -204,7 +205,7 @@
         <RegistryKey Root="HKLM"
                      Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
           <RegistryValue Type="string"
-                         Value="&quot;[ProgramFiles6432Folder]TECHI Remote Support\TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
+                         Value="&quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
         </RegistryKey>
       </Component>
 

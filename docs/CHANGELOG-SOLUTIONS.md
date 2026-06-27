@@ -3,6 +3,65 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Move TECHI Remote Support Install Path from Program Files to ProgramData
+
+### Root cause
+
+The real `installer.wxs` brought in from the field (previous entry below)
+installed TECHI Remote Support under `ProgramFiles6432Folder` (`C:\Program
+Files\TECHI Remote Support\`). After building and testing this MSI manually
+on a Windows box (token-based enrollment), the new agent version showed up
+correctly, but TECHI Remote Support would not open and the remote session
+dropped every few seconds. The user found the existing/legacy install on that
+same machine had TECHI Remote Support under `C:\ProgramData\TECHI Remote
+Support\` instead — matching the rest of the live fleet — and the agent's own
+Go code (`rustdesk_manage.go`, `rustdesk.go`, `actions_windows.go`) already
+hardcoded `C:\Program Files\TECHI Remote Support\...` as the *primary* path
+for service registration, password config, and protocol-handler registration,
+while `backend/app/services/enrollment_bootstrap_service.py`'s legacy-migration
+PowerShell already assumes `C:\ProgramData\TECHI Remote Support` is where the
+existing fleet has it installed. So the new MSI created a second, disconnected
+copy of TECHI Remote Support in a different folder than the one the agent
+self-healing logic and the rest of the fleet actually use — explaining both
+symptoms (wrong/orphaned binary won't launch correctly; agent's periodic
+service/config healing fights with whichever copy is actually running).
+
+### Fix
+
+- `agent/installer/installer.wxs`: moved `REMOTESUPPORTFOLDER` from its own
+  `ProgramFiles6432Folder` `StandardDirectory` to a `Directory` under the same
+  `CommonAppDataFolder` `StandardDirectory` as `INSTALLFOLDER`/`TECHIDATADIR`
+  (i.e. `C:\ProgramData\TECHI Remote Support\`). Updated `TECHI_RS_EXE`'s
+  `DirectorySearch` path and the `techiremotesupport://` protocol handler's
+  registry value to match (the Start Menu shortcut already referenced the
+  `REMOTESUPPORTFOLDER` property, so it updates automatically).
+- `agent/rustdesk_manage.go`: `rustdeskDefaultInstallPath` and
+  `rustdeskLegacyExePath` now point at `C:\ProgramData\TECHI Remote
+  Support\...` instead of `C:\Program Files\...`.
+- `agent/actions_windows.go`: the two protocol-handler-writing PowerShell
+  snippets (`ensureRustDeskProtocolHandler`, `handleRegisterTechiProtocol`)
+  now write the `C:\ProgramData\...` path.
+- `agent/rustdesk.go`: `discoverRustDeskWindows`'s candidate path list now
+  checks `ProgramData` first, keeping `Program Files`/`LOCALAPPDATA` as
+  fallbacks for any machine that ended up with a Program-Files copy during
+  this transition.
+- `agent/installer/build.sh` / `build.bat`: corrected stale "WiX v4" comments
+  to "WiX v7" (matches the CI fix below) and documented the
+  `wix eula accept wix7` step needed once per machine.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1` (pass)
+- `cd agent && GOOS=windows GOARCH=amd64 go build .` (cross-compile pass,
+  exercises the `//go:build windows` files: `rustdesk_manage.go`,
+  `actions_windows.go`)
+- Confirmed `backend/app/services/enrollment_bootstrap_service.py`'s legacy
+  migration script already targets `C:\ProgramData\TECHI Remote Support` —
+  this change makes the new MSI consistent with that existing assumption
+  instead of contradicting it.
+- `python3 -c "import xml.dom.minidom as m; m.parse('agent/installer/installer.wxs')"`
+  (well-formed XML after edits)
+
 ## [2026-06-27] Adopt Real Combined installer.wxs (Agent + Remote Support), Revert Explicit Uninstall
 
 ### Root cause
