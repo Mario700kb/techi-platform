@@ -3,6 +3,44 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Auto-Restart "TECHI Remote Support" Service on Failure (Tray "Exit" Can Kill It)
+
+### Root cause
+
+Once Remote Support could actually start (previous entry), the user found
+that clicking "Exit" on its system-tray icon can stop the underlying SCM
+service too, not just close a window -- and once that happens, heartbeats
+for that device stop until something restarts it. For a platform that
+monitors many PCs/servers unattended, an end-user/operator being able to
+accidentally kill monitoring from the tray is a real operational risk, not
+just a cosmetic one.
+
+`ensureRustDeskService` (called every heartbeat) already restarts the
+service if it's stopped, but that only happens on the *next* heartbeat tick
+(up to `HeartbeatSeconds` later, default ~60s) -- there was no faster,
+SCM-level recovery the way `TechiAgent`'s own service already has via the
+installer's `SetServiceRecovery` custom action.
+
+### Fix
+
+- `agent/rustdesk_manage.go`: added `setRustDeskServiceRecovery()`, which
+  runs `sc failure "TECHI Remote Support" reset= 86400 actions=
+  restart/15000/restart/15000/restart/60000` every time
+  `ensureRustDeskService` confirms the service exists (already running, just
+  started, or just created) -- so SCM itself restarts the service within
+  15-60s of any exit, regardless of cause, well before the next heartbeat's
+  own check would catch it. Idempotent, safe to re-apply every call.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+- `cd agent && GOOS=windows GOARCH=amd64 go build .` (cross-compile pass)
+- Still open: confirm with the user whether heartbeats resumed on their own
+  after the previous ~60s self-heal window, or stayed down indefinitely --
+  determines whether this SCM-level fix alone is sufficient or whether a
+  second issue (e.g. the whole machine losing connectivity, not just
+  Remote Support) is also in play.
+
 ## [2026-06-27] Remote Support Wouldn't Open: app.so Silently Excluded by .gitignore's `*.so` Rule
 
 ### Root cause

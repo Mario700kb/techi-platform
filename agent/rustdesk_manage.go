@@ -252,7 +252,7 @@ func ensureRustDeskService() (bool, error) {
 	if err == nil {
 		lower := strings.ToLower(string(out))
 		if strings.Contains(lower, "running") {
-			log.Printf("[rustdesk_manage] service already running")
+			setRustDeskServiceRecovery()
 			return false, nil
 		}
 		if strings.Contains(lower, strings.ToLower(rustdeskServiceName)) {
@@ -261,6 +261,7 @@ func ensureRustDeskService() (bool, error) {
 				return false, fmt.Errorf("sc start: %w", err2)
 			}
 			log.Printf("[rustdesk_manage] service started")
+			setRustDeskServiceRecovery()
 			return true, nil
 		}
 	}
@@ -275,7 +276,22 @@ func ensureRustDeskService() (bool, error) {
 		return false, fmt.Errorf("sc start after create: %w", err2)
 	}
 	log.Printf("[rustdesk_manage] service created and started")
+	setRustDeskServiceRecovery()
 	return true, nil
+}
+
+// setRustDeskServiceRecovery configures SCM to auto-restart the service if it
+// ever exits, on any cause -- including a user closing it from the tray icon.
+// RustDesk's tray "Exit" can terminate the whole process the SCM is tracking
+// (not just hide a window), so without this an operator clicking it stops
+// remote-support connectivity until the next heartbeat's ensureRustDeskService
+// call (up to HeartbeatSeconds later). 15s/15s/60s restart delays make SCM
+// itself bring it back almost immediately, well before that.
+func setRustDeskServiceRecovery() {
+	if _, err := runWithTimeout(10*time.Second, "sc", "failure", rustdeskServiceName,
+		"reset=", "86400", "actions=", "restart/15000/restart/15000/restart/60000"); err != nil {
+		log.Printf("[rustdesk_manage] sc failure (recovery policy) failed: %v", err)
+	}
 }
 
 func setRustDeskPassword(password string) error {
