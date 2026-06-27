@@ -190,16 +190,17 @@ func killProcessTree(pid int) {
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	installPath := firstExistingPath([]string{
-		// ProgramData eshte primar -- aty instalon installer.wxs dhe aty
-		// eshte e instaluar flota ekzistuese. Program Files/LOCALAPPDATA
-		// mbeten fallback per instalime te vjetra/te ndryshme.
-		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "TECHI Remote Support.exe"),
+		// Program Files is primary -- matches the proven TECHI-Remote-Support.iss
+		// reference installer and the existing fleet's install location.
+		// ProgramData/LOCALAPPDATA remain fallbacks for machines that picked up
+		// the incorrect ProgramData install during the brief window it shipped.
 		filepath.Join(os.Getenv("ProgramFiles"), "TECHI Remote Support", "TECHI Remote Support.exe"),
 		filepath.Join(os.Getenv("ProgramFiles(x86)"), "TECHI Remote Support", "TECHI Remote Support.exe"),
+		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "TECHI Remote Support.exe"),
 		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "TECHI Remote Support", "TECHI Remote Support.exe"),
-		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "rustdesk.exe"),
 		filepath.Join(os.Getenv("ProgramFiles"), "TECHI Remote Support", "rustdesk.exe"),
 		filepath.Join(os.Getenv("ProgramFiles(x86)"), "TECHI Remote Support", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "rustdesk.exe"),
 		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "TECHI Remote Support", "rustdesk.exe"),
 	})
 

@@ -47,7 +47,7 @@
     <!-- Kontrollon nëse TECHI Remote Support.exe ekziston tashmë -->
     <Property Id="TECHI_RS_EXE">
       <DirectorySearch Id="SearchTechiRS"
-                       Path="[CommonAppDataFolder]TECHI Remote Support">
+                       Path="[ProgramFiles6432Folder]TECHI Remote Support">
         <FileSearch Name="TECHI Remote Support.exe"/>
       </DirectorySearch>
     </Property>
@@ -135,20 +135,24 @@
     </UI>
 
     <!-- ===== DIREKTORITË ===== -->
-    <!-- INSTALLFOLDER        = C:\ProgramData\TechiAgent\         (CommonAppDataFolder → "CommApp" në admin extract)
-         TECHIDATADIR         = C:\ProgramData\TECHI\              (konfig + logs)
-         REMOTESUPPORTFOLDER  = C:\ProgramData\TECHI Remote Support\  (ne ProgramData, jo Program Files;
-           agent/rustdesk_manage.go dhe agent/rustdesk.go presin rustdeskDefaultInstallPath ne ProgramData, dhe
-           flota ekzistuese (480+ PC) e ka instaluar Remote Support aty; mospërputhja shkakton lidhje jo-stabile
-           te RustDesk, sepse agent-i s'gjen/menaxhon kopjen e duhur).
-         Te treja jane nen CommonAppDataFolder — MOS e ndrysho parent te StandardDirectory:
-           ndryshimi do te thyente admin-install path (msiexec /a) qe techi-deploy.cmd manual_replace pret.
+    <!-- INSTALLFOLDER  = C:\ProgramData\TechiAgent\  (CommonAppDataFolder → "CommApp" në admin extract)
+         TECHIDATADIR   = C:\ProgramData\TECHI\        (konfig + logs)
+         Te dyja jane nen CommonAppDataFolder — MOS e ndrysho parent te StandardDirectory:
+           ndryshimi do te thyente admin-install path (msiexec /a) qe techi-deploy.cmd :manual_replace_lan
+           pret per agent-in (jo per Remote Support, shih me poshte).
          ADMIN INSTALL PATH I GARANTUAR (msiexec /a):
-           [TARGETDIR]\CommApp\TechiAgent\techi-agent.exe  ← ky path DUHET hardcoded në techi-deploy.cmd
-           [TARGETDIR]\CommApp\TECHI Remote Support\TECHI Remote Support.exe -->
+           [TARGETDIR]\CommApp\TechiAgent\techi-agent.exe  ← ky path DUHET hardcoded në techi-deploy.cmd -->
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="TechiAgent"/>
       <Directory Id="TECHIDATADIR" Name="TECHI"/>
+    </StandardDirectory>
+    <!-- REMOTESUPPORTFOLDER = C:\Program Files\TECHI Remote Support\ ; Program Files, jo ProgramData.
+         Perputhet me installer-in real te references (TECHI-Remote-Support.iss, Inno Setup, v1.4.6)
+         dhe me flotat e instaluara me te. S'krijohet me Windows Service per RS (shih
+         agent/rustdesk_manage.go: rustdeskTrayTaskName) ; vetem nje Scheduled Task qe e nis
+         RS me argumentin tray ne sesionin e perdoruesit kur ben login, sepse nje SCM service
+         SYSTEM (Session 0) nuk mund te beje screen-capture interaktiv (shkaktonte "Not ready"). -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="REMOTESUPPORTFOLDER" Name="TECHI Remote Support"/>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
@@ -235,10 +239,6 @@
                 Target="[REMOTESUPPORTFOLDER]TECHI Remote Support.exe"
                 WorkingDirectory="REMOTESUPPORTFOLDER"
                 Description="TECHI Remote Support"/>
-      <ServiceControl Id="StopTechiRemoteSupport"
-                      Name="TECHI Remote Support"
-                      Stop="uninstall"
-                      Wait="no"/>
       <RemoveFolder Id="CleanTechiMenuFolder" Directory="TechiMenuFolder" On="uninstall"/>
       <RegistryValue Root="HKLM"
                      Key="SOFTWARE\TECHI\Agent"
@@ -256,7 +256,7 @@
          device_id mbrohet gjithmonë gjatë upgrade/self_update në fushë. -->
     <CustomAction Id="WriteAgentConfig"
                   Directory="TECHIDATADIR"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command $$d=$$env:ProgramData+'\TECHI\'; md ($$d+'logs') -Force | Out-Null; $$f=$$d+'agent.config.json'; ((!(Test-Path $$f)) -or ('[UI_REENROLL]' -eq '1')) -and $$($$c=New-Object PSObject; Add-Member -InputObject $$c -MemberType NoteProperty -Name api_url -Value '[API_URL]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name enrollment_token -Value '[ENROLLMENT_TOKEN]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name timeout_seconds -Value 30; Add-Member -InputObject $$c -MemberType NoteProperty -Name heartbeat_interval_seconds -Value 60; Add-Member -InputObject $$c -MemberType NoteProperty -Name retries -Value 3; Add-Member -InputObject $$c -MemberType NoteProperty -Name retry_delay_seconds -Value 10; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_processes -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_software -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_services -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_manage_enabled -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_rendezvous_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_relay_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_key -Value '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='; $$c|ConvertTo-Json|Out-File $$f -Encoding ASCII); $$s=New-Object -ComObject WScript.Shell; $$sc=$$s.CreateShortcut('C:\Users\Public\Desktop\TECHI Remote Support.lnk'); $$sc.TargetPath='C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe'; $$sc.WorkingDirectory='C:\ProgramData\TECHI Remote Support'; $$sc.Description='TECHI Remote Support'; $$sc.Save()"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command $$d=$$env:ProgramData+'\TECHI\'; md ($$d+'logs') -Force | Out-Null; $$f=$$d+'agent.config.json'; ((!(Test-Path $$f)) -or ('[UI_REENROLL]' -eq '1')) -and $$($$c=New-Object PSObject; Add-Member -InputObject $$c -MemberType NoteProperty -Name api_url -Value '[API_URL]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name enrollment_token -Value '[ENROLLMENT_TOKEN]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name timeout_seconds -Value 30; Add-Member -InputObject $$c -MemberType NoteProperty -Name heartbeat_interval_seconds -Value 60; Add-Member -InputObject $$c -MemberType NoteProperty -Name retries -Value 3; Add-Member -InputObject $$c -MemberType NoteProperty -Name retry_delay_seconds -Value 10; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_processes -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_software -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_services -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_manage_enabled -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_rendezvous_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_relay_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_key -Value '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='; $$c|ConvertTo-Json|Out-File $$f -Encoding ASCII); $$s=New-Object -ComObject WScript.Shell; $$sc=$$s.CreateShortcut('C:\Users\Public\Desktop\TECHI Remote Support.lnk'); $$sc.TargetPath='C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe'; $$sc.WorkingDirectory='C:\Program Files\TECHI Remote Support'; $$sc.Description='TECHI Remote Support'; $$sc.Save()"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -338,18 +338,54 @@
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- KillTechiRS: vret proceset para fshirjes -->
+    <!-- KillTechiRS: vret proceset para fshirjes (uninstall) ose para InstallFiles
+         (fresh install/upgrade — shih KillTechiRSBeforeInstall). Mbyll te dy emrat e
+         mundshem: "TECHI Remote Support.exe" (branded) dhe "rustdesk.exe" (emri qe
+         perdor installer-i real i vjeter, Inno Setup, ende ne flote). Pa kete, InstallFiles
+         deshtonte te mbishkruante librustdesk.dll/flutter_windows.dll/data\* sepse RS
+         eshte gjithmone ne xhirim — kjo dyshohet te jete shkaku i PC-ve qe mbeten offline
+         pas dështimit te upgrade 2.0.0 -> 2.1.0 (deshtimi i InstallFiles mund te rrezoje
+         e gjithe transaksioni MSI, perfshire upgrade-in e vete agent-it). -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- DeleteTechiRSService: heq shërbimin nga SCM -->
-    <CustomAction Id="DeleteTechiRSService"
+    <!-- KillTechiRSBeforeInstall: njesoj si KillTechiRS, por para InstallFiles — mbulon
+         fresh install (no-op, asnje proces s'ekziston) dhe upgrade (kritike, shih komenti
+         siper). Dy CustomAction te ndara sepse i njejti Id s'mund te skedulohet dy here. -->
+    <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- RemoveRustDeskTrayArtifacts: heq Scheduled Task-in "TECHI Remote Support Tray";
+         "sc delete" mbetet si pastrim per cdo PC qe ende ka shërbimin e vjeter te orfanizuar
+         nga nje build i meparshem (perpara se RS te kalonte nga SCM service te Scheduled Task). -->
+    <CustomAction Id="RemoveRustDeskTrayArtifacts"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- CreateRustDeskTrayTask: regjistron Scheduled Task "At Logon" qe nis RS me argumentin
+         tray ne sesionin e perdoruesit interaktiv. Asnje Windows Service per RS ; nje service
+         SYSTEM (Session 0) nuk mund te beje screen-capture interaktiv, prandaj shfaqej "Not ready".
+         schtasks /run nga agent-i (rustdeskTrayTaskName) e rinis kete task po te mbyllet
+         aksidentalisht nga tray-i mes sesionit. ExecutionTimeLimit 0 = pa limit kohor
+         (default eshte 72 ore, c'ka do te mbyllte RS automatikisht ne PC qe rrine ndezur gjate).
+         Pas regjistrimit, schtasks /run e nis nje here menjehere ne sesionin aktual ne xhirim
+         (instalim manual/interaktiv) — trigger-i "At Logon" vetem nuk do te kishte aktivizuar
+         per sesionin qe eshte tashme aktiv; ne instalim /quiet pa user te kyqur, /run thjesht
+         s'gjen sesion dhe s'ben asgje, pa demtuar instalimin (Return ignore). -->
+    <CustomAction Id="CreateRustDeskTrayTask"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $$Action = New-ScheduledTaskAction -Execute '[REMOTESUPPORTFOLDER]TECHI Remote Support.exe' -Argument '--tray'; $$Trigger = New-ScheduledTaskTrigger -AtLogOn; $$Principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\Users' -RunLevel Limited; $$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero); Register-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Action $$Action -Trigger $$Trigger -Principal $$Principal -Settings $$Settings -Force | Out-Null; Start-Sleep -Seconds 1; schtasks /run /tn 'TECHI Remote Support Tray' | Out-Null"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -390,6 +426,10 @@
       <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
       <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
       <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
+      <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
+           file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
+           RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
+      <Custom Action="KillTechiRSBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
       <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
            WriteAgentConfig: PS script-i brenda kontrollon vetë nëse config ekziston (idempotent).
            SetServiceRecovery: duhet gjithmonë pas upgrade — v1.0.4 nuk e kishte vendosur.
@@ -407,10 +447,13 @@
       <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs"               Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal"       After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
+      <!-- CreateRustDeskTrayTask: pasi RS eshte instaluar dhe konfiguruar, regjistro
+           Scheduled Task-in "At Logon" qe e nis ne sesionin e perdoruesit. -->
+      <Custom Action="CreateRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
       <!-- Uninstall -->
-      <Custom Action="KillTechiRS"          Before="RemoveFiles"     Condition="REMOVE~=&quot;ALL&quot;"/>
-      <Custom Action="DeleteTechiRSService" After="KillTechiRS"      Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
-      <Custom Action="CleanupProgramData"   After="DeleteTechiRSService" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
+      <Custom Action="KillTechiRS"                Before="RemoveFiles"     Condition="REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="RemoveRustDeskTrayArtifacts" After="KillTechiRS"      Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
+      <Custom Action="CleanupProgramData"         After="RemoveRustDeskTrayArtifacts" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
     </InstallExecuteSequence>
 
   </Package>

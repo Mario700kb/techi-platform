@@ -3,6 +3,136 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Devices Going Offline During 2.0.0 -> 2.1.0 Upgrade: Kill Remote Support Before InstallFiles, Not Just Before Uninstall
+
+### Root cause
+
+User reported many devices going offline specifically because the
+2.0.0 -> 2.1.0 upgrade fails to complete (fails to remove 2.0.0 / install
+2.1.0). The 2.0.0 MSI (inspected directly via `msiinfo`) does not bundle
+Remote Support at all -- on the real fleet, Remote Support was installed
+separately via `TECHI-Remote-Support.iss` (Inno Setup), running as
+`rustdesk.exe` in `C:\Program Files\TECHI Remote Support\`, always
+running as a persistent tray app once a user has logged on.
+
+2.1.0's `installer.wxs` bundles Remote Support in the *same* MSI
+transaction as the agent, writing files (`librustdesk.dll`,
+`flutter_windows.dll`, `data\*`) into that same Program Files directory.
+`KillTechiRS` (which terminates the Remote Support process) was only
+scheduled `Before="RemoveFiles" Condition="REMOVE~=\"ALL\""` -- i.e. only
+during a *full uninstall*, never during a normal install/upgrade. Since
+Remote Support is essentially always running on a real device, MSI's
+`InstallFiles` standard action would try to overwrite DLLs that Windows
+has locked open in the running `rustdesk.exe` process, causing the file
+write to fail. A failure during `InstallFiles` can roll back the *entire*
+MSI transaction -- including the agent's own file/service upgrade in the
+same package -- which plausibly explains devices stuck mid-upgrade,
+neither cleanly on 2.0.0 nor 2.1.0, and consequently offline. `KillTechiRS`
+also only killed the branded `TECHI Remote Support.exe` name, never the
+legacy `rustdesk.exe` name the existing Inno-installed fleet actually
+runs under.
+
+### Fix
+
+`agent/installer/installer.wxs`:
+- `KillTechiRS`'s `taskkill` now targets both `TECHI Remote Support.exe`
+  and the legacy `rustdesk.exe` process name.
+- Added `KillTechiRSBeforeInstall` (same kill logic, separate CustomAction
+  Id since the same Id can't be scheduled twice), scheduled
+  `Before="InstallFiles" Condition="NOT REMOVE"`. This runs on every
+  fresh install (no-op, nothing running yet) and every upgrade (kills
+  any already-running Remote Support -- whether from the Inno installer
+  or a previous MSI build -- before the new files are written), removing
+  the file-lock collision that could break the whole upgrade transaction.
+
+### Checks
+
+- XML re-verified well-formed, no `--`-inside-comment regressions.
+- Not yet verified on a real machine / MSI build, intentionally (per
+  explicit instruction not to trigger a build yet). Devices already
+  stuck in a failed/offline state from a *past* upgrade attempt will
+  need the fixed MSI redeployed (e.g. on next GPO retry cycle); this fix
+  prevents the failure going forward, it does not retroactively repair
+  an already-broken local install state.
+
+## [2026-06-27] Remote Support "Not ready": Drop the SCM Service, Go Back to Program Files + Logon Scheduled Task
+
+### Root cause
+
+Earlier this session, "TECHI Remote Support" was moved from Program Files
+to ProgramData, and a Windows Service (`sc create ... --service`) was added
+so the agent could "ensure" it stays running. Both changes were wrong,
+discovered by comparing against `TECHI-Remote-Support.iss` (the real,
+proven Inno Setup installer used historically, found locally alongside the
+actual RustDesk fork source) and `enrollment_bootstrap_service.py`'s own
+exe-path candidates (`C:\Program Files\TECHI Remote Support\rustdesk.exe`):
+
+- The proven installer puts the exe in **Program Files**, not ProgramData.
+  Moving it to ProgramData (to match the agent's own, apparently
+  outdated, assumption) went the wrong direction.
+- The proven installer never creates a Windows Service for Remote Support
+  at all. It only installs files and optionally adds a Startup-folder
+  shortcut that launches `rustdesk.exe --tray` at user logon -- an
+  interactive, per-session launch. A Service we added instead runs as
+  SYSTEM in **Session 0**, which cannot do interactive screen capture,
+  which is exactly why the app showed "Not ready. Please check your
+  connection" even with heartbeats arriving fine, and why behavior
+  differed between the tray icon and a Desktop-launched instance.
+
+### Fix
+
+- `agent/installer/installer.wxs`: `REMOTESUPPORTFOLDER` moved back under
+  `ProgramFiles6432Folder` (was `CommonAppDataFolder`/ProgramData).
+  `TECHI_RS_EXE` search path updated to match. Removed the
+  `ServiceControl` for "TECHI Remote Support" (no service exists anymore).
+  Added `CreateRustDeskTrayTask`: registers a Scheduled Task ("At Logon",
+  runs as the interactive user via `BUILTIN\Users` principal,
+  `ExecutionTimeLimit` 0 so it isn't killed after 72h) that launches
+  `TECHI Remote Support.exe --tray`, then immediately does `schtasks /run`
+  against it once so a manual/interactive install opens Remote Support
+  right away (matching old behavior) instead of waiting for the next
+  logon -- an "At Logon" trigger never fires for a session that's already
+  active. On an unattended `/quiet` GPO install with nobody logged on,
+  this `/run` is a harmless no-op; the task still fires normally at the
+  next real logon. Renamed `DeleteTechiRSService` to
+  `RemoveRustDeskTrayArtifacts`: unregisters the Scheduled Task on
+  uninstall, and still runs the old `sc delete` as a no-op safety net for
+  any device that already has the now-removed service registered from a
+  build during this session.
+- `agent/rustdesk_manage.go`: removed `ensureRustDeskService` /
+  `setRustDeskServiceRecovery` and the `rustdeskServiceName` SCM
+  machinery entirely. Added `isRustDeskProcessRunning` (tasklist-based),
+  `ensureRustDeskTrayRunning` (nudges via `schtasks /run` against the
+  installer's task if not running), and `stopRustDeskTray` /
+  `startRustDeskTray` helpers used by the remote actions. Path constants
+  changed back to Program Files.
+- `agent/rustdesk.go`: `discoverRustDeskWindows`'s path candidate list
+  reordered so Program Files is checked first; ProgramData/LOCALAPPDATA
+  remain fallbacks for the brief window devices may have picked up the
+  wrong location.
+- `agent/actions_windows.go`: `handleRestartRustDesk`,
+  `handleReinstallRustDesk`, `handleReopenRustDesk`,
+  `handleRepairConfigRustDesk`, `handleSetRemotePassword`, and
+  `handleDeployRemoteSupport`'s service-ensure phase all switched from
+  `sc stop`/`sc start`/`ensureRustDeskService` to
+  `stopRustDeskTray`/`startRustDeskTray`/`ensureRustDeskTrayRunning`.
+  Protocol-handler registry value paths reverted to Program Files.
+
+### Checks
+
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`, `go vet
+  ./...` (native and Windows cross-compile) -- clean.
+- `go test ./...` -- all existing tests pass unchanged.
+- `installer.wxs` checked for the recurring `--`-inside-XML-comment bug
+  (none found) and confirmed well-formed via `xml.dom.minidom`. A local
+  `wix build` was attempted for schema validation but `wix.exe` only
+  partially works on macOS (`WIX0000: only supports Windows`); confirmed
+  via the *same* error appearing against the unmodified original file
+  that this is a pre-existing host limitation, not a regression --
+  real validation still requires the Windows CI build (not run yet, per
+  explicit instruction, pending more items to batch).
+- Not yet verified on a real machine / MSI build, intentionally.
+
 ## [2026-06-27] New Managed RustDesk Options Were Blocked by the 30-Minute Repair Cooldown
 
 ### Root cause

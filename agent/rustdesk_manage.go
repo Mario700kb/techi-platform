@@ -16,15 +16,25 @@ import (
 )
 
 const (
-	// rustdeskDefaultInstallPath is the primary EXE path used for service
-	// registration, password configuration, and direct-launch fallbacks.
-	// ProgramData (not Program Files) to match installer.wxs and the
-	// existing fleet's install location.
-	rustdeskDefaultInstallPath = `C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe`
+	// rustdeskDefaultInstallPath is the primary EXE path used for password
+	// configuration and direct-launch fallbacks. Program Files, matching the
+	// proven TECHI-Remote-Support.iss reference installer and the existing
+	// fleet's install location -- NOT ProgramData (an earlier, incorrect
+	// assumption baked into this same file; see git history).
+	rustdeskDefaultInstallPath = `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`
 	// rustdeskLegacyExePath is a fallback for installations that still carry
 	// the upstream rustdesk.exe binary name alongside the branded one.
-	rustdeskLegacyExePath = `C:\ProgramData\TECHI Remote Support\rustdesk.exe`
-	rustdeskServiceName   = "TECHI Remote Support"
+	rustdeskLegacyExePath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
+	// rustdeskTrayTaskName is the Scheduled Task (created by installer.wxs)
+	// that launches the tray app in the logged-on user's own session at
+	// logon -- "--tray". There is intentionally no Windows Service for
+	// Remote Support: a SYSTEM-context service runs in Session 0, which
+	// cannot do interactive screen capture, causing the "Not ready" status
+	// and duplicate-instance issues seen when this was tried. schtasks /run
+	// against this task is how the agent (itself running as SYSTEM) can
+	// nudge Remote Support back open in the user's session if it's not
+	// running, without hitting the same session-isolation problem.
+	rustdeskTrayTaskName = "TECHI Remote Support Tray"
 )
 
 // ensureRustDesk checks and heals TECHI Remote Support installation, config, and service.
@@ -83,9 +93,9 @@ func ensureRustDesk(cfg *Config, configPath string) {
 			cfg.RustDeskOptionsSchemaVer = rustDeskOptionsSchemaVersion
 		}
 
-		// Service check always runs regardless of cooldown.
-		if changed, err := ensureRustDeskService(); err != nil {
-			log.Printf("[rustdesk_manage] service ensure failed: %v", err)
+		// Tray-running check always runs regardless of cooldown.
+		if changed, err := ensureRustDeskTrayRunning(); err != nil {
+			log.Printf("[rustdesk_manage] tray ensure failed: %v", err)
 		} else if changed {
 			repaired = true
 		}
@@ -253,51 +263,57 @@ func rustDeskConfigDirs() []string {
 	return dirs
 }
 
-func ensureRustDeskService() (bool, error) {
-	out, err := runWithTimeout(10*time.Second, "sc", "query", rustdeskServiceName)
-	if err == nil {
-		lower := strings.ToLower(string(out))
-		if strings.Contains(lower, "running") {
-			setRustDeskServiceRecovery()
-			return false, nil
-		}
-		if strings.Contains(lower, strings.ToLower(rustdeskServiceName)) {
-			log.Printf("[rustdesk_manage] service exists but not running — starting")
-			if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
-				return false, fmt.Errorf("sc start: %w", err2)
-			}
-			log.Printf("[rustdesk_manage] service started")
-			setRustDeskServiceRecovery()
-			return true, nil
-		}
+// isRustDeskProcessRunning checks via tasklist whether the tray app process
+// is already running in some session. There is no SCM service to query --
+// see the rustdeskTrayTaskName comment for why.
+func isRustDeskProcessRunning() bool {
+	out, err := runWithTimeout(10*time.Second, "tasklist", "/FI", "IMAGENAME eq TECHI Remote Support.exe")
+	if err == nil && strings.Contains(string(out), "TECHI Remote Support.exe") {
+		return true
 	}
-
-	binPath := fmt.Sprintf(`%s --service`, rustdeskDefaultInstallPath)
-	log.Printf("[rustdesk_manage] creating service")
-	if _, err2 := runWithTimeout(15*time.Second, "sc", "create", rustdeskServiceName,
-		"binPath=", binPath, "start=", "auto", "DisplayName=", "TECHI Remote Support"); err2 != nil {
-		return false, fmt.Errorf("sc create: %w", err2)
-	}
-	if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
-		return false, fmt.Errorf("sc start after create: %w", err2)
-	}
-	log.Printf("[rustdesk_manage] service created and started")
-	setRustDeskServiceRecovery()
-	return true, nil
+	out, err = runWithTimeout(10*time.Second, "tasklist", "/FI", "IMAGENAME eq rustdesk.exe")
+	return err == nil && strings.Contains(strings.ToLower(string(out)), "rustdesk.exe")
 }
 
-// setRustDeskServiceRecovery configures SCM to auto-restart the service if it
-// ever exits, on any cause -- including a user closing it from the tray icon.
-// RustDesk's tray "Exit" can terminate the whole process the SCM is tracking
-// (not just hide a window), so without this an operator clicking it stops
-// remote-support connectivity until the next heartbeat's ensureRustDeskService
-// call (up to HeartbeatSeconds later). 15s/15s/60s restart delays make SCM
-// itself bring it back almost immediately, well before that.
-func setRustDeskServiceRecovery() {
-	if _, err := runWithTimeout(10*time.Second, "sc", "failure", rustdeskServiceName,
-		"reset=", "86400", "actions=", "restart/15000/restart/15000/restart/60000"); err != nil {
-		log.Printf("[rustdesk_manage] sc failure (recovery policy) failed: %v", err)
+// stopRustDeskTray kills any running tray process, across sessions. Used
+// before a restart/reinstall/config-repair/password-change so the relaunch
+// picks up fresh state. No SCM service to stop -- see rustdeskTrayTaskName.
+func stopRustDeskTray() {
+	_, _ = runWithTimeout(15*time.Second, "taskkill", "/F", "/IM", "TECHI Remote Support.exe")
+	_, _ = runWithTimeout(15*time.Second, "taskkill", "/F", "/IM", "rustdesk.exe")
+}
+
+// startRustDeskTray triggers the Scheduled Task to relaunch the tray app in
+// the logged-on user's own session. Falls back to a direct launch from this
+// (SYSTEM) process if the task is missing or schtasks fails -- that won't
+// render interactively (Session 0), but still gets *a* process running.
+func startRustDeskTray() error {
+	if _, err := runWithTimeout(15*time.Second, "schtasks", "/run", "/tn", rustdeskTrayTaskName); err == nil {
+		return nil
 	}
+	_, err := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath, "--tray")
+	return err
+}
+
+// ensureRustDeskTrayRunning nudges Remote Support back open if it's not
+// running, by triggering the Scheduled Task installer.wxs creates (At Logon
+// trigger, runs as the interactive user). schtasks /run executes the task's
+// action immediately in the currently logged-on user's session even though
+// this agent process itself runs as SYSTEM -- the Task Scheduler service
+// handles that session hand-off correctly, unlike a raw exec.Command of the
+// exe from a SYSTEM process (which would be confined to Session 0). If no
+// user is logged on, the task simply won't have anywhere to run, same as it
+// wouldn't have run at logon either -- an accepted limitation of this model.
+func ensureRustDeskTrayRunning() (bool, error) {
+	if isRustDeskProcessRunning() {
+		return false, nil
+	}
+	log.Printf("[rustdesk_manage] tray not running — triggering scheduled task")
+	if _, err := runWithTimeout(10*time.Second, "schtasks", "/run", "/tn", rustdeskTrayTaskName); err != nil {
+		return false, fmt.Errorf("schtasks /run: %w", err)
+	}
+	log.Printf("[rustdesk_manage] scheduled task triggered")
+	return true, nil
 }
 
 func setRustDeskPassword(password string) error {

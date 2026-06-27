@@ -76,20 +76,17 @@ func handleRestartAgent(_ context.Context) actionResult {
 func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 	done := make(chan actionResult, 1)
 	go func() {
-		log.Printf("[action] restart_rustdesk: stopping service")
-		_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+		log.Printf("[action] restart_rustdesk: stopping tray")
+		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		log.Printf("[action] restart_rustdesk: starting service")
-		if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
-			// Try starting the exe directly if the service doesn't exist yet.
-			if _, err2 := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath, "--service"); err2 != nil {
-				done <- actionResult{
-					err:    fmt.Errorf("sc start failed: %v; direct launch also failed: %v", err, err2),
-					stderr: fmt.Sprintf("sc start: %v\ndirect: %v", err, err2),
-				}
-				return
+		log.Printf("[action] restart_rustdesk: starting tray")
+		if err := startRustDeskTray(); err != nil {
+			done <- actionResult{
+				err:    fmt.Errorf("start tray failed: %w", err),
+				stderr: err.Error(),
 			}
+			return
 		}
 		rd := discoverRustDesk(cfg)
 		done <- actionResult{
@@ -110,8 +107,8 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 	}
 	done := make(chan actionResult, 1)
 	go func() {
-		log.Printf("[action] reinstall_rustdesk: stopping service")
-		_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+		log.Printf("[action] reinstall_rustdesk: stopping tray")
+		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
 		log.Printf("[action] reinstall_rustdesk: running MSI install")
@@ -123,12 +120,12 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 
-		// Re-apply config and restart service after install.
+		// Re-apply config and relaunch tray after install.
 		if _, err := writeRustDeskConfig(cfg); err != nil {
 			log.Printf("[action] reinstall_rustdesk: config write failed (non-fatal): %v", err)
 		}
-		if _, err := ensureRustDeskService(); err != nil {
-			log.Printf("[action] reinstall_rustdesk: service start failed (non-fatal): %v", err)
+		if _, err := ensureRustDeskTrayRunning(); err != nil {
+			log.Printf("[action] reinstall_rustdesk: tray start failed (non-fatal): %v", err)
 		}
 
 		rd := discoverRustDesk(cfg)
@@ -155,16 +152,13 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 			done <- actionResult{message: fmt.Sprintf("TECHI Remote Support already running (id=%s)", rd.ID)}
 			return
 		}
-		log.Printf("[action] reopen_rustdesk: service not running — starting")
-		if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
-			// Fallback: launch the executable directly.
-			if _, err2 := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath); err2 != nil {
-				done <- actionResult{
-					err:    fmt.Errorf("sc start: %v; direct launch: %v", err, err2),
-					stderr: fmt.Sprintf("sc start: %v\ndirect: %v", err, err2),
-				}
-				return
+		log.Printf("[action] reopen_rustdesk: not running — starting")
+		if err := startRustDeskTray(); err != nil {
+			done <- actionResult{
+				err:    fmt.Errorf("start tray failed: %w", err),
+				stderr: err.Error(),
 			}
+			return
 		}
 		time.Sleep(2 * time.Second)
 		rd = discoverRustDesk(cfg)
@@ -193,14 +187,14 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 
-		log.Printf("[action] repair_config_rustdesk: stopping service for restart")
-		_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+		log.Printf("[action] repair_config_rustdesk: stopping tray for restart")
+		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		log.Printf("[action] repair_config_rustdesk: starting service")
-		if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+		log.Printf("[action] repair_config_rustdesk: starting tray")
+		if err2 := startRustDeskTray(); err2 != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("service restart failed after config repair: %w", err2),
+				err:    fmt.Errorf("tray restart failed after config repair: %w", err2),
 				stderr: err2.Error(),
 			}
 			return
@@ -357,9 +351,9 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 		st.ConfigStatus = "written"
 	}
 
-	// Phase 6: ensure service running.
-	if _, err := ensureRustDeskService(); err != nil {
-		log.Printf("[deploy_remote_support] service ensure failed (non-fatal): %v", err)
+	// Phase 6: ensure tray running.
+	if _, err := ensureRustDeskTrayRunning(); err != nil {
+		log.Printf("[deploy_remote_support] tray ensure failed (non-fatal): %v", err)
 		st.ServiceStatus = "failed"
 	} else {
 		st.ServiceStatus = "started"
@@ -457,7 +451,7 @@ func ensureRustDeskProtocolHandler() string {
 		`$p2 = 'HKCR:\rustdesk\shell\open\command'; ` +
 		`New-Item -Path $p2 -Force | Out-Null; ` +
 		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
-		`-Value '"C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
 
 	if _, writeErr := runWithTimeout(15*time.Second, "powershell",
 		"-NoProfile", "-NonInteractive", "-Command", script); writeErr != nil {
@@ -486,14 +480,14 @@ func handleSetRemotePassword(_ context.Context, _ *Config, params map[string]int
 		}
 	}
 
-	// Restart service so the new password takes effect immediately.
-	_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+	// Restart the tray so the new password takes effect immediately.
+	stopRustDeskTray()
 	time.Sleep(2 * time.Second)
-	if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
-		log.Printf("[action] set_remote_password: service restart failed (non-fatal): %v", err)
+	if err := startRustDeskTray(); err != nil {
+		log.Printf("[action] set_remote_password: tray restart failed (non-fatal): %v", err)
 	}
 
-	log.Printf("[action] set_remote_password: password updated and service restarted")
+	log.Printf("[action] set_remote_password: password updated and tray restarted")
 	return actionResult{message: "Remote password changed successfully"}
 }
 
@@ -509,7 +503,7 @@ func handleRegisterTechiProtocol(_ context.Context) actionResult {
 		`$p2 = "$p\shell\open\command"; ` +
 		`New-Item -Path $p2 -Force | Out-Null; ` +
 		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
-		`-Value '"C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
 
 	if _, err := runWithTimeout(15*time.Second, "powershell",
 		"-NoProfile", "-NonInteractive", "-Command", script); err != nil {
