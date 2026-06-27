@@ -3,6 +3,53 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Remaining Program Files Reference, Visible PowerShell Windows During Install
+
+### Root cause
+
+After the ProgramData move (previous entry), the user still saw a `TECHI
+Remote Support` folder under both `Program Files` and `ProgramData`, and
+PowerShell console windows flashing during the token-based manual install.
+Two separate issues:
+
+1. `WriteAgentConfig`'s `CustomAction` (the one that also writes
+   `agent.config.json`) created the Public Desktop shortcut with
+   `TargetPath`/`WorkingDirectory` hardcoded to
+   `C:\Program Files\TECHI Remote Support\...` — missed in the previous pass
+   because it's a string inside a PowerShell snippet, not a WiX directory
+   reference. This alone doesn't *create* the Program Files folder (a
+   shortcut's target isn't validated at save time), but the `Program Files`
+   folder the user saw is most likely a leftover from testing this repo's
+   *earlier, incorrect* installer.wxs (before the real one was adopted),
+   whose RustDesk binary ran from Program Files and left its own
+   untracked runtime files (logs/identity/cache) there — those aren't part
+   of any MSI component, so `RemoveExistingProducts` during the MajorUpgrade
+   never removes them. One-time manual cleanup of that stale folder is
+   needed on machines that were used for earlier testing; new/clean installs
+   won't recreate it now that nothing in installer.wxs references it.
+2. None of the seven `powershell.exe`-launching `CustomAction`s
+   (`WriteAgentConfig`, `EnsureServiceCreated`, `BackupAgentConfigBeforeLegacyRemove`,
+   `CleanupLegacyEndpointInstallerRegistry`, `RestoreAgentConfigAfterLegacyRemove`,
+   `RestoreAgentConfigFromLegacyBackup`, `CleanupProgramData`) passed
+   `-WindowStyle Hidden`, so each one could flash a console window even
+   though the action itself runs silently in the background during `/qn`.
+
+### Fix
+
+- `agent/installer/installer.wxs`: `WriteAgentConfig`'s shortcut now points
+  at `C:\ProgramData\TECHI Remote Support\TECHI Remote Support.exe`.
+- Added `-WindowStyle Hidden` to all seven `powershell.exe` `ExeCommand`
+  invocations.
+
+### Checks
+
+- `python3 -c "import xml.dom.minidom as m; m.parse('agent/installer/installer.wxs')"`
+  (well-formed XML after edits)
+- `grep -c "WindowStyle Hidden" agent/installer/installer.wxs` → 7 (one per
+  powershell.exe CustomAction)
+- `grep "Program Files" agent/installer/installer.wxs` → only the explanatory
+  comment remains, no executable reference
+
 ## [2026-06-27] Move TECHI Remote Support Install Path from Program Files to ProgramData
 
 ### Root cause
