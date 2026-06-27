@@ -307,7 +307,7 @@ class TestRustDeskForceMigrationScript:
         # TECHI Remote Support no longer runs as a Windows Service (Session 0
         # can't do interactive screen capture) -- it's relaunched via the
         # "TECHI Remote Support Tray" Scheduled Task installer.wxs creates.
-        assert "Restarting TECHI Remote Support via Scheduled Task" in self.script
+        assert "Starting TECHI Remote Support via Scheduled Task" in self.script
         assert "Get-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
         assert "Start-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
         assert "TECHI Remote Support Tray task triggered." in self.script
@@ -329,16 +329,19 @@ class TestRustDeskForceMigrationScript:
         assert "Get-CimInstance Win32_Service" in self.script
         assert "$Service.PathName" in self.script
         assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" in self.script
-        assert "TECHI Remote Support unattended access password configured." in self.script
+        assert "TECHI Remote Support password CLI exited 0" in self.script
         assert "WARNING: TECHI Remote Support password CLI failed; continuing bootstrap." in self.script
         assert 'Write-Log "Durres.12' not in self.script
         assert "Write-Log 'Durres.12" not in self.script
 
-    def test_password_set_happens_before_restart(self):
+    def test_restart_happens_before_password_set(self):
+        # --password talks to the running daemon over IPC (RustDesk source:
+        # ipc.rs set_permanent_password_with_ack_async) -- it must already be
+        # running, so the Scheduled Task has to start before the CLI call.
+        restart_index = self.script.index("Starting TECHI Remote Support via Scheduled Task")
         password_index = self.script.index("Setting TECHI Remote Support unattended access password via CLI")
-        restart_index = self.script.index("Restarting TECHI Remote Support via Scheduled Task")
 
-        assert password_index < restart_index
+        assert restart_index < password_index
 
     def test_idempotent_cleanup_then_rewrite_order(self):
         remove_index = self.script.index("TECHI Remote Support config removed")

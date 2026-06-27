@@ -94,13 +94,21 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		}
 
 		// Tray-running check always runs regardless of cooldown.
+		justStarted := false
 		if changed, err := ensureRustDeskTrayRunning(); err != nil {
 			log.Printf("[rustdesk_manage] tray ensure failed: %v", err)
 		} else if changed {
 			repaired = true
+			justStarted = true
 		}
 
 		if cfg.RustDeskDefaultPassword != "" {
+			if justStarted {
+				// --password talks to the running daemon over IPC; give it a
+				// moment to finish starting and start listening, or the CLI
+				// call exits 0 having silently failed (no daemon to ACK).
+				time.Sleep(4 * time.Second)
+			}
 			if err := setRustDeskPassword(cfg.RustDeskDefaultPassword); err != nil {
 				log.Printf("[rustdesk_manage] password set failed: %v", err)
 			}

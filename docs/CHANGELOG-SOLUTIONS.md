@@ -3,6 +3,69 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Scheduled Task Silently Failed to Register; Password CLI Needs the Daemon Already Running
+
+### Root cause
+
+Second real-machine test (after the previous entry's fixes) showed the
+orphaned service was correctly removed, the password CLI now found the
+right executable, and logged "configured" -- but the password still
+didn't take effect, and the log showed:
+`WARNING: TECHI Remote Support Tray Scheduled Task not found`. Two
+separate bugs, the first causing the second:
+
+1. `CreateRustDeskTrayTask` (installer.wxs) used
+   `New-ScheduledTaskPrincipal -GroupId 'BUILTIN\Users'`. This is the
+   same class of bug already learned the hard way with `icacls` earlier
+   in this session: friendly group names aren't reliable across
+   locales/contexts, and the failure was completely invisible because
+   the CustomAction has `Return="ignore"` and had no logging of its own.
+2. Checking the actual RustDesk source (`src/core_main.rs` /
+   `src/ipc.rs`, vendored locally) confirms `--password` connects to the
+   *already-running* daemon over IPC (`set_permanent_password_with_ack_async`,
+   1s timeout) and applies it there -- it does **not** write the config
+   file directly. Critically, `core_main.rs`'s `--password` branch only
+   `println!`s on failure; it never sets a non-zero process exit code.
+   So when no daemon is running (exactly the situation here, since the
+   Scheduled Task never got created), the CLI still exits 0 and our
+   wrapper logs "configured" even though nothing happened. The bootstrap
+   script's existing order (set password, *then* restart) was backwards
+   for this reason regardless of bug #1.
+
+### Fix
+
+- `agent/installer/installer.wxs`: `CreateRustDeskTrayTask` rewritten as
+  an `-EncodedCommand` (was a raw `-Command` one-liner) so it can
+  properly try/catch and log every step to
+  `C:\ProgramData\TECHI\logs\deploy.log` instead of failing in total
+  silence. `-GroupId 'BUILTIN\Users'` replaced with the locale-safe SID
+  `S-1-5-32-545` (the "Users" group). Also switched from the
+  `[REMOTESUPPORTFOLDER]` WiX token to `$env:ProgramFiles` inside the
+  script, since a property substitution into the middle of a base64
+  blob wouldn't have worked anyway.
+- `backend/app/services/enrollment_bootstrap_service.py`: swapped the
+  order in `_rustdesk_force_migration_ps_lines` -- start the Scheduled
+  Task first (4s wait for the daemon to come up), *then* attempt
+  `--password`. Updated the log line to note the exit-0-on-failure
+  caveat so it doesn't read as a false-positive guarantee again.
+- `agent/rustdesk_manage.go`: `ensureRustDesk` now sleeps 4s before
+  `setRustDeskPassword` specifically when `ensureRustDeskTrayRunning`
+  just triggered a fresh start in the same call (not on every
+  heartbeat) -- same IPC-needs-the-daemon-up reasoning, scoped to the
+  one situation where it actually matters.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py -q`
+  -- 105 passed (re-ordering assertions flipped/renamed).
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -- clean.
+- Decoded the new `-EncodedCommand` base64 back to UTF-16LE text and
+  diffed it against the intended script to confirm it matches exactly.
+- `installer.wxs` re-verified well-formed, no `--`-in-comment regressions.
+- Not yet verified on a real machine -- this is a same-day follow-up to
+  a test that's still in progress.
+
 ## [2026-06-27] Bootstrap Script Still Assumed a Remote Support Windows Service After It Was Removed
 
 ### Root cause
