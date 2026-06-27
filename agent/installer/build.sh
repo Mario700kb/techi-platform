@@ -17,6 +17,10 @@ if [ -z "$VERSION" ]; then
 fi
 VERSION4="${VERSION}.0"
 OUTPUT="TECHI-Endpoint-Deployment-${VERSION}.msi"
+BUILD_COMMIT="$(git -C "$AGENT_DIR" rev-parse --short HEAD 2>/dev/null || echo local)"
+if ! git -C "$AGENT_DIR" diff --quiet 2>/dev/null || ! git -C "$AGENT_DIR" diff --cached --quiet 2>/dev/null; then
+  BUILD_COMMIT="${BUILD_COMMIT}-dirty"
+fi
 
 echo "[1/5] Updating versioninfo.json + techi-agent.manifest to v$VERSION..."
 cd "$AGENT_DIR"
@@ -52,9 +56,9 @@ echo "[3/5] Cross-compiling techi-agent.exe (Windows/amd64) v$VERSION..."
 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.AgentVersion=$VERSION" -trimpath -o "$SCRIPT_DIR/techi-agent.exe" .
 rm -f resource.syso
 
-echo "[4/5] Building MSI with WiX v7..."
+echo "[4/5] Building MSI with WiX v7 (BuildCommit=$BUILD_COMMIT)..."
 cd "$SCRIPT_DIR"
-wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d "SourceDir=$SCRIPT_DIR" -d "Version=$VERSION4" -o "$OUTPUT"
+wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d "SourceDir=$SCRIPT_DIR" -d "Version=$VERSION4" -d "BuildCommit=$BUILD_COMMIT" -o "$OUTPUT"
 
 echo "[5/5] Done!"
 echo "      MSI: $SCRIPT_DIR/$OUTPUT"

@@ -11,6 +11,9 @@
 <?ifndef Version?>
 <?define Version="0.0.0.0"?>
 <?endif?>
+<?ifndef BuildCommit?>
+<?define BuildCommit="dev"?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
@@ -193,6 +196,14 @@
                        Type="string"
                        Value="[TECHIDATADIR]"
                        KeyPath="yes"/>
+        <!-- BuildCommit: git short SHA i ketij build-i (nga CI -d BuildCommit=...), jo ProductVersion
+             (ai mbetet 2.1.0). Lejon te verifikohet ne PC pikerisht cili kod eshte instaluar, pa pyetur
+             "cilin build prove"; reg query HKLM\SOFTWARE\TECHI\Agent /v BuildCommit -->
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\TECHI\Agent"
+                       Name="BuildCommit"
+                       Type="string"
+                       Value="$(var.BuildCommit)"/>
       </Component>
 
       <!-- techiremotesupport:// protocol handler -->
@@ -256,7 +267,7 @@
          që funksionon në çdo locale Windows). /T/(OI)(CI) e zbatojnë te skedarët ekzistues dhe te ata të rinj. -->
     <CustomAction Id="LockdownTechiDataDir"
                   Directory="TECHIDATADIR"
-                  ExeCommand="icacls.exe &quot;[TECHIDATADIR]&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'icacls.exe' -ArgumentList @('[TECHIDATADIR]','/inheritance:r','/grant:r','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F','/T','/C','/Q') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -275,7 +286,7 @@
     <!-- SetServiceRecovery: restart automatik pas dështimit -->
     <CustomAction Id="SetServiceRecovery"
                   Directory="SystemFolder"
-                  ExeCommand="sc.exe failure TechiAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'sc.exe' -ArgumentList @('failure','TechiAgent','reset=','86400','actions=','restart/60000/restart/60000/restart/300000') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -330,7 +341,7 @@
     <!-- KillTechiRS: vret proceset para fshirjes -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="taskkill.exe /F /IM &quot;TECHI Remote Support.exe&quot;"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -338,7 +349,7 @@
     <!-- DeleteTechiRSService: heq shërbimin nga SCM -->
     <CustomAction Id="DeleteTechiRSService"
                   Directory="SystemFolder"
-                  ExeCommand="sc.exe delete &quot;TECHI Remote Support&quot;"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

@@ -116,17 +116,22 @@ jobs:
         run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
 
       # ------------------------------------------------------------------ #
-      # 8. Build MSI me WiX v4                                              #
+      # 8. Build MSI me WiX v7                                              #
+      #    BuildCommit (git short SHA) shkon ne HKLM\SOFTWARE\TECHI\Agent,   #
+      #    jo ne ProductVersion -- lejon te verifikohet ne PC saktesisht     #
+      #    cili commit eshte instaluar pa pyetur "cilin build prove".       #
       # ------------------------------------------------------------------ #
       - name: Build MSI
         shell: pwsh
         working-directory: agent/installer
         run: |
+          $buildCommit = "${{ github.sha }}".Substring(0, 7)
           wix build installer.wxs `
             -arch x64 `
             -ext WixToolset.UI.wixext `
             -d SourceDir=. `
             -d Version=${{ steps.version.outputs.version4 }} `
+            -d BuildCommit=$buildCommit `
             -o TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
 
       # ------------------------------------------------------------------ #

@@ -3,6 +3,53 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Hide Remaining Console-EXE CustomActions, Embed BuildCommit for Test Traceability
+
+### Root cause
+
+After a from-scratch IObit-driven uninstall/reinstall, the user still saw
+console windows flash during manual install. The previous `-WindowStyle
+Hidden` pass (commit `20844ae`) only covered the seven `powershell.exe`
+`CustomAction`s. Four others launch bare console executables directly --
+`SetServiceRecovery` (`sc.exe failure ...`), `LockdownTechiDataDir`
+(`icacls.exe ...`), `KillTechiRS` (`taskkill.exe ...`), and
+`DeleteTechiRSService` (`sc.exe delete ...`) -- none of which accept a
+`-WindowStyle` flag themselves, so they were never covered. `KillTechiRS`/
+`DeleteTechiRSService` also run during the *old* product's uninstall step
+of every MajorUpgrade transaction, i.e. during what looks to the user like
+"installing the new version."
+
+Separately, since `ProductVersion` intentionally stays `2.1.0` across every
+iteration (per explicit instruction, to avoid version churn), there was no
+way to tell from the installed machine which exact commit's MSI was
+actually running -- repeated back-and-forth was needed each time to confirm
+"which build did you test."
+
+### Fix
+
+- `agent/installer/installer.wxs`: wrapped the four bare console-EXE
+  `CustomAction`s in `powershell.exe -WindowStyle Hidden ... Start-Process
+  -WindowStyle Hidden -NoNewWindow -Wait`, consistent with the other seven.
+- Added a `BuildCommit` WiX variable (`-d BuildCommit=<git short sha>`,
+  defaults to `dev`/`local` when unset) written to
+  `HKLM\SOFTWARE\TECHI\Agent\BuildCommit` alongside the existing `DataDir`
+  value -- `reg query HKLM\SOFTWARE\TECHI\Agent /v BuildCommit` on the test
+  machine now tells us exactly which commit is installed.
+- `.github/workflows/build-agent-msi.yml`: passes `-d BuildCommit=$(git sha
+  short)` to `wix build`.
+- `agent/installer/build.sh` / `build.bat`: same, using local `git rev-parse
+  --short HEAD` (suffixed `-dirty` in build.sh if the tree has uncommitted
+  changes).
+
+### Checks
+
+- `python3 -c "import xml.dom.minidom as m; m.parse('agent/installer/installer.wxs')"`
+  (well-formed XML)
+- `bash -n agent/installer/build.sh` (syntax check)
+- `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/build-agent-msi.yml'))"`
+- `grep -c "WindowStyle Hidden" agent/installer/installer.wxs` → 11 (7
+  powershell.exe CAs + 4 newly-wrapped console-EXE CAs)
+
 ## [2026-06-27] Stop Spawning a Remote Support Process Every Heartbeat (Process Pile-up, Won't Open, Reconnect Loop)
 
 ### Root cause

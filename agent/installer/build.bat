@@ -21,6 +21,8 @@ if "%VERSION%"=="" (
 )
 set VERSION4=%VERSION%.0
 set OUTPUT=TECHI-Endpoint-Deployment-%VERSION%.msi
+for /f %%c in ('git -C "%~dp0.." rev-parse --short HEAD 2^>nul') do set BUILD_COMMIT=%%c
+if "%BUILD_COMMIT%"=="" set BUILD_COMMIT=local
 
 echo [1/5] Generating resource.syso (versioninfo + manifest) v%VERSION%...
 pushd "%~dp0.."
@@ -56,9 +58,9 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-echo [4/5] Building MSI with WiX v7...
+echo [4/5] Building MSI with WiX v7 (BuildCommit=%BUILD_COMMIT%)...
 pushd "%~dp0"
-wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=%SRCDIR% -d Version=%VERSION4% -o "%OUTPUT%"
+wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=%SRCDIR% -d Version=%VERSION4% -d BuildCommit=%BUILD_COMMIT% -o "%OUTPUT%"
 REM Requires: wix extension add --global WixToolset.UI.wixext/7.0.0
 if %ERRORLEVEL% neq 0 (
     popd
