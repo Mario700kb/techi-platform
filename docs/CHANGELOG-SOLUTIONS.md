@@ -70,6 +70,18 @@ device to re-enroll as a new device on every upgrade.
   `elevated-notoken-upgrade-output.log`) already validated the real
   `installer.wxs` end-to-end against the live `2.0.0` lineage before this
   integration.
+- CI (`build-agent-msi.yml`) run for this change actually built the MSI
+  end-to-end on `windows-latest` (artifact `TECHI-Endpoint-Deployment-2.1.0`,
+  ~22 MB) after fixing three real CI-only issues found via failed runs:
+  1. WiX tool version was pinned to `4.0.5`; the real `installer.wxs` needs
+     WiX v7 (`WixToolset.UI.wixext` API surface). Pinned both the `wix`
+     dotnet tool and `WixToolset.UI.wixext` to `7.0.0`.
+  2. WiX v7 refuses to run (`WIX7015`) until the Open Source Maintenance Fee
+     EULA is accepted — added `wix eula accept wix7` right after install
+     (see https://docs.firegiant.com/wix/osmf/).
+  3. The parameterized-`Version` comment block added to `installer.wxs`'s
+     header contained two literal `--` sequences, which is invalid inside an
+     XML comment (`WIX0104`). Reworded to avoid `--`.
 
 ## [2026-06-27] Self-Update — Stop Relying on MajorUpgrade, Mirror techi-deploy.cmd's Explicit Uninstall
 
