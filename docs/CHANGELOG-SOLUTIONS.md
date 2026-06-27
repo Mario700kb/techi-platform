@@ -3,6 +3,50 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] Password Write Found Nothing to Patch: the Identity File Gets Deleted, Then Never Waited For
+
+### Root cause
+
+Fourth real-machine test of the just-deployed TOML-write fix: zero log
+lines from the password step at all -- not even the "skipped: no
+password configured" fallback. The bootstrap script's own earlier
+cleanup loop (`$TechiRoots` / `Get-ChildItemSafe -Path $ConfigDir |
+... Remove-Item -Recurse`) deletes every file under each root's
+`config\` directory, including the suffix-less identity TOML that
+holds `password`/`salt`/`id`. Nothing in this script recreates that
+file -- only RustDesk itself does, once it actually runs. The new
+password-write block ran *before* the Scheduled Task was even
+triggered, so every candidate path was missing, `Test-PathSafe`
+returned false for all of them, and the function silently returned
+`$false` with no logging at all -- exactly the silence observed.
+
+### Fix
+
+- `backend/app/services/enrollment_bootstrap_service.py`: moved the
+  Scheduled Task start (now with a 6s wait, was 2s) to *before* the
+  password-write block, since RustDesk needs to actually run once to
+  recreate the identity file the cleanup loop just deleted. The
+  password loop now retries once more after a 5s wait if nothing was
+  found the first time, and logs explicitly either way ("identity TOML
+  not found yet -- waiting... retrying" / a final WARNING if still not
+  found after both attempts) instead of failing in total silence.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py -q`
+  -- 105 passed (ordering assertion flipped back, two new assertions
+  for the retry/visibility logging).
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -- clean (no Go changes this entry, re-verified
+  anyway since the agent shares `rustDeskConfigDirs()`/file-patch
+  logic conceptually).
+- Generated the real script locally via
+  `EnrollmentBootstrapService._rustdesk_force_migration_ps_lines` with
+  a dummy payload to confirm the literal generated PowerShell matches
+  what's described above, rather than trusting the Python source alone.
+- Not yet verified on a real machine for this specific reorder -- this
+  directly follows from the previous entry's real-machine test result.
+
 ## [2026-06-28] Set the Remote Support Password by Writing the Identity TOML Directly, Not via --password CLI
 
 ### Root cause

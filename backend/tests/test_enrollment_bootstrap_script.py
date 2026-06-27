@@ -331,18 +331,23 @@ class TestRustDeskForceMigrationScript:
         assert "password = '$Password'" in self.script
         assert "Join-Path $Root 'TECHI Remote Support.toml'" in self.script
         assert "TECHI Remote Support password written" in self.script
+        assert "TECHI Remote Support identity TOML not found yet -- waiting" in self.script
+        assert "WARNING: TECHI Remote Support password not set -- identity TOML never appeared" in self.script
         assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" not in self.script
         assert "function Get-TechiExecutable" not in self.script
         assert 'Write-Log "Durres.12' not in self.script
         assert "Write-Log 'Durres.12" not in self.script
 
-    def test_password_written_before_tray_restart(self):
-        # Restart after writing so an already-running tray instance picks up
-        # the new password from disk instead of keeping the old one in memory.
-        password_index = self.script.index("function Set-TechiPermanentPasswordSafe")
+    def test_tray_restarts_before_password_write(self):
+        # The cleanup loop earlier in this script deletes config\ entirely,
+        # so the identity TOML doesn't exist on disk again until RustDesk
+        # itself runs and recreates it -- the Scheduled Task must be started
+        # (and given time to do so) before any write attempt, or every
+        # candidate path is missing and nothing gets patched.
         restart_index = self.script.index("Starting TECHI Remote Support via Scheduled Task")
+        password_index = self.script.index("function Set-TechiPermanentPasswordSafe")
 
-        assert password_index < restart_index
+        assert restart_index < password_index
 
     def test_idempotent_cleanup_then_rewrite_order(self):
         remove_index = self.script.index("TECHI Remote Support config removed")
