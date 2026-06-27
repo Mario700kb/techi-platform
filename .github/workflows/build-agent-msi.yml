@@ -6,6 +6,7 @@ on:
       - stable/phase-2-heartbeat
     paths:
       - 'agent/**'
+      - '.github/workflows/build-agent-msi.yml'
   workflow_dispatch:
 
 env:
