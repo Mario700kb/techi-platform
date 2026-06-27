@@ -41,8 +41,8 @@ jobs:
       - name: Install WiX v4 + UI extension
         shell: pwsh
         run: |
-          dotnet tool install --global wix --version 4.0.5
-          wix extension add --global WixToolset.UI.wixext/4.0.5
+          dotnet tool install --global wix --version 7.0.0
+          wix extension add --global WixToolset.UI.wixext/7.0.0
 
       # ------------------------------------------------------------------ #
       # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
