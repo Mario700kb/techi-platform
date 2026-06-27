@@ -7,9 +7,59 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// cliProbeInterval throttles the --get-id/--version CLI probes below: each
+// spawns a second instance of the single-instance-locked Remote Support exe,
+// so probing on every heartbeat (every ~60s) piles up processes far faster
+// than a kill-on-timeout can clean them up. Once we have a usable cached
+// value there's no need to re-probe more than occasionally.
+const cliProbeInterval = 30 * time.Minute
+
+var (
+	cliProbeMu      sync.Mutex
+	cliProbeVersion string
+	cliProbeVerAt   time.Time
+	cliProbeIDAt    time.Time
+)
+
+func cachedRustDeskVersion(path string) string {
+	cliProbeMu.Lock()
+	if cliProbeVersion != "" && time.Since(cliProbeVerAt) < cliProbeInterval {
+		v := cliProbeVersion
+		cliProbeMu.Unlock()
+		return v
+	}
+	cliProbeMu.Unlock()
+
+	v := rustDeskVersion(path)
+	cliProbeMu.Lock()
+	if v != "" {
+		cliProbeVersion = v
+		cliProbeVerAt = time.Now()
+	}
+	cliProbeMu.Unlock()
+	return v
+}
+
+func shouldProbeRustDeskID(currentID string) bool {
+	if !isUsableRustDeskID(currentID) {
+		return true
+	}
+	cliProbeMu.Lock()
+	defer cliProbeMu.Unlock()
+	return time.Since(cliProbeIDAt) >= cliProbeInterval
+}
+
+func recordRustDeskIDProbe() {
+	cliProbeMu.Lock()
+	cliProbeIDAt = time.Now()
+	cliProbeMu.Unlock()
+}
 
 type RustDeskInfo struct {
 	ID            string `json:"rustdesk_id"`
@@ -91,6 +141,15 @@ func isUsableRustDeskID(id string) bool {
 
 // localRustDeskIDFromCLI runs `rustdesk.exe --get-id` and returns the
 // normalized numeric ID (e.g. "1235009710") or "" if unavailable.
+//
+// This spawns a second instance of the (single-instance-locked) Remote
+// Support exe. If it doesn't exit cleanly on its own, the 5s timeout below
+// kills it -- but cmd.Process.Kill() only kills that one PID, not any
+// children it spawned, so a hung/non-exiting --get-id leaves an orphaned
+// process that holds the single-instance lock forever (manual launches of
+// Remote Support then silently do nothing, since they just forward to the
+// orphan instead of opening a window). killProcessTree below force-kills
+// the whole tree as a safety net.
 func localRustDeskIDFromCLI(installPath string) string {
 	if installPath == "" {
 		return ""
@@ -103,7 +162,7 @@ func localRustDeskIDFromCLI(installPath string) string {
 	select {
 	case <-time.After(5 * time.Second):
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			killProcessTree(cmd.Process.Pid)
 		}
 		return ""
 	case <-done:
@@ -120,6 +179,13 @@ func localRustDeskIDFromCLI(installPath string) string {
 		}
 	}
 	return ""
+}
+
+// killProcessTree force-kills pid and its descendants. Used as a safety net
+// when a spawned CLI probe (--get-id, --version) doesn't exit on its own --
+// cmd.Process.Kill() alone only terminates the single PID we spawned.
+func killProcessTree(pid int) {
+	_, _ = runWithTimeout(5*time.Second, "taskkill", "/F", "/T", "/PID", strconv.Itoa(pid))
 }
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
@@ -140,7 +206,7 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	if installPath != "" {
 		info.InstallStatus = "installed"
 		info.InstallPath = installPath
-		info.Version = rustDeskVersion(installPath)
+		info.Version = cachedRustDeskVersion(installPath)
 	} else {
 		info.InstallStatus = "not_installed"
 	}
@@ -148,10 +214,13 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	info.Status = rustDeskWindowsStatus()
 
 	// Prefer CLI: rustdesk.exe --get-id gives the exact ID shown in the UI.
-	if installPath != "" {
+	// Only probe when we don't have a usable ID yet, or periodically to
+	// catch drift -- see cliProbeInterval.
+	if installPath != "" && shouldProbeRustDeskID(info.ID) {
 		if cliID := localRustDeskIDFromCLI(installPath); cliID != "" {
 			info.ID = cliID
 		}
+		recordRustDeskIDProbe()
 	}
 
 	// Read TOML files for encID, and ID as fallback if CLI produced nothing.
@@ -211,7 +280,9 @@ func rustDeskVersion(path string) string {
 	go func() { done <- cmd.Run() }()
 	select {
 	case <-time.After(2 * time.Second):
-		_ = cmd.Process.Kill()
+		if cmd.Process != nil {
+			killProcessTree(cmd.Process.Pid)
+		}
 		return ""
 	case err := <-done:
 		if err != nil {

@@ -3,6 +3,60 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Stop Spawning a Remote Support Process Every Heartbeat (Process Pile-up, Won't Open, Reconnect Loop)
+
+### Root cause
+
+After moving Remote Support to ProgramData, the user reported, on real
+hardware: clicking the Remote Support icon does nothing at all (no process
+ever appears in Task Manager, from either the Desktop shortcut or the exe in
+`C:\ProgramData\TECHI Remote Support\`), several duplicate "TECHI Remote
+Support" processes visibly running all the time (nested under "TECHI Platform
+Endpoint Agent" in Task Manager), and connecting via our platform UI drops
+and reconnects every 5-10 seconds. The user confirmed this is unrelated to
+Defender/AppLocker and started with the first GitHub-CI-built MSI — i.e. it
+traces back to this repo's agent code, not the installer or AV.
+
+`rustdesk.go`'s `discoverRustDeskWindows` (called every heartbeat, default
+every ~60s, from both the main loop and the on-demand `sync_remote_support`
+action handler) unconditionally spawned a *second* instance of the exe twice
+per call: `--version` (2s timeout) and `--get-id` (5s timeout), to refresh
+telemetry. Remote Support is single-instance-locked, so a probe spawn either
+exits almost immediately (forwarded to the existing instance) or, if it
+doesn't, was only killed via `cmd.Process.Kill()` -- which kills just that
+one PID, not any child process the exe itself spawned. Probing on every
+heartbeat, indefinitely, is exactly what produced the pile of duplicate
+processes the user saw in Task Manager: every ~60s added another spawn that
+either left an orphaned child behind or briefly held the single-instance
+lock, so the user's manual double-click attempts were silently forwarded to
+one of these short-lived orphans (which has no UI to show, being headless)
+instead of opening a window. The lock contention and repeated spawn/kill
+cycles are also a plausible explanation for the periodic disconnects: each
+new probe competes with whatever instance currently owns an active remote
+session.
+
+### Fix
+
+- `agent/rustdesk.go`: added `cachedRustDeskVersion`/`shouldProbeRustDeskID`/
+  `recordRustDeskIDProbe`, throttling both probes to once per
+  `cliProbeInterval` (30 min) once a usable ID/version is already known,
+  instead of every heartbeat. The ID probe still runs immediately if we
+  don't have a usable ID yet (first-run bootstrap).
+- Added `killProcessTree` (`taskkill /F /T /PID`) and use it instead of
+  `cmd.Process.Kill()` on both probes' timeout paths, so a non-exiting probe
+  can't leave orphaned children behind even in the rare case the throttle
+  above still lets one through.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+- `cd agent && GOOS=windows GOARCH=amd64 go build .` (cross-compile pass)
+- Manual cleanup still required once on already-affected machines: kill all
+  existing `TECHI Remote Support.exe` processes (`taskkill /F /IM "TECHI
+  Remote Support.exe"`), then retest opening Remote Support after updating
+  to this agent build -- this fix prevents future pile-up, it doesn't clear
+  processes that already accumulated under the old code.
+
 ## [2026-06-27] Remaining Program Files Reference, Visible PowerShell Windows During Install
 
 ### Root cause
