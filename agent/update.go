@@ -142,28 +142,6 @@ function Get-AgentServiceStatus {
     return [string]$svc.Status
 }
 
-# Gjen ProductCode-in real te instaluar per "TECHI Agent" nga registry.
-# I pavarur nga UpgradeCode -- punon edhe kur MSI e re ka UpgradeCode tjeter
-# nga ajo e instaluar (rast real: bundle i vjeter Agent+Remote Support ka
-# UpgradeCode te ndryshem nga MSI-ja vetem-agent e tanishme, ndaj MajorUpgrade
-# nuk e njeh kurre si "upgrade").
-function Get-InstalledTechiAgentProductCode {
-    $roots = @(
-        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
-        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
-    )
-    foreach ($root in $roots) {
-        $keys = Get-ChildItem $root -ErrorAction SilentlyContinue
-        foreach ($key in $keys) {
-            $p = Get-ItemProperty $key.PSPath -ErrorAction SilentlyContinue
-            if ($p.DisplayName -eq 'TECHI Agent' -and $p.UninstallString -match '\{[0-9A-Fa-f-]{36}\}') {
-                return $Matches[0]
-            }
-        }
-    }
-    return $null
-}
-
 function Ensure-AgentService {
     $status = Get-AgentServiceStatus
     Write-DeployLog "service status after msiexec=$status"
@@ -202,25 +180,14 @@ try {
         Write-DeployLog "service status wait=$status"
     } while ($status -eq 'Running' -and (Get-Date) -lt $deadline)
 
-    # Uninstall eksplicit i ProductCode-it real te instaluar PARA install-it
-    # te ri. Mos u mbeshtet te MajorUpgrade i MSI-se -- ne praktike ka pasur
-    # MSI te instaluara me UpgradeCode tjeter (bundle i vjeter Agent+Remote
-    # Support), ndaj Windows Installer s'e njeh kurre si "upgrade" dhe
-    # /i i thjeshte do dilte pa asnje efekt te dukshem.
-    $oldProductCode = Get-InstalledTechiAgentProductCode
-    if ($oldProductCode) {
-        Write-DeployLog "uninstalling existing TECHI Agent product_code=$oldProductCode"
-        $uninstallResult = Run-Logged 'msiexec.exe' @('/x', $oldProductCode, '/quiet', '/norestart')
-        Write-DeployLog "uninstall result=$uninstallResult"
-        if ($uninstallResult -ne 0 -and $uninstallResult -ne 3010) {
-            Write-DeployLog "uninstall failed; attempting service recovery"
-            Ensure-AgentService
-            throw "msiexec /x result=$uninstallResult"
-        }
-    } else {
-        Write-DeployLog "no existing TECHI Agent product found in registry; fresh install"
-    }
-
+    # Plain /i: installer.wxs (UpgradeCode E6AD0A88, matching production)
+    # heq automatikisht versionin e instaluar via MajorUpgrade. MOS bej
+    # msiexec /x eksplicit para /i -- nje uninstall i ndare (standalone)
+    # NUK e vendos UPGRADINGPRODUCTCODE, dhe CustomAction CleanupProgramData
+    # (Condition="REMOVE~='ALL' AND NOT UPGRADINGPRODUCTCODE") do te fshinte
+    # C:\ProgramData\TECHI\agent.config.json -- duke humbur device_id dhe
+    # duke rilidhur pajisjen si te re. MajorUpgrade brenda nje transaksioni
+    # te vetem e ruan device_id (verifikuar me teste lokale elevated).
     $msiResult = Run-Logged 'msiexec.exe' @('/i', $MsiPath, '/quiet', '/norestart')
     if ($msiResult -ne 0 -and $msiResult -ne 3010) {
         Write-DeployLog "msiexec failed; attempting service recovery"

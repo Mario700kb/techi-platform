@@ -723,53 +723,37 @@ class TestGPOScheduledDeployScript:
         assert "installed_registry_version=%REG_VERSION%" in self.script
         assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
 
-    def test_deploy_cmd_routes_registry_missing_to_fresh_install(self):
-        """Fresh install ndodh vetem kur registry entry mungon."""
-        assert 'if /i "%VERSION_STATE%"=="missing" goto :do_install' in self.script
+    def test_deploy_cmd_routes_non_equal_state_to_install(self):
+        """Fresh install DHE upgrade (missing/older) shkojne te i njejti :do_install --
+        installer.wxs (UpgradeCode E6AD0A88) ka MajorUpgrade qe e bën upgrade-in
+        automatikisht brenda nje msiexec /i te vetem."""
+        assert 'if /i "%VERSION_STATE%"=="equal" goto :already_uptodate' in self.script
+        assert "goto :do_install" in self.script
         do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[do_install_pos:already_pos]
         assert 'msiexec /i "%NETLOGON_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
         assert "installing_product_version=%ACTIVE_VERSION%" in section
-        assert "mode=fresh" in section
         assert 'msiexec /i "%NETLOGON_MSI%" TOKEN=%TOKEN%' not in self.script
         assert "REINSTALL=ALL" not in self.script
         assert "REINSTALLMODE=vomus" not in self.script
 
-    def test_deploy_cmd_stops_service_before_install(self):
-        """Shërbimi ndalet para instalimit."""
-        assert "net stop TechiAgent 2>nul" in self.script
-        assert "taskkill /f /im techi-agent.exe 2>nul" in self.script
+    def test_deploy_cmd_does_not_uninstall_explicitly_before_install(self):
+        """Upgrade-i NUK ben msiexec /x manual para /i -- nje uninstall i ndare nuk
+        vendos UPGRADINGPRODUCTCODE dhe shkakton humbje te device_id (installer.wxs
+        CustomAction CleanupProgramData fshin C:\\ProgramData\\TECHI ne ate rast).
+        MajorUpgrade brenda nje transaksioni te vetem mbron device_id (verifikuar
+        me teste elevated lokale: device_id i ruajtur 2.0.0 -> 2.1.0)."""
+        assert 'msiexec /x "' not in self.script
+        assert ":do_upgrade" not in self.script
+        assert ":wait_registry_removed" not in self.script
+        assert "REGISTRY_REMOVED_OK" not in self.script
 
-    def test_deploy_cmd_upgrade_uninstalls_existing_product_code(self):
-        """2.0.0 -> 2.1.0: upgrade ndalon service dhe ben msiexec /x ProductCode."""
-        assert 'if /i "%VERSION_STATE%"=="older" goto :do_upgrade' in self.script
-        do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
-        already = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
-        section = self.script[do_install:already]
-        assert ":do_upgrade" in section
-        assert "net stop TechiAgent 2>nul" in section
-        assert "taskkill /f /im techi-agent.exe 2>nul" in section
-        assert 'msiexec /x "%REG_PRODUCT_CODE%" /qn /norestart' in section
-        assert "mode=uninstall product_code=%REG_PRODUCT_CODE%" in section
-        assert "call :wait_registry_removed" in section
-        assert "registry_removed_ok=1" in section
-        assert "mode=install-after-uninstall" in section
-        assert "sc.exe delete TechiAgent" not in section
-
-    def test_deploy_cmd_handles_product_code_changed(self):
-        """ProductCode i ndryshuar merret nga UninstallString dhe perdoret per uninstall."""
+    def test_deploy_cmd_captures_product_code_for_logging(self):
+        """ProductCode i instaluar merret nga UninstallString per qellim logimi/diagnoze."""
         assert "$item.UninstallString -match ''\\{[0-9A-Fa-f-]{36}\\}''" in self.script
         assert "$code=$Matches[0]" in self.script
-        assert 'msiexec /x "%REG_PRODUCT_CODE%" /qn /norestart' in self.script
-
-    def test_deploy_cmd_registry_removed_is_required_after_uninstall(self):
-        """Upgrade nuk vazhdon pa u hequr registry entry i vjeter."""
-        assert ":wait_registry_removed" in self.script
-        assert "set REGISTRY_REMOVED_OK=0" in self.script
-        assert "call :read_registry" in self.script
-        assert 'if /i "!VERSION_STATE!"=="missing"' in self.script
-        assert 'if not "%REGISTRY_REMOVED_OK%"=="1" goto :install_failed' in self.script
+        assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
 
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""
@@ -830,7 +814,7 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
         """:install_failed regjistron detaje dhe del me exit /b 1."""
         assert "result=failed active_version=%ACTIVE_VERSION%" in self.script
-        assert "uninstall_exit=%UNINSTALL_EXIT%" in self.script
+        assert "msi_exit_code=%MSI_EXIT%" in self.script
         assert "exit /b 1" in self.script
 
     def test_deploy_cmd_done_label_before_already_uptodate(self):

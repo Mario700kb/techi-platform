@@ -1,9 +1,10 @@
 #!/bin/bash
-# TECHI Agent v2.0 MSI Builder (macOS / Linux cross-compile)
+# TECHI Agent MSI Builder (macOS / Linux cross-compile)
 # Kërkon: Go 1.21+    →  https://go.dev/dl/
+#          goversioninfo: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 #          WiX v4 via dotnet tool:
 #            dotnet tool install --global wix
-#            wix extension add WixToolset.Util.wixext
+#            wix extension add WixToolset.UI.wixext
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,18 +14,48 @@ if [ -z "$VERSION" ]; then
   echo "ERROR: nuk u gjet version. Kaloje si argument ose vendose ne agent/VERSION." >&2
   exit 1
 fi
+VERSION4="${VERSION}.0"
 OUTPUT="TECHI-Endpoint-Deployment-${VERSION}.msi"
 
-echo "[1/3] Cross-compiling techi-agent.exe (Windows/amd64) v$VERSION..."
+echo "[1/5] Updating versioninfo.json + techi-agent.manifest to v$VERSION..."
 cd "$AGENT_DIR"
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.AgentVersion=$VERSION" -o "$SCRIPT_DIR/techi-agent.exe" .
-echo "      techi-agent.exe built: $(du -h "$SCRIPT_DIR/techi-agent.exe" | cut -f1)"
+python3 - "$VERSION" "$VERSION4" <<'PYEOF'
+import json, re, sys
+version, version4 = sys.argv[1], sys.argv[2]
+major, minor, patch = (version.split(".") + ["0", "0", "0"])[:3]
 
-echo "[2/3] Building MSI with WiX v4..."
+with open("versioninfo.json") as f:
+    data = json.load(f)
+data["FixedFileInfo"]["FileVersion"] = {"Major": int(major), "Minor": int(minor), "Patch": int(patch), "Build": 0}
+data["FixedFileInfo"]["ProductVersion"] = {"Major": int(major), "Minor": int(minor), "Patch": int(patch), "Build": 0}
+data["StringFileInfo"]["FileVersion"] = version4
+data["StringFileInfo"]["ProductVersion"] = version4
+with open("versioninfo.json", "w") as f:
+    json.dump(data, f, indent=4)
+    f.write("\n")
+
+with open("techi-agent.manifest") as f:
+    manifest = f.read()
+manifest = re.sub(r'version="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"', f'version="{version4}"', manifest)
+manifest = re.sub(r"TECHI Platform Endpoint Agent [0-9]+\.[0-9]+\.[0-9]+", f"TECHI Platform Endpoint Agent {version}", manifest)
+with open("techi-agent.manifest", "w") as f:
+    f.write(manifest)
+PYEOF
+
+echo "[2/5] Generating resource.syso (goversioninfo)..."
+command -v goversioninfo >/dev/null 2>&1 || go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+GOVERSIONINFO="$(command -v goversioninfo || echo "$(go env GOPATH)/bin/goversioninfo")"
+"$GOVERSIONINFO" -o resource.syso versioninfo.json
+
+echo "[3/5] Cross-compiling techi-agent.exe (Windows/amd64) v$VERSION..."
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.AgentVersion=$VERSION" -trimpath -o "$SCRIPT_DIR/techi-agent.exe" .
+rm -f resource.syso
+
+echo "[4/5] Building MSI with WiX v4..."
 cd "$SCRIPT_DIR"
-wix build installer.wxs -d "SourceDir=$SCRIPT_DIR" -d "Version=$VERSION" -o "$OUTPUT"
+wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d "SourceDir=$SCRIPT_DIR" -d "Version=$VERSION4" -o "$OUTPUT"
 
-echo "[3/3] Done!"
+echo "[5/5] Done!"
 echo "      MSI: $SCRIPT_DIR/$OUTPUT"
 echo "      SHA256:"
 sha256sum "$OUTPUT" 2>/dev/null || shasum -a 256 "$OUTPUT"

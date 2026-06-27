@@ -36,13 +36,13 @@ jobs:
           cache-dependency-path: agent/go.sum
 
       # ------------------------------------------------------------------ #
-      # 3. WiX v4 + Util extension (për util:ServiceConfig)                 #
+      # 3. WiX v4 + UI extension (per WixUI_Common dialogs)                 #
       # ------------------------------------------------------------------ #
-      - name: Install WiX v4 + Util extension
+      - name: Install WiX v4 + UI extension
         shell: pwsh
         run: |
           dotnet tool install --global wix --version 4.0.5
-          wix extension add --global WixToolset.Util.wixext/4.0.5
+          wix extension add --global WixToolset.UI.wixext/4.0.5
 
       # ------------------------------------------------------------------ #
       # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
@@ -56,32 +56,76 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) {
             throw "agent/VERSION is empty"
           }
-          Write-Host "Agent version: $version"
+          $version4 = "$version.0"
+          Write-Host "Agent version: $version ($version4)"
           "version=$version" >> $env:GITHUB_OUTPUT
+          "version4=$version4" >> $env:GITHUB_OUTPUT
 
       # ------------------------------------------------------------------ #
-      # 5. Build techi-agent.exe (native Windows — nuk nevojitet GOOS)      #
+      # 5. Perditeso versioninfo.json + techi-agent.manifest                #
+      # ------------------------------------------------------------------ #
+      - name: Update version metadata
+        shell: pwsh
+        working-directory: agent
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $v4 = "${{ steps.version.outputs.version4 }}"
+          $vi = 'versioninfo.json'
+          $m = 'techi-agent.manifest'
+          $json = Get-Content $vi -Raw | ConvertFrom-Json
+          $parts = $v.Split('.')
+          $json.FixedFileInfo.FileVersion.Major = [int]$parts[0]
+          $json.FixedFileInfo.FileVersion.Minor = [int]$parts[1]
+          $json.FixedFileInfo.FileVersion.Patch = [int]$parts[2]
+          $json.FixedFileInfo.FileVersion.Build = 0
+          $json.FixedFileInfo.ProductVersion.Major = [int]$parts[0]
+          $json.FixedFileInfo.ProductVersion.Minor = [int]$parts[1]
+          $json.FixedFileInfo.ProductVersion.Patch = [int]$parts[2]
+          $json.FixedFileInfo.ProductVersion.Build = 0
+          $json.StringFileInfo.FileVersion = $v4
+          $json.StringFileInfo.ProductVersion = $v4
+          $json | ConvertTo-Json -Depth 8 | Set-Content -Path $vi -Encoding ASCII
+          (Get-Content $m -Raw) `
+            -replace 'version="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"', ('version="' + $v4 + '"') `
+            -replace 'TECHI Platform Endpoint Agent [0-9]+\.[0-9]+\.[0-9]+', ('TECHI Platform Endpoint Agent ' + $v) |
+            Set-Content -Path $m -Encoding ASCII
+
+      # ------------------------------------------------------------------ #
+      # 6. goversioninfo -> resource.syso (icon + version ne .exe)          #
+      # ------------------------------------------------------------------ #
+      - name: Install goversioninfo
+        shell: pwsh
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Generate resource.syso
+        shell: pwsh
+        working-directory: agent
+        run: goversioninfo -o resource.syso versioninfo.json
+
+      # ------------------------------------------------------------------ #
+      # 7. Build techi-agent.exe (native Windows — nuk nevojitet GOOS)      #
       # ------------------------------------------------------------------ #
       - name: Build techi-agent.exe
         shell: pwsh
         working-directory: agent
-        run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -o installer/techi-agent.exe .
+        run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
 
       # ------------------------------------------------------------------ #
-      # 6. Build MSI me WiX v4                                              #
+      # 8. Build MSI me WiX v4                                              #
       # ------------------------------------------------------------------ #
       - name: Build MSI
         shell: pwsh
         working-directory: agent/installer
         run: |
           wix build installer.wxs `
-            -ext WixToolset.Util.wixext `
+            -arch x64 `
+            -ext WixToolset.UI.wixext `
             -d SourceDir=. `
-            -d Version=${{ steps.version.outputs.version }} `
+            -d Version=${{ steps.version.outputs.version4 }} `
             -o TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
 
       # ------------------------------------------------------------------ #
-      # 7. SHA256 checksum                                                   #
+      # 9. SHA256 checksum                                                   #
       # ------------------------------------------------------------------ #
       - name: Compute SHA256
         shell: pwsh
@@ -93,7 +137,7 @@ jobs:
           Write-Host "SHA256: $hash"
 
       # ------------------------------------------------------------------ #
-      # 8. Upload artifact (30 ditë)                                         #
+      # 10. Upload artifact (30 ditë)                                        #
       # ------------------------------------------------------------------ #
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4.6.2

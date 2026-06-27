@@ -1,59 +1,179 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  TECHI Agent — WiX v4 MSI Installer
-  Upgrade GUID: A1B2C3D4-E5F6-7890-ABCD-EF1234567890 (KONSTANT — mos ndrysho kurrë)
-  Build: wix build installer.wxs -d SourceDir=. -d Version=2.1.0 -o TECHI-Endpoint-Deployment-2.1.0.msi
-  Version DUHET te kaloje gjithmone si -d Version= ne build — nuk mund te jete e barabarte
-  me versionin tashme te instaluar, perndryshe MajorUpgrade s'aktivizohet (Windows
-  Installer e refuzon me ERROR 1638 "another version is already installed").
+  TECHI Agent - WiX 7 MSI Installer
+  UpgradeCode: E6AD0A88-5F26-5665-9B1F-70B8C5EE8363 (mos ndrysho kurrë -- duhet
+  te perputhet me prodhimin per te aktivizuar MajorUpgrade)
+  Version vjen nga agent/VERSION, jo hardcoded -- shih build.sh / CI workflow.
+  Build:   wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=. -d Version=2.1.0.0 -o TECHI-Endpoint-Deployment-2.1.0.msi
+  GPO:     msiexec /i TECHI-Endpoint-Deployment-2.1.0.msi /qn ENROLLMENT_TOKEN="xxx"
+  Manual:  double-click MSI → dialog kërkon token → Install
 -->
 <?ifndef Version?>
-<?define Version="0.0.0"?>
+<?define Version="0.0.0.0"?>
 <?endif?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
   <Package Name="TECHI Agent"
            Version="$(var.Version)"
-           Manufacturer="TECHI"
-           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           Manufacturer="TECHI Solutions SH.P.K."
+           UpgradeCode="E6AD0A88-5F26-5665-9B1F-70B8C5EE8363"
            Scope="perMachine">
 
-    <!-- Replace older versions silently without requiring manual uninstall -->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of TECHI Agent is already installed."
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of TECHI Agent is already installed."
                   Schedule="afterInstallInitialize"/>
-
     <MediaTemplate EmbedCab="yes"/>
 
+    <Property Id="ARPCOMMENTS" Value="TECHI Platform endpoint management"/>
+    <Icon Id="TechiIcon" SourceFile="..\TECHI-branding-assets\techi-icon.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="TechiIcon"/>
+    <Binary Id="TechiIconBin" SourceFile="..\TECHI-branding-assets\techi-icon.ico"/>
+    <Binary Id="BannerBmp" SourceFile="banner.bmp"/>
+    <WixVariable Id="WixUIBannerBmp" Value="banner.bmp"/>
+    <WixVariable Id="WixUIDialogBmp" Value="banner.bmp"/>
+    <Property Id="ENROLLMENT_TOKEN" Secure="yes"/>
+    <Property Id="API_URL" Value="https://api-rdp.techi.com.al" Secure="yes"/>
+    <!-- UI_REENROLL: vendoset vetëm kur Install klikohet te EnrollmentTokenDlg (instalim manual).
+         Lejon WriteAgentConfig të mbishkruajë config-un ekzistues me token-in e ri, edhe nëse
+         file-i tashmë ekziston nga teste/instalime të mëparshme. Rruga /quiet (GPO/self_update)
+         kurrë nuk e vendos këtë property, kështu që mbrojtja e device_id gjatë upgrade në fushë
+         mbetet e paprekur. -->
+    <Property Id="UI_REENROLL" Secure="yes"/>
+
+    <!-- Kontrollon nëse TECHI Remote Support.exe ekziston tashmë -->
+    <Property Id="TECHI_RS_EXE">
+      <DirectorySearch Id="SearchTechiRS"
+                       Path="[ProgramFiles64Folder]TECHI Remote Support">
+        <FileSearch Name="TECHI Remote Support.exe"/>
+      </DirectorySearch>
+    </Property>
+
+    <!-- Konfigurim i TECHI Remote Support (RustDesk) — identik me v1.0.4 -->
+    <Property Id="REMOTE_SERVER"   Value="139.162.158.208"/>
+    <Property Id="REMOTE_RELAY"    Value="139.162.158.208"/>
+    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes"/>
+    <Property Id="REMOTE_PASSWORD" Value="Durres.12" Secure="yes"/>
+    <Property Id="LEGACY_TECHI_ENDPOINT_104_A" Value="{134568B7-BCB0-4341-933B-C24DA78DEF6E}"/>
+    <Property Id="LEGACY_TECHI_ENDPOINT_104_B" Value="{110919C6-BCB0-4341-933B-C24DA78DEF6E}"/>
+    <Property Id="LEGACY_TECHI_ENDPOINT_104_C" Value="{3154867B-CB0B-3414-39B3-2CD47AD8FEE6}"/>
+
+    <!-- Abort (Type 19): ndal instalimet pa token — për /qn pa dialog -->
+    <CustomAction Id="AbortNoToken"
+                  Error="Enrollment token is required.&#13;&#10;GPO: msiexec /i TECHI-Endpoint-Deployment-2.1.0.msi /qn ENROLLMENT_TOKEN=your_token"/>
+
+    <!-- WixUI_Common: Progress, Exit, Cancel, FatalError dialogs — pa Welcome/License/Features wizard -->
+    <ui:WixUI Id="WixUI_Common"/>
+
+    <!-- Dialog i vetëm (stil v2.0.0, jo wizard multi-hap):
+         Fresh install:  EnrollmentTokenDlg → ProgressDlg → ExitDlg
+         Upgrade:        EnrollmentTokenDlg skip-ohet (Condition="NOT Installed")
+         /quiet me token: AbortNoToken nuk aktivizohet, instalohet pa UI
+         /quiet pa token: AbortNoToken exit 1603 -->
+    <UI>
+      <!-- EnrollmentTokenDlg: dialog i vetëm — icon TECHI lart majtas + titull + nëntitull + 1 fushë token -->
+      <Dialog Id="EnrollmentTokenDlg" Width="370" Height="185" Title="[ProductName] — Setup">
+        <Control Id="DialogIcon" Type="Icon" X="15" Y="8" Width="32" Height="32"
+                 ToolTip="TECHI" FixedSize="yes" IconSize="32" Text="TechiIconBin"/>
+
+        <Control Id="Title" Type="Text" X="50" Y="10" Width="300" Height="15"
+                 Transparent="yes" NoPrefix="yes">
+          <Text Value="{\WixUI_Font_Title}TECHI Agent — Enrollment"/>
+        </Control>
+        <Control Id="Subtitle" Type="Text" X="50" Y="26" Width="300" Height="18"
+                 Transparent="yes" NoPrefix="yes">
+          <Text Value="Enter the enrollment token to register this device with TECHI platform."/>
+        </Control>
+
+        <Control Id="Sep1" Type="Line" X="0" Y="48" Width="370" Height="0"/>
+
+        <Control Id="TokenLabel" Type="Text" X="20" Y="58" Width="330" Height="12"
+                 NoPrefix="yes">
+          <Text Value="&amp;Enrollment Token:"/>
+        </Control>
+        <Control Id="TokenEdit" Type="Edit" X="20" Y="73" Width="330" Height="20"
+                 Property="ENROLLMENT_TOKEN" Text="{256}" TabSkip="no"/>
+
+        <Control Id="Sep2" Type="Line" X="0" Y="149" Width="370" Height="0"/>
+
+        <Control Id="Install" Type="PushButton" X="178" Y="158" Width="80" Height="17"
+                 Default="yes" Text="&amp;Install">
+          <Publish Event="EndDialog" Value="Return"
+                   Condition="ENROLLMENT_TOKEN &lt;&gt; &quot;&quot;"/>
+          <Publish Property="UI_REENROLL" Value="1"
+                   Condition="ENROLLMENT_TOKEN &lt;&gt; &quot;&quot;"/>
+          <Publish Event="SpawnDialog" Value="TokenRequiredDlg"
+                   Condition="ENROLLMENT_TOKEN = &quot;&quot;"/>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="270" Y="158" Width="80" Height="17"
+                 Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" Condition="1"/>
+        </Control>
+      </Dialog>
+
+      <!-- TokenRequiredDlg: modal error kur token mungon -->
+      <Dialog Id="TokenRequiredDlg" Width="260" Height="85" Title="TECHI Agent" NoMinimize="yes">
+        <Control Id="Text" Type="Text" X="20" Y="15" Width="220" Height="40" NoPrefix="yes">
+          <Text Value="Enrollment token is required.&#13;&#10;&#13;&#10;Please enter the token before continuing."/>
+        </Control>
+        <Control Id="OK" Type="PushButton" X="102" Y="58" Width="56" Height="17"
+                 Default="yes" Cancel="yes" Text="OK">
+          <Publish Event="EndDialog" Value="Return" Condition="1"/>
+        </Control>
+      </Dialog>
+
+      <!-- Shfaq token dialog gjithmonë gjatë instalimit manual (double-click), pavarësisht
+           nëse është fresh install ose upgrade — vetëm /quiet (GPO) e kapërcen UI fare.
+           AbortNoToken (InstallExecuteSequence) mbetet i paprekur dhe vazhdon të mbrojë
+           rrugën /quiet pa token. -->
+      <InstallUISequence>
+        <Show Dialog="EnrollmentTokenDlg" Before="ExecuteAction" Condition="1"/>
+      </InstallUISequence>
+    </UI>
+
+    <!-- ===== DIREKTORITË ===== -->
+    <!-- INSTALLFOLDER  = C:\ProgramData\TechiAgent\        (CommonAppDataFolder → "CommApp" në admin extract)
+         TECHIDATADIR   = C:\ProgramData\TECHI\             (konfig + logs)
+         INSTALLFOLDER është nën CommonAppDataFolder — MOS e ndrysho në ProgramFiles64Folder:
+           ndryshimi i StandardDirectory parent do të ndryshonte admin-install path
+           nga CommApp\TechiAgent\ → PFiles64\... dhe do të thyente techi-deploy.cmd manual_replace.
+         ADMIN INSTALL PATH I GARANTUAR (msiexec /a):
+           [TARGETDIR]\CommApp\TechiAgent\techi-agent.exe  ← ky path DUHET hardcoded në techi-deploy.cmd
+           [TARGETDIR]\PFiles64\TECHI Remote Support\TECHI Remote Support.exe -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="TechiAgent"/>
+      <Directory Id="TECHIDATADIR" Name="TECHI"/>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="REMOTESUPPORTFOLDER" Name="TECHI Remote Support"/>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="TechiMenuFolder" Name="TECHI"/>
+    </StandardDirectory>
+    <!-- ===== FEATURES ===== -->
     <Feature Id="ProductFeature" Title="TECHI Agent" Level="1">
       <ComponentGroupRef Id="ProductComponents"/>
+      <ComponentGroupRef Id="RemoteSupportComponents"/>
+      <ComponentRef Id="StartMenuShortcuts"/>
     </Feature>
 
+    <!-- ===== KOMPONENTËT ===== -->
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
 
-      <!-- Main executable -->
+      <!-- techi-agent.exe + Windows Service -->
       <Component Id="AgentExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
         <File Id="TechiAgentExe"
               Source="$(var.SourceDir)\techi-agent.exe"
               Name="techi-agent.exe"
               KeyPath="yes"/>
-      </Component>
-
-      <!-- Windows Service: create, start on install, stop+remove on uninstall -->
-      <Component Id="AgentService" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
         <ServiceInstall Id="TechiAgentService"
                         Name="TechiAgent"
                         DisplayName="TECHI Agent"
                         Description="TECHI Platform endpoint monitoring and management agent"
                         Type="ownProcess"
                         Start="auto"
-                        ErrorControl="normal"
+                        ErrorControl="ignore"
                         Account="LocalSystem"/>
-        <!-- Auto-recovery: restart after 1m / 1m / 5m -->
-        <util:ServiceConfig xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
-                            ServiceName="TechiAgent"
-                            FirstFailureActionType="restart"
-                            SecondFailureActionType="restart"
-                            ThirdFailureActionType="restart"
-                            RestartServiceDelayInSeconds="60"/>
         <ServiceControl Id="StartTechiAgent"
                         Name="TechiAgent"
                         Start="install"
@@ -62,24 +182,212 @@
                         Wait="yes"/>
       </Component>
 
-      <!-- Protocol registration: techiremotesupport:// in HKLM (all users) -->
+      <!-- C:\ProgramData\TECHI\ — direktoria e të dhënave -->
+      <Component Id="AgentDataDir" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567891"
+                 Directory="TECHIDATADIR">
+        <CreateFolder/>
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\TECHI\Agent"
+                       Name="DataDir"
+                       Type="string"
+                       Value="[TECHIDATADIR]"
+                       KeyPath="yes"/>
+      </Component>
+
+      <!-- techiremotesupport:// protocol handler -->
       <Component Id="ProtocolReg" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123">
         <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport">
-          <RegistryValue Type="string" Value="URL:TECHI Remote Support Protocol"/>
+          <RegistryValue Type="string" Value="URL:TECHI Remote Support Protocol"
+                         KeyPath="yes"/>
           <RegistryValue Name="URL Protocol" Type="string" Value=""/>
         </RegistryKey>
-        <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
           <RegistryValue Type="string"
-                         Value="&quot;[ProgramFilesFolder]TECHI Remote Support\TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
+                         Value="&quot;[ProgramFiles6432Folder]TECHI Remote Support\TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
         </RegistryKey>
       </Component>
 
     </ComponentGroup>
 
-    <!-- Install to: C:\Program Files\TECHI Agent\ -->
-    <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="TECHI Agent"/>
-    </StandardDirectory>
+    <!-- TECHI Remote Support binaries -->
+    <ComponentGroup Id="RemoteSupportComponents" Directory="REMOTESUPPORTFOLDER">
+      <Files Include="$(var.SourceDir)\TECHI-Remote-Support\**"/>
+    </ComponentGroup>
+
+    <!-- Start Menu: Programs\TECHI\TECHI Remote Support.lnk -->
+    <Component Id="StartMenuShortcuts" Guid="C5D6E7F8-A9B0-1234-CDEF-123456789012"
+               Directory="TechiMenuFolder">
+      <Shortcut Id="RemoteSupportMenuShortcut"
+                Name="TECHI Remote Support"
+                Target="[REMOTESUPPORTFOLDER]TECHI Remote Support.exe"
+                WorkingDirectory="REMOTESUPPORTFOLDER"
+                Description="TECHI Remote Support"/>
+      <ServiceControl Id="StopTechiRemoteSupport"
+                      Name="TECHI Remote Support"
+                      Stop="uninstall"
+                      Wait="no"/>
+      <RemoveFolder Id="CleanTechiMenuFolder" Directory="TechiMenuFolder" On="uninstall"/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\Agent"
+                     Name="StartMenuInstalled"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes"/>
+    </Component>
+
+    <!-- ===== CUSTOM ACTIONS ===== -->
+
+    <!-- WriteAgentConfig: krijon agent.config.json nëse nuk ekziston, OSE e mbishkruan
+         nëse UI_REENROLL=1 (instalim manual me token të ri — shih Install button te
+         EnrollmentTokenDlg). Rruga /quiet kurrë nuk vendos UI_REENROLL, kështu që
+         device_id mbrohet gjithmonë gjatë upgrade/self_update në fushë. -->
+    <CustomAction Id="WriteAgentConfig"
+                  Directory="TECHIDATADIR"
+                  ExeCommand="powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command $$d=$$env:ProgramData+'\TECHI\'; md ($$d+'logs') -Force | Out-Null; $$f=$$d+'agent.config.json'; ((!(Test-Path $$f)) -or ('[UI_REENROLL]' -eq '1')) -and $$($$c=New-Object PSObject; Add-Member -InputObject $$c -MemberType NoteProperty -Name api_url -Value '[API_URL]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name enrollment_token -Value '[ENROLLMENT_TOKEN]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name timeout_seconds -Value 30; Add-Member -InputObject $$c -MemberType NoteProperty -Name heartbeat_interval_seconds -Value 60; Add-Member -InputObject $$c -MemberType NoteProperty -Name retries -Value 3; Add-Member -InputObject $$c -MemberType NoteProperty -Name retry_delay_seconds -Value 10; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_processes -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_software -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_services -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_manage_enabled -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_rendezvous_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_relay_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_key -Value '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='; $$c|ConvertTo-Json|Out-File $$f -Encoding ASCII); $$s=New-Object -ComObject WScript.Shell; $$sc=$$s.CreateShortcut('C:\Users\Public\Desktop\TECHI Remote Support.lnk'); $$sc.TargetPath='C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe'; $$sc.WorkingDirectory='C:\Program Files\TECHI Remote Support'; $$sc.Description='TECHI Remote Support'; $$sc.Save()"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
+         të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
+         njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
+         ekziston, e rikrijon dhe e nis — njëjtë me Ensure-AgentService në update.go self_update. -->
+    <CustomAction Id="EnsureServiceCreated"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBQAHIAbwBnAHIAYQBtAEQAYQB0AGEAIAAnAFQARQBDAEgASQBcAGwAbwBnAHMAXABkAGUAcABsAG8AeQAuAGwAbwBnACcACgBmAHUAbgBjAHQAaQBvAG4AIABXAHIAaQB0AGUALQBMAG8AZwAoAFsAcwB0AHIAaQBuAGcAXQAkAG0AKQAgAHsACgAgACAAIAAgACQAZABpAHIAIAA9ACAAUwBwAGwAaQB0AC0AUABhAHQAaAAgAC0AUABhAHIAZQBuAHQAIAAkAGwAbwBnAAoAIAAgACAAIABOAGUAdwAtAEkAdABlAG0AIAAtAEkAdABlAG0AVAB5AHAAZQAgAEQAaQByAGUAYwB0AG8AcgB5ACAALQBQAGEAdABoACAAJABkAGkAcgAgAC0ARgBvAHIAYwBlACAAfAAgAE8AdQB0AC0ATgB1AGwAbAAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAoAEcAZQB0AC0ARABhAHQAZQAgAC0ARgBvAHIAbQBhAHQAIAAnAHkAeQB5AHkALQBNAE0ALQBkAGQAIABIAEgAOgBtAG0AOgBzAHMAJwApACAAKwAgACIAIABbAEUAbgBzAHUAcgBlAFMAZQByAHYAaQBjAGUAQwByAGUAYQB0AGUAZABdACAAIgAgACsAIAAkAG0AKQAKAH0ACgAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAgAD0AIAAnAFQAZQBjAGgAaQBBAGcAZQBuAHQAJwAKACQAYQBnAGUAbgB0AEUAeABlACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARABhAHQAYQAgACcAVABlAGMAaABpAEEAZwBlAG4AdABcAHQAZQBjAGgAaQAtAGEAZwBlAG4AdAAuAGUAeABlACcACgAkAHMAdgBjACAAPQAgAEcAZQB0AC0AUwBlAHIAdgBpAGMAZQAgAC0ATgBhAG0AZQAgACQAcwBlAHIAdgBpAGMAZQBOAGEAbQBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAVwByAGkAdABlAC0ATABvAGcAIAAoACIAcwB0AGEAdAB1AHMAPQAiACAAKwAgACQAKABpAGYAIAAoACQAcwB2AGMAKQAgAHsAIAAkAHMAdgBjAC4AUwB0AGEAdAB1AHMAIAB9ACAAZQBsAHMAZQAgAHsAIAAiAG0AaQBzAHMAaQBuAGcAIgAgAH0AKQApAAoAaQBmACAAKAAtAG4AbwB0ACAAJABzAHYAYwApACAAewAKACAAIAAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABhAGcAZQBuAHQARQB4AGUAKQAgAHsACgAgACAAIAAgACAAIAAgACAAJABiAGkAbgBQAGEAdABoAEEAcgBnACAAPQAgACcAYgBpAG4AUABhAHQAaAA9ACAAIgAnACAAKwAgACQAYQBnAGUAbgB0AEUAeABlACAAKwAgACcAIgAnAAoAIAAgACAAIAAgACAAIAAgAFMAdABhAHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAtAEYAaQBsAGUAUABhAHQAaAAgACcAcwBjAC4AZQB4AGUAJwAgAC0AQQByAGcAdQBtAGUAbgB0AEwAaQBzAHQAIABAACgAJwBjAHIAZQBhAHQAZQAnACwAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAsACAAJABiAGkAbgBQAGEAdABoAEEAcgBnACwAIAAnAHMAdABhAHIAdAA9ACAAYQB1AHQAbwAnACwAIAAnAEQAaQBzAHAAbABhAHkATgBhAG0AZQA9ACAAVABFAEMASABJACAAQQBnAGUAbgB0ACcALAAgACcAbwBiAGoAPQAgAEwAbwBjAGEAbABTAHkAcwB0AGUAbQAnACkAIAAtAFcAYQBpAHQAIAAtAFcAaQBuAGQAbwB3AFMAdAB5AGwAZQAgAEgAaQBkAGQAZQBuAAoAIAAgACAAIAAgACAAIAAgAFcAcgBpAHQAZQAtAEwAbwBnACAAIgByAGUAYwByAGUAYQB0AGUAZAAgAG0AaQBzAHMAaQBuAGcAIABzAGUAcgB2AGkAYwBlACIACgAgACAAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAIAAgACAAIABXAHIAaQB0AGUALQBMAG8AZwAgACgAIgBhAGIAbwByAHQAOgAgAGUAeABlACAAbQBpAHMAcwBpAG4AZwAgAGEAdAAgACIAIAArACAAJABhAGcAZQBuAHQARQB4AGUAKQAKACAAIAAgACAAfQAKAH0ACgAkAHMAdgBjACAAPQAgAEcAZQB0AC0AUwBlAHIAdgBpAGMAZQAgAC0ATgBhAG0AZQAgACQAcwBlAHIAdgBpAGMAZQBOAGEAbQBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAaQBmACAAKAAkAHMAdgBjACAALQBhAG4AZAAgACQAcwB2AGMALgBTAHQAYQB0AHUAcwAgAC0AbgBlACAAJwBSAHUAbgBuAGkAbgBnACcAKQAgAHsACgAgACAAIAAgAFMAdABhAHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAtAEYAaQBsAGUAUABhAHQAaAAgACcAbgBlAHQALgBlAHgAZQAnACAALQBBAHIAZwB1AG0AZQBuAHQATABpAHMAdAAgAEAAKAAnAHMAdABhAHIAdAAnACwAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQApACAALQBXAGEAaQB0ACAALQBXAGkAbgBkAG8AdwBTAHQAeQBsAGUAIABIAGkAZABkAGUAbgAKACAAIAAgACAAVwByAGkAdABlAC0ATABvAGcAIAAiAHMAdABhAHIAdABlAGQAIABzAGUAcgB2AGkAYwBlACIACgB9AAoAJABzAHYAYwAgAD0AIABHAGUAdAAtAFMAZQByAHYAaQBjAGUAIAAtAE4AYQBtAGUAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAKAFcAcgBpAHQAZQAtAEwAbwBnACAAKAAiAGYAaQBuAGEAbAAgAHMAdABhAHQAdQBzAD0AIgAgACsAIAAkACgAaQBmACAAKAAkAHMAdgBjACkAIAB7ACAAJABzAHYAYwAuAFMAdABhAHQAdQBzACAAfQAgAGUAbABzAGUAIAB7ACAAIgBtAGkAcwBzAGkAbgAgACIAIAB9ACkAKQA="
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- SetServiceRecovery: restart automatik pas dështimit -->
+    <CustomAction Id="SetServiceRecovery"
+                  Directory="SystemFolder"
+                  ExeCommand="sc.exe failure TechiAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="BackupAgentConfigBeforeLegacyRemove"
+                  Directory="TECHIDATADIR"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQAtAGMAbwBuAGYAaQBnAC0AbQBpAGcAcgBhAHQAZQAuAGwAbwBnACcACgAkAHMAcgBjACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARABhAHQAYQAgACcAVABlAGMAaABpAEEAZwBlAG4AdABcAGEAZwBlAG4AdAAuAGMAbwBuAGYAaQBnAC4AagBzAG8AbgAnAAoAJABkAHMAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQBfAGMAbwBuAGYAaQBnAF8AYgBhAGMAawB1AHAALgBqAHMAbwBuACcACgB0AHIAeQAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAcwB0AGEAcgB0ACAAcwByAGMAPQB7ADAAfQAgAGQAcwB0AD0AewAxAH0AIgAgAC0AZgAgACQAcwByAGMALAAkAGQAcwB0ACkACgAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAcwByAGMAKQAgAHsACgAgACAAIAAgACQAYwBmAGcAIAA9ACAARwBlAHQALQBDAG8AbgB0AGUAbgB0ACAAJABzAHIAYwAgAC0AUgBhAHcAIAB8ACAAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACAAIAAgACAAaQBmACAAKAAkAG4AdQBsAGwAIAAtAG4AZQAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAAgAC0AYQBuAGQAIABbAHMAdAByAGkAbgBnAF0AJABjAGYAZwAuAGQAZQB2AGkAYwBlAF8AaQBkACAALQBuAGUAIAAnACcAKQAgAHsACgAgACAAIAAgACAAIABDAG8AcAB5AC0ASQB0AGUAbQAgACQAcwByAGMAIAAkAGQAcwB0ACAALQBGAG8AcgBjAGUACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAoACIAYgBhAGMAawB1AHAAIABjAG8AcABpAGUAZAAgAGQAZQB2AGkAYwBlAF8AaQBkAD0AewAwAH0AIgAgAC0AZgAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAApAAoAIAAgACAAIAB9ACAAZQBsAHMAZQAgAHsACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAnAGIAYQBjAGsAdQBwACAAcwBrAGkAcABwAGUAZAAgAG0AaQBzAHMAaQBuAGcAIABkAGUAdgBpAGMAZQBfAGkAZAAnAAoAIAAgACAAIAB9AAoAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAJwBiAGEAYwBrAHUAcAAgAHMAawBpAHAAcABlAGQAIABtAGkAcwBzAGkAbgBnACAAcwBvAHUAcgBjAGUAJwAKACAAIAB9AAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAZQByAHIAbwByACAAewAwAH0AIgAgAC0AZgAgACQAXwAuAEUAeABjAGUAcAB0AGkAbwBuAC4ATQBlAHMAcwBhAGcAZQApAAoAfQA="
+                  Execute="immediate"
+                  Return="ignore"/>
+    <CustomAction Id="RemoveLegacyEndpoint104A"
+                  Directory="SystemFolder"
+                  ExeCommand="msiexec.exe /x [LEGACY_TECHI_ENDPOINT_104_A] /qn /norestart /l*v &quot;C:\Windows\Temp\techi-remove-legacy-104A.log&quot;"
+                  Execute="immediate"
+                  Return="ignore"/>
+    <CustomAction Id="RemoveLegacyEndpoint104B"
+                  Directory="SystemFolder"
+                  ExeCommand="msiexec.exe /x [LEGACY_TECHI_ENDPOINT_104_B] /qn /norestart /l*v &quot;C:\Windows\Temp\techi-remove-legacy-104B.log&quot;"
+                  Execute="immediate"
+                  Return="ignore"/>
+    <CustomAction Id="RemoveLegacyEndpoint104C"
+                  Directory="SystemFolder"
+                  ExeCommand="msiexec.exe /x [LEGACY_TECHI_ENDPOINT_104_C] /qn /norestart /l*v &quot;C:\Windows\Temp\techi-remove-legacy-104C.log&quot;"
+                  Execute="immediate"
+                  Return="ignore"/>
+    <CustomAction Id="CleanupLegacyEndpointInstallerRegistry"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $$keys=@('3EE5B9A51FBA63047BE88423E1B84525','7B8654310BCB143439B32CD47AD8FEE6','B7684513B0BC4143933BC24DA78DEF6E'); foreach ($$k in $$keys) { Remove-Item -Recurse -Force ('HKLM:\SOFTWARE\Classes\Installer\Products\'+$$k) -ErrorAction SilentlyContinue; Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData' -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Recurse -Force ($$_.PSPath+'\Products\'+$$k) -ErrorAction SilentlyContinue } }; Remove-Item -Recurse -Force 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{134568B7-BCB0-4341-933B-C24DA78DEF6E}' -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5A9B5EE3-ABF1-4036-B78E-48321E8B5452}' -ErrorAction SilentlyContinue"
+                  Execute="immediate"
+                  Return="ignore"/>
+    <CustomAction Id="RestoreAgentConfigAfterLegacyRemove"
+                  Directory="TECHIDATADIR"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQAtAGMAbwBuAGYAaQBnAC0AbQBpAGcAcgBhAHQAZQAuAGwAbwBnACcACgAkAHMAcgBjACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFcASQBOAEQASQBSACAAJwBUAGUAbQBwAFwAdABlAGMAaABpAF8AYwBvAG4AZgBpAGcAXwBiAGEAYwBrAHUAcAAuAGoAcwBvAG4AJwAKACQAZABzAHQARABpAHIAIAA9ACAASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAUAByAG8AZwByAGEAbQBEAGEAdABhACAAJwBUAEUAQwBIAEkAJwAKACQAZABzAHQAIAA9ACAASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGQAcwB0AEQAaQByACAAJwBhAGcAZQBuAHQALgBjAG8AbgBmAGkAZwAuAGoAcwBvAG4AJwAKAHQAcgB5ACAAewAKACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAoACIAcgBlAHMAdABvAHIAZQAgAHMAdABhAHIAdAAgAHMAcgBjAD0AewAwAH0AIABkAHMAdAA9AHsAMQB9ACIAIAAtAGYAIAAkAHMAcgBjACwAJABkAHMAdAApAAoAIAAgAGkAZgAgACgAVABlAHMAdAAtAFAAYQB0AGgAIAAkAHMAcgBjACkAIAB7AAoAIAAgACAAIAAkAGgAYQBzAEQAZQB2AGkAYwBlACAAPQAgACQAZgBhAGwAcwBlAAoAIAAgACAAIABpAGYAIAAoAFQAZQBzAHQALQBQAGEAdABoACAAJABkAHMAdAApACAAewAKACAAIAAgACAAIAAgAHQAcgB5ACAAewAKACAAIAAgACAAIAAgACAAIAAkAGMAZgBnACAAPQAgAEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgACQAZABzAHQAIAAtAFIAYQB3ACAAfAAgAEMAbwBuAHYAZQByAHQARgByAG8AbQAtAEoAcwBvAG4ACgAgACAAIAAgACAAIAAgACAAJABoAGEAcwBEAGUAdgBpAGMAZQAgAD0AIAAoACQAbgB1AGwAbAAgAC0AbgBlACAAJABjAGYAZwAuAGQAZQB2AGkAYwBlAF8AaQBkACAALQBhAG4AZAAgAFsAcwB0AHIAaQBuAGcAXQAkAGMAZgBnAC4AZABlAHYAaQBjAGUAXwBpAGQAIAAtAG4AZQAgACcAJwApAAoAIAAgACAAIAAgACAAIAAgAEEAZABkAC0AQwBvAG4AdABlAG4AdAAgAC0AUABhAHQAaAAgACQAbABvAGcAIAAtAFYAYQBsAHUAZQAgACgAIgByAGUAcwB0AG8AcgBlACAAZQB4AGkAcwB0AGkAbgBnACAAaABhAHMARABlAHYAaQBjAGUAPQB7ADAAfQAiACAALQBmACAAJABoAGEAcwBEAGUAdgBpAGMAZQApAAoAIAAgACAAIAAgACAAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAIAAgACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAHIAZQBzAHQAbwByAGUAIABlAHgAaQBzAHQAaQBuAGcAIABwAGEAcgBzAGUAIABlAHIAcgBvAHIAIAB7ADAAfQAiACAALQBmACAAJABfAC4ARQB4AGMAZQBwAHQAaQBvAG4ALgBNAGUAcwBhAGcAZQApACAAfQAgAH0ACgAgACAAIAAgaQBmACAAKAAtAG4AbwB0ACAAJABoAGEAcwBEAGUAdgBpAGMAZQApACAAewAKACAAIAAgACAAIAAgAE4AZQB3AC0ASQB0AGUAbQAgAC0ASQB0AGUAbQBUAHkAcABlACAARABpAHIAZQBjAHQAbwByAHkAIAAtAFAAYQB0AGgAIAAkAGQAcwB0AEQAaQByACAALQBGAG8AcgBjAGUAIAB8ACAATwB1AHQALQBOAHUAbABsAAoAIAAgACAAIAAgACAAQwBvAHAAeQAtAEkAdABlAG0AIAAkAHMAcgBjACAAJABkAHMAdAAgAC0ARgBvAHIAYwBlAAoAIAAgACAAIAAgACAAJABjAG8AcABpAGUAZAAgAD0AIABHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAkAGQAcwB0ACAALQBSAGEAdwAgAHwAIABDAG8AbgB2AGUAcgB0AEYAcgBvAG0ALQBKAHMAbwBuAAoAIAAgACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAHIAZQBzAHQAbwByAGUAIABjAG8AcABpAGUAZAAgAGQAZQB2AGkAYwBlAF8AaQBkAD0AewAwAH0AIgAgAC0AZgAgACQAYwBvAHAAaQBlAGQALgBkAGUAdgBpAGMAZQBfAGkAZAApAAoAIAAgACAAIAB9ACAAZQBsAHMAZQAgAHsAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAnAHIAZQBzAHQAbwByAGUAIABzAGsAaQBwAHAAZQBkACAAZABlAHMAdABpAG4AYQB0AGkAbwBuACAAYQBsAHIAZQBhAGQAeQAgAGUAbgByAG8AbABsAGUAZAAnACAAfQAKACAAIAB9ACAAZQBsAHMAZQAgAHsAIABBAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAJwByAGUAcwB0AG8AcgBlACAAcwBrAGkAcABwAGUAZAAgAG0AaQBzAHMAaQBuAGcAIABiAGEAYwBrAHUAcAAnACAAfQAKAH0AIABjAGEAdABjAGgAIAB7ACAACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAHIAZQBzAHQAbwByAGUAIABlAHIAcgBvAHIAIAB7ADAAfQAiACAALQBmACAAJABfAC4ARQB4AGMAZQBwAHQAaQBvAG4ALgBNAGUAcwBhAGcAZQApAAoAfQA="
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- CleanupProgramData: fshin C:\ProgramData\TECHI\ vetëm gjatë uninstall të plotë -->
+    <CustomAction Id="RestoreAgentConfigFromLegacyBackup"
+                  Directory="TECHIDATADIR"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwA9ACIAJABlAG4AdgA6AFcASQBOAEQASQBSAFwAVABlAG0AcABcAHQAZQBjAGgAaQAtAGMAbwBuAGYAaQBnAC0AbQBpAGcAcgBhAHQAZQAuAGwAbwBnACIACgAkAHMAcgBjAD0AIgAkAGUAbgB2ADoAVwBJAE4ARABJAFIAXABUAGUAbQBwAFwAdABlAGMAaABpAF8AYwBvAG4AZgBpAGcAXwBiAGEAYwBrAHUAcAAuAGoAcwBvAG4AIgAKACQAZABzAHQARABpAHIAPQAiACQAZQBuAHYAOgBQAHIAbwBnAHIAYQBtAEQAYQB0AGEAXABUAEUAQwBIAEkAIgAKACQAZABzAHQAPQAiACQAZABzAHQARABpAHIAXABhAGcAZQBuAHQALgBjAG8AbgBmAGkAZwAuAGoAcwBvAG4AIgAKAHQAcgB5ACAAewAKACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAkAGwAbwBnACAAIgByAGUAcwB0AG8AcgBlADIAIABzAHQAYQByAHQAIABzAHIAYwA9ACQAcwByAGMAIABkAHMAdAA9ACQAZABzAHQAIgAKACAAIAAkAGgAYQBzAEQAZQB2AGkAYwBlAD0AJABmAGEAbABzAGUACgAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAZABzAHQAKQAgAHsACgAgACAAIAAgAHQAcgB5ACAAewAKACAAIAAgACAAIAAgACQAYwBmAGcAPQBHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAkAGQAcwB0ACAALQBSAGEAdwAgAHwAIABDAG8AbgB2AGUAcgB0AEYAcgBvAG0ALQBKAHMAbwBuAAoAIAAgACAAIAAgACAAJABoAGEAcwBEAGUAdgBpAGMAZQA9ACgAJABuAHUAbABsACAALQBuAGUAIAAkAGMAZgBnAC4AZABlAHYAaQBjAGUAXwBpAGQAIAAtAGEAbgBkACAAWwBzAHQAcgBpAG4AZwBdACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAAgAC0AbgBlACAAJwAnACkACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAkAGwAbwBnACAAIgByAGUAcwB0AG8AcgBlADIAIABlAHgAaQBzAHQAaQBuAGcAIABoAGEAcwBEAGUAdgBpAGMAZQA9ACQAaABhAHMARABlAHYAaQBjAGUAIgAKACAAIAAgACAAfQAgAGMAYQB0AGMAaAAgAHsAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAkAGwAbwBnACAAIgByAGUAcwB0AG8AcgBlADIAIABlAHgAaQBzAHQAaQBuAGcAIABwAGEAcgBzAGUAIABlAHIAcgBvAHIAIAAkACgAJABfAC4ARQB4AGMAZQBwAHQAaQBvAG4ALgBNAGUAcwBzAGEAZwBlACkAIgAgAH0ACgAgACAAfQAKACAAIABpAGYAIAAoACgAVABlAHMAdAAtAFAAYQB0AGgAIAAkAHMAcgBjACkAIAAtAGEAbgBkACAALQBuAG8AdAAgACQAaABhAHMARABlAHYAaQBjAGUAKQAgAHsACgAgACAAIAAgAE4AZQB3AC0ASQB0AGUAbQAgAC0ASQB0AGUAbQBUAHkAcABlACAARABpAHIAZQBjAHQAbwByAHkAIAAtAFAAYQB0AGgAIAAkAGQAcwB0AEQAaQByACAALQBGAG8AcgBjAGUAIAB8ACAATwB1AHQALQBOAHUAbABsAAoAIAAgACAAIABDAG8AcAB5AC0ASQB0AGUAbQAgACQAcwByAGMAIAAkAGQAcwB0ACAALQBGAG8AcgBjAGUACgAgACAAIAAgACQAYwBvAHAAaQBlAGQAPQBHAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAkAGQAcwB0ACAALQBSAGEAdwAgAHwAIABDAG8AbgB2AGUAcgB0AEYAcgBvAG0ALQBKAHMAbwBuAAoAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAkAGwAbwBnACAAIgByAGUAcwB0AG8AcgBlADIAIABjAG8AcABpAGUAZAAgAGQAZQB2AGkAYwBlAF8AaQBkAD0AJAAoACQAYwBvAHAAaQBlAGQALgBkAGUAdgBpAGMAZQBfAGkAZAApACIACgAgACAAfQAgAGUAbABzAGUAaQBmACAAKAAtAG4AbwB0ACAAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAcwByAGMAKQApACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAAJABsAG8AZwAgACcAcgBlAHMAdABvAHIAZQAyACAAcwBrAGkAcABwAGUAZAAgAG0AaQBzAHMAaQBuAGcAIABiAGEAYwBrAHUAcAAnAAoAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAAJABsAG8AZwAgACcAcgBlAHMAdABvAHIAZQAyACAAcwBrAGkAcABwAGUAZAAgAGQAZQBzAHQAaQBuAGEAdABpAG8AbgAgAGEAbAByAGUAYQBkAHkAIABlAG4AcgBvAGwAbABlAGQAJwAKACAAIAB9AAoAfQAgAGMAYQB0AGMAaAAgAHsAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAkAGwAbwBnACAAIgByAGUAcwB0AG8AcgBlADIAIABlAHIAcgBvAHIAIAAkACgAJABfAC4ARQB4AGMAZQBwAHQAaQBvAG4ALgBNAGUAcwBzAGEAZwBlACkAIgAgAH0A"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="CleanupProgramData"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command Remove-Item 'C:\Users\Public\Desktop\TECHI Remote Support.lnk' -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force ($$env:ProgramData+'\TECHI') -ErrorAction SilentlyContinue"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- KillTechiRS: vret proceset para fshirjes -->
+    <CustomAction Id="KillTechiRS"
+                  Directory="SystemFolder"
+                  ExeCommand="taskkill.exe /F /IM &quot;TECHI Remote Support.exe&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- DeleteTechiRSService: heq shërbimin nga SCM -->
+    <CustomAction Id="DeleteTechiRSService"
+                  Directory="SystemFolder"
+                  ExeCommand="sc.exe delete &quot;TECHI Remote Support&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- EpCustomActDll nga v1.0.4 — shkruan TOML konfigurim për TECHI Remote Support -->
+    <Binary Id="EpCustomActDll" SourceFile="EpCustomActDll.dll"/>
+
+    <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key) për RS -->
+    <CustomAction Id="WriteTechiConfigs.SetParam"
+                  Property="WriteTechiConfigs"
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+    <CustomAction Id="WriteTechiConfigs"
+                  BinaryRef="EpCustomActDll"
+                  DllEntry="WriteTechiConfigs"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- ApplyTechiRemoteSupportConfigFinal: aplikon konfigurimet finale të RS -->
+    <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
+                  Property="ApplyTechiRemoteSupportConfigFinal"
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+    <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
+                  BinaryRef="EpCustomActDll"
+                  DllEntry="ApplyTechiRemoteSupportConfigFinal"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- ===== SEKUENCA EKZEKUTIMI ===== -->
+    <InstallExecuteSequence>
+      <!-- Abort PARA InstallInitialize: kërkon token për fresh install OSE reinstall të pastër.
+           (NOT Installed) = instalim i parë; (Installed AND REINSTALL) = msiexec REINSTALL=ALL.
+           Skip-ohet gjatë upgrade të vërtetë (WIX_UPGRADE_DETECTED/UPGRADINGPRODUCTCODE). -->
+      <Custom Action="AbortNoToken" Before="InstallInitialize" Condition="NOT ENROLLMENT_TOKEN AND NOT WIX_UPGRADE_DETECTED AND NOT UPGRADINGPRODUCTCODE AND (NOT Installed OR (Installed AND REINSTALL))"/>
+      <Custom Action="BackupAgentConfigBeforeLegacyRemove" After="CostFinalize" Condition="NOT REMOVE"/>
+      <Custom Action="RemoveLegacyEndpoint104A" After="BackupAgentConfigBeforeLegacyRemove" Condition="NOT REMOVE"/>
+      <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
+      <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
+      <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
+      <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
+           WriteAgentConfig: PS script-i brenda kontrollon vetë nëse config ekziston (idempotent).
+           SetServiceRecovery: duhet gjithmonë pas upgrade — v1.0.4 nuk e kishte vendosur.
+           WriteTechiConfigs/Apply: rifresko RS TOML config pas çdo upgrade. -->
+      <Custom Action="WriteAgentConfig"   After="InstallServices"    Condition="NOT REMOVE"/>
+      <Custom Action="RestoreAgentConfigFromLegacyBackup" After="WriteAgentConfig" Condition="NOT REMOVE"/>
+      <!-- EnsureServiceCreated: rrjet sigurie PARA SetServiceRecovery — nëse InstallServices
+           nuk e krijoi service-in (race-condition SCM me DeleteServices të produktit të vjetër),
+           e rikrijon këtu, kështu që SetServiceRecovery i aplikohet gjithsesi më pas. -->
+      <Custom Action="EnsureServiceCreated" After="StartServices"    Condition="NOT REMOVE"/>
+      <Custom Action="SetServiceRecovery" After="EnsureServiceCreated" Condition="NOT REMOVE"/>
+      <!-- WriteTechiConfigs: shkruan TOML config për RS pas instalimit të skedarëve -->
+      <Custom Action="WriteTechiConfigs.SetParam"               After="WriteAgentConfig"                   Condition="NOT REMOVE"/>
+      <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
+      <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs"               Condition="NOT REMOVE"/>
+      <Custom Action="ApplyTechiRemoteSupportConfigFinal"       After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
+      <!-- Uninstall -->
+      <Custom Action="KillTechiRS"          Before="RemoveFiles"     Condition="REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="DeleteTechiRSService" After="KillTechiRS"      Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
+      <Custom Action="CleanupProgramData"   After="DeleteTechiRSService" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
+    </InstallExecuteSequence>
 
   </Package>
 </Wix>

@@ -3,6 +3,74 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Adopt Real Combined installer.wxs (Agent + Remote Support), Revert Explicit Uninstall
+
+### Root cause
+
+The previous entry (below) diagnosed an `UpgradeCode` mismatch by comparing the
+live-deployed `2.0.0` MSI against this repo's `agent/installer/installer.wxs`
+— but that comparison was against the **wrong** file. The actual source for
+the live MSI lived only on a local Windows machine (never committed): a much
+more complete WiX project with UI dialogs (enrollment token prompt), legacy
+v1.0.4 migration, `agent.config.json`/`device_id` backup-and-restore across
+upgrades, and `UpgradeCode=E6AD0A88-5F26-5665-9B1F-70B8C5EE8363` — which
+*does* match production. That real installer was already locally built and
+tested through three elevated scenarios (fresh→upgrade, same-version
+reinstall, no-token GPO-style upgrade), all passing with `device_id`
+preserved, using a **plain** `msiexec /i` (no explicit uninstall).
+
+Given that, the explicit-uninstall logic added in the previous two entries
+(`self_update`'s manual `msiexec /x` before `/i`, and `techi-deploy.cmd`'s
+`:do_upgrade` uninstall-then-install) is actively harmful with the real
+installer: a standalone `msiexec /x` does not set `UPGRADINGPRODUCTCODE`,
+so `installer.wxs`'s `CustomAction CleanupProgramData` (condition
+`REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE`) fires and deletes
+`C:\ProgramData\TECHI\agent.config.json` — wiping `device_id` and causing the
+device to re-enroll as a new device on every upgrade.
+
+### Fix
+
+- Brought the real `installer.wxs`, `EpCustomActDll.dll`, `banner.bmp`,
+  `TECHI-branding-assets/`, `TECHI-Remote-Support/` (prebuilt RustDesk/Flutter
+  bundle), `versioninfo.json`, and `techi-agent.manifest` into the repo under
+  `agent/` — this is the single source of truth going forward, replacing the
+  simplified agent-only installer this session had been building.
+- Parameterized `installer.wxs`'s `Version` via `$(var.Version)` (same
+  pattern as before), sourced from `agent/VERSION`.
+- `agent/update.go` self_update reverted to a **plain** `msiexec /i
+  $MsiPath /quiet /norestart` — no explicit `/x`. Removed the now-unused
+  `Get-InstalledTechiAgentProductCode` helper.
+- `techi-deploy.cmd` (`enrollment_bootstrap_service.py`) collapsed
+  `:do_install`/`:do_upgrade` into a single `:do_install` path: any
+  non-`equal` registry version state runs the same `msiexec /i` (relying on
+  `MajorUpgrade` + `AllowSameVersionUpgrades`), with no `msiexec /x` and no
+  `:wait_registry_removed`. Registry read is kept for logging/diagnostics
+  only.
+- `agent/installer/build.sh` and `build.bat` rewritten to mirror the real
+  build process: patch `versioninfo.json`/`techi-agent.manifest` from
+  `agent/VERSION`, generate `resource.syso` via `goversioninfo`, `go build
+  -ldflags -X main.AgentVersion=... -trimpath`, then `wix build -arch x64
+  -ext WixToolset.UI.wixext -d Version=<version>.0`.
+- `.github/workflows/build-agent-msi.yml` updated to match (swapped
+  `WixToolset.Util.wixext` for `WixToolset.UI.wixext`, added `-arch x64`,
+  added the `goversioninfo`/manifest-patch steps).
+- `.gitignore`: added `agent/installer/*.wixpdb`, `agent/installer/.wix/`,
+  `agent/installer/*.log`, `agent/resource.syso`.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+- `cd backend && python3 -m pytest tests/` (326 passed; 1 pre-existing
+  unrelated failure in `test_legacy_compat.py`)
+- Locally verified (on macOS, cross-compile only — `wix build` itself
+  requires Windows): version-metadata patch script is idempotent,
+  `goversioninfo` + `go build -ldflags -X main.AgentVersion=...
+  -trimpath` succeed and produce a valid `techi-agent.exe`.
+- User's own local elevated test logs (`elevated-test-output.log`,
+  `elevated-notoken-upgrade-output.log`) already validated the real
+  `installer.wxs` end-to-end against the live `2.0.0` lineage before this
+  integration.
+
 ## [2026-06-27] Self-Update — Stop Relying on MajorUpgrade, Mirror techi-deploy.cmd's Explicit Uninstall
 
 ### Root cause
