@@ -206,5 +206,9 @@ func writeConfig(path string, cfg *Config, scrubEnrollmentToken bool) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	lockdownConfigACL(path)
+	return nil
 }

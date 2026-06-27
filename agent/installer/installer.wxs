@@ -250,6 +250,17 @@
                   Impersonate="no"
                   Return="ignore"/>
 
+    <!-- LockdownTechiDataDir: agent.config.json ka enrollment_token, rustdesk_key, rustdesk_default_password
+         në plaintext. ProgramData trashëgon ACL që lë "Users" me Read, kështu që çdo llogari lokale e PC-së
+         mund ta lexonte; icacls heq trashëgimine dhe lë vetëm SYSTEM + Administrators (sipas SID, jo emrit,
+         që funksionon në çdo locale Windows). /T/(OI)(CI) e zbatojnë te skedarët ekzistues dhe te ata të rinj. -->
+    <CustomAction Id="LockdownTechiDataDir"
+                  Directory="TECHIDATADIR"
+                  ExeCommand="icacls.exe &quot;[TECHIDATADIR]&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
     <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
          të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
          njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
@@ -374,6 +385,7 @@
            WriteTechiConfigs/Apply: rifresko RS TOML config pas çdo upgrade. -->
       <Custom Action="WriteAgentConfig"   After="InstallServices"    Condition="NOT REMOVE"/>
       <Custom Action="RestoreAgentConfigFromLegacyBackup" After="WriteAgentConfig" Condition="NOT REMOVE"/>
+      <Custom Action="LockdownTechiDataDir" After="RestoreAgentConfigFromLegacyBackup" Condition="NOT REMOVE"/>
       <!-- EnsureServiceCreated: rrjet sigurie PARA SetServiceRecovery — nëse InstallServices
            nuk e krijoi service-in (race-condition SCM me DeleteServices të produktit të vjetër),
            e rikrijon këtu, kështu që SetServiceRecovery i aplikohet gjithsesi më pas. -->
