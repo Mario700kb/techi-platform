@@ -304,12 +304,26 @@ class TestRustDeskForceMigrationScript:
         assert "TECHI Remote Support TECHI config verified" in self.script
 
     def test_restarts_rustdesk_and_logs_migration(self):
-        assert "Restarting TECHI Remote Support service" in self.script
-        assert "TECHI Remote Support restarted" in self.script
+        # TECHI Remote Support no longer runs as a Windows Service (Session 0
+        # can't do interactive screen capture) -- it's relaunched via the
+        # "TECHI Remote Support Tray" Scheduled Task installer.wxs creates.
+        assert "Restarting TECHI Remote Support via Scheduled Task" in self.script
+        assert "Get-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
+        assert "Start-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
+        assert "TECHI Remote Support Tray task triggered." in self.script
         assert "TECHI Remote Support forced migration complete" in self.script
+
+    def test_removes_orphaned_service_instead_of_restarting_it(self):
+        # Any "TECHI Remote Support"/"RustDesk"/"rustdesk" service found is an
+        # orphan from before the Scheduled-Task model -- delete it, don't
+        # restart it back into the broken Session 0 state.
+        assert "Removing orphaned TECHI Remote Support service registration" in self.script
+        assert "Start-Process -FilePath 'sc.exe' -ArgumentList @('delete', $ServiceName)" in self.script
 
     def test_sets_unattended_password_with_cli_without_logging_secret(self):
         assert "$TechiPassword = 'Durres.12'" in self.script
+        assert "'C:\\Program Files\\TECHI Remote Support\\TECHI Remote Support.exe'" in self.script
+        assert "'C:\\Program Files (x86)\\TECHI Remote Support\\TECHI Remote Support.exe'" in self.script
         assert "'C:\\Program Files\\TECHI Remote Support\\rustdesk.exe'" in self.script
         assert "'C:\\Program Files (x86)\\TECHI Remote Support\\rustdesk.exe'" in self.script
         assert "Get-CimInstance Win32_Service" in self.script
@@ -322,7 +336,7 @@ class TestRustDeskForceMigrationScript:
 
     def test_password_set_happens_before_restart(self):
         password_index = self.script.index("Setting TECHI Remote Support unattended access password via CLI")
-        restart_index = self.script.index("Restarting TECHI Remote Support service")
+        restart_index = self.script.index("Restarting TECHI Remote Support via Scheduled Task")
 
         assert password_index < restart_index
 

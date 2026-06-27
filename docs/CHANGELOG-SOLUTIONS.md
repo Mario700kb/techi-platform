@@ -3,6 +3,59 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Bootstrap Script Still Assumed a Remote Support Windows Service After It Was Removed
+
+### Root cause
+
+Real-machine test of the "Safe one-time/manual command" bootstrap (and the
+shared GPO bootstrap path -- both call the same
+`_rustdesk_force_migration_ps_lines` generator in
+`enrollment_bootstrap_service.py`) surfaced two bugs left over from
+dropping the Remote Support Windows Service earlier today:
+
+- `Get-TechiExecutable`'s candidate paths only listed `rustdesk.exe`,
+  never the actual shipped binary name `TECHI Remote Support.exe` --
+  log showed `WARNING: TECHI Remote Support password not set because
+  rustdesk.exe was not found.` every time, on every device.
+- The script still did `Stop-Service` / `Start-Service` against a
+  `TECHI Remote Support` service name. On the test device this found
+  an orphaned service left over from an earlier build *this session*
+  (before the Program Files + Scheduled Task fix) and happily
+  restarted it -- putting Remote Support right back into the broken
+  Session 0 state the rest of today's work was meant to eliminate.
+
+### Fix
+
+- `backend/app/services/enrollment_bootstrap_service.py`:
+  `Get-TechiExecutable`'s candidates now include
+  `TECHI Remote Support.exe` (Program Files, both archs) ahead of the
+  legacy `rustdesk.exe` names. The service stop-loop now deletes
+  (`sc.exe delete`) any matched service instead of just stopping it --
+  there's no legitimate reason for one to exist anymore. The final
+  "restart" step no longer does `Start-Service`; it instead does
+  `Get-ScheduledTask`/`Start-ScheduledTask` against the
+  `TECHI Remote Support Tray` task installer.wxs creates.
+- `agent/installer/installer.wxs`: `KillTechiRSBeforeInstall` (runs
+  before `InstallFiles` on every install/upgrade, see the entry below)
+  now also runs `sc.exe delete "TECHI Remote Support"`. This closes the
+  same gap at the MSI level so it's covered regardless of which outer
+  deployment path triggered msiexec (raw `msiexec /i`, GPO
+  `techi-deploy.cmd`, or either bootstrap script) -- `RemoveRustDeskTrayArtifacts`
+  only runs on a full uninstall, never on a normal upgrade, so without
+  this the orphaned service would otherwise survive upgrades indefinitely.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py -q`
+  -- 105 passed (2 assertions updated for the new Scheduled-Task-based
+  restart wording, 1 new test added for the orphaned-service deletion).
+- `installer.wxs` re-verified well-formed, no `--`-in-comment regressions.
+- Real-machine result that surfaced this: manual install of this MSI
+  over an existing 2.1.0, then 2.0.0, then 2.1.0 again all completed
+  without the device going offline (the InstallFiles fix from the entry
+  below appears to be working) -- only the bootstrap script's own
+  service-restart/password-exe-name bugs remained, both fixed here.
+
 ## [2026-06-27] Devices Going Offline During 2.0.0 -> 2.1.0 Upgrade: Kill Remote Support Before InstallFiles, Not Just Before Uninstall
 
 ### Root cause

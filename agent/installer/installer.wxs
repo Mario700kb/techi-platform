@@ -355,10 +355,17 @@
 
     <!-- KillTechiRSBeforeInstall: njesoj si KillTechiRS, por para InstallFiles — mbulon
          fresh install (no-op, asnje proces s'ekziston) dhe upgrade (kritike, shih komenti
-         siper). Dy CustomAction te ndara sepse i njejti Id s'mund te skedulohet dy here. -->
+         siper). Dy CustomAction te ndara sepse i njejti Id s'mund te skedulohet dy here.
+         Fshin gjithashtu CDO service "TECHI Remote Support" te orfanizuar (nga build te
+         mehershme te ketij sesioni, perpara se RS te kalonte ne Scheduled Task) — ne CDO
+         rruge deploy-mi (msiexec direkt, GPO techi-deploy.cmd, bootstrap script), jo vetem
+         ne ate qe gjenerohet nga enrollment_bootstrap_service.py. Pa kete, service-i i vjeter
+         do te mbetej i regjistruar pas upgrade normal (RemoveRustDeskTrayArtifacts s'ekzekutohet
+         gjate upgrade, vetem gjate uninstall te plote) dhe dikush mund ta "rinise" perseri
+         ne gjendjen e thyer Session 0. -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
