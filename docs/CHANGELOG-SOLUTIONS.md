@@ -3,6 +3,37 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Always Enable "Remote Configuration Modification" Permission
+
+### Root cause
+
+In the Remote Support permissions panel, "Enable remote configuration
+modification" was the one permission left unchecked by default, requiring
+someone physically at each PC to turn it on before an operator could adjust
+that device's Remote Support settings remotely. This is a standard
+RustDesk `[options]` key (`enable-remote-config-modification`), the same
+mechanism already used for `custom-rendezvous-server`/`relay-server`/`key`.
+
+Separately, the user asked about adding clipboard copy-paste / drag-and-drop
+file transfer (today only the manual "file transfer" menu works). That is
+not a config toggle -- it doesn't appear at all in this build's permissions
+list (13 known permissions, ending at remote-config-modification), so it's
+not compiled into this vendored RustDesk fork. It can't be enabled via
+config; it would need a newer build of the binary itself.
+
+### Fix
+
+- `agent/rustdesk_toml.go`: `managedRustDeskOptions` now always includes
+  `enable-remote-config-modification = 'Y'`, repaired the same way as the
+  other managed keys (30-min cooldown, see `ensureRustDesk`).
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+  (updated 3 existing fixtures in `rustdesk_toml_test.go` that asserted
+  "no repair needed" / "no change" without the new key)
+- `cd agent && GOOS=windows GOARCH=amd64 go build .` (cross-compile pass)
+
 ## [2026-06-27] Auto-Restart "TECHI Remote Support" Service on Failure (Tray "Exit" Can Kill It)
 
 ### Root cause

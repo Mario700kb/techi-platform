@@ -64,6 +64,10 @@ func managedRustDeskOptions(cfg *Config) map[string]string {
 	if cfg.RustDeskKey != "" {
 		m["key"] = cfg.RustDeskKey
 	}
+	// Always-on permission: lets operators connecting from our platform
+	// adjust this device's Remote Support settings remotely, instead of
+	// needing someone physically at the PC to flip it on first.
+	m["enable-remote-config-modification"] = "Y"
 	return m
 }
 

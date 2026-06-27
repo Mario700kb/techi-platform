@@ -93,6 +93,7 @@ key_pair = ['pubkey', 'privkey']
 custom-rendezvous-server = '139.162.158.208'
 relay-server = '139.162.158.208'
 key = '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='
+enable-remote-config-modification = 'Y'
 `
 	cfg := cfgWithServers()
 	if rustDeskConfigNeedsRepair(content, cfg) {
@@ -108,6 +109,7 @@ func TestRustDeskConfigNeedsRepairDifferentFormatting(t *testing.T) {
 custom-rendezvous-server = "139.162.158.208"
 relay-server =  "139.162.158.208"
 key = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
+enable-remote-config-modification = "Y"
 `
 	cfg := cfgWithServers()
 	if rustDeskConfigNeedsRepair(content, cfg) {
@@ -184,6 +186,7 @@ func TestApplyTOMLOptionPatchNoChange(t *testing.T) {
 custom-rendezvous-server = '139.162.158.208'
 relay-server = '139.162.158.208'
 key = '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='
+enable-remote-config-modification = 'Y'
 `
 	cfg := cfgWithServers()
 	managed := managedRustDeskOptions(cfg)
