@@ -3,6 +3,52 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Remote Support Wouldn't Open: app.so Silently Excluded by .gitignore's `*.so` Rule
+
+### Root cause
+
+TECHI Remote Support exited immediately on every launch attempt (no window,
+no Task Manager entry lasting more than an instant), confirmed via a direct
+launch capturing stderr:
+
+```
+[ERROR:flutter/shell/platform/windows/flutter_project_bundle.cc(66)] Can't load AOT data from C:\ProgramData\TECHI Remote Support\data\app.so; no such file.
+[ERROR:flutter/shell/platform/windows/flutter_windows_engine.cc(253)] Unable to start engine without AOT data.
+Failed to create view controller.
+```
+
+TECHI Remote Support is a Flutter Windows app; `data\app.so` is the
+AOT-compiled Dart bytecode the Flutter engine needs to start at all --
+without it the engine can't initialize and the process exits before showing
+anything. `data\app.so` (13 MB) existed on disk in
+`agent/installer/TECHI-Remote-Support/data/` (copied from the user's
+`agent.rar`) but was never actually committed to git: `.gitignore`'s
+generic `*.so` rule (meant for Python C-extension shared objects, line 7)
+silently matched and excluded it too, since gitignore patterns aren't
+path-scoped by default. Every CI-built MSI since this repo adopted the real
+`installer.wxs` shipped Remote Support's DLLs and Flutter assets but not
+its actual application code -- explaining why the icon "does nothing": the
+engine fails before any window is created.
+
+Found via a PowerShell diagnostic script run on the affected machine that
+killed any running instance, relaunched the exe directly with
+`-RedirectStandardError`, and captured the message above.
+
+### Fix
+
+- `.gitignore`: added `!agent/installer/TECHI-Remote-Support/data/app.so`
+  exception to the `*.so` rule (same pattern already used for
+  `!agent/techi-agent.manifest` against the `*.manifest` rule).
+- `git add -f` the file so it's actually tracked going forward.
+
+### Checks
+
+- `comm -23 <(find agent/installer/TECHI-Remote-Support -type f | sort) <(git ls-files agent/installer/TECHI-Remote-Support | sort)`
+  -- confirmed `app.so` was the *only* file on disk missing from git tracking
+  under that whole vendored directory.
+- Expect the next CI artifact to grow from ~22 MB to ~30+ MB (the MSI
+  previously shipped without this 13 MB file at all).
+
 ## [2026-06-27] Hide Remaining Console-EXE CustomActions, Embed BuildCommit for Test Traceability
 
 ### Root cause
