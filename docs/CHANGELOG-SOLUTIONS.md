@@ -3,6 +3,46 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] Self-Update — Stop Relying on MajorUpgrade, Mirror techi-deploy.cmd's Explicit Uninstall
+
+### Root cause
+
+Live verification on a test PC showed double-clicking the freshly built
+`TECHI-Endpoint-Deployment-2.1.0.msi` (confirmed via `msiinfo`/WindowsInstaller
+COM to correctly embed `ProductVersion=2.1.0`) had no effect on a machine
+already at `2.0.0`. Inspecting the actually-deployed production `2.0.0` MSI
+(pulled from `agent_packages` on `techi-server`) revealed it is a **different,
+much larger build** (~27 MB vs ~7 MB) that bundles `TECHI Agent` together with
+`TECHI Remote Support` (RustDesk/Flutter runtime — `librustdesk.dll`,
+`flutter_windows.dll`, `app.so`) and uses
+`UpgradeCode={E6AD0A88-5F26-5665-9B1F-70B8C5EE8363}`, `Manufacturer=TECHI
+Solutions SH.P.K.` — neither matches `agent/installer/installer.wxs`
+(`UpgradeCode={A1B2C3D4-E5F6-7890-ABCD-EF1234567890}`, `Manufacturer=TECHI`).
+That MSI was never built from this repo's installer source. Because
+`MajorUpgrade` keys off `UpgradeCode`, Windows Installer treats the two as
+fully unrelated products — no version bump can ever make `MajorUpgrade` fire
+against the currently-installed bundle. The previous fix (see entry below)
+made `self_update`'s `msiexec /i` rely on `MajorUpgrade` alone, which cannot
+work against this specific installed base.
+
+### Fix
+
+`agent/update.go`'s self-update helper no longer assumes `MajorUpgrade` will
+fire. It now mirrors the registry-driven approach already used by
+`techi-deploy.cmd`: looks up `DisplayName = TECHI Agent` under both native and
+WOW6432Node uninstall hives, extracts the real installed `ProductCode` from
+`UninstallString`, and runs `msiexec /x <ProductCode>` before `msiexec /i
+$MsiPath` — regardless of whether the installed product's `UpgradeCode`
+matches. This works for the current mismatched-UpgradeCode bundle and for any
+future build, without depending on MSI version/UpgradeCode bookkeeping being
+correct.
+
+### Checks
+
+- `cd agent && go build ./... && go vet ./... && go test ./... -count=1`
+- Manually confirmed via `msiinfo export` against both the new `2.1.0` MSI and
+  the live `2.0.0` MSI pulled from `agent_packages` on `techi-server`.
+
 ## [2026-06-27] MSI/GPO Deploy — Version Parameterization, Self-Update Parity, Redundant Boot GPO, Third Daily Trigger
 
 ### Root cause
@@ -36,9 +76,11 @@ the checks used to verify them. Add new entries at the top.
   the MSI `Version` and `-ldflags -X main.AgentVersion=` for the compiled
   binary, wired into `agent/installer/build.sh` and
   `.github/workflows/build-agent-msi.yml`.
-- `update.go` self_update now runs plain `msiexec /i $MsiPath /quiet
-  /norestart` — relies on `MajorUpgrade`'s automatic `RemoveExistingProducts`
-  instead of `REINSTALL=ALL`.
+- `update.go` self_update dropped `REINSTALL=ALL REINSTALLMODE=vomus`.
+  **Correction (see entry above, same day):** relying on `MajorUpgrade` alone
+  turned out to be insufficient against the live-deployed `2.0.0` bundle
+  (different `UpgradeCode`) — self_update now does an explicit registry-driven
+  uninstall before install, not a bare `/i`.
 - Removed the redundant "TECHI Agent Startup" GPO and its
   `scripts.ini`/Startup-Scripts plumbing from `_gpo_scheduled_task_setup`;
   boot-time execution is now covered solely by the Scheduled Task's
