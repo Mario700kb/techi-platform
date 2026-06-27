@@ -45,15 +45,30 @@ jobs:
           wix extension add --global WixToolset.Util.wixext/4.0.5
 
       # ------------------------------------------------------------------ #
-      # 4. Build techi-agent.exe (native Windows — nuk nevojitet GOOS)      #
+      # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
+      # ------------------------------------------------------------------ #
+      - name: Read agent version
+        id: version
+        shell: pwsh
+        working-directory: agent
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "agent/VERSION is empty"
+          }
+          Write-Host "Agent version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------ #
+      # 5. Build techi-agent.exe (native Windows — nuk nevojitet GOOS)      #
       # ------------------------------------------------------------------ #
       - name: Build techi-agent.exe
         shell: pwsh
         working-directory: agent
-        run: go build -ldflags="-s -w" -o installer/techi-agent.exe .
+        run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -o installer/techi-agent.exe .
 
       # ------------------------------------------------------------------ #
-      # 5. Build MSI me WiX v4                                              #
+      # 6. Build MSI me WiX v4                                              #
       # ------------------------------------------------------------------ #
       - name: Build MSI
         shell: pwsh
@@ -62,29 +77,30 @@ jobs:
           wix build installer.wxs `
             -ext WixToolset.Util.wixext `
             -d SourceDir=. `
-            -o TECHI-Endpoint-Deployment-2.0.0.msi
+            -d Version=${{ steps.version.outputs.version }} `
+            -o TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
 
       # ------------------------------------------------------------------ #
-      # 6. SHA256 checksum                                                   #
+      # 7. SHA256 checksum                                                   #
       # ------------------------------------------------------------------ #
       - name: Compute SHA256
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $hash = (Get-FileHash "TECHI-Endpoint-Deployment-2.0.0.msi" -Algorithm SHA256).Hash.ToLower()
-          "$hash  TECHI-Endpoint-Deployment-2.0.0.msi" |
-            Out-File "TECHI-Endpoint-Deployment-2.0.0.msi.sha256" -Encoding utf8NoBOM
+          $msi = "TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi"
+          $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
+          "$hash  $msi" | Out-File "$msi.sha256" -Encoding utf8NoBOM
           Write-Host "SHA256: $hash"
 
       # ------------------------------------------------------------------ #
-      # 7. Upload artifact (30 ditë)                                         #
+      # 8. Upload artifact (30 ditë)                                         #
       # ------------------------------------------------------------------ #
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: TECHI-Endpoint-Deployment-2.0.0
+          name: TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}
           path: |
-            agent/installer/TECHI-Endpoint-Deployment-2.0.0.msi
-            agent/installer/TECHI-Endpoint-Deployment-2.0.0.msi.sha256
+            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
+            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi.sha256
           retention-days: 30
           if-no-files-found: error

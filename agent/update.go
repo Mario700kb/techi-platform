@@ -180,7 +180,13 @@ try {
         Write-DeployLog "service status wait=$status"
     } while ($status -eq 'Running' -and (Get-Date) -lt $deadline)
 
-    $msiResult = Run-Logged 'msiexec.exe' @('/i', $MsiPath, '/quiet', '/norestart', 'REINSTALL=ALL', 'REINSTALLMODE=vomus')
+    # Plain /i (jo REINSTALL=ALL): MajorUpgrade brenda installer.wxs e heq
+    # automatikisht versionin e instaluar kur Version e MSI-se se re eshte
+    # me e madhe. REINSTALL=ALL/REINSTALLMODE=vomus eshte per repair te
+    # te njejtit version dhe nuk aktivizon RemoveExistingProducts -- nese
+    # versionet jane te barabarta/ProductCode ndryshe, msiexec refuzon me
+    # ERROR 1638 dhe upgrade-i deshton ne heshtje.
+    $msiResult = Run-Logged 'msiexec.exe' @('/i', $MsiPath, '/quiet', '/norestart')
     if ($msiResult -ne 0 -and $msiResult -ne 3010) {
         Write-DeployLog "msiexec failed; attempting service recovery"
         Ensure-AgentService

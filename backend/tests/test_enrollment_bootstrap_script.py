@@ -932,18 +932,20 @@ class TestGPOScheduledDeployScript:
         assert '<Arguments>/c "$NetlogonScr"</Arguments>' in self.script
         assert "<Command>$NetlogonScr</Command>" not in self.script
 
-    def test_ps1_scheduled_task_has_daily_13_and_21_triggers(self):
-        """Scheduled Task ka boot trigger dhe trigger-et ditore 13:00 dhe 21:00."""
+    def test_ps1_scheduled_task_has_daily_09_13_and_21_triggers(self):
+        """Scheduled Task ka boot trigger dhe trigger-et ditore 09:00, 13:00 dhe 21:00."""
+        assert '$ScheduleTime0 = "09:00"' in self.script
         assert '$ScheduleTime1 = "13:00"' in self.script
         assert '$ScheduleTime2 = "21:00"' in self.script
         assert "<BootTrigger>" in self.script
-        assert "<CalendarTrigger>" in self.script
+        assert self.script.count("<CalendarTrigger>") == 3
         assert "<DaysInterval>1</DaysInterval>" in self.script
 
-    def test_ps1_has_test_path_after_scripts_ini_write(self):
-        """PS1 verifikon me Test-Path se scripts.ini dhe kopja e CMD u shkruan."""
-        assert "GABIM KRITIK: techi-deploy.cmd nuk u kopjua te Startup Scripts!" in self.script
-        assert "GABIM KRITIK: $ScriptsIniPath nuk u shkrua! Ndalim." in self.script
+    def test_ps1_has_no_redundant_startup_script_gpo(self):
+        """GPO 'TECHI Agent Startup' (Hapi 8 i vjeter) u hoq -- BootTrigger mjafton vetem."""
+        assert "TECHI Agent Startup" not in self.script
+        assert "Machine\\Scripts\\Startup" not in self.script
+        assert "scripts.ini" not in self.script
 
     # ── PS1-level: banner PERFUNDOI ───────────────────────────────────────────
 

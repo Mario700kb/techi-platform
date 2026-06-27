@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  TECHI Agent v2.0 — WiX v4 MSI Installer
+  TECHI Agent — WiX v4 MSI Installer
   Upgrade GUID: A1B2C3D4-E5F6-7890-ABCD-EF1234567890 (KONSTANT — mos ndrysho kurrë)
-  Build: wix build installer.wxs -d SourceDir=. -o TECHI-Endpoint-Deployment-2.0.0.msi
+  Build: wix build installer.wxs -d SourceDir=. -d Version=2.1.0 -o TECHI-Endpoint-Deployment-2.1.0.msi
+  Version DUHET te kaloje gjithmone si -d Version= ne build — nuk mund te jete e barabarte
+  me versionin tashme te instaluar, perndryshe MajorUpgrade s'aktivizohet (Windows
+  Installer e refuzon me ERROR 1638 "another version is already installed").
 -->
+<?ifndef Version?>
+<?define Version="0.0.0"?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="TECHI Agent"
-           Version="2.0.0"
+           Version="$(var.Version)"
            Manufacturer="TECHI"
            UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
            Scope="perMachine">

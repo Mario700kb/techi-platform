@@ -3,6 +3,59 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-27] MSI/GPO Deploy — Version Parameterization, Self-Update Parity, Redundant Boot GPO, Third Daily Trigger
+
+### Root cause
+
+- `agent/installer/installer.wxs` hardcoded `Version="2.0.0"`; neither
+  `agent/installer/build.sh` nor `.github/workflows/build-agent-msi.yml` ever
+  bumped it or passed `-d Version=`. Every MSI built from these scripts
+  embedded ProductVersion `2.0.0` regardless of the release label. On machines
+  already at `2.0.0`, Windows Installer's `MajorUpgrade` (which only removes
+  strictly *older* versions under the same UpgradeCode) saw an equal version
+  and refused the install with `ERROR_PRODUCT_VERSION (1638)`. Device
+  telemetry confirmed exactly this split: 480 devices stuck at `2.0.0`, 148
+  fresh-install devices (no prior version to conflict with) correctly on
+  `2.1.0`, 48 with no agent at all.
+- `agent/update.go`'s `self_update` helper ran
+  `msiexec /i ... REINSTALL=ALL REINSTALLMODE=vomus`, which targets
+  repair-reinstall of the *same* ProductCode and never triggers
+  `RemoveExistingProducts` — same 1638 failure mode as above, making
+  "update agent" from Command Center unsafe for real version upgrades.
+- GPO scheduled-task deploy created two independent "run techi-deploy.cmd on
+  boot" mechanisms: a `<BootTrigger>` inside the Scheduled Task XML, and a
+  separate "TECHI Agent Startup" GPO (classic Group Policy startup script).
+  Both fired on every boot — redundant, and a source of double-execution
+  races during an actual upgrade.
+
+### Fix
+
+- `installer.wxs`: `Version` is now `$(var.Version)`, supplied via a
+  build-time `-d Version=` parameter (falls back to `0.0.0` if omitted).
+- New single source of truth `agent/VERSION` (currently `2.1.0`) feeds both
+  the MSI `Version` and `-ldflags -X main.AgentVersion=` for the compiled
+  binary, wired into `agent/installer/build.sh` and
+  `.github/workflows/build-agent-msi.yml`.
+- `update.go` self_update now runs plain `msiexec /i $MsiPath /quiet
+  /norestart` — relies on `MajorUpgrade`'s automatic `RemoveExistingProducts`
+  instead of `REINSTALL=ALL`.
+- Removed the redundant "TECHI Agent Startup" GPO and its
+  `scripts.ini`/Startup-Scripts plumbing from `_gpo_scheduled_task_setup`;
+  boot-time execution is now covered solely by the Scheduled Task's
+  `<BootTrigger>`. Renumbered remaining setup steps.
+- Added a third daily `<CalendarTrigger>` at `09:00` (alongside the existing
+  `13:00`/`21:00`).
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py` (106 passed)
+- `cd backend && python3 -m pytest tests/` (328 passed; 1 pre-existing unrelated
+  failure in `test_legacy_compat.py`, confirmed present before this change via
+  `git stash`)
+- `cd agent && go build ./... && go vet ./... && go test ./...`
+- `GOOS=windows GOARCH=amd64 go build -ldflags="-X main.AgentVersion=2.1.1" ...`
+  to confirm ldflags wiring compiles
+
 ## [2026-06-27] GPO Deploy — Registry-Driven MSI Upgrade When ProductCode Changes
 
 ### Root cause
