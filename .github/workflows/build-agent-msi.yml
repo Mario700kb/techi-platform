@@ -37,12 +37,16 @@ jobs:
           cache-dependency-path: agent/go.sum
 
       # ------------------------------------------------------------------ #
-      # 3. WiX v4 + UI extension (per WixUI_Common dialogs)                 #
+      # 3. WiX v7 + UI extension (per WixUI_Common dialogs)                 #
+      #    WiX v7 kerkon pranim te Open Source Maintenance Fee (OSMF) EULA  #
+      #    -- https://docs.firegiant.com/wix/osmf/ -- "wix eula accept"     #
+      #    e pranon nje here per-user/per-computer per kete runner.         #
       # ------------------------------------------------------------------ #
-      - name: Install WiX v4 + UI extension
+      - name: Install WiX v7 + UI extension
         shell: pwsh
         run: |
           dotnet tool install --global wix --version 7.0.0
+          wix eula accept wix7
           wix extension add --global WixToolset.UI.wixext/7.0.0
 
       # ------------------------------------------------------------------ #
