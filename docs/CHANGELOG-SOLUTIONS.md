@@ -3,6 +3,66 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] Devices Stuck Without a device_id Stayed Stuck Forever, Even After a Fresh, Valid Enrollment Token Was Written
+
+### Root cause
+
+Testing the restored Remote Support service (see entry below) on NODE02
+surfaced a second, independent bug: after a clean MSI upgrade with the
+correct, healthy "Metropol" enrollment token passed via
+`ENROLLMENT_TOKEN=`, the device still failed every heartbeat with
+"enrollment_token is required" and never got a `device_id`. The
+deploy log showed `service_before=not-installed` before this run,
+meaning NODE02's prior install was already in a broken state with no
+TechiAgent service registered at all -- so it had likely never
+completed a single successful enrollment.
+
+There are two `agent.config.json` locations: the MSI's
+`WriteAgentConfig` custom action always writes to the "legacy" path
+(`C:\ProgramData\TECHI\agent.config.json`), but the agent binary itself
+only ever reads `C:\ProgramData\TechiAgent\agent.config.json` (the
+"canonical" path, `agent/paths.go`). A one-time bridge
+(`migrateConfigIfNeeded`) is supposed to copy legacy into canonical,
+but it only ran the copy if the canonical file was completely absent.
+For a device whose canonical file already existed in a broken,
+never-enrolled state (no `device_id`, no token -- from any earlier
+crashed or interrupted install), the bridge saw "file exists" and did
+nothing, forever -- even though every later MSI run kept writing a
+perfectly valid, fresh token into the legacy file right next to it.
+This is the same failure NODE04 hit earlier in this engagement, fixed
+there with a one-time manual edit; NODE02 showed it is not a one-off
+but a fleet-wide class of bug for any device that ends up in this
+specific broken state.
+
+### Fix
+
+`agent/paths.go`: added `refreshEnrollmentTokenIfNeeded`, called from
+`migrateConfigIfNeeded` whenever the canonical config already exists.
+It only acts when the canonical file has no `device_id` and no
+`enrollment_token` of its own, and the legacy file has a usable token
+-- in which case it patches just the `enrollment_token` field into the
+canonical file, leaving everything else (including a device that is
+already enrolled, or already holds its own token) completely
+untouched. This lets a stuck, never-enrolled device self-heal on its
+next service start/heartbeat cycle, without needing the kind of
+manual one-time fix NODE04 needed.
+
+### Checks
+
+- Added `agent/paths_test.go` covering: legacy-to-canonical copy when
+  canonical is absent (pre-existing behavior), an enrolled device
+  (`device_id` set) is never touched, a stuck unenrolled device gets
+  its token refreshed from legacy, a stuck device that already has its
+  own token is left alone, and a no-op when the legacy file is also
+  missing.
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -- all clean.
+- Manual one-time recovery script provided for NODE02 in the meantime
+  (writes the live "Metropol" token directly into the canonical file
+  and restarts the service), mirroring the earlier NODE04 fix --
+  this code change prevents needing that manual step on future
+  devices that hit the same stuck state.
+
 ## [2026-06-28] Restored the Windows Service for TECHI Remote Support: --tray Alone Has No Daemon to Accept Connections
 
 ### Root cause

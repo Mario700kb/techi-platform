@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"log"
 	"os"
@@ -37,7 +38,7 @@ func migrateLegacyConfigIfNeeded(configPath string) error {
 
 func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath string) error {
 	if _, err := os.Stat(configPath); err == nil {
-		return nil
+		return refreshEnrollmentTokenIfNeeded(configPath, legacyConfigPath)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -79,6 +80,64 @@ func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath s
 		return closeErr
 	}
 	log.Printf("migrated legacy agent config from %s to %s", legacyConfigPath, configPath)
+	return nil
+}
+
+// refreshEnrollmentTokenIfNeeded covers a device whose canonical config
+// already exists but was never successfully enrolled (no device_id) and
+// has no token of its own -- e.g. a prior install that left a half-written
+// file before the agent's first heartbeat. Without this, a device stuck in
+// that state stays stuck forever: the plain copy above only runs once, the
+// very first time the canonical file is created, so a later MSI run that
+// writes a fresh, valid token into the legacy file never reaches the
+// canonical file the agent actually loads. Never touches a file that
+// already has a device_id -- enrollment, once established, is untouched.
+func refreshEnrollmentTokenIfNeeded(configPath string, legacyConfigPath string) error {
+	canonicalBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	var canonical struct {
+		DeviceID        int    `json:"device_id,omitempty"`
+		EnrollmentToken string `json:"enrollment_token,omitempty"`
+	}
+	if err := json.Unmarshal(canonicalBytes, &canonical); err != nil {
+		return err
+	}
+	if canonical.DeviceID != 0 || canonical.EnrollmentToken != "" {
+		return nil
+	}
+
+	legacyBytes, err := os.ReadFile(legacyConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var legacy struct {
+		EnrollmentToken string `json:"enrollment_token,omitempty"`
+	}
+	if err := json.Unmarshal(legacyBytes, &legacy); err != nil {
+		return err
+	}
+	if legacy.EnrollmentToken == "" {
+		return nil
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(canonicalBytes, &raw); err != nil {
+		return err
+	}
+	raw["enrollment_token"] = legacy.EnrollmentToken
+	updated, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(configPath, updated, 0600); err != nil {
+		return err
+	}
+	log.Printf("refreshed enrollment_token in %s from %s (device not yet enrolled)", configPath, legacyConfigPath)
 	return nil
 }
 
