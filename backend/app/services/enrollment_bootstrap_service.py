@@ -15,6 +15,92 @@ from app.schemas.enrollment_bootstrap import (
 from app.services.agent_package_service import AgentPackageService
 from app.services.enrollment_token_service import EnrollmentTokenService
 
+# Base64 (UTF-16LE) -EncodedCommand for techi-deploy.cmd's :read_registry label.
+# Source (decode with base64 + utf-16-le to verify):
+#
+#   $active = $env:ACTIVE_VERSION
+#   function ToVer($v) {
+#       $p = @($v -split '\.')
+#       while ($p.Count -lt 4) { $p += '0' }
+#       [version]($p[0..3] -join '.')
+#   }
+#   $roots = @(
+#       'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+#       'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+#   )
+#   $item = $null
+#   foreach ($r in $roots) {
+#       Get-ChildItem $r -ErrorAction SilentlyContinue | ForEach-Object {
+#           $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+#           if ($p.DisplayName -eq 'TECHI Agent' -and -not $item) { $script:item = $p }
+#       }
+#   }
+#   $out = Join-Path $env:TEMP 'techi-read-registry.out'
+#   if (-not $item) {
+#       @('REG_VERSION=', 'REG_PRODUCT_CODE=', 'VERSION_STATE=missing') | Set-Content -Path $out -Encoding ASCII
+#       exit
+#   }
+#   $code = ''
+#   if ($item.UninstallString -match '\{[0-9A-Fa-f-]{36}\}') { $code = $Matches[0] }
+#   $cmp = (ToVer $item.DisplayVersion).CompareTo((ToVer $active))
+#   $state = 'newer'
+#   if ($cmp -lt 0) { $state = 'older' } elseif ($cmp -eq 0) { $state = 'equal' }
+#   @(
+#       "REG_VERSION=$($item.DisplayVersion)",
+#       "REG_PRODUCT_CODE=$code",
+#       "VERSION_STATE=$state"
+#   ) | Set-Content -Path $out -Encoding ASCII
+#
+# Replaces a single-line -Command with 3 layers of nested quoting (batch
+# for/f + PowerShell + regex) that broke in production: it threw "The syntax
+# of the command is incorrect." and silently fell back to VERSION_STATE=missing
+# even when the product WAS correctly installed, forcing an unnecessary
+# msiexec /i on every scheduled run, on every domain machine (confirmed
+# incident: metropolgroup.local/NODE04, 2026-06-28).
+_READ_REGISTRY_ENCODED_COMMAND = (
+    "JABhAGMAdABpAHYAZQAgAD0AIAAkAGUAbgB2ADoAQQBDAFQASQBWAEUAXwBWAEUAUgBTAEkATwBO"
+    "AAoAZgB1AG4AYwB0AGkAbwBuACAAVABvAFYAZQByACgAJAB2ACkAIAB7AAoAIAAgACAAIAAkAHAA"
+    "IAA9ACAAQAAoACQAdgAgAC0AcwBwAGwAaQB0ACAAJwBcAC4AJwApAAoAIAAgACAAIAB3AGgAaQBs"
+    "AGUAIAAoACQAcAAuAEMAbwB1AG4AdAAgAC0AbAB0ACAANAApACAAewAgACQAcAAgACsAPQAgACcA"
+    "MAAnACAAfQAKACAAIAAgACAAWwB2AGUAcgBzAGkAbwBuAF0AKAAkAHAAWwAwAC4ALgAzAF0AIAAt"
+    "AGoAbwBpAG4AIAAnAC4AJwApAAoAfQAKACQAcgBvAG8AdABzACAAPQAgAEAAKAAKACAAIAAgACAA"
+    "JwBIAEsATABNADoAXABTAG8AZgB0AHcAYQByAGUAXABNAGkAYwByAG8AcwBvAGYAdABcAFcAaQBu"
+    "AGQAbwB3AHMAXABDAHUAcgByAGUAbgB0AFYAZQByAHMAaQBvAG4AXABVAG4AaQBuAHMAdABhAGwA"
+    "bAAnACwACgAgACAAIAAgACcASABLAEwATQA6AFwAUwBvAGYAdAB3AGEAcgBlAFwAVwBPAFcANgA0"
+    "ADMAMgBOAG8AZABlAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBzAFwAQwB1AHIA"
+    "cgBlAG4AdABWAGUAcgBzAGkAbwBuAFwAVQBuAGkAbgBzAHQAYQBsAGwAJwAKACkACgAkAGkAdABl"
+    "AG0AIAA9ACAAJABuAHUAbABsAAoAZgBvAHIAZQBhAGMAaAAgACgAJAByACAAaQBuACAAJAByAG8A"
+    "bwB0AHMAKQAgAHsACgAgACAAIAAgAEcAZQB0AC0AQwBoAGkAbABkAEkAdABlAG0AIAAkAHIAIAAt"
+    "AEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUA"
+    "IAB8ACAARgBvAHIARQBhAGMAaAAtAE8AYgBqAGUAYwB0ACAAewAKACAAIAAgACAAIAAgACAAIAAk"
+    "AHAAIAA9ACAARwBlAHQALQBJAHQAZQBtAFAAcgBvAHAAZQByAHQAeQAgACQAXwAuAFAAUwBQAGEA"
+    "dABoACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABp"
+    "AG4AdQBlAAoAIAAgACAAIAAgACAAIAAgAGkAZgAgACgAJABwAC4ARABpAHMAcABsAGEAeQBOAGEA"
+    "bQBlACAALQBlAHEAIAAnAFQARQBDAEgASQAgAEEAZwBlAG4AdAAnACAALQBhAG4AZAAgAC0AbgBv"
+    "AHQAIAAkAGkAdABlAG0AKQAgAHsAIAAkAHMAYwByAGkAcAB0ADoAaQB0AGUAbQAgAD0AIAAkAHAA"
+    "IAB9AAoAIAAgACAAIAB9AAoAfQAKACQAbwB1AHQAIAA9ACAASgBvAGkAbgAtAFAAYQB0AGgAIAAk"
+    "AGUAbgB2ADoAVABFAE0AUAAgACcAdABlAGMAaABpAC0AcgBlAGEAZAAtAHIAZQBnAGkAcwB0AHIA"
+    "eQAuAG8AdQB0ACcACgBpAGYAIAAoAC0AbgBvAHQAIAAkAGkAdABlAG0AKQAgAHsACgAgACAAIAAg"
+    "AEAAKAAnAFIARQBHAF8AVgBFAFIAUwBJAE8ATgA9ACcALAAgACcAUgBFAEcAXwBQAFIATwBEAFUA"
+    "QwBUAF8AQwBPAEQARQA9ACcALAAgACcAVgBFAFIAUwBJAE8ATgBfAFMAVABBAFQARQA9AG0AaQBz"
+    "AHMAaQBuAGcAJwApACAAfAAgAFMAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0AUABhAHQAaAAgACQA"
+    "bwB1AHQAIAAtAEUAbgBjAG8AZABpAG4AZwAgAEEAUwBDAEkASQAKACAAIAAgACAAZQB4AGkAdAAK"
+    "AH0ACgAkAGMAbwBkAGUAIAA9ACAAJwAnAAoAaQBmACAAKAAkAGkAdABlAG0ALgBVAG4AaQBuAHMA"
+    "dABhAGwAbABTAHQAcgBpAG4AZwAgAC0AbQBhAHQAYwBoACAAJwBcAHsAWwAwAC0AOQBBAC0ARgBh"
+    "AC0AZgAtAF0AewAzADYAfQBcAH0AJwApACAAewAgACQAYwBvAGQAZQAgAD0AIAAkAE0AYQB0AGMA"
+    "aABlAHMAWwAwAF0AIAB9AAoAJABjAG0AcAAgAD0AIAAoAFQAbwBWAGUAcgAgACQAaQB0AGUAbQAu"
+    "AEQAaQBzAHAAbABhAHkAVgBlAHIAcwBpAG8AbgApAC4AQwBvAG0AcABhAHIAZQBUAG8AKAAoAFQA"
+    "bwBWAGUAcgAgACQAYQBjAHQAaQB2AGUAKQApAAoAJABzAHQAYQB0AGUAIAA9ACAAJwBuAGUAdwBl"
+    "AHIAJwAKAGkAZgAgACgAJABjAG0AcAAgAC0AbAB0ACAAMAApACAAewAgACQAcwB0AGEAdABlACAA"
+    "PQAgACcAbwBsAGQAZQByACcAIAB9ACAAZQBsAHMAZQBpAGYAIAAoACQAYwBtAHAAIAAtAGUAcQAg"
+    "ADAAKQAgAHsAIAAkAHMAdABhAHQAZQAgAD0AIAAnAGUAcQB1AGEAbAAnACAAfQAKAEAAKAAKACAA"
+    "IAAgACAAIgBSAEUARwBfAFYARQBSAFMASQBPAE4APQAkACgAJABpAHQAZQBtAC4ARABpAHMAcABs"
+    "AGEAeQBWAGUAcgBzAGkAbwBuACkAIgAsAAoAIAAgACAAIAAiAFIARQBHAF8AUABSAE8ARABVAEMA"
+    "VABfAEMATwBEAEUAPQAkAGMAbwBkAGUAIgAsAAoAIAAgACAAIAAiAFYARQBSAFMASQBPAE4AXwBT"
+    "AFQAQQBUAEUAPQAkAHMAdABhAHQAZQAiAAoAKQAgAHwAIABTAGUAdAAtAEMAbwBuAHQAZQBuAHQA"
+    "IAAtAFAAYQB0AGgAIAAkAG8AdQB0ACAALQBFAG4AYwBvAGQAaQBuAGcAIABBAFMAQwBJAEkACgA="
+)
+
 
 class EnrollmentBootstrapService:
     NOTICE = (
@@ -1067,11 +1153,25 @@ class EnrollmentBootstrapService:
             "echo [%DATE% %TIME%] result=0 version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% msi_exit_code=%MSI_EXIT% >> \"%LOG%\"",
             "goto :done",
             "",
+            ":: read_registry perdor -EncodedCommand (base64 UTF-16LE) ne vend te nje",
+            ":: one-liner -Command me kuota te ndertheura ne 3 nivele (batch for/f +",
+            ":: PowerShell + regex) -- ai one-liner doli te thyer ne prodhim: jepte",
+            "::  \"The syntax of the command is incorrect.\" dhe kthente HERE TE PARE",
+            ":: VERSION_STATE=missing edhe kur produkti ishte instaluar saktesisht,",
+            ":: duke shkaktuar nje msiexec /i te panevojshem (dhe te rrezikshem per",
+            ":: device_id) ne CDO xhirim te planifikuar, per CDO makine te domain-it",
+            ":: (incident real i konfirmuar ne metropolgroup.local/NODE04).",
             ":read_registry",
             "set REG_VERSION=",
             "set REG_PRODUCT_CODE=",
             "set VERSION_STATE=missing",
-            "for /f \"tokens=1,* delims==\" %%a in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$active=$env:ACTIVE_VERSION; function NV($v){$p=@(($v -split ''\\.'')); while($p.Count -lt 4){$p+=0}; [version](($p[0..3]) -join ''.'')}; $roots=@(''HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall'',''HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall''); $item=$null; foreach($r in $roots){Get-ChildItem $r -ErrorAction SilentlyContinue ^| ForEach-Object {$p=Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue; if($p.DisplayName -eq ''TECHI Agent'' -and -not $script:item){$script:item=$p}}}; if(-not $item){''REG_VERSION=''; ''REG_PRODUCT_CODE=''; ''VERSION_STATE=missing''; exit}; $code=''''; if($item.UninstallString -match ''\\{[0-9A-Fa-f-]{36}\\}''){$code=$Matches[0]}; $cmp=(NV $item.DisplayVersion).CompareTo((NV $active)); $state=''newer''; if($cmp -lt 0){$state=''older''} elseif($cmp -eq 0){$state=''equal''}; ''REG_VERSION=''+$item.DisplayVersion; ''REG_PRODUCT_CODE=''+$code; ''VERSION_STATE=''+$state\"') do set \"%%a=%%b\"",
+            "set REG_OUT=%TEMP%\\techi-read-registry.out",
+            "del \"%REG_OUT%\" 2>nul",
+            f"powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand {_READ_REGISTRY_ENCODED_COMMAND} >nul 2>&1",
+            "if exist \"%REG_OUT%\" (",
+            "    for /f \"tokens=1,* delims==\" %%a in (%REG_OUT%) do set \"%%a=%%b\"",
+            "    del \"%REG_OUT%\" 2>nul",
+            ")",
             "exit /b 0",
             "",
             ":ensure_service_running",

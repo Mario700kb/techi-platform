@@ -10,6 +10,7 @@ These tests catch the class of bugs where Python string templating
 No Windows runtime required — we check structural invariants that
 must hold for PowerShell 5.1 to parse the scripts correctly.
 """
+import base64
 import json
 import re
 from types import SimpleNamespace
@@ -24,7 +25,10 @@ from app.schemas.enrollment_bootstrap import (
     EnrollmentBootstrapPlatform,
     EnrollmentBootstrapRequest,
 )
-from app.services.enrollment_bootstrap_service import EnrollmentBootstrapService
+from app.services.enrollment_bootstrap_service import (
+    _READ_REGISTRY_ENCODED_COMMAND,
+    EnrollmentBootstrapService,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -735,14 +739,21 @@ class TestGPOScheduledDeployScript:
         assert do_install < already
 
     def test_deploy_cmd_reads_msi_registry_from_hklm_and_wow6432node(self):
-        """Deploy lexon registry MSI per TECHI Agent, jo exe/service si burim versioni."""
-        assert "function NV($v)" in self.script
-        assert "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in self.script
-        assert "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in self.script
-        assert "$p.DisplayName -eq ''TECHI Agent''" in self.script
+        """Deploy lexon registry MSI per TECHI Agent, jo exe/service si burim versioni.
+
+        :read_registry perdor -EncodedCommand (jo nje -Command me kuota te
+        ndertheura ne 3 nivele, qe doli e thyer ne prodhim) -- logjika PowerShell
+        verifikohet duke dekoduar konstanten, ku jeton tani burimi i se vertetes."""
+        assert "-EncodedCommand" in self.script
         assert "REG_VERSION=" in self.script
         assert "REG_PRODUCT_CODE=" in self.script
         assert "VERSION_STATE=" in self.script
+
+        decoded = base64.b64decode(_READ_REGISTRY_ENCODED_COMMAND).decode("utf-16-le")
+        assert "function ToVer($v)" in decoded
+        assert "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in decoded
+        assert "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in decoded
+        assert "$p.DisplayName -eq 'TECHI Agent'" in decoded
         assert "installed_registry_version=%REG_VERSION%" in self.script
         assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
 
@@ -774,9 +785,11 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_captures_product_code_for_logging(self):
         """ProductCode i instaluar merret nga UninstallString per qellim logimi/diagnoze."""
-        assert "$item.UninstallString -match ''\\{[0-9A-Fa-f-]{36}\\}''" in self.script
-        assert "$code=$Matches[0]" in self.script
         assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
+
+        decoded = base64.b64decode(_READ_REGISTRY_ENCODED_COMMAND).decode("utf-16-le")
+        assert "$item.UninstallString -match '\\{[0-9A-Fa-f-]{36}\\}'" in decoded
+        assert "$code = $Matches[0]" in decoded
 
     def test_deploy_cmd_has_deploy_log(self):
         """CMD shkruan deploy.log me timestamp, result dhe version."""

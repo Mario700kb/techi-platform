@@ -3,6 +3,66 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] techi-deploy.cmd's :read_registry Was Silently Broken on Every Run, Forcing Unnecessary Reinstalls Fleet-Wide
+
+### Root cause
+
+The real explanation for "650 devices offline" on metropolgroup.local,
+found by reproducing on NODE04 with a clean, non-wrapped invocation
+(`& $DeployScript` directly from PowerShell, no `cmd.exe /c` involved
+at all): `techi-deploy.cmd`'s `:read_registry` label printed "The
+syntax of the command is incorrect." -- twice, matching its two call
+sites -- on every single run, regardless of how the script was
+invoked. Its one-liner nested three layers of quoting (batch
+`for /f ... in ('...')` + a PowerShell `-Command` string + a regex
+inside that), and that combination was malformed. Because the `for /f`
+command itself failed to even parse, it produced no output to
+capture, so `REG_VERSION`/`REG_PRODUCT_CODE`/`VERSION_STATE` always
+kept their pre-set defaults (`missing`) -- even on machines where
+TECHI Agent was correctly installed. `techi-deploy.cmd` then always
+took the `:do_install` branch and ran `msiexec /i ... ENROLLMENT_TOKEN=...`
+on every scheduled run (09:00/13:00/21:00), on every domain machine,
+regardless of whether anything actually needed installing.
+
+This single bug explains both incidents from today: the original mass
+offline report (forced reinstalls fleet-wide since whenever this
+`:read_registry` version was deployed) and the NODE04/DC device_id
+loss after manually triggering `techi-deploy.cmd` for diagnosis --
+both are the same forced-reinstall path firing when it never should
+have. (An earlier theory blaming an expired "Internal gpo bootstrap"
+token was wrong and retracted: the actual embedded token, "Metropol",
+is healthy -- active, no expiry, 187/400 uses.)
+
+### Fix
+
+Replaced the single-line `-Command` with a `-EncodedCommand` (base64
+UTF-16LE) invocation -- the same pattern already used safely elsewhere
+in `installer.wxs` -- eliminating all nested-quoting risk entirely
+(the encoded blob is pure base64, no characters that batch or
+PowerShell could misinterpret). The script now writes its output to a
+temp file (`%TEMP%\techi-read-registry.out`) instead of being captured
+via `for /f in ('command')`, and batch reads that file directly.
+`enrollment_bootstrap_service.py` keeps the literal PowerShell source
+in a comment above the encoded constant (`_READ_REGISTRY_ENCODED_COMMAND`)
+so it stays human-reviewable and regeneratable.
+
+### Checks
+
+- Generated the actual `techi-deploy.cmd` content locally via
+  `EnrollmentBootstrapService._gpo_scheduled_task_setup` and confirmed
+  the embedded command line decodes (base64 + UTF-16LE) back to the
+  intended PowerShell source byte-for-byte; full line length 3198
+  chars, well under cmd.exe's 8191 limit.
+- `pytest tests/test_enrollment_bootstrap_script.py -q` -- 105 passed
+  (two tests that asserted on the old inline PowerShell text now
+  decode `_READ_REGISTRY_ENCODED_COMMAND` and assert against that).
+  `pytest tests/ -k "bootstrap or enrollment"` -- 119 passed.
+- Not yet re-verified on a real domain machine (this fix isn't on
+  NETLOGON yet -- `techi-deploy.cmd` only gets rewritten when the GPO
+  admin re-fetches `/api/v1/bootstrap/gpo-deploy.ps1?token=...`;
+  pending explicit go-ahead before pushing that to metropolgroup.local
+  again given today's history).
+
 ## [2026-06-28] GPO/NETLOGON Domain Deployment Was Silently Serving a Stale MSI (metropolgroup.local)
 
 ### Root cause
