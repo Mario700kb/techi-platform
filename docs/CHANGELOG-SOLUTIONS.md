@@ -3,6 +3,35 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] GPO Token Repair Must Write Canonical Config Without UTF-8 BOM
+
+### Root cause
+
+On RHGDC1, the scheduled task upgraded the agent to 2.1.0, repaired
+`agent.config.json` with the GPO enrollment token, and started the
+service. A manual `techi-agent.exe -once` still failed immediately with:
+
+`config migration failed: invalid character 'ï' looking for beginning of value`
+
+The repair step wrote JSON using Windows PowerShell `Set-Content
+-Encoding UTF8`, which on Windows PowerShell 5 emits a UTF-8 BOM. The
+agent's Go JSON parser then rejected the canonical config before it
+could enroll or send heartbeat.
+
+### Fix
+
+`techi-deploy.cmd` now writes repaired canonical config with
+`System.IO.File.WriteAllText(..., [System.Text.UTF8Encoding]::new($false))`
+so the file is UTF-8 without BOM. The repair also rewrites any
+unenrolled config that already has a token, which lets existing BOM
+configs self-heal on the next scheduled task run without reinstalling.
+
+### Checks
+
+- Updated bootstrap script tests to reject the old PowerShell
+  `Set-Content -Encoding UTF8` writer and require the no-BOM
+  `UTF8Encoding` writer.
+
 ## [2026-06-28] GPO Equal-Version Devices Could Stay Unenrolled Without a Token
 
 ### Root cause

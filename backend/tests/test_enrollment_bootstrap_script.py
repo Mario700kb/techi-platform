@@ -837,7 +837,10 @@ class TestGPOScheduledDeployScript:
         assert "set TECHI_DEPLOY_LEGACY_CONFIG=%LEGACY_CONFIG%" in self.script
         assert "$hasId=" in self.script
         assert "$hasTok=" in self.script
+        assert "$changed=$false" in self.script
         assert "Add-Member -NotePropertyName enrollment_token" in self.script
+        assert "[System.Text.UTF8Encoding]::new($false)" in self.script
+        assert "$j|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $cfg -Encoding UTF8" not in self.script
         assert "enrollment_token_repaired config=%CONFIG% source=gpo-token" in self.script
         assert "net stop TechiAgent /y >nul 2>&1" in self.script
         assert "net start TechiAgent >nul 2>&1" in self.script
