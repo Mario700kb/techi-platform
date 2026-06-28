@@ -844,6 +844,7 @@ class TestGPOScheduledDeployScript:
         assert "enrollment_token_repaired config=%CONFIG% source=gpo-token" in self.script
         assert "net stop TechiAgent /y >nul 2>&1" in self.script
         assert "net start TechiAgent >nul 2>&1" in self.script
+        assert "timeout /t 10 /nobreak >nul" in self.script
 
     def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
         """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""

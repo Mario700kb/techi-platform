@@ -25,12 +25,17 @@ could enroll or send heartbeat.
 so the file is UTF-8 without BOM. The repair also rewrites any
 unenrolled config that already has a token, which lets existing BOM
 configs self-heal on the next scheduled task run without reinstalling.
+After a repair-triggered service restart, the script now waits briefly
+before validation so `deploy.log` does not record a false `result=failed`
+while the service is still transitioning.
 
 ### Checks
 
 - Updated bootstrap script tests to reject the old PowerShell
   `Set-Content -Encoding UTF8` writer and require the no-BOM
   `UTF8Encoding` writer.
+- Added a check that repair-triggered restarts wait before final
+  validation.
 
 ## [2026-06-28] GPO Equal-Version Devices Could Stay Unenrolled Without a Token
 

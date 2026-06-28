@@ -1215,6 +1215,7 @@ class EnrollmentBootstrapService:
             "    echo [%DATE% %TIME%] enrollment_token_repaired config=%CONFIG% source=gpo-token >> \"%LOG%\"",
             "    net stop TechiAgent /y >nul 2>&1",
             "    net start TechiAgent >nul 2>&1",
+            "    timeout /t 10 /nobreak >nul",
             ")",
             "if not \"%REPAIR_EXIT%\"==\"0\" if not \"%REPAIR_EXIT%\"==\"2\" echo [%DATE% %TIME%] WARNING enrollment_token_repair_failed exit=%REPAIR_EXIT% >> \"%LOG%\"",
             "exit /b 0",
