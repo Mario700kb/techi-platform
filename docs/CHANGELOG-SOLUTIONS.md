@@ -44,11 +44,14 @@ file directly (without touching GPO objects or `techi-deploy.cmd`).
   backend's published hash exactly. The next scheduled GPO run
   (09:00/13:00/21:00) will install the current build on affected
   machines.
-- Flagged but not yet implemented: `_gpo_scheduled_task_setup`'s Hapi
-  4b should compare file hash/content instead of (or in addition to)
-  the version string, so this exact trap can't recur the next time a
-  fix ships without a version bump. Deferred pending user confirmation
-  since it changes a live production deployment script.
+- Follow-up implemented same day (user approved): `_gpo_scheduled_task_setup`'s
+  Hapi 4b now always downloads the current backend MSI to a temp path,
+  hashes it, and only overwrites the NETLOGON copy when the hash
+  differs from what's already there -- the version string is still
+  used for the filename/cleanup, but no longer gates whether a refresh
+  happens. This trap cannot recur regardless of whether ProductVersion
+  changes. `pytest tests/test_enrollment_bootstrap_script.py -q` --
+  105 passed (two tests updated for the new hash-compare flow).
 
 ## [2026-06-28] Password Write Found Nothing to Patch: the Identity File Gets Deleted, Then Never Waited For
 

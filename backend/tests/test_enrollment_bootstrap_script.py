@@ -860,7 +860,7 @@ class TestGPOScheduledDeployScript:
         """PS1 Hapi 4b shkarkon MSI tek NETLOGON."""
         assert "Hapi 4b: Shkarkimi i MSI ne NETLOGON" in self.script
         assert "$MsiNetlogonPath = Join-Path $NetlogonPath" in self.script
-        assert "(New-Object Net.WebClient).DownloadFile($MsiDownloadUrl, $MsiNetlogonPath)" in self.script
+        assert "(New-Object Net.WebClient).DownloadFile($MsiDownloadUrl, $TmpMsi)" in self.script
 
     def test_ps1_step4b_has_retry_loop(self):
         """PS1 Hapi 4b ka retry loop me 3 tentativa."""
@@ -880,9 +880,15 @@ class TestGPOScheduledDeployScript:
         assert "$VersionFilePath = Join-Path $NetlogonPath" in self.script
         assert "Out-File $VersionFilePath -Encoding ASCII -NoNewline" in self.script
 
-    def test_ps1_step4b_skips_download_if_msi_exists(self):
-        """PS1 Hapi 4b kalon download nëse MSI i njëjtë ekziston."""
-        assert "tashme ekziston ne NETLOGON -- skip download" in self.script
+    def test_ps1_step4b_compares_hash_not_just_version_string(self):
+        """PS1 Hapi 4b krahason SHA256, jo vetem version string -- nje fix qe ne te
+        kundert do te linte NETLOGON me build te vjeter sa here qe nxjerrim nje
+        ndryshim pa rritur ProductVersion (incident real: metropolgroup.local)."""
+        assert "$ExistingHash = (Get-FileHash $MsiNetlogonPath -Algorithm SHA256).Hash.ToLower()" in self.script
+        assert "$DownloadedHash = (Get-FileHash $TmpMsi -Algorithm SHA256).Hash.ToLower()" in self.script
+        assert "if ($DownloadedHash -ne $ExistingHash) {" in self.script
+        assert "ne NETLOGON eshte tashme i azhornuar (hash identik) -- skip copy" in self.script
+        assert "rifreskuar ne NETLOGON (hash i ndryshuar)" in self.script
 
     def test_ps1_step4b_cleans_old_msi_versions(self):
         """PS1 Hapi 4b fshin versione të vjetra MSI para download."""
@@ -890,9 +896,10 @@ class TestGPOScheduledDeployScript:
         assert "Remove-Item -Force -ErrorAction SilentlyContinue" in self.script
 
     def test_ps1_step4b_displays_sha256(self):
-        """PS1 Hapi 4b shfaq SHA256 hash të MSI-t pas download."""
+        """PS1 Hapi 4b shfaq SHA256 hash të MSI-t të shkarkuar dhe verifikon kopjen."""
         assert "Get-FileHash $MsiNetlogonPath -Algorithm SHA256" in self.script
-        assert 'Write-Host "   MSI SHA256: $LocalHash"' in self.script
+        assert 'Write-Host "   MSI shkarkuar, SHA256: $DownloadedHash"' in self.script
+        assert "$CopiedHash = (Get-FileHash $MsiNetlogonPath -Algorithm SHA256).Hash.ToLower()" in self.script
 
     # ── PS1-level: Test-Path verifikime post-write ────────────────────────────
 
@@ -907,8 +914,9 @@ class TestGPOScheduledDeployScript:
         assert "GABIM KRITIK" in section
 
     def test_ps1_has_test_path_after_msi_download(self):
-        """PS1 verifikon me Test-Path se MSI u shkarkua."""
-        assert "GABIM KRITIK: MSI nuk u gjend pas download" in self.script
+        """PS1 verifikon se MSI u shkarkua dhe se kopja ne NETLOGON ka te njejtin hash."""
+        assert "-not $downloaded -or -not (Test-Path $TmpMsi)" in self.script
+        assert "GABIM KRITIK: hash i NETLOGON" in self.script
 
     def test_ps1_has_test_path_after_version_file_write(self):
         """PS1 verifikon me Test-Path se techi-version.txt u shkrua."""
