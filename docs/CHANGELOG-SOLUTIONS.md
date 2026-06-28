@@ -3,6 +3,53 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] GPO/NETLOGON Domain Deployment Was Silently Serving a Stale MSI (metropolgroup.local)
+
+### Root cause
+
+Urgent report: devices on the "metropolgroup.local" domain hadn't come
+online via the scheduled GPO deployment, and a server that did enroll
+via GPO had the wrong Remote Support password. Both traced to the same
+cause: `_gpo_scheduled_task_setup`'s "Hapi 4b" only re-downloads the MSI
+into `\\<domain>\NETLOGON\TECHI-Agent-<version>.msi` when the version
+*string* differs from `techi-version.txt`, or the file is missing.
+Since `ProductVersion` intentionally stayed at 2.1.0 through every fix
+from the last two days (per standing instruction not to bump it), the
+NETLOGON copy was never refreshed even though the GPO admin re-ran the
+setup script today (confirmed: GPO objects and `techi-deploy.cmd` were
+freshly rewritten at 00:41 today, but `Get-FileHash` on the NETLOGON
+MSI showed `cd7a6d3d...`, last written 2026-06-26 17:49 -- two days
+before today's password/Scheduled-Task fixes -- while the backend's
+currently published MSI hashes to `a58e6702...`). Every domain machine
+running off NETLOGON was therefore stuck on a build from before all of
+today's fixes, regardless of how many times the platform itself was
+redeployed.
+
+### Fix
+
+No code change -- this was an operational/process gap, not a bug in
+this session's commits. Diagnosed via a read-only PowerShell script
+(domain info, `techi-version.txt` + NETLOGON MSI hash/timestamp,
+hash of the currently published backend MSI for comparison, GPO object
+status) run directly on the domain's DC, then resolved by downloading
+the current backend MSI and overwriting the NETLOGON copy + version
+file directly (without touching GPO objects or `techi-deploy.cmd`).
+
+### Checks
+
+- Diagnostic script confirmed the hash mismatch (`cd7a6d3d...` vs.
+  `a58e6702...`) conclusively before taking any action.
+- After the refresh: `Get-FileHash` on
+  `\\metropolgroup.local\NETLOGON\TECHI-Agent-2.1.0.msi` matches the
+  backend's published hash exactly. The next scheduled GPO run
+  (09:00/13:00/21:00) will install the current build on affected
+  machines.
+- Flagged but not yet implemented: `_gpo_scheduled_task_setup`'s Hapi
+  4b should compare file hash/content instead of (or in addition to)
+  the version string, so this exact trap can't recur the next time a
+  fix ships without a version bump. Deferred pending user confirmation
+  since it changes a live production deployment script.
+
 ## [2026-06-28] Password Write Found Nothing to Patch: the Identity File Gets Deleted, Then Never Waited For
 
 ### Root cause
