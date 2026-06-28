@@ -3,6 +3,43 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] GPO Equal-Version Devices Could Stay Unenrolled Without a Token
+
+### Root cause
+
+After the GPO Scheduled Task fixes, a Metropol test machine showed the
+new task running and `techi-deploy.cmd` logging `result=uptodate`
+because registry version was already 2.1.0 and `TechiAgent` was
+running. The device still never appeared online because the agent log
+repeated:
+
+`enrollment_token is required when trusted domain auto-enrollment is
+disabled or domain is not trusted`
+
+This is a distinct equal-version stuck state: since the package was
+already 2.1.0, GPO did not run `msiexec /i` again, so the MSI did not
+rewrite the legacy config with `ENROLLMENT_TOKEN=...`. The running
+agent had a canonical config with no `device_id`/`agent_id` and no
+`enrollment_token`; it kept retrying enrollment without credentials.
+
+### Fix
+
+`techi-deploy.cmd` generation now calls `:repair_unenrolled_config`
+before taking the `VERSION_STATE=equal` / `:already_uptodate` branch.
+The repair is narrowly scoped: if canonical config exists (or can be
+copied from legacy), has no `device_id`, no `agent_id`, and no
+`enrollment_token`, it injects the current GPO token into canonical
+config and restarts `TechiAgent` so the already-running process reloads
+the token immediately. Already-enrolled devices or devices that already
+hold a token are left untouched.
+
+### Checks
+
+- Updated `backend/tests/test_enrollment_bootstrap_script.py` to assert
+  the repair runs before `:already_uptodate`, patches only missing
+  `enrollment_token`, logs `enrollment_token_repaired`, and restarts
+  `TechiAgent` when it acts.
+
 ## [2026-06-28] GPO UI Script Now Removes the Legacy `TECHI Agent Startup` GPO
 
 ### Root cause

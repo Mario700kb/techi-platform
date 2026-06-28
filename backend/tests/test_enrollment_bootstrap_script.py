@@ -826,6 +826,22 @@ class TestGPOScheduledDeployScript:
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in section
         assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER%' in section
 
+    def test_deploy_cmd_repairs_unenrolled_equal_version_config_before_uptodate(self):
+        """Version equal por config pa identity/token merr token-in e GPO dhe rinis service."""
+        repair_call = self.script.index("call :repair_unenrolled_config")
+        equal_gate = self.script.index('if /i "%VERSION_STATE%"=="equal" goto :already_uptodate')
+        assert repair_call < equal_gate
+        assert ":repair_unenrolled_config" in self.script
+        assert "set TECHI_DEPLOY_TOKEN=%TOKEN%" in self.script
+        assert "set TECHI_DEPLOY_CONFIG=%CONFIG%" in self.script
+        assert "set TECHI_DEPLOY_LEGACY_CONFIG=%LEGACY_CONFIG%" in self.script
+        assert "$hasId=" in self.script
+        assert "$hasTok=" in self.script
+        assert "Add-Member -NotePropertyName enrollment_token" in self.script
+        assert "enrollment_token_repaired config=%CONFIG% source=gpo-token" in self.script
+        assert "net stop TechiAgent /y >nul 2>&1" in self.script
+        assert "net start TechiAgent >nul 2>&1" in self.script
+
     def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
         """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""
         assert ":ensure_service_running" in self.script
