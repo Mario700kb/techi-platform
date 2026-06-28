@@ -25,6 +25,12 @@ domain discovery. If present, it disables the GPO and deletes it with
 logged as warnings and do not block creating/updating the two current
 GPOs.
 
+Follow-up from real DC run: `Set-GPO` is not a valid GroupPolicy
+cmdlet, so the cleanup warninged and continued. The cleanup now uses
+real cmdlets: it enumerates domain/OU links with `Get-GPInheritance`,
+disables matching links with `Set-GPLink -LinkEnabled No`, then deletes
+the legacy object with `Remove-GPO`.
+
 ### Checks
 
 - Updated `backend/tests/test_enrollment_bootstrap_script.py` to assert

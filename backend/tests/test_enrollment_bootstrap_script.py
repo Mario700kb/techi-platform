@@ -976,8 +976,10 @@ class TestGPOScheduledDeployScript:
     def test_ps1_removes_redundant_startup_script_gpo_if_present(self):
         """GPO legacy 'TECHI Agent Startup' pastrohet, por nuk rikrijohet më."""
         assert '$LegacyStartupGPOName = "TECHI Agent Startup"' in self.script
-        assert "Set-GPO -Guid $LegacyStartupGPO.Id -GpoStatus AllSettingsDisabled" in self.script
+        assert "Set-GPO" not in self.script
+        assert "Set-GPLink -Name $LegacyStartupGPOName -Target $TargetDn -LinkEnabled No" in self.script
         assert "Remove-GPO -Guid $LegacyStartupGPO.Id -Confirm:$false" in self.script
+        assert "Get-ADOrganizationalUnit -Filter *" in self.script
         assert "u gjet por nuk u fshi" in self.script
         assert "Machine\\Scripts\\Startup" not in self.script
         assert "scripts.ini" not in self.script
