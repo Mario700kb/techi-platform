@@ -801,9 +801,11 @@ class TestGPOScheduledDeployScript:
         assert "msi_path=%NETLOGON_MSI%" in self.script
         assert "msi_exit_code=%MSI_EXIT%" in self.script
         assert "service_before=%SERVICE_STATUS_BEFORE%" in self.script
+        assert 'if "%SERVICE_STATUS_BEFORE%"=="4" set SERVICE_STATUS_BEFORE=RUNNING' in self.script
         assert "registry_version_after_install=%REG_VERSION%" in self.script
         assert "installed_product_code_after_install=%REG_PRODUCT_CODE%" in self.script
         assert "service_state_after_install=%SERVICE_STATUS_AFTER%" in self.script
+        assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
         assert 'result=0 version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% >> "%LOG%"' in self.script
 
@@ -837,6 +839,7 @@ class TestGPOScheduledDeployScript:
         assert ":validate_success" in self.script
         assert "set DEPLOY_VALID=0" in self.script
         assert "call :read_registry" in self.script
+        assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
         assert 'if /i "%VERSION_STATE%"=="equal" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" set DEPLOY_VALID=1' in self.script
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script
 
@@ -949,8 +952,9 @@ class TestGPOScheduledDeployScript:
         """Scheduled Task krijohet si SYSTEM dhe me privilegje te larta."""
         assert 'runAs="NT AUTHORITY\\System"' in self.script
         assert 'logonType="ServiceAccount"' in self.script
-        assert "<UserId>NT AUTHORITY\\System</UserId>" in self.script
-        assert "<LogonType>ServiceAccount</LogonType>" in self.script
+        assert "<UserId>S-1-5-18</UserId>" in self.script
+        assert "<UserId>NT AUTHORITY\\System</UserId>" not in self.script
+        assert "<LogonType>ServiceAccount</LogonType>" not in self.script
         assert "<RunLevel>HighestAvailable</RunLevel>" in self.script
 
     def test_ps1_scheduled_task_uses_cmd_exe_netlogon_action(self):

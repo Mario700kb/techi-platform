@@ -3,6 +3,48 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] GPO Scheduled Task Was Applied but Not Created on Windows Server 2016
+
+### Root cause
+
+Metropol ALPHADB showed `TECHI Agent Deployment` as an applied computer
+GPO, and Group Policy logged successful Scheduled Tasks Extension
+processing, but `schtasks /query /tn "TECHI Agent Deploy"` returned
+"file not found". NETLOGON was reachable, the current MSI and
+`techi-deploy.cmd` were present, and a manual
+`cmd /c "\\metropolgroup.local\NETLOGON\techi-deploy.cmd"` installed
+2.1.0 successfully and brought the device online. Extracting the inner
+Task Scheduler XML from `ScheduledTasks.xml` and registering it manually
+failed on ALPHADB with `LogonType:ServiceAccount`; a direct `schtasks
+/create /ru SYSTEM ...` worked. The GPP wrapper was fine, but the inner
+Task Scheduler XML used `NT AUTHORITY\System` plus
+`<LogonType>ServiceAccount</LogonType>`, which Server 2016 rejected.
+
+The same run also exposed a false negative in `techi-deploy.cmd`:
+`for /f "tokens=3"` over `sc query` captured the numeric state `4`,
+not the text `RUNNING`, so deploy logged `result=failed` even though
+MSI exit code was 0, registry version was 2.1.0, the service was
+actually running, and heartbeats were arriving.
+
+### Fix
+
+- `backend/app/services/enrollment_bootstrap_service.py`: generated
+  GPP ScheduledTasks XML now keeps the outer GPP `runAs`/`logonType`
+  wrapper, but the inner Task Scheduler principal uses the locale-safe
+  SYSTEM SID (`S-1-5-18`) and omits the inner
+  `<LogonType>ServiceAccount</LogonType>`. This matches the manual DC
+  patch that immediately made ALPHADB create `TECHI Agent Deploy` with
+  boot + 09:00/13:00/21:00 triggers.
+- `techi-deploy.cmd` generation now normalizes `sc query` state `4` to
+  `RUNNING` before success validation/logging, preventing false
+  `result=failed` entries after successful installs.
+
+### Checks
+
+- Updated `backend/tests/test_enrollment_bootstrap_script.py` to assert
+  `S-1-5-18`, absence of the inner `LogonType`, and service-state
+  normalization.
+
 ## [2026-06-28] Devices Stuck Without a device_id Stayed Stuck Forever, Even After a Fresh, Valid Enrollment Token Was Written
 
 ### Root cause
