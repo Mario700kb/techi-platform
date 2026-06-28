@@ -25,15 +25,26 @@ const (
 	// rustdeskLegacyExePath is a fallback for installations that still carry
 	// the upstream rustdesk.exe binary name alongside the branded one.
 	rustdeskLegacyExePath = `C:\Program Files\TECHI Remote Support\rustdesk.exe`
+	// rustdeskServiceName is the Windows Service (installer.wxs ServiceInstall,
+	// "--service") that runs the actual connection daemon -- this is what
+	// accepts incoming remote-control sessions. RustDesk's own source confirms
+	// "--tray" (rustdeskTrayTaskName below) is only a thin UI client that shows
+	// an icon; it never starts a daemon by itself. An earlier change in this
+	// codebase dropped this service on a theory that a SYSTEM-context service
+	// can't do interactive screen capture (Session 0 isolation) -- that theory
+	// was wrong: RustDesk's --service is designed to run exactly this way, and
+	// without it Remote Support shows as installed/running (the tray) but
+	// every connect attempt fails, since nothing is listening.
+	rustdeskServiceName = "TECHI Remote Support"
 	// rustdeskTrayTaskName is the Scheduled Task (created by installer.wxs)
-	// that launches the tray app in the logged-on user's own session at
-	// logon -- "--tray". There is intentionally no Windows Service for
-	// Remote Support: a SYSTEM-context service runs in Session 0, which
-	// cannot do interactive screen capture, causing the "Not ready" status
-	// and duplicate-instance issues seen when this was tried. schtasks /run
-	// against this task is how the agent (itself running as SYSTEM) can
-	// nudge Remote Support back open in the user's session if it's not
-	// running, without hitting the same session-isolation problem.
+	// that launches the tray icon in the logged-on user's own session at
+	// logon -- "--tray". This is a cosmetic companion to the service above
+	// (matches RustDesk's own install_service(), which both creates the SCM
+	// service AND drops a --tray shortcut into the Startup folder) -- it is
+	// NOT a substitute for the service. schtasks /run against this task is
+	// how the agent (itself running as SYSTEM) can nudge the tray icon back
+	// open in the user's session, the same Session-0 hand-off problem that
+	// makes a direct exec.Command of the exe from this process ineffective.
 	rustdeskTrayTaskName = "TECHI Remote Support Tray"
 )
 
@@ -93,7 +104,15 @@ func ensureRustDesk(cfg *Config, configPath string) {
 			cfg.RustDeskOptionsSchemaVer = rustDeskOptionsSchemaVersion
 		}
 
-		// Tray-running check always runs regardless of cooldown.
+		// Service is the real connection daemon -- always ensured regardless
+		// of cooldown, same as the tray.
+		if changed, err := ensureRustDeskService(); err != nil {
+			log.Printf("[rustdesk_manage] service ensure failed: %v", err)
+		} else if changed {
+			repaired = true
+		}
+
+		// Tray is a cosmetic companion to the service -- always ensured too.
 		if changed, err := ensureRustDeskTrayRunning(); err != nil {
 			log.Printf("[rustdesk_manage] tray ensure failed: %v", err)
 		} else if changed {
@@ -314,6 +333,77 @@ func ensureRustDeskTrayRunning() (bool, error) {
 	}
 	log.Printf("[rustdesk_manage] scheduled task triggered")
 	return true, nil
+}
+
+// ensureRustDeskService makes sure the SCM service -- the actual connection
+// daemon -- is running, creating it if installer.wxs's ServiceInstall somehow
+// didn't (e.g. an older install predating the service). Mirrors RustDesk's
+// own get_create_service(): binPath is the exe with "--service" appended.
+func ensureRustDeskService() (bool, error) {
+	out, err := runWithTimeout(10*time.Second, "sc", "query", rustdeskServiceName)
+	if err == nil {
+		lower := strings.ToLower(string(out))
+		if strings.Contains(lower, "running") {
+			setRustDeskServiceRecovery()
+			return false, nil
+		}
+		if strings.Contains(lower, strings.ToLower(rustdeskServiceName)) {
+			log.Printf("[rustdesk_manage] service exists but not running — starting")
+			if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+				return false, fmt.Errorf("sc start: %w", err2)
+			}
+			log.Printf("[rustdesk_manage] service started")
+			setRustDeskServiceRecovery()
+			return true, nil
+		}
+	}
+
+	binPath := fmt.Sprintf(`%s --service`, rustdeskDefaultInstallPath)
+	log.Printf("[rustdesk_manage] creating service")
+	if _, err2 := runWithTimeout(15*time.Second, "sc", "create", rustdeskServiceName,
+		"binPath=", binPath, "start=", "auto", "DisplayName=", "TECHI Remote Support"); err2 != nil {
+		return false, fmt.Errorf("sc create: %w", err2)
+	}
+	if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+		return false, fmt.Errorf("sc start after create: %w", err2)
+	}
+	log.Printf("[rustdesk_manage] service created and started")
+	setRustDeskServiceRecovery()
+	return true, nil
+}
+
+// setRustDeskServiceRecovery configures SCM to auto-restart the service if it
+// ever exits, on any cause -- including a user closing it from the tray icon.
+// RustDesk's tray "Exit" can terminate the whole process the SCM is tracking
+// (not just hide a window), so without this an operator clicking it stops
+// remote-support connectivity until the next heartbeat's ensureRustDeskService
+// call (up to HeartbeatSeconds later). 15s/15s/60s restart delays make SCM
+// itself bring it back almost immediately, well before that.
+func setRustDeskServiceRecovery() {
+	if _, err := runWithTimeout(10*time.Second, "sc", "failure", rustdeskServiceName,
+		"reset=", "86400", "actions=", "restart/15000/restart/15000/restart/60000"); err != nil {
+		log.Printf("[rustdesk_manage] sc failure (recovery policy) failed: %v", err)
+	}
+}
+
+// stopRustDeskServiceFn and startRustDeskServiceFn give action handlers a
+// restart sequence for the actual connection daemon, mirroring stopRustDeskTray
+// / startRustDeskTray for the cosmetic tray companion.
+func stopRustDeskServiceFn() {
+	_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+}
+
+func startRustDeskServiceFn() error {
+	if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
+		// Service might not exist yet on an older install -- fall back to
+		// ensureRustDeskService, which creates it if needed.
+		if _, err2 := ensureRustDeskService(); err2 != nil {
+			return fmt.Errorf("sc start: %v; ensure failed: %w", err, err2)
+		}
+		return nil
+	}
+	setRustDeskServiceRecovery()
+	return nil
 }
 
 // setRustDeskPassword writes the plaintext password directly into the

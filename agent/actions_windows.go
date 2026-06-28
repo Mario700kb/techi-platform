@@ -76,17 +76,21 @@ func handleRestartAgent(_ context.Context) actionResult {
 func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 	done := make(chan actionResult, 1)
 	go func() {
-		log.Printf("[action] restart_rustdesk: stopping tray")
+		log.Printf("[action] restart_rustdesk: stopping service+tray")
+		stopRustDeskServiceFn()
 		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		log.Printf("[action] restart_rustdesk: starting tray")
-		if err := startRustDeskTray(); err != nil {
+		log.Printf("[action] restart_rustdesk: starting service+tray")
+		if err := startRustDeskServiceFn(); err != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("start tray failed: %w", err),
+				err:    fmt.Errorf("start service failed: %w", err),
 				stderr: err.Error(),
 			}
 			return
+		}
+		if err := startRustDeskTray(); err != nil {
+			log.Printf("[action] restart_rustdesk: tray start failed (non-fatal): %v", err)
 		}
 		rd := discoverRustDesk(cfg)
 		done <- actionResult{
@@ -107,7 +111,8 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 	}
 	done := make(chan actionResult, 1)
 	go func() {
-		log.Printf("[action] reinstall_rustdesk: stopping tray")
+		log.Printf("[action] reinstall_rustdesk: stopping service+tray")
+		stopRustDeskServiceFn()
 		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
@@ -120,9 +125,12 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 
-		// Re-apply config and relaunch tray after install.
+		// Re-apply config and relaunch service+tray after install.
 		if _, err := writeRustDeskConfig(cfg); err != nil {
 			log.Printf("[action] reinstall_rustdesk: config write failed (non-fatal): %v", err)
+		}
+		if _, err := ensureRustDeskService(); err != nil {
+			log.Printf("[action] reinstall_rustdesk: service start failed (non-fatal): %v", err)
 		}
 		if _, err := ensureRustDeskTrayRunning(); err != nil {
 			log.Printf("[action] reinstall_rustdesk: tray start failed (non-fatal): %v", err)
@@ -153,12 +161,15 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 		log.Printf("[action] reopen_rustdesk: not running — starting")
-		if err := startRustDeskTray(); err != nil {
+		if err := startRustDeskServiceFn(); err != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("start tray failed: %w", err),
+				err:    fmt.Errorf("start service failed: %w", err),
 				stderr: err.Error(),
 			}
 			return
+		}
+		if err := startRustDeskTray(); err != nil {
+			log.Printf("[action] reopen_rustdesk: tray start failed (non-fatal): %v", err)
 		}
 		time.Sleep(2 * time.Second)
 		rd = discoverRustDesk(cfg)
@@ -187,17 +198,21 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 
-		log.Printf("[action] repair_config_rustdesk: stopping tray for restart")
+		log.Printf("[action] repair_config_rustdesk: stopping service+tray for restart")
+		stopRustDeskServiceFn()
 		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		log.Printf("[action] repair_config_rustdesk: starting tray")
-		if err2 := startRustDeskTray(); err2 != nil {
+		log.Printf("[action] repair_config_rustdesk: starting service+tray")
+		if err2 := startRustDeskServiceFn(); err2 != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("tray restart failed after config repair: %w", err2),
+				err:    fmt.Errorf("service restart failed after config repair: %w", err2),
 				stderr: err2.Error(),
 			}
 			return
+		}
+		if err2 := startRustDeskTray(); err2 != nil {
+			log.Printf("[action] repair_config_rustdesk: tray start failed (non-fatal): %v", err2)
 		}
 
 		time.Sleep(2 * time.Second)
@@ -351,12 +366,15 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 		st.ConfigStatus = "written"
 	}
 
-	// Phase 6: ensure tray running.
-	if _, err := ensureRustDeskTrayRunning(); err != nil {
-		log.Printf("[deploy_remote_support] tray ensure failed (non-fatal): %v", err)
+	// Phase 6: ensure service (real connection daemon) + tray (cosmetic) running.
+	if _, err := ensureRustDeskService(); err != nil {
+		log.Printf("[deploy_remote_support] service ensure failed: %v", err)
 		st.ServiceStatus = "failed"
 	} else {
 		st.ServiceStatus = "started"
+	}
+	if _, err := ensureRustDeskTrayRunning(); err != nil {
+		log.Printf("[deploy_remote_support] tray ensure failed (non-fatal): %v", err)
 	}
 
 	// Phase 7: verify protocol handler.
@@ -480,14 +498,19 @@ func handleSetRemotePassword(_ context.Context, _ *Config, params map[string]int
 		}
 	}
 
-	// Restart the tray so the new password takes effect immediately.
+	// Restart the service (and tray) so the new password takes effect
+	// immediately instead of waiting for the next process/load cycle.
+	stopRustDeskServiceFn()
 	stopRustDeskTray()
 	time.Sleep(2 * time.Second)
+	if err := startRustDeskServiceFn(); err != nil {
+		log.Printf("[action] set_remote_password: service restart failed (non-fatal): %v", err)
+	}
 	if err := startRustDeskTray(); err != nil {
 		log.Printf("[action] set_remote_password: tray restart failed (non-fatal): %v", err)
 	}
 
-	log.Printf("[action] set_remote_password: password updated and tray restarted")
+	log.Printf("[action] set_remote_password: password updated and service+tray restarted")
 	return actionResult{message: "Remote password changed successfully"}
 }
 

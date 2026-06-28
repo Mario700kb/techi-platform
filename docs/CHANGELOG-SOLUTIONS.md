@@ -3,6 +3,74 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] Restored the Windows Service for TECHI Remote Support: --tray Alone Has No Daemon to Accept Connections
+
+### Root cause
+
+After fixing the GPO/NETLOGON and enrollment issues, NODE04 came back
+online correctly (heartbeat, version 2.1.0) but "connect" from the
+platform still failed, and `sc query`/`Get-Service` showed no
+"TECHI Remote Support" service at all -- only the Scheduled-Task-
+launched tray process. Earlier in this engagement, the Windows Service
+for Remote Support was deliberately dropped in favor of a Scheduled
+Task running `--tray`, on the theory that a SYSTEM-context service
+(Session 0) can't do interactive screen capture. That theory was
+wrong: RustDesk's own source (`src/platform/windows.rs`,
+`get_create_service`/`install_service`) creates exactly this kind of
+service to run its real connection daemon, and `--tray` (`core_main.rs`,
+`tray.rs`) is documented in RustDesk's own comments as only showing an
+icon -- "the tray icon is only shown when the service is running." A
+tray-only install looks installed/running in monitoring but has no
+daemon listening for incoming connections at all, so every connect
+attempt fails. This was flagged as an open question earlier in this
+engagement and deliberately deferred; revisited now that the
+password/enrollment issues are resolved and this is the one remaining
+blocker.
+
+### Fix
+
+Restored the service as the real daemon, keeping the Scheduled Task
++ `--tray` as a cosmetic companion icon (matches RustDesk's own
+`install_service()`, which creates the SCM service AND drops a
+`--tray` shortcut for the logged-on user -- the same hybrid, just via
+a Scheduled Task instead of a Startup-folder shortcut):
+
+- `agent/rustdesk_manage.go`: restored `ensureRustDeskService` /
+  `setRustDeskServiceRecovery` (creates/starts the SCM service if
+  missing or stopped, with an auto-restart failure policy) and added
+  `stopRustDeskServiceFn` / `startRustDeskServiceFn` for action
+  handlers. `ensureRustDesk`'s heartbeat loop now ensures both the
+  service (primary) and the tray (cosmetic) every cycle. Kept the
+  TOML-based `setRustDeskPassword` from the earlier fix -- it works
+  the same regardless of service vs. tray.
+- `agent/actions_windows.go`: `restart_rustdesk`, `reinstall_rustdesk`,
+  `reopen_rustdesk`, `repair_config_rustdesk`, `set_remote_password`,
+  and `deploy_remote_support`'s Phase 6 all now stop/start the service
+  as the primary action, with the tray restarted alongside it
+  (non-fatal if the tray step fails).
+- `agent/installer/installer.wxs`: restored the
+  `ServiceControl Id="StopTechiRemoteSupport"` (stop-on-uninstall)
+  that was removed earlier -- the service itself is still created at
+  runtime by the agent (`sc create`), not declaratively by the MSI,
+  matching how it has always worked. Updated the comments that
+  asserted the now-corrected "no service, Session 0" rationale on
+  `REMOTESUPPORTFOLDER`, `KillTechiRSBeforeInstall`,
+  `RemoveRustDeskTrayArtifacts`, and `CreateRustDeskTrayTask`.
+
+### Checks
+
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -- clean.
+- `wix build` against the modified `installer.wxs` (with fake
+  `-d SourceDir`) produces the exact same `WIX0200`/`WIX0389` errors,
+  same count, as the unmodified file on this macOS/mono host -- a
+  known pre-existing host limitation, not a regression. A Python
+  regex scan confirms zero literal `--` sequences inside any XML
+  comment (the recurring WIX0104-class bug from earlier in this
+  engagement).
+- Not yet verified on a real machine with the new MSI -- pending CI
+  build and a fresh test on NODE04.
+
 ## [2026-06-28] techi-deploy.cmd's :read_registry Was Silently Broken on Every Run, Forcing Unnecessary Reinstalls Fleet-Wide
 
 ### Root cause
