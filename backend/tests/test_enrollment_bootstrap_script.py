@@ -973,9 +973,12 @@ class TestGPOScheduledDeployScript:
         assert self.script.count("<CalendarTrigger>") == 3
         assert "<DaysInterval>1</DaysInterval>" in self.script
 
-    def test_ps1_has_no_redundant_startup_script_gpo(self):
-        """GPO 'TECHI Agent Startup' (Hapi 8 i vjeter) u hoq -- BootTrigger mjafton vetem."""
-        assert "TECHI Agent Startup" not in self.script
+    def test_ps1_removes_redundant_startup_script_gpo_if_present(self):
+        """GPO legacy 'TECHI Agent Startup' pastrohet, por nuk rikrijohet më."""
+        assert '$LegacyStartupGPOName = "TECHI Agent Startup"' in self.script
+        assert "Set-GPO -Guid $LegacyStartupGPO.Id -GpoStatus AllSettingsDisabled" in self.script
+        assert "Remove-GPO -Guid $LegacyStartupGPO.Id -Confirm:$false" in self.script
+        assert "u gjet por nuk u fshi" in self.script
         assert "Machine\\Scripts\\Startup" not in self.script
         assert "scripts.ini" not in self.script
 

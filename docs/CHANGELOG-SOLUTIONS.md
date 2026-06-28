@@ -3,6 +3,34 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-28] GPO UI Script Now Removes the Legacy `TECHI Agent Startup` GPO
+
+### Root cause
+
+Domains that had already run older deployment scripts could still have
+the separate `TECHI Agent Startup` GPO linked and active. The current
+deployment model uses only two GPOs (`TECHI Agent - Defender
+Exclusions` and `TECHI Agent Deployment`) and relies on the scheduled
+task's own boot trigger for startup execution. Because the new script
+only updated the two current GPOs, it left the old startup-script GPO
+behind, creating a parallel deployment path and noisy/ambiguous client
+diagnostics.
+
+### Fix
+
+`backend/app/services/enrollment_bootstrap_service.py`: the generated
+UI GPO script now checks for `TECHI Agent Startup` immediately after
+domain discovery. If present, it disables the GPO and deletes it with
+`Remove-GPO`; if absent, it continues normally. Cleanup failures are
+logged as warnings and do not block creating/updating the two current
+GPOs.
+
+### Checks
+
+- Updated `backend/tests/test_enrollment_bootstrap_script.py` to assert
+  legacy GPO cleanup and to keep guarding against reintroducing
+  `Machine\Scripts\Startup` / `scripts.ini` startup-script plumbing.
+
 ## [2026-06-28] GPO Scheduled Task Was Applied but Not Created on Windows Server 2016
 
 ### Root cause
