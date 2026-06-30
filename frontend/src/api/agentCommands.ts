@@ -1,6 +1,6 @@
 import { fetchJson } from "./client";
 
-export type BulkCommandTarget = "all" | "client" | "group" | "devices";
+export type BulkCommandTarget = "all" | "online" | "client" | "group" | "devices";
 
 export type BulkCommandType =
   | "ping"

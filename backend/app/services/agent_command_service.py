@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.time import utcnow
-from app.models.device import Device
+from app.models.device import Device, DeviceStatus
 from app.models.operator import Operator
 from app.models.remote_action import ActionStatus, RemoteAction
 from app.repositories.agent_command_repository import AgentCommandRepository
@@ -64,12 +64,14 @@ class AgentCommandService:
         else:
             payload_json = json.dumps(create_in.payload)
 
+        timeout_seconds = self._effective_timeout_seconds(create_in)
+
         batch = self.batch_repo.create_batch(
             batch_id=batch_id,
             command_type=create_in.command_type,
             payload_json=payload_json,
             target=create_in.target.value,
-            timeout_seconds=create_in.timeout_seconds,
+            timeout_seconds=timeout_seconds,
             created_by=operator_id,
         )
 
@@ -83,7 +85,7 @@ class AgentCommandService:
                 created_at=now,
                 queued_at=now,
                 created_by=operator_username,
-                execution_timeout_seconds=create_in.timeout_seconds,
+                execution_timeout_seconds=timeout_seconds,
                 batch_id=batch_id,
             )
             self.db.add(action)
@@ -131,8 +133,8 @@ class AgentCommandService:
 
         total = len(actions)
         done = counts["completed"] + counts["failed"] + counts["timeout"]
-        percent = int(done / total * 100) if total > 0 else 0
-        finished = total > 0 and done == total
+        percent = int(done / total * 100) if total > 0 else 100
+        finished = total == 0 or done == total
 
         return BatchProgressResponse(
             batch_id=batch_id,
@@ -182,7 +184,7 @@ class AgentCommandService:
                 completed=counts["completed"],
                 failed=counts["failed"],
                 timeout=counts["timeout"],
-                finished=total > 0 and done == total,
+                finished=total == 0 or done == total,
                 created_at=batch.created_at,
                 created_by_name=operator_names.get(batch.created_by),
             ))
@@ -222,12 +224,20 @@ class AgentCommandService:
             "sha256": package.sha256,
         }
 
+    @staticmethod
+    def _effective_timeout_seconds(create_in: BulkCommandCreate) -> int:
+        if create_in.command_type == "set_remote_password":
+            return max(create_in.timeout_seconds, 300)
+        return create_in.timeout_seconds
+
     def _resolve_devices(self, create_in: BulkCommandCreate) -> List[Device]:
         query = self.db.query(Device).filter(
             (Device.is_archived.is_(False)) | (Device.is_archived.is_(None))
         )
 
-        if create_in.target == BulkCommandTarget.CLIENT:
+        if create_in.target == BulkCommandTarget.ONLINE:
+            query = query.filter(Device.status == DeviceStatus.ONLINE)
+        elif create_in.target == BulkCommandTarget.CLIENT:
             if not create_in.client_id:
                 raise ValueError("client_id required for target=client")
             query = query.filter(Device.client_id == create_in.client_id)

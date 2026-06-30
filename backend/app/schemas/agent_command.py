@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 class BulkCommandTarget(str, Enum):
     ALL = "all"
+    ONLINE = "online"
     CLIENT = "client"
     GROUP = "group"
     DEVICES = "devices"

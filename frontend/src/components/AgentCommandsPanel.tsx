@@ -121,7 +121,7 @@ function WarnNote({ children }: { children: React.ReactNode }) {
 interface ConfirmModalProps {
   commandType: BulkCommandType;
   targetLabel: string;
-  target: "all" | "client" | "group" | "devices" | "outdated_agents";
+  target: "all" | "online" | "client" | "group" | "devices" | "outdated_agents";
   deviceCount: number | null;
   twoStep: boolean;
   sending: boolean;
@@ -554,7 +554,7 @@ export default function AgentCommandsPanel() {
 
   // Send form
   const [commandType, setCommandType] = useState<BulkCommandType>("ping");
-  const [target, setTarget] = useState<"all" | "client" | "group" | "devices" | "outdated_agents">("all");
+  const [target, setTarget] = useState<"all" | "online" | "client" | "group" | "devices" | "outdated_agents">("online");
   const [clientId, setClientId] = useState<number | null>(null);
   const [groupId, setGroupId] = useState<number | null>(null);
   const [deviceIdsInput, setDeviceIdsInput] = useState("");
@@ -619,7 +619,7 @@ export default function AgentCommandsPanel() {
       collect_inventory: 60,
       sync_rustdesk: 60,
       restart_rustdesk: 30,
-      set_remote_password: 30,
+      set_remote_password: 300,
       change_heartbeat_interval: 20,
       run_powershell: 60,
       register_protocol: 20,
@@ -755,6 +755,7 @@ export default function AgentCommandsPanel() {
 
   const targetLabel =
     target === "all" ? "All devices"
+    : target === "online" ? "Online devices"
     : target === "outdated_agents" ? "Devices needing agent update"
     : target === "client" ? (clients.find((c) => c.id === clientId)?.name ?? `Client #${clientId}`)
     : target === "group" ? (groups.find((g) => g.id === groupId)?.name ?? `Group #${groupId}`)
@@ -766,6 +767,7 @@ export default function AgentCommandsPanel() {
   // without a new endpoint (out of scope for this UI-only change).
   const deviceCount =
     target === "all" ? (fleetOverview?.stats.total ?? null)
+    : target === "online" ? (fleetOverview?.stats.online ?? null)
     : target === "outdated_agents" ? (fleetOverview?.agents_outdated ?? null)
     : target === "client" ? (clientId != null ? fleetOverview?.tree_counts.by_client[String(clientId)] ?? null : null)
     : target === "devices" ? (deviceIdsInput.split(",").map((s) => s.trim()).filter(Boolean).length || null)
@@ -859,6 +861,7 @@ export default function AgentCommandsPanel() {
                 style={inputStyle}
               >
                 <option value="all">All devices</option>
+                <option value="online">Online devices</option>
                 <option value="outdated_agents">Devices needing agent update</option>
                 <option value="client">By client</option>
                 <option value="group">By group</option>

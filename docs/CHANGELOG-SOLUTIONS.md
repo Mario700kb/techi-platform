@@ -3,6 +3,35 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-06-30] Command Center Bulk Password Should Target Online Devices
+
+### Root cause
+
+Manual per-device `set_remote_password` worked, but several bulk
+Command Center runs looked stuck as `running`. Production DB showed the
+manual device-targeted batches completed, while older `all`/`client`
+batches had `total=0` actions and therefore could never satisfy the
+old `finished = total > 0 and done == total` check. Bulk password also
+used a 30-second UI default timeout even though commands are delivered
+on the next heartbeat, commonly every 60 seconds.
+
+### Fix
+
+Added an `online` bulk target. Operators can now send password rotation
+to online devices only, avoiding offline devices that cannot pick up
+the command until later. `set_remote_password` bulk timeout is now
+raised to 300 seconds server-side even if an older UI sends a lower
+value, and the UI default is also 300 seconds. Empty historical batches
+now report `finished=true` with 100% progress instead of appearing to
+run forever.
+
+### Checks
+
+- Added `backend/tests/test_agent_command_service.py` for online-only
+  targeting, password timeout normalization, empty-batch progress, and
+  normal completed-batch progress.
+- Ran the new backend test file and frontend production build.
+
 ## [2026-06-28] GPO Token Repair Must Write Canonical Config Without UTF-8 BOM
 
 ### Root cause
