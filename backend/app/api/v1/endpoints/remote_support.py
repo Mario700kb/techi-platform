@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
@@ -118,6 +119,15 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
         client_id=device.client_id,
         group_id=device.group_id,
     )
+
+
+def _build_connect_url(remote_id: str) -> str:
+    encoded_id = quote(remote_id, safe="")
+    connect_url = f"techiremotesupport://{encoded_id}"
+    managed_password = settings.RUSTDESK_DEFAULT_PASSWORD.strip()
+    if settings.RUSTDESK_DEEP_LINK_PASSWORD_ENABLED and managed_password:
+        connect_url += f"?password={quote(managed_password, safe='')}"
+    return connect_url
 
 
 # ------------------------------------------------------------------ #
@@ -259,7 +269,7 @@ def get_connect_url(
     return ConnectUrlResponse(
         device_id=device_id,
         techi_remote_id=remote_id,
-        connect_url=f"techiremotesupport://{remote_id}",
+        connect_url=_build_connect_url(remote_id),
     )
 
 

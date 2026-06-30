@@ -23,6 +23,10 @@ export function buildRustDeskFallbackUrl(rustdeskId: string): string {
   return `rustdesk://${encodeURIComponent(normalized)}`;
 }
 
+export function buildRustDeskFallbackUrlFromTechiUrl(techiUrl: string): string {
+  return techiUrl.replace(/^techiremotesupport:\/\//i, "rustdesk://");
+}
+
 export function launchRustDesk(rustdeskId: string): void {
   window.open(buildRustDeskLaunchUrl(rustdeskId), "_blank", "noopener,noreferrer");
 }

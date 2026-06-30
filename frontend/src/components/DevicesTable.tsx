@@ -6,7 +6,8 @@ import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
-import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchConnect } from "../services/rustdeskLaunch";
+import { getConnectUrl } from "../api/remoteSupport";
+import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
@@ -1096,13 +1097,17 @@ const DevicesTable = memo(function DevicesTable({
                   activePackageVersion={activePackageVersion}
                   onSelect={() => onDeviceSelect?.(device)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
-                  onConnect={() => {
-                    const id = device.rustdesk_id!;
-                    launchConnect(
-                      buildRustDeskLaunchUrl(id),
-                      buildRustDeskFallbackUrl(id),
-                      () => showBulkToast("Opening with RustDesk instead", true)
-                    );
+                  onConnect={async () => {
+                    try {
+                      const res = await getConnectUrl(device.id);
+                      launchConnect(
+                        res.connect_url,
+                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                        () => showBulkToast("Opening with RustDesk instead", true)
+                      );
+                    } catch (err) {
+                      showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                    }
                   }}
                 />
               );
@@ -1420,13 +1425,17 @@ const DevicesTable = memo(function DevicesTable({
                           <button
                             type="button"
                             disabled={!canConnect}
-                            onClick={() => {
-                              const id = device.rustdesk_id!;
-                              launchConnect(
-                                buildRustDeskLaunchUrl(id),
-                                buildRustDeskFallbackUrl(id),
-                                () => showBulkToast("Opening with RustDesk instead", true)
-                              );
+                            onClick={async () => {
+                              try {
+                                const res = await getConnectUrl(device.id);
+                                launchConnect(
+                                  res.connect_url,
+                                  buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                                  () => showBulkToast("Opening with RustDesk instead", true)
+                                );
+                              } catch (err) {
+                                showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                              }
                             }}
                             title={
                               device.rustdesk_conflict_detected

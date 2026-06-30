@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
-import { getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
+import { getConnectUrl, getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
-import { isValidRustDeskId, buildRustDeskLaunchUrl, buildRustDeskFallbackUrl, launchConnect } from "../services/rustdeskLaunch";
+import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
@@ -1887,13 +1887,18 @@ export default function DeviceDrawer({
                 <button
                   type="button"
                   disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected || !hasPermission("remote_support_connect")}
-                  onClick={() => {
-                    const id = device.rustdesk_id!;
-                    launchConnect(
-                      buildRustDeskLaunchUrl(id),
-                      buildRustDeskFallbackUrl(id),
-                      () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
-                    );
+                  onClick={async () => {
+                    try {
+                      const res = await getConnectUrl(device.id);
+                      launchConnect(
+                        res.connect_url,
+                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                        () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
+                      );
+                    } catch (err) {
+                      setRsToast({ message: err instanceof Error ? err.message : "Connect failed", ok: false });
+                      setTimeout(() => setRsToast(null), 3000);
+                    }
                   }}
                   title={
                     !hasPermission("remote_support_connect")
