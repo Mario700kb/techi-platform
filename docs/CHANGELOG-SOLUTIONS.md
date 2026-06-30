@@ -27,6 +27,9 @@ run forever.
 Batch creation is also atomic now: the backend no longer commits the
 batch row before its per-device actions are added, so a transient error
 cannot leave a new zero-target batch behind.
+The confirm modal now submits as a real form, shows send errors inside
+the modal, and refreshes Command History immediately after a batch is
+created.
 
 ### Checks
 
@@ -35,6 +38,8 @@ cannot leave a new zero-target batch behind.
   normal completed-batch progress.
 - Added coverage that an empty online target creates no batch/actions.
 - Ran the new backend test file and frontend production build.
+- Verified the frontend production build emits a new JS asset after the
+  modal/history refresh fix.
 
 ## [2026-06-28] GPO Token Repair Must Write Canonical Config Without UTF-8 BOM
 

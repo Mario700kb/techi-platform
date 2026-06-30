@@ -125,6 +125,7 @@ interface ConfirmModalProps {
   deviceCount: number | null;
   twoStep: boolean;
   sending: boolean;
+  error?: string | null;
   scriptPreview?: string;
   selfUpdatePackage?: AgentPackage | null;
   onConfirm: () => void;
@@ -132,7 +133,7 @@ interface ConfirmModalProps {
 }
 
 function ConfirmModal({
-  commandType, targetLabel, target, deviceCount, twoStep, sending, scriptPreview, selfUpdatePackage, onConfirm, onClose,
+  commandType, targetLabel, target, deviceCount, twoStep, sending, error, scriptPreview, selfUpdatePackage, onConfirm, onClose,
 }: ConfirmModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmInput, setConfirmInput] = useState("");
@@ -153,18 +154,24 @@ function ConfirmModal({
   // empty input trivially match, defeating the confirmation.
   const canConfirm = !twoStep || step === 1 || (expectedText !== "" && confirmInput === expectedText);
 
+  function submitConfirm(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!sending && canConfirm) onConfirm();
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.65)" }}
       onClick={onClose}
     >
-      <div
+      <form
         className="w-full max-w-sm rounded-xl p-5 space-y-4 shadow-2xl"
         style={{
           background: "var(--th-bg-drawer, var(--th-bg-shell))",
           border: isAllDevices ? "2px solid rgba(239,68,68,0.6)" : "1px solid var(--th-border-drawer-section)",
         }}
+        onSubmit={submitConfirm}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -264,10 +271,16 @@ function ConfirmModal({
               className={inputCls}
               style={inputStyle}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && canConfirm) onConfirm();
+                if (e.key === "Enter" && canConfirm) submitConfirm(e);
               }}
             />
           </div>
+        )}
+
+        {error && (
+          <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
+            {error}
+          </p>
         )}
 
         {/* Buttons */}
@@ -283,8 +296,7 @@ function ConfirmModal({
             </button>
           ) : (
             <button
-              type="button"
-              onClick={onConfirm}
+              type="submit"
               disabled={sending || !canConfirm}
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: "#ef4444" }}
@@ -301,7 +313,7 @@ function ConfirmModal({
             Anulo
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -704,6 +716,7 @@ export default function AgentCommandsPanel() {
 
       const progress = await getBatchProgress(result.batch_id);
       setActiveBatch(progress);
+      await loadHistory();
       if (!progress.finished) startPolling(result.batch_id);
       setConfirmOpen(false);
     } catch (err) {
@@ -792,6 +805,7 @@ export default function AgentCommandsPanel() {
           deviceCount={deviceCount}
           twoStep={needsTwoStep}
           sending={sending}
+          error={sendError}
           scriptPreview={commandType === "run_powershell" ? payload["script"] : undefined}
           selfUpdatePackage={commandType === "self_update" ? selfUpdatePackage : undefined}
           onConfirm={handleSend}
