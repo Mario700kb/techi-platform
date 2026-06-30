@@ -24,12 +24,16 @@ raised to 300 seconds server-side even if an older UI sends a lower
 value, and the UI default is also 300 seconds. Empty historical batches
 now report `finished=true` with 100% progress instead of appearing to
 run forever.
+Batch creation is also atomic now: the backend no longer commits the
+batch row before its per-device actions are added, so a transient error
+cannot leave a new zero-target batch behind.
 
 ### Checks
 
 - Added `backend/tests/test_agent_command_service.py` for online-only
   targeting, password timeout normalization, empty-batch progress, and
   normal completed-batch progress.
+- Added coverage that an empty online target creates no batch/actions.
 - Ran the new backend test file and frontend production build.
 
 ## [2026-06-28] GPO Token Repair Must Write Canonical Config Without UTF-8 BOM

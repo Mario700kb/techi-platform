@@ -92,6 +92,30 @@ def test_empty_batch_progress_is_finished():
     assert progress.finished is True
 
 
+def test_online_bulk_target_with_no_online_devices_does_not_create_empty_batch():
+    db = next(_db())
+    db.add(_device("offline-one", DeviceStatus.OFFLINE))
+    db.commit()
+
+    service = AgentCommandService(db)
+    try:
+        service.create_bulk(
+            BulkCommandCreate(
+                command_type="set_remote_password",
+                payload={"password": "secret"},
+                target=BulkCommandTarget.ONLINE,
+                timeout_seconds=300,
+            )
+        )
+    except ValueError as exc:
+        assert str(exc) == "No active devices found for the specified target"
+    else:
+        raise AssertionError("expected ValueError for empty online target")
+
+    assert db.query(AgentCommandBatch).count() == 0
+    assert db.query(RemoteAction).count() == 0
+
+
 def test_batch_history_marks_empty_batch_finished():
     db = next(_db())
     batch = AgentCommandBatch(

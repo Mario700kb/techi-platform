@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.time import utcnow
+from app.models.agent_command_batch import AgentCommandBatch
 from app.models.device import Device, DeviceStatus
 from app.models.operator import Operator
 from app.models.remote_action import ActionStatus, RemoteAction
@@ -66,14 +67,15 @@ class AgentCommandService:
 
         timeout_seconds = self._effective_timeout_seconds(create_in)
 
-        batch = self.batch_repo.create_batch(
-            batch_id=batch_id,
+        batch = AgentCommandBatch(
+            id=batch_id,
             command_type=create_in.command_type,
-            payload_json=payload_json,
+            payload=payload_json,
             target=create_in.target.value,
             timeout_seconds=timeout_seconds,
             created_by=operator_id,
         )
+        self.db.add(batch)
 
         now = utcnow()
         for device in devices:
@@ -91,6 +93,7 @@ class AgentCommandService:
             self.db.add(action)
 
         self.db.commit()
+        self.db.refresh(batch)
         logger.info(
             "[command_batch] created %s batch=%s devices=%d by=%s",
             create_in.command_type,
