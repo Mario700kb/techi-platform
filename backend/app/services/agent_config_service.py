@@ -25,6 +25,9 @@ _POLICY_FILE: str = os.environ.get("AGENT_POLICY_FILE", "/app/data/agent_policy.
 HEARTBEAT_INTERVAL_DEFAULT: int = 300
 HEARTBEAT_INTERVAL_MIN: int = 60
 HEARTBEAT_INTERVAL_MAX: int = 600
+REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT: bool = os.environ.get(
+    "RUSTDESK_DEEP_LINK_PASSWORD_ENABLED", "true"
+).strip().lower() not in {"0", "false", "no", "off"}
 
 # Fixed constants — kept in sync with device_repository.py and device.py
 ONLINE_THRESHOLD_MINUTES: int = 6
@@ -49,10 +52,16 @@ def _load() -> dict:
         with open(_POLICY_FILE, "r", encoding="utf-8") as fh:
             _policy = json.load(fh)
     except FileNotFoundError:
-        _policy = {"heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT}
+        _policy = {
+            "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT,
+            "remote_support_managed_password_enabled": REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
+        }
     except Exception as exc:
         log.warning("Cannot read agent policy %s: %s — using defaults", _POLICY_FILE, exc)
-        _policy = {"heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT}
+        _policy = {
+            "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT,
+            "remote_support_managed_password_enabled": REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
+        }
     return _policy
 
 
@@ -74,6 +83,12 @@ def get_policy() -> dict:
             ),
             "online_threshold_minutes": ONLINE_THRESHOLD_MINUTES,
             "stale_threshold_minutes": STALE_THRESHOLD_MINUTES,
+            "remote_support_managed_password_enabled": bool(
+                data.get(
+                    "remote_support_managed_password_enabled",
+                    REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
+                )
+            ),
         }
 
 
@@ -86,6 +101,26 @@ def set_heartbeat_interval(seconds: int) -> dict:
     with _lock:
         data = _load()
         data["heartbeat_interval_seconds"] = seconds
+        _persist(data)
+    return get_policy()
+
+
+def set_policy(
+    *,
+    heartbeat_interval_seconds: Optional[int] = None,
+    remote_support_managed_password_enabled: Optional[bool] = None,
+) -> dict:
+    with _lock:
+        data = _load()
+        if heartbeat_interval_seconds is not None:
+            if not (HEARTBEAT_INTERVAL_MIN <= heartbeat_interval_seconds <= HEARTBEAT_INTERVAL_MAX):
+                raise ValueError(
+                    f"heartbeat_interval_seconds must be between "
+                    f"{HEARTBEAT_INTERVAL_MIN} and {HEARTBEAT_INTERVAL_MAX}, got {heartbeat_interval_seconds}"
+                )
+            data["heartbeat_interval_seconds"] = heartbeat_interval_seconds
+        if remote_support_managed_password_enabled is not None:
+            data["remote_support_managed_password_enabled"] = remote_support_managed_password_enabled
         _persist(data)
     return get_policy()
 

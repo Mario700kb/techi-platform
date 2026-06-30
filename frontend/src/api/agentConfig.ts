@@ -4,10 +4,12 @@ export interface AgentConfig {
   heartbeat_interval_seconds: number;
   online_threshold_minutes: number;
   stale_threshold_minutes: number;
+  remote_support_managed_password_enabled: boolean;
 }
 
 export interface AgentConfigUpdate {
-  heartbeat_interval_seconds: number;
+  heartbeat_interval_seconds?: number;
+  remote_support_managed_password_enabled?: boolean;
 }
 
 export async function getAgentConfig(): Promise<AgentConfig> {

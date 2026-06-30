@@ -13,6 +13,7 @@ the generated PowerShell script via GPO or running it manually per device.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
@@ -31,15 +32,17 @@ class AgentConfigResponse(BaseModel):
     heartbeat_interval_seconds: int
     online_threshold_minutes: int
     stale_threshold_minutes: int
+    remote_support_managed_password_enabled: bool
 
 
 class AgentConfigUpdate(BaseModel):
-    heartbeat_interval_seconds: int = Field(
-        ...,
+    heartbeat_interval_seconds: Optional[int] = Field(
+        None,
         ge=_svc.HEARTBEAT_INTERVAL_MIN,
         le=_svc.HEARTBEAT_INTERVAL_MAX,
         description=f"Seconds between agent heartbeats ({_svc.HEARTBEAT_INTERVAL_MIN}–{_svc.HEARTBEAT_INTERVAL_MAX})",
     )
+    remote_support_managed_password_enabled: Optional[bool] = None
 
 
 @router.get("", response_model=AgentConfigResponse)
@@ -55,7 +58,10 @@ def put_agent_config(
     _: Operator = Depends(_require_admin),
 ):
     try:
-        return _svc.set_heartbeat_interval(body.heartbeat_interval_seconds)
+        return _svc.set_policy(
+            heartbeat_interval_seconds=body.heartbeat_interval_seconds,
+            remote_support_managed_password_enabled=body.remote_support_managed_password_enabled,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 

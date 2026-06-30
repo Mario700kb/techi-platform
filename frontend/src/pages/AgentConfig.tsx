@@ -13,6 +13,7 @@ type CopyTarget = "rollout" | "rollback" | null;
 export default function AgentConfigPage() {
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [intervalInput, setIntervalInput] = useState<string>("");
+  const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export default function AgentConfigPage() {
       .then((cfg) => {
         setConfig(cfg);
         setIntervalInput(String(cfg.heartbeat_interval_seconds));
+        setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
@@ -42,9 +44,13 @@ export default function AgentConfigPage() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await putAgentConfig({ heartbeat_interval_seconds: val });
+      const updated = await putAgentConfig({
+        heartbeat_interval_seconds: val,
+        remote_support_managed_password_enabled: managedPasswordEnabled,
+      });
       setConfig(updated);
       setIntervalInput(String(updated.heartbeat_interval_seconds));
+      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
       setSaved(true);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => setSaved(false), 2500);
@@ -72,7 +78,10 @@ export default function AgentConfigPage() {
   }
 
   const currentInterval = config?.heartbeat_interval_seconds ?? 180;
-  const dirty = config !== null && parseInt(intervalInput, 10) !== currentInterval;
+  const dirty = config !== null && (
+    parseInt(intervalInput, 10) !== currentInterval ||
+    managedPasswordEnabled !== config.remote_support_managed_password_enabled
+  );
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -211,6 +220,55 @@ export default function AgentConfigPage() {
               )}
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Remote Support card */}
+      <div
+        className="rounded-xl p-5 space-y-4"
+        style={{
+          background: "var(--th-bg-drawer-section)",
+          border: "1px solid var(--th-border-drawer-section)",
+        }}
+      >
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
+            TECHI Remote Support
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
+            Controls whether Connect links include the global managed password for direct sessions.
+          </p>
+        </div>
+
+        {loading ? (
+          <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+        ) : (
+          <label
+            className="flex cursor-pointer items-center justify-between gap-4 rounded-lg px-4 py-3"
+            style={{
+              background: "var(--th-bg-shell)",
+              border: "1px solid var(--th-border-subtle)",
+            }}
+          >
+            <span>
+              <span className="block text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                Auto-connect with managed password
+              </span>
+              <span className="mt-0.5 block text-xs" style={{ color: "var(--th-text-muted)" }}>
+                When enabled, Connect uses the global password; unmatched devices will still ask manually.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={managedPasswordEnabled}
+              onChange={(e) => {
+                setManagedPasswordEnabled(e.target.checked);
+                setError(null);
+              }}
+              className="h-5 w-5 shrink-0 rounded border-white/15 accent-orange-500"
+              aria-label="Auto-connect with managed password"
+            />
+          </label>
         )}
       </div>
 

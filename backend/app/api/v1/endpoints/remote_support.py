@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.remote_action import ActionType, RemoteActionCreate, RemoteActionResponse
+from app.services import agent_config_service
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
@@ -125,7 +126,8 @@ def _build_connect_url(remote_id: str) -> str:
     encoded_id = quote(remote_id, safe="")
     connect_url = f"techiremotesupport://{encoded_id}"
     managed_password = settings.RUSTDESK_DEFAULT_PASSWORD.strip()
-    if settings.RUSTDESK_DEEP_LINK_PASSWORD_ENABLED and managed_password:
+    policy = agent_config_service.get_policy()
+    if policy["remote_support_managed_password_enabled"] and managed_password:
         connect_url += f"?password={quote(managed_password, safe='')}"
     return connect_url
 
