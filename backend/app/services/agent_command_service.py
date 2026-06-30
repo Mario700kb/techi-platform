@@ -76,6 +76,7 @@ class AgentCommandService:
             created_by=operator_id,
         )
         self.db.add(batch)
+        self.db.flush()
 
         now = utcnow()
         for device in devices:
@@ -91,6 +92,12 @@ class AgentCommandService:
                 batch_id=batch_id,
             )
             self.db.add(action)
+            # PostgreSQL stores status as an enum. SQLAlchemy's multi-row
+            # insert path can bind that enum as VARCHAR for large batches,
+            # which Postgres rejects. Flushing each action keeps the whole
+            # transaction atomic while using the single-row insert path that
+            # correctly casts the enum.
+            self.db.flush()
 
         self.db.commit()
         self.db.refresh(batch)

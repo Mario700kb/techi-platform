@@ -30,6 +30,10 @@ cannot leave a new zero-target batch behind.
 The confirm modal now submits as a real form, shows send errors inside
 the modal, and refreshes Command History immediately after a batch is
 created.
+Large online batches now flush each `RemoteAction` through SQLAlchemy's
+single-row insert path inside the same transaction. This avoids a
+Postgres enum cast failure where the ORM's multi-row insert bound
+`remote_actions.status` as `VARCHAR` instead of the `actionstatus` enum.
 
 ### Checks
 
@@ -40,6 +44,8 @@ created.
 - Ran the new backend test file and frontend production build.
 - Verified the frontend production build emits a new JS asset after the
   modal/history refresh fix.
+- Verified from production logs that the bulk failure was a Postgres
+  `actionstatus` enum mismatch during multi-row insert.
 
 ## [2026-06-28] GPO Token Repair Must Write Canonical Config Without UTF-8 BOM
 
