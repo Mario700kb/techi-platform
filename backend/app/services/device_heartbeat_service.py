@@ -8,6 +8,7 @@ from app.core.time import utcnow
 from typing import Optional
 
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.device_activity_event import DeviceActivityEvent
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
@@ -38,6 +39,7 @@ _AGENT_ID_CACHE: OrderedDict[str, tuple[int, float]] = OrderedDict()
 _AGENT_ID_CACHE_TTL = 300.0  # seconds
 _AGENT_ID_CACHE_MAX_SIZE = 1000
 _AGENT_ID_CACHE_EVICT_COUNT = 100
+RUSTDESK_REPAIR_EVENT_THROTTLE_HOURS = 24
 
 
 def _cache_agent_device(agent_id: str, device_id: int) -> None:
@@ -480,6 +482,8 @@ class DeviceHeartbeatService:
         current_count = device.rustdesk_repair_count or 0
         if current_count <= (previous_count or 0):
             return
+        if self._has_recent_rustdesk_repair_event(device.id):
+            return
         DeviceActivityEventService(self.db).record(
             device_id=device.id,
             event_type="rustdesk_repaired",
@@ -487,6 +491,19 @@ class DeviceHeartbeatService:
             detail=f"Repair count: {current_count}",
             actor="agent",
             fail_silently=True,
+        )
+
+    def _has_recent_rustdesk_repair_event(self, device_id: int) -> bool:
+        cutoff = utcnow() - timedelta(hours=RUSTDESK_REPAIR_EVENT_THROTTLE_HOURS)
+        return (
+            self.db.query(DeviceActivityEvent.id)
+            .filter(
+                DeviceActivityEvent.device_id == device_id,
+                DeviceActivityEvent.event_type == "rustdesk_repaired",
+                DeviceActivityEvent.occurred_at >= cutoff,
+            )
+            .first()
+            is not None
         )
 
     def _process_telemetry(self, payload: AgentHeartbeatPayload, device) -> None:
