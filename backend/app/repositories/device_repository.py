@@ -105,6 +105,7 @@ class DeviceRepository:
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
         smart_folder: Optional[str] = None,
+        active_agent_version: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
@@ -122,6 +123,7 @@ class DeviceRepository:
             query = query.filter(Device.group_id == group_id)
         query = self._apply_assignment_filter(query, assignment_source)
         query = self._apply_smart_folder_filter(query, smart_folder)
+        query = self._apply_agent_update_filter(query, active_agent_version)
         query = self._apply_lifecycle_filter(query, lifecycle_state)
         if duplicate_candidates is True:
             query = query.filter(Device.duplicate_candidate.is_(True))
@@ -138,6 +140,11 @@ class DeviceRepository:
         query = self._apply_scope_filter(query, scope)
 
         return query.order_by(Device.registered_at.desc(), Device.id.desc()).offset(skip).limit(limit).all()
+
+    def _apply_agent_update_filter(self, query, active_agent_version: Optional[str]):
+        if not active_agent_version:
+            return query
+        return query.filter(or_(Device.agent_version.is_(None), Device.agent_version != active_agent_version))
 
     def _apply_maintenance_filter(self, query, maintenance_state: Optional[str]):
         if not maintenance_state:
@@ -343,6 +350,7 @@ class DeviceRepository:
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
         smart_folder: Optional[str] = None,
+        active_agent_version: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         query = self.db.query(Device)
@@ -360,6 +368,7 @@ class DeviceRepository:
             query = query.filter(Device.group_id == group_id)
         query = self._apply_assignment_filter(query, assignment_source)
         query = self._apply_smart_folder_filter(query, smart_folder)
+        query = self._apply_agent_update_filter(query, active_agent_version)
         query = self._apply_lifecycle_filter(query, lifecycle_state)
         if duplicate_candidates is True:
             query = query.filter(Device.duplicate_candidate.is_(True))

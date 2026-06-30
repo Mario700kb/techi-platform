@@ -87,6 +87,7 @@ def read_devices(
     duplicate_candidates: Optional[bool] = None,
     maintenance_state: Optional[str] = None,
     smart_folder: Optional[str] = None,
+    agent_update_state: Optional[str] = None,
 ):
     svc = DeviceService(db)
     filter_kwargs = dict(
@@ -101,6 +102,7 @@ def read_devices(
         duplicate_candidates=duplicate_candidates,
         maintenance_state=maintenance_state,
         smart_folder=smart_folder,
+        agent_update_state=agent_update_state,
         scope=scope,
     )
     devices = svc.get_devices(skip=skip, limit=limit, **filter_kwargs)

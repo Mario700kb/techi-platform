@@ -99,6 +99,7 @@ export interface DeviceFilters {
   duplicate_candidates?: boolean;
   maintenance_state?: "maintenance" | "normal";
   smart_folder?: "windows_server" | "windows_workstation" | "laptop" | "domain" | "workgroup" | "unassigned" | "offline" | "rustdesk_missing";
+  agent_update_state?: "outdated";
 }
 
 const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
@@ -115,6 +116,7 @@ const allowedAssignmentSources = new Set(["system_auto", "manual", "legacy_manua
 const allowedLifecycleStates = new Set(["active", "archived", "all"]);
 const allowedMaintenanceStates = new Set(["maintenance", "normal"]);
 const allowedSmartFolders = new Set(["windows_server", "windows_workstation", "laptop", "domain", "workgroup", "unassigned", "offline", "rustdesk_missing"]);
+const allowedAgentUpdateStates = new Set(["outdated"]);
 
 function appendIfAllowed(params: URLSearchParams, key: string, value: string | undefined, allowed: Set<string>) {
   if (value && allowed.has(value)) {
@@ -138,6 +140,7 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   if (filters.duplicate_candidates === true) params.append("duplicate_candidates", "true");
   appendIfAllowed(params, "maintenance_state", filters.maintenance_state, allowedMaintenanceStates);
   appendIfAllowed(params, "smart_folder", filters.smart_folder, allowedSmartFolders);
+  appendIfAllowed(params, "agent_update_state", filters.agent_update_state, allowedAgentUpdateStates);
 }
 
 export interface DevicesResponse {

@@ -14,6 +14,7 @@ from app.schemas.device import DeviceCreate, DeviceUpdate, MaintenanceEnterReque
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.device_assignment_service import DeviceAssignmentService
 from app.services.device_maintenance_service import DeviceMaintenanceService
+from app.services.agent_package_service import AgentPackageService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload
 from app.websocket.publisher import realtime_publisher
@@ -58,8 +59,10 @@ class DeviceService:
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
         smart_folder: Optional[str] = None,
+        agent_update_state: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
+        active_agent_version = self._active_agent_version_for_filter(agent_update_state)
         devices = self.repository.get_multi(
             skip=skip,
             limit=limit,
@@ -74,9 +77,17 @@ class DeviceService:
             duplicate_candidates=duplicate_candidates,
             maintenance_state=maintenance_state,
             smart_folder=smart_folder,
+            active_agent_version=active_agent_version,
             scope=scope,
         )
         return self.assignment.apply_resolution_many(devices)
+
+    @staticmethod
+    def _active_agent_version_for_filter(agent_update_state: Optional[str]) -> Optional[str]:
+        if (agent_update_state or "").strip().lower() != "outdated":
+            return None
+        active_pkg = AgentPackageService().latest_active("windows-amd64")
+        return active_pkg.version if active_pkg else None
 
     def create_device(self, device_in: DeviceCreate) -> Device:
         verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id)
@@ -142,8 +153,10 @@ class DeviceService:
         duplicate_candidates: Optional[bool] = None,
         maintenance_state: Optional[str] = None,
         smart_folder: Optional[str] = None,
+        agent_update_state: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
+        active_agent_version = self._active_agent_version_for_filter(agent_update_state)
         return self.repository.count(
             status=status,
             device_type=device_type,
@@ -156,6 +169,7 @@ class DeviceService:
             duplicate_candidates=duplicate_candidates,
             maintenance_state=maintenance_state,
             smart_folder=smart_folder,
+            active_agent_version=active_agent_version,
             scope=scope,
         )
 

@@ -561,7 +561,7 @@ const DevicesTable = memo(function DevicesTable({
           (d.rustdesk_status ?? "") !== "running"
         );
         case "needs_agent_update": return (
-          !!activePackageVersion && (!d.agent_version || d.agent_version !== activePackageVersion)
+          !activePackageVersion || !d.agent_version || d.agent_version !== activePackageVersion
         );
         case "favorites":       return favorites.has(d.id);
         default:                return true;

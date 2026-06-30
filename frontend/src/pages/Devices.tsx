@@ -65,6 +65,7 @@ function quickFilterToApiFilters(qf: QuickFilter): Partial<DeviceFilters> {
     case "servers": return { smart_folder: "windows_server" };
     case "workstations": return { smart_folder: "windows_workstation" };
     case "maintenance": return { maintenance_state: "maintenance" };
+    case "needs_agent_update": return { agent_update_state: "outdated" };
     default: return {};
   }
 }

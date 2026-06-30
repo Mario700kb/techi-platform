@@ -13,6 +13,7 @@ const MOBILE_QUICK_FILTERS: { id: QuickFilter; label: string; color?: string }[]
   { id: "warnings", label: "Warnings", color: "#fbbf24" },
   { id: "needs_attention", label: "Attention", color: "#fb923c" },
   { id: "needs_updates", label: "Updates", color: "#fbbf24" },
+  { id: "needs_agent_update", label: "Agent Update", color: "#a78bfa" },
   { id: "favorites", label: "Starred" },
 ];
 
