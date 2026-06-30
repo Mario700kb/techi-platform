@@ -16,11 +16,15 @@ export default function AgentConfigPage() {
   const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [remoteSaving, setRemoteSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [remoteSaved, setRemoteSaved] = useState(false);
   const [copying, setCopying] = useState<CopyTarget>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -35,7 +39,7 @@ export default function AgentConfigPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleSave() {
+  async function handleSaveHeartbeat() {
     const val = parseInt(intervalInput, 10);
     if (isNaN(val) || val < 60 || val > 600) {
       setError("Heartbeat interval must be between 60 and 600 seconds.");
@@ -44,10 +48,7 @@ export default function AgentConfigPage() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await putAgentConfig({
-        heartbeat_interval_seconds: val,
-        remote_support_managed_password_enabled: managedPasswordEnabled,
-      });
+      const updated = await putAgentConfig({ heartbeat_interval_seconds: val });
       setConfig(updated);
       setIntervalInput(String(updated.heartbeat_interval_seconds));
       setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
@@ -58,6 +59,26 @@ export default function AgentConfigPage() {
       setError(String(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveRemoteSupport() {
+    setRemoteSaving(true);
+    setRemoteError(null);
+    try {
+      const updated = await putAgentConfig({
+        remote_support_managed_password_enabled: managedPasswordEnabled,
+      });
+      setConfig(updated);
+      setIntervalInput(String(updated.heartbeat_interval_seconds));
+      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
+      setRemoteSaved(true);
+      if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
+      remoteSaveTimer.current = setTimeout(() => setRemoteSaved(false), 2500);
+    } catch (err) {
+      setRemoteError(String(err));
+    } finally {
+      setRemoteSaving(false);
     }
   }
 
@@ -78,10 +99,8 @@ export default function AgentConfigPage() {
   }
 
   const currentInterval = config?.heartbeat_interval_seconds ?? 180;
-  const dirty = config !== null && (
-    parseInt(intervalInput, 10) !== currentInterval ||
-    managedPasswordEnabled !== config.remote_support_managed_password_enabled
-  );
+  const heartbeatDirty = config !== null && parseInt(intervalInput, 10) !== currentInterval;
+  const remoteSupportDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -203,8 +222,8 @@ export default function AgentConfigPage() {
             {/* Save button */}
             <button
               type="button"
-              onClick={handleSave}
-              disabled={saving || !dirty}
+              onClick={handleSaveHeartbeat}
+              disabled={saving || !heartbeatDirty}
               className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
               style={{
                 background: "var(--th-accent-orange, #ff553f)",
@@ -216,7 +235,7 @@ export default function AgentConfigPage() {
               ) : saving ? (
                 "Saving…"
               ) : (
-                <><Save className="h-3.5 w-3.5" /> Save policy</>
+                <><Save className="h-3.5 w-3.5" /> Save heartbeat policy</>
               )}
             </button>
           </div>
@@ -263,12 +282,39 @@ export default function AgentConfigPage() {
               checked={managedPasswordEnabled}
               onChange={(e) => {
                 setManagedPasswordEnabled(e.target.checked);
-                setError(null);
+                setRemoteError(null);
               }}
               className="h-5 w-5 shrink-0 rounded border-white/15 accent-orange-500"
               aria-label="Auto-connect with managed password"
             />
           </label>
+        )}
+
+        {remoteError && (
+          <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
+            {remoteError}
+          </p>
+        )}
+
+        {!loading && (
+          <button
+            type="button"
+            onClick={handleSaveRemoteSupport}
+            disabled={remoteSaving || !remoteSupportDirty}
+            className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
+            style={{
+              background: "var(--th-accent-orange, #ff553f)",
+              color: "#fff",
+            }}
+          >
+            {remoteSaved ? (
+              <><Check className="h-3.5 w-3.5" /> Saved</>
+            ) : remoteSaving ? (
+              "Saving…"
+            ) : (
+              <><Save className="h-3.5 w-3.5" /> Save Remote Support</>
+            )}
+          </button>
         )}
       </div>
 
