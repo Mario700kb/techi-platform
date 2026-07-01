@@ -34,6 +34,10 @@ export default function Clients() {
     }, {});
   }, [groups]);
 
+  const mappedTrustedDomains = useMemo(() => {
+    return trustedDomains.filter((domain) => domain.client_id);
+  }, [trustedDomains]);
+
   const loadData = async (force = false) => {
     // Skip if cache is fresh and not forced (manual refresh)
     if (!force && appCache.get(CACHE_KEYS.clientsList, CACHE_TTL.clientsList)) return;
@@ -398,13 +402,13 @@ export default function Clients() {
               <h2 className="text-base font-semibold text-white">Domain mapping</h2>
             </div>
             <p className="mb-3 text-xs leading-5 text-slate-500">
-              Maps AD domains like x.local to the real client used by automatic enrollment.
+              Maps the domain value shown on devices, for example x, to the real client used by automatic enrollment.
             </p>
             <div className="space-y-3">
               <input
                 value={domainName}
                 onChange={(event) => setDomainName(event.target.value)}
-                placeholder="x.local"
+                placeholder="x"
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
               <select
@@ -423,10 +427,10 @@ export default function Clients() {
             </div>
 
             <div className="mt-5 space-y-2">
-              {trustedDomains.length === 0 ? (
+              {mappedTrustedDomains.length === 0 ? (
                 <p className="text-xs font-medium text-slate-500">No domain mappings configured.</p>
               ) : (
-                trustedDomains.map((domain) => (
+                mappedTrustedDomains.map((domain) => (
                   <div key={domain.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className="font-mono text-xs font-semibold text-slate-100">{domain.domain}</span>
@@ -445,7 +449,6 @@ export default function Clients() {
                       aria-label={`Client for ${domain.domain}`}
                       className="mb-2 w-full rounded-md border border-white/10 bg-slate-950 px-2 py-2 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
                     >
-                      <option value="">Fallback by domain name</option>
                       {clients.map((client) => (
                         <option key={client.id} value={client.id}>{client.name}</option>
                       ))}
