@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DeviceType(str, Enum):
@@ -26,6 +26,7 @@ class DeviceBase(BaseModel):
     agent_id: Optional[str] = None
     rustdesk_id: Optional[str] = None
     hostname: Optional[str]
+    display_name: Optional[str] = Field(default=None, max_length=128)
     current_user: Optional[str]
     user_source: Optional[str] = None
     user_session_state: Optional[str] = None
@@ -90,6 +91,7 @@ class DeviceCreate(DeviceBase):
 class DeviceUpdate(BaseModel):
     agent_id: Optional[str] = None
     hostname: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=128)
     current_user: Optional[str] = None
     user_source: Optional[str] = None
     user_session_state: Optional[str] = None
@@ -141,6 +143,14 @@ class DeviceUpdate(BaseModel):
     maintenance_note: Optional[str] = None
     maintenance_started_by: Optional[str] = None
     agent_version: Optional[str] = None
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class RustDeskIdVerifyRequest(BaseModel):

@@ -6,6 +6,7 @@ import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge } from "./ui";
 import { parseUTC } from "../utils/time";
 import { ActiveActionEntry } from "./DevicesTable";
+import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +215,8 @@ export function DeviceMobileCard({
   const offlineBadge = getOfflineReasonBadge(device, offlineSummary);
   const healthScore = health?.health_score;
   const isLowHealth = healthScore != null && healthScore < 60;
+  const displayName = deviceDisplayName(device);
+  const hostnameSubtitle = deviceHostnameSubtitle(device);
   const rsIssue =
     device.rustdesk_install_status !== "not_installed" &&
     (device.rustdesk_status ?? "") !== "running";
@@ -234,9 +237,9 @@ export function DeviceMobileCard({
             <span
               className="min-w-0 truncate text-[13px] font-bold leading-tight"
               style={{ color: "var(--th-text-primary)" }}
-              title={device.hostname || "Unknown"}
+              title={displayName}
             >
-              {device.hostname || "Unknown"}
+              {displayName}
             </span>
             {/* Taps stop propagation so they don't open the drawer */}
             <div
@@ -274,6 +277,11 @@ export function DeviceMobileCard({
               </button>
             </div>
           </div>
+          {hostnameSubtitle && (
+            <p className="mt-0.5 truncate font-mono text-[10px]" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
+              {hostnameSubtitle}
+            </p>
+          )}
 
           {/* Row 2: badges */}
           <div className="mt-1 flex flex-wrap items-center gap-1">

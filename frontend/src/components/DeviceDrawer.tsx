@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import { getConnectUrl, getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
-import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis } from "../api/devices";
+import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
@@ -33,6 +33,7 @@ import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
+import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -212,6 +213,9 @@ export default function DeviceDrawer({
   const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(device.display_name ?? "");
+  const [nameSaving, setNameSaving] = useState(false);
 
   const [actions, setActions] = useState<RemoteAction[]>([]);
   const [actionsLoading, setActionsLoading] = useState(false);
@@ -261,6 +265,25 @@ export default function DeviceDrawer({
     deviceId: device.id,
     latestEvent,
   });
+  const displayName = deviceDisplayName(device);
+  const hostnameSubtitle = deviceHostnameSubtitle(device);
+
+  useEffect(() => {
+    setNameDraft(device.display_name ?? "");
+    setNameEditing(false);
+  }, [device.id, device.display_name]);
+
+  async function saveDisplayName() {
+    const trimmed = nameDraft.trim();
+    setNameSaving(true);
+    try {
+      const updated = await updateDevice(device.id, { display_name: trimmed || null });
+      onDeviceUpdated?.(updated);
+      setNameEditing(false);
+    } finally {
+      setNameSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -546,9 +569,62 @@ export default function DeviceDrawer({
                   isOnline ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-slate-600"
                 }`}
               />
-              <h2 className="truncate text-sm font-bold text-white">
-                {device.hostname || "Unknown host"}
-              </h2>
+              {nameEditing ? (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <input
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveDisplayName();
+                      if (e.key === "Escape") {
+                        setNameDraft(device.display_name ?? "");
+                        setNameEditing(false);
+                      }
+                    }}
+                    maxLength={128}
+                    autoFocus
+                    placeholder={device.hostname || "Device name"}
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-sm font-bold text-white outline-none focus:border-orange-400/60"
+                  />
+                  <button
+                    type="button"
+                    disabled={nameSaving}
+                    onClick={() => void saveDisplayName()}
+                    title="Save name"
+                    className="rounded p-1 text-emerald-300 transition hover:bg-white/5 disabled:opacity-50"
+                  >
+                    {nameSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={nameSaving}
+                    onClick={() => {
+                      setNameDraft(device.display_name ?? "");
+                      setNameEditing(false);
+                    }}
+                    title="Cancel"
+                    className="rounded p-1 text-slate-500 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="truncate text-sm font-bold text-white" title={displayName}>
+                    {displayName}
+                  </h2>
+                  {canOperate && (
+                    <button
+                      type="button"
+                      onClick={() => setNameEditing(true)}
+                      title="Edit display name"
+                      className="rounded p-1 text-slate-500 transition hover:bg-white/5 hover:text-white"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
               {device.device_type === "server" ? (
                 <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
                   style={{ color: "#a78bfa", background: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.22)" }}>
@@ -590,6 +666,11 @@ export default function DeviceDrawer({
               )}
               {device.domain && (
                 <span className="text-[10px] font-medium text-slate-500">{device.domain}</span>
+              )}
+              {hostnameSubtitle && (
+                <span className="max-w-[150px] truncate font-mono text-[10px] font-medium text-slate-500" title={device.hostname}>
+                  host {hostnameSubtitle}
+                </span>
               )}
             </div>
             <p className="mt-1 text-[10px] font-medium text-slate-600">Device #{device.id}</p>

@@ -30,6 +30,7 @@ export interface DeviceRealtimeEvent {
     id?: number;
     rustdesk_id?: string;
     hostname?: string | null;
+    display_name?: string | null;
     current_user?: string | null;
     domain?: string | null;
     public_ip?: string | null;

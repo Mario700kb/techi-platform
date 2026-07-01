@@ -7,6 +7,7 @@ import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
 import { getConnectUrl } from "../api/remoteSupport";
+import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
@@ -573,7 +574,7 @@ const DevicesTable = memo(function DevicesTable({
     return [...versionFiltered].sort((a, b) => {
       let cmp: number;
       if (sortKey === "hostname") {
-        cmp = (a.hostname ?? "").localeCompare(b.hostname ?? "");
+        cmp = deviceDisplayName(a).localeCompare(deviceDisplayName(b));
       } else if (sortKey === "client_name") {
         cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
       } else {
@@ -884,7 +885,7 @@ const DevicesTable = memo(function DevicesTable({
               type="search"
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search hostname, user, domain or IP..."
+              placeholder="Search name, hostname, user, domain or IP..."
               className={`${FILTER_INPUT_CLS} w-full py-1.5 pl-9 pr-3`}
             />
           </div>
@@ -1253,13 +1254,26 @@ const DevicesTable = memo(function DevicesTable({
 
                       {/* ── Hostname ── */}
                       <td className="px-2.5 py-1.5 align-middle">
-                        <div
-                          className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
-                          style={{ color: "var(--th-text-primary)" }}
-                          title={device.hostname || "Unknown"}
-                        >
-                          {device.hostname || "Unknown"}
-                        </div>
+                        {(() => {
+                          const label = deviceDisplayName(device);
+                          const hostname = deviceHostnameSubtitle(device);
+                          return (
+                            <>
+                              <div
+                                className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
+                                style={{ color: "var(--th-text-primary)" }}
+                                title={label}
+                              >
+                                {label}
+                              </div>
+                              {hostname && (
+                                <div className="max-w-[180px] truncate font-mono text-[10px] leading-4" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
+                                  {hostname}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="mt-0.5 flex flex-wrap items-center gap-0.5">
                           {getDeviceTypeBadge(device)}
                           {getPatchBadge(patchMap[device.id])}

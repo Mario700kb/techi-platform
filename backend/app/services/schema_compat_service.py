@@ -16,6 +16,7 @@ DEVICE_COLUMNS = {
     "os_caption": "VARCHAR(160)",
     "os_build": "VARCHAR(80)",
     "windows_product_type": "INTEGER",
+    "display_name": "VARCHAR(128)",
     "rustdesk_install_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_status": "VARCHAR(32) NOT NULL DEFAULT 'unknown'",
     "rustdesk_version": "VARCHAR(80)",

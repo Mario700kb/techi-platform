@@ -131,6 +131,7 @@ class DeviceRepository:
         if search:
             search_filter = or_(
                 Device.hostname.ilike(f"%{search}%"),
+                Device.display_name.ilike(f"%{search}%"),
                 Device.rustdesk_id.ilike(f"%{search}%"),
                 Device.current_user.ilike(f"%{search}%"),
                 Device.public_ip.ilike(f"%{search}%"),
@@ -376,6 +377,7 @@ class DeviceRepository:
         if search:
             search_filter = or_(
                 Device.hostname.ilike(f"%{search}%"),
+                Device.display_name.ilike(f"%{search}%"),
                 Device.rustdesk_id.ilike(f"%{search}%"),
                 Device.current_user.ilike(f"%{search}%"),
                 Device.public_ip.ilike(f"%{search}%"),

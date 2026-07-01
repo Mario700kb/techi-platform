@@ -48,6 +48,7 @@ def device_payload(device: Device) -> Dict[str, Any]:
         "id": device.id,
         "rustdesk_id": device.rustdesk_id,
         "hostname": device.hostname,
+        "display_name": getattr(device, "display_name", None),
         "current_user": device.current_user,
         "domain": device.domain,
         "public_ip": device.public_ip,

@@ -31,6 +31,7 @@ class Device(Base):
     rustdesk_id = Column(String(64), unique=True, nullable=True, index=True)
     agent_id = Column(String(80), unique=True, nullable=True, index=True)
     hostname = Column(String(128), nullable=True)
+    display_name = Column(String(128), nullable=True)
     current_user = Column(String(128), nullable=True)
     user_source = Column(String(40), nullable=True)
     user_session_state = Column(String(40), nullable=True)

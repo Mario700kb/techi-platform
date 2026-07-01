@@ -23,6 +23,7 @@ export interface Device {
   agent_id?: string | null;
   rustdesk_id: string;
   hostname?: string;
+  display_name?: string | null;
   current_user?: string;
   user_source?: string;
   user_session_state?: string;
