@@ -90,6 +90,30 @@ class TrustedDomainService:
         # trusted_domains.
         return settings.ENVIRONMENT.lower() != "production"
 
+    def get_active_domain(self, domain: Optional[str]) -> Optional[TrustedDomain]:
+        if self.db is None:
+            return None
+        normalized = self.normalize_domain(domain)
+        if not normalized:
+            return None
+        return (
+            self.db.query(TrustedDomain)
+            .filter(TrustedDomain.domain == normalized, TrustedDomain.is_active.is_(True))
+            .first()
+        )
+
+    def mapped_client_id(self, domain: Optional[str]) -> Optional[int]:
+        configured = self.get_active_domain(domain)
+        return configured.client_id if configured and configured.client_id else None
+
+    def mapped_client_name(self, domain: Optional[str]) -> Optional[str]:
+        configured = self.get_active_domain(domain)
+        if configured is None:
+            return None
+        if configured.client:
+            return configured.client.name
+        return configured.client_name or None
+
     @classmethod
     def normalize_to_client_name(cls, domain: str) -> str:
         """ADPascucci.local → 'Adpascucci'; corp.example.com → 'Corp'."""

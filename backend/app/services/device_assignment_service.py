@@ -13,6 +13,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.schemas.client import ClientCreate
 from app.schemas.device import DeviceUpdate
 from app.schemas.device_group import DeviceGroupCreate
+from app.services.trusted_domain_service import TrustedDomainService
 
 
 @dataclass
@@ -60,6 +61,7 @@ class DeviceAssignmentService:
         self.clients = ClientRepository(db)
         self.groups = DeviceGroupRepository(db)
         self.devices = DeviceRepository(db)
+        self.trusted_domains = TrustedDomainService(db)
 
     def apply_enrollment_assignment(
         self,
@@ -96,7 +98,7 @@ class DeviceAssignmentService:
                 DeviceUpdate(client_id=None, group_id=None, auto_assigned=False, assignment_source=self.UNASSIGNED_SOURCE),
             )
 
-        client = self._get_or_create_client(client_name)
+        client = self._get_client_for_domain(signal.domain, fallback_name=client_name)
         group = self._get_or_create_group(client.id, self._detect_group(signal))
         return self.devices.update(
             device,
@@ -127,13 +129,11 @@ class DeviceAssignmentService:
         signal: AssignmentSignal,
     ) -> Device:
         """Assign a trusted-domain device directly from its domain name, bypassing token checks."""
-        from app.services.trusted_domain_service import TrustedDomainService
-
         if not self._can_auto_assign(device):
             return device
 
         client_name = self._normalize_domain_to_client_name(domain) or TrustedDomainService.normalize_to_client_name(domain)
-        client = self._get_or_create_client(client_name)
+        client = self._get_client_for_domain(domain, fallback_name=client_name)
         group_name = TrustedDomainService.detect_group_name(
             signal.os_name,
             signal.platform,
@@ -161,10 +161,8 @@ class DeviceAssignmentService:
         if source in {self.MANUAL_SOURCE, self.LEGACY_MANUAL_SOURCE, self.ENROLLMENT_SOURCE}:
             return device
 
-        from app.services.trusted_domain_service import TrustedDomainService
-
         client_name = self._normalize_domain_to_client_name(signal.domain) or TrustedDomainService.normalize_to_client_name(signal.domain or "")
-        client = self._get_or_create_client(client_name)
+        client = self._get_client_for_domain(signal.domain, fallback_name=client_name)
         self._ensure_standard_groups(client.id)
         group_name = TrustedDomainService.detect_group_name(
             signal.os_name,
@@ -232,9 +230,10 @@ class DeviceAssignmentService:
             )
 
         if self._is_domain_managed(device.domain):
+            mapped_name = self.trusted_domains.mapped_client_name(device.domain)
             return AssignmentResolution(
-                resolved_client_id=None,
-                resolved_client_name=self._normalize_domain_to_client_name(device.domain),
+                resolved_client_id=self.trusted_domains.mapped_client_id(device.domain),
+                resolved_client_name=mapped_name or self._normalize_domain_to_client_name(device.domain),
                 resolved_group="Servers" if category == "servers" else "Client PC",
                 resolved_assignment_source=self.TRUSTED_DOMAIN_SOURCE,
                 resolved_device_category=category,
@@ -327,6 +326,17 @@ class DeviceAssignmentService:
             slug = f"{base_slug}-{suffix}"
             suffix += 1
         return self.clients.create(ClientCreate(name=name, slug=slug, is_active=True), slug=slug)
+
+    def _get_client_for_domain(self, domain: Optional[str], *, fallback_name: str) -> Client:
+        mapped_client_id = self.trusted_domains.mapped_client_id(domain)
+        if mapped_client_id is not None:
+            mapped = self.clients.get(mapped_client_id)
+            if mapped:
+                return mapped
+        mapped_client_name = self.trusted_domains.mapped_client_name(domain)
+        if mapped_client_name:
+            return self._get_or_create_client(mapped_client_name)
+        return self._get_or_create_client(fallback_name)
 
     def _get_or_create_group(self, client_id: int, name: str) -> DeviceGroup:
         existing = self.groups.get_by_client_and_name(client_id, name)

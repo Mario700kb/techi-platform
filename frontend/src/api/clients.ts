@@ -17,6 +17,31 @@ export interface DeviceGroup {
   created_at: string;
 }
 
+export interface TrustedDomain {
+  id: number;
+  domain: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  resolved_client_name?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrustedDomainCreate {
+  domain: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_active?: boolean;
+}
+
+export interface TrustedDomainUpdate {
+  domain?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_active?: boolean;
+}
+
 export interface ClientCreate {
   name: string;
   slug?: string;
@@ -63,6 +88,32 @@ export async function updateClient(clientId: number, payload: ClientUpdate): Pro
 
 export async function deleteClient(clientId: number): Promise<Client> {
   return fetchJson<Client>(`/api/v1/clients/${clientId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getTrustedDomains(): Promise<TrustedDomain[]> {
+  return fetchJson<TrustedDomain[]>("/api/v1/trusted-domains");
+}
+
+export async function createTrustedDomain(payload: TrustedDomainCreate): Promise<TrustedDomain> {
+  return fetchJson<TrustedDomain>("/api/v1/trusted-domains", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTrustedDomain(domainId: number, payload: TrustedDomainUpdate): Promise<TrustedDomain> {
+  return fetchJson<TrustedDomain>(`/api/v1/trusted-domains/${domainId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteTrustedDomain(domainId: number): Promise<TrustedDomain> {
+  return fetchJson<TrustedDomain>(`/api/v1/trusted-domains/${domainId}`, {
     method: "DELETE",
   });
 }

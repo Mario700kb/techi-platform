@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Pencil, Plus, RefreshCcw, Trash2, Users, X } from "lucide-react";
-import { Client, DeviceGroup, createClient, createGroup, deleteClient, deleteGroup, getClients, getGroups, updateClient, updateGroup } from "../api/clients";
+import { Building2, Globe2, Pencil, Plus, RefreshCcw, Trash2, Users, X } from "lucide-react";
+import { Client, DeviceGroup, TrustedDomain, createClient, createGroup, createTrustedDomain, deleteClient, deleteGroup, deleteTrustedDomain, getClients, getGroups, getTrustedDomains, updateClient, updateGroup, updateTrustedDomain } from "../api/clients";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
@@ -10,11 +10,14 @@ export default function Clients() {
   const canManageClients = can("admin");
   const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
   const [groups, setGroups] = useState<DeviceGroup[]>(() => appCache.peek<DeviceGroup[]>(CACHE_KEYS.groupsList) ?? []);
+  const [trustedDomains, setTrustedDomains] = useState<TrustedDomain[]>([]);
   const [clientName, setClientName] = useState("");
   const [clientDescription, setClientDescription] = useState("");
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [groupClientId, setGroupClientId] = useState("");
+  const [domainName, setDomainName] = useState("");
+  const [domainClientId, setDomainClientId] = useState("");
   const [editingGroup, setEditingGroup] = useState<DeviceGroup | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editClientName, setEditClientName] = useState("");
@@ -37,13 +40,17 @@ export default function Clients() {
     try {
       setLoading(true);
       setError(null);
-      const [clientData, groupData] = await Promise.all([getClients(), getGroups()]);
+      const [clientData, groupData, trustedDomainData] = await Promise.all([getClients(), getGroups(), getTrustedDomains()]);
       appCache.set(CACHE_KEYS.clientsList, clientData);
       appCache.set(CACHE_KEYS.groupsList, groupData);
       setClients(clientData);
       setGroups(groupData);
+      setTrustedDomains(trustedDomainData);
       if (!groupClientId && clientData[0]) {
         setGroupClientId(String(clientData[0].id));
+      }
+      if (!domainClientId && clientData[0]) {
+        setDomainClientId(String(clientData[0].id));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load clients");
@@ -87,6 +94,54 @@ export default function Clients() {
       setGroupDescription("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
+    }
+  };
+
+  const handleCreateTrustedDomain = async () => {
+    if (!domainName.trim() || !domainClientId) return;
+    try {
+      setError(null);
+      const created = await createTrustedDomain({
+        domain: domainName,
+        client_id: Number(domainClientId),
+        is_active: true,
+      });
+      setTrustedDomains((items) => [...items, created].sort((a, b) => a.domain.localeCompare(b.domain)));
+      setDomainName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create domain mapping");
+    }
+  };
+
+  const handleTrustedDomainClientChange = async (domain: TrustedDomain, clientId: string) => {
+    try {
+      setError(null);
+      const updated = await updateTrustedDomain(domain.id, { client_id: clientId ? Number(clientId) : null });
+      setTrustedDomains((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update domain mapping");
+    }
+  };
+
+  const handleTrustedDomainActiveChange = async (domain: TrustedDomain, isActive: boolean) => {
+    try {
+      setError(null);
+      const updated = await updateTrustedDomain(domain.id, { is_active: isActive });
+      setTrustedDomains((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update domain mapping");
+    }
+  };
+
+  const handleDeleteTrustedDomain = async (domain: TrustedDomain) => {
+    const confirmed = window.confirm(`Delete trusted domain mapping "${domain.domain}"?`);
+    if (!confirmed) return;
+    try {
+      setError(null);
+      await deleteTrustedDomain(domain.id);
+      setTrustedDomains((items) => items.filter((item) => item.id !== domain.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete domain mapping");
     }
   };
 
@@ -336,6 +391,79 @@ export default function Clients() {
               </Button>
 	            </div>
 	          </div>
+
+          <div className="premium-card-soft p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Globe2 className="h-4 w-4 text-techi-orange" />
+              <h2 className="text-base font-semibold text-white">Domain mapping</h2>
+            </div>
+            <p className="mb-3 text-xs leading-5 text-slate-500">
+              Maps AD domains like x.local to the real client used by automatic enrollment.
+            </p>
+            <div className="space-y-3">
+              <input
+                value={domainName}
+                onChange={(event) => setDomainName(event.target.value)}
+                placeholder="x.local"
+                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
+              />
+              <select
+                value={domainClientId}
+                onChange={(event) => setDomainClientId(event.target.value)}
+                aria-label="Mapped client"
+                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
+              >
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>{client.name}</option>
+                ))}
+              </select>
+              <Button className="w-full" type="button" onClick={handleCreateTrustedDomain} disabled={!clients.length}>
+                Save Mapping
+              </Button>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              {trustedDomains.length === 0 ? (
+                <p className="text-xs font-medium text-slate-500">No domain mappings configured.</p>
+              ) : (
+                trustedDomains.map((domain) => (
+                  <div key={domain.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-semibold text-slate-100">{domain.domain}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteTrustedDomain(domain)}
+                        className="text-slate-500 transition hover:text-red-300"
+                        title="Delete mapping"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <select
+                      value={domain.client_id ?? ""}
+                      onChange={(event) => void handleTrustedDomainClientChange(domain, event.target.value)}
+                      aria-label={`Client for ${domain.domain}`}
+                      className="mb-2 w-full rounded-md border border-white/10 bg-slate-950 px-2 py-2 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
+                    >
+                      <option value="">Fallback by domain name</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>{client.name}</option>
+                      ))}
+                    </select>
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={domain.is_active}
+                        onChange={(event) => void handleTrustedDomainActiveChange(domain, event.target.checked)}
+                        className="h-3.5 w-3.5 rounded accent-orange-500"
+                      />
+                      Active
+                    </label>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 	        </div>
 	        )}
       </div>

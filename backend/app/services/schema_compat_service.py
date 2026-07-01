@@ -72,6 +72,10 @@ ENROLLMENT_TOKEN_COLUMNS = {
     "internal_kind": "VARCHAR(32)",
 }
 
+TRUSTED_DOMAIN_COLUMNS = {
+    "client_id": "INTEGER",
+}
+
 DEV_TABLES = {
     "audit_logs": """
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -124,6 +128,7 @@ DEV_TABLES = {
             id INTEGER PRIMARY KEY,
             domain VARCHAR(255) NOT NULL UNIQUE,
             client_name VARCHAR(160),
+            client_id INTEGER,
             is_active BOOLEAN NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL
@@ -148,6 +153,7 @@ DEV_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_id ON trusted_domains (id)",
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_domain ON trusted_domains (domain)",
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_is_active ON trusted_domains (is_active)",
+    "CREATE INDEX IF NOT EXISTS ix_trusted_domains_client_id ON trusted_domains (client_id)",
 ]
 
 
@@ -163,6 +169,7 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "device_inventory": INVENTORY_COLUMNS,
         "remote_actions": REMOTE_ACTION_COLUMNS,
         "enrollment_tokens": ENROLLMENT_TOKEN_COLUMNS,
+        "trusted_domains": TRUSTED_DOMAIN_COLUMNS,
     }.items():
         if not inspector.has_table(table_name):
             continue
