@@ -3,6 +3,45 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-01] Device Aliases and Domain-to-Client Mapping
+
+### Root cause
+
+Some devices enrolled with generic Windows hostnames such as
+`DESKTOP-...`, and some customer domains were very short, for example
+`X`. The fleet tree used the automatically created client/domain name,
+so operators could not safely present the real customer name without
+risking future enrollments being assigned back to the old short domain
+client.
+
+The new Domain Mapping panel also showed existing trusted-domain
+fallback rows with no explicit client mapping. Those rows appeared as
+`Fallback by domain name`, which made the panel look like it contained
+real mappings that operators had not configured.
+
+### Fix
+
+- Added editable device display names as UI aliases without renaming the
+  Windows hostname or changing enrollment identity.
+- Added trusted-domain-to-client mapping so a reported domain such as
+  `x` can be mapped to the real client, for example `X-PlanStudio`.
+- Kept fallback trusted domains working server-side, but hid fallback
+  rows from the Domain Mapping panel unless they have a real `client_id`.
+- Updated the Domain Mapping helper text and placeholder to use the
+  exact domain value shown on devices, for example `x`, instead of
+  suggesting `x.local` by default.
+
+### Checks
+
+- Added backend coverage for mapped trusted domains assigning new and
+  existing devices to the configured client.
+- Ran focused backend tests for trusted-domain mapping and Windows
+  device classification.
+- Ran the frontend production build.
+- Deployed the mapping flow and the follow-up UI cleanup to production.
+- Verified production containers are healthy and the frontend returns
+  `200 OK`.
+
 ## [2026-06-30] Command Center Bulk Password Should Target Online Devices
 
 ### Root cause
