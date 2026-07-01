@@ -1,15 +1,15 @@
 """add device display name
 
-Revision ID: a2b3c4d5e6f7
-Revises: z1a2b3c4d5e6
+Revision ID: d5e6f7a8b9c0
+Revises: c4d5e6f7a8b9
 Create Date: 2026-07-01
 
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "a2b3c4d5e6f7"
-down_revision = "z1a2b3c4d5e6"
+revision = "d5e6f7a8b9c0"
+down_revision = "c4d5e6f7a8b9"
 branch_labels = None
 depends_on = None
 
