@@ -81,6 +81,7 @@ class DeviceBase(BaseModel):
     maintenance_note: Optional[str] = None
     maintenance_started_by: Optional[str] = None
     agent_version: Optional[str] = None
+    agent_sha256: Optional[str] = None
 
 
 class DeviceCreate(DeviceBase):
@@ -143,6 +144,7 @@ class DeviceUpdate(BaseModel):
     maintenance_note: Optional[str] = None
     maintenance_started_by: Optional[str] = None
     agent_version: Optional[str] = None
+    agent_sha256: Optional[str] = None
 
     @field_validator("display_name")
     @classmethod
@@ -234,6 +236,7 @@ class DeviceFleetOverview(BaseModel):
     needs_updates: int
     agents_outdated: int = 0
     active_agent_version: Optional[str] = None
+    active_agent_sha256: Optional[str] = None
     loaded_at: datetime
 
 

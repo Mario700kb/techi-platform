@@ -846,6 +846,25 @@ class TestGPOScheduledDeployScript:
         assert "net start TechiAgent >nul 2>&1" in self.script
         assert "timeout /t 10 /nobreak >nul" in self.script
 
+    def test_deploy_cmd_recovers_missing_agent_exe_before_uptodate_gate(self):
+        """Registry equal nuk mjafton: nese exe mungon, rikthe backup ose detyro MSI reinstall."""
+        recovery_call = self.script.index("call :recover_missing_agent_binary")
+        repair_call = self.script.index("call :repair_unenrolled_config")
+        equal_gate = self.script.index('if /i "%VERSION_STATE%"=="equal" goto :already_uptodate')
+        assert recovery_call < repair_call < equal_gate
+
+        assert ":recover_missing_agent_binary" in self.script
+        assert 'if exist "%AGENT_EXE%" exit /b 0' in self.script
+        assert "agent_exe_missing path=%AGENT_EXE% version_state=%VERSION_STATE%" in self.script
+        assert 'if exist "%INSTALL_DIR%\\techi-agent-new.exe" set RESTORE_SOURCE=%INSTALL_DIR%\\techi-agent-new.exe' in self.script
+        assert 'if not defined RESTORE_SOURCE if exist "%INSTALL_DIR%\\techi-agent-old.exe" set RESTORE_SOURCE=%INSTALL_DIR%\\techi-agent-old.exe' in self.script
+        assert 'if not defined RESTORE_SOURCE if exist "%INSTALL_DIR%\\techi-agent.new.exe" set RESTORE_SOURCE=%INSTALL_DIR%\\techi-agent.new.exe' in self.script
+        assert 'if not defined RESTORE_SOURCE if exist "%INSTALL_DIR%\\techi-agent.previous.exe" set RESTORE_SOURCE=%INSTALL_DIR%\\techi-agent.previous.exe' in self.script
+        assert 'move /y "%RESTORE_SOURCE%" "%AGENT_EXE%"' in self.script
+        assert "agent_exe_restored source=%RESTORE_SOURCE%" in self.script
+        assert "agent_exe_missing_force_reinstall no_restore_source=1" in self.script
+        assert "set VERSION_STATE=missing" in self.script
+
     def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
         """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""
         assert ":ensure_service_running" in self.script

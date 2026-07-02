@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -83,8 +82,11 @@ func downloadAgentBinary(url, dest string) error {
 	return fmt.Errorf("download failed after 3 attempts: %w", lastErr)
 }
 
-// swapAgentBinary writes and launches a detached PowerShell helper.  The helper
-// does the risky work outside the current service process:
+// swapAgentBinary writes a PowerShell helper and runs it through a one-shot
+// Scheduled Task as SYSTEM.  Starting a plain child powershell.exe from the
+// agent is not enough: when the helper stops TechiAgent, Windows can terminate
+// child processes that still belong to the service's process/job tree.
+// Task Scheduler gives the swap an independent parent before the service stops:
 //   - stop service
 //   - backup old exe → techi-agent-old.exe
 //   - move new exe → techi-agent.exe
@@ -104,24 +106,58 @@ func swapAgentBinary(newExePath string) error {
 		return fmt.Errorf("write helper: %w", err)
 	}
 
+	launcherPath := filepath.Join(filepath.Dir(newExePath),
+		"binary-swap-launch-"+sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))+".ps1")
+	taskName := "TECHI-Agent-SelfUpdate-" + sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))
+	if err := os.WriteFile(launcherPath, []byte(binarySwapTaskLauncherScript(helperPath, newExePath, taskName)), 0600); err != nil {
+		return fmt.Errorf("write task launcher: %w", err)
+	}
+
 	cmd := exec.Command(
 		"powershell.exe",
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-		"-File", helperPath,
-		"-NewExePath", newExePath,
+		"-File", launcherPath,
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW,
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("start scheduled task helper: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start helper: %w", err)
-	}
-	_ = cmd.Process.Release()
 	return nil
 }
 
+func binarySwapTaskLauncherScript(helperPath, newExePath, taskName string) string {
+	return fmt.Sprintf(`$ErrorActionPreference = 'Stop'
+$taskName = '%s'
+$helperPath = '%s'
+$newExePath = '%s'
+$deployLog = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
+
+function Write-DeployLog([string]$Message) {
+    $dir = Split-Path -Parent $deployLog
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Add-Content -Path $deployLog -Value "$stamp [self_update] $Message"
+}
+
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+$arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $helperPath + '" -NewExePath "' + $newExePath + '" -TaskName "' + $taskName + '"'
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+Start-ScheduledTask -TaskName $taskName
+Write-DeployLog "scheduled task launched task=$taskName helper=$helperPath new=$newExePath"
+`, psSingleQuoted(taskName), psSingleQuoted(helperPath), psSingleQuoted(newExePath))
+}
+
+func psSingleQuoted(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 func binarySwapHelperScript() string {
-	return `param([Parameter(Mandatory=$true)][string]$NewExePath)
+	return `param(
+    [Parameter(Mandatory=$true)][string]$NewExePath,
+    [string]$TaskName = ''
+)
 
 $ErrorActionPreference = 'Continue'
 
@@ -228,12 +264,18 @@ try {
 
     # 5. Clean up backup on success.
     Remove-Item $agentOldExe -Force -ErrorAction SilentlyContinue
+    if ($TaskName -ne '') {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
     Write-DeployLog "complete: binary swap succeeded"
     exit 0
 
 } catch {
     Write-DeployLog ("failed: " + $_.Exception.Message)
     Rollback
+    if ($TaskName -ne '') {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
     exit 1
 }
 `

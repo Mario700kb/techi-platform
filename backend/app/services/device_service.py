@@ -62,7 +62,7 @@ class DeviceService:
         agent_update_state: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
-        active_agent_version = self._active_agent_version_for_filter(agent_update_state)
+        active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
         devices = self.repository.get_multi(
             skip=skip,
             limit=limit,
@@ -78,16 +78,28 @@ class DeviceService:
             maintenance_state=maintenance_state,
             smart_folder=smart_folder,
             active_agent_version=active_agent_version,
+            active_agent_sha256=active_agent_sha256,
             scope=scope,
         )
         return self.assignment.apply_resolution_many(devices)
 
     @staticmethod
-    def _active_agent_version_for_filter(agent_update_state: Optional[str]) -> Optional[str]:
+    def _active_agent_package_for_filter(agent_update_state: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         if (agent_update_state or "").strip().lower() != "outdated":
-            return None
-        active_pkg = AgentPackageService().latest_active("windows-amd64")
-        return active_pkg.version if active_pkg else None
+            return None, None
+        package_service = AgentPackageService()
+        active_pkg = (
+            package_service.latest_active("windows-amd64", file_type="agent_binary")
+            or package_service.latest_active("windows-amd64")
+        )
+        if active_pkg is None:
+            return None, None
+        active_sha256 = (
+            active_pkg.sha256
+            if getattr(active_pkg.file_type, "value", None) == "agent_binary"
+            else None
+        )
+        return active_pkg.version, active_sha256
 
     def create_device(self, device_in: DeviceCreate) -> Device:
         verification = RustDeskIdentityService(self.repository.db).verify(device_in.rustdesk_id)
@@ -156,7 +168,7 @@ class DeviceService:
         agent_update_state: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
-        active_agent_version = self._active_agent_version_for_filter(agent_update_state)
+        active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
         return self.repository.count(
             status=status,
             device_type=device_type,
@@ -170,6 +182,7 @@ class DeviceService:
             maintenance_state=maintenance_state,
             smart_folder=smart_folder,
             active_agent_version=active_agent_version,
+            active_agent_sha256=active_agent_sha256,
             scope=scope,
         )
 

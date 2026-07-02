@@ -102,7 +102,8 @@ def delete_agent_package(
 
 @router.get("/active-version", response_class=PlainTextResponse)
 def get_active_windows_agent_version() -> PlainTextResponse:
-    package = AgentPackageService().latest_active("windows-amd64")
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="agent_binary") or service.latest_active("windows-amd64")
     if package is None:
         raise HTTPException(status_code=404, detail="No active package for platform")
     return PlainTextResponse(

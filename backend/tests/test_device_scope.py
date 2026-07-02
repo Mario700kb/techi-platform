@@ -109,6 +109,7 @@ def _write_agent_manifest(tmp_path, items):
             "id": item["id"],
             "version": item["version"],
             "platform": item["platform"],
+            "file_type": item.get("file_type", "msi"),
             "filename": item.get("filename", "agent.msi"),
             "uploaded_at": item.get("uploaded_at", "2026-06-17T09:00:00+00:00"),
             "uploaded_by": item.get("uploaded_by", "pytest"),
@@ -297,6 +298,47 @@ class TestDeviceScopeByClientId:
 
         assert overview.active_agent_version == "2.4.0"
         assert overview.agents_outdated == 2
+
+    def test_overview_agent_outdated_uses_agent_binary_sha_for_same_version_rebuild(self, db, tmp_path, monkeypatch):
+        _overview_cache.clear()
+        from app.core.config import settings
+
+        active_sha = "a" * 64
+        stale_sha = "b" * 64
+        package_dir = _write_agent_manifest(tmp_path, [
+            {
+                "id": "windows-msi",
+                "version": "2.1.0",
+                "platform": "windows-amd64",
+                "file_type": "msi",
+                "sha256": "c" * 64,
+                "uploaded_at": "2026-06-17T09:00:00+00:00",
+            },
+            {
+                "id": "windows-agent-binary",
+                "version": "2.1.1",
+                "platform": "windows-amd64",
+                "file_type": "agent_binary",
+                "filename": "techi-agent.exe",
+                "sha256": active_sha,
+                "uploaded_at": "2026-06-17T10:00:00+00:00",
+            },
+        ])
+        monkeypatch.setattr(settings, "AGENT_PACKAGE_STORAGE_DIR", str(package_dir))
+
+        current = _device(db, "RUST-AGENT-SHA-CURRENT", client_id=1, hostname="agent-sha-current")
+        stale = _device(db, "RUST-AGENT-SHA-STALE", client_id=1, hostname="agent-sha-stale")
+        current.agent_version = "2.1.1"
+        current.agent_sha256 = active_sha
+        stale.agent_version = "2.1.1"
+        stale.agent_sha256 = stale_sha
+        db.commit()
+
+        overview = DeviceOverviewService(db).get_overview()
+
+        assert overview.active_agent_version == "2.1.1"
+        assert overview.active_agent_sha256 == active_sha
+        assert overview.agents_outdated == 1
 
     def test_overview_active_agent_version_uses_active_windows_amd64_package(self, db, tmp_path, monkeypatch):
         _overview_cache.clear()

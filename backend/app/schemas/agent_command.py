@@ -11,6 +11,7 @@ class BulkCommandTarget(str, Enum):
     CLIENT = "client"
     GROUP = "group"
     DEVICES = "devices"
+    OUTDATED_AGENTS = "outdated_agents"
 
 
 BULK_COMMAND_TYPES = frozenset({

@@ -528,9 +528,7 @@ export default function RemoteSupport() {
                       })
                       .map((device, idx) => {
                         const acts = actionStates[device.device_id] ?? defaultActionState();
-                        const canConnect =
-                          !!device.techi_remote_id &&
-                          device.remote_support_status !== "offline";
+                        const canConnect = !!device.techi_remote_id;
 
                         return (
                           <tr
@@ -633,8 +631,8 @@ export default function RemoteSupport() {
                                   title={
                                     !device.techi_remote_id
                                       ? "No Remote ID"
-                                      : device.remote_support_status === "offline"
-                                      ? "Device offline"
+                                    : device.remote_support_status === "offline"
+                                      ? "Agent heartbeat offline — try remote session"
                                       : "Open remote session"
                                   }
                                 />

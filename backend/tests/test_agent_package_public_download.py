@@ -23,7 +23,7 @@ def test_public_active_windows_package_download_returns_200(monkeypatch, tmp_pat
     )
 
     class FakeAgentPackageService:
-        def latest_active(self, platform: str):
+        def latest_active(self, platform: str, *, file_type=None):
             assert platform == "windows-amd64"
             return package
 
@@ -52,7 +52,7 @@ def test_public_download_without_authentication_works(monkeypatch, tmp_path):
     )
 
     class FakeAgentPackageService:
-        def latest_active(self, platform: str):
+        def latest_active(self, platform: str, *, file_type=None):
             return package
 
         def package_path(self, selected_package):
@@ -75,8 +75,10 @@ def test_public_active_windows_version_returns_plain_text(monkeypatch):
     )
 
     class FakeAgentPackageService:
-        def latest_active(self, platform: str):
+        def latest_active(self, platform: str, *, file_type=None):
             assert platform == "windows-amd64"
+            if file_type == "agent_binary":
+                return None
             return package
 
     monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
@@ -89,9 +91,36 @@ def test_public_active_windows_version_returns_plain_text(monkeypatch):
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_public_active_windows_version_prefers_agent_binary(monkeypatch):
+    msi_package = SimpleNamespace(
+        id="pkg-msi",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="techi-agent.msi",
+        version="2.1.0",
+    )
+    binary_package = SimpleNamespace(
+        id="pkg-binary",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="techi-agent.exe",
+        version="2.1.1",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            return binary_package if file_type == "agent_binary" else msi_package
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/active-version")
+
+    assert response.status_code == 200
+    assert response.text == "2.1.1"
+
+
 def test_public_active_windows_version_returns_404_when_missing(monkeypatch):
     class FakeAgentPackageService:
-        def latest_active(self, platform: str):
+        def latest_active(self, platform: str, *, file_type=None):
             assert platform == "windows-amd64"
             return None
 
@@ -105,7 +134,7 @@ def test_public_active_windows_version_returns_404_when_missing(monkeypatch):
 
 def test_public_inactive_package_returns_404(monkeypatch):
     class FakeAgentPackageService:
-        def latest_active(self, platform: str):
+        def latest_active(self, platform: str, *, file_type=None):
             return None
 
     monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)

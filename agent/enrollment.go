@@ -28,6 +28,7 @@ type EnrollmentRequest struct {
 	PublicIP           string `json:"public_ip,omitempty"`
 	RustDeskID         string `json:"rustdesk_id,omitempty"`
 	AgentVersion       string `json:"agent_version,omitempty"`
+	AgentSHA256        string `json:"agent_sha256,omitempty"`
 }
 
 type EnrollmentResponse struct {
@@ -96,6 +97,7 @@ func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*Enrollmen
 		PublicIP:           inv.PublicIP,
 		RustDeskID:         configuredRustDeskID(&Config{RustDeskID: rustdesk.ID}),
 		AgentVersion:       AgentVersion,
+		AgentSHA256:        currentAgentSHA256(),
 	}
 	data, err := json.Marshal(requestPayload)
 	if err != nil {

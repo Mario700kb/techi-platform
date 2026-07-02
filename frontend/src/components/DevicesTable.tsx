@@ -58,6 +58,7 @@ interface DevicesTableProps {
   mobileHasMore?: boolean;
   mobileLoadingMore?: boolean;
   activePackageVersion?: string | null;
+  activePackageSha256?: string | null;
   agentsOutdated?: number;
 }
 
@@ -89,6 +90,22 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
 
 type PendingAction = "archive" | "restore" | "delete";
 export type HealthFilter = "all" | DeviceHealthSummary["health_state"];
+
+function isAgentOutdated(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
+  if (!activeVersion) return false;
+  if (!device.agent_version || device.agent_version !== activeVersion) return true;
+  if (activeSha256) return (device.agent_sha256 ?? "").toLowerCase() !== activeSha256.toLowerCase();
+  return false;
+}
+
+function agentVersionTitle(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
+  if (!activeVersion) return undefined;
+  const active = activeSha256 ? `${activeVersion} | ${activeSha256.slice(0, 8)}` : activeVersion;
+  const current = device.agent_sha256
+    ? `${device.agent_version ?? "unknown"} | ${device.agent_sha256.slice(0, 8)}`
+    : (device.agent_version ?? "unknown");
+  return `Installed: ${current} | Active: ${active}`;
+}
 
 // ─── Visual constants ────────────────────────────────────────────────────────
 
@@ -455,6 +472,7 @@ const DevicesTable = memo(function DevicesTable({
   mobileHasMore = false,
   mobileLoadingMore = false,
   activePackageVersion,
+  activePackageSha256,
   agentsOutdated = 0,
 }: DevicesTableProps) {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -521,11 +539,11 @@ const DevicesTable = memo(function DevicesTable({
       if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
       if ((health?.health_score ?? 100) < 60) counts.low_health++;
       if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
-      if (activePackageVersion && (!d.agent_version || d.agent_version !== activePackageVersion)) counts.needs_agent_update++;
+      if (isAgentOutdated(d, activePackageVersion, activePackageSha256)) counts.needs_agent_update++;
       if (favorites.has(d.id)) counts.favorites++;
     }
     return counts;
-  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion]);
+  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256]);
 
   // Distinct agent versions present in the current device list, newest first
   const agentVersionOptions = useMemo(() => {
@@ -562,7 +580,7 @@ const DevicesTable = memo(function DevicesTable({
           (d.rustdesk_status ?? "") !== "running"
         );
         case "needs_agent_update": return (
-          !activePackageVersion || !d.agent_version || d.agent_version !== activePackageVersion
+          isAgentOutdated(d, activePackageVersion, activePackageSha256)
         );
         case "favorites":       return favorites.has(d.id);
         default:                return true;
@@ -582,7 +600,7 @@ const DevicesTable = memo(function DevicesTable({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, sortKey, sortDir]);
+  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, sortKey, sortDir]);
 
   const offlineSummaryByClient = useMemo(() => {
     const summaries = new Map<number, ClientOfflineSummary>();
@@ -1096,6 +1114,7 @@ const DevicesTable = memo(function DevicesTable({
                   canConnect={canConnect}
                   isFavorite={favorites.has(device.id)}
                   activePackageVersion={activePackageVersion}
+                  activePackageSha256={activePackageSha256}
                   onSelect={() => onDeviceSelect?.(device)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
                   onConnect={async () => {
@@ -1392,11 +1411,11 @@ const DevicesTable = memo(function DevicesTable({
                           <span
                             className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
                             style={
-                              activePackageVersion && device.agent_version === activePackageVersion
+                              !isAgentOutdated(device, activePackageVersion, activePackageSha256)
                                 ? { color: "#22c55e", background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.35)" }
                                 : { color: "#f97316", background: "rgba(249,115,22,0.2)", border: "1px solid rgba(249,115,22,0.35)" }
                             }
-                            title={activePackageVersion ? `Active: ${activePackageVersion}` : undefined}
+                            title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
                           >
                             {device.agent_version}
                           </span>

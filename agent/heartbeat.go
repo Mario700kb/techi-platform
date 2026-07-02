@@ -2,14 +2,23 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
+
+var agentSHA256Cache struct {
+	once  sync.Once
+	value string
+}
 
 type HeartbeatPayload struct {
 	AgentID               string         `json:"agent_id,omitempty"`
@@ -48,6 +57,7 @@ type HeartbeatPayload struct {
 	Software              []SoftwareInfo `json:"software,omitempty"`
 	PatchStatus           *PatchStatus   `json:"patch_status,omitempty"`
 	AgentVersion          string         `json:"agent_version,omitempty"`
+	AgentSHA256           string         `json:"agent_sha256,omitempty"`
 }
 
 func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, tel *Telemetry, procs []ProcessInfo, svcs []ServiceInfo, software []SoftwareInfo, patchStatus *PatchStatus) *HeartbeatPayload {
@@ -95,7 +105,31 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		p.HeartbeatLatencyMs = tel.HeartbeatLatencyMs
 	}
 	p.AgentVersion = AgentVersion
+	p.AgentSHA256 = currentAgentSHA256()
 	return p
+}
+
+func currentAgentSHA256() string {
+	agentSHA256Cache.once.Do(func() {
+		exePath, err := os.Executable()
+		if err != nil {
+			log.Printf("agent sha256: executable path unavailable: %v", err)
+			return
+		}
+		file, err := os.Open(exePath)
+		if err != nil {
+			log.Printf("agent sha256: open %s failed: %v", exePath, err)
+			return
+		}
+		defer file.Close()
+		h := sha256.New()
+		if _, err := io.Copy(h, file); err != nil {
+			log.Printf("agent sha256: hash %s failed: %v", exePath, err)
+			return
+		}
+		agentSHA256Cache.value = hex.EncodeToString(h.Sum(nil))
+	})
+	return agentSHA256Cache.value
 }
 
 func sendHeartbeat(cfg *Config, payload *HeartbeatPayload) (*HeartbeatResponse, error) {

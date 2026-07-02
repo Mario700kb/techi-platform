@@ -25,6 +25,7 @@ export interface DeviceMobileCardProps {
   canConnect: boolean;
   isFavorite: boolean;
   activePackageVersion?: string | null;
+  activePackageSha256?: string | null;
   onSelect: () => void;
   onToggleFavorite?: () => void;
   onConnect: () => void;
@@ -34,6 +35,22 @@ export interface DeviceMobileCardProps {
 
 const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[10px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
+
+function isAgentOutdated(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
+  if (!activeVersion) return false;
+  if (!device.agent_version || device.agent_version !== activeVersion) return true;
+  if (activeSha256) return (device.agent_sha256 ?? "").toLowerCase() !== activeSha256.toLowerCase();
+  return false;
+}
+
+function agentVersionTitle(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
+  if (!activeVersion) return undefined;
+  const active = activeSha256 ? `${activeVersion} | ${activeSha256.slice(0, 8)}` : activeVersion;
+  const current = device.agent_sha256
+    ? `${device.agent_version ?? "unknown"} | ${device.agent_sha256.slice(0, 8)}`
+    : (device.agent_version ?? "unknown");
+  return `Installed: ${current} | Active: ${active}`;
+}
 
 // ─── Cell helpers (duplicated from DevicesTable so the file stays importable
 //     without pulling in the full 1700-line component) ──────────────────────
@@ -206,6 +223,7 @@ export function DeviceMobileCard({
   canConnect,
   isFavorite,
   activePackageVersion,
+  activePackageSha256,
   onSelect,
   onToggleFavorite,
   onConnect,
@@ -350,13 +368,14 @@ export function DeviceMobileCard({
             {device.agent_version ? (
               <span
                 style={
-                  activePackageVersion && device.agent_version === activePackageVersion
+                  !isAgentOutdated(device, activePackageVersion, activePackageSha256)
                     ? { color: "#34d399" }
                     : { color: "#f97316" }
                 }
+                title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
               >
                 Agent v{device.agent_version}
-                {activePackageVersion && device.agent_version !== activePackageVersion && " ⚠️"}
+                {isAgentOutdated(device, activePackageVersion, activePackageSha256) && " !"}
               </span>
             ) : null}
             <span className={`ml-auto font-semibold tabular-nums ${ls.cls}`}>{ls.text}</span>

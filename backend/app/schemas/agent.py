@@ -48,6 +48,7 @@ class AgentHeartbeatPayload(BaseModel):
     software: Optional[List[Dict[str, Any]]] = None
     patch_status: Optional[Dict[str, Any]] = None
     agent_version: Optional[str] = None
+    agent_sha256: Optional[str] = None
 
 
 class DeviceHeartbeatCreate(BaseModel):
@@ -115,6 +116,7 @@ class AgentEnrollmentRequest(BaseModel):
     public_ip: Optional[str] = None
     rustdesk_id: Optional[str] = None
     agent_version: Optional[str] = None
+    agent_sha256: Optional[str] = None
 
 
 class AgentEnrollmentResponse(BaseModel):

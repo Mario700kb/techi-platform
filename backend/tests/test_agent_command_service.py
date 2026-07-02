@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -9,6 +11,7 @@ from app.models.device import Device, DeviceStatus
 from app.models.device_group import DeviceGroup
 from app.models.remote_action import ActionStatus, RemoteAction
 from app.schemas.agent_command import BulkCommandCreate, BulkCommandTarget
+from app.services import agent_command_service as agent_command_service_module
 from app.services.agent_command_service import AgentCommandService
 
 
@@ -71,6 +74,47 @@ def test_online_bulk_target_queues_only_online_devices():
 
     batch = db.get(AgentCommandBatch, result.batch_id)
     assert batch.timeout_seconds == 300
+
+
+def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch):
+    db = next(_db())
+    active_sha = "a" * 64
+    current = _device("current-agent", DeviceStatus.ONLINE)
+    stale_hash = _device("stale-hash-agent", DeviceStatus.ONLINE)
+    missing_hash = _device("missing-hash-agent", DeviceStatus.ONLINE)
+    current.agent_version = "2.1.1"
+    current.agent_sha256 = active_sha
+    stale_hash.agent_version = "2.1.1"
+    stale_hash.agent_sha256 = "b" * 64
+    missing_hash.agent_version = "2.1.1"
+    missing_hash.agent_sha256 = None
+    db.add_all([current, stale_hash, missing_hash])
+    db.commit()
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            assert file_type == "agent_binary"
+            return SimpleNamespace(version="2.1.1", sha256=active_sha)
+
+        def agent_binary_download_url(self):
+            return "/api/v1/agent-packages/agent-binary/download"
+
+    monkeypatch.setattr(agent_command_service_module, "AgentPackageService", FakeAgentPackageService)
+
+    result = AgentCommandService(db).create_bulk(
+        BulkCommandCreate(
+            command_type="self_update",
+            payload={},
+            target=BulkCommandTarget.OUTDATED_AGENTS,
+            timeout_seconds=30,
+        ),
+        operator_username="admin",
+    )
+
+    actions = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).all()
+    hostnames = sorted(action.device.hostname for action in actions)
+    assert hostnames == ["missing-hash-agent", "stale-hash-agent"]
 
 
 def test_empty_batch_progress_is_finished():

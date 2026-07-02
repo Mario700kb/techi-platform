@@ -915,6 +915,7 @@ export default function Devices() {
             mobileHasMore={tableTotal > tableDevices.length}
             mobileLoadingMore={mobileLoadingMore}
             activePackageVersion={fleetOverview?.active_agent_version}
+            activePackageSha256={fleetOverview?.active_agent_sha256}
             agentsOutdated={fleetOverview?.agents_outdated ?? 0}
           />
         </div>

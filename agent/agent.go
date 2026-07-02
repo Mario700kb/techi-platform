@@ -33,6 +33,11 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 
 	log.Printf("agent loop started config=%s interval=%s", configPath, interval)
 
+	// Install/refresh an external watchdog. If this service is later stopped,
+	// the watchdog task can start it again because it runs independently under
+	// Task Scheduler.
+	ensureAgentServiceWatchdog()
+
 	// Apply power policy once on startup (Windows only; no-op elsewhere).
 	applyPowerPolicy(cfg)
 

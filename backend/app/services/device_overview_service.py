@@ -52,8 +52,9 @@ class DeviceOverviewService:
         return overview
 
     def _compute_overview(self, scope: Optional[AllowedScope]) -> DeviceFleetOverview:
-        active_pkg = AgentPackageService().latest_active("windows-amd64")
+        active_pkg = _active_agent_package()
         active_agent_version = active_pkg.version if active_pkg else None
+        active_agent_sha256 = _active_agent_sha256(active_pkg)
 
         count_rows, health_rows = self.repository.get_overview_inputs(scope=scope)
 
@@ -113,9 +114,7 @@ class DeviceOverviewService:
                 except (TypeError, ValueError, json.JSONDecodeError):
                     pass
             device = entry["device"]
-            if active_agent_version and (
-                not device.agent_version or device.agent_version != active_agent_version
-            ):
+            if _is_agent_outdated(device, active_agent_version, active_agent_sha256):
                 agents_outdated += 1
 
         return DeviceFleetOverview(
@@ -132,5 +131,28 @@ class DeviceOverviewService:
             needs_updates=needs_updates,
             agents_outdated=agents_outdated,
             active_agent_version=active_agent_version,
+            active_agent_sha256=active_agent_sha256,
             loaded_at=utcnow(),
         )
+
+
+def _active_agent_package():
+    service = AgentPackageService()
+    return service.latest_active("windows-amd64", file_type="agent_binary") or service.latest_active("windows-amd64")
+
+
+def _active_agent_sha256(package) -> Optional[str]:
+    if package is None or getattr(package.file_type, "value", None) != "agent_binary":
+        return None
+    return package.sha256
+
+
+def _is_agent_outdated(device, active_version: Optional[str], active_sha256: Optional[str]) -> bool:
+    if not active_version:
+        return False
+    if not device.agent_version or device.agent_version != active_version:
+        return True
+    if active_sha256:
+        reported_sha = (device.agent_sha256 or "").strip().lower()
+        return reported_sha != active_sha256.strip().lower()
+    return False

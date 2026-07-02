@@ -3,6 +3,7 @@ import logging
 import uuid
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -220,16 +221,11 @@ class AgentCommandService:
     def _build_self_update_payload() -> dict:
         """Pull the active agent_binary package so the command always ships
         the exact exe that the operator has marked active in Agent Packages
-        → Agent Binary tab.  The download URL points to the public
+        -> Agent Binary tab.  The download URL points to the public
         /agent-binary/download endpoint (no auth token required by the
         agent)."""
         service = AgentPackageService()
-        package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_binary")
-        if package is None:
-            raise ValueError(
-                f"No active agent binary package for platform '{SELF_UPDATE_PLATFORM}'. "
-                "Upload and activate a techi-agent.exe under Agent Packages → Agent Binary."
-            )
+        package = _active_self_update_package(service)
         backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
         download_path = service.agent_binary_download_url()
         return {
@@ -263,5 +259,27 @@ class AgentCommandService:
             if not create_in.device_ids:
                 raise ValueError("device_ids required for target=devices")
             query = query.filter(Device.id.in_(create_in.device_ids))
+        elif create_in.target == BulkCommandTarget.OUTDATED_AGENTS:
+            if create_in.command_type != "self_update":
+                raise ValueError("target=outdated_agents is only supported for self_update")
+            package = _active_self_update_package(AgentPackageService())
+            query = query.filter(
+                or_(
+                    Device.agent_version.is_(None),
+                    Device.agent_version != package.version,
+                    Device.agent_sha256.is_(None),
+                    Device.agent_sha256 != (package.sha256 or "").lower(),
+                )
+            )
 
         return query.all()
+
+
+def _active_self_update_package(service: AgentPackageService):
+    package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_binary")
+    if package is None:
+        raise ValueError(
+            f"No active agent binary package for platform '{SELF_UPDATE_PLATFORM}'. "
+            "Upload and activate a techi-agent.exe under Agent Packages -> Agent Binary."
+        )
+    return package

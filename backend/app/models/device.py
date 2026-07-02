@@ -90,6 +90,7 @@ class Device(Base):
     maintenance_started_by = Column(String(128), nullable=True)
 
     agent_version = Column(String(20), nullable=True)
+    agent_sha256 = Column(String(64), nullable=True)
 
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)

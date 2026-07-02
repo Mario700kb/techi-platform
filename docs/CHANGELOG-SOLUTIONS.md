@@ -3,6 +3,185 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Hardening: Same-Version Agent Rebuilds Verified by SHA256
+
+### Root cause
+
+Keeping the public agent version at `2.1.1` is correct, but version-only
+comparison is not enough when we rebuild the same version to fix self-update,
+watchdog, or deployment behavior. A device can report `2.1.1` while still
+running an older `2.1.1` binary if the previous self-update did not complete.
+
+Another old path was confusing the UI: some backend checks read the active
+`windows-amd64` package without filtering `file_type="agent_binary"`, so they
+could compare the fleet against the MSI package instead of the active
+standalone agent binary.
+
+### Fix
+
+- The agent now sends `agent_sha256` during enrollment and every heartbeat.
+- `devices.agent_sha256` stores the last reported hash.
+- Fleet overview exposes both `active_agent_version` and
+  `active_agent_sha256`.
+- "Needs Agent Update" uses version plus SHA256 when the active package is an
+  `agent_binary`.
+- `/api/v1/agent-packages/active-version` now prefers the active
+  `agent_binary` over the MSI package.
+- Command Center target `outdated_agents` is now a real backend target for
+  `self_update`; it queues only devices whose version or binary hash differs
+  from the active agent binary.
+
+### Final 2.1.1 binary for upload
+
+Upload this as `file_type=agent_binary`, platform `windows-amd64`, version
+`2.1.1`, then activate it:
+
+`/private/tmp/techi-agent-2.1.1-clean.exe`
+
+SHA256:
+
+`f0eaddc9d4957df02faf9f082fba0b5ab557609d319e55595b2288e084a6b4f5`
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_agent_package_public_download.py tests/test_device_scope.py tests/test_agent_command_service.py tests/test_remote_support_connect_url.py tests/test_enrollment_bootstrap_script.py -q`
+  -> 144 passed.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache go test ./...`
+  -> clean.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache GOOS=windows GOARCH=amd64 go build ./...`
+  -> clean.
+- `cd frontend && npm run build`
+  -> clean.
+- Final binary strings confirm `2.1.1`, `TECHI-Agent-SelfUpdate`, and
+  `TECHI Agent Watchdog`.
+
+## [2026-07-02] Hardening: TechiAgent Watchdog Scheduled Task
+
+### Root cause
+
+Windows Service recovery actions restart `TechiAgent` after process failure,
+but they do not reliably cover every operational case we hit during recovery:
+manual stop, a service left stopped after an interrupted script, or a missing
+service entry while `techi-agent.exe` still exists. Also, if `TechiAgent` is
+already stopped, the agent process cannot execute code to start itself.
+
+### Fix
+
+`agent/watchdog_windows.go` adds a separate Task Scheduler watchdog:
+- On agent startup, `ensureAgentServiceWatchdog()` registers/refreshes
+  `TECHI Agent Watchdog` as `SYSTEM`.
+- The task runs at Windows startup and then every 5 minutes.
+- It checks `TechiAgent`; if stopped, it starts it.
+- If the service entry is missing but
+  `C:\ProgramData\TechiAgent\techi-agent.exe` exists, it recreates the service
+  and starts it.
+- It reapplies SCM failure actions
+  `restart/60000/restart/60000/restart/300000`.
+- It logs to `C:\ProgramData\TechiAgent\deploy.log` with `[watchdog]`.
+
+Non-Windows builds use a no-op implementation.
+
+### Checks
+
+- Final same-version binary for upload:
+  superseded by `/private/tmp/techi-agent-2.1.1-clean.exe`, SHA256
+  `f0eaddc9d4957df02faf9f082fba0b5ab557609d319e55595b2288e084a6b4f5`.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache GOOS=windows GOARCH=amd64 go build ./...`
+  -> clean.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache go test ./...`
+  -> clean.
+
+## [2026-07-02] Fix: Remote Support Connect Must Not Depend on Agent Heartbeat
+
+### Root cause
+
+During recovery, some machines had no TechiAgent heartbeat, so the platform
+marked the device as offline and `/api/v1/remote-support/devices/{id}/connect-url`
+returned `422 "Device is OFFLINE — cannot initiate remote session"`.
+
+That block was too strict. TECHI Remote Support runs as a separate Windows
+service and can still be reachable through its RustDesk/TECHI Remote ID even
+when the monitoring agent is stopped, stuck in update, or missing heartbeat.
+In this incident, blocking connect removed the exact fallback path operators
+needed to inspect/recover the machine.
+
+### Fix
+
+`backend/app/api/v1/endpoints/remote_support.py`:
+- `connect-url` still rejects devices with no valid TECHI Remote ID.
+- It no longer rejects only because computed remote support status is
+  `offline` from stale `device.last_seen`.
+- Audit logs now include the computed `remote_support_status`, so operators can
+  see whether the connection was attempted while heartbeat was stale.
+
+`frontend/src/pages/RemoteSupport.tsx`:
+- The Connect button is enabled whenever a TECHI Remote ID exists.
+- If status is offline, tooltip now says "Agent heartbeat offline — try remote
+  session" instead of disabling the action.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_remote_support_connect_url.py -q`
+  -> 5 passed.
+- `cd frontend && npm run build` -> clean.
+
+## [2026-07-02] Fix: self_update Must Use Scheduled Task, Not Child PowerShell
+
+### Root cause
+
+Device 590 (`Server002`) accepted `self_update` for v2.1.1 and the action
+completed with payload SHA256 `3f0917e245...`, but later heartbeats still
+reported agent version `2.1.0`. The active uploaded binary was verified by
+SHA256 and contained version string `2.1.1`, so the problem was not the UI
+payload or the uploaded package.
+
+The remaining unsafe part was `agent/update.go`: it launched the binary-swap
+PowerShell helper as a child process of `TechiAgent` with
+`CREATE_NEW_PROCESS_GROUP`. That is not a hard detach from the service's
+process/job tree. When the helper stops `TechiAgent`, Windows can still
+terminate that child helper before the swap finishes. This is the same class
+of failure as the earlier v1 PowerShell rollout incident.
+
+### Fix
+
+`agent/update.go` now writes a small launcher PS1 that registers a one-shot
+Scheduled Task named `TECHI-Agent-SelfUpdate-*` as `SYSTEM`, starts it, and
+returns. The task runs the real binary-swap helper independently of the agent
+process, then unregisters itself on success or failure. The swap still does
+download verification before scheduling, stop -> backup -> replace -> start,
+and rollback on failure.
+
+Operator decision: keep the public agent version at `2.1.1` and rebuild/re-upload
+the `agent_binary` package with the same version string but a new SHA256, rather
+than creating `2.1.2`. Superseded by the final clean build above:
+`/private/tmp/techi-agent-2.1.1-clean.exe`, SHA256
+`f0eaddc9d4957df02faf9f082fba0b5ab557609d319e55595b2288e084a6b4f5`.
+
+### Related GPO recovery hardening
+
+`techi-deploy.cmd` generation now calls `:recover_missing_agent_binary` before
+the `VERSION_STATE=equal` / `:already_uptodate` gate. If registry says the MSI
+version is current but `C:\ProgramData\TechiAgent\techi-agent.exe` is missing,
+the script restores one of the known incident backup names
+(`techi-agent-new.exe`, `techi-agent-old.exe`, `techi-agent.new.exe`,
+`techi-agent.previous.exe`) and starts the service. If no backup exists, it
+forces `VERSION_STATE=missing` so the scheduled GPO run reinstalls from the
+NETLOGON MSI instead of falsely treating the machine as up to date.
+
+### Checks
+
+- Active prod agent binary download SHA256 verified:
+  `3f0917e245103dd9de0b4497c1f35e9d93e26f9827338de0415ea89dd0196de4`.
+- Device 590 action history confirmed `self_update` completed but heartbeat
+  stayed `2.1.0`, proving command completion alone was not sufficient evidence
+  of swap completion.
+- `cd backend && python3 -m pytest tests/test_enrollment_bootstrap_script.py -q`
+  -> 107 passed.
+- `cd agent && GOOS=windows GOARCH=amd64 go build ./...` -> clean.
+- Fixed same-version binary built with
+  `AgentVersion=2.1.1`; strings confirm `TECHI-Agent-SelfUpdate-*` and `2.1.1`.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache go test ./...` -> clean.
+
 ## [2026-07-02] INCIDENT: Fleet Bootstrap v1 Killed 253 Devices — Root Cause, Fix, Recovery
 
 ### Root cause

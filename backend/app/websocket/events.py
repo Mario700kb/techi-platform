@@ -94,6 +94,8 @@ def device_payload(device: Device) -> Dict[str, Any]:
         "rustdesk_conflict_detected": device.rustdesk_conflict_detected,
         "rustdesk_last_repair_at": _iso(device.rustdesk_last_repair_at),
         "rustdesk_repair_count": device.rustdesk_repair_count,
+        "agent_version": device.agent_version,
+        "agent_sha256": device.agent_sha256,
     }
 
 

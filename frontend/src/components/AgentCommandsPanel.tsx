@@ -703,7 +703,7 @@ export default function AgentCommandsPanel() {
         .map((s) => parseInt(s.trim(), 10))
         .filter((n) => !isNaN(n));
 
-      const resolvedTarget = target === "outdated_agents" ? "all" : target;
+      const resolvedTarget = target;
 
       const result = await sendBulkCommand({
         command_type: commandType,
@@ -948,8 +948,7 @@ export default function AgentCommandsPanel() {
           {/* Outdated agents target note */}
           {target === "outdated_agents" && (
             <InfoNote>
-              Targets all active devices. Each agent will self-update only if its installed version
-              differs from the active package — devices already up-to-date will skip the update.
+              Targets only active devices whose agent version or binary hash differs from the active package.
             </InfoNote>
           )}
 

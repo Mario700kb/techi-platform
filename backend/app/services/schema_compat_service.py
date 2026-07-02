@@ -33,6 +33,7 @@ DEVICE_COLUMNS = {
     "is_archived": "BOOLEAN NOT NULL DEFAULT 0",
     "archived_at": "DATETIME",
     "archived_by": "VARCHAR(128)",
+    "agent_sha256": "VARCHAR(64)",
 }
 
 HEARTBEAT_COLUMNS = {

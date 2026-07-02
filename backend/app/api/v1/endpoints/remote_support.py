@@ -132,6 +132,20 @@ def _build_connect_url(remote_id: str) -> str:
     return connect_url
 
 
+def _connect_url_response_for_device(device: Device) -> ConnectUrlResponse:
+    remote_id = (device.rustdesk_id or "").strip()
+    if not remote_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
+        )
+    return ConnectUrlResponse(
+        device_id=device.id,
+        techi_remote_id=remote_id,
+        connect_url=_build_connect_url(remote_id),
+    )
+
+
 # ------------------------------------------------------------------ #
 # Scope helper                                                         #
 # ------------------------------------------------------------------ #
@@ -245,19 +259,12 @@ def get_connect_url(
     """Return the techiremotesupport:// protocol URL for connecting to this device."""
     device = _get_device(device_id, db, scope)
 
-    remote_id = (device.rustdesk_id or "").strip()
-    if not remote_id:
-        raise HTTPException(
-            status_code=422,
-            detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
-        )
-
+    # A stale TechiAgent heartbeat does not prove TECHI Remote Support itself is
+    # unreachable: it is a separate Windows service and may still be registered
+    # with the rendezvous server.  If we have a valid remote ID, return the
+    # protocol URL and let the native client attempt the session.
     status = compute_remote_support_status(device)
-    if status == RemoteSupportStatus.OFFLINE:
-        raise HTTPException(
-            status_code=422,
-            detail="Device is OFFLINE — cannot initiate remote session",
-        )
+    response = _connect_url_response_for_device(device)
 
     audit_log(
         db,
@@ -265,14 +272,10 @@ def get_connect_url(
         action=AuditAction.REMOTE_CONNECT,
         entity_type="device",
         entity_id=device_id,
-        details={"techi_remote_id": remote_id},
+        details={"techi_remote_id": response.techi_remote_id, "remote_support_status": status.value},
     )
 
-    return ConnectUrlResponse(
-        device_id=device_id,
-        techi_remote_id=remote_id,
-        connect_url=_build_connect_url(remote_id),
-    )
+    return response
 
 
 @router.post("/devices/{device_id}/restart-service", response_model=RemoteActionResponse)
