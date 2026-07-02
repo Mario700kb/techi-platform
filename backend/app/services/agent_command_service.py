@@ -218,16 +218,20 @@ class AgentCommandService:
 
     @staticmethod
     def _build_self_update_payload() -> dict:
-        """Operators never type the MSI URL/version/hash by hand — pull them
-        from the active agent package so the command always ships the
-        package currently marked active in Agent Packages."""
-        package = AgentPackageService().latest_active(SELF_UPDATE_PLATFORM)
+        """Pull the active agent_binary package so the command always ships
+        the exact exe that the operator has marked active in Agent Packages
+        → Agent Binary tab.  The download URL points to the public
+        /agent-binary/download endpoint (no auth token required by the
+        agent)."""
+        service = AgentPackageService()
+        package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_binary")
         if package is None:
             raise ValueError(
-                f"No active agent package found for platform '{SELF_UPDATE_PLATFORM}'"
+                f"No active agent binary package for platform '{SELF_UPDATE_PLATFORM}'. "
+                "Upload and activate a techi-agent.exe under Agent Packages → Agent Binary."
             )
         backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
-        download_path = AgentPackageService().latest_download_url(SELF_UPDATE_PLATFORM)
+        download_path = service.agent_binary_download_url()
         return {
             "download_url": f"{backend_url}{download_path}",
             "version": package.version,

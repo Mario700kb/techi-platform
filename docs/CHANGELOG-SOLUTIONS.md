@@ -3,6 +3,67 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Binary-Only self_update: techi-agent.exe Swapped Without Touching TECHI Remote Support
+
+### Arkitektura e re
+
+Dy kategori të ndara paketash:
+- **MSI** (`file_type=msi`): GPO, fresh install, PC të reja.
+  Përmban techi-agent.exe + TECHI Remote Support bashkë.
+- **Agent Binary** (`file_type=agent_binary`): vetëm techi-agent.exe.
+  Përdoret nga komanda `self_update` përmes UI.
+  TECHI Remote Support nuk preket kurrë.
+
+### Ndryshimet
+
+**Backend** (`agent_package_service.py`, `agent_package.py`,
+`agent_packages.py`, `agent_command_service.py`):
+- Shtohet `AgentFileType` enum (`msi` | `agent_binary`) te skema.
+  Nuk nevojitet Alembic — hapësira e paketave është file-based (JSON
+  manifest), jo tabelë DB.
+- `upload()` pranon `file_type` (default `msi`); manifest-i ruan vlerën
+  në çdo hyrje të re; hyrjet ekzistuese pa `file_type` lexohen si `msi`.
+- `latest_active(platform, *, file_type=None)` mund të filtrojë sipas
+  llojit; `set_active()` çaktivizon vetëm paketat e së njëjtës
+  `platform + file_type` (kështu aktivizimi i MSI nuk çaktivizon
+  binary-n dhe anasjelltas).
+- Endpoint i ri `GET /api/v1/agent-packages/agent-binary/download` —
+  kthen binary-n aktiv `agent_binary / windows-amd64`, publik (pa token).
+  Vendoset para `/{package_id}/download` në router kështu FastAPI nuk
+  e trajton `agent-binary` si një package_id.
+- `_build_self_update_payload()` tani merr paketën `agent_binary` aktive
+  dhe ndërton URL-në drejt endpointit të ri.
+
+**Frontend** (`agentPackages.ts`, `AgentPackages.tsx`,
+`AgentCommandsPanel.tsx`):
+- `AgentPackage` interface fiton `file_type: AgentFileType`.
+- `uploadAgentPackage()` dërgon `file_type` si form field.
+- `AgentPackages.tsx` ka tani dy tab: **MSI Packages** dhe
+  **Agent Binary** — secilit i shfaqen vetëm paketat e llojit të vet;
+  upload-i ndryshon `accept` dhe dërgon `file_type` automatikisht.
+- Modal i `self_update` te `AgentCommandsPanel` tani tregon paketën
+  `agent_binary` aktive (jo MSI-n) dhe teksti i paralajmërimit
+  është ndryshuar: "~30 sekonda" (jo "~2 minuta"),
+  "TECHI Remote Support nuk preket".
+
+**Agent Go** (`update.go`):
+- `performSelfUpdate()` tani shkarkon `.exe` (jo `.msi`) dhe lançon
+  një helper PowerShell të shkëputur (`binary-swap-*.ps1`) që bën:
+  stop service → backup old exe → move new exe → start service →
+  rollback automatik nëse start dështon. MSI (`msiexec`) nuk thirret
+  kurrë gjatë self_update. TECHI Remote Support.exe nuk preket.
+
+### Checks
+
+- `go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` — clean.
+- `pytest` — 229 passed (4 gabime pre-ekzistuese DB, jo lidhur me
+  ndryshimet tona).
+- `tsc --noEmit` — pa gabime TypeScript.
+- Deploy: backend `docker compose build backend && up -d backend`;
+  frontend `npm run build` + sync; agent binary: shpërndarje vetëm
+  e binarit Go (nuk kërkon MSI rebuild).
+
 ## [2026-07-02] RustDesk Periodically Wiped custom-rendezvous-server, Accumulating 40 000+ Repairs on Servers
 
 ### Root cause

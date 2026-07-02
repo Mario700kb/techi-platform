@@ -203,7 +203,8 @@ function ConfirmModal({
               className="rounded-lg px-3 py-2 text-xs text-red-400"
               style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}
             >
-              Agjenti do të riniset gjatë instalimit. PC mund të dalë offline përkohësisht (~2 minuta).
+              Agjenti do të riniset gjatë update-it. PC mund të dalë offline ~30 sekonda.
+              TECHI Remote Support <strong>nuk preket</strong>.
             </div>
             {selfUpdatePackage && (
               <div className="space-y-1 rounded-md px-3 py-2 text-xs" style={{ background: "var(--th-bg-shell)" }}>
@@ -614,7 +615,7 @@ export default function AgentCommandsPanel() {
     if (commandType !== "self_update") return;
     getAgentPackages()
       .then((packages) => {
-        const active = packages.find((p) => p.is_active && p.platform === "windows-amd64");
+        const active = packages.find((p) => p.is_active && p.platform === "windows-amd64" && p.file_type === "agent_binary");
         setSelfUpdatePackage(active ?? null);
       })
       .catch(() => setSelfUpdatePackage(null));

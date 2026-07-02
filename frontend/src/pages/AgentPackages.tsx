@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Download, Package, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
+import { Binary, CheckCircle2, Download, Package, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
 import {
+  AgentFileType,
   AgentPackage,
   AgentPackagePlatform,
   deleteAgentPackage,
@@ -21,9 +22,27 @@ function formatDate(iso: string): string {
   return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+type TabId = "msi" | "agent_binary";
+
+const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string }[] = [
+  {
+    id: "msi",
+    label: "MSI Packages",
+    fileType: "msi",
+    hint: "Për GPO, instalim të ri dhe PC të reja. Përmban TECHI Remote Support + techi-agent.",
+  },
+  {
+    id: "agent_binary",
+    label: "Agent Binary",
+    fileType: "agent_binary",
+    hint: "Vetëm techi-agent.exe. Përdoret nga komanda \"Përditëso Agjentin\" — nuk prek TECHI Remote Support.",
+  },
+];
+
 export default function AgentPackages() {
   const { can } = useAuth();
   const canManage = can("admin");
+  const [tab, setTab] = useState<TabId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
   const [version, setVersion] = useState("");
   const [platform, setPlatform] = useState<AgentPackagePlatform>("windows-amd64");
@@ -35,7 +54,17 @@ export default function AgentPackages() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeCount = useMemo(() => packages.filter((pkg) => pkg.is_active).length, [packages]);
+  const currentTab = TABS.find((t) => t.id === tab)!;
+
+  const visiblePackages = useMemo(
+    () => packages.filter((pkg) => pkg.file_type === currentTab.fileType),
+    [packages, currentTab.fileType],
+  );
+
+  const activeCount = useMemo(
+    () => visiblePackages.filter((pkg) => pkg.is_active).length,
+    [visiblePackages],
+  );
 
   const load = async () => {
     try {
@@ -61,7 +90,7 @@ export default function AgentPackages() {
     try {
       setUploading(true);
       setError(null);
-      await uploadAgentPackage({ version: version.trim(), platform, file });
+      await uploadAgentPackage({ version: version.trim(), platform, file, file_type: currentTab.fileType });
       setVersion("");
       setFile(null);
       await load();
@@ -120,7 +149,7 @@ export default function AgentPackages() {
             <p className="premium-kicker">Deployment</p>
             <h1 className="mt-1.5 text-3xl font-semibold text-white">Agent Packages</h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Manage downloadable Techi Agent binaries for controlled MSP deployments.
+              Manage downloadable Techi Agent packages for GPO deployments and binary-only updates.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -131,38 +160,69 @@ export default function AgentPackages() {
             </Button>
           </div>
         </div>
+
+        {/* Tabs */}
+        <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => { setTab(t.id); setError(null); }}
+              className={[
+                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
+                tab === t.id
+                  ? "border-b-2 border-techi-orange text-techi-orange"
+                  : "text-slate-400 hover:text-slate-200",
+              ].join(" ")}
+            >
+              {t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />}
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
       </div>
 
       {canManage && (
         <div className="premium-card-soft p-4">
           <div className="mb-3 flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-techi-orange" />
-            <h2 className="text-sm font-semibold text-white">Upload package</h2>
+            <h2 className="text-sm font-semibold text-white">
+              {tab === "msi" ? "Upload MSI package" : "Upload Agent Binary (techi-agent.exe)"}
+            </h2>
           </div>
           <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
             <input
               value={version}
               onChange={(event) => setVersion(event.target.value)}
-              placeholder="Version"
+              placeholder="Version (e.g. 2.1.1)"
               className={INPUT_CLS}
             />
-            <select
-              value={platform}
-              onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
-              id="package-platform"
-              name="package-platform"
-              aria-label="Platform"
-              className={INPUT_CLS}
-            >
-              {PLATFORMS.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
+            {tab === "msi" ? (
+              <select
+                value={platform}
+                onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
+                id="package-platform"
+                name="package-platform"
+                aria-label="Platform"
+                className={INPUT_CLS}
+              >
+                {PLATFORMS.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            ) : (
+              <div className={`${INPUT_CLS} flex items-center text-slate-400`}>
+                windows-amd64
+              </div>
+            )}
             <input
               type="file"
               id="package-file"
               name="package-file"
               aria-label="Package file"
+              accept={tab === "msi" ? ".msi" : ".exe"}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
             />
@@ -183,9 +243,13 @@ export default function AgentPackages() {
       <div className="premium-card-soft overflow-hidden">
         <div className="border-b border-white/[0.08] px-4 py-3">
           <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-techi-orange" />
+            {tab === "msi" ? (
+              <Package className="h-4 w-4 text-techi-orange" />
+            ) : (
+              <Binary className="h-4 w-4 text-techi-orange" />
+            )}
             <span className="text-sm font-semibold text-white">
-              {loading ? "Loading packages..." : `${packages.length} package${packages.length === 1 ? "" : "s"}`}
+              {loading ? "Loading..." : `${visiblePackages.length} package${visiblePackages.length === 1 ? "" : "s"}`}
             </span>
           </div>
         </div>
@@ -195,7 +259,7 @@ export default function AgentPackages() {
             <thead className="bg-slate-950/80">
               <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Version</th>
-                <th className="px-4 py-3">Platform</th>
+                {tab === "msi" && <th className="px-4 py-3">Platform</th>}
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Uploaded</th>
                 <th className="px-4 py-3">Uploader</th>
@@ -205,17 +269,17 @@ export default function AgentPackages() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
-              {packages.length === 0 && (
+              {visiblePackages.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                    {loading ? "Loading..." : "No agent packages available."}
+                  <td colSpan={tab === "msi" ? 8 : 7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                    {loading ? "Loading..." : `No ${tab === "msi" ? "MSI packages" : "agent binaries"} uploaded yet.`}
                   </td>
                 </tr>
               )}
-              {packages.map((pkg) => (
+              {visiblePackages.map((pkg) => (
                 <tr key={pkg.id} className="text-slate-300 hover:bg-white/[0.025]">
                   <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">{pkg.version}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-300">{pkg.platform}</td>
+                  {tab === "msi" && <td className="whitespace-nowrap px-4 py-3 text-slate-300">{pkg.platform}</td>}
                   <td className="whitespace-nowrap px-4 py-3">
                     {pkg.is_active ? (
                       <Badge variant="ghost" className="border-emerald-400/25 bg-emerald-400/10 text-emerald-300">
@@ -270,14 +334,14 @@ export default function AgentPackages() {
 
       {deleteTarget && (
         <ConfirmationModal
-          title="Delete agent package"
+          title="Delete package"
           confirmLabel={deleting ? "Deleting" : "Delete"}
           loading={deleting}
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
           Permanently delete <span className="font-semibold text-white">{deleteTarget.filename}</span>?
-          {deleteTarget.is_active && " This package is active and deleting it removes the current active package for this platform."}
+          {deleteTarget.is_active && " This package is active — deleting it removes the current active package for this type."}
         </ConfirmationModal>
       )}
     </section>

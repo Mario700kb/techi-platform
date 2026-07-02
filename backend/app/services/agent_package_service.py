@@ -10,11 +10,12 @@ from typing import BinaryIO, List, Optional
 from uuid import uuid4
 
 from app.core.config import settings
-from app.schemas.agent_package import AgentPackageOut, AgentPackagePlatform
+from app.schemas.agent_package import AgentFileType, AgentPackageOut, AgentPackagePlatform
 
 
 ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
 ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz")
+ALLOWED_FILE_TYPES = {ft.value for ft in AgentFileType}
 
 
 class AgentPackageService:
@@ -35,11 +36,12 @@ class AgentPackageService:
                 return self._to_out(item)
         return None
 
-    def latest_active(self, platform: str) -> Optional[AgentPackageOut]:
+    def latest_active(self, platform: str, *, file_type: Optional[str] = None) -> Optional[AgentPackageOut]:
         packages = [
             package
             for package in self.list_packages(include_inactive=False)
             if package.platform.value == platform
+            and (file_type is None or package.file_type.value == file_type)
         ]
         return packages[0] if packages else None
 
@@ -57,13 +59,16 @@ class AgentPackageService:
         filename: str,
         uploaded_by: str,
         stream: BinaryIO,
+        file_type: str = "msi",
     ) -> AgentPackageOut:
         version = version.strip()
         platform = platform.strip()
+        file_type = file_type.strip()
         safe_filename = self._safe_filename(filename)
         self._validate_version(version)
         self._validate_platform(platform)
         self._validate_extension(safe_filename)
+        self._validate_file_type(file_type)
 
         package_id = uuid4().hex
         package_dir = self.files_dir / package_id
@@ -76,6 +81,7 @@ class AgentPackageService:
             "id": package_id,
             "version": version,
             "platform": platform,
+            "file_type": file_type,
             "filename": safe_filename,
             "uploaded_at": utcnow().isoformat(),
             "uploaded_by": uploaded_by,
@@ -98,8 +104,9 @@ class AgentPackageService:
             raise ValueError("Package not found")
 
         if is_active:
+            target_ft = target.get("file_type", "msi")
             for item in manifest:
-                if item.get("platform") == target.get("platform"):
+                if item.get("platform") == target.get("platform") and item.get("file_type", "msi") == target_ft:
                     item["is_active"] = False
         target["is_active"] = is_active
         self._write_manifest(manifest)
@@ -132,6 +139,9 @@ class AgentPackageService:
     def latest_download_url(self, platform: str) -> str:
         return f"{settings.API_PREFIX}/agent-packages/platform/{platform}/download"
 
+    def agent_binary_download_url(self) -> str:
+        return f"{settings.API_PREFIX}/agent-packages/agent-binary/download"
+
     def _read_manifest(self) -> List[dict]:
         if not self.manifest_path.exists():
             return []
@@ -154,6 +164,7 @@ class AgentPackageService:
             id=item["id"],
             version=item["version"],
             platform=AgentPackagePlatform(item["platform"]),
+            file_type=AgentFileType(item.get("file_type", "msi")),
             filename=item["filename"],
             uploaded_at=datetime.fromisoformat(item["uploaded_at"]),
             uploaded_by=item.get("uploaded_by"),
@@ -199,3 +210,8 @@ class AgentPackageService:
         lowered = filename.lower()
         if not any(lowered.endswith(ext) for ext in ALLOWED_EXTENSIONS):
             raise ValueError("Unsupported package file extension")
+
+    @staticmethod
+    def _validate_file_type(file_type: str) -> None:
+        if file_type not in ALLOWED_FILE_TYPES:
+            raise ValueError(f"Unsupported file_type '{file_type}'. Allowed: {sorted(ALLOWED_FILE_TYPES)}")

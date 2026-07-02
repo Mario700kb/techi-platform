@@ -13,10 +13,16 @@ class AgentPackagePlatform(str, Enum):
     DARWIN_ARM64 = "darwin-arm64"
 
 
+class AgentFileType(str, Enum):
+    MSI = "msi"
+    AGENT_BINARY = "agent_binary"
+
+
 class AgentPackageOut(BaseModel):
     id: str
     version: str
     platform: AgentPackagePlatform
+    file_type: AgentFileType = AgentFileType.MSI
     filename: str
     uploaded_at: datetime
     uploaded_by: Optional[str] = None

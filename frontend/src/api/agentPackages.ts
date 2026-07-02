@@ -1,11 +1,13 @@
 import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
 
 export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "darwin-arm64";
+export type AgentFileType = "msi" | "agent_binary";
 
 export interface AgentPackage {
   id: string;
   version: string;
   platform: AgentPackagePlatform;
+  file_type: AgentFileType;
   filename: string;
   uploaded_at: string;
   uploaded_by?: string | null;
@@ -22,10 +24,12 @@ export async function uploadAgentPackage(payload: {
   version: string;
   platform: AgentPackagePlatform;
   file: File;
+  file_type?: AgentFileType;
 }): Promise<AgentPackage> {
   const formData = new FormData();
   formData.append("version", payload.version);
   formData.append("platform", payload.platform);
+  formData.append("file_type", payload.file_type ?? "msi");
   formData.append("file", payload.file);
 
   const result = await fetchJson<{ package: AgentPackage }>("/api/v1/agent-packages", {

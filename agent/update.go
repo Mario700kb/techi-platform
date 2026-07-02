@@ -13,41 +13,44 @@ import (
 	"time"
 )
 
-// performSelfUpdate downloads the MSI at update.URL, verifies its SHA256 (if
-// provided), then hands installation to a detached helper. The helper survives
-// when SCM stops this service process during replacement.
+// performSelfUpdate downloads the new techi-agent.exe, verifies its SHA256,
+// then hands the binary swap to a detached PowerShell helper.  The helper
+// survives when SCM stops this service process during the replacement.
+//
+// The MSI is never touched here -- self_update ships only the agent binary.
+// TECHI Remote Support is never affected.
 func performSelfUpdate(update *AgentUpdate) {
 	if update == nil || !update.Available || update.URL == "" {
 		return
 	}
-	log.Printf("[self_update] starting update to v%s from %s", update.Version, update.URL)
+	log.Printf("[self_update] starting binary update to v%s from %s", update.Version, update.URL)
 
-	msiPath := agentMSICachePath(update.Version)
-	if err := downloadAgentMSI(update.URL, msiPath); err != nil {
+	exePath := agentBinaryCachePath(update.Version)
+	if err := downloadAgentBinary(update.URL, exePath); err != nil {
 		log.Printf("[self_update] download failed: %v", err)
 		return
 	}
 
 	if update.Checksum != "" {
-		if !sha256Matches(msiPath, strings.ToLower(update.Checksum)) {
+		if !sha256Matches(exePath, strings.ToLower(update.Checksum)) {
 			log.Printf("[self_update] checksum mismatch; aborting")
-			_ = os.Remove(msiPath)
+			_ = os.Remove(exePath)
 			return
 		}
 		log.Printf("[self_update] checksum verified")
 	}
 
-	log.Printf("[self_update] scheduling detached install for %s", msiPath)
-	if err := installAgentMSI(msiPath); err != nil {
+	log.Printf("[self_update] scheduling detached binary swap for %s", exePath)
+	if err := swapAgentBinary(exePath); err != nil {
 		log.Printf("[self_update] schedule failed: %v", err)
 		return
 	}
 
-	log.Printf("[self_update] v%s install helper launched", update.Version)
+	log.Printf("[self_update] v%s swap helper launched", update.Version)
 }
 
-// agentMSICachePath returns a stable temp path for the agent MSI.
-func agentMSICachePath(version string) string {
+// agentBinaryCachePath returns a stable temp path for the downloaded exe.
+func agentBinaryCachePath(version string) string {
 	programData := strings.TrimSpace(os.Getenv("ProgramData"))
 	base := os.TempDir()
 	if programData != "" {
@@ -59,19 +62,19 @@ func agentMSICachePath(version string) string {
 	if v == "" {
 		v = "latest"
 	}
-	return filepath.Join(dir, "techi-agent-"+v+".msi")
+	return filepath.Join(dir, "techi-agent-"+v+".exe")
 }
 
-// downloadAgentMSI downloads url to dest with 3 attempts and exponential backoff.
-func downloadAgentMSI(url, dest string) error {
+// downloadAgentBinary downloads url to dest with 3 attempts and exponential backoff.
+func downloadAgentBinary(url, dest string) error {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
-		if err := downloadFile(url, dest, 300); err == nil {
+		if err := downloadFile(url, dest, 120); err == nil {
 			return nil
 		} else {
 			lastErr = err
 			if attempt < 3 {
-				delay := time.Duration(attempt*30) * time.Second
+				delay := time.Duration(attempt*15) * time.Second
 				log.Printf("[self_update] download attempt %d failed: %v; retrying in %s", attempt, err, delay)
 				time.Sleep(delay)
 			}
@@ -80,20 +83,24 @@ func downloadAgentMSI(url, dest string) error {
 	return fmt.Errorf("download failed after 3 attempts: %w", lastErr)
 }
 
-// installAgentMSI writes and launches a detached PowerShell helper. The helper
-// does the risky work outside the current service process: stop service,
-// reinstall MSI, verify service exists/runs, recreate it if needed, and log all
-// results to deploy.log.
-func installAgentMSI(msiPath string) error {
-	if strings.TrimSpace(msiPath) == "" {
-		return fmt.Errorf("empty MSI path")
+// swapAgentBinary writes and launches a detached PowerShell helper.  The helper
+// does the risky work outside the current service process:
+//   - stop service
+//   - backup old exe → techi-agent-old.exe
+//   - move new exe → techi-agent.exe
+//   - start service
+//   - rollback on failure (restore backup)
+func swapAgentBinary(newExePath string) error {
+	if strings.TrimSpace(newExePath) == "" {
+		return fmt.Errorf("empty exe path")
 	}
-	if _, err := os.Stat(msiPath); err != nil {
-		return fmt.Errorf("MSI not accessible: %w", err)
+	if _, err := os.Stat(newExePath); err != nil {
+		return fmt.Errorf("new exe not accessible: %w", err)
 	}
 
-	helperPath := filepath.Join(filepath.Dir(msiPath), "self-update-"+sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))+".ps1")
-	if err := os.WriteFile(helperPath, []byte(selfUpdateHelperScript()), 0600); err != nil {
+	helperPath := filepath.Join(filepath.Dir(newExePath),
+		"binary-swap-"+sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))+".ps1")
+	if err := os.WriteFile(helperPath, []byte(binarySwapHelperScript()), 0600); err != nil {
 		return fmt.Errorf("write helper: %w", err)
 	}
 
@@ -101,7 +108,7 @@ func installAgentMSI(msiPath string) error {
 		"powershell.exe",
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
 		"-File", helperPath,
-		"-MsiPath", msiPath,
+		"-NewExePath", newExePath,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW,
@@ -113,13 +120,15 @@ func installAgentMSI(msiPath string) error {
 	return nil
 }
 
-func selfUpdateHelperScript() string {
-	return `param([Parameter(Mandatory=$true)][string]$MsiPath)
+func binarySwapHelperScript() string {
+	return `param([Parameter(Mandatory=$true)][string]$NewExePath)
 
 $ErrorActionPreference = 'Continue'
 
-$deployLog = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
-$agentExe = Join-Path $env:ProgramData 'TechiAgent\techi-agent.exe'
+$deployLog   = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
+$agentDir    = Join-Path $env:ProgramData 'TechiAgent'
+$agentExe    = Join-Path $agentDir 'techi-agent.exe'
+$agentOldExe = Join-Path $agentDir 'techi-agent-old.exe'
 $serviceName = 'TechiAgent'
 
 function Write-DeployLog([string]$Message) {
@@ -127,13 +136,6 @@ function Write-DeployLog([string]$Message) {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Add-Content -Path $deployLog -Value "$stamp [self_update] $Message"
-}
-
-function Run-Logged([string]$FilePath, [string[]]$Arguments) {
-    Write-DeployLog ("run=" + $FilePath + " " + ($Arguments -join ' '))
-    $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
-    Write-DeployLog ("result=" + $p.ExitCode + " command=" + $FilePath)
-    return $p.ExitCode
 }
 
 function Get-AgentServiceStatus {
@@ -144,64 +146,86 @@ function Get-AgentServiceStatus {
 
 function Ensure-AgentService {
     $status = Get-AgentServiceStatus
-    Write-DeployLog "service status after msiexec=$status"
+    Write-DeployLog "service status after swap=$status"
     if ($status -eq 'missing') {
         Write-DeployLog "service missing; recreating"
         $binPathArg = 'binPath= "' + $agentExe + '"'
-        Run-Logged 'sc.exe' @('create', $serviceName, $binPathArg, 'start= auto', 'DisplayName= TECHI Agent') | Out-Null
+        Start-Process -FilePath 'sc.exe' -ArgumentList @('create', $serviceName, $binPathArg, 'start= auto', 'DisplayName= TECHI Agent') -Wait -WindowStyle Hidden
     }
-    Run-Logged 'sc.exe' @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/60000/restart/60000/restart/300000') | Out-Null
+    Start-Process -FilePath 'sc.exe' -ArgumentList @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/60000/restart/60000/restart/300000') -Wait -WindowStyle Hidden
     $status = Get-AgentServiceStatus
     if ($status -ne 'Running') {
         Write-DeployLog "starting service; current=$status"
-        Run-Logged 'net.exe' @('start', $serviceName) | Out-Null
+        Start-Process -FilePath 'net.exe' -ArgumentList @('start', $serviceName) -Wait -WindowStyle Hidden
     }
     Start-Sleep -Seconds 5
     $status = Get-AgentServiceStatus
     Write-DeployLog "service final status=$status"
     if ($status -ne 'Running') {
-        throw "service not running after self_update; status=$status"
+        throw "service not running after binary swap; status=$status"
+    }
+}
+
+function Rollback {
+    Write-DeployLog "rollback: restoring $agentOldExe -> $agentExe"
+    try {
+        if (Test-Path $agentOldExe) {
+            Move-Item -Path $agentOldExe -Destination $agentExe -Force
+            Write-DeployLog "rollback: backup restored"
+        } else {
+            Write-DeployLog "rollback: no backup found"
+        }
+        Start-Process -FilePath 'net.exe' -ArgumentList @('start', $serviceName) -Wait -WindowStyle Hidden
+        $status = Get-AgentServiceStatus
+        Write-DeployLog "rollback: service status=$status"
+    } catch {
+        Write-DeployLog ("rollback error: " + $_.Exception.Message)
     }
 }
 
 try {
-    Write-DeployLog "begin msi=$MsiPath"
-    if (!(Test-Path -LiteralPath $MsiPath)) {
-        throw "MSI not found: $MsiPath"
+    Write-DeployLog "begin binary_swap new=$NewExePath"
+
+    if (!(Test-Path -LiteralPath $NewExePath)) {
+        throw "new exe not found: $NewExePath"
     }
 
+    # 1. Stop the service (this will terminate this process shortly after
+    #    the helper is detached — that is the intended behaviour).
     $before = Get-AgentServiceStatus
     Write-DeployLog "service status before stop=$before"
-    Run-Logged 'sc.exe' @('stop', $serviceName) | Out-Null
+    Start-Process -FilePath 'sc.exe' -ArgumentList @('stop', $serviceName) -WindowStyle Hidden
     $deadline = (Get-Date).AddSeconds(30)
     do {
         Start-Sleep -Seconds 2
         $status = Get-AgentServiceStatus
         Write-DeployLog "service status wait=$status"
     } while ($status -eq 'Running' -and (Get-Date) -lt $deadline)
+    Write-DeployLog "service stopped; status=$(Get-AgentServiceStatus)"
 
-    # Plain /i: installer.wxs (UpgradeCode E6AD0A88, matching production)
-    # heq automatikisht versionin e instaluar via MajorUpgrade. MOS bej
-    # msiexec /x eksplicit para /i -- nje uninstall i ndare (standalone)
-    # NUK e vendos UPGRADINGPRODUCTCODE, dhe CustomAction CleanupProgramData
-    # (Condition="REMOVE~='ALL' AND NOT UPGRADINGPRODUCTCODE") do te fshinte
-    # C:\ProgramData\TECHI\agent.config.json -- duke humbur device_id dhe
-    # duke rilidhur pajisjen si te re. MajorUpgrade brenda nje transaksioni
-    # te vetem e ruan device_id (verifikuar me teste lokale elevated).
-    $msiResult = Run-Logged 'msiexec.exe' @('/i', $MsiPath, '/quiet', '/norestart')
-    if ($msiResult -ne 0 -and $msiResult -ne 3010) {
-        Write-DeployLog "msiexec failed; attempting service recovery"
-        Ensure-AgentService
-        throw "msiexec result=$msiResult"
+    # 2. Backup old exe.
+    if (Test-Path $agentOldExe) {
+        Remove-Item $agentOldExe -Force
+        Write-DeployLog "removed old backup"
     }
+    Move-Item -Path $agentExe -Destination $agentOldExe -Force
+    Write-DeployLog "backup: $agentExe -> $agentOldExe"
 
+    # 3. Move new exe into place.
+    Move-Item -Path $NewExePath -Destination $agentExe -Force
+    Write-DeployLog "installed: $NewExePath -> $agentExe"
+
+    # 4. Start service and verify.
     Ensure-AgentService
-    Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue
-    Write-DeployLog "complete result=$msiResult"
+
+    # 5. Clean up backup on success.
+    Remove-Item $agentOldExe -Force -ErrorAction SilentlyContinue
+    Write-DeployLog "complete: binary swap succeeded"
     exit 0
+
 } catch {
-    Write-DeployLog ("failed error=" + $_.Exception.Message)
-    try { Ensure-AgentService } catch { Write-DeployLog ("recovery failed error=" + $_.Exception.Message) }
+    Write-DeployLog ("failed: " + $_.Exception.Message)
+    Rollback
     exit 1
 }
 `

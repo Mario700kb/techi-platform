@@ -32,6 +32,7 @@ def list_agent_packages(
 def upload_agent_package(
     version: str = Form(...),
     platform: str = Form(...),
+    file_type: str = Form(default="msi"),
     file: UploadFile = File(...),
     operator: Operator = Depends(get_current_operator),
     _: None = Depends(_require_deployment),
@@ -40,6 +41,7 @@ def upload_agent_package(
         package = AgentPackageService().upload(
             version=version,
             platform=platform,
+            file_type=file_type,
             filename=file.filename or "",
             uploaded_by=operator.username,
             stream=file.file,
@@ -110,6 +112,29 @@ def get_active_windows_agent_version() -> PlainTextResponse:
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+@router.get("/agent-binary/download")
+def download_active_agent_binary():
+    """Public endpoint: returns the currently active agent_binary package for
+    windows-amd64.  Used by the self_update command so the agent always fetches
+    the binary that is marked active in the UI — no token required."""
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="agent_binary")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active agent binary package for windows-amd64")
+    path = service.package_path(package)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Package file not found")
+    logger.info(
+        "Agent binary download package_id=%s version=%s", package.id, package.version
+    )
+    return FileResponse(
+        path,
+        filename=package.filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 
