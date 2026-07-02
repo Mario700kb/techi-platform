@@ -58,6 +58,13 @@ $deployLog = Join-Path $agentDir 'deploy.log'
 
 New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
+function Write-InstallLog([string]$Message) {
+    try {
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Add-Content -Path $deployLog -Value "$stamp [watchdog-install] $Message"
+    } catch {}
+}
+
 $watchdog = @'
 $ErrorActionPreference = 'Continue'
 $agentDir = Join-Path $env:ProgramData 'TechiAgent'
@@ -101,19 +108,23 @@ try {
 }
 '@
 
-$watchdogPath = Join-Path $agentDir 'techi-agent-watchdog.ps1'
-[System.IO.File]::WriteAllText($watchdogPath, $watchdog, [System.Text.UTF8Encoding]::new($false))
+try {
+    $watchdogPath = Join-Path $agentDir 'techi-agent-watchdog.ps1'
+    [System.IO.File]::WriteAllText($watchdogPath, $watchdog, [System.Text.UTF8Encoding]::new($false))
 
-Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $watchdogPath + '"')
-$bootTrigger = New-ScheduledTaskTrigger -AtStartup
-$repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
-$repeatTrigger.Repetition.Interval = 'PT5M'
-$repeatTrigger.Repetition.Duration = 'P3650D'
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $watchdogPath + '"')
+    $bootTrigger = New-ScheduledTaskTrigger -AtStartup
+    $repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($bootTrigger, $repeatTrigger) -Principal $principal -Settings $settings -Force | Out-Null
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($bootTrigger, $repeatTrigger) -Principal $principal -Settings $settings -Force | Out-Null
+    Write-InstallLog "scheduled task installed/updated"
+} catch {
+    Write-InstallLog ("install failed: " + $_.Exception.Message)
+    throw
+}
 `
 }

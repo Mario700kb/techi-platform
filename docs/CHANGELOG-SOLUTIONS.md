@@ -3,6 +3,63 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Fix: Watchdog Task Creation on Clean 2.1.1 Build
+
+### Root cause
+
+Device #11 successfully updated to the clean `2.1.1` binary and reported the
+expected SHA256, but `Get-ScheduledTask -TaskName "TECHI Agent Watchdog"`
+returned not found after service restart. The installed binary was correct;
+the issue was in the watchdog registration script. It set repetition fields by
+mutating `$repeatTrigger.Repetition.Interval` / `.Duration`, which is not
+reliable across Windows PowerShell/ScheduledTasks implementations.
+
+The agent service log path is:
+
+`C:\ProgramData\TechiAgent\logs\agent.log`
+
+not:
+
+`C:\ProgramData\TechiAgent\agent.log`
+
+### Fix
+
+`agent/watchdog_windows.go` now creates the repeat trigger using the supported
+parameters directly:
+
+```powershell
+New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5) `
+  -RepetitionDuration (New-TimeSpan -Days 3650)
+```
+
+It also writes watchdog install success/failure to:
+
+`C:\ProgramData\TechiAgent\deploy.log`
+
+with `[watchdog-install]`, so failures are visible even when operators do not
+know the agent log location.
+
+### Final replacement binary
+
+Upload this as `file_type=agent_binary`, platform `windows-amd64`, version
+`2.1.1`, then activate it:
+
+`/private/tmp/techi-agent-2.1.1-watchdog-fix.exe`
+
+SHA256:
+
+`264516f15e2fe26fccb334bb017845f4ecee7a4cb4b9711e9e3f437a3a216600`
+
+### Checks
+
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache go test ./...`
+  -> clean.
+- `cd agent && GOCACHE=/private/tmp/techi-go-cache GOOS=windows GOARCH=amd64 go build ./...`
+  -> clean.
+- Final binary strings confirm `2.1.1`, `TECHI Agent Watchdog`,
+  `watchdog-install`, and `-RepetitionInterval`.
+
 ## [2026-07-02] Hardening: Same-Version Agent Rebuilds Verified by SHA256
 
 ### Root cause
