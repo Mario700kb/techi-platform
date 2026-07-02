@@ -160,7 +160,7 @@ def download_latest_active_agent_package(platform: str):
         raise HTTPException(status_code=400, detail="Unsupported public download platform")
 
     service = AgentPackageService()
-    package = service.latest_active(platform)
+    package = service.latest_active(platform, file_type="msi")
     if package is None:
         logger.info("Public agent package download returned no active package for platform=%s", platform)
         raise HTTPException(status_code=404, detail="No active package for platform")

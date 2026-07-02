@@ -3,6 +3,35 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Fix: Platform Package Download Must Serve MSI, Not Agent Binary
+
+### Root cause
+
+After split packaging, production can have two active Windows packages at the
+same time:
+
+- `file_type=msi` for legacy MSI self-update/GPO;
+- `file_type=agent_binary` for clean binary-only self-update.
+
+The public `/agent-packages/platform/windows-amd64/download` endpoint used
+`latest_active(platform)` without a file type. Once the active EXE was newer
+than the MSI, this endpoint returned `techi-agent.exe` even though legacy agents
+use it as an MSI URL.
+
+### Fix
+
+The platform download endpoint now explicitly selects
+`latest_active(platform, file_type="msi")`.
+
+`/agent-packages/agent-binary/download` remains the EXE endpoint.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_agent_package_public_download.py tests/test_agent_command_service.py -q`
+  -> 18 passed.
+- `python3 -m compileall backend/app/api/v1/endpoints/agent_packages.py`
+  -> clean.
+
 ## [2026-07-02] Packaging: Split Agent Update Bridge and Remote Support MSI
 
 ### Root cause

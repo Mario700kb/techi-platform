@@ -12,19 +12,20 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_public_active_windows_package_download_returns_200(monkeypatch, tmp_path):
-    package_file = tmp_path / "techi-agent.exe"
-    package_file.write_bytes(b"active-agent-binary")
+def test_public_active_windows_package_download_returns_active_msi(monkeypatch, tmp_path):
+    package_file = tmp_path / "techi-agent.msi"
+    package_file.write_bytes(b"active-agent-msi")
     package = SimpleNamespace(
         id="pkg-active",
         platform=SimpleNamespace(value="windows-amd64"),
-        filename="techi-agent.exe",
+        filename="techi-agent.msi",
         version="1.2.3",
     )
 
     class FakeAgentPackageService:
         def latest_active(self, platform: str, *, file_type=None):
             assert platform == "windows-amd64"
+            assert file_type == "msi"
             return package
 
         def package_path(self, selected_package):
@@ -36,9 +37,47 @@ def test_public_active_windows_package_download_returns_200(monkeypatch, tmp_pat
     response = _client().get("/api/v1/agent-packages/platform/windows-amd64/download")
 
     assert response.status_code == 200
-    assert response.content == b"active-agent-binary"
+    assert response.content == b"active-agent-msi"
     assert response.headers["content-type"] == "application/octet-stream"
-    assert "techi-agent.exe" in response.headers["content-disposition"]
+    assert "techi-agent.msi" in response.headers["content-disposition"]
+
+
+def test_public_platform_download_ignores_active_agent_binary(monkeypatch, tmp_path):
+    msi_file = tmp_path / "techi-agent.msi"
+    msi_file.write_bytes(b"active-msi")
+    msi_package = SimpleNamespace(
+        id="pkg-msi",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="techi-agent.msi",
+        version="2.1.1",
+    )
+    binary_package = SimpleNamespace(
+        id="pkg-binary",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="techi-agent.exe",
+        version="2.1.1",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            if file_type == "msi":
+                return msi_package
+            if file_type == "agent_binary":
+                return binary_package
+            raise AssertionError(f"unexpected file_type={file_type}")
+
+        def package_path(self, selected_package):
+            assert selected_package is msi_package
+            return msi_file
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/platform/windows-amd64/download")
+
+    assert response.status_code == 200
+    assert response.content == b"active-msi"
+    assert "techi-agent.msi" in response.headers["content-disposition"]
 
 
 def test_public_download_without_authentication_works(monkeypatch, tmp_path):
@@ -53,6 +92,7 @@ def test_public_download_without_authentication_works(monkeypatch, tmp_path):
 
     class FakeAgentPackageService:
         def latest_active(self, platform: str, *, file_type=None):
+            assert file_type == "msi"
             return package
 
         def package_path(self, selected_package):
