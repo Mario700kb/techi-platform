@@ -40,6 +40,7 @@ _AGENT_ID_CACHE_TTL = 300.0  # seconds
 _AGENT_ID_CACHE_MAX_SIZE = 1000
 _AGENT_ID_CACHE_EVICT_COUNT = 100
 RUSTDESK_REPAIR_EVENT_THROTTLE_HOURS = 24
+RUSTDESK_REPAIR_COUNTER_RETENTION_HOURS = 24
 
 
 def _cache_agent_device(agent_id: str, device_id: int) -> None:
@@ -144,6 +145,7 @@ class DeviceHeartbeatService:
         prev_repair_count = device.rustdesk_repair_count if device else 0
         if device:
             update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id"})
+            self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)
             if has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
@@ -326,6 +328,7 @@ class DeviceHeartbeatService:
             return self._reuse_device(effective_match.device, payload, device_type, now)
 
         create_data = payload.model_dump(exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id"})
+        self._drop_stale_repair_counter(create_data, now)
         create_data["agent_id"] = payload.agent_id
         create_data["rustdesk_id"] = fingerprint_rustdesk_id  # None when agent has no numeric RustDesk ID yet
         create_data["device_type"] = device_type
@@ -427,6 +430,7 @@ class DeviceHeartbeatService:
             exclude_unset=True,
             exclude={"device_id", "rustdesk_id"},
         )
+        self._drop_stale_repair_counter(update_data, now)
 
         # Rustdesk runtime fields are synced separately by apply_heartbeat_sync
         for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
@@ -507,6 +511,25 @@ class DeviceHeartbeatService:
             .first()
             is not None
         )
+
+    @staticmethod
+    def _drop_stale_repair_counter(values: dict, now: datetime) -> None:
+        repair_count = values.get("rustdesk_repair_count")
+        repair_at = values.get("rustdesk_last_repair_at")
+        if not repair_count:
+            return
+        if repair_at is None:
+            values["rustdesk_repair_count"] = 0
+            values["rustdesk_last_repair_at"] = None
+            return
+        try:
+            age = now - repair_at
+        except TypeError:
+            from app.core.time import ensure_utc
+            age = ensure_utc(now) - ensure_utc(repair_at)
+        if age > timedelta(hours=RUSTDESK_REPAIR_COUNTER_RETENTION_HOURS):
+            values["rustdesk_repair_count"] = 0
+            values["rustdesk_last_repair_at"] = None
 
     def _process_telemetry(self, payload: AgentHeartbeatPayload, device) -> None:
         has_telemetry = any(

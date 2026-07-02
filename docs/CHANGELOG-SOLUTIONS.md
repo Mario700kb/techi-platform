@@ -3,6 +3,42 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Cleanup: Ignore RustDesk Repair Counters Older Than 24h
+
+### Root cause
+
+Resetting historical `rustdesk_repair_count` in the database is not enough by
+itself. Older agents still have the cumulative repair counter in local config
+and can resend it on the next heartbeat, causing old counts to reappear in the
+UI.
+
+### Fix
+
+`DeviceHeartbeatService` now drops stale repair counters from heartbeat device
+updates when `rustdesk_last_repair_at` is missing or older than 24 hours:
+
+- `rustdesk_repair_count` is set to `0`;
+- `rustdesk_last_repair_at` is set to `NULL`.
+
+Recent repair counters inside the last 24 hours are preserved, so active repair
+loops remain visible.
+
+### Operations
+
+Before deploying this backend filter, production historical repair counters
+older than 24 hours were backed up to:
+
+`device_repair_count_reset_20260702`
+
+and reset for 314 devices.
+
+### Checks
+
+- `python3 -m compileall backend/app/services/device_heartbeat_service.py`
+  -> clean.
+- `cd backend && python3 -m pytest tests/test_rustdesk_repair_event_throttle.py tests/test_rustdesk_heartbeat_sync.py -q`
+  -> 8 passed.
+
 ## [2026-07-02] Fix: self_update Batch Completion Must Wait for Heartbeat SHA
 
 ### Root cause
