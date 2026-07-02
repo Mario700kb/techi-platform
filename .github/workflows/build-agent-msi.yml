@@ -134,6 +134,29 @@ jobs:
             -d BuildCommit=$buildCommit `
             -o TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
 
+      - name: Build Agent Update Bridge MSI
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $buildCommit = "${{ github.sha }}".Substring(0, 7)
+          wix build agent-update.wxs `
+            -arch x64 `
+            -d SourceDir=. `
+            -d Version=${{ steps.version.outputs.version4 }} `
+            -d AgentVersion=${{ steps.version.outputs.version }} `
+            -d BuildCommit=$buildCommit `
+            -o TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi
+
+      - name: Build Remote Support MSI
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          wix build remote-support.wxs `
+            -arch x64 `
+            -d SourceDir=. `
+            -d Version=1.4.6.0 `
+            -o TECHI-Remote-Support-1.4.6.msi
+
       # ------------------------------------------------------------------ #
       # 9. SHA256 checksum                                                   #
       # ------------------------------------------------------------------ #
@@ -145,6 +168,14 @@ jobs:
           $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
           "$hash  $msi" | Out-File "$msi.sha256" -Encoding utf8NoBOM
           Write-Host "SHA256: $hash"
+          $bridge = "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi"
+          $bridgeHash = (Get-FileHash $bridge -Algorithm SHA256).Hash.ToLower()
+          "$bridgeHash  $bridge" | Out-File "$bridge.sha256" -Encoding utf8NoBOM
+          Write-Host "Bridge SHA256: $bridgeHash"
+          $remoteSupport = "TECHI-Remote-Support-1.4.6.msi"
+          $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
+          "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
+          Write-Host "Remote Support SHA256: $remoteSupportHash"
 
       # ------------------------------------------------------------------ #
       # 10. Upload artifact (30 ditë)                                        #
@@ -156,5 +187,25 @@ jobs:
           path: |
             agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
             agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload Agent Update Bridge MSI artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: TECHI-Agent-Update-${{ steps.version.outputs.version }}
+          path: |
+            agent/installer/TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi
+            agent/installer/TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload Remote Support MSI artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: TECHI-Remote-Support-1.4.6
+          path: |
+            agent/installer/TECHI-Remote-Support-1.4.6.msi
+            agent/installer/TECHI-Remote-Support-1.4.6.msi.sha256
           retention-days: 30
           if-no-files-found: error

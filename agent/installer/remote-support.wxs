@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TECHI Remote Support MSI
+
+  Installs only the remote support application, protocol handler, SCM service,
+  tray scheduled task, and remote support config. It intentionally contains no
+  endpoint-management service or enrollment writes.
+-->
+<?ifndef Version?>
+<?define Version="1.4.6.0"?>
+<?endif?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="TECHI Remote Support"
+           Version="$(var.Version)"
+           Manufacturer="TECHI Solutions SH.P.K."
+           UpgradeCode="60D9FA89-6F6C-5C7C-A74E-027363D83921"
+           Scope="perMachine">
+
+    <MediaTemplate EmbedCab="yes"/>
+    <Property Id="ARPCOMMENTS" Value="TECHI Remote Support remote access client"/>
+    <Property Id="REMOTE_SERVER"   Value="139.162.158.208"/>
+    <Property Id="REMOTE_RELAY"    Value="139.162.158.208"/>
+    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes"/>
+    <Property Id="API_URL"         Value="https://api-rdp.techi.com.al" Secure="yes"/>
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="REMOTESUPPORTFOLDER" Name="TECHI Remote Support"/>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="TechiMenuFolder" Name="TECHI"/>
+    </StandardDirectory>
+
+    <Feature Id="RemoteSupportFeature" Title="TECHI Remote Support" Level="1">
+      <ComponentGroupRef Id="RemoteSupportComponents"/>
+      <ComponentRef Id="RemoteSupportProtocol"/>
+      <ComponentRef Id="RemoteSupportStartMenu"/>
+      <ComponentRef Id="RemoteSupportHelper"/>
+    </Feature>
+
+    <ComponentGroup Id="RemoteSupportComponents" Directory="REMOTESUPPORTFOLDER">
+      <Files Include="$(var.SourceDir)\TECHI-Remote-Support\**"/>
+    </ComponentGroup>
+
+    <Component Id="RemoteSupportProtocol" Guid="C796CA39-CA13-4861-B5F2-507419A83033"
+               Directory="REMOTESUPPORTFOLDER">
+      <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport">
+        <RegistryValue Type="string" Value="URL:TECHI Remote Support Protocol" KeyPath="yes"/>
+        <RegistryValue Name="URL Protocol" Type="string" Value=""/>
+      </RegistryKey>
+      <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
+        <RegistryValue Type="string"
+                       Value="&quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
+      </RegistryKey>
+    </Component>
+
+    <Component Id="RemoteSupportStartMenu" Guid="F9AF05C3-B717-4EB3-A3A1-A5202297A5D7"
+               Directory="TechiMenuFolder">
+      <Shortcut Id="RemoteSupportMenuShortcut"
+                Name="TECHI Remote Support"
+                Target="[REMOTESUPPORTFOLDER]TECHI Remote Support.exe"
+                WorkingDirectory="REMOTESUPPORTFOLDER"
+                Description="TECHI Remote Support"/>
+      <RemoveFolder Id="CleanTechiMenuFolder" Directory="TechiMenuFolder" On="uninstall"/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\RemoteSupport"
+                     Name="StartMenuInstalled"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes"/>
+    </Component>
+
+    <Component Id="RemoteSupportHelper" Guid="3DE842C5-0D44-4ED8-8C11-5DBCA265462A"
+               Directory="REMOTESUPPORTFOLDER">
+      <File Id="RemoteSupportHelperPs1"
+            Source="$(var.SourceDir)\remote-support-helper.ps1"
+            Name="remote-support-helper.ps1"
+            KeyPath="yes"/>
+    </Component>
+
+    <Binary Id="EpCustomActDll" SourceFile="EpCustomActDll.dll"/>
+
+    <CustomAction Id="WriteTechiConfigs.SetParam"
+                  Property="WriteTechiConfigs"
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+    <CustomAction Id="WriteTechiConfigs"
+                  BinaryRef="EpCustomActDll"
+                  DllEntry="WriteTechiConfigs"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
+                  Property="ApplyTechiRemoteSupportConfigFinal"
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+    <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
+                  BinaryRef="EpCustomActDll"
+                  DllEntry="ApplyTechiRemoteSupportConfigFinal"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="ConfigureRemoteSupportRuntime"
+                  Directory="REMOTESUPPORTFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REMOTESUPPORTFOLDER]remote-support-helper.ps1&quot; -ExePath &quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
+
+    <CustomAction Id="StopRemoteSupportRuntimeBeforeInstall"
+                  Directory="REMOTESUPPORTFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="StopRemoteSupportRuntimeBeforeRemove"
+                  Directory="REMOTESUPPORTFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="RemoveRemoteSupportRuntime"
+                  Directory="REMOTESUPPORTFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="StopRemoteSupportRuntimeBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
+      <Custom Action="WriteTechiConfigs.SetParam" After="InstallFiles" Condition="NOT REMOVE"/>
+      <Custom Action="WriteTechiConfigs" After="WriteTechiConfigs.SetParam" Condition="NOT REMOVE"/>
+      <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs" Condition="NOT REMOVE"/>
+      <Custom Action="ApplyTechiRemoteSupportConfigFinal" After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
+      <Custom Action="ConfigureRemoteSupportRuntime" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <Custom Action="StopRemoteSupportRuntimeBeforeRemove" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="RemoveRemoteSupportRuntime" After="StopRemoteSupportRuntimeBeforeRemove" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

@@ -3,6 +3,62 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Packaging: Split Agent Update Bridge and Remote Support MSI
+
+### Root cause
+
+The existing production MSI is a combined endpoint package: it contains both
+`techi-agent.exe` and the TECHI Remote Support runtime. That is correct for
+full bootstrap, but it is risky for routine agent upgrades because a normal
+MSI major upgrade can uninstall/reinstall remote support files while operators
+still depend on remote access to recover devices.
+
+Legacy agents also still expect an MSI payload for `self_update`; sending them
+the new binary-only EXE causes `msiexec` failures.
+
+### Fix
+
+The combined MSI is kept as fallback/full-bootstrap. Two new split packages
+were added:
+
+- `agent/installer/agent-update.wxs`
+  - builds `TECHI-Agent-Update-<version>.msi`;
+  - carries only `techi-agent.exe` and `agent-update-helper.ps1`;
+  - does not use the combined MSI `UpgradeCode`;
+  - does not run `MajorUpgrade`;
+  - does not ship or stop TECHI Remote Support;
+  - stops only `TechiAgent`, writes a backup, copies the new exe, recreates the
+    service if missing, sets service recovery, starts it, and rolls back on
+    failure.
+- `agent/installer/remote-support.wxs`
+  - builds `TECHI-Remote-Support-1.4.6.msi`;
+  - carries only the TECHI Remote Support runtime, protocol handler, service,
+    tray scheduled task, and RS config;
+  - contains no enrollment token flow and no agent config writes.
+
+GitHub Actions now builds three artifacts on Windows:
+
+- combined full-bootstrap MSI;
+- agent update bridge MSI;
+- remote support MSI.
+
+### Rollout Rule
+
+For the existing fleet, use the Agent Update Bridge MSI first. Do not replace
+the combined MSI in every GPO until device #5 and a small pilot confirm:
+
+1. `TechiAgent` updates to `2.1.1`;
+2. heartbeat reports the expected agent SHA;
+3. `TECHI Remote Support` still connects;
+4. `agent.config.json` keeps the same device identity.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_agent_update_bridge_installer.py tests/test_remote_support_installer.py tests/test_agent_command_service.py -q`
+  -> 21 passed.
+- macOS local WiX still cannot be used as the final MSI build authority for
+  this repo; Windows GitHub Actions is the expected MSI build path.
+
 ## [2026-07-02] Fix: Legacy Agent self_update Must Not Receive EXE as MSI
 
 ### Root cause

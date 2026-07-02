@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TECHI Agent Update Bridge MSI
+
+  Purpose:
+    Transport only techi-agent.exe to legacy agents that still expect MSI
+    self_update payloads. This package intentionally does not MajorUpgrade the
+    existing combined endpoint MSI, because uninstalling that product can remove
+    remote access files on live devices.
+
+  Build:
+    wix build agent-update.wxs -arch x64 -d SourceDir=. -d Version=2.1.1.0 -d AgentVersion=2.1.1 -o TECHI-Agent-Update-2.1.1.msi
+-->
+<?ifndef Version?>
+<?define Version="0.0.0.0"?>
+<?endif?>
+<?ifndef AgentVersion?>
+<?define AgentVersion="0.0.0"?>
+<?endif?>
+<?ifndef BuildCommit?>
+<?define BuildCommit="dev"?>
+<?endif?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="TECHI Agent Update Bridge"
+           Version="$(var.Version)"
+           Manufacturer="TECHI Solutions SH.P.K."
+           UpgradeCode="2E4B47F2-42A6-5B84-9A08-34B8E1A87111"
+           Scope="perMachine">
+
+    <MediaTemplate EmbedCab="yes"/>
+    <Property Id="ARPCOMMENTS" Value="TECHI Agent binary update bridge"/>
+    <Property Id="API_URL" Value="https://api-rdp.techi.com.al" Secure="yes"/>
+    <Property Id="ENROLLMENT_TOKEN" Secure="yes"/>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="BRIDGEFOLDER" Name="TechiAgentUpdateBridge"/>
+      <Directory Id="TECHIDATADIR" Name="TECHI"/>
+    </StandardDirectory>
+
+    <Feature Id="BridgeFeature" Title="TECHI Agent Update Bridge" Level="1">
+      <ComponentGroupRef Id="BridgeComponents"/>
+      <ComponentRef Id="BridgeRegistry"/>
+    </Feature>
+
+    <ComponentGroup Id="BridgeComponents" Directory="BRIDGEFOLDER">
+      <Component Id="BridgeAgentExe" Guid="3B93D89E-8E79-49B2-9D53-22DD65360DB0">
+        <File Id="BridgeTechiAgentExe"
+              Source="$(var.SourceDir)\techi-agent.exe"
+              Name="techi-agent.exe"
+              KeyPath="yes"/>
+      </Component>
+      <Component Id="BridgeHelperScript" Guid="B6B0DF65-7448-4DC0-9E87-F82E85D88F08">
+        <File Id="BridgeHelperPs1"
+              Source="$(var.SourceDir)\agent-update-helper.ps1"
+              Name="agent-update-helper.ps1"
+              KeyPath="yes"/>
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="BridgeRegistry" Guid="B4AC9758-ACDB-4C7D-89E9-CB6A9C52FB80"
+               Directory="TECHIDATADIR">
+      <CreateFolder/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\Agent"
+                     Name="UpdateBridgeVersion"
+                     Type="string"
+                     Value="$(var.AgentVersion)"
+                     KeyPath="yes"/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\Agent"
+                     Name="UpdateBridgeBuildCommit"
+                     Type="string"
+                     Value="$(var.BuildCommit)"/>
+    </Component>
+
+    <CustomAction Id="RunAgentUpdateBridge"
+                  Directory="BRIDGEFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[BRIDGEFOLDER]agent-update-helper.ps1&quot; -NewExePath &quot;[BRIDGEFOLDER]techi-agent.exe&quot; -TargetVersion &quot;$(var.AgentVersion)&quot; -ApiUrl &quot;[API_URL]&quot; -EnrollmentToken &quot;[ENROLLMENT_TOKEN]&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="RunAgentUpdateBridge" After="InstallFiles" Condition="NOT REMOVE"/>
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
