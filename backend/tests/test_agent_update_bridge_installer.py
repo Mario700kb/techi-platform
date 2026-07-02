@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 WXS_PATH = ROOT / "agent" / "installer" / "agent-update.wxs"
-HELPER_PATH = ROOT / "agent" / "installer" / "agent-update-helper.ps1"
+SWAP_GO_PATH = ROOT / "agent" / "swap_windows.go"
 BUILD_PATH = ROOT / "agent" / "installer" / "build-agent-update.sh"
 
 
@@ -12,8 +12,8 @@ def _wxs_text() -> str:
     return WXS_PATH.read_text(encoding="utf-8")
 
 
-def _helper_text() -> str:
-    return HELPER_PATH.read_text(encoding="utf-8")
+def _swap_go_text() -> str:
+    return SWAP_GO_PATH.read_text(encoding="utf-8")
 
 
 def test_agent_update_bridge_wxs_is_well_formed():
@@ -28,7 +28,7 @@ def test_agent_update_bridge_has_no_major_upgrade_or_combined_upgrade_code():
 
 
 def test_agent_update_bridge_does_not_ship_remote_support():
-    combined = _wxs_text() + "\n" + _helper_text()
+    combined = _wxs_text() + "\n" + _swap_go_text()
     forbidden = [
         "RemoteSupportComponents",
         "REMOTESUPPORTFOLDER",
@@ -44,23 +44,32 @@ def test_agent_update_bridge_does_not_ship_remote_support():
         assert needle not in combined
 
 
-def test_agent_update_bridge_only_controls_techi_agent_service():
-    helper = _helper_text()
-    assert "$serviceName = 'TechiAgent'" in helper
-    assert "sc.exe" in helper
-    assert "net.exe" in helper
-    assert "TECHI Agent" in helper
-    assert "TECHI Remote Support" not in helper
-    assert "rustdesk" not in helper.lower()
+def test_agent_update_bridge_custom_action_is_script_free():
+    """Strict AV/AMSI policies block every PowerShell script; the bridge must
+    run the shipped agent exe directly (swap-binary subcommand)."""
+    text = _wxs_text()
+    assert "powershell.exe" not in text.lower()
+    assert ".ps1" not in text
+    assert "swap-binary" in text
+    assert "[BRIDGEFOLDER]techi-agent.exe" in text
+    assert "-swap-target" in text
+    assert r"C:\ProgramData\TechiAgent\techi-agent.exe" in text
+
+
+def test_agent_update_bridge_swap_only_controls_techi_agent_service():
+    swap = _swap_go_text()
+    assert 'serviceName' in swap
+    assert "powershell.exe" not in swap.lower()
+    assert "TECHI Remote Support" not in swap
+    assert "rustdesk" not in swap.lower()
 
 
 def test_agent_update_bridge_preserves_existing_config_and_only_creates_if_missing():
-    helper = _helper_text()
-    assert "config preserved path=$configPath" in helper
-    assert "if (Test-Path -LiteralPath $configPath)" in helper
-    assert "config missing and no enrollment token supplied" in helper
-    assert "device_id" not in helper
-    assert "Remove-Item" not in helper
+    swap = _swap_go_text()
+    assert 'writeDeployLog("[self_update]", "config preserved path="+windowsConfigPath)' in swap
+    assert 'writeDeployLog("[self_update]", "config preserved path="+windowsLegacyConfigPath)' in swap
+    assert "config missing and no enrollment token supplied" in swap
+    assert "device_id" not in swap
 
 
 def test_agent_update_bridge_build_script_outputs_distinct_msi_name():

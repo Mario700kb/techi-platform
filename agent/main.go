@@ -10,6 +10,17 @@ import (
 )
 
 func main() {
+	// Script-free maintenance subcommands (run detached via Task Scheduler /
+	// MSI custom actions). Dispatched before any service/flag handling.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "swap-binary":
+			os.Exit(runBinarySwapCommand(os.Args[2:]))
+		case "watchdog-check":
+			os.Exit(runWatchdogCheckCommand())
+		}
+	}
+
 	command := ""
 	args := os.Args[1:]
 	if len(args) > 0 && isServiceCommand(args[0]) {

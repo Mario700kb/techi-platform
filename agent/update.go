@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
 // performSelfUpdate downloads the new techi-agent.exe, verifies its SHA256,
-// then hands the binary swap to a detached PowerShell helper.  The helper
-// survives when SCM stops this service process during the replacement.
+// then hands the binary swap to a detached copy of the new binary itself.
+// The swap process survives when SCM stops this service process during the
+// replacement.
 //
 // The MSI is never touched here -- self_update ships only the agent binary.
 // TECHI Remote Support is never affected.
@@ -82,16 +82,17 @@ func downloadAgentBinary(url, dest string) error {
 	return fmt.Errorf("download failed after 3 attempts: %w", lastErr)
 }
 
-// swapAgentBinary writes a PowerShell helper and runs it through a one-shot
-// Scheduled Task as SYSTEM.  Starting a plain child powershell.exe from the
-// agent is not enough: when the helper stops TechiAgent, Windows can terminate
-// child processes that still belong to the service's process/job tree.
-// Task Scheduler gives the swap an independent parent before the service stops:
-//   - stop service
-//   - backup old exe → techi-agent-old.exe
-//   - move new exe → techi-agent.exe
-//   - start service
-//   - rollback on failure (restore backup)
+// swapAgentBinary runs the downloaded new exe itself through a one-shot
+// Scheduled Task as SYSTEM (`techi-agent.exe swap-binary ...`).  Starting a
+// plain child process from the agent is not enough: when the swap stops
+// TechiAgent, Windows can terminate child processes that still belong to the
+// service's process/job tree.  Task Scheduler gives the swap an independent
+// parent before the service stops.
+//
+// No PowerShell (or any script) is involved: strict AV/AMSI policies on some
+// managed domains block every script the agent writes, which used to make
+// self_update fail silently there.  The swap logic itself lives in
+// swap_windows.go and runs as native code inside the new binary.
 func swapAgentBinary(newExePath string) error {
 	if strings.TrimSpace(newExePath) == "" {
 		return fmt.Errorf("empty exe path")
@@ -100,183 +101,12 @@ func swapAgentBinary(newExePath string) error {
 		return fmt.Errorf("new exe not accessible: %w", err)
 	}
 
-	helperPath := filepath.Join(filepath.Dir(newExePath),
-		"binary-swap-"+sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))+".ps1")
-	if err := os.WriteFile(helperPath, []byte(binarySwapHelperScript()), 0600); err != nil {
-		return fmt.Errorf("write helper: %w", err)
-	}
-
-	launcherPath := filepath.Join(filepath.Dir(newExePath),
-		"binary-swap-launch-"+sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))+".ps1")
 	taskName := "TECHI-Agent-SelfUpdate-" + sanitizeCachePart(time.Now().UTC().Format("20060102T150405Z"))
-	if err := os.WriteFile(launcherPath, []byte(binarySwapTaskLauncherScript(helperPath, newExePath, taskName)), 0600); err != nil {
-		return fmt.Errorf("write task launcher: %w", err)
+	taskRun := fmt.Sprintf(`"%s" swap-binary -swap-target "%s" -swap-task "%s"`,
+		newExePath, agentTargetExePath(), taskName)
+	if err := registerOneShotSystemTask(taskName, taskRun); err != nil {
+		return fmt.Errorf("start swap task: %w", err)
 	}
-
-	cmd := exec.Command(
-		"powershell.exe",
-		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-		"-File", launcherPath,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("start scheduled task helper: %w: %s", err, strings.TrimSpace(string(out)))
-	}
+	writeDeployLog("[self_update]", fmt.Sprintf("scheduled task launched task=%s new=%s", taskName, newExePath))
 	return nil
-}
-
-func binarySwapTaskLauncherScript(helperPath, newExePath, taskName string) string {
-	return fmt.Sprintf(`$ErrorActionPreference = 'Stop'
-$taskName = '%s'
-$helperPath = '%s'
-$newExePath = '%s'
-$deployLog = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
-
-function Write-DeployLog([string]$Message) {
-    $dir = Split-Path -Parent $deployLog
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Add-Content -Path $deployLog -Value "$stamp [self_update] $Message"
-}
-
-Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-$arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $helperPath + '" -NewExePath "' + $newExePath + '" -TaskName "' + $taskName + '"'
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
-Start-ScheduledTask -TaskName $taskName
-Write-DeployLog "scheduled task launched task=$taskName helper=$helperPath new=$newExePath"
-`, psSingleQuoted(taskName), psSingleQuoted(helperPath), psSingleQuoted(newExePath))
-}
-
-func psSingleQuoted(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
-
-func binarySwapHelperScript() string {
-	return `param(
-    [Parameter(Mandatory=$true)][string]$NewExePath,
-    [string]$TaskName = ''
-)
-
-$ErrorActionPreference = 'Continue'
-
-$deployLog   = Join-Path $env:ProgramData 'TechiAgent\deploy.log'
-$agentDir    = Join-Path $env:ProgramData 'TechiAgent'
-$agentExe    = Join-Path $agentDir 'techi-agent.exe'
-$agentOldExe = Join-Path $agentDir 'techi-agent-old.exe'
-$serviceName = 'TechiAgent'
-
-function Write-DeployLog([string]$Message) {
-    $dir = Split-Path -Parent $deployLog
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Add-Content -Path $deployLog -Value "$stamp [self_update] $Message"
-}
-
-function Get-AgentServiceStatus {
-    $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-    if ($null -eq $svc) { return 'missing' }
-    return [string]$svc.Status
-}
-
-function Ensure-AgentService {
-    $status = Get-AgentServiceStatus
-    Write-DeployLog "service status after swap=$status"
-    if ($status -eq 'missing') {
-        Write-DeployLog "service missing; recreating"
-        $binPathArg = 'binPath= "' + $agentExe + '"'
-        Start-Process -FilePath 'sc.exe' -ArgumentList @('create', $serviceName, $binPathArg, 'start= auto', 'DisplayName= TECHI Agent') -Wait -WindowStyle Hidden
-    }
-    Start-Process -FilePath 'sc.exe' -ArgumentList @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/60000/restart/60000/restart/300000') -Wait -WindowStyle Hidden
-    $status = Get-AgentServiceStatus
-    if ($status -ne 'Running') {
-        Write-DeployLog "starting service; current=$status"
-        Start-Process -FilePath 'net.exe' -ArgumentList @('start', $serviceName) -Wait -WindowStyle Hidden
-    }
-    Start-Sleep -Seconds 5
-    $status = Get-AgentServiceStatus
-    Write-DeployLog "service final status=$status"
-    if ($status -ne 'Running') {
-        throw "service not running after binary swap; status=$status"
-    }
-}
-
-function Rollback {
-    Write-DeployLog "rollback: restoring $agentOldExe -> $agentExe"
-    try {
-        if (Test-Path $agentOldExe) {
-            Move-Item -Path $agentOldExe -Destination $agentExe -Force
-            Write-DeployLog "rollback: backup restored"
-        } else {
-            Write-DeployLog "rollback: no backup found"
-        }
-        Start-Process -FilePath 'net.exe' -ArgumentList @('start', $serviceName) -Wait -WindowStyle Hidden
-        $status = Get-AgentServiceStatus
-        Write-DeployLog "rollback: service status=$status"
-    } catch {
-        Write-DeployLog ("rollback error: " + $_.Exception.Message)
-    }
-}
-
-try {
-    Write-DeployLog "begin binary_swap new=$NewExePath"
-
-    if (!(Test-Path -LiteralPath $NewExePath)) {
-        throw "new exe not found: $NewExePath"
-    }
-
-    # 1. Stop the service (this terminates the agent process — the helper
-    #    is detached and survives). We wait for BOTH Running AND StopPending
-    #    to clear before touching the exe file, otherwise Move-Item fails with
-    #    "file in use" while the process is still exiting, which triggers an
-    #    unwanted rollback and leaves the old binary in place.
-    $before = Get-AgentServiceStatus
-    Write-DeployLog "service status before stop=$before"
-    Start-Process -FilePath 'sc.exe' -ArgumentList @('stop', $serviceName) -WindowStyle Hidden
-    $deadline = (Get-Date).AddSeconds(45)
-    do {
-        Start-Sleep -Seconds 2
-        $status = Get-AgentServiceStatus
-        Write-DeployLog "service status wait=$status"
-    } while ($status -notin @('Stopped', 'missing') -and (Get-Date) -lt $deadline)
-
-    # Belt-and-suspenders: kill any lingering techi-agent process so the
-    # exe file is guaranteed unlocked before we attempt the rename.
-    Stop-Process -Name 'techi-agent' -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
-    Write-DeployLog "service fully stopped; proceeding with swap"
-
-    # 2. Backup old exe.
-    if (Test-Path $agentOldExe) {
-        Remove-Item $agentOldExe -Force
-        Write-DeployLog "removed old backup"
-    }
-    Move-Item -Path $agentExe -Destination $agentOldExe -Force
-    Write-DeployLog "backup: $agentExe -> $agentOldExe"
-
-    # 3. Move new exe into place.
-    Move-Item -Path $NewExePath -Destination $agentExe -Force
-    Write-DeployLog "installed: $NewExePath -> $agentExe"
-
-    # 4. Start service and verify.
-    Ensure-AgentService
-
-    # 5. Clean up backup on success.
-    Remove-Item $agentOldExe -Force -ErrorAction SilentlyContinue
-    if ($TaskName -ne '') {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    Write-DeployLog "complete: binary swap succeeded"
-    exit 0
-
-} catch {
-    Write-DeployLog ("failed: " + $_.Exception.Message)
-    Rollback
-    if ($TaskName -ne '') {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    exit 1
-}
-`
 }

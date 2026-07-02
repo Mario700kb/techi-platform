@@ -4,127 +4,39 @@ package main
 
 import (
 	"log"
-	"os/exec"
-	"strings"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
+const agentWatchdogTaskName = "TECHI Agent Watchdog"
+
 var agentWatchdogOnce sync.Once
 
+// ensureAgentServiceWatchdog registers (or refreshes) the "TECHI Agent
+// Watchdog" scheduled task: every 5 minutes, SYSTEM runs
+// `techi-agent.exe watchdog-check`, which recreates/starts the TechiAgent
+// service if needed (see swap_windows.go).
+//
+// The task is registered with schtasks.exe and executes the agent binary
+// directly — no PowerShell, so strict AV/AMSI policies cannot block it.
 func ensureAgentServiceWatchdog() {
 	agentWatchdogOnce.Do(func() {
 		if err := installAgentServiceWatchdog(); err != nil {
+			writeDeployLog("[watchdog-install]", "install failed: "+err.Error())
 			log.Printf("[watchdog] install/update skipped: %v", err)
 			return
 		}
-		log.Printf("[watchdog] TECHI Agent Watchdog scheduled task installed/updated")
+		writeDeployLog("[watchdog-install]", "scheduled task installed/updated (native)")
+		log.Printf("[watchdog] %s scheduled task installed/updated", agentWatchdogTaskName)
+
+		// The pre-2.1.2 watchdog ran through a PowerShell script; remove the
+		// stale file so nothing script-based is left behind.
+		_ = os.Remove(filepath.Join(agentProgramDataDir(), "techi-agent-watchdog.ps1"))
 	})
 }
 
 func installAgentServiceWatchdog() error {
-	cmd := exec.Command(
-		"powershell.exe",
-		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-		"-Command", agentWatchdogInstallScript(),
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return wrapCommandError(err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func wrapCommandError(err error, output string) error {
-	if output == "" {
-		return err
-	}
-	return &commandOutputError{err: err, output: output}
-}
-
-type commandOutputError struct {
-	err    error
-	output string
-}
-
-func (e *commandOutputError) Error() string {
-	return e.err.Error() + ": " + e.output
-}
-
-func agentWatchdogInstallScript() string {
-	return `$ErrorActionPreference = 'Stop'
-$taskName = 'TECHI Agent Watchdog'
-$agentDir = Join-Path $env:ProgramData 'TechiAgent'
-$agentExe = Join-Path $agentDir 'techi-agent.exe'
-$deployLog = Join-Path $agentDir 'deploy.log'
-
-New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-
-function Write-InstallLog([string]$Message) {
-    try {
-        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Add-Content -Path $deployLog -Value "$stamp [watchdog-install] $Message"
-    } catch {}
-}
-
-$watchdog = @'
-$ErrorActionPreference = 'Continue'
-$agentDir = Join-Path $env:ProgramData 'TechiAgent'
-$agentExe = Join-Path $agentDir 'techi-agent.exe'
-$deployLog = Join-Path $agentDir 'deploy.log'
-$svcName = 'TechiAgent'
-
-function Write-WatchdogLog([string]$Message) {
-    try {
-        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Add-Content -Path $deployLog -Value "$stamp [watchdog] $Message"
-    } catch {}
-}
-
-try {
-    $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-    if ($null -eq $svc) {
-        if (Test-Path -LiteralPath $agentExe) {
-            $binPathArg = 'binPath= "' + $agentExe + '"'
-            Start-Process -FilePath 'sc.exe' -ArgumentList @('create', $svcName, $binPathArg, 'start= auto', 'DisplayName= TECHI Agent', 'obj= LocalSystem') -Wait -WindowStyle Hidden
-            Write-WatchdogLog "service missing; recreated"
-            $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-        } else {
-            Write-WatchdogLog "service missing and exe missing; cannot recover"
-            exit 0
-        }
-    }
-
-    Start-Process -FilePath 'sc.exe' -ArgumentList @('failure', $svcName, 'reset=', '86400', 'actions=', 'restart/60000/restart/60000/restart/300000') -Wait -WindowStyle Hidden
-
-    $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -ne 'Running') {
-        Start-Process -FilePath 'net.exe' -ArgumentList @('start', $svcName) -Wait -WindowStyle Hidden
-        Start-Sleep -Seconds 5
-        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
-        Write-WatchdogLog ("start attempted; final=" + $(if ($svc) { $svc.Status } else { 'missing' }))
-    }
-} catch {
-    Write-WatchdogLog ("error: " + $_.Exception.Message)
-}
-'@
-
-try {
-    $watchdogPath = Join-Path $agentDir 'techi-agent-watchdog.ps1'
-    [System.IO.File]::WriteAllText($watchdogPath, $watchdog, [System.Text.UTF8Encoding]::new($false))
-
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $watchdogPath + '"')
-    $bootTrigger = New-ScheduledTaskTrigger -AtStartup
-    $repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
-    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($bootTrigger, $repeatTrigger) -Principal $principal -Settings $settings -Force | Out-Null
-    Write-InstallLog "scheduled task installed/updated"
-} catch {
-    Write-InstallLog ("install failed: " + $_.Exception.Message)
-    throw
-}
-`
+	taskRun := `"` + agentTargetExePath() + `" watchdog-check`
+	return registerRecurringSystemTask(agentWatchdogTaskName, taskRun, 5)
 }

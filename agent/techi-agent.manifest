@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    version="2.1.1.0"
+    version="2.1.2.0"
     processorArchitecture="amd64"
     name="TECHI.Platform.EndpointAgent"
     type="win32"/>
-  <description>TECHI Platform Endpoint Agent 2.1.1</description>
+  <description>TECHI Platform Endpoint Agent 2.1.2</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

@@ -49,12 +49,6 @@
               Name="techi-agent.exe"
               KeyPath="yes"/>
       </Component>
-      <Component Id="BridgeHelperScript" Guid="B6B0DF65-7448-4DC0-9E87-F82E85D88F08">
-        <File Id="BridgeHelperPs1"
-              Source="$(var.SourceDir)\agent-update-helper.ps1"
-              Name="agent-update-helper.ps1"
-              KeyPath="yes"/>
-      </Component>
     </ComponentGroup>
 
     <Component Id="BridgeRegistry" Guid="B4AC9758-ACDB-4C7D-89E9-CB6A9C52FB80"
@@ -73,9 +67,13 @@
                      Value="$(var.BuildCommit)"/>
     </Component>
 
+    <!-- Runs the shipped agent exe itself to stop TechiAgent, swap the
+         installed binary, and restart the service (swap-binary subcommand).
+         Native code only: strict AV/AMSI policies block PowerShell scripts,
+         which is exactly what broke updates on some managed domains. -->
     <CustomAction Id="RunAgentUpdateBridge"
                   Directory="BRIDGEFOLDER"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[BRIDGEFOLDER]agent-update-helper.ps1&quot; -NewExePath &quot;[BRIDGEFOLDER]techi-agent.exe&quot; -TargetVersion &quot;$(var.AgentVersion)&quot; -ApiUrl &quot;[API_URL]&quot; -EnrollmentToken &quot;[ENROLLMENT_TOKEN]&quot;"
+                  ExeCommand="&quot;[BRIDGEFOLDER]techi-agent.exe&quot; swap-binary -swap-target &quot;C:\ProgramData\TechiAgent\techi-agent.exe&quot; -swap-api-url &quot;[API_URL]&quot; -swap-enrollment-token &quot;[ENROLLMENT_TOKEN]&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>

@@ -3,6 +3,84 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-03] v2.1.2: Script-Free Self-Update and Watchdog (AV/AMSI-Proof)
+
+### Root cause
+
+Devices in the GFFA and INDUSTRIALE domains run an AV policy that blocks
+every PowerShell script the agent launches (AMSI:
+"This script contains malicious content and has been blocked by your
+antivirus software" — reproduced with a read-only diagnostic script on
+device 112). Everything in the update chain depended on PowerShell:
+
+- the 2.1.0 legacy agent runs `self-update-*.ps1` before msiexec;
+- the 2.1.1 binary-swap agent writes `binary-swap-*.ps1` + a PS task launcher;
+- the watchdog is a `.ps1` registered through PowerShell cmdlets;
+- the Agent Update Bridge MSI custom action runs `agent-update-helper.ps1`.
+
+On those domains self_update failed silently and expired as "timeout"
+(devices 16 `PDC`/GFFA, 112 `PM-SRV`/GFFA, 451 `PDC`/INDUSTRIALE), while the
+same payloads worked in seconds elsewhere (device 5 `PDC`/AGROBLEND0: 25 s).
+
+### Fix (agent v2.1.2)
+
+The swap and watchdog are now native Go code inside techi-agent.exe; the only
+external process used is Microsoft-signed `schtasks.exe`. No `.ps1` files are
+written or executed anywhere in the update chain:
+
+- `agent/swap_windows.go` (new): `techi-agent.exe swap-binary` — stop
+  TechiAgent via the SCM API, wait for full stop, kill lingering agent
+  processes (gopsutil), backup, copy itself over the target, recreate the
+  service if missing, reapply recovery actions, start, verify Running,
+  rollback to backup on failure. Logs to deploy.log. Also
+  `techi-agent.exe watchdog-check` — the watchdog body in Go.
+- `agent/update.go`: self_update registers a one-shot SYSTEM task via
+  schtasks.exe running the downloaded exe with `swap-binary`; both PS1
+  template functions are deleted.
+- `agent/watchdog_windows.go`: registers "TECHI Agent Watchdog" via
+  `schtasks /SC MINUTE /MO 5` running `techi-agent.exe watchdog-check`;
+  removes the stale `techi-agent-watchdog.ps1`.
+- `agent/installer/agent-update.wxs`: the bridge custom action now runs
+  `[BRIDGEFOLDER]techi-agent.exe swap-binary -swap-target ... -swap-api-url
+  ... -swap-enrollment-token ...` directly; `agent-update-helper.ps1` is
+  deleted from the package and repo. Config-preservation semantics are kept
+  in Go (`ensureFreshAgentConfig`): existing configs are never touched, a
+  minimal config is created only when none exists and a token was supplied.
+
+Still PowerShell-dependent (out of scope, features rather than update path):
+`run_powershell` action itself, `restart_agent` helper, patch-status
+telemetry. These remain blocked on AMSI-strict domains.
+
+### Version
+
+`agent/VERSION` bumped to 2.1.2 (versioninfo.json + manifest updated).
+Backend legacy classification (`BINARY_SELF_UPDATE_MIN_VERSION = 2.1.1`)
+already routes 2.1.1 devices to the EXE payload, so the 2.1.1 fleet can be
+updated to 2.1.2 from the UI. GitHub Actions builds the 2.1.2 MSIs on push.
+
+### Rollout
+
+1. Upload `/private/tmp/techi-agent-2.1.2-native-swap.exe` as
+   `file_type=agent_binary`, windows-amd64, version `2.1.2`, activate. SHA256:
+   `253e0c56c4540305f7b86fd15a5e37880598ef88827d67d98c97a6965365e8de`
+2. Upload/activate the CI-built `TECHI-Agent-Update-2.1.2.msi` as
+   `file_type=msi` (legacy 2.1.0 devices refuse UI updates until the MSI
+   version matches the active binary).
+3. Pilot on one AMSI-strict device (16/112/451 via GPO or manual msiexec of
+   the 2.1.2 bridge MSI — their *current* agents still use PS, so the first
+   hop cannot come from UI self_update on those domains).
+4. After the first hop, UI self_update works everywhere, including
+   AMSI-strict domains.
+
+### Checks
+
+- `cd agent && go build ./...`, `GOOS=windows GOARCH=amd64 go build ./...`,
+  `go test ./...` -> clean (vet warnings in inventory_windows.go pre-exist).
+- `cd backend && python3 -m pytest` -> 359 passed; the 5 failures pre-exist
+  (enrollment audit diagnostics + legacy compat, unrelated).
+- Final exe strings confirm `2.1.2`, `swap-binary`, `watchdog-check`,
+  `schtasks.exe`; no `binary-swap-*.ps1` templates remain.
+
 ## [2026-07-03] Fix: Legacy self_update Classification Must Use Version, Not Missing SHA
 
 ### Root cause
