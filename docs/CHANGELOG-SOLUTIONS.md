@@ -3,6 +3,95 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] INCIDENT: Fleet Bootstrap v1 Killed 253 Devices — Root Cause, Fix, Recovery
+
+### Root cause
+
+Gjatë përpjekjes për të instaluar binaryni e ri (v2.1.1) me `run_powershell`
+te gjithë fleet-i (~624 devices), skripti i parë (v1) dërgoi `sc.exe stop
+TechiAgent` nga brenda i njëjti PowerShell proces që kishte lançuar vetë
+agjenti. Kur agjenti ndalet, Windows mund të kill-ojë child process-in
+(PowerShell-in) si pjesë e i njëjtit job object. Ky kill ndodhte MES dy
+`Move-Item` operacioneve (rename old → backup, rename new → current):
+- `techi-agent.exe` u fshi (mov-uar te `techi-agent-old.exe`)
+- `techi-agent-new.exe` nuk arriti të vendoset në vend
+- Rollback-u nuk funksionoi (procesi ishte vrarë)
+- Shërbimi nuk mund të rifillonte (exe mungonte)
+- 175 device kaluan offline ndërmjet 13:39–13:42 (peak: 80 @ 13:40, 73 @ 13:41)
+
+Problemi dytë: binari origjinal i vjetër (v2.1.0, SHA256 `5ee07dff...`,
+instaluar nga MSI me 26 qershor) kishte kodin e vjetër të `update.go` me
+`msiexec /i` dhe jo binary-swap. Ai shkruante helperin PS1 (`self-update-*.ps1`)
+por PS1-i thirrte `msiexec` mbi një `.exe` — komanda dështonte pa log
+(deploy.log mungonte). Kjo shpjegon pse `self_update` komanda tregonte
+"Completed" por asgjë nuk ndodhte.
+
+Gjithashtu: loop-i i pritjes pas `sc stop` dilte kur statusi bëhej
+`StopPending` (jo `Stopped`) — procesi ishte akoma gjallë dhe mbante
+lock-un mbi exe-n. `Move-Item` dështonte, catch block bënte rollback.
+
+### Çfarë u fiksua
+
+**`agent/update.go` commit `bcf0c24`:**
+- Loop ndryshoi nga `while status != 'Running'` në
+  `while status not in ('Stopped','missing')` — pret plotësisht
+- `Stop-Process -Name techi-agent -Force` + 3 sekonda pas loop-it
+- Kontroll eksplicit i file lock para rename-it
+
+**Bootstrap manual njëherësh për DESKTOP-IM4V3G4 (device 11):**
+Skript manual (jo nëpërmjet agjentit) i dërguar direkt; stop → kontroll
+lock → swap → start. SHA256 `3f0917e245...` konfirmuar. v2.1.1 online.
+
+**Bootstrap v2 (Scheduled Task) për fleet-in:**
+Skript i ri me dy faza: (1) shkarkon binary-n dhe regjistron Scheduled Task
+SYSTEM — pastaj del menjëherë pa pritur. (2) Task-u (SYSTEM, i pavarur)
+kryen stop→swap→start. Kështu kill-i i agjentit nuk prek swap-in.
+Rezultat: 186/440 completed ✅ (127 failed + 127 timeout = download overload
+— 440 device njëkohësisht nga i njëjti backend endpoint i vogël).
+
+### Gjendja pas incidentit (DB query 14:10)
+
+```
+online   : 430  (192 = v2.1.1 ✅,  236 = v2.1.0 akoma)
+offline  : 286  (207 nga v2.1.0 batch v1,  6 v2.1.1 temp gjatë swap)
+Datat e incidentit: 13:39–13:42 peak; 24 offline në 30 min e fundit
+                    (scheduled tasks nga batch v2 duke bërë swap temp)
+```
+
+Të gjithë 430 online kanë `rustdesk_id` valid — RS funksionon.
+
+### Recovery për device-t offline
+
+**Script recovery (qasje fizike / RDP / mjet tjetër):**
+```powershell
+$d='C:\ProgramData\TechiAgent'
+$exe="$d\techi-agent.exe"; $old="$d\techi-agent-old.exe"; $new="$d\techi-agent-new.exe"
+if(-not(Test-Path $exe)){
+    if(Test-Path $new){Move-Item $new $exe -Force}
+    elseif(Test-Path $old){Move-Item $old $exe -Force}
+}
+net.exe start TechiAgent
+```
+
+**GPO Startup Script `techi-recovery.ps1`:**
+Të shtuar te Metropol domain GPO → Computer Configuration → Scripts →
+Startup: kontrollon nëse exe ekziston, e rivendos nga `*-new.exe` ose
+`*-old.exe`, riniset shërbimi. Ekzekutohet automatikisht në reboot.
+
+**Nëse asnjë exe nuk ekziston:**
+```
+msiexec /i \\METROPOLGROUP.LOCAL\NETLOGON\TECHI-Agent-2.1.0.msi /quiet
+```
+
+### Mësimet
+
+- Kurrë mos ndalo shërbimin nga brenda child process-it të tij (run_powershell
+  ekzekutohet si child i TechiAgent). Gjithmonë detach (Scheduled Task SYSTEM)
+  para `sc stop`.
+- Batch i madh njëkohësisht (440 download × 7MB) overload-on backend-in.
+  Dërgo në grupe ≤50, prit 2 min mes grupeve.
+- Testoji skriptet e reja te 1–2 device para dërgimit te gjithë fleet-i.
+
 ## [2026-07-02] Deploy stable/phase-2-heartbeat → prodhim (rdp.techi.com.al)
 
 ### Commits të deployu
