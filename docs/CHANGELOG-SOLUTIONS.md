@@ -3,6 +3,35 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Fix: self_update Batch Completion Must Wait for Heartbeat SHA
+
+### Root cause
+
+On device #5 (`PDC`), the agent reported `self_update` as completed, but the
+next heartbeat still showed `agent_version=2.1.0` and empty `agent_sha256`.
+This is the old false-positive behavior: older agents report that the
+background swap was initiated, not that the new binary is actually running.
+
+### Fix
+
+Backend `RemoteActionService.complete()` now treats `self_update` specially:
+
+- agent callback "complete" moves the action to `running` with
+  `Self-update initiated; awaiting heartbeat verification` unless the device
+  already reports the target version/SHA;
+- `DeviceHeartbeatService` verifies running `self_update` actions after each
+  heartbeat and marks them completed only when `agent_sha256` matches the
+  active package payload;
+- bulk `self_update` timeout is raised to at least 900 seconds so server
+  swaps, restarts, and heartbeat verification have enough time.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_agent_command_service.py -q`
+  -> 7 passed.
+- `python3 -m compileall backend/app/services/remote_action_service.py backend/app/services/device_heartbeat_service.py backend/app/services/agent_command_service.py`
+  -> clean.
+
 ## [2026-07-02] Fix: Watchdog Task Creation on Clean 2.1.1 Build
 
 ### Root cause

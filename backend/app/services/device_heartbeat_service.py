@@ -211,6 +211,8 @@ class DeviceHeartbeatService:
             )
 
         device = self.assignment_service.apply_resolution(device)
+        from app.services.remote_action_service import RemoteActionService
+        RemoteActionService(self.db).verify_self_update_for_device(device.id)
 
         heartbeat_data = DeviceHeartbeatCreate(
             device_id=device.id,

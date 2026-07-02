@@ -236,6 +236,8 @@ class AgentCommandService:
 
     @staticmethod
     def _effective_timeout_seconds(create_in: BulkCommandCreate) -> int:
+        if create_in.command_type == "self_update":
+            return max(create_in.timeout_seconds, 900)
         if create_in.command_type == "set_remote_password":
             return max(create_in.timeout_seconds, 300)
         return create_in.timeout_seconds

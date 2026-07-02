@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from sqlalchemy import create_engine
@@ -13,6 +14,7 @@ from app.models.remote_action import ActionStatus, RemoteAction
 from app.schemas.agent_command import BulkCommandCreate, BulkCommandTarget
 from app.services import agent_command_service as agent_command_service_module
 from app.services.agent_command_service import AgentCommandService
+from app.services.remote_action_service import RemoteActionService
 
 
 TABLES = [
@@ -115,6 +117,47 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
     actions = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).all()
     hostnames = sorted(action.device.hostname for action in actions)
     assert hostnames == ["missing-hash-agent", "stale-hash-agent"]
+    assert {action.execution_timeout_seconds for action in actions} == {900}
+
+
+def test_self_update_complete_waits_for_heartbeat_sha_verification():
+    db = next(_db())
+    target_sha = "a" * 64
+    device = _device("verify-agent", DeviceStatus.ONLINE)
+    device.agent_version = "2.1.0"
+    device.agent_sha256 = None
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    action = RemoteAction(
+        device_id=device.id,
+        action_type="self_update",
+        payload=json.dumps({"version": "2.1.1", "sha256": target_sha}),
+        status=ActionStatus.RUNNING,
+        execution_timeout_seconds=900,
+    )
+    db.add(action)
+    db.commit()
+    db.refresh(action)
+
+    service = RemoteActionService(db)
+    updated = service.complete(action.id, result_message="Self-update to v2.1.1 initiated in background")
+
+    assert updated.status == ActionStatus.RUNNING
+    assert updated.completed_at is None
+    assert updated.result_message == "Self-update initiated; awaiting heartbeat verification"
+
+    device.agent_version = "2.1.1"
+    device.agent_sha256 = target_sha
+    db.add(device)
+    db.commit()
+
+    service.verify_self_update_for_device(device.id)
+    db.refresh(updated)
+
+    assert updated.status == ActionStatus.COMPLETED
+    assert "verified by heartbeat" in updated.result_message
 
 
 def test_empty_batch_progress_is_finished():

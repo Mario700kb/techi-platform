@@ -4,6 +4,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import compute_callback_token
+from app.core.time import utcnow
+from app.models.device import Device
 from app.models.remote_action import ActionStatus, RemoteAction, TERMINAL_STATUSES
 from app.repositories.remote_action_repository import RemoteActionRepository
 from app.schemas.remote_action import (
@@ -227,11 +229,61 @@ class RemoteActionService:
             return None
         if action.status in TERMINAL_STATUSES:
             raise ValueError(f"Cannot complete action in terminal status: {action.status.value}")
+        if action.action_type == ActionType.SELF_UPDATE.value and not self._self_update_verified(action):
+            action.status = ActionStatus.RUNNING
+            if action.started_at is None:
+                action.started_at = utcnow()
+            action.result_message = "Self-update initiated; awaiting heartbeat verification"
+            action.output = output
+            self.repo.db.add(action)
+            self.repo.db.commit()
+            self.repo.db.refresh(action)
+            logger.info("[action] self_update #%d awaiting heartbeat verification", action_id)
+            _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+            return action
         action = self.repo.mark_completed(action, result_message=result_message, output=output)
         logger.info("[action] completed #%d result=%r", action_id, result_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         _record_audit(self.repo.db, action, f"Action completed: {action.action_type}")
         return action
+
+    def verify_self_update_for_device(self, device_id: int) -> None:
+        actions = (
+            self.repo.db.query(RemoteAction)
+            .filter(
+                RemoteAction.device_id == device_id,
+                RemoteAction.action_type == ActionType.SELF_UPDATE.value,
+                RemoteAction.status == ActionStatus.RUNNING,
+            )
+            .order_by(RemoteAction.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        for action in actions:
+            if not self._self_update_verified(action):
+                continue
+            target_sha = (action.payload_dict.get("sha256") or "").strip().lower()
+            action = self.repo.mark_completed(
+                action,
+                result_message=f"Self-update verified by heartbeat sha256={target_sha[:12]}",
+                output=action.output,
+            )
+            logger.info("[action] self_update #%d verified by heartbeat", action.id)
+            _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+            _record_audit(self.repo.db, action, "Action completed: self_update verified by heartbeat")
+
+    def _self_update_verified(self, action: RemoteAction) -> bool:
+        payload = action.payload_dict
+        target_version = (payload.get("version") or "").strip()
+        target_sha = (payload.get("sha256") or "").strip().lower()
+        device = self.repo.db.query(Device).filter(Device.id == action.device_id).first()
+        if device is None:
+            return False
+        if target_version and (device.agent_version or "").strip() != target_version:
+            return False
+        if target_sha and (device.agent_sha256 or "").strip().lower() != target_sha:
+            return False
+        return bool(target_version or target_sha)
 
     def fail(
         self,
