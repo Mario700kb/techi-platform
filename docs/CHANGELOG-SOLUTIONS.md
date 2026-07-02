@@ -3,6 +3,37 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Deploy stable/phase-2-heartbeat → prodhim (rdp.techi.com.al)
+
+### Commits të deployu
+
+- `e5d11f3` feat: binary-only self_update + Agent Binary tab
+- `8a08665` fix: TOML read-only pas repair (rustdesk_repair_count)
+- `1df0d46` fix: enrollment_token self-heal për device-t e bllokuara
+- `137ecfb` fix: restore Windows Service TECHI Remote Support
+
+### Hapat e deploy-it
+
+```
+git pull origin stable/phase-2-heartbeat   # 12 skedarë të re
+docker compose build backend               # Python:3.12-slim, kodi i ri i ngarkuar
+docker compose up -d backend               # Recreated → healthy
+docker compose build frontend              # Node:20-alpine + npm run build (19s)
+docker compose up -d frontend              # Recreated → healthy
+```
+
+### Health checks
+
+- `curl http://127.0.0.1:8000/health` → `{"status":"ok","environment":"production"}`
+- `docker compose ps` → të tre containers healthy (postgres, backend, frontend)
+- `python3 -c "from app.schemas.agent_package import AgentFileType"` → OK
+- `GET /api/v1/agent-packages/agent-binary/download` → HTTP 404 (endpoint aktiv, paketë e ngarkimit pritet)
+
+### Hapi tjetër
+
+Ngarko `techi-agent.exe` v2.1.1 te UI → Agent Packages → **Agent Binary tab** → Activate.
+Dërgo `self_update` nga Command Center → device 11 → verifiko RS.exe SHA256 i pandryshuar.
+
 ## [2026-07-02] Binary-Only self_update: techi-agent.exe Swapped Without Touching TECHI Remote Support
 
 ### Arkitektura e re
