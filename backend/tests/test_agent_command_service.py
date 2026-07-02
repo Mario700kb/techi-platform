@@ -84,13 +84,16 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
     current = _device("current-agent", DeviceStatus.ONLINE)
     stale_hash = _device("stale-hash-agent", DeviceStatus.ONLINE)
     missing_hash = _device("missing-hash-agent", DeviceStatus.ONLINE)
+    legacy = _device("legacy-msi-agent", DeviceStatus.ONLINE)
     current.agent_version = "2.1.1"
     current.agent_sha256 = active_sha
     stale_hash.agent_version = "2.1.1"
     stale_hash.agent_sha256 = "b" * 64
     missing_hash.agent_version = "2.1.1"
     missing_hash.agent_sha256 = None
-    db.add_all([current, stale_hash, missing_hash])
+    legacy.agent_version = "2.1.0"
+    legacy.agent_sha256 = None
+    db.add_all([current, stale_hash, missing_hash, legacy])
     db.commit()
 
     class FakeAgentPackageService:
@@ -123,19 +126,22 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
 
     actions = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).all()
     actions_by_hostname = {action.device.hostname: action for action in actions}
-    assert sorted(actions_by_hostname) == ["missing-hash-agent", "stale-hash-agent"]
+    assert sorted(actions_by_hostname) == ["legacy-msi-agent", "missing-hash-agent", "stale-hash-agent"]
     assert {action.execution_timeout_seconds for action in actions} == {900}
 
-    legacy_payload = json.loads(actions_by_hostname["missing-hash-agent"].payload)
+    legacy_payload = json.loads(actions_by_hostname["legacy-msi-agent"].payload)
     assert legacy_payload["package_type"] == "msi"
     assert legacy_payload["sha256"] == "c" * 64
     assert legacy_payload["target_sha256"] == active_sha
     assert legacy_payload["download_url"].endswith("/platform/windows-amd64/download")
 
-    binary_payload = json.loads(actions_by_hostname["stale-hash-agent"].payload)
-    assert "package_type" not in binary_payload
-    assert binary_payload["sha256"] == active_sha
-    assert binary_payload["download_url"].endswith("/agent-binary/download")
+    # 2.1.1 agents use the binary-swap flow even when they never reported a
+    # SHA — sending them an MSI would make them swap the exe with MSI bytes.
+    for hostname in ("missing-hash-agent", "stale-hash-agent"):
+        binary_payload = json.loads(actions_by_hostname[hostname].payload)
+        assert "package_type" not in binary_payload
+        assert binary_payload["sha256"] == active_sha
+        assert binary_payload["download_url"].endswith("/agent-binary/download")
 
 
 def test_self_update_refuses_legacy_agents_without_matching_active_msi(monkeypatch):
@@ -172,13 +178,60 @@ def test_self_update_refuses_legacy_agents_without_matching_active_msi(monkeypat
             operator_username="admin",
         )
     except ValueError as exc:
-        assert "Legacy agents without agent_sha256 require an active MSI package for version 2.1.1" in str(exc)
+        assert "Legacy agents (version < 2.1.1) require an active MSI package for version 2.1.1" in str(exc)
         assert "legacy-agent" in str(exc)
     else:
         raise AssertionError("expected ValueError for legacy self_update without matching MSI")
 
     assert db.query(AgentCommandBatch).count() == 0
     assert db.query(RemoteAction).count() == 0
+
+
+def test_self_update_sends_binary_payload_to_211_agent_without_sha(monkeypatch):
+    """Regression: 2.1.1 fleet builds that predate SHA reporting run the
+    binary-swap flow. They must get the EXE payload — not the MSI — even when
+    the active MSI version differs from the active agent binary."""
+    db = next(_db())
+    device = _device("no-sha-211-agent", DeviceStatus.ONLINE)
+    device.agent_version = "2.1.1"
+    device.agent_sha256 = None
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    active_sha = "a" * 64
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            if file_type == "agent_binary":
+                return SimpleNamespace(version="2.1.1", sha256=active_sha)
+            if file_type == "msi":
+                # Mismatched MSI must not matter for binary-swap agents.
+                return SimpleNamespace(version="2.1.0", sha256="b" * 64)
+            raise AssertionError(f"unexpected file_type={file_type}")
+
+        def agent_binary_download_url(self):
+            return "/api/v1/agent-packages/agent-binary/download"
+
+    monkeypatch.setattr(agent_command_service_module, "AgentPackageService", FakeAgentPackageService)
+
+    result = AgentCommandService(db).create_bulk(
+        BulkCommandCreate(
+            command_type="self_update",
+            payload={},
+            target=BulkCommandTarget.DEVICES,
+            device_ids=[device.id],
+            timeout_seconds=30,
+        ),
+        operator_username="admin",
+    )
+
+    action = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).one()
+    payload = json.loads(action.payload)
+    assert "package_type" not in payload
+    assert payload["sha256"] == active_sha
+    assert payload["download_url"].endswith("/agent-binary/download")
 
 
 def test_self_update_complete_uses_target_sha256_for_legacy_msi_payload():

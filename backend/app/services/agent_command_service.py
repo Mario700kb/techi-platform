@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 # Agent fleet is Windows-only today — self_update always targets this platform.
 SELF_UPDATE_PLATFORM = "windows-amd64"
 
+# First agent version whose self_update swaps the standalone exe. Older agents
+# save the payload as .msi and run msiexec, so they must receive an MSI.
+# Version is the only reliable discriminator: 2.1.1 builds deployed before the
+# SHA-reporting rebuild run the binary-swap flow but never report agent_sha256,
+# and sending them an MSI makes them install the MSI bytes as techi-agent.exe.
+BINARY_SELF_UPDATE_MIN_VERSION = (2, 1, 1)
+
 # Maps remote_action status → agent command concept
 _STATUS_MAP = {
     ActionStatus.QUEUED: "queued",
@@ -227,9 +234,10 @@ class AgentCommandService:
         """Pull the active agent_binary package so the command always ships
         the exact exe that the operator has marked active in Agent Packages
         -> Agent Binary tab.  The download URL points to the public
-        /agent-binary/download endpoint for clean agents.  Legacy agents that
-        do not report agent_sha256 only know the old MSI self-update flow, so
-        they must receive an active MSI for the same target version."""
+        /agent-binary/download endpoint for binary-swap agents (>= 2.1.1).
+        Legacy agents below that version only know the old MSI self-update
+        flow, so they must receive an active MSI for the same target
+        version."""
         service = AgentPackageService()
         package = _active_self_update_package(service)
         backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
@@ -248,7 +256,7 @@ class AgentCommandService:
             hostnames = ", ".join(sorted(device.hostname or str(device.id) for device in legacy_devices[:5]))
             extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
             raise ValueError(
-                "Legacy agents without agent_sha256 require an active MSI package "
+                "Legacy agents (version < 2.1.1) require an active MSI package "
                 f"for version {package.version} before UI self_update can run. "
                 f"Affected devices: {hostnames}{extra}. "
                 "Upload/activate the matching MSI or update them once via GPO/NETLOGON."
@@ -321,5 +329,28 @@ def _active_self_update_package(service: AgentPackageService):
     return package
 
 
+def _parse_agent_version(raw: Optional[str]) -> Optional[tuple]:
+    text = (raw or "").strip().lstrip("vV")
+    if not text:
+        return None
+    parts = []
+    for piece in text.split("."):
+        digits = ""
+        for ch in piece:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            return None
+        parts.append(int(digits))
+    return tuple(parts)
+
+
 def _requires_legacy_msi_self_update(device: Device) -> bool:
-    return not (device.agent_sha256 or "").strip()
+    if (device.agent_sha256 or "").strip():
+        return False
+    version = _parse_agent_version(device.agent_version)
+    if version is None:
+        # Unknown/unparseable version — assume the oldest (msiexec) flow.
+        return True
+    return version < BINARY_SELF_UPDATE_MIN_VERSION
