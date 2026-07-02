@@ -3,6 +3,49 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] RustDesk Periodically Wiped custom-rendezvous-server, Accumulating 40 000+ Repairs on Servers
+
+### Root cause
+
+The agent correctly repaired the managed `[options]` keys in
+`TECHI Remote Support.toml` (custom-rendezvous-server, relay-server,
+key) but left the file writable after every repair. When the
+"TECHI Remote Support" Windows Service restarted (e.g., via the SCM
+failure-recovery policy the agent itself sets -- 15 s/15 s/60 s),
+RustDesk overwrote its own config, wiping those keys. The 30-minute
+cooldown meant a repair every ~33 minutes; on long-running servers
+this accumulated rustdesk_repair_count in the tens of thousands.
+
+### Fix
+
+`agent/rustdesk_readonly.go` (new, no build tag -- `os.Chmod` is
+cross-platform):
+- `setTomlReadOnly(path)` -- `os.Chmod(path, 0444)`, maps to
+  `FILE_ATTRIBUTE_READONLY` on Windows. Logged on error, never
+  propagated.
+- `removeTomlReadOnly(path)` -- `os.Chmod(path, 0644)`, clears it.
+
+`agent/rustdesk_manage.go`:
+- `writeRustDeskConfig`: for each existing repaired file, calls
+  `removeTomlReadOnly` immediately before `os.WriteFile` and
+  `setTomlReadOnly` immediately after. Fresh file initialisation
+  intentionally does NOT set read-only -- RustDesk must be able to
+  write its own identity fields (id, enc_id, key_pair) on first run;
+  the next heartbeat cycle patches and protects the file then.
+- `setRustDeskPassword`: same remove-write-set pattern so UI password
+  updates are not blocked by the read-only bit.
+
+### Checks
+
+`agent/rustdesk_readonly_test.go` (new):
+- Patch + setReadOnly + simulate RustDesk overwrite -- write blocked,
+  content unchanged.
+- setReadOnly + removeReadOnly + write -- write succeeds.
+- Two consecutive remove-patch-setReadOnly cycles -- file correct and
+  read-only after both rounds.
+- helpers on non-existent path -- no panic, only logs.
+- `go test ./...` clean. No MSI rebuild needed -- binary-only fix.
+
 ## [2026-07-01] Device Aliases and Domain-to-Client Mapping
 
 ### Root cause

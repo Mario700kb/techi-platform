@@ -211,14 +211,23 @@ func writeRustDeskConfig(cfg *Config) (bool, error) {
 			if !changed {
 				continue
 			}
+			// Clear read-only (set by us after the last repair) before writing,
+			// then restore it immediately after -- this is what prevents RustDesk
+			// from wiping the managed keys when its service restarts.
+			removeTomlReadOnly(path)
 			if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
 				log.Printf("[rustdesk_manage] write %s: %v", path, err)
 				continue
 			}
 			log.Printf("[rustdesk_manage] repaired: %s", path)
+			setTomlReadOnly(path)
 			repaired = true
 		} else {
 			// File does not exist yet: write a fresh minimal config.
+			// Do NOT set read-only here -- RustDesk must be able to write its
+			// own identity fields (id, enc_id, key_pair) into this file on
+			// first run.  The next heartbeat cycle will find the file, detect
+			// that managed options are missing, and patch+protect it then.
 			newContent := buildRustDeskTOML(cfg)
 			if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
 				log.Printf("[rustdesk_manage] init write %s: %v", path, err)
@@ -432,10 +441,12 @@ func setRustDeskPassword(password string) error {
 			wrote = true
 			continue
 		}
+		removeTomlReadOnly(path)
 		if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
 			lastErr = err
 			continue
 		}
+		setTomlReadOnly(path)
 		log.Printf("[rustdesk_manage] password written to %s", path)
 		wrote = true
 	}
