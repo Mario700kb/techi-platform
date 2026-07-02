@@ -96,8 +96,15 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
     class FakeAgentPackageService:
         def latest_active(self, platform: str, *, file_type=None):
             assert platform == "windows-amd64"
-            assert file_type == "agent_binary"
-            return SimpleNamespace(version="2.1.1", sha256=active_sha)
+            if file_type == "agent_binary":
+                return SimpleNamespace(version="2.1.1", sha256=active_sha)
+            if file_type == "msi":
+                return SimpleNamespace(version="2.1.1", sha256="c" * 64)
+            raise AssertionError(f"unexpected file_type={file_type}")
+
+        def latest_download_url(self, platform: str):
+            assert platform == "windows-amd64"
+            return "/api/v1/agent-packages/platform/windows-amd64/download"
 
         def agent_binary_download_url(self):
             return "/api/v1/agent-packages/agent-binary/download"
@@ -115,9 +122,119 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
     )
 
     actions = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).all()
-    hostnames = sorted(action.device.hostname for action in actions)
-    assert hostnames == ["missing-hash-agent", "stale-hash-agent"]
+    actions_by_hostname = {action.device.hostname: action for action in actions}
+    assert sorted(actions_by_hostname) == ["missing-hash-agent", "stale-hash-agent"]
     assert {action.execution_timeout_seconds for action in actions} == {900}
+
+    legacy_payload = json.loads(actions_by_hostname["missing-hash-agent"].payload)
+    assert legacy_payload["package_type"] == "msi"
+    assert legacy_payload["sha256"] == "c" * 64
+    assert legacy_payload["target_sha256"] == active_sha
+    assert legacy_payload["download_url"].endswith("/platform/windows-amd64/download")
+
+    binary_payload = json.loads(actions_by_hostname["stale-hash-agent"].payload)
+    assert "package_type" not in binary_payload
+    assert binary_payload["sha256"] == active_sha
+    assert binary_payload["download_url"].endswith("/agent-binary/download")
+
+
+def test_self_update_refuses_legacy_agents_without_matching_active_msi(monkeypatch):
+    db = next(_db())
+    legacy = _device("legacy-agent", DeviceStatus.ONLINE)
+    legacy.agent_version = "2.1.0"
+    legacy.agent_sha256 = None
+    db.add(legacy)
+    db.commit()
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            if file_type == "agent_binary":
+                return SimpleNamespace(version="2.1.1", sha256="a" * 64)
+            if file_type == "msi":
+                return SimpleNamespace(version="2.1.0", sha256="b" * 64)
+            raise AssertionError(f"unexpected file_type={file_type}")
+
+        def agent_binary_download_url(self):
+            return "/api/v1/agent-packages/agent-binary/download"
+
+    monkeypatch.setattr(agent_command_service_module, "AgentPackageService", FakeAgentPackageService)
+
+    try:
+        AgentCommandService(db).create_bulk(
+            BulkCommandCreate(
+                command_type="self_update",
+                payload={},
+                target=BulkCommandTarget.DEVICES,
+                device_ids=[legacy.id],
+                timeout_seconds=30,
+            ),
+            operator_username="admin",
+        )
+    except ValueError as exc:
+        assert "Legacy agents without agent_sha256 require an active MSI package for version 2.1.1" in str(exc)
+        assert "legacy-agent" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for legacy self_update without matching MSI")
+
+    assert db.query(AgentCommandBatch).count() == 0
+    assert db.query(RemoteAction).count() == 0
+
+
+def test_self_update_complete_uses_target_sha256_for_legacy_msi_payload():
+    db = next(_db())
+    target_sha = "a" * 64
+    msi_sha = "b" * 64
+    device = _device("legacy-verify-agent", DeviceStatus.ONLINE)
+    device.agent_version = "2.1.1"
+    device.agent_sha256 = target_sha
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    action = RemoteAction(
+        device_id=device.id,
+        action_type="self_update",
+        payload=json.dumps({"version": "2.1.1", "sha256": msi_sha, "target_sha256": target_sha}),
+        status=ActionStatus.RUNNING,
+        execution_timeout_seconds=900,
+    )
+    db.add(action)
+    db.commit()
+    db.refresh(action)
+
+    RemoteActionService(db).verify_self_update_for_device(device.id)
+    db.refresh(action)
+
+    assert action.status == ActionStatus.COMPLETED
+    assert target_sha[:12] in action.result_message
+
+
+def test_self_update_complete_waits_when_legacy_msi_target_sha_does_not_match():
+    db = next(_db())
+    target_sha = "a" * 64
+    device = _device("legacy-wait-agent", DeviceStatus.ONLINE)
+    device.agent_version = "2.1.1"
+    device.agent_sha256 = "b" * 64
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    action = RemoteAction(
+        device_id=device.id,
+        action_type="self_update",
+        payload=json.dumps({"version": "2.1.1", "sha256": "c" * 64, "target_sha256": target_sha}),
+        status=ActionStatus.RUNNING,
+        execution_timeout_seconds=900,
+    )
+    db.add(action)
+    db.commit()
+    db.refresh(action)
+
+    RemoteActionService(db).verify_self_update_for_device(device.id)
+    db.refresh(action)
+
+    assert action.status == ActionStatus.RUNNING
 
 
 def test_self_update_complete_waits_for_heartbeat_sha_verification():

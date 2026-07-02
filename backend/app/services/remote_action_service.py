@@ -69,6 +69,10 @@ def _record_audit(db: Session, action: RemoteAction, summary: str, actor: Option
         logger.debug("audit record skipped", exc_info=True)
 
 
+def _self_update_target_sha(payload: dict) -> str:
+    return (payload.get("target_sha256") or payload.get("sha256") or "").strip().lower()
+
+
 def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Optional[str]:
     """
     Return an error message if new_type conflicts with any active (non-terminal)
@@ -262,7 +266,7 @@ class RemoteActionService:
         for action in actions:
             if not self._self_update_verified(action):
                 continue
-            target_sha = (action.payload_dict.get("sha256") or "").strip().lower()
+            target_sha = _self_update_target_sha(action.payload_dict)
             action = self.repo.mark_completed(
                 action,
                 result_message=f"Self-update verified by heartbeat sha256={target_sha[:12]}",
@@ -275,7 +279,7 @@ class RemoteActionService:
     def _self_update_verified(self, action: RemoteAction) -> bool:
         payload = action.payload_dict
         target_version = (payload.get("version") or "").strip()
-        target_sha = (payload.get("sha256") or "").strip().lower()
+        target_sha = _self_update_target_sha(payload)
         device = self.repo.db.query(Device).filter(Device.id == action.device_id).first()
         if device is None:
             return False

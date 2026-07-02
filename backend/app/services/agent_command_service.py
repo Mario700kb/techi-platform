@@ -61,8 +61,10 @@ class AgentCommandService:
             raise ValueError("No active devices found for the specified target")
 
         batch_id = str(uuid.uuid4())
+        self_update_payloads_by_device_id = {}
         if create_in.command_type == "self_update":
-            payload_json = json.dumps(self._build_self_update_payload())
+            default_payload, self_update_payloads_by_device_id = self._build_self_update_payloads(devices)
+            payload_json = json.dumps(default_payload)
         else:
             payload_json = json.dumps(create_in.payload)
 
@@ -81,10 +83,13 @@ class AgentCommandService:
 
         now = utcnow()
         for device in devices:
+            action_payload_json = payload_json
+            if create_in.command_type == "self_update":
+                action_payload_json = json.dumps(self_update_payloads_by_device_id[device.id])
             action = RemoteAction(
                 device_id=device.id,
                 action_type=create_in.command_type,
-                payload=payload_json,
+                payload=action_payload_json,
                 status=ActionStatus.QUEUED,
                 created_at=now,
                 queued_at=now,
@@ -218,20 +223,49 @@ class AgentCommandService:
         return {"cancelled": cancelled}
 
     @staticmethod
-    def _build_self_update_payload() -> dict:
+    def _build_self_update_payloads(devices: List[Device]) -> tuple[dict, dict[int, dict]]:
         """Pull the active agent_binary package so the command always ships
         the exact exe that the operator has marked active in Agent Packages
         -> Agent Binary tab.  The download URL points to the public
-        /agent-binary/download endpoint (no auth token required by the
-        agent)."""
+        /agent-binary/download endpoint for clean agents.  Legacy agents that
+        do not report agent_sha256 only know the old MSI self-update flow, so
+        they must receive an active MSI for the same target version."""
         service = AgentPackageService()
         package = _active_self_update_package(service)
         backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
         download_path = service.agent_binary_download_url()
-        return {
+        binary_payload = {
             "download_url": f"{backend_url}{download_path}",
             "version": package.version,
             "sha256": package.sha256,
+        }
+        legacy_devices = [device for device in devices if _requires_legacy_msi_self_update(device)]
+        if not legacy_devices:
+            return binary_payload, {device.id: dict(binary_payload) for device in devices}
+
+        msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="msi")
+        if msi_package is None or msi_package.version != package.version:
+            hostnames = ", ".join(sorted(device.hostname or str(device.id) for device in legacy_devices[:5]))
+            extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
+            raise ValueError(
+                "Legacy agents without agent_sha256 require an active MSI package "
+                f"for version {package.version} before UI self_update can run. "
+                f"Affected devices: {hostnames}{extra}. "
+                "Upload/activate the matching MSI or update them once via GPO/NETLOGON."
+            )
+
+        msi_payload = {
+            "download_url": f"{backend_url}{service.latest_download_url(SELF_UPDATE_PLATFORM)}",
+            "version": package.version,
+            # Old agents use this URL as an MSI. Verify completion against the
+            # installed agent exe hash instead of the MSI file hash.
+            "sha256": msi_package.sha256,
+            "target_sha256": package.sha256,
+            "package_type": "msi",
+        }
+        return binary_payload, {
+            device.id: dict(msi_payload if _requires_legacy_msi_self_update(device) else binary_payload)
+            for device in devices
         }
 
     @staticmethod
@@ -285,3 +319,7 @@ def _active_self_update_package(service: AgentPackageService):
             "Upload and activate a techi-agent.exe under Agent Packages -> Agent Binary."
         )
     return package
+
+
+def _requires_legacy_msi_self_update(device: Device) -> bool:
+    return not (device.agent_sha256 or "").strip()

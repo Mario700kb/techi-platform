@@ -3,6 +3,55 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-02] Fix: Legacy Agent self_update Must Not Receive EXE as MSI
+
+### Root cause
+
+Device #5 (`PDC`) was online and receiving actions, but remained on
+`agent_version=2.1.0` with empty `agent_sha256`. The local deploy log showed
+the old agent self-update path:
+
+`msiexec.exe /i C:\ProgramData\TechiAgent\cache\techi-agent-2.1.1.msi`
+
+followed by:
+
+`result=1620 command=msiexec.exe`
+
+MSI exit code `1620` means Windows Installer could not open the package as a
+valid MSI. The backend was sending the new binary-only EXE endpoint, while the
+legacy `2.1.0` agent saved the download as `.msi` and ran `msiexec`.
+
+NETLOGON was also still advertising `active_version=2.1.0`, so the scheduled
+GPO run correctly logged `result=uptodate` and never moved the machine to the
+clean `2.1.1` build.
+
+### Fix
+
+`AgentCommandService` now builds `self_update` payloads per device:
+
+- clean agents that report `agent_sha256` receive the binary-only EXE payload;
+- legacy agents without `agent_sha256` must receive an active MSI package for
+  the same target version;
+- if a matching active MSI is missing, the backend rejects the UI command with
+  a clear error instead of sending an EXE to an agent that will run `msiexec`
+  and fail;
+- legacy MSI payloads include `target_sha256`, so completion is still verified
+  by the installed `techi-agent.exe` hash from heartbeat, not by the MSI hash.
+
+### Operations Note
+
+Production currently has active MSI `2.1.0` and active agent binary `2.1.1`.
+That means legacy agents like device #5 cannot be safely updated from the UI
+until a matching `2.1.1` MSI is uploaded/activated or NETLOGON/GPO is updated
+once with the clean `2.1.1` installer.
+
+### Checks
+
+- `python3 -m compileall backend/app/services/agent_command_service.py backend/app/services/remote_action_service.py`
+  -> clean.
+- `cd backend && python3 -m pytest tests/test_agent_command_service.py -q`
+  -> 10 passed.
+
 ## [2026-07-02] Cleanup: Ignore RustDesk Repair Counters Older Than 24h
 
 ### Root cause
