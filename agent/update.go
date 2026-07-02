@@ -190,18 +190,26 @@ try {
         throw "new exe not found: $NewExePath"
     }
 
-    # 1. Stop the service (this will terminate this process shortly after
-    #    the helper is detached — that is the intended behaviour).
+    # 1. Stop the service (this terminates the agent process — the helper
+    #    is detached and survives). We wait for BOTH Running AND StopPending
+    #    to clear before touching the exe file, otherwise Move-Item fails with
+    #    "file in use" while the process is still exiting, which triggers an
+    #    unwanted rollback and leaves the old binary in place.
     $before = Get-AgentServiceStatus
     Write-DeployLog "service status before stop=$before"
     Start-Process -FilePath 'sc.exe' -ArgumentList @('stop', $serviceName) -WindowStyle Hidden
-    $deadline = (Get-Date).AddSeconds(30)
+    $deadline = (Get-Date).AddSeconds(45)
     do {
         Start-Sleep -Seconds 2
         $status = Get-AgentServiceStatus
         Write-DeployLog "service status wait=$status"
-    } while ($status -eq 'Running' -and (Get-Date) -lt $deadline)
-    Write-DeployLog "service stopped; status=$(Get-AgentServiceStatus)"
+    } while ($status -notin @('Stopped', 'missing') -and (Get-Date) -lt $deadline)
+
+    # Belt-and-suspenders: kill any lingering techi-agent process so the
+    # exe file is guaranteed unlocked before we attempt the rename.
+    Stop-Process -Name 'techi-agent' -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Write-DeployLog "service fully stopped; proceeding with swap"
 
     # 2. Backup old exe.
     if (Test-Path $agentOldExe) {
