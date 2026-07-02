@@ -3,6 +3,49 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-03] Fix: Legacy self_update Classification Must Use Version, Not Missing SHA
+
+### Root cause
+
+UI self_update to devices 603 (`PDC`), 604 (`FileSharing-SRV`), 714 (`AC-SRV`)
+timed out. All three run 2.1.1 fleet builds deployed via bootstrap v2 that
+predate the SHA-reporting rebuild: they use the binary-swap self_update flow
+but never send `agent_sha256`.
+
+`_requires_legacy_msi_self_update` treated "no agent_sha256" as "legacy
+msiexec agent" and shipped them the Agent Update Bridge MSI payload
+(`sha256` = MSI hash). The binary-swap agent downloaded the MSI, the checksum
+matched, and it tried to install the MSI bytes as `techi-agent.exe`. The
+service could not start, rollback restored the old exe, no failure was ever
+reported, and the action expired at 900s as "timeout".
+
+Fleet impact at the time of the fix: 115 online devices were in the same trap
+(2.1.1 without SHA); only 6 devices reported SHA and got the correct payload.
+
+### Fix
+
+`agent_command_service.py`: legacy now means `agent_version < 2.1.1`
+(`BINARY_SELF_UPDATE_MIN_VERSION`). Devices reporting `agent_sha256` are
+always binary-swap; devices with missing/unparseable versions still fall back
+to the MSI flow. 2.1.1+ agents get the EXE payload even without a reported
+SHA — completion is still verified by heartbeat SHA because the new binary
+reports it after the swap.
+
+### Operations note
+
+The 115 affected devices run the pre-scheduled-task swap helper (child
+PowerShell). The payload is now correct for them, but their internal swap is
+the unreliable one — retest on 714/603/604 first and roll out in waves ≤50.
+
+### Checks
+
+- `cd backend && python3 -m pytest tests/test_agent_command_service.py -q`
+  -> 11 passed (new regression test: 2.1.1 without SHA gets binary payload).
+- Full backend suite: 358 passed; 5 failures pre-exist without the change
+  (enrollment audit diagnostics + legacy compat, unrelated).
+- Deployed commit `620ea31` to production: backend rebuilt, `/health` ok,
+  heartbeats flowing (~496/min), new constant present in the container.
+
 ## [2026-07-02] Fix: Platform Package Download Must Serve MSI, Not Agent Binary
 
 ### Root cause
