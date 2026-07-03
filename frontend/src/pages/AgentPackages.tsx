@@ -22,7 +22,7 @@ function formatDate(iso: string): string {
   return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type TabId = "msi" | "agent_binary";
+type TabId = "msi" | "agent_binary" | "agent_update_msi";
 
 const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string }[] = [
   {
@@ -36,6 +36,12 @@ const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string }[
     label: "Agent Binary",
     fileType: "agent_binary",
     hint: "Vetëm techi-agent.exe. Përdoret nga komanda \"Përditëso Agjentin\" — nuk prek TECHI Remote Support.",
+  },
+  {
+    id: "agent_update_msi",
+    label: "Update MSI (Bridge)",
+    fileType: "agent_update_msi",
+    hint: "Bridge MSI vetëm me agjentin (TECHI-Agent-Update-*.msi). Përdoret nga \"Përditëso Agjentin\" për agjentët legacy (< 2.1.1) — nuk prek TECHI Remote Support dhe nuk përdoret për GPO/bootstrap.",
   },
 ];
 
@@ -189,7 +195,7 @@ export default function AgentPackages() {
           <div className="mb-3 flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-techi-orange" />
             <h2 className="text-sm font-semibold text-white">
-              {tab === "msi" ? "Upload MSI package" : "Upload Agent Binary (techi-agent.exe)"}
+              {tab === "msi" ? "Upload MSI package" : tab === "agent_update_msi" ? "Upload Agent Update Bridge MSI" : "Upload Agent Binary (techi-agent.exe)"}
             </h2>
           </div>
           <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
@@ -222,7 +228,7 @@ export default function AgentPackages() {
               id="package-file"
               name="package-file"
               aria-label="Package file"
-              accept={tab === "msi" ? ".msi" : ".exe"}
+              accept={tab === "agent_binary" ? ".exe" : ".msi"}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
             />
@@ -272,7 +278,7 @@ export default function AgentPackages() {
               {visiblePackages.length === 0 && (
                 <tr>
                   <td colSpan={tab === "msi" ? 8 : 7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                    {loading ? "Loading..." : `No ${tab === "msi" ? "MSI packages" : "agent binaries"} uploaded yet.`}
+                    {loading ? "Loading..." : `No ${tab === "msi" ? "MSI packages" : tab === "agent_update_msi" ? "bridge MSI packages" : "agent binaries"} uploaded yet.`}
                   </td>
                 </tr>
               )}

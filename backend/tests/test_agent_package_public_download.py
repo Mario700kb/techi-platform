@@ -196,3 +196,47 @@ def test_public_unsupported_platform_rejected(monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported public download platform"
+
+
+def test_public_agent_update_msi_download_returns_active_bridge(monkeypatch, tmp_path):
+    bridge_file = tmp_path / "TECHI-Agent-Update-2.1.2.msi"
+    bridge_file.write_bytes(b"bridge-msi")
+    bridge_package = SimpleNamespace(
+        id="pkg-bridge",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="TECHI-Agent-Update-2.1.2.msi",
+        version="2.1.2",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            assert file_type == "agent_update_msi"
+            return bridge_package
+
+        def package_path(self, selected_package):
+            assert selected_package is bridge_package
+            return bridge_file
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/agent-update-msi/download")
+
+    assert response.status_code == 200
+    assert response.content == b"bridge-msi"
+    assert "TECHI-Agent-Update-2.1.2.msi" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_agent_update_msi_download_404_when_missing(monkeypatch):
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert file_type == "agent_update_msi"
+            return None
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/agent-update-msi/download")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No active agent update MSI package for windows-amd64"

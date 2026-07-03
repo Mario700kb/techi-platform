@@ -165,11 +165,13 @@
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="TechiMenuFolder" Name="TECHI"/>
     </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder"/>
     <!-- ===== FEATURES ===== -->
     <Feature Id="ProductFeature" Title="TECHI Agent" Level="1">
       <ComponentGroupRef Id="ProductComponents"/>
       <ComponentGroupRef Id="RemoteSupportComponents"/>
       <ComponentRef Id="StartMenuShortcuts"/>
+      <ComponentRef Id="PublicDesktopShortcut"/>
     </Feature>
 
     <!-- ===== KOMPONENTËT ===== -->
@@ -238,6 +240,23 @@
       <Files Include="$(var.SourceDir)\TECHI-Remote-Support\**"/>
     </ComponentGroup>
 
+    <!-- Public Desktop: TECHI Remote Support.lnk — deklarativ (me pare krijohej nga
+         PS-i i WriteAgentConfig). Scope perMachine => DesktopFolder = C:\Users\Public\Desktop. -->
+    <Component Id="PublicDesktopShortcut" Guid="7E2F30A1-94C3-4B7D-8F1A-6D5E42C9B310"
+               Directory="DesktopFolder">
+      <Shortcut Id="RemoteSupportDesktopShortcut"
+                Name="TECHI Remote Support"
+                Target="[REMOTESUPPORTFOLDER]TECHI Remote Support.exe"
+                WorkingDirectory="REMOTESUPPORTFOLDER"
+                Description="TECHI Remote Support"/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\Agent"
+                     Name="DesktopShortcutInstalled"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes"/>
+    </Component>
+
     <!-- Start Menu: Programs\TECHI\TECHI Remote Support.lnk -->
     <Component Id="StartMenuShortcuts" Guid="C5D6E7F8-A9B0-1234-CDEF-123456789012"
                Directory="TechiMenuFolder">
@@ -269,10 +288,14 @@
     <!-- WriteAgentConfig: krijon agent.config.json nëse nuk ekziston, OSE e mbishkruan
          nëse UI_REENROLL=1 (instalim manual me token të ri — shih Install button te
          EnrollmentTokenDlg). Rruga /quiet kurrë nuk vendos UI_REENROLL, kështu që
-         device_id mbrohet gjithmonë gjatë upgrade/self_update në fushë. -->
+         device_id mbrohet gjithmonë gjatë upgrade/self_update në fushë.
+         Ekzekutohet nga vetë techi-agent.exe (bootstrap-config, kod natif Go) —
+         jo PowerShell: AV/AMSI strikte (Symantec, CybeeAI) bllokojnë çdo skript,
+         që linte instalimet gjysmë të konfiguruara. Shortcut-i i desktop-it publik
+         tani krijohet deklarativisht nga vetë MSI (PublicDesktopShortcut më poshtë). -->
     <CustomAction Id="WriteAgentConfig"
                   Directory="TECHIDATADIR"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command $$d=$$env:ProgramData+'\TECHI\'; md ($$d+'logs') -Force | Out-Null; $$f=$$d+'agent.config.json'; ((!(Test-Path $$f)) -or ('[UI_REENROLL]' -eq '1')) -and $$($$c=New-Object PSObject; Add-Member -InputObject $$c -MemberType NoteProperty -Name api_url -Value '[API_URL]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name enrollment_token -Value '[ENROLLMENT_TOKEN]'; Add-Member -InputObject $$c -MemberType NoteProperty -Name timeout_seconds -Value 30; Add-Member -InputObject $$c -MemberType NoteProperty -Name heartbeat_interval_seconds -Value 60; Add-Member -InputObject $$c -MemberType NoteProperty -Name retries -Value 3; Add-Member -InputObject $$c -MemberType NoteProperty -Name retry_delay_seconds -Value 10; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_processes -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_software -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name collect_services -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_manage_enabled -Value $$true; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_rendezvous_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_relay_server -Value '139.162.158.208'; Add-Member -InputObject $$c -MemberType NoteProperty -Name rustdesk_key -Value '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='; $$c|ConvertTo-Json|Out-File $$f -Encoding ASCII); $$s=New-Object -ComObject WScript.Shell; $$sc=$$s.CreateShortcut('C:\Users\Public\Desktop\TECHI Remote Support.lnk'); $$sc.TargetPath='C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe'; $$sc.WorkingDirectory='C:\Program Files\TECHI Remote Support'; $$sc.Description='TECHI Remote Support'; $$sc.Save()"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; bootstrap-config -api-url &quot;[API_URL]&quot; -enrollment-token &quot;[ENROLLMENT_TOKEN]&quot; -reenroll &quot;[UI_REENROLL]&quot; -rustdesk-server &quot;[REMOTE_SERVER]&quot; -rustdesk-relay &quot;[REMOTE_RELAY]&quot; -rustdesk-key &quot;[REMOTE_KEY]&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -283,7 +306,7 @@
          që funksionon në çdo locale Windows). /T/(OI)(CI) e zbatojnë te skedarët ekzistues dhe te ata të rinj. -->
     <CustomAction Id="LockdownTechiDataDir"
                   Directory="TECHIDATADIR"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'icacls.exe' -ArgumentList @('[TECHIDATADIR]','/inheritance:r','/grant:r','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F','/T','/C','/Q') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="icacls.exe &quot;[TECHIDATADIR].&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -291,22 +314,31 @@
     <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
          të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
          njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
-         ekziston, e rikrijon dhe e nis — njëjtë me Ensure-AgentService në update.go self_update. -->
+         ekziston, e rikrijon, i vendos recovery actions dhe e nis — logjika është
+         `techi-agent.exe watchdog-check` (kod natif Go, shih swap_windows.go), pa PowerShell. -->
     <CustomAction Id="EnsureServiceCreated"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBQAHIAbwBnAHIAYQBtAEQAYQB0AGEAIAAnAFQARQBDAEgASQBcAGwAbwBnAHMAXABkAGUAcABsAG8AeQAuAGwAbwBnACcACgBmAHUAbgBjAHQAaQBvAG4AIABXAHIAaQB0AGUALQBMAG8AZwAoAFsAcwB0AHIAaQBuAGcAXQAkAG0AKQAgAHsACgAgACAAIAAgACQAZABpAHIAIAA9ACAAUwBwAGwAaQB0AC0AUABhAHQAaAAgAC0AUABhAHIAZQBuAHQAIAAkAGwAbwBnAAoAIAAgACAAIABOAGUAdwAtAEkAdABlAG0AIAAtAEkAdABlAG0AVAB5AHAAZQAgAEQAaQByAGUAYwB0AG8AcgB5ACAALQBQAGEAdABoACAAJABkAGkAcgAgAC0ARgBvAHIAYwBlACAAfAAgAE8AdQB0AC0ATgB1AGwAbAAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAoAEcAZQB0AC0ARABhAHQAZQAgAC0ARgBvAHIAbQBhAHQAIAAnAHkAeQB5AHkALQBNAE0ALQBkAGQAIABIAEgAOgBtAG0AOgBzAHMAJwApACAAKwAgACIAIABbAEUAbgBzAHUAcgBlAFMAZQByAHYAaQBjAGUAQwByAGUAYQB0AGUAZABdACAAIgAgACsAIAAkAG0AKQAKAH0ACgAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAgAD0AIAAnAFQAZQBjAGgAaQBBAGcAZQBuAHQAJwAKACQAYQBnAGUAbgB0AEUAeABlACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARABhAHQAYQAgACcAVABlAGMAaABpAEEAZwBlAG4AdABcAHQAZQBjAGgAaQAtAGEAZwBlAG4AdAAuAGUAeABlACcACgAkAHMAdgBjACAAPQAgAEcAZQB0AC0AUwBlAHIAdgBpAGMAZQAgAC0ATgBhAG0AZQAgACQAcwBlAHIAdgBpAGMAZQBOAGEAbQBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAVwByAGkAdABlAC0ATABvAGcAIAAoACIAcwB0AGEAdAB1AHMAPQAiACAAKwAgACQAKABpAGYAIAAoACQAcwB2AGMAKQAgAHsAIAAkAHMAdgBjAC4AUwB0AGEAdAB1AHMAIAB9ACAAZQBsAHMAZQAgAHsAIAAiAG0AaQBzAHMAaQBuAGcAIgAgAH0AKQApAAoAaQBmACAAKAAtAG4AbwB0ACAAJABzAHYAYwApACAAewAKACAAIAAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABhAGcAZQBuAHQARQB4AGUAKQAgAHsACgAgACAAIAAgACAAIAAgACAAJABiAGkAbgBQAGEAdABoAEEAcgBnACAAPQAgACcAYgBpAG4AUABhAHQAaAA9ACAAIgAnACAAKwAgACQAYQBnAGUAbgB0AEUAeABlACAAKwAgACcAIgAnAAoAIAAgACAAIAAgACAAIAAgAFMAdABhAHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAtAEYAaQBsAGUAUABhAHQAaAAgACcAcwBjAC4AZQB4AGUAJwAgAC0AQQByAGcAdQBtAGUAbgB0AEwAaQBzAHQAIABAACgAJwBjAHIAZQBhAHQAZQAnACwAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAsACAAJABiAGkAbgBQAGEAdABoAEEAcgBnACwAIAAnAHMAdABhAHIAdAA9ACAAYQB1AHQAbwAnACwAIAAnAEQAaQBzAHAAbABhAHkATgBhAG0AZQA9ACAAVABFAEMASABJACAAQQBnAGUAbgB0ACcALAAgACcAbwBiAGoAPQAgAEwAbwBjAGEAbABTAHkAcwB0AGUAbQAnACkAIAAtAFcAYQBpAHQAIAAtAFcAaQBuAGQAbwB3AFMAdAB5AGwAZQAgAEgAaQBkAGQAZQBuAAoAIAAgACAAIAAgACAAIAAgAFcAcgBpAHQAZQAtAEwAbwBnACAAIgByAGUAYwByAGUAYQB0AGUAZAAgAG0AaQBzAHMAaQBuAGcAIABzAGUAcgB2AGkAYwBlACIACgAgACAAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAIAAgACAAIABXAHIAaQB0AGUALQBMAG8AZwAgACgAIgBhAGIAbwByAHQAOgAgAGUAeABlACAAbQBpAHMAcwBpAG4AZwAgAGEAdAAgACIAIAArACAAJABhAGcAZQBuAHQARQB4AGUAKQAKACAAIAAgACAAfQAKAH0ACgAkAHMAdgBjACAAPQAgAEcAZQB0AC0AUwBlAHIAdgBpAGMAZQAgAC0ATgBhAG0AZQAgACQAcwBlAHIAdgBpAGMAZQBOAGEAbQBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAaQBmACAAKAAkAHMAdgBjACAALQBhAG4AZAAgACQAcwB2AGMALgBTAHQAYQB0AHUAcwAgAC0AbgBlACAAJwBSAHUAbgBuAGkAbgBnACcAKQAgAHsACgAgACAAIAAgAFMAdABhAHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAtAEYAaQBsAGUAUABhAHQAaAAgACcAbgBlAHQALgBlAHgAZQAnACAALQBBAHIAZwB1AG0AZQBuAHQATABpAHMAdAAgAEAAKAAnAHMAdABhAHIAdAAnACwAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQApACAALQBXAGEAaQB0ACAALQBXAGkAbgBkAG8AdwBTAHQAeQBsAGUAIABIAGkAZABkAGUAbgAKACAAIAAgACAAVwByAGkAdABlAC0ATABvAGcAIAAiAHMAdABhAHIAdABlAGQAIABzAGUAcgB2AGkAYwBlACIACgB9AAoAJABzAHYAYwAgAD0AIABHAGUAdAAtAFMAZQByAHYAaQBjAGUAIAAtAE4AYQBtAGUAIAAkAHMAZQByAHYAaQBjAGUATgBhAG0AZQAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAKAFcAcgBpAHQAZQAtAEwAbwBnACAAKAAiAGYAaQBuAGEAbAAgAHMAdABhAHQAdQBzAD0AIgAgACsAIAAkACgAaQBmACAAKAAkAHMAdgBjACkAIAB7ACAAJABzAHYAYwAuAFMAdABhAHQAdQBzACAAfQAgAGUAbABzAGUAIAB7ACAAIgBtAGkAcwBzAGkAbgAgACIAIAB9ACkAKQA="
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; watchdog-check"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- SetServiceRecovery: restart automatik pas dështimit -->
+    <!-- SetServiceRecovery: restart automatik pas dështimit (sc.exe direkt, pa PS wrapper) -->
     <CustomAction Id="SetServiceRecovery"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'sc.exe' -ArgumentList @('failure','TechiAgent','reset=','86400','actions=','restart/60000/restart/60000/restart/300000') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="sc.exe failure TechiAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
+    <!-- SHENIM AV/AMSI: 4 custom actions me poshte (BackupAgentConfigBeforeLegacyRemove,
+         CleanupLegacyEndpointInstallerRegistry, RestoreAgentConfigAfterLegacyRemove,
+         RestoreAgentConfigFromLegacyBackup) mbeten me PowerShell ME QELLIM: ekzekutohen
+         vetem gjate upgrade nga produktet antike v1.0.4 (Execute=immediate — para se
+         techi-agent.exe i ri te jete instaluar, keshtu s'mund t'i kryeje ai). Ne klientet
+         me AV strikt qe bllokon PS, efekti maksimal i deshtimit eshte qe migrimit 1.0.4
+         i humbet device_id (pajisja ri-enrollohet si e re) — i pranueshem per nje rruge
+         praktikisht te vdekur. Gjithe rruga normale e instalimit eshte script-free. -->
     <CustomAction Id="BackupAgentConfigBeforeLegacyRemove"
                   Directory="TECHIDATADIR"
                   ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQAtAGMAbwBuAGYAaQBnAC0AbQBpAGcAcgBhAHQAZQAuAGwAbwBnACcACgAkAHMAcgBjACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARABhAHQAYQAgACcAVABlAGMAaABpAEEAZwBlAG4AdABcAGEAZwBlAG4AdAAuAGMAbwBuAGYAaQBnAC4AagBzAG8AbgAnAAoAJABkAHMAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQBfAGMAbwBuAGYAaQBnAF8AYgBhAGMAawB1AHAALgBqAHMAbwBuACcACgB0AHIAeQAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAcwB0AGEAcgB0ACAAcwByAGMAPQB7ADAAfQAgAGQAcwB0AD0AewAxAH0AIgAgAC0AZgAgACQAcwByAGMALAAkAGQAcwB0ACkACgAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAcwByAGMAKQAgAHsACgAgACAAIAAgACQAYwBmAGcAIAA9ACAARwBlAHQALQBDAG8AbgB0AGUAbgB0ACAAJABzAHIAYwAgAC0AUgBhAHcAIAB8ACAAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACAAIAAgACAAaQBmACAAKAAkAG4AdQBsAGwAIAAtAG4AZQAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAAgAC0AYQBuAGQAIABbAHMAdAByAGkAbgBnAF0AJABjAGYAZwAuAGQAZQB2AGkAYwBlAF8AaQBkACAALQBuAGUAIAAnACcAKQAgAHsACgAgACAAIAAgACAAIABDAG8AcAB5AC0ASQB0AGUAbQAgACQAcwByAGMAIAAkAGQAcwB0ACAALQBGAG8AcgBjAGUACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAoACIAYgBhAGMAawB1AHAAIABjAG8AcABpAGUAZAAgAGQAZQB2AGkAYwBlAF8AaQBkAD0AewAwAH0AIgAgAC0AZgAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAApAAoAIAAgACAAIAB9ACAAZQBsAHMAZQAgAHsACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAnAGIAYQBjAGsAdQBwACAAcwBrAGkAcABwAGUAZAAgAG0AaQBzAHMAaQBuAGcAIABkAGUAdgBpAGMAZQBfAGkAZAAnAAoAIAAgACAAIAB9AAoAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAJwBiAGEAYwBrAHUAcAAgAHMAawBpAHAAcABlAGQAIABtAGkAcwBzAGkAbgBnACAAcwBvAHUAcgBjAGUAJwAKACAAIAB9AAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAZQByAHIAbwByACAAewAwAH0AIgAgAC0AZgAgACQAXwAuAEUAeABjAGUAcAB0AGkAbwBuAC4ATQBlAHMAcwBhAGcAZQApAAoAfQA="
@@ -349,7 +381,7 @@
 
     <CustomAction Id="CleanupProgramData"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command Remove-Item 'C:\Users\Public\Desktop\TECHI Remote Support.lnk' -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force ($$env:ProgramData+'\TECHI') -ErrorAction SilentlyContinue"
+                  ExeCommand="cmd.exe /d /c del /f /q &quot;C:\Users\Public\Desktop\TECHI Remote Support.lnk&quot; &amp; rd /s /q &quot;C:\ProgramData\TECHI&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -364,7 +396,7 @@
          e gjithe transaksioni MSI, perfshire upgrade-in e vete agent-it). -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="cmd.exe /d /c taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -378,7 +410,7 @@
          "sc create" me binPath te vjeter/gabuar te mbijetoje nje upgrade qe ndryshon shtegun. -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -NoNewWindow; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="cmd.exe /d /c taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe &amp; sc delete &quot;TECHI Remote Support&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -389,7 +421,7 @@
          komenti i REMOTESUPPORTFOLDER me siper). -->
     <CustomAction Id="RemoveRustDeskTrayArtifacts"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -NoNewWindow"
+                  ExeCommand="cmd.exe /d /c schtasks /Delete /TN &quot;TECHI Remote Support Tray&quot; /F &amp; sc delete &quot;TECHI Remote Support&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -397,21 +429,18 @@
     <!-- CreateRustDeskTrayTask: regjistron Scheduled Task "At Logon" qe nis RS me argumentin
          tray ne sesionin e perdoruesit interaktiv; ikona shoqeruese, JO daemon-i. Daemon-i real
          eshte Windows Service "TECHI Remote Support" (argumenti service), krijuar ne runtime nga
-         agent-i (rustdesk_manage.go: ensureRustDeskService), jo nga kjo MSI. schtasks /run nga agent-i
-         (rustdeskTrayTaskName) e rinis kete task po te mbyllet
-         aksidentalisht nga tray-i mes sesionit. ExecutionTimeLimit 0 = pa limit kohor
-         (default eshte 72 ore, c'ka do te mbyllte RS automatikisht ne PC qe rrine ndezur gjate).
-         Pas regjistrimit, schtasks /run e nis nje here menjehere ne sesionin aktual ne xhirim
-         (instalim manual/interaktiv) — trigger-i "At Logon" vetem nuk do te kishte aktivizuar
-         per sesionin qe eshte tashme aktiv; ne instalim /quiet pa user te kyqur, /run thjesht
-         s'gjen sesion dhe s'ben asgje, pa demtuar instalimin (Return ignore).
-         -EncodedCommand (jo -Command me token te lire) sepse '-GroupId BUILTIN\Users' nje here
-         deshtoi ne heshtje (Return=ignore e fshehu); tani perdoret SID locale-safe S-1-5-32-545
-         (grupi "Users", njesoj si lezimi i mesuar me icacls me heret), dhe cdo hap shkruan ne
-         C:\ProgramData\TECHI\logs\deploy.log per diagnostikim real, jo me heshtje totale. -->
+         agent-i (rustdesk_manage.go: ensureRustDeskService), jo nga kjo MSI. schtasks /run nga
+         agent-i (rustdeskTrayTaskName) e rinis kete task po te mbyllet aksidentalisht.
+         Ekzekutohet nga vete techi-agent.exe (rs-tray-task, kod natif Go, bootstrap_windows.go):
+         shkruan XML-in e task-ut (grupi Users sipas SID S-1-5-32-545, ExecutionTimeLimit PT0S =
+         pa limit kohor — default-i 72h do te mbyllte RS ne PC qe rrine ndezur gjate; schtasks CLI
+         s'e shpreh dot, prandaj XML) dhe e regjistron me schtasks /Create /XML, pastaj /Run
+         njehere per sesionin aktual (ne /quiet pa user te kyqur /Run s'ben asgje, pa dem).
+         Pa PowerShell — AV/AMSI strikte (Symantec, CybeeAI) s'ka cfare te bllokoje; cdo hap
+         logohet ne C:\ProgramData\TechiAgent\deploy.log me [rs-tray-task]. -->
     <CustomAction Id="CreateRustDeskTrayTask"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwBEAGkAcgAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBQAHIAbwBnAHIAYQBtAEQAYQB0AGEAIAAnAFQARQBDAEgASQBcAGwAbwBnAHMAJwAKAE4AZQB3AC0ASQB0AGUAbQAgAC0ASQB0AGUAbQBUAHkAcABlACAARABpAHIAZQBjAHQAbwByAHkAIAAtAFAAYQB0AGgAIAAkAGwAbwBnAEQAaQByACAALQBGAG8AcgBjAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUAIAB8ACAATwB1AHQALQBOAHUAbABsAAoAJABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAbABvAGcARABpAHIAIAAnAGQAZQBwAGwAbwB5AC4AbABvAGcAJwAKAGYAdQBuAGMAdABpAG8AbgAgAFcAcgBpAHQAZQAtAEwAbwBnACgAWwBzAHQAcgBpAG4AZwBdACQAbQApACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAoAEcAZQB0AC0ARABhAHQAZQAgAC0ARgBvAHIAbQBhAHQAIAAnAHkAeQB5AHkALQBNAE0ALQBkAGQAIABIAEgAOgBtAG0AOgBzAHMAJwApACAAKwAgACIAIABbAEMAcgBlAGEAdABlAFIAdQBzAHQARABlAHMAawBUAHIAYQB5AFQAYQBzAGsAXQAgACIAIAArACAAJABtACkACgB9AAoAdAByAHkAIAB7AAoAIAAgACAAIAAkAGUAeABlACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARgBpAGwAZQBzACAAJwBUAEUAQwBIAEkAIABSAGUAbQBvAHQAZQAgAFMAdQBwAHAAbwByAHQAXABUAEUAQwBIAEkAIABSAGUAbQBvAHQAZQAgAFMAdQBwAHAAbwByAHQALgBlAHgAZQAnAAoAIAAgACAAIAAkAGEAYwB0AGkAbwBuACAAPQAgAE4AZQB3AC0AUwBjAGgAZQBkAHUAbABlAGQAVABhAHMAawBBAGMAdABpAG8AbgAgAC0ARQB4AGUAYwB1AHQAZQAgACQAZQB4AGUAIAAtAEEAcgBnAHUAbQBlAG4AdAAgACcALQAtAHQAcgBhAHkAJwAKACAAIAAgACAAJAB0AHIAaQBnAGcAZQByACAAPQAgAE4AZQB3AC0AUwBjAGgAZQBkAHUAbABlAGQAVABhAHMAawBUAHIAaQBnAGcAZQByACAALQBBAHQATABvAGcATwBuAAoAIAAgACAAIAAkAHAAcgBpAG4AYwBpAHAAYQBsACAAPQAgAE4AZQB3AC0AUwBjAGgAZQBkAHUAbABlAGQAVABhAHMAawBQAHIAaQBuAGMAaQBwAGEAbAAgAC0ARwByAG8AdQBwAEkAZAAgACcAUwAtADEALQA1AC0AMwAyAC0ANQA0ADUAJwAgAC0AUgB1AG4ATABlAHYAZQBsACAATABpAG0AaQB0AGUAZAAKACAAIAAgACAAJABzAGUAdAB0AGkAbgBnAHMAIAA9ACAATgBlAHcALQBTAGMAaABlAGQAdQBsAGUAZABUAGEAcwBrAFMAZQB0AHQAaQBuAGcAcwBTAGUAdAAgAC0AQQBsAGwAbwB3AFMAdABhAHIAdABJAGYATwBuAEIAYQB0AHQAZQByAGkAZQBzACAALQBEAG8AbgB0AFMAdABvAHAASQBmAEcAbwBpAG4AZwBPAG4AQgBhAHQAdABlAHIAaQBlAHMAIAAtAFMAdABhAHIAdABXAGgAZQBuAEEAdgBhAGkAbABhAGIAbABlACAALQBFAHgAZQBjAHUAdABpAG8AbgBUAGkAbQBlAEwAaQBtAGkAdAAgACgAWwBUAGkAbQBlAFMAcABhAG4AXQA6ADoAWgBlAHIAbwApAAoAIAAgACAAIABSAGUAZwBpAHMAdABlAHIALQBTAGMAaABlAGQAdQBsAGUAZABUAGEAcwBrACAALQBUAGEAcwBrAE4AYQBtAGUAIAAnAFQARQBDAEgASQAgAFIAZQBtAG8AdABlACAAUwB1AHAAcABvAHIAdAAgAFQAcgBhAHkAJwAgAC0AQQBjAHQAaQBvAG4AIAAkAGEAYwB0AGkAbwBuACAALQBUAHIAaQBnAGcAZQByACAAJAB0AHIAaQBnAGcAZQByACAALQBQAHIAaQBuAGMAaQBwAGEAbAAgACQAcAByAGkAbgBjAGkAcABhAGwAIAAtAFMAZQB0AHQAaQBuAGcAcwAgACQAcwBlAHQAdABpAG4AZwBzACAALQBGAG8AcgBjAGUAIAB8ACAATwB1AHQALQBOAHUAbABsAAoAIAAgACAAIABXAHIAaQB0AGUALQBMAG8AZwAgACIAdABhAHMAawAgAHIAZQBnAGkAcwB0AGUAcgBlAGQALAAgAGUAeABlAD0AJABlAHgAZQAiAAoAIAAgACAAIABTAHQAYQByAHQALQBTAGwAZQBlAHAAIAAtAFMAZQBjAG8AbgBkAHMAIAAxAAoAIAAgACAAIABzAGMAaAB0AGEAcwBrAHMAIAAvAHIAdQBuACAALwB0AG4AIAAnAFQARQBDAEgASQAgAFIAZQBtAG8AdABlACAAUwB1AHAAcABvAHIAdAAgAFQAcgBhAHkAJwAgAHwAIABPAHUAdAAtAE4AdQBsAGwACgAgACAAIAAgAFcAcgBpAHQAZQAtAEwAbwBnACAAIgB0AGEAcwBrACAAcgB1AG4AIAB0AHIAaQBnAGcAZQByAGUAZAAiAAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAIAAgAFcAcgBpAHQAZQAtAEwAbwBnACAAKAAiAEUAUgBSAE8AUgA6ACAAIgAgACsAIAAkAF8ALgBFAHgAYwBlAHAAdABpAG8AbgAuAE0AZQBzAHMAYQBnAGUAKQAKAH0ACgA="
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; rs-tray-task"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

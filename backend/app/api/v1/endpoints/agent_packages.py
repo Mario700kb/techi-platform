@@ -139,6 +139,30 @@ def download_active_agent_binary():
     )
 
 
+@router.get("/agent-update-msi/download")
+def download_active_agent_update_msi():
+    """Public endpoint: returns the currently active agent_update_msi (Agent
+    Update Bridge) package for windows-amd64.  Used by self_update payloads
+    for legacy msiexec-based agents — no token required.  Kept separate from
+    /platform/{platform}/download, which serves the combined bootstrap MSI."""
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="agent_update_msi")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active agent update MSI package for windows-amd64")
+    path = service.package_path(package)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Package file not found")
+    logger.info(
+        "Agent update MSI download package_id=%s version=%s", package.id, package.version
+    )
+    return FileResponse(
+        path,
+        filename=package.filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/{package_id}/download")
 def download_agent_package(package_id: str, operator: Operator = Depends(get_current_operator)):
     service = AgentPackageService()

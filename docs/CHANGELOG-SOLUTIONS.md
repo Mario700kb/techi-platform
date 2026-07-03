@@ -3,6 +3,68 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-03] v2.1.3: Package-Type Split (agent_update_msi) + Script-Free Combined MSI
+
+### Root cause
+
+Two remaining structural gaps after v2.1.2:
+
+1. One "active MSI" slot served two conflicting purposes: the public
+   `/agent-packages/platform/windows-amd64/download` feeds BOTH the
+   GPO/NETLOGON bootstrap (needs the combined MSI with Remote Support) AND
+   legacy self_update payloads (need the agent-only bridge MSI). Activating
+   the bridge broke bootstrap; activating the combined re-exposed RS to
+   MajorUpgrade during routine agent updates.
+2. The combined bootstrap MSI still ran ~12 PowerShell custom actions
+   (config, service ensure, recovery, icacls, tray task, shortcuts, kill RS,
+   cleanup). AV/AMSI-strict clients (Symantec, CybeeAI) block all of them,
+   leaving fresh GPO installs half-configured.
+
+### Fix
+
+**Backend/UI — new package type `agent_update_msi`:**
+- `AgentFileType` gains `agent_update_msi` (bridge). `msi` keeps meaning the
+  combined bootstrap package; `set_active` scopes per platform+file_type, so
+  combined and bridge can be active simultaneously.
+- New public endpoint `GET /api/v1/agent-packages/agent-update-msi/download`.
+- Legacy self_update payloads now require an active `agent_update_msi`
+  matching the active agent binary version and point at the new endpoint;
+  `/platform/{platform}/download` (bootstrap) is untouched and again always
+  serves the combined MSI.
+- Agent Packages UI gains a third tab "Update MSI (Bridge)".
+
+**Combined MSI (installer.wxs) — script-free:**
+- `WriteAgentConfig` → `techi-agent.exe bootstrap-config ...` (native Go,
+  bootstrap_windows.go); public-desktop shortcut is now a declarative WiX
+  component (`PublicDesktopShortcut`).
+- `EnsureServiceCreated` → `techi-agent.exe watchdog-check`.
+- `CreateRustDeskTrayTask` → `techi-agent.exe rs-tray-task` (task definition
+  shipped as Task Scheduler XML via `schtasks /Create /XML` — keeps group SID
+  S-1-5-32-545 and ExecutionTimeLimit PT0S which the schtasks CLI cannot express).
+- `SetServiceRecovery` → direct `sc.exe failure ...`; `LockdownTechiDataDir`
+  → direct `icacls.exe`; `KillTechiRS*`, `RemoveRustDeskTrayArtifacts`,
+  `CleanupProgramData` → `cmd.exe /d /c` chains. No PowerShell anywhere in
+  the normal install path.
+- Intentionally still PowerShell (documented in the wxs): the four
+  v1.0.4-legacy config backup/restore/registry-cleanup actions — they run
+  before the new exe exists and only matter when upgrading from 1.0.4.
+
+### Version
+
+`agent/VERSION` bumped to 2.1.3 (binary gains bootstrap-config/rs-tray-task).
+Standalone exe for upload: `/private/tmp/techi-agent-2.1.3-native-bootstrap.exe`
+SHA256 `94a0bda42c929d2521b450f7edffd65dba04cc7fc36c1cf8a3faf2e55033874e`.
+CI builds the three 2.1.3 MSIs on push.
+
+### Checks
+
+- `cd agent && go build ./...` (darwin + windows), `go test ./...` -> clean.
+- `cd backend && python3 -m pytest` -> 363 passed (4 pre-existing
+  enrollment-audit failures, unrelated).
+- `cd frontend && npx tsc --noEmit && npm run build` -> clean.
+- installer.wxs parses as XML; `powershell.exe` appears only in the four
+  documented v1.0.4-legacy actions.
+
 ## [2026-07-03] INCIDENT: Server 90-99% CPU From 09:00 — Legacy Heartbeat Bridge + 60s Global Interval
 
 ### Root cause

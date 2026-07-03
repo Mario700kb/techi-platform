@@ -251,19 +251,19 @@ class AgentCommandService:
         if not legacy_devices:
             return binary_payload, {device.id: dict(binary_payload) for device in devices}
 
-        msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="msi")
+        msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_update_msi")
         if msi_package is None or msi_package.version != package.version:
             hostnames = ", ".join(sorted(device.hostname or str(device.id) for device in legacy_devices[:5]))
             extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
             raise ValueError(
-                "Legacy agents (version < 2.1.1) require an active MSI package "
-                f"for version {package.version} before UI self_update can run. "
-                f"Affected devices: {hostnames}{extra}. "
-                "Upload/activate the matching MSI or update them once via GPO/NETLOGON."
+                "Legacy agents (version < 2.1.1) require an active Agent Update "
+                f"Bridge MSI (file_type=agent_update_msi) for version {package.version} "
+                f"before UI self_update can run. Affected devices: {hostnames}{extra}. "
+                "Upload/activate the matching bridge MSI or update them once via GPO/NETLOGON."
             )
 
         msi_payload = {
-            "download_url": f"{backend_url}{service.latest_download_url(SELF_UPDATE_PLATFORM)}",
+            "download_url": f"{backend_url}{service.agent_update_msi_download_url()}",
             "version": package.version,
             # Old agents use this URL as an MSI. Verify completion against the
             # installed agent exe hash instead of the MSI file hash.

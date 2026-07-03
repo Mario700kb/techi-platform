@@ -101,13 +101,12 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
             assert platform == "windows-amd64"
             if file_type == "agent_binary":
                 return SimpleNamespace(version="2.1.1", sha256=active_sha)
-            if file_type == "msi":
+            if file_type == "agent_update_msi":
                 return SimpleNamespace(version="2.1.1", sha256="c" * 64)
             raise AssertionError(f"unexpected file_type={file_type}")
 
-        def latest_download_url(self, platform: str):
-            assert platform == "windows-amd64"
-            return "/api/v1/agent-packages/platform/windows-amd64/download"
+        def agent_update_msi_download_url(self):
+            return "/api/v1/agent-packages/agent-update-msi/download"
 
         def agent_binary_download_url(self):
             return "/api/v1/agent-packages/agent-binary/download"
@@ -133,7 +132,7 @@ def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch)
     assert legacy_payload["package_type"] == "msi"
     assert legacy_payload["sha256"] == "c" * 64
     assert legacy_payload["target_sha256"] == active_sha
-    assert legacy_payload["download_url"].endswith("/platform/windows-amd64/download")
+    assert legacy_payload["download_url"].endswith("/agent-update-msi/download")
 
     # 2.1.1 agents use the binary-swap flow even when they never reported a
     # SHA — sending them an MSI would make them swap the exe with MSI bytes.
@@ -157,7 +156,7 @@ def test_self_update_refuses_legacy_agents_without_matching_active_msi(monkeypat
             assert platform == "windows-amd64"
             if file_type == "agent_binary":
                 return SimpleNamespace(version="2.1.1", sha256="a" * 64)
-            if file_type == "msi":
+            if file_type == "agent_update_msi":
                 return SimpleNamespace(version="2.1.0", sha256="b" * 64)
             raise AssertionError(f"unexpected file_type={file_type}")
 
@@ -178,7 +177,7 @@ def test_self_update_refuses_legacy_agents_without_matching_active_msi(monkeypat
             operator_username="admin",
         )
     except ValueError as exc:
-        assert "Legacy agents (version < 2.1.1) require an active MSI package for version 2.1.1" in str(exc)
+        assert "Legacy agents (version < 2.1.1) require an active Agent Update Bridge MSI (file_type=agent_update_msi) for version 2.1.1" in str(exc)
         assert "legacy-agent" in str(exc)
     else:
         raise AssertionError("expected ValueError for legacy self_update without matching MSI")
@@ -206,7 +205,7 @@ def test_self_update_sends_binary_payload_to_211_agent_without_sha(monkeypatch):
             assert platform == "windows-amd64"
             if file_type == "agent_binary":
                 return SimpleNamespace(version="2.1.1", sha256=active_sha)
-            if file_type == "msi":
+            if file_type == "agent_update_msi":
                 # Mismatched MSI must not matter for binary-swap agents.
                 return SimpleNamespace(version="2.1.0", sha256="b" * 64)
             raise AssertionError(f"unexpected file_type={file_type}")

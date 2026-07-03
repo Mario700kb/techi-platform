@@ -14,8 +14,16 @@ class AgentPackagePlatform(str, Enum):
 
 
 class AgentFileType(str, Enum):
+    # Combined full-bootstrap MSI (agent + TECHI Remote Support). Served to
+    # GPO/NETLOGON bootstrap flows; historical entries without file_type are
+    # read as this.
     MSI = "msi"
+    # Standalone techi-agent.exe used by binary-swap self_update (>= 2.1.1).
     AGENT_BINARY = "agent_binary"
+    # Agent Update Bridge MSI (agent only, no Remote Support). Served to
+    # legacy msiexec-based agents (< 2.1.1) for UI self_update, so routine
+    # agent upgrades never reinstall Remote Support.
+    AGENT_UPDATE_MSI = "agent_update_msi"
 
 
 class AgentPackageOut(BaseModel):

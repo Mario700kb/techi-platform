@@ -18,6 +18,10 @@ func main() {
 			os.Exit(runBinarySwapCommand(os.Args[2:]))
 		case "watchdog-check":
 			os.Exit(runWatchdogCheckCommand())
+		case "bootstrap-config":
+			os.Exit(runBootstrapConfigCommand(os.Args[2:]))
+		case "rs-tray-task":
+			os.Exit(runRSTrayTaskCommand())
 		}
 	}
 

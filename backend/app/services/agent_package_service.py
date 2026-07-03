@@ -142,6 +142,9 @@ class AgentPackageService:
     def agent_binary_download_url(self) -> str:
         return f"{settings.API_PREFIX}/agent-packages/agent-binary/download"
 
+    def agent_update_msi_download_url(self) -> str:
+        return f"{settings.API_PREFIX}/agent-packages/agent-update-msi/download"
+
     def _read_manifest(self) -> List[dict]:
         if not self.manifest_path.exists():
             return []
