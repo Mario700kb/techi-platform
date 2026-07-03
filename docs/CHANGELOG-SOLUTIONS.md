@@ -3,6 +3,46 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-03] INCIDENT: Server 90-99% CPU From 09:00 — Legacy Heartbeat Bridge + 60s Global Interval
+
+### Root cause
+
+Two compounding factors, both unrelated to the previous night's
+self_update-classification deploy:
+
+1. The v1 heartbeat endpoint gained a `background_tasks` parameter, but
+   `legacy_compat.py` still called it as `agent_heartbeat(payload, db)`.
+   Every legacy `/api/heartbeat` request raised, was answered with a bodyless
+   204, and old agents treated it as failure and retried in a tight loop
+   (~34 req/s). The flood began at exactly 09:00 local when the legacy-fleet
+   client offices (zoomtrip, vasdream, Travel, Reservation-*, Remote-*)
+   powered on — overnight traffic on that route was zero. This was the
+   long-failing `test_current_v1_heartbeat_route_is_unchanged`.
+2. The global agent heartbeat policy had been left at 60 seconds for the
+   whole fleet (~600 online devices ≈ 10 heavy heartbeats/s on a 2 vCPU/2 GB
+   host).
+
+Additionally, leftover pre-2.1 agent services on those client machines
+fire-and-forget POST `/api/heartbeat` with tiny timeouts; each request died
+with a full ClientDisconnect traceback (~2 300/min of log spam).
+
+### Fix
+
+- `legacy_compat.py` now calls the v1 handler with a real `BackgroundTasks`
+  and runs the side effects inline; known legacy devices again receive the
+  JSON body old agents expect (commit `60576a7`).
+- `_read_limited_body` swallows `ClientDisconnect` quietly (commit `107528c`).
+- Global heartbeat policy raised 60 → 180 seconds (`/app/data/agent_policy.json`).
+- `test_legacy_compat.py` updated to the core+background endpoint shape and
+  extended with a regression test that a known legacy device gets a JSON body.
+
+### Result
+
+Backend CPU fell from pegged 90-99% to normal levels within minutes; v1
+heartbeats settled at ~150/min; zero tracebacks. The ~2 200/min legacy churn
+from leftover old services continues (cheap, bodyless) — the durable cleanup
+is uninstalling the leftover legacy agent services on those fleets.
+
 ## [2026-07-03] v2.1.2: Script-Free Self-Update and Watchdog (AV/AMSI-Proof)
 
 ### Root cause
