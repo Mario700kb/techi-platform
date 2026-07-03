@@ -3,6 +3,61 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-04] INCIDENT: v2.1.3 Agent Won't Launch — Broken Manifest XML Declaration (SxS)
+
+### Root cause
+
+The physical test PC failed every 2.1.3 install with msiexec 1603. After
+ruling out (via the verbose MSI log) leftover MSI registration, and after
+confirming Windows Defender real-time was genuinely OFF and it still failed,
+the decisive test was an administrative extract (`msiexec /a`) of the exe
+plus a direct run:
+
+`The application has failed to start because its side-by-side configuration
+is incorrect.` (SxS, error 14001)
+
+Both the combined-MSI exe and the agent-binary exe failed identically — the
+binary would not launch at all, as a service (1920) or as an MSI custom
+action (1721).
+
+The cause was in `agent/techi-agent.manifest`:
+
+`<?xml version="2.1.3.0" encoding="UTF-8" standalone="yes"?>`
+
+The 2.1.3 version-bump used a sloppy inline regex
+(`version="[0-9.]+"` with `count=1`) that replaced the FIRST `version="..."`
+in the file — the **XML declaration**, which must always be `version="1.0"`.
+An invalid XML declaration makes the whole manifest unparseable, so Windows
+cannot build the activation context and refuses to start the process. 2.1.2
+was fine because its build used a 4-part-only regex that never matched the
+2-part `version="1.0"`. Once the declaration was poisoned to `2.1.3.0`
+(4-part), even the "safe" CI regex kept re-stamping it 4-part, so every
+2.1.3 artifact shipped broken.
+
+### Fix
+
+- `techi-agent.manifest` restored: `<?xml version="1.0"...?>`,
+  assemblyIdentity `version="2.1.4.0"`.
+- All three manifest-stamping regexes (`build.sh`, `build-agent-update.sh`,
+  CI `build-agent-msi.yml`) anchored to the indented assemblyIdentity line
+  `(?m)^(\s+version=")...` so they can NEVER touch the XML declaration again.
+- Version bumped to **2.1.4** to retire the poisoned 2.1.3 artifacts.
+
+### Verification
+
+- `agent/techi-agent.manifest` parses as valid XML; declaration is
+  `version="1.0"`, assemblyIdentity is `2.1.4.0`.
+- Built exe embeds `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+  (confirmed via strings). Local standalone build:
+  `/private/tmp/techi-agent-2.1.4.exe`
+  SHA256 `8657e4d59072162851f3a1ccae2525ed0fac036c0bc8c6039d2088a82e6b1f82`.
+- `go build ./...` (darwin + windows) clean.
+
+### Lesson
+
+Never regex the manifest with a pattern that can match the XML declaration.
+Defender/AV was a red herring here — the exe never ran on ANY machine.
+
 ## [2026-07-03] v2.1.3: Package-Type Split (agent_update_msi) + Script-Free Combined MSI
 
 ### Root cause

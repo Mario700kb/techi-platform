@@ -39,7 +39,10 @@ with open("versioninfo.json", "w") as f:
 
 with open("techi-agent.manifest") as f:
     manifest = f.read()
-manifest = re.sub(r'version="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"', f'version="{version4}"', manifest)
+# Anchor to the indented assemblyIdentity version line only. Never touch the
+# XML declaration <?xml version="1.0"?> — replacing it makes the manifest
+# invalid and the exe fails to launch with a fatal SxS error.
+manifest = re.sub(r'(?m)^(\s+version=")[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(")', rf'\g<1>{version4}\g<2>', manifest)
 manifest = re.sub(r"TECHI Platform Endpoint Agent [0-9]+\.[0-9]+\.[0-9]+", f"TECHI Platform Endpoint Agent {version}", manifest)
 with open("techi-agent.manifest", "w") as f:
     f.write(manifest)

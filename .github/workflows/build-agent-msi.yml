@@ -90,8 +90,11 @@ jobs:
           $json.StringFileInfo.FileVersion = $v4
           $json.StringFileInfo.ProductVersion = $v4
           $json | ConvertTo-Json -Depth 8 | Set-Content -Path $vi -Encoding ASCII
+          # Anchor to the indented assemblyIdentity version line (^\s+version=).
+          # NEVER match the XML declaration <?xml version="1.0"?> — replacing
+          # that produced an invalid manifest and a fatal SxS launch failure.
           (Get-Content $m -Raw) `
-            -replace 'version="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"', ('version="' + $v4 + '"') `
+            -replace '(?m)^(\s+version=")[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(")', ('${1}' + $v4 + '${2}') `
             -replace 'TECHI Platform Endpoint Agent [0-9]+\.[0-9]+\.[0-9]+', ('TECHI Platform Endpoint Agent ' + $v) |
             Set-Content -Path $m -Encoding ASCII
 
