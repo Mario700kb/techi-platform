@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -77,7 +77,15 @@ async def heartbeat_legacy(request: Request, db: Session = Depends(get_db)):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     try:
-        response = agent_heartbeat(payload, db)
+        # agent_heartbeat defers side effects (telemetry, inventory, actions
+        # bookkeeping) to BackgroundTasks; run them inline here so legacy
+        # devices get the same processing as the v1 route. Calling with the
+        # wrong signature would raise, return a bodyless 204, and old agents
+        # would treat every heartbeat as failed and hammer this endpoint in a
+        # tight retry loop (2026-07-03 CPU incident).
+        background_tasks = BackgroundTasks()
+        response = agent_heartbeat(payload, background_tasks, db)
+        await background_tasks()
     except Exception as exc:
         db.rollback()
         logger.info("Ignoring legacy heartbeat that could not be processed: %s", type(exc).__name__)
