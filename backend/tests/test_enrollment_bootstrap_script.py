@@ -1131,3 +1131,46 @@ class TestPyToPsLiteral:
 
     def test_string_with_single_quote(self):
         assert self.svc._py_to_ps_literal("it's") == "'it''s'"
+
+
+class TestWindowsPackageInfoSelectsCombinedMsi:
+    """Regression: with both the combined bootstrap MSI (file_type=msi) and a
+    bridge MSI (agent_update_msi) active for windows-amd64, the bootstrap
+    installer must embed the SHA of the combined MSI — the one
+    /platform/windows-amd64/download actually serves. Otherwise the physical
+    install fails with 'SHA256 mismatch' (2026-07-03)."""
+
+    def _patch_pkg_service(self, monkeypatch, *, combined_sha, bridge_sha):
+        from app.services import enrollment_bootstrap_service as mod
+
+        combined = SimpleNamespace(version="2.1.3", sha256=combined_sha, filename="TECHI-Endpoint-Deployment-2.1.3.msi")
+        bridge = SimpleNamespace(version="2.1.3", sha256=bridge_sha, filename="TECHI-Agent-Update-2.1.3.msi")
+
+        class FakePkgService:
+            def latest_active(self, platform, *, file_type=None):
+                assert platform in ("windows", "windows-amd64")
+                # No filter would return the bridge (uploaded last); the code
+                # under test must always pass file_type="msi" here.
+                if file_type == "msi":
+                    return combined
+                if file_type == "agent_update_msi":
+                    return bridge
+                return bridge
+
+            def latest_download_url(self, platform):
+                return f"/api/v1/agent-packages/platform/{platform}/download"
+
+        monkeypatch.setattr(mod, "AgentPackageService", FakePkgService)
+
+    def test_windows_package_info_uses_combined_msi_sha(self, monkeypatch):
+        self._patch_pkg_service(monkeypatch, combined_sha="c" * 64, bridge_sha="b" * 64)
+        svc = EnrollmentBootstrapService(db=None)
+        url, sha256, filename = svc._windows_package_info("https://api-rdp.techi.com.al")
+        assert sha256 == "c" * 64
+        assert filename == "TECHI-Endpoint-Deployment-2.1.3.msi"
+        assert url.endswith("/platform/windows-amd64/download")
+
+    def test_active_windows_version_uses_combined_msi(self, monkeypatch):
+        self._patch_pkg_service(monkeypatch, combined_sha="c" * 64, bridge_sha="b" * 64)
+        svc = EnrollmentBootstrapService(db=None)
+        assert svc._active_windows_version() == "2.1.3"

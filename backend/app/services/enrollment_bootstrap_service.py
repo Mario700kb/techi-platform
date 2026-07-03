@@ -1009,7 +1009,8 @@ class EnrollmentBootstrapService:
     # ─── GPO Scheduled Task setup script (DC one-shot) ───────────────────────────
 
     def _active_windows_version(self) -> str:
-        pkg = AgentPackageService().latest_active("windows-amd64")
+        # GPO/NETLOGON version marker — the combined bootstrap MSI, not a bridge.
+        pkg = AgentPackageService().latest_active("windows-amd64", file_type="msi")
         return pkg.version if pkg else "0.0.0"
 
     def _gpo_scheduled_task_setup(self, backend_url: str, enrollment_token: str) -> str:
@@ -1531,7 +1532,7 @@ class EnrollmentBootstrapService:
     def _windows_msi_package_info(self, backend_url: str) -> tuple[str, str]:
         backend_url = self.normalize_backend_url(backend_url)
         svc = AgentPackageService()
-        package = svc.latest_active("windows")
+        package = svc.latest_active("windows", file_type="msi")
         if package is None:
             return "", ""
         url = f"{backend_url.rstrip('/')}{svc.latest_download_url('windows')}"
@@ -1678,7 +1679,11 @@ class EnrollmentBootstrapService:
     def _windows_package_info(self, backend_url: str) -> tuple[str, str, str]:
         backend_url = self.normalize_backend_url(backend_url)
         svc = AgentPackageService()
-        package = svc.latest_active("windows-amd64")
+        # Must match /platform/windows-amd64/download, which serves the combined
+        # bootstrap MSI (file_type="msi"). Without this filter, an active bridge
+        # MSI (agent_update_msi) can win latest_active and the script embeds the
+        # wrong SHA256 → "SHA256 mismatch" at install time.
+        package = svc.latest_active("windows-amd64", file_type="msi")
         if package is None:
             return self.WINDOWS_AGENT_URL_PLACEHOLDER, "", "techi-agent.exe"
         url = f"{backend_url.rstrip('/')}{svc.latest_download_url('windows-amd64')}"
