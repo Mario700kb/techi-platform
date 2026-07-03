@@ -212,3 +212,26 @@ jobs:
             agent/installer/TECHI-Remote-Support-1.4.6.msi.sha256
           retention-days: 30
           if-no-files-found: error
+
+      # Standalone techi-agent.exe — the SAME binary embedded in the combined
+      # MSI (built once at step 7). Upload it as the Agent Binary package so a
+      # device installed via MSI and a device that ran self_update report the
+      # identical SHA256 and both show green in "Needs Agent Update".
+      - name: Package standalone agent binary
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          Copy-Item techi-agent.exe "techi-agent-$v.exe" -Force
+          (Get-FileHash "techi-agent-$v.exe" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content "techi-agent-$v.exe.sha256"
+
+      - name: Upload standalone agent binary artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: techi-agent-${{ steps.version.outputs.version }}-exe
+          path: |
+            agent/installer/techi-agent-${{ steps.version.outputs.version }}.exe
+            agent/installer/techi-agent-${{ steps.version.outputs.version }}.exe.sha256
+          retention-days: 30
+          if-no-files-found: error
