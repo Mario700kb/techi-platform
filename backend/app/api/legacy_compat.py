@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, stat
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse
 
 from app.api.v1.endpoints.agent import agent_heartbeat
@@ -21,11 +22,17 @@ _MAX_LEGACY_BODY_BYTES = 1024 * 1024
 
 async def _read_limited_body(request: Request) -> Optional[bytes]:
     body = bytearray()
-    async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > _MAX_LEGACY_BODY_BYTES:
-            logger.info("Ignoring oversized legacy heartbeat body")
-            return None
+    try:
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > _MAX_LEGACY_BODY_BYTES:
+                logger.info("Ignoring oversized legacy heartbeat body")
+                return None
+    except ClientDisconnect:
+        # Leftover legacy agents fire heartbeats with tiny timeouts and hang
+        # up without waiting; thousands per minute. Not an error — drop them
+        # quietly instead of spamming a full traceback per request.
+        return None
     return bytes(body)
 
 
