@@ -215,7 +215,7 @@ export default function DeviceDrawer({
   isFavorite = false,
   onToggleFavorite,
 }: DeviceDrawerProps) {
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, can } = useAuth();
 
   const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
@@ -2049,13 +2049,14 @@ export default function DeviceDrawer({
                   </div>
                 </div>
 
-                {/* Per-device Remote Support password */}
+                {/* Per-device Remote Support password — owner/admin only */}
+                {can("admin") && (
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
                   <p className="premium-kicker mb-1">Password</p>
                   {rsPassword === null ? (
                     <button
                       type="button"
-                      disabled={rsPasswordBusy || !hasPermission("remote_support_connect")}
+                      disabled={rsPasswordBusy}
                       onClick={async () => {
                         setRsPasswordBusy(true);
                         try {
@@ -2157,6 +2158,7 @@ export default function DeviceDrawer({
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Details grid */}
                 <div className="grid grid-cols-2 gap-x-5 gap-y-3">

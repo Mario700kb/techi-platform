@@ -316,12 +316,12 @@ def get_connect_url(
 def get_remote_support_password(
     *,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(get_current_operator),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
-    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
     device_id: int,
 ):
-    """Reveal this device's per-device TECHI Remote Support password. Audited."""
+    """Reveal this device's per-device TECHI Remote Support password. Audited.
+    Owner/admin only — operators must not see the plaintext password."""
     device = _get_device(device_id, db, scope)
     svc = RemoteSupportPasswordService(db)
     password = svc.get_or_create(device)
@@ -345,9 +345,8 @@ def get_remote_support_password(
 def set_remote_support_password(
     *,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
-    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
     device_id: int,
     body: SetRemoteSupportPasswordRequest,
 ):
@@ -377,9 +376,8 @@ def set_remote_support_password(
 def regenerate_remote_support_password(
     *,
     db: Session = Depends(get_db),
-    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
-    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
     device_id: int,
 ):
     """Generate a fresh unique per-device password. Applied on next heartbeat."""
