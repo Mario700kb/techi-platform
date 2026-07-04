@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
-import { getConnectUrl, getRemoteSupportDevice, RemoteSupportDevice } from "../api/remoteSupport";
+import {
+  getConnectUrl,
+  getRemoteSupportDevice,
+  getRemoteSupportPassword,
+  setRemoteSupportPassword,
+  regenerateRemoteSupportPassword,
+  RemoteSupportDevice,
+} from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
@@ -247,6 +254,10 @@ export default function DeviceDrawer({
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
   const [rsCopySuccess, setRsCopySuccess] = useState(false);
   const rsLoadedFor = useRef<number | null>(null);
+  const [rsPassword, setRsPassword] = useState<string | null>(null);
+  const [rsPasswordSource, setRsPasswordSource] = useState<string | null>(null);
+  const [rsPasswordBusy, setRsPasswordBusy] = useState(false);
+  const [rsCustomPassword, setRsCustomPassword] = useState("");
 
   // Offline analysis state
   const [offlineAnalysis, setOfflineAnalysis] = useState<DeviceOfflineAnalysis | null>(null);
@@ -397,6 +408,9 @@ export default function DeviceDrawer({
     setRsCopySuccess(false);
     setRsToast(null);
     setRsBusyAction(null);
+    setRsPassword(null);
+    setRsPasswordSource(null);
+    setRsCustomPassword("");
     offlineAnalysisLoadedFor.current = null;
     setOfflineAnalysis(null);
   }, [device.id]);
@@ -2033,6 +2047,115 @@ export default function DeviceDrawer({
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* Per-device Remote Support password */}
+                <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+                  <p className="premium-kicker mb-1">Password</p>
+                  {rsPassword === null ? (
+                    <button
+                      type="button"
+                      disabled={rsPasswordBusy || !hasPermission("remote_support_connect")}
+                      onClick={async () => {
+                        setRsPasswordBusy(true);
+                        try {
+                          const res = await getRemoteSupportPassword(device.id);
+                          setRsPassword(res.password);
+                          setRsPasswordSource(res.source ?? null);
+                        } catch (e) {
+                          setRsToast({ message: e instanceof Error ? e.message : "Failed to load password", ok: false });
+                        } finally {
+                          setRsPasswordBusy(false);
+                        }
+                      }}
+                      className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                      style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                    >
+                      {rsPasswordBusy ? "Loading…" : "Reveal password"}
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-semibold text-orange-300">{rsPassword}</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(rsPassword);
+                              setRsToast({ message: "Password copied", ok: true });
+                              setTimeout(() => setRsToast(null), 2000);
+                            } catch {
+                              setRsToast({ message: "Copy failed", ok: false });
+                            }
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-200"
+                          title="Copy password"
+                        >
+                          <ClipboardCopy className="h-3.5 w-3.5" />
+                        </button>
+                        {rsPasswordSource && (
+                          <span className="text-[10px] uppercase tracking-wide text-slate-500">{rsPasswordSource}</span>
+                        )}
+                      </div>
+                      {hasPermission("remote_support_manage") && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={rsPasswordBusy}
+                            onClick={async () => {
+                              setRsPasswordBusy(true);
+                              try {
+                                const res = await regenerateRemoteSupportPassword(device.id);
+                                setRsPassword(res.password);
+                                setRsPasswordSource("generated");
+                                setRsToast({ message: "New password — applied on next heartbeat", ok: true });
+                                setTimeout(() => setRsToast(null), 3000);
+                              } catch (e) {
+                                setRsToast({ message: e instanceof Error ? e.message : "Regenerate failed", ok: false });
+                              } finally {
+                                setRsPasswordBusy(false);
+                              }
+                            }}
+                            className="rounded-md px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                            style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                          >
+                            Regenerate
+                          </button>
+                          <input
+                            type="text"
+                            placeholder="Custom (min 8)"
+                            value={rsCustomPassword}
+                            onChange={(e) => setRsCustomPassword(e.target.value)}
+                            className="w-32 rounded-md bg-black/20 px-2 py-1 text-xs text-slate-200 outline-none"
+                            style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                          />
+                          <button
+                            type="button"
+                            disabled={rsPasswordBusy || rsCustomPassword.trim().length < 8}
+                            onClick={async () => {
+                              setRsPasswordBusy(true);
+                              try {
+                                const res = await setRemoteSupportPassword(device.id, rsCustomPassword.trim());
+                                setRsPassword(res.password);
+                                setRsPasswordSource("custom");
+                                setRsCustomPassword("");
+                                setRsToast({ message: "Custom password set — applied on next heartbeat", ok: true });
+                                setTimeout(() => setRsToast(null), 3000);
+                              } catch (e) {
+                                setRsToast({ message: e instanceof Error ? e.message : "Set failed", ok: false });
+                              } finally {
+                                setRsPasswordBusy(false);
+                              }
+                            }}
+                            className="rounded-md px-2.5 py-1 text-xs font-semibold text-white transition"
+                            style={{ background: "var(--techi-orange, #f59e0b)" }}
+                          >
+                            Set
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Details grid */}
