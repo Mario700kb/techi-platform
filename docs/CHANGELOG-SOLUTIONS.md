@@ -3,6 +3,53 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-04] Security: Per-Device Remote Support Password (Phase 1, backend)
+
+### Why
+
+The TECHI Remote Support password was a single fleet-wide value (`Durres.12`),
+written in plaintext into the RustDesk TOMLs and re-applied every heartbeat.
+One compromised/curious user reading a TOML exposed remote access to the
+ENTIRE fleet. The enrollment token was also plaintext in
+`\\DOMAIN\NETLOGON\techi-deploy.cmd` (world-readable by domain users).
+
+### Phase 1 (backend, deployed)
+
+- Each device gets a unique, server-generated RS password, stored encrypted
+  at rest (`app/core/secret_cipher.py`, XOR+HMAC keyed off SECRET_KEY;
+  `remote_support_password_ciphertext` column).
+- `RemoteSupportPasswordService`: get_or_create / set_custom / regenerate.
+- Heartbeat response now returns `remote_support_password`; a >= 2.1.5 agent
+  will apply it to RustDesk (Phase 2).
+- `/connect-url` uses the per-device password, with a **transition-safe
+  fallback** to the legacy shared password for agents < 2.1.5 (so remote
+  access does not break during rollout; the fallback retires itself).
+- New audited endpoints: `GET/POST /remote-support/devices/{id}/password`,
+  `POST .../password/regenerate`.
+
+### GOTCHA (caused a brief heartbeat outage during deploy)
+
+`schema_compat_service.ensure_sqlite_dev_schema` only adds columns on
+**SQLite (dev)**. Production Postgres needs the columns added by hand — the
+heartbeat 500'd fleet-wide until:
+
+```sql
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS remote_support_password_ciphertext TEXT;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS remote_support_password_updated_at TIMESTAMP;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS remote_support_password_source VARCHAR(16);
+```
+
+Any new model column that the heartbeat/enrollment fast-path reads MUST be
+ALTER-ed into Postgres before/with the deploy.
+
+### Remaining (Phase 2/3)
+
+- Agent 2.1.5: read `remote_support_password` from heartbeat, apply to RS,
+  persist; `set_remote_password` must persist to config so the heartbeat loop
+  stops reverting to the old global.
+- Frontend: reveal / set-custom / regenerate per device.
+- NETLOGON `techi-deploy.cmd` token: restrict ACL to Domain Computers.
+
 ## [2026-07-04] INCIDENT: v2.1.3 Agent Won't Launch — Broken Manifest XML Declaration (SxS)
 
 ### Root cause
