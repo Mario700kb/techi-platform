@@ -18,6 +18,7 @@ from app.services import agent_config_service as _cfg_svc
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
 from app.services.remote_action_service import RemoteActionService
+from app.services.remote_support_password_service import RemoteSupportPasswordService
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,10 @@ def agent_heartbeat(
     pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
     interval = _cfg_svc.get_policy()["heartbeat_interval_seconds"]
 
+    # Server-authoritative per-device RS password. Generated on first use and
+    # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it.
+    rs_password = RemoteSupportPasswordService(db).get_or_create(device)
+
     return {
         "device_id": device.id,
         "heartbeat_id": heartbeat.id,
@@ -118,4 +123,5 @@ def agent_heartbeat(
         "pending_actions": [a.model_dump() for a in pending_actions],
         "heartbeat_interval_seconds": interval,
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
+        "remote_support_password": rs_password,
     }

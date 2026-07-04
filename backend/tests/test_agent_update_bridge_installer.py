@@ -56,12 +56,18 @@ def test_agent_update_bridge_custom_action_is_script_free():
     assert r"C:\ProgramData\TechiAgent\techi-agent.exe" in text
 
 
-def test_agent_update_bridge_swap_only_controls_techi_agent_service():
+def test_agent_update_bridge_swap_is_script_free():
+    # The binary swap and watchdog must never touch PowerShell (AV/AMSI). The
+    # watchdog does start the TECHI Remote Support service if stopped (it must
+    # never let remote access die), but it only START-s an existing service —
+    # it never ships RS files or creates/configures it.
     swap = _swap_go_text()
     assert 'serviceName' in swap
     assert "powershell.exe" not in swap.lower()
-    assert "TECHI Remote Support" not in swap
-    assert "rustdesk" not in swap.lower()
+    assert "sc create" not in swap.lower()
+    # No RS binaries/config are shipped or written by the swap/watchdog code.
+    for forbidden in ("librustdesk", "flutter_windows", ".toml", "custom-rendezvous-server"):
+        assert forbidden not in swap.lower()
 
 
 def test_agent_update_bridge_preserves_existing_config_and_only_creates_if_missing():

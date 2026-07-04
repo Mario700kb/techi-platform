@@ -84,6 +84,10 @@ def test_current_v1_heartbeat_route_is_unchanged(client):
             "app.api.v1.endpoints.agent.RemoteActionService.collect_pending_for_delivery",
             return_value=[],
         ),
+        patch(
+            "app.api.v1.endpoints.agent.RemoteSupportPasswordService.get_or_create",
+            return_value="pw-per-device",
+        ),
     ):
         response = client.post(
             "/api/v1/agent/heartbeat",
@@ -122,6 +126,10 @@ def test_legacy_heartbeat_for_known_device_returns_json_body(client, db):
         patch(
             "app.api.v1.endpoints.agent.RemoteActionService.collect_pending_for_delivery",
             return_value=[],
+        ),
+        patch(
+            "app.api.v1.endpoints.agent.RemoteSupportPasswordService.get_or_create",
+            return_value="pw-per-device",
         ),
     ):
         response = client.post(

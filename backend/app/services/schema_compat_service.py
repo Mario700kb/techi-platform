@@ -34,6 +34,9 @@ DEVICE_COLUMNS = {
     "archived_at": "DATETIME",
     "archived_by": "VARCHAR(128)",
     "agent_sha256": "VARCHAR(64)",
+    "remote_support_password_ciphertext": "TEXT",
+    "remote_support_password_updated_at": "DATETIME",
+    "remote_support_password_source": "VARCHAR(16)",
 }
 
 HEARTBEAT_COLUMNS = {

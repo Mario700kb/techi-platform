@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -91,6 +91,13 @@ class Device(Base):
 
     agent_version = Column(String(20), nullable=True)
     agent_sha256 = Column(String(64), nullable=True)
+
+    # Per-device TECHI Remote Support (RustDesk) permanent password, encrypted
+    # at rest. Server-generated unique value (or operator-set custom). Replaces
+    # the fleet-wide shared password so one device compromise can't expose all.
+    remote_support_password_ciphertext = Column(Text, nullable=True)
+    remote_support_password_updated_at = Column(DateTime, nullable=True)
+    remote_support_password_source = Column(String(16), nullable=True)  # "generated" | "custom"
 
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)

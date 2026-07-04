@@ -98,6 +98,10 @@ class AgentHeartbeatResponse(BaseModel):
     pending_actions: List[PendingActionDelivery] = []
     heartbeat_interval_seconds: Optional[int] = None
     agent_update: Optional[AgentUpdateInfo] = None
+    # Per-device TECHI Remote Support password the agent must apply to RustDesk
+    # (>= 2.1.5). Replaces the fleet-wide default. Sent every heartbeat so a
+    # wiped RS config self-heals to the server-authoritative value.
+    remote_support_password: Optional[str] = None
 
 
 class AgentEnrollmentRequest(BaseModel):

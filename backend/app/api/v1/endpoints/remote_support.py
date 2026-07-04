@@ -20,6 +20,7 @@ from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
+from app.services.remote_support_password_service import RemoteSupportPasswordService
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
 
@@ -98,6 +99,17 @@ class ConnectUrlResponse(BaseModel):
     connect_url: str
 
 
+class RemoteSupportPasswordResponse(BaseModel):
+    device_id: int
+    password: str
+    source: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class SetRemoteSupportPasswordRequest(BaseModel):
+    password: str
+
+
 def _device_to_rs(device: Device) -> RemoteSupportDevice:
     return RemoteSupportDevice(
         device_id=device.id,
@@ -122,27 +134,49 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
     )
 
 
-def _build_connect_url(remote_id: str) -> str:
+def _build_connect_url(remote_id: str, password: Optional[str]) -> str:
     encoded_id = quote(remote_id, safe="")
     connect_url = f"techiremotesupport://{encoded_id}"
-    managed_password = settings.RUSTDESK_DEFAULT_PASSWORD.strip()
     policy = agent_config_service.get_policy()
-    if policy["remote_support_managed_password_enabled"] and managed_password:
-        connect_url += f"?password={quote(managed_password, safe='')}"
+    password = (password or "").strip()
+    if policy["remote_support_managed_password_enabled"] and password:
+        connect_url += f"?password={quote(password, safe='')}"
     return connect_url
 
 
-def _connect_url_response_for_device(device: Device) -> ConnectUrlResponse:
+def _agent_applies_per_device_password(device: Device) -> bool:
+    """Only >= 2.1.5 agents apply the server's per-device password to RustDesk.
+    Older agents still hold the legacy shared password, so connecting to them
+    must use that during the rollout — otherwise remote access breaks fleet-wide
+    until every device is upgraded."""
+    parts = []
+    for piece in (getattr(device, "agent_version", None) or "").strip().lstrip("vV").split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        if not digits:
+            return False
+        parts.append(int(digits))
+    return tuple(parts) >= (2, 1, 5)
+
+
+def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlResponse:
     remote_id = (device.rustdesk_id or "").strip()
     if not remote_id:
         raise HTTPException(
             status_code=422,
             detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
         )
+    if _agent_applies_per_device_password(device):
+        # Server-authoritative per-device password. The agent applies exactly
+        # this value to RustDesk every heartbeat — no fleet-wide shared secret.
+        password = RemoteSupportPasswordService(db).get_or_create(device)
+    else:
+        # Transition fallback for agents < 2.1.5 that still hold the legacy
+        # shared password. Automatically retired once the fleet is upgraded.
+        password = settings.RUSTDESK_DEFAULT_PASSWORD
     return ConnectUrlResponse(
         device_id=device.id,
         techi_remote_id=remote_id,
-        connect_url=_build_connect_url(remote_id),
+        connect_url=_build_connect_url(remote_id, password),
     )
 
 
@@ -264,7 +298,7 @@ def get_connect_url(
     # with the rendezvous server.  If we have a valid remote ID, return the
     # protocol URL and let the native client attempt the session.
     status = compute_remote_support_status(device)
-    response = _connect_url_response_for_device(device)
+    response = _connect_url_response_for_device(device, db)
 
     audit_log(
         db,
@@ -276,6 +310,94 @@ def get_connect_url(
     )
 
     return response
+
+
+@router.get("/devices/{device_id}/password", response_model=RemoteSupportPasswordResponse)
+def get_remote_support_password(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
+    device_id: int,
+):
+    """Reveal this device's per-device TECHI Remote Support password. Audited."""
+    device = _get_device(device_id, db, scope)
+    svc = RemoteSupportPasswordService(db)
+    password = svc.get_or_create(device)
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.REMOTE_CONNECT,
+        entity_type="device",
+        entity_id=device_id,
+        details={"action": "reveal_remote_support_password"},
+    )
+    return RemoteSupportPasswordResponse(
+        device_id=device.id,
+        password=password,
+        source=device.remote_support_password_source,
+        updated_at=device.remote_support_password_updated_at,
+    )
+
+
+@router.post("/devices/{device_id}/password", response_model=RemoteSupportPasswordResponse)
+def set_remote_support_password(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
+    device_id: int,
+    body: SetRemoteSupportPasswordRequest,
+):
+    """Set a custom per-device password. The >= 2.1.5 agent applies it on the
+    next heartbeat; connect-url returns it immediately."""
+    device = _get_device(device_id, db, scope)
+    svc = RemoteSupportPasswordService(db)
+    try:
+        password = svc.set_custom(device, body.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.ACTION_QUEUED,
+        entity_type="device",
+        entity_id=device_id,
+        details={"action": "set_remote_support_password", "source": "custom"},
+    )
+    return RemoteSupportPasswordResponse(
+        device_id=device.id, password=password, source="custom",
+        updated_at=device.remote_support_password_updated_at,
+    )
+
+
+@router.post("/devices/{device_id}/password/regenerate", response_model=RemoteSupportPasswordResponse)
+def regenerate_remote_support_password(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
+    device_id: int,
+):
+    """Generate a fresh unique per-device password. Applied on next heartbeat."""
+    device = _get_device(device_id, db, scope)
+    svc = RemoteSupportPasswordService(db)
+    password = svc.regenerate(device)
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.ACTION_QUEUED,
+        entity_type="device",
+        entity_id=device_id,
+        details={"action": "regenerate_remote_support_password", "source": "generated"},
+    )
+    return RemoteSupportPasswordResponse(
+        device_id=device.id, password=password, source="generated",
+        updated_at=device.remote_support_password_updated_at,
+    )
 
 
 @router.post("/devices/{device_id}/restart-service", response_model=RemoteActionResponse)
