@@ -41,6 +41,10 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	// Apply power policy once on startup (Windows only; no-op elsewhere).
 	applyPowerPolicy(cfg)
 
+	// Prune stale download caches (old RS MSIs, old self-update exes) in the
+	// background so startup and the first heartbeat are never delayed.
+	go cleanupAgentCaches(cfg)
+
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 		log.Printf("heartbeat cycle failed: %v", err)
 	}

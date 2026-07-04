@@ -58,6 +58,7 @@ func deployLogFilePath() string {
 func writeDeployLog(tag string, message string) {
 	path := deployLogFilePath()
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	rotateFileIfOversize(path, deployLogMaxBytes)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return
