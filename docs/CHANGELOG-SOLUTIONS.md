@@ -42,13 +42,30 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS remote_support_password_source VARC
 Any new model column that the heartbeat/enrollment fast-path reads MUST be
 ALTER-ed into Postgres before/with the deploy.
 
-### Remaining (Phase 2/3)
+### Phase 2 (agent 2.1.5) + Phase 3 (frontend) — done, in commit 0335ec7
 
-- Agent 2.1.5: read `remote_support_password` from heartbeat, apply to RS,
-  persist; `set_remote_password` must persist to config so the heartbeat loop
-  stops reverting to the old global.
-- Frontend: reveal / set-custom / regenerate per device.
+- Agent 2.1.5: the heartbeat response `remote_support_password` is adopted
+  into `cfg.RustDeskDefaultPassword`, persisted to config, and applied to
+  RustDesk immediately (`applyRemoteSupportPassword`). The management loop
+  now re-applies the server's per-device value, not the old global.
+- Also in 2.1.5: `bootstrap-config -rustdesk-password` (fresh installs write
+  the RS password), and `watchdog-check` starts the TECHI Remote Support
+  service if stopped (remote access survives agent-down).
+- Frontend: RemoteSupport page password modal (reveal / copy / regenerate /
+  set-custom), deployed.
+
+**Rollout dependency:** devices only APPLY the per-device password once on
+2.1.5. Until a device is on 2.1.5, connect-url returns the legacy shared
+password for it (version-gated fallback), so remote access keeps working.
+Standalone 2.1.5 exe: `/private/tmp/techi-agent-2.1.5.exe` SHA256
+`cdc413f191faab7046c04451a7ff6f83300449e03f067377bda96a3ef52e29a3`
+(CI builds the MSIs). Keep the agent_binary SHA aligned to the MSI's exe.
+
+### Still open
+
 - NETLOGON `techi-deploy.cmd` token: restrict ACL to Domain Computers.
+- Optionally stop the install writing the transient Durres.12 bootstrap value
+  (server overrides it on first heartbeat anyway).
 
 ## [2026-07-04] INCIDENT: v2.1.3 Agent Won't Launch — Broken Manifest XML Declaration (SxS)
 
