@@ -326,18 +326,52 @@ func runWatchdogCheckCommand() int {
 	}
 	defer m.Disconnect()
 
+	agentRC := 0
 	if _, err := m.OpenService(serviceName); err != nil {
 		if _, serr := os.Stat(targetExe); serr != nil {
 			writeDeployLog("[watchdog]", "service missing and exe missing; cannot recover")
-			return 0
+		} else {
+			writeDeployLog("[watchdog]", "service missing; recreating")
+			if err := ensureAgentServiceRunning(m, targetExe); err != nil {
+				writeDeployLog("[watchdog]", "service not running: "+err.Error())
+				agentRC = 1
+			}
 		}
-		writeDeployLog("[watchdog]", "service missing; recreating")
-	}
-	if err := ensureAgentServiceRunning(m, targetExe); err != nil {
+	} else if err := ensureAgentServiceRunning(m, targetExe); err != nil {
 		writeDeployLog("[watchdog]", "service not running: "+err.Error())
-		return 1
+		agentRC = 1
 	}
-	return 0
+
+	// Also keep TECHI Remote Support alive: if an operator (or the user) stops
+	// or closes it, remote access is lost until the next agent heartbeat. The
+	// watchdog gives an independent 5-minute safety net even when the agent
+	// itself is down. Only START an existing service — creation/config/binPath
+	// is the agent's job (rustdesk_manage.go ensureRustDeskService).
+	ensureRemoteSupportRunningFromWatchdog(m)
+	return agentRC
+}
+
+// ensureRemoteSupportRunningFromWatchdog starts the "TECHI Remote Support"
+// service if it exists and is not running. It never creates the service.
+func ensureRemoteSupportRunningFromWatchdog(m *mgr.Mgr) {
+	rs, err := m.OpenService(rustdeskServiceName)
+	if err != nil {
+		// Not installed yet, or agent hasn't created it — nothing to do here.
+		return
+	}
+	defer rs.Close()
+	status, err := rs.Query()
+	if err != nil {
+		return
+	}
+	if status.State == svc.Running || status.State == svc.StartPending {
+		return
+	}
+	if err := rs.Start(); err != nil {
+		writeDeployLog("[watchdog]", "remote support start failed: "+err.Error())
+		return
+	}
+	writeDeployLog("[watchdog]", "remote support was stopped; started")
 }
 
 // ------------------------------------------------------------------ //

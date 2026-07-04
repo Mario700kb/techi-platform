@@ -5,6 +5,7 @@ import {
   ClipboardCopy,
   Download,
   ExternalLink,
+  KeyRound,
   Monitor,
   RefreshCcw,
   Search,
@@ -19,6 +20,9 @@ import {
   restartRemoteSupportService,
   repairRemoteSupportConfig,
   deployRemoteSupport,
+  getRemoteSupportPassword,
+  setRemoteSupportPassword,
+  regenerateRemoteSupportPassword,
   RemoteSupportDevice,
   RemoteSupportStatus,
 } from "../api/remoteSupport";
@@ -144,6 +148,14 @@ export default function RemoteSupport() {
   const [actionStates, setActionStates] = useState<Record<number, DeviceActionState>>({});
   const [toasts, setToasts] = useState<{ id: number; message: string; ok: boolean }[]>([]);
   const toastCounter = useState(0);
+  const [passwordModal, setPasswordModal] = useState<{
+    device: RemoteSupportDevice;
+    password: string;
+    source?: string;
+    loading: boolean;
+    custom: string;
+    saving: boolean;
+  } | null>(null);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -214,6 +226,54 @@ export default function RemoteSupport() {
     },
     [addToast]
   );
+
+  const openPasswordModal = useCallback(
+    async (device: RemoteSupportDevice) => {
+      setPasswordModal({ device, password: "", loading: true, custom: "", saving: false });
+      try {
+        const res = await getRemoteSupportPassword(device.device_id);
+        setPasswordModal((m) => (m && m.device.device_id === device.device_id
+          ? { ...m, password: res.password, source: res.source ?? undefined, loading: false }
+          : m));
+      } catch (e: unknown) {
+        addToast(e instanceof Error ? e.message : "Failed to load password", false);
+        setPasswordModal(null);
+      }
+    },
+    [addToast]
+  );
+
+  const handleRegeneratePassword = useCallback(async () => {
+    setPasswordModal((m) => (m ? { ...m, saving: true } : m));
+    const dev = passwordModal?.device;
+    if (!dev) return;
+    try {
+      const res = await regenerateRemoteSupportPassword(dev.device_id);
+      setPasswordModal((m) => (m ? { ...m, password: res.password, source: "generated", saving: false } : m));
+      addToast("New password generated — applied on next heartbeat", true);
+    } catch (e: unknown) {
+      addToast(e instanceof Error ? e.message : "Regenerate failed", false);
+      setPasswordModal((m) => (m ? { ...m, saving: false } : m));
+    }
+  }, [addToast, passwordModal?.device]);
+
+  const handleSetCustomPassword = useCallback(async () => {
+    const dev = passwordModal?.device;
+    const custom = passwordModal?.custom?.trim() ?? "";
+    if (!dev || custom.length < 8) {
+      addToast("Password must be at least 8 characters", false);
+      return;
+    }
+    setPasswordModal((m) => (m ? { ...m, saving: true } : m));
+    try {
+      const res = await setRemoteSupportPassword(dev.device_id, custom);
+      setPasswordModal((m) => (m ? { ...m, password: res.password, source: "custom", custom: "", saving: false } : m));
+      addToast("Custom password set — applied on next heartbeat", true);
+    } catch (e: unknown) {
+      addToast(e instanceof Error ? e.message : "Set password failed", false);
+      setPasswordModal((m) => (m ? { ...m, saving: false } : m));
+    }
+  }, [addToast, passwordModal?.device, passwordModal?.custom]);
 
   const handleRestart = useCallback(
     async (device: RemoteSupportDevice) => {
@@ -337,6 +397,105 @@ export default function RemoteSupport() {
           </div>
         ))}
       </div>
+
+      {/* Per-device Remote Support password modal */}
+      {passwordModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setPasswordModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-6"
+            style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center gap-2">
+              <KeyRound className="h-4 w-4" style={{ color: "var(--techi-orange, #f59e0b)" }} />
+              <h3 className="text-base font-semibold" style={{ color: "var(--th-text)" }}>
+                Remote Support Password
+              </h3>
+            </div>
+            <p className="mb-3 text-xs" style={{ color: "var(--th-text-muted)" }}>
+              {passwordModal.device.hostname ?? `Device ${passwordModal.device.device_id}`}
+              {passwordModal.source ? ` · ${passwordModal.source}` : ""}
+            </p>
+
+            <div className="mb-4 flex items-center gap-2">
+              <input
+                readOnly
+                value={passwordModal.loading ? "Loading…" : passwordModal.password}
+                className="flex-1 rounded-lg px-3 py-2 font-mono text-sm"
+                style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
+              />
+              <button
+                type="button"
+                disabled={passwordModal.loading || !passwordModal.password}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(passwordModal.password);
+                    addToast("Password copied", true);
+                  } catch {
+                    addToast("Copy failed", false);
+                  }
+                }}
+                className="rounded-lg px-3 py-2 text-sm font-medium"
+                style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
+                title="Copy password"
+              >
+                <ClipboardCopy className="h-4 w-4" />
+              </button>
+            </div>
+
+            {isOperator && (
+              <>
+                <button
+                  type="button"
+                  disabled={passwordModal.saving}
+                  onClick={handleRegeneratePassword}
+                  className="mb-3 w-full rounded-lg px-3 py-2 text-sm font-medium"
+                  style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}
+                >
+                  {passwordModal.saving ? "Working…" : "Generate new random password"}
+                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Set custom password (min 8)"
+                    value={passwordModal.custom}
+                    onChange={(e) => setPasswordModal((m) => (m ? { ...m, custom: e.target.value } : m))}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm"
+                    style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
+                  />
+                  <button
+                    type="button"
+                    disabled={passwordModal.saving || passwordModal.custom.trim().length < 8}
+                    onClick={handleSetCustomPassword}
+                    className="rounded-lg px-3 py-2 text-sm font-medium"
+                    style={{ background: "var(--techi-orange, #f59e0b)", color: "#fff" }}
+                  >
+                    Set
+                  </button>
+                </div>
+              </>
+            )}
+
+            <p className="mt-4 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+              Unique per device. Applied to Remote Support on the next agent heartbeat
+              (agents &lt; 2.1.5 still use the legacy password until upgraded).
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setPasswordModal(null)}
+              className="mt-4 w-full rounded-lg px-3 py-2 text-sm font-medium"
+              style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div
@@ -646,6 +805,14 @@ export default function RemoteSupport() {
                                     title="Copy Remote ID"
                                   />
                                 )}
+
+                                {/* Per-device password */}
+                                <ActionButton
+                                  label=""
+                                  icon={<KeyRound className="h-3 w-3" />}
+                                  onClick={() => openPasswordModal(device)}
+                                  title="View / set the per-device Remote Support password"
+                                />
 
                                 {/* Restart — operator+ */}
                                 {isOperator && (

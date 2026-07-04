@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -149,6 +150,18 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)
+
+	// Adopt the server-authoritative per-device RS password. Persisting it into
+	// cfg.RustDeskDefaultPassword means the RustDesk management loop applies THIS
+	// value (not the old fleet-wide default) on the next cycle, and it survives
+	// restarts. applyRemoteSupportPassword also sets it on RS immediately.
+	if pw := strings.TrimSpace(hbResp.RemoteSupportPassword); pw != "" && pw != cfg.RustDeskDefaultPassword {
+		cfg.RustDeskDefaultPassword = pw
+		if err := saveConfig(configPath, cfg); err != nil {
+			log.Printf("[rustdesk_manage] persist per-device password failed: %v", err)
+		}
+		applyRemoteSupportPassword(pw)
+	}
 
 	// Apply dynamic interval from server response (change_heartbeat_interval action
 	// may also have written pendingIntervalChange; this only overrides if the server

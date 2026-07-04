@@ -63,6 +63,37 @@ export async function getConnectUrl(deviceId: number): Promise<ConnectUrlRespons
   return fetchJson<ConnectUrlResponse>(`/api/v1/remote-support/devices/${deviceId}/connect-url`);
 }
 
+export interface RemoteSupportPasswordResponse {
+  device_id: number;
+  password: string;
+  source?: string | null;
+  updated_at?: string | null;
+}
+
+export async function getRemoteSupportPassword(deviceId: number): Promise<RemoteSupportPasswordResponse> {
+  return fetchJson<RemoteSupportPasswordResponse>(`/api/v1/remote-support/devices/${deviceId}/password`);
+}
+
+export async function setRemoteSupportPassword(
+  deviceId: number,
+  password: string
+): Promise<RemoteSupportPasswordResponse> {
+  return fetchJson<RemoteSupportPasswordResponse>(`/api/v1/remote-support/devices/${deviceId}/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function regenerateRemoteSupportPassword(
+  deviceId: number
+): Promise<RemoteSupportPasswordResponse> {
+  return fetchJson<RemoteSupportPasswordResponse>(
+    `/api/v1/remote-support/devices/${deviceId}/password/regenerate`,
+    { method: "POST" }
+  );
+}
+
 export async function restartRemoteSupportService(deviceId: number): Promise<void> {
   await fetchJson(`/api/v1/remote-support/devices/${deviceId}/restart-service`, { method: "POST" });
 }

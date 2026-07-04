@@ -295,7 +295,7 @@
          tani krijohet deklarativisht nga vetë MSI (PublicDesktopShortcut më poshtë). -->
     <CustomAction Id="WriteAgentConfig"
                   Directory="TECHIDATADIR"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; bootstrap-config -api-url &quot;[API_URL]&quot; -enrollment-token &quot;[ENROLLMENT_TOKEN]&quot; -reenroll &quot;[UI_REENROLL]&quot; -rustdesk-server &quot;[REMOTE_SERVER]&quot; -rustdesk-relay &quot;[REMOTE_RELAY]&quot; -rustdesk-key &quot;[REMOTE_KEY]&quot;"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; bootstrap-config -api-url &quot;[API_URL]&quot; -enrollment-token &quot;[ENROLLMENT_TOKEN]&quot; -reenroll &quot;[UI_REENROLL]&quot; -rustdesk-server &quot;[REMOTE_SERVER]&quot; -rustdesk-relay &quot;[REMOTE_RELAY]&quot; -rustdesk-key &quot;[REMOTE_KEY]&quot; -rustdesk-password &quot;[REMOTE_PASSWORD]&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

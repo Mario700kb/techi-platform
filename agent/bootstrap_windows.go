@@ -39,6 +39,7 @@ func runBootstrapConfigCommand(args []string) int {
 	rustdeskServer := fs.String("rustdesk-server", "", "rustdesk rendezvous server")
 	rustdeskRelay := fs.String("rustdesk-relay", "", "rustdesk relay server")
 	rustdeskKey := fs.String("rustdesk-key", "", "rustdesk public key")
+	rustdeskPassword := fs.String("rustdesk-password", "", "rustdesk default permanent password")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -70,6 +71,13 @@ func runBootstrapConfigCommand(args []string) int {
 		cfg["rustdesk_rendezvous_server"] = strings.TrimSpace(*rustdeskServer)
 		cfg["rustdesk_relay_server"] = strings.TrimSpace(*rustdeskRelay)
 		cfg["rustdesk_key"] = strings.TrimSpace(*rustdeskKey)
+	}
+	// The agent sets this as the RustDesk permanent password on every heartbeat
+	// (rustdesk_manage.go setRustDeskPassword) once the identity TOML exists.
+	// Without it in the config, GPO/MSI installs leave a random RS password and
+	// the managed connect-url password never matches.
+	if strings.TrimSpace(*rustdeskPassword) != "" {
+		cfg["rustdesk_default_password"] = strings.TrimSpace(*rustdeskPassword)
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

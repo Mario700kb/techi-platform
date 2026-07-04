@@ -10,3 +10,6 @@ func ensureRustDesk(cfg *Config, _ string) {
 		log.Printf("[rustdesk_manage] Windows-only — no-op on this platform")
 	}
 }
+
+// applyRemoteSupportPassword is a no-op on non-Windows platforms.
+func applyRemoteSupportPassword(_ string) {}

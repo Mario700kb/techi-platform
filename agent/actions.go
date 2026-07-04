@@ -40,6 +40,10 @@ type HeartbeatResponse struct {
 	PendingActions        []PendingAction `json:"pending_actions"`
 	HeartbeatIntervalSecs int             `json:"heartbeat_interval_seconds,omitempty"`
 	AgentUpdate           *AgentUpdate    `json:"agent_update,omitempty"`
+	// Server-authoritative per-device TECHI Remote Support password. The agent
+	// applies it to RustDesk and persists it so the heartbeat loop stops using
+	// the old fleet-wide default.
+	RemoteSupportPassword string `json:"remote_support_password,omitempty"`
 }
 
 type actionResult struct {

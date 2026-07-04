@@ -459,6 +459,25 @@ func setRustDeskPassword(password string) error {
 	return nil
 }
 
+// applyRemoteSupportPassword sets the server-pushed per-device password on
+// RustDesk and restarts the service so it takes effect immediately, instead of
+// waiting for the next management cycle. Best-effort; errors are logged only.
+func applyRemoteSupportPassword(password string) {
+	if strings.TrimSpace(password) == "" {
+		return
+	}
+	if err := setRustDeskPassword(password); err != nil {
+		log.Printf("[rustdesk_manage] apply per-device password failed: %v", err)
+		return
+	}
+	stopRustDeskServiceFn()
+	time.Sleep(1 * time.Second)
+	if err := startRustDeskServiceFn(); err != nil {
+		log.Printf("[rustdesk_manage] restart after password (non-fatal): %v", err)
+	}
+	log.Printf("[rustdesk_manage] applied per-device password from server")
+}
+
 
 func recordRustDeskRepair(cfg *Config, configPath string) {
 	cfg.RustDeskRepairCount++
