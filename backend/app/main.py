@@ -35,14 +35,33 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_heartbeats,
         cleanup_old_telemetry,
         cleanup_old_activity_events,
+        cleanup_resolved_alerts,
+        cleanup_old_remote_actions,
+        cleanup_old_command_batches,
+        cleanup_old_status_history,
+        cleanup_old_audit_logs,
+        cleanup_old_enrollment_audit,
+    )
+    tasks = (
+        cleanup_old_heartbeats,
+        cleanup_old_telemetry,
+        cleanup_old_activity_events,
+        cleanup_resolved_alerts,
+        cleanup_old_remote_actions,
+        cleanup_old_command_batches,
+        cleanup_old_status_history,
+        cleanup_old_audit_logs,
+        cleanup_old_enrollment_audit,
     )
     db = SessionLocal()
     try:
-        cleanup_old_heartbeats(db)
-        cleanup_old_telemetry(db)
-        cleanup_old_activity_events(db)
-    except Exception:
-        logger.exception("Heartbeat cleanup failed")
+        # Each task commits/vacuums independently; one failure must not stop the rest.
+        for task in tasks:
+            try:
+                task(db)
+            except Exception:
+                db.rollback()
+                logger.exception("Cleanup task %s failed", task.__name__)
     finally:
         db.close()
 

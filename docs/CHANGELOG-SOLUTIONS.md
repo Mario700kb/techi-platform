@@ -3,6 +3,63 @@
 Use this file as a running record of user-facing fixes, their root causes, and
 the checks used to verify them. Add new entries at the top.
 
+## [2026-07-04] Storage: retention, log rotation, cache pruning (safe batch)
+
+### Why
+
+Server disk at ~98%. Audit found unbounded growth in: DB tables without
+retention (audit_logs, resolved alerts, terminal remote_actions incl. full
+PowerShell output, status history, command batches, enrollment audit), the
+postgres container log (no docker cap), agent-side `agent.log`/`deploy.log`
+(append-only, never rotated), and `%ProgramData%\TechiAgent\cache` (old RS
+MSIs ~25 MB + old self-update exes ~10 MB per version, never deleted).
+Heartbeat redesign is NOT part of this batch — see
+`docs/architecture/heartbeat-storage-redesign.md` (proposal, needs approval).
+
+### What changed (behavior-preserving)
+
+- `app/tasks/cleanup.py` + `app/main.py`: nightly 03:00 UTC job now also
+  cleans resolved alerts (90 d), terminal remote actions (90 d), empty
+  command batches (90 d), status history (60 d), audit logs (180 d),
+  enrollment audit (180 d). Open alerts and non-terminal actions untouched.
+  Each task is isolated — one failure no longer stops the rest.
+- Alembic `b2c3d4e5f8a9`: index on `device_heartbeats.created_at` (nightly
+  cleanup was full-scanning the biggest table).
+- `logging_config.py`: uvicorn access lines for `/api/v1/agent/heartbeat` and
+  `/health` are dropped (per-device-per-minute noise that churned rotation).
+- `docker-compose.yml`: postgres service now has the same json-file 10m×5 cap
+  as backend/frontend (was unbounded).
+- Agent-side changes (log rotation 5 MB for `agent.log` / 1 MB for
+  `deploy.log`, startup pruning of stale cache files) are **NOT in this
+  batch**: they live on branch `pending-agent-2.1.6`, marked *Pending Agent
+  2.1.6*. Nothing on the current branch requires an agent build or touches
+  the heartbeat contract — the 2.1.5 fleet (700-device rollout) is fully
+  compatible as-is.
+
+### Deploy notes (Postgres — remember the schema gotcha)
+
+The index must exist in prod. Either run the alembic revision or, to avoid
+blocking live heartbeat INSERTs on a large table, apply by hand:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_device_heartbeats_created_at
+    ON device_heartbeats (created_at);
+```
+
+Recreate the postgres container for the logging cap to take effect
+(`docker compose up -d postgres`) — note this restarts the DB, do it in a
+quiet window. Pre-existing condition, unchanged by this batch: alembic has
+two heads (`a1b2c3d4e5f7`, `e6f7a8b9c0d1`); the new revision extends the
+first.
+
+### Verify
+
+- Backend: 368 tests pass (the 4 failures in
+  `test_enrollment_audit_diagnostics.py` are pre-existing on a clean tree).
+- Agent: `go vet` clean, `GOOS=windows` build OK, `go test ./...` pass.
+- Next morning after deploy: `grep Cleanup /app/logs/techi.log` shows the six
+  new tasks; `docker logs techi-postgres --tail 1` capped.
+
 ## [2026-07-04] Security: Per-Device Remote Support Password (Phase 1, backend)
 
 ### Why
