@@ -17,6 +17,8 @@ import TeamDetailPage from "../pages/TeamDetail";
 import Login from "../pages/Login";
 import AgentConfigPage from "../pages/AgentConfig";
 import AlertsMobile from "../pages/AlertsMobile";
+import More from "../pages/More";
+import Settings from "../pages/Settings";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -52,6 +54,8 @@ export default function AppRoutes() {
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
       <Route path="/agent-config" element={<RequireAuth><RequirePermission perm="system_settings"><AgentConfigPage /></RequirePermission></RequireAuth>} />
       <Route path="/alerts" element={<RequireAuth><AlertsMobile /></RequireAuth>} />
+      <Route path="/more" element={<RequireAuth><More /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
     </Routes>
   );
 }

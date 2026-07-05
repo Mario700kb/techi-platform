@@ -1,54 +1,71 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Monitor, Bell, Menu } from "lucide-react";
+import { LayoutDashboard, Monitor, Bell, MoreHorizontal } from "lucide-react";
 import { useAppData } from "../contexts/AppDataContext";
 
-interface BottomNavProps {
-  onOpenMenu: () => void;
-}
+/**
+ * Mobile UI 2.0 bottom navigation (docs/reference/MOBILE-DESIGN-SPEC.md):
+ * 4 fixed tabs — Dashboard, Devices, Alerts, More. "More" replaces the old
+ * slide-in sidebar on mobile and stays active on its sub-pages.
+ */
 
-export function BottomNav({ onOpenMenu }: BottomNavProps) {
+// Pages reachable from the More screen — the More tab stays active on them.
+const MORE_SUBPATHS = [
+  "/more",
+  "/settings",
+  "/clients",
+  "/remote-support",
+  "/audit",
+  "/deployment",
+  "/enrollment-bootstrap",
+  "/agent-packages",
+  "/inventory",
+  "/operators",
+  "/teams",
+  "/agent-config",
+];
+
+export function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { alertCount } = useAppData();
   const totalAlerts = alertCount.total_open;
+  const badgeText = totalAlerts > 99 ? "99+" : String(totalAlerts);
 
+  const path = location.pathname;
   const tabs = [
     {
       label: "Dashboard",
       icon: LayoutDashboard,
       to: "/",
-      exact: true,
+      active: path === "/",
       badge: 0,
-      action: undefined as (() => void) | undefined,
     },
     {
       label: "Devices",
       icon: Monitor,
       to: "/devices",
-      exact: false,
+      active: path.startsWith("/devices"),
       badge: 0,
-      action: undefined as (() => void) | undefined,
     },
     {
       label: "Alerts",
       icon: Bell,
       to: "/alerts",
-      exact: true,
+      active: path === "/alerts",
       badge: totalAlerts,
-      action: undefined as (() => void) | undefined,
     },
     {
-      label: "Menu",
-      icon: Menu,
-      to: null as string | null,
-      exact: false,
+      label: "More",
+      icon: MoreHorizontal,
+      to: "/more",
+      active: MORE_SUBPATHS.some((p) => path === p || path.startsWith(p + "/")),
       badge: 0,
-      action: onOpenMenu,
     },
   ];
 
   return (
     <nav
+      aria-label="Primary"
       className="fixed bottom-0 left-0 right-0 z-50 md:hidden"
       style={{
         background: "var(--th-bg-sidebar)",
@@ -57,54 +74,47 @@ export function BottomNav({ onOpenMenu }: BottomNavProps) {
       }}
     >
       <div className="flex items-stretch">
-        {tabs.map(({ label, icon: Icon, to, exact, badge, action }) => {
-          const basePath = to ? to.split("?")[0] : null;
-          const isActive = basePath
-            ? exact
-              ? location.pathname === basePath
-              : location.pathname.startsWith(basePath)
-            : false;
-
-          return (
-            <button
-              key={label}
-              type="button"
-              onClick={() => {
-                if (action) action();
-                else if (to) navigate(to);
-              }}
-              className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 transition-colors active:bg-white/[0.04]"
-              style={{
-                color: isActive ? "#f97316" : "var(--th-text-muted)",
-                minHeight: 56,
-              }}
-            >
-              <span className="relative">
-                <Icon className="h-5 w-5" />
-                {badge > 0 && (
-                  <span
-                    className="absolute -right-2.5 -top-2.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none text-white"
-                    style={{ background: "#ef4444" }}
-                  >
-                    {badge > 9 ? "9+" : badge}
-                  </span>
-                )}
-              </span>
-              <span className="text-[10px] font-semibold">{label}</span>
-              {isActive && (
+        {tabs.map(({ label, icon: Icon, to, active, badge }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => navigate(to)}
+            aria-current={active ? "page" : undefined}
+            aria-label={
+              badge > 0 ? `${label}, ${totalAlerts} open` : label
+            }
+            className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
+            style={{
+              color: active ? "var(--th-accent)" : "var(--th-text-muted)",
+            }}
+          >
+            {active && (
+              <span
+                aria-hidden="true"
+                className="absolute top-0 rounded-full"
+                style={{
+                  left: "26%",
+                  right: "26%",
+                  height: 2.5,
+                  background: "var(--th-accent)",
+                }}
+              />
+            )}
+            <span className="relative">
+              <Icon className="h-[21px] w-[21px]" strokeWidth={1.8} />
+              {badge > 0 && (
                 <span
-                  className="absolute bottom-0 rounded-full"
-                  style={{
-                    left: "20%",
-                    right: "20%",
-                    height: 2,
-                    background: "#f97316",
-                  }}
-                />
+                  aria-hidden="true"
+                  className="absolute -right-3 -top-2 flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 text-[9.5px] font-extrabold leading-none"
+                  style={{ background: "var(--danger)", color: "#fff" }}
+                >
+                  {badgeText}
+                </span>
               )}
-            </button>
-          );
-        })}
+            </span>
+            <span className="text-[11px] font-bold">{label}</span>
+          </button>
+        ))}
       </div>
     </nav>
   );

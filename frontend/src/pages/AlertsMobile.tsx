@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Bell, CheckCircle2, WifiOff, Cpu, MemoryStick, HardDrive, RefreshCw, Zap, Key } from "lucide-react";
+import { AlertTriangle, CheckCircle2, WifiOff, Cpu, MemoryStick, HardDrive, Zap, Key } from "lucide-react";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
 import { Alert, AlertKind, AlertSeverity } from "../types/alert";
@@ -166,10 +166,9 @@ function AlertCard({
 
 export default function AlertsMobile() {
   const navigate = useNavigate();
-  const { alerts, alertCount, reloadAlerts } = useAppData();
+  const { alerts, reloadAlerts } = useAppData();
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [dismissingIds, setDismissingIds] = useState<Set<number>>(new Set());
-  const [reloading, setReloading] = useState(false);
 
   const filtered = applyFilter(alerts, activeFilter);
 
@@ -189,48 +188,10 @@ export default function AlertsMobile() {
     }
   };
 
-  const handleReload = async () => {
-    setReloading(true);
-    reloadAlerts();
-    // give it a moment to fetch
-    await new Promise((r) => setTimeout(r, 1200));
-    setReloading(false);
-  };
-
   return (
     <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 112px)" }}>
-      {/* ── Header ── */}
-      <div
-        className="sticky top-0 z-10 flex items-center justify-between px-4 py-3"
-        style={{
-          background: "var(--th-bg-main)",
-          borderBottom: "1px solid var(--th-border-subtle)",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <Bell className="h-4 w-4" style={{ color: "var(--th-text-muted)" }} />
-          <span className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>
-            Alerts
-          </span>
-          {alertCount.total_open > 0 && (
-            <span
-              className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
-              style={{ background: "#ef4444" }}
-            >
-              {alertCount.total_open > 99 ? "99+" : alertCount.total_open}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => void handleReload()}
-          className="rounded-lg p-1.5 transition-colors active:bg-white/[0.06]"
-          style={{ color: "var(--th-text-muted)" }}
-          title="Refresh"
-        >
-          <RefreshCw className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`} />
-        </button>
-      </div>
+      {/* Mobile UI 2.0: the screen title lives in MobileTopBar; the open count
+          lives in the BottomNav badge (single source — MOBILE-DESIGN-SPEC.md). */}
 
       {/* ── Filter pills ── */}
       <div

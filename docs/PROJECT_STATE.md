@@ -260,6 +260,39 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
     `trusted_domains` table in test setup) — not caused by recent work.
 13. Deployments page serves mock data (`/deployments/recent` is hardcoded).
 
+# RDP TECHI MOBILE UI 2.0
+
+| | |
+|---|---|
+| **Status** | IN PROGRESS — Design LOCKED (2026-07-05), implementimi ka nisur |
+| **Current Phase** | Phase 1 — E IMPLEMENTUAR, pret aprovimin e commit-it |
+| **Progress** | Phase 1 gati (kod + verifikim vizual me Playwright); 0/7 faza të commit-uara |
+| **Current Sprint** | Aprovimi i commit-it të Phase 1 → nis Phase 2 (Dashboard) |
+| **Reference Document** | [reference/MOBILE-DESIGN-SPEC.md](reference/MOBILE-DESIGN-SPEC.md) — kontrata zyrtare e dizajnit (design-locked; ndryshimet vetëm me amendament) |
+| **Mockup i aprovuar** | https://claude.ai/code/artifact/af146cd9-d000-49d3-b723-35442ee3eaae |
+
+**Current Priorities**: Phase 1 (shell/nav/tokens/shared) → Phase 2 Dashboard →
+Phase 3 Devices/Search/Filters → Phase 4 Device Details (faqe `/devices/:id`) →
+Phase 5 Alerts → Phase 6 More/Settings/RS → Phase 7 states/a11y/polish.
+Commit në fund të çdo faze, vetëm pas aprovimit; pa push, pa merge, pa deploy.
+
+**Documentation**: specifikimi i plotë, wireframes, design tokens, rregullat
+a11y/responsive dhe Implementation Notes jetojnë VETËM te
+`docs/reference/MOBILE-DESIGN-SPEC.md` (mos e dubliko këtu); progresi i fazave
+përditësohet aty (Progress Log) + kjo tabelë (vetëm rreshtat Status/Phase/
+Progress).
+
+**Known Risks**: (1) regresion desktop nga ndarjet `md:hidden` në AppShell —
+mitigohet duke mos prekur komponentët desktop dhe me `tsc --noEmit` + verifikim
+vizual desktop pas çdo faze; (2) Device Details si faqe e re krah drawer-it
+desktop — komponentë të ndarë, drawer i paprekur; (3) sjellje browser-i mobile
+(pull-to-refresh, keyboard) — testim në pajisje reale në Phase 7.
+
+**Implementation Rules**: vetëm UX/UI mobile (`<768px`); API contracts,
+permissions, auth, realtime, business logic — të paprekura; asnjë ngjyrë
+hardcoded jashtë tokens; asnjë TODO/FIXME/placeholder; devijimet teknike
+regjistrohen si Implementation Notes në spec, jo si ndryshime dizajni.
+
 # Pending Features (committed/decided but not live)
 
 - Deploy of `49fce27` (extended retention 90/60/180-day windows, postgres log

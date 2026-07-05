@@ -100,6 +100,19 @@
   --success: #10B981;
   --info: #38BDF8;
 
+  /* Mobile UI 2.0 tokens (MOBILE-DESIGN-SPEC.md — Design System/Colors) */
+  --th-status-online:   #34d399;
+  --th-status-stale:    #fbbf24;
+  --th-status-offline:  #94a3b8;
+  --th-status-critical: #f87171;
+  --th-status-warning:  #fbbf24;
+  --th-status-info:     #60a5fa;
+  --th-status-maint:    #38bdf8;
+  --th-status-agent:    #a78bfa;
+  --th-ring-track:      #2A2A30;
+  --th-scrim:           rgba(0, 0, 0, 0.62);
+  --th-chip-bg:         rgba(255, 255, 255, 0.05);
+
   color-scheme: dark;
 }
 
@@ -169,6 +182,19 @@ html.light {
   --th-btn-secondary-hover: rgba(15, 23, 42, 0.095);
   --th-btn-danger-bg:       rgba(220, 38, 38, 0.09);
   --th-btn-danger-hover:    rgba(220, 38, 38, 0.14);
+
+  /* Mobile UI 2.0 tokens (MOBILE-DESIGN-SPEC.md — Design System/Colors) */
+  --th-status-online:   #059669;
+  --th-status-stale:    #b45309;
+  --th-status-offline:  #64748b;
+  --th-status-critical: #dc2626;
+  --th-status-warning:  #b45309;
+  --th-status-info:     #2563eb;
+  --th-status-maint:    #0284c7;
+  --th-status-agent:    #7c3aed;
+  --th-ring-track:      #D9DAE0;
+  --th-scrim:           rgba(15, 15, 20, 0.45);
+  --th-chip-bg:         rgba(20, 20, 28, 0.05);
 
   color-scheme: light;
 }
@@ -1035,4 +1061,21 @@ html.light .drawer-table-head {
       transform: none !important;
     }
   }
+}
+
+/* ══════════════════════════════════════════════════════
+   Mobile UI 2.0 (docs/reference/MOBILE-DESIGN-SPEC.md)
+   ══════════════════════════════════════════════════════ */
+
+@keyframes m-pulse {
+  50% { opacity: 0.35; }
+}
+
+.m-live-dot {
+  animation: m-pulse 2.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-live-dot { animation: none; }
+  .m-anim { transition: none !important; }
 }

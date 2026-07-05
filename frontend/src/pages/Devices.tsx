@@ -622,24 +622,8 @@ export default function Devices() {
 
   return (
     <section className="premium-page devices-premium min-w-0 space-y-5">
-      {/* Mobile header — minimal, shown below md only */}
-      <div className="md:hidden flex items-center justify-between px-1">
-        <h1 className="text-xl font-bold" style={{ color: "var(--th-text-primary)" }}>
-          Devices
-        </h1>
-        {alertCount.total_open > 0 && (
-          <span
-            className="rounded-full px-2.5 py-0.5 text-[11px] font-bold"
-            style={{
-              background: "rgba(239,68,68,0.15)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              color: "#f87171",
-            }}
-          >
-            {alertCount.total_open} alert{alertCount.total_open !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
+      {/* Mobile: the screen title lives in MobileTopBar (Mobile UI 2.0);
+          the alert count lives in the BottomNav badge. */}
 
       {/* Desktop header card — hidden on mobile */}
       <div className="hidden md:block premium-card overflow-hidden p-5 md:p-6">
