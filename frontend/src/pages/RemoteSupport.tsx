@@ -29,6 +29,7 @@ import {
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
+import { RemoteSupportMobileList } from "../components/mobile/RemoteSupportMobileList";
 
 // ------------------------------------------------------------------ //
 // Status helpers                                                       //
@@ -371,15 +372,33 @@ export default function RemoteSupport() {
   // Render                                                            //
   // ---------------------------------------------------------------- //
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Activity className="h-6 w-6 animate-spin" style={{ color: "var(--th-text-muted)" }} />
-      </div>
-    );
-  }
-
   return (
+    <>
+      {/* Mobile Remote Support (Mobile UI 2.0 — MOBILE-DESIGN-SPEC.md,
+          Remote Support). Reuses the same filtered device list, search
+          state and action handlers as the desktop view below. */}
+      <div className="md:hidden">
+        <RemoteSupportMobileList
+          devices={filtered}
+          loading={loading}
+          error={error}
+          search={search}
+          onSearchChange={setSearch}
+          actionStates={actionStates}
+          onConnect={(d) => void handleConnect(d)}
+          onRepair={(d) => void handleRepair(d)}
+          onRestart={(d) => void handleRestart(d)}
+          onRetry={() => void runNow()}
+        />
+      </div>
+
+      {/* Desktop Remote Support — unchanged below */}
+      <div className="hidden md:block">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <Activity className="h-6 w-6 animate-spin" style={{ color: "var(--th-text-muted)" }} />
+          </div>
+        ) : (
     <section className="space-y-5">
       {/* Toasts */}
       <div className="fixed right-4 top-4 z-50 flex flex-col gap-2">
@@ -862,6 +881,9 @@ export default function RemoteSupport() {
         </div>
       )}
     </section>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyRound, LogOut, Moon, Sun } from "lucide-react";
+import { Copy, KeyRound, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
@@ -7,10 +7,23 @@ import ChangePasswordModal from "../components/ChangePasswordModal";
 import pkg from "../../package.json";
 
 /**
- * Settings — Phase 1 minimal-but-real scope (MOBILE-DESIGN-SPEC.md,
- * Implementation Note #1): Appearance, Account, About, Sign out.
- * Phase 6 adds System theme, notifications and preferences.
+ * Settings (docs/reference/MOBILE-DESIGN-SPEC.md — Settings). Phase 6 adds
+ * System theme, Preferences (default landing screen — a real, working
+ * preference, wired into Login.tsx) and Diagnostics. Notifications are
+ * intentionally NOT here yet: Web Push needs backend infra (VAPID,
+ * subscriptions) that does not exist — see Known Limitations; adding the
+ * toggle now would be a non-functional placeholder, which the Quality
+ * Rules forbid.
  */
+
+const DEFAULT_SCREEN_KEY = "techi.preferences.defaultScreen";
+export type DefaultScreen = "/" | "/devices" | "/alerts";
+
+export function getPreferredDefaultScreen(): DefaultScreen {
+  if (typeof window === "undefined") return "/";
+  const stored = window.localStorage.getItem(DEFAULT_SCREEN_KEY);
+  return stored === "/devices" || stored === "/alerts" ? stored : "/";
+}
 
 function Section({
   title,
@@ -39,32 +52,59 @@ function Section({
 
 export default function Settings() {
   const { user, logout } = useAuth();
-  const { theme, toggle } = useTheme();
-  const { fleetOverview } = useAppData();
+  const { themePreference, setThemeMode } = useTheme();
+  const { fleetOverview, realtimeStatus } = useAppData();
   const [showChangePwd, setShowChangePwd] = useState(false);
-
-  const setTheme = (target: "dark" | "light") => {
-    if (theme !== target) toggle();
-  };
+  const [defaultScreen, setDefaultScreen] = useState<DefaultScreen>(getPreferredDefaultScreen);
+  const [copied, setCopied] = useState(false);
 
   const themeOptions = [
     { id: "dark" as const, label: "Dark", icon: Moon },
     { id: "light" as const, label: "Light", icon: Sun },
+    { id: "system" as const, label: "System", icon: Monitor },
   ];
+
+  const screenOptions: { id: DefaultScreen; label: string }[] = [
+    { id: "/", label: "Dashboard" },
+    { id: "/devices", label: "Devices" },
+    { id: "/alerts", label: "Alerts" },
+  ];
+
+  const handleDefaultScreen = (id: DefaultScreen) => {
+    setDefaultScreen(id);
+    window.localStorage.setItem(DEFAULT_SCREEN_KEY, id);
+  };
+
+  const handleCopyDiagnostics = async () => {
+    const info = [
+      `App version: v${pkg.version}`,
+      `Active agent: ${fleetOverview?.active_agent_version ?? "—"}`,
+      `Realtime status: ${realtimeStatus}`,
+      `User: ${user?.username ?? "—"} (${user?.role ?? "—"})`,
+      `Time: ${new Date().toISOString()}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(info);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard permission denied — nothing to recover from client-side
+    }
+  };
 
   return (
     <div className="mx-auto flex max-w-md flex-col gap-3 md:max-w-2xl">
       <Section title="Appearance">
         <div className="flex gap-2" role="radiogroup" aria-label="Theme">
           {themeOptions.map(({ id, label, icon: Icon }) => {
-            const active = theme === id;
+            const active = themePreference === id;
             return (
               <button
                 key={id}
                 type="button"
                 role="radio"
                 aria-checked={active}
-                onClick={() => setTheme(id)}
+                onClick={() => setThemeMode(id)}
                 className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl text-[13px] font-bold transition-colors"
                 style={{
                   background: active ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
@@ -116,23 +156,61 @@ export default function Settings() {
         </Section>
       )}
 
-      <Section title="About">
+      <Section title="Preferences">
+        <p className="mb-[10px] text-[12px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>
+          Default screen on open
+        </p>
+        <div className="flex gap-2" role="radiogroup" aria-label="Default screen">
+          {screenOptions.map(({ id, label }) => {
+            const active = defaultScreen === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => handleDefaultScreen(id)}
+                className="flex min-h-[40px] flex-1 items-center justify-center rounded-lg text-[12.5px] font-bold transition-colors"
+                style={{
+                  background: active ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
+                  border: `1px solid ${active ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
+                  color: active ? "var(--th-accent)" : "var(--th-text-secondary)",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      <Section title="Diagnostics">
         <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[12.5px]">
-          <dt style={{ color: "var(--th-text-muted)" }}>App version</dt>
+          <dt style={{ color: "var(--th-text-muted)" }}>Realtime</dt>
           <dd
             className="font-semibold"
-            style={{ color: "var(--th-text-primary)", fontFamily: '"JetBrains Mono", monospace' }}
+            style={{ color: realtimeStatus === "connected" ? "var(--th-status-online)" : "var(--th-status-warning)" }}
           >
+            {realtimeStatus}
+          </dd>
+          <dt style={{ color: "var(--th-text-muted)" }}>App version</dt>
+          <dd className="font-semibold" style={{ color: "var(--th-text-primary)", fontFamily: '"JetBrains Mono", monospace' }}>
             v{pkg.version}
           </dd>
           <dt style={{ color: "var(--th-text-muted)" }}>Active agent</dt>
-          <dd
-            className="font-semibold"
-            style={{ color: "var(--th-text-primary)", fontFamily: '"JetBrains Mono", monospace' }}
-          >
+          <dd className="font-semibold" style={{ color: "var(--th-text-primary)", fontFamily: '"JetBrains Mono", monospace' }}>
             {fleetOverview?.active_agent_version ?? "—"}
           </dd>
         </dl>
+        <button
+          type="button"
+          onClick={() => void handleCopyDiagnostics()}
+          className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-lg text-[12.5px] font-bold"
+          style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "Copied!" : "Copy diagnostic info"}
+        </button>
       </Section>
 
       <button

@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { getPreferredDefaultScreen } from "./Settings";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -11,7 +12,11 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const target = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/";
+  // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Settings/Preferences): honor the
+  // user's preferred landing screen only for a plain login, never
+  // overriding a protected-route redirect ("from").
+  const target =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || getPreferredDefaultScreen();
 
   if (user) return <Navigate to={target} replace />;
 
