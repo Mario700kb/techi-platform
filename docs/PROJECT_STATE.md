@@ -269,7 +269,7 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 |---|---|
 | **Status** | ✅ DEPLOYED — të 7 fazat live në prodhim (2026-07-06), verifikuar me Playwright kundër https://rdp.techi.com.al. 3 raunde rregullimesh pas deploy-it, gjithashtu live. |
 | **Current Phase** | E përfunduar. Punë e ardhshme (Notifications/Web Push, tablet layout, etj.) kërkon amendament të ri të MOBILE-DESIGN-SPEC.md |
-| **Progress** | 7/7 faza të commit-uara: Phase 1 → `27f1687`, Phase 2 → `6db4ed9`, Phase 3 → `e3dcdff`, Phase 4 → `259e1fc`, Phase 5 → `d0dd447`, Phase 6 → `1a660aa`, Phase 7 → `a8a35ea`. Push-uar (`origin/stable/phase-2-heartbeat`) dhe deploy-uar në prodhim 2026-07-06. Post-deploy: Raundi 1 (Software lazy-fetch + Sparkline) → `44770fd`, Raundi 2 (Uptime/Latency format) → `7161f73`, Raundi 3 (No Client te FilterSheet + Disk filter te Alerts) → commit aktual, shih `git log`. |
+| **Progress** | 7/7 faza të commit-uara: Phase 1 → `27f1687`, Phase 2 → `6db4ed9`, Phase 3 → `e3dcdff`, Phase 4 → `259e1fc`, Phase 5 → `d0dd447`, Phase 6 → `1a660aa`, Phase 7 → `a8a35ea`. Push-uar (`origin/stable/phase-2-heartbeat`) dhe deploy-uar në prodhim 2026-07-06. Post-deploy: Raundi 1 (Software lazy-fetch + Sparkline) → `44770fd`, Raundi 2 (Uptime/Latency format) → `7161f73`, Raundi 3 (No Client te FilterSheet + Disk filter te Alerts) → `c1b5f9f`. |
 | **Current Sprint** | I mbyllur. Shih CHANGELOG-SOLUTIONS.md (2026-07-06) për detajet e deploy-it dhe 3 raundeve të rregullimeve. |
 | **Reference Document** | [reference/MOBILE-DESIGN-SPEC.md](reference/MOBILE-DESIGN-SPEC.md) — kontrata zyrtare e dizajnit (design-locked; ndryshimet vetëm me amendament) |
 | **Mockup i aprovuar** | https://claude.ai/code/artifact/af146cd9-d000-49d3-b723-35442ee3eaae |
