@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Box } from "lucide-react";
 import { Client } from "../api/clients";
 import { DeviceFilters } from "../api/devices";
 import { QuickFilter } from "./DevicesTable";
@@ -47,6 +48,7 @@ interface FilterSheetProps {
   onQuickFilterChange: (f: QuickFilter) => void;
   clients?: Client[];
   clientGroups?: Record<string, Record<string, number>>;
+  unassignedCount?: number;
   filters: DeviceFilters;
   onFilterChange: (key: keyof DeviceFilters, value: string | boolean | undefined) => void;
 }
@@ -58,6 +60,7 @@ export function FilterSheet({
   onQuickFilterChange,
   clients = [],
   clientGroups,
+  unassignedCount,
   filters,
   onFilterChange,
 }: FilterSheetProps) {
@@ -156,7 +159,7 @@ export function FilterSheet({
         </div>
 
         {/* Client + subgroups */}
-        {validClients.length > 0 && (
+        {(validClients.length > 0 || (unassignedCount ?? 0) > 0) && (
           <div>
             <p
               className="mb-[10px] text-[10px] font-extrabold uppercase tracking-[0.1em]"
@@ -179,6 +182,30 @@ export function FilterSheet({
                 }}
               >
                 All clients
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftClientId(-1);
+                  setDraftDeviceType(undefined);
+                }}
+                className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 text-[13px] font-bold transition-colors"
+                style={{
+                  background: draftClientId === -1 ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
+                  border: `1px solid ${draftClientId === -1 ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
+                  color: draftClientId === -1 ? "var(--th-accent)" : "var(--th-text-primary)",
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Box className="h-4 w-4" />
+                  No Client
+                </span>
+                {unassignedCount !== undefined && (
+                  <span className="text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
+                    {unassignedCount}
+                  </span>
+                )}
               </button>
 
               {validClients.map((client) => {

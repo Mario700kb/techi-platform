@@ -56,6 +56,7 @@ interface DevicesTableProps {
   onLimitChange?: (limit: number) => void;
   clients?: Client[];
   clientGroups?: Record<string, Record<string, number>>;
+  unassignedCount?: number;
   onMobileLoadMore?: () => void;
   mobileHasMore?: boolean;
   mobileLoadingMore?: boolean;
@@ -470,6 +471,7 @@ const DevicesTable = memo(function DevicesTable({
   onLimitChange,
   clients,
   clientGroups,
+  unassignedCount,
   onMobileLoadMore,
   mobileHasMore = false,
   mobileLoadingMore = false,
@@ -627,7 +629,16 @@ const DevicesTable = memo(function DevicesTable({
         onClear: () => onQuickFilterChange("all"),
       });
     }
-    if (filters.client_id) {
+    if (filters.client_id === -1) {
+      chips.push({
+        key: "client",
+        label: "No Client",
+        onClear: () => {
+          onFilterChange("client_id", undefined);
+          onFilterChange("device_type", undefined);
+        },
+      });
+    } else if (filters.client_id) {
       const clientName = clients?.find((c) => c.id === filters.client_id)?.name;
       if (clientName) {
         chips.push({
@@ -1752,6 +1763,7 @@ const DevicesTable = memo(function DevicesTable({
         onQuickFilterChange={onQuickFilterChange}
         clients={clients}
         clientGroups={clientGroups}
+        unassignedCount={unassignedCount}
         filters={filters}
         onFilterChange={onFilterChange}
       />

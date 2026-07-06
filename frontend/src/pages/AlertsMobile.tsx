@@ -59,7 +59,7 @@ function KindIcon({ kind, className }: { kind: AlertKind; className?: string }) 
   return <AlertTriangle className={cls} />;
 }
 
-type FilterId = "all" | "critical" | "warning" | "device_offline" | "high_cpu" | "high_ram" | "token";
+type FilterId = "all" | "critical" | "warning" | "device_offline" | "high_cpu" | "high_ram" | "low_disk" | "token";
 
 const FILTER_PILLS: { id: FilterId; label: string }[] = [
   { id: "all", label: "All" },
@@ -68,6 +68,7 @@ const FILTER_PILLS: { id: FilterId; label: string }[] = [
   { id: "device_offline", label: "Offline" },
   { id: "high_cpu", label: "CPU" },
   { id: "high_ram", label: "RAM" },
+  { id: "low_disk", label: "Disk" },
   { id: "token", label: "Token" },
 ];
 

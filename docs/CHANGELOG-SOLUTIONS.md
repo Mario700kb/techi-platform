@@ -27,6 +27,87 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-06] Mobile UI 2.0 — 3 raunde rregullimesh pas deploy-it
+
+### Problemi
+
+Pas deploy-it të Mobile UI 2.0 (shih entry-n më poshtë), owner-i rishikoi
+prodhimin live dhe raportoi tre probleme në tre raunde të veçanta:
+Raundi 1 — Software te Device Details fetch-ohej automatikisht sapo hapej
+accordion-i (rrezik ngarkese DB të panevojshme) dhe seksioni Performance i
+mungonte sparkline-i i mockup-it dhe dukej me "të dhëna jo reale". Raundi 2
+— Uptime/Latency në Device Details mobile "s'janë reale" krahasuar me web.
+Raundi 3 — Fleet Tree mobile i mungon opsioni "No Client" (i pranishëm në
+Desktop), dhe Alerts mobile s'ka kategori filtri "Disk"/"Storage" për
+alertet e diskut.
+
+### Analiza
+
+Raundi 1: `DeviceInventoryService.get_inventory()` në backend u lexua
+drejtpërdrejt — është një lookup i lehtë me një rresht, jo një query e
+rëndë; problemi real ishte payload-i JSON (software/services/processes të
+plota), jo kostoja e DB-së, dhe fakti që mobile hapet më rastësisht se
+desktop. Raundi 2: krahasimi me `DeviceDrawer.tsx` tregoi se e dhëna
+(`uptime_seconds`, `heartbeat_latency_ms` nga `useDeviceTelemetry`) ishte
+identike me desktop-un — divergjenca ishte thjesht formatimi
+(`formatUptime()` mungonte në mobile, ndante vetëm në orë totale). Raundi
+3: `DeviceTree.tsx` (Desktop) konfirmoi konventën `client_id = -1` +
+`treeCounts.unassigned` për "No Client"; `AlertsMobile.tsx` konfirmoi se
+`low_disk` ekzistonte tashmë plotësisht në `AlertKind`/`KIND_LABEL`/
+`KindIcon` por mungonte thjesht nga `FilterId`/`FILTER_PILLS`.
+
+### Shkaku
+
+Raundi 1: mungesë gate-i eksplicit për një fetch të shtrenjtë në payload.
+Raundi 2: divergjencë formatimi e prezantuar gjatë implementimit fillestar
+të Phase 4 (mobile s'e riprodhoi `formatUptime()` e Desktop-it). Raundi 3:
+dy feature paritetesh Desktop→Mobile të harruara gjatë Phase 3/5 fillestare
+(elementë additivë, jo bug logjike).
+
+### Zgjidhja
+
+Raundi 1 (commit `44770fd`): `Software` kërkon tap eksplicit ("Load
+software list") para se të thërrasë `getDeviceInventory`; shtuar
+`Sparkline.tsx` (SVG, real) i ushqyer nga `getDeviceTelemetryHistory`.
+Raundi 2 (commit `7161f73`): `formatUptime()` në `DeviceDetailsMobile.tsx`
+bërë identike me `DeviceDrawer.tsx`; hequr heuristika e gabuar "0ms =
+e pamatur" — Latency tani përdor saktësisht të njëjtin kontroll `!== null`
+si Desktop. Raundi 3: shtuar buton "No Client" te `FilterSheet.tsx`
+(menjëherë pas "All clients", ikonë `Box`, ripërdor `client_id = -1`
+ekzistues, `unassignedCount` nga `fleetOverview.tree_counts.unassigned`);
+shtuar `low_disk`/"Disk" te `FilterId`/`FILTER_PILLS` në `AlertsMobile.tsx`
+(aditiv i pastër, `applyFilter`'s fallback tashmë e mbulonte).
+
+### Ndryshimet
+
+Raundi 1: `frontend/src/pages/DeviceDetailsMobile.tsx`,
+`frontend/src/components/mobile/Sparkline.tsx` (i ri). Raundi 2:
+`frontend/src/pages/DeviceDetailsMobile.tsx`. Raundi 3:
+`frontend/src/components/FilterSheet.tsx`,
+`frontend/src/components/DevicesTable.tsx`, `frontend/src/pages/Devices.tsx`,
+`frontend/src/pages/AlertsMobile.tsx`. Të tre raundet: vetëm frontend, zero
+ndryshim backend/API, zero prekje Desktop (verifikuar me smoke test
+Playwright kundër komponentëve desktop përkatës). `docs/reference/
+MOBILE-DESIGN-SPEC.md` përditësuar me Implementation Notes #8–#11 dhe
+rreshta Progress Log pas secilit raund.
+
+### Rezultati
+
+Të tre raundet u verifikuan me Playwright (mock data + build prodhimi
+`vite preview`) para push+deploy, dhe me verifikim live kundër
+https://rdp.techi.com.al pas deploy-it. 0 gabime console në çdo rast.
+Deploy: `docker compose -p techi-platform build frontend && ... up -d
+frontend` (frontend-only, pa prekur backend/postgres).
+
+### Mësimet
+
+"E dhëna është 'jo reale'" nga një owner që krahason Mobile me Desktop
+shpesh do të thotë **divergjencë formatimi/veçorie**, jo të dhëna false —
+krahasimi drejtpërdrejt me komponentin ekuivalent të Desktop-it (para se
+të supozohet një bug backend-i) e zgjidhi çdo raund më shpejt dhe me
+ndryshim më të vogël se sa do të kishte kërkuar një "rregullim" i ri
+spekulativ.
+
 ## [2026-07-06] Mobile UI 2.0 — implementim i plotë (7 faza) + deploy në prodhim
 
 ### Problemi
