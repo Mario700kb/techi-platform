@@ -27,6 +27,72 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-06] JetBrains Mono self-hosted — hiqet varësia nga Google Fonts CDN
+
+### Problemi
+
+Owner-i vërejti te DevTools Issues (prodhim, desktop) një "Page Error:
+failed to load a stylesheet" për `fonts.googleapis.com/css2?family=
+JetBrains+Mono...` (`index.html:17`).
+
+### Analiza
+
+URL-ja e font-it ishte valide (curl → 200 OK; Chromium i pastër kundër
+prodhimit → stylesheet 200, zero kërkesa të dështuara). Dështimi ndodhte
+vetëm në browser-in e owner-it sepse ka AdBlock të instaluar — shumë
+filter-lista privatësie bllokojnë Google Fonts. Pasoja: monospace i
+sistemit në vend të JetBrains Mono për çdo operator me ad-blocker (pjesa
+më e madhe e teknikëve). Dy issues të tjera në panel u analizuan si
+jo-probleme: "bounce tracking 486643457" = heuristikë e Chrome mbi
+protokollet custom `techiremotesupport://` / `rustdesk://` të butonit
+Connect (ID-ja interpretohet si hostname — s'ka tracking real, s'ka
+veprim); "16 form fields without id/name" = rekomandim autofill-i i
+Chrome-it (kategoria Improvements), jo error.
+
+### Shkaku
+
+Varësi e vetme runtime nga një CDN palë e tretë (Google Fonts) për
+JetBrains Mono — të bllokueshme nga çdo ad-blocker, GDPR-gri, dhe jashtë
+mbulimit të service worker-it offline.
+
+### Zgjidhja
+
+Self-hosting: shkarkuar saktësisht të njëjtat woff2 latin-subset që
+shërbente Google (një file variabël wght 400–800 për upright — konfirmuar
+me fontTools `fvar` axis — dhe një statik 400 italic; latin U+0000-00FF
+mbulon edhe ë/ç shqip), vendosur te `frontend/public/fonts/`; `@font-face`
+në krye të `index.css` me të njëjtat `unicode-range`/`font-display: swap`;
+hequr 3 rreshtat e Google Fonts (2 preconnect + stylesheet) nga
+`index.html`; CSP në `nginx.conf` u SHTRËNGUA — `fonts.googleapis.com`
+hequr nga `style-src`, `fonts.gstatic.com` hequr nga `font-src` (tani
+`font-src 'self' data:`).
+
+### Ndryshimet
+
+`frontend/public/fonts/jetbrains-mono-latin.woff2` (i ri, 31KB),
+`frontend/public/fonts/jetbrains-mono-latin-italic.woff2` (i ri, 22KB),
+`frontend/src/index.css` (@font-face), `frontend/index.html` (hequr 3
+rreshta), `frontend/nginx.conf` (CSP më e ngushtë). Zero ndryshim
+backend/API/komponentësh.
+
+### Rezultati
+
+Verifikuar Playwright kundër build-it të prodhimit (`vite preview`):
+`document.fonts.check` true për 400/700/italic; vetëm 2 kërkesa fonts,
+të dyja nga origjina vetjake; zero kërkesa te `fonts.googleapis.com`/
+`fonts.gstatic.com`; zero referenca Google në `dist/`. Font-et bien nën
+rregullin ekzistues nginx `\.woff2$` (1 vit immutable — korrekte këtu:
+nëse përditësohen, riemërtohen) dhe cache-ohen edhe nga runtime cache i
+service worker-it (mbulim offline).
+
+### Mësimet
+
+Për një konsolë të brendshme MSP, çdo asset kritik UI duhet të vijë nga
+`'self'` — CDN-të e palëve të treta dështojnë në mënyra të padukshme
+(ad-blockers, DNS filtering në rrjetet e klientëve) pikërisht për
+audiencën që e përdor më shumë (teknikë me ad-blocker). Bonus: heqja e
+një origjine nga CSP është përmirësim sigurie në vetvete.
+
 ## [2026-07-06] "Add to Home Screen" në iOS shfaqte logo-n e vjetër — file i vjetëruar + cache 1-vjeçar
 
 ### Problemi

@@ -170,6 +170,10 @@ Three package types in Agent Packages UI, all can be active simultaneously
 - Heartbeat identity is payload-based (agent_id/device_id/rustdesk_id) — the
   heartbeat endpoint itself is not operator-authenticated by design.
 - Security headers middleware (nosniff, referrer-policy); CORS configurable.
+- Frontend CSP (nginx.conf): fully self-contained since 2026-07-06 —
+  JetBrains Mono is self-hosted under `/fonts/` (was Google Fonts CDN,
+  which ad blockers routinely blocked); `style-src`/`font-src` no longer
+  allow any third-party origin.
 - **Open issues**: enrollment token plaintext in `\\DOMAIN\NETLOGON\techi-deploy.cmd`
   (readable by any domain user — ACL restriction pending); code signing declined
   by owner (AMSI-strict domains need first hop via GPO instead).
