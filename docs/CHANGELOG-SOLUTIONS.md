@@ -27,6 +27,87 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-06] "Add to Home Screen" në iOS shfaqte logo-n e vjetër — file i vjetëruar + cache 1-vjeçar
+
+### Problemi
+
+Owner-i raportoi se ikona e "Save to Home Screen" në iOS mbetej ajo e
+VJETËR edhe pas ndryshimit të logo-s, dhe që fshirja+rishtimi i
+shkurtores nga home screen nuk ndihmonte fare — e njëjta gjë përsëritej.
+
+### Analiza
+
+`git log` zbuloi që `frontend/public/apple-touch-icon.png` (referuar te
+`<link rel="apple-touch-icon">` në `index.html`, mekanizmi kryesor që iOS
+Safari përdor për "Add to Home Screen") s'ishte prekur që nga commit
+`aec945e` (shumë i vjetër) — ndërsa `manifest.json`'s `/icons/*.png` u
+rregulluan më vonë te commit `bf32ef8` ("fix: PWA icons from real
+Logo.png"). Krahasimi vizual (Read tool mbi të dy PNG-të) e konfirmoi:
+`icon-512.png` tregonte logo-n e saktë aktuale (sfond i errët, "techi"
+wordmark, gradient rozë→portokalli), `apple-touch-icon.png` tregonte një
+version krejt tjetër, të vjetër, të prerë keq (flakë portokalli e
+sheshtë). iOS injoron kryesisht manifest.json për home-screen icon dhe
+mbështetet te `apple-touch-icon` link tag-u — kështu që rregullimi i
+`bf32ef8` kurrë s'e prekte atë që iOS-i faktikisht shfaq. Gjetje e dytë,
+më e rëndësishme afatgjatë: `nginx.conf`'s rregulli gjenerik
+`location ~* \.(js|css|png|...)$` i cakonte `apple-touch-icon.png` dhe
+`favicon.svg`/`favicon.png` me `Cache-Control: public, max-age=31536000,
+immutable` (1 VIT) — ndryshe nga `/icons/` që kishte tashmë rregull të
+veçantë me `max-age=86400`. Kjo shpjegon pse "remove+add" nuk ndihmoi:
+edhe nëse skedari të ndryshohej, header-i "immutable" 1-vjeçar i thoshte
+çdo cache (browser, sistemi iOS) të mos e rikontrollonte fare për një vit.
+
+### Shkaku
+
+Dy shkaqe të pavarura, të dyja duhej të rregulloheshin: (1) vetë skedari
+`apple-touch-icon.png` s'u rigjenerua kurrë kur logo-ja u ndryshua/u
+rregullua për manifest-in; (2) `nginx.conf` s'kishte një rregull të
+veçantë për ikonat rrënjë (root-level) siç kishte për `/icons/`, kështu që
+ato binin nën rregullin gjenerik immutable-1-vit të menduar për bundle-t e
+hash-uara të Vite-it (që VËRTET s'ndryshojnë kurrë nën të njëjtin emër,
+ndryshe nga këto ikona).
+
+### Zgjidhja
+
+(1) Rigjeneruar `apple-touch-icon.png` (180×180, `sips`) nga i njëjti
+burim si `icon-512.png` (logo-ja aktuale korrekte); bump `?v=4→5` te
+`index.html` për cache-bust të menjëhershëm anë-browser. (2) Shtuar një
+`location` e re e veçantë në `nginx.conf` (`favicon.svg`, `favicon.png`,
+`apple-touch-icon.png`) me të njëjtën politikë ditore (`max-age=86400`,
+JO immutable) si `/icons/` — vendosur PARA rregullit gjenerik `\.png$` në
+skedar, që nginx (rregulla regex zgjidhen sipas radhës së parë-që-
+përputhet) ta zgjedhë këtë në vend të asaj immutable.
+
+### Ndryshimet
+
+`frontend/public/apple-touch-icon.png` (rigjeneruar), `frontend/index.html`
+(cache-bust bump), `frontend/nginx.conf` (location e re). Zero ndryshim
+backend/API, zero ndryshim komponentësh React — thjesht asete + config
+serveri statik.
+
+### Rezultati
+
+Verifikuar lokalisht (`npm run build`): `dist/apple-touch-icon.png` e re,
+`dist/index.html` përmban `?v=5`. Nginx.conf u rishikua rresht-për-rresht
+për radhën e location-eve (rregullat regex `~*` zgjidhen sipas radhës së
+parë-që-përputhet në skedar, jo sipas specifikimit — rregulli i ri është
+para atij gjenerik). Verifikimi live pas deploy: header-at `Cache-Control`
+mbi `https://rdp.techi.com.al/apple-touch-icon.png` duhet të tregojnë
+`max-age=86400` (jo `31536000, immutable`).
+
+### Mësimet
+
+Kur një "fix" i mëparshëm (`bf32ef8`, rregullimi i ikonave PWA) prek
+VETËM `manifest.json`'s icons array, kontrollo GJITHMONË nëse ka file të
+tjerë referuar drejtpërdrejt nga `index.html` (`apple-touch-icon`,
+`favicon`) që mbeten jashtë — iOS Safari në veçanti u jep përparësi këtyre
+mbi manifest-in. Dhe: një header `Cache-Control: immutable` i gabuar mbi
+një asset JO të hash-uar (që ndryshon me të njëjtin emër file-i) e bën
+çdo "fix" të ardhshëm të padukshëm për muaj/vite, pavarësisht sa herë
+rifreskon ose fshin+rishton — duhet verifikuar që politika e cache-ut
+përputhet me natyrën reale të file-it (i hash-uar+immutable, apo i
+riemërtueshëm+revalidate).
+
 ## [2026-07-06] Mobile UI 2.0 — 4 raunde rregullimesh pas deploy-it
 
 ### Problemi
