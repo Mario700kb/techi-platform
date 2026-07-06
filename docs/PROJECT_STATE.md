@@ -265,9 +265,9 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | | |
 |---|---|
 | **Status** | IN PROGRESS — Design LOCKED (2026-07-05), implementimi ka nisur |
-| **Current Phase** | Phase 1 — E IMPLEMENTUAR, pret aprovimin e commit-it |
-| **Progress** | Phase 1 gati (kod + verifikim vizual me Playwright); 0/7 faza të commit-uara |
-| **Current Sprint** | Aprovimi i commit-it të Phase 1 → nis Phase 2 (Dashboard) |
+| **Current Phase** | Phase 2 — E IMPLEMENTUAR, pret commit (faza e mëparshme e commit-uar) |
+| **Progress** | 1/7 faza të commit-uara (Phase 1 → `27f1687`); Phase 2 gati |
+| **Current Sprint** | Ekzekutim i vazhdueshëm i fazave 2–7 sipas aprovimit të ownerit ("mbyll të gjitha fazat dhe bëjmë commit + deploy") |
 | **Reference Document** | [reference/MOBILE-DESIGN-SPEC.md](reference/MOBILE-DESIGN-SPEC.md) — kontrata zyrtare e dizajnit (design-locked; ndryshimet vetëm me amendament) |
 | **Mockup i aprovuar** | https://claude.ai/code/artifact/af146cd9-d000-49d3-b723-35442ee3eaae |
 

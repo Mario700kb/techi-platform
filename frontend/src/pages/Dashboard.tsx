@@ -282,6 +282,7 @@ export default function Dashboard() {
           patchCount={patchCount}
           alertsTotal={totalOpenAlerts}
           agentsOutdated={fleetOverview?.agents_outdated ?? 0}
+          actions={recentActions}
           loading={loading}
         />
       </div>

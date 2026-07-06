@@ -517,7 +517,7 @@ layout 768–1024.
 | Faza | Statusi | Data | Shënime |
 |---|---|---|---|
 | 1 — Shell, Nav, Theme, Shared | ✅ Implementuar — pret aprovimin e commit-it | 2026-07-05 | Tokens dark+light; MobileTopBar + FreshnessPill; BottomNav 4-tab (More, 99+, aria-current); More + Settings (minimal — Impl. Note #1); MobileSheet/Snackbar/primitives gati për fazat 2–6; sidebar mobile i hequr; header-at mobile të dublikuar hequr nga Devices/AlertsMobile. Verifikuar me Playwright kundër dev + API mock (dark/light/desktop — 0 gabime console; desktop identik). Known issue: asnjë. Regression risk: AppShell md-split (i verifikuar vizualisht). Remaining: asgjë për Phase 1. |
-| 2 — Dashboard | — | | |
+| 2 — Dashboard | ✅ Implementuar — pret aprovimin e commit-it | 2026-07-06 | HealthRing/tiles/Needs Attention theme-aware (tokens, jo hardcoded); shtuar "Stale devices" si rresht normal; shtuar Recent Activity nga `getRecentActions` ekzistuese; Alerts tile → `/alerts` (jo filtër Devices). Verifikuar Playwright dark+light — vizualisht i lexueshëm në të dyja, 0 gabime console (përveç WS refused, pritur pa backend real). Known issue: asnjë. Remaining: asgjë. |
 | 3 — Devices, Search, Filters | — | | |
 | 4 — Device Details | — | | |
 | 5 — Alerts | — | | |

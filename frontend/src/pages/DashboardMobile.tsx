@@ -1,5 +1,13 @@
 import { CheckCircle2, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ACTION_LABELS, RemoteActionWithDevice } from "../api/actions";
+import { timeAgo } from "../utils/time";
+
+/**
+ * Mobile Dashboard (MOBILE-DESIGN-SPEC.md — Dashboard).
+ * Theme-aware (tokens only), stale as a normal attention row, and a
+ * Recent-activity feed from the existing recent-actions API.
+ */
 
 interface DashboardMobileProps {
   total: number;
@@ -10,6 +18,7 @@ interface DashboardMobileProps {
   patchCount: number;
   alertsTotal: number;
   agentsOutdated?: number;
+  actions?: RemoteActionWithDevice[];
   loading: boolean;
 }
 
@@ -26,20 +35,15 @@ function HealthRing({
   const circumference = 2 * Math.PI * r;
   const dashOffset = circumference - (pct / 100) * circumference;
   const color =
-    pct >= 90 ? "#34d399" : pct >= 70 ? "#fbbf24" : "#f87171";
+    pct >= 90
+      ? "var(--th-status-online)"
+      : pct >= 70
+      ? "var(--th-status-warning)"
+      : "var(--th-status-critical)";
 
   return (
-    <svg viewBox="0 0 140 140" className="h-36 w-36" aria-label={`${pct}% online`}>
-      {/* Track */}
-      <circle
-        cx="70"
-        cy="70"
-        r={r}
-        fill="none"
-        stroke="#27272a"
-        strokeWidth="10"
-      />
-      {/* Progress arc */}
+    <svg viewBox="0 0 140 140" className="h-36 w-36" role="img" aria-label={`${pct}% online — ${online} nga ${total}`}>
+      <circle cx="70" cy="70" r={r} fill="none" stroke="var(--th-ring-track)" strokeWidth="10" />
       <circle
         cx="70"
         cy="70"
@@ -51,16 +55,16 @@ function HealthRing({
         strokeDashoffset={dashOffset}
         strokeLinecap="round"
         transform="rotate(-90 70 70)"
+        className="m-anim"
         style={{ transition: "stroke-dashoffset 0.8s ease, stroke 0.4s ease" }}
       />
-      {/* Center text */}
       <text
         x="70"
         y="63"
         textAnchor="middle"
         fontSize="26"
-        fontWeight="700"
-        fill="white"
+        fontWeight="800"
+        fill="var(--th-text-primary)"
         fontFamily="inherit"
       >
         {pct}%
@@ -70,12 +74,37 @@ function HealthRing({
         y="81"
         textAnchor="middle"
         fontSize="11"
-        fill="#71717a"
+        fontWeight="600"
+        fill="var(--th-text-muted)"
         fontFamily="inherit"
       >
         {online}/{total} online
       </text>
     </svg>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="w-full overflow-hidden rounded-[14px]"
+      style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ title }: { title: string }) {
+  return (
+    <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+      <p
+        className="text-[11px] font-extrabold uppercase tracking-[0.08em]"
+        style={{ color: "var(--th-text-muted)" }}
+      >
+        {title}
+      </p>
+    </div>
   );
 }
 
@@ -88,6 +117,7 @@ export function DashboardMobile({
   patchCount,
   alertsTotal,
   agentsOutdated = 0,
+  actions = [],
   loading,
 }: DashboardMobileProps) {
   const pct = total > 0 ? Math.round((online / total) * 100) : 0;
@@ -97,82 +127,95 @@ export function DashboardMobile({
       label: "Offline devices",
       count: offline,
       to: "/devices?filter=offline",
-      color: "#94a3b8",
+      color: "var(--th-status-offline)",
+    },
+    {
+      label: "Stale devices",
+      count: stale,
+      to: "/devices?filter=stale",
+      color: "var(--th-status-stale)",
     },
     {
       label: "Critical health",
       count: criticalCount,
       to: "/devices?filter=critical",
-      color: "#f87171",
+      color: "var(--th-status-critical)",
     },
     {
       label: "Pending updates",
       count: patchCount,
       to: "/devices?filter=needs_updates",
-      color: "#fbbf24",
+      color: "var(--th-status-warning)",
     },
     {
       label: "Active alerts",
       count: alertsTotal,
-      to: "/devices?filter=needs_attention",
-      color: "#fb923c",
+      to: "/alerts",
+      color: "var(--th-accent)",
     },
     {
       label: "Agent updates pending",
       count: agentsOutdated,
       to: "/devices?filter=needs_agent_update",
-      color: "#a78bfa",
+      color: "var(--th-status-agent)",
     },
   ].filter((i) => i.count > 0);
 
+  const tiles = [
+    { label: "Total", value: total, color: "var(--th-text-primary)", to: "/devices" },
+    { label: "Online", value: online, color: "var(--th-status-online)", to: "/devices?filter=online" },
+    {
+      label: "Critical",
+      value: criticalCount,
+      color: criticalCount > 0 ? "var(--th-status-critical)" : "var(--th-text-primary)",
+      to: "/devices?filter=critical",
+    },
+    {
+      label: "Alerts",
+      value: alertsTotal,
+      color: alertsTotal > 0 ? "var(--th-status-warning)" : "var(--th-text-primary)",
+      to: "/alerts",
+    },
+  ];
+
   return (
-    <div className="flex flex-col items-center gap-4 pb-2 pt-2">
+    <div className="mx-auto flex max-w-md flex-col items-center gap-3">
       {/* Health ring */}
-      {loading ? (
-        <div
-          className="h-36 w-36 animate-pulse rounded-full"
-          style={{ border: "10px solid #27272a" }}
-        />
-      ) : (
-        <HealthRing pct={pct} online={online} total={total} />
-      )}
+      <div className="pt-1">
+        {loading ? (
+          <div
+            className="h-36 w-36 animate-pulse rounded-full"
+            style={{ border: "10px solid var(--th-ring-track)" }}
+          />
+        ) : (
+          <HealthRing pct={pct} online={online} total={total} />
+        )}
+      </div>
 
       {/* 2×2 stat tiles */}
-      <div className="grid w-full grid-cols-2 gap-3">
-        {[
-          { label: "Total", value: total, color: null, to: "/devices" },
-          { label: "Online", value: online, color: "#34d399", to: "/devices?filter=online" },
-          {
-            label: "Critical",
-            value: criticalCount,
-            color: criticalCount > 0 ? "#f87171" : null,
-            to: "/devices?filter=critical",
-          },
-          {
-            label: "Alerts",
-            value: alertsTotal,
-            color: alertsTotal > 0 ? "#fb923c" : null,
-            to: "/devices?filter=needs_attention",
-          },
-        ].map(({ label, value, color, to }) => (
+      <div className="grid w-full grid-cols-2 gap-[10px]">
+        {tiles.map(({ label, value, color, to }) => (
           <Link
             key={label}
             to={to}
-            className="rounded-xl p-4 transition-opacity active:opacity-75"
+            className="rounded-[14px] p-4 transition-opacity active:opacity-75"
             style={{
               background: "var(--th-bg-card)",
               border: "1px solid var(--th-border-card)",
             }}
           >
             <p
-              className="text-[10px] font-bold uppercase tracking-[0.1em]"
+              className="text-[11px] font-extrabold uppercase tracking-[0.08em]"
               style={{ color: "var(--th-text-muted)" }}
             >
               {label}
             </p>
             <p
-              className="mt-2 text-3xl font-bold"
-              style={{ color: loading ? "var(--th-text-muted)" : (color ?? "white") }}
+              className="num mt-2 text-[27px] font-extrabold tracking-[-0.02em]"
+              style={{
+                color: loading ? "var(--th-text-muted)" : color,
+                fontVariantNumeric: "tabular-nums",
+              }}
             >
               {loading ? "—" : value}
             </p>
@@ -181,38 +224,21 @@ export function DashboardMobile({
       </div>
 
       {/* Needs Attention */}
-      <div
-        className="w-full overflow-hidden rounded-xl"
-        style={{
-          background: "var(--th-bg-card)",
-          border: "1px solid var(--th-border-card)",
-        }}
-      >
-        <div
-          className="px-4 py-3"
-          style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <p
-            className="text-[11px] font-bold uppercase tracking-[0.1em]"
-            style={{ color: "var(--th-text-muted)" }}
-          >
-            Needs Attention
-          </p>
-        </div>
-
+      <Card>
+        <CardHeader title="Needs attention" />
         {loading ? (
           <div className="space-y-2 p-4">
             {[0, 1, 2].map((i) => (
               <div key={i} className="flex animate-pulse items-center justify-between">
-                <div className="h-3 w-32 rounded" style={{ background: "#374151" }} />
-                <div className="h-3 w-8 rounded" style={{ background: "#374151" }} />
+                <div className="h-3 w-32 rounded" style={{ background: "var(--th-ring-track)" }} />
+                <div className="h-3 w-8 rounded" style={{ background: "var(--th-ring-track)" }} />
               </div>
             ))}
           </div>
         ) : issues.length === 0 ? (
           <div className="flex items-center gap-2 p-4">
-            <CheckCircle2 className="h-4 w-4 flex-none text-emerald-400" />
-            <span className="text-[13px] font-semibold text-emerald-400">
+            <CheckCircle2 className="h-4 w-4 flex-none" style={{ color: "var(--th-status-online)" }} />
+            <span className="text-[13px] font-bold" style={{ color: "var(--th-status-online)" }}>
               All systems healthy
             </span>
           </div>
@@ -222,48 +248,75 @@ export function DashboardMobile({
               <Link
                 key={label}
                 to={to}
-                className="flex items-center justify-between px-4 py-3 transition-colors active:bg-white/[0.04]"
+                className="flex min-h-[48px] items-center justify-between px-4 py-3 transition-colors"
                 style={{
                   borderBottom:
-                    idx < issues.length - 1
-                      ? "1px solid var(--th-border-subtle)"
-                      : undefined,
+                    idx < issues.length - 1 ? "1px solid var(--th-border-subtle)" : undefined,
                 }}
               >
-                <span
-                  className="text-[13px] font-semibold"
-                  style={{ color: "var(--th-text-primary)" }}
-                >
+                <span className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>
                   {label}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span
-                    className="text-[15px] font-bold tabular-nums"
-                    style={{ color }}
+                    className="text-[15px] font-extrabold"
+                    style={{ color, fontVariantNumeric: "tabular-nums" }}
                   >
                     {count}
                   </span>
-                  <ChevronRight
-                    className="h-3.5 w-3.5"
-                    style={{ color: "var(--th-text-muted)" }}
-                  />
+                  <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
                 </span>
               </Link>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
-      {/* Stale count indicator (small footnote) */}
-      {!loading && stale > 0 && (
-        <Link
-          to="/devices?filter=stale"
-          className="text-[11px] font-medium transition-opacity active:opacity-70"
-          style={{ color: "#fbbf24" }}
-        >
-          {stale} device{stale !== 1 ? "s" : ""} stale (seen &lt;15 min ago)
-        </Link>
-      )}
+      {/* Recent activity */}
+      <Card>
+        <CardHeader title="Recent activity" />
+        {loading && actions.length === 0 ? (
+          <div className="space-y-2 p-4">
+            {[0, 1].map((i) => (
+              <div key={i} className="h-3 w-48 animate-pulse rounded" style={{ background: "var(--th-ring-track)" }} />
+            ))}
+          </div>
+        ) : actions.length === 0 ? (
+          <p className="px-4 py-4 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+            No recent actions.
+          </p>
+        ) : (
+          <div>
+            {actions.slice(0, 5).map((a, idx) => (
+              <div
+                key={a.id}
+                className="flex items-baseline gap-2 px-4 py-[11px] text-[12px]"
+                style={{
+                  color: "var(--th-text-secondary)",
+                  borderBottom:
+                    idx < Math.min(actions.length, 5) - 1
+                      ? "1px solid var(--th-border-subtle)"
+                      : undefined,
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  <b className="font-bold" style={{ color: "var(--th-text-primary)" }}>
+                    {ACTION_LABELS[a.action_type] ?? a.action_type}
+                  </b>
+                  {a.device_hostname ? ` · ${a.device_hostname}` : ""}
+                  {a.created_by ? ` · ${a.created_by}` : ""}
+                </span>
+                <time
+                  className="flex-none text-[11px] font-semibold"
+                  style={{ color: "var(--th-text-muted)" }}
+                >
+                  {a.created_at ? timeAgo(a.created_at) : "—"}
+                </time>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
