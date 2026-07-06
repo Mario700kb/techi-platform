@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-05 |
-| **Production Verified** | 2026-07-04 (live server audit) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `e0df46a`) |
-| **Current Development Branch** | `stable/phase-2-heartbeat` (local, +1 unpushed commit `49fce27`); agent work parked on `pending-agent-2.1.6` |
+| **Last Updated** | 2026-07-06 |
+| **Production Verified** | 2026-07-06 (live server deploy + Playwright verification against https://rdp.techi.com.al) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `a8a35ea`) |
+| **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
 | **Agent Version** | **2.1.5** — fleet target, NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
@@ -19,13 +19,16 @@
 ## CURRENT PRIORITIES
 
 1. ✅ Documentation Baseline — completed (2026-07-05, this standard)
-2. Complete the Agent **2.1.5** rollout (~700 devices via NETLOGON/GPO)
-3. Deploy the server-side improvements (commit `49fce27` — retention, log
-   caps, access-log filter; deploy from `/root`)
+2. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
+   production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)
+3. Complete the Agent **2.1.5** rollout (~700 devices via NETLOGON/GPO)
 4. Start Agent **2.1.6** (from branch `pending-agent-2.1.6`, only after the
    rollout completes; SHA-alignment procedure)
 5. Standardize the deployment working directory (decision pending — see
    Known Issues #1)
+6. Recreate the postgres container's log-cap benefit was already applied
+   as a side effect of the 2026-07-06 deploy (see below) — no longer
+   pending.
 
 This document describes the CURRENT state only. History (incidents, fixes,
 decisions, deploys) lives exclusively in
@@ -264,10 +267,10 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 
 | | |
 |---|---|
-| **Status** | TË 7 FAZAT E IMPLEMENTUARA — Phase 7 pret commit; pastaj deploy sipas kërkesës së ownerit |
-| **Current Phase** | Phase 7 (e fundit) — E IMPLEMENTUAR, pret commit |
-| **Progress** | 6/7 faza të commit-uara (Phase 1 → `27f1687`, Phase 2 → `6db4ed9`, Phase 3 → `e3dcdff`, Phase 4 → `259e1fc`, Phase 5 → `d0dd447`, Phase 6 → `1a660aa`); Phase 7 gati |
-| **Current Sprint** | Commit Phase 7 → build final → deploy në prodhim (https://rdp.techi.com.al) sipas aprovimit "mbyll të gjitha fazat dhe bëjmë commit + deploy" |
+| **Status** | ✅ DEPLOYED — të 7 fazat live në prodhim (2026-07-06), verifikuar me Playwright kundër https://rdp.techi.com.al |
+| **Current Phase** | E përfunduar. Punë e ardhshme (Notifications/Web Push, tablet layout, etj.) kërkon amendament të ri të MOBILE-DESIGN-SPEC.md |
+| **Progress** | 7/7 faza të commit-uara: Phase 1 → `27f1687`, Phase 2 → `6db4ed9`, Phase 3 → `e3dcdff`, Phase 4 → `259e1fc`, Phase 5 → `d0dd447`, Phase 6 → `1a660aa`, Phase 7 → `a8a35ea`. Push-uar (`origin/stable/phase-2-heartbeat`) dhe deploy-uar në prodhim 2026-07-06. |
+| **Current Sprint** | I mbyllur. Shih CHANGELOG-SOLUTIONS.md (2026-07-06) për detajet e deploy-it. |
 | **Reference Document** | [reference/MOBILE-DESIGN-SPEC.md](reference/MOBILE-DESIGN-SPEC.md) — kontrata zyrtare e dizajnit (design-locked; ndryshimet vetëm me amendament) |
 | **Mockup i aprovuar** | https://claude.ai/code/artifact/af146cd9-d000-49d3-b723-35442ee3eaae |
 
@@ -293,11 +296,27 @@ permissions, auth, realtime, business logic — të paprekura; asnjë ngjyrë
 hardcoded jashtë tokens; asnjë TODO/FIXME/placeholder; devijimet teknike
 regjistrohen si Implementation Notes në spec, jo si ndryshime dizajni.
 
+**Deploy 2026-07-06** (shih CHANGELOG-SOLUTIONS.md për detaje të plota):
+push i 9 commits (7 fazat mobile + `49fce27` storage batch + `1fe93de` docs,
+aprovuar shprehimisht nga owner-i pas pyetjes për scope-in e push-it); pull
+në `/root`; index `ix_device_heartbeats_created_at` (ekzistonte tashmë) i
+"stamped" në Alembic; backend+frontend rindërtuar dhe rikrijuar; postgres
+u rikrijua **vetë nga Docker Compose** (jo e planifikuar — ndryshimi i
+log-cap në docker-compose.yml e detyroi) — u shërua në ~30s, 0 humbje
+heartbeat, verifikuar menjëherë me logje. Të tre kontejnerët "healthy";
+verifikuar vizualisht me Playwright kundër site-it real (login manual):
+Dashboard/Devices/Device Details (`/devices/714`)/Alerts/More/Settings —
+0 gabime 4xx/5xx në sweep të pastër të 6 rrugëve kryesore.
+
 # Pending Features (committed/decided but not live)
 
-- Deploy of `49fce27` (extended retention 90/60/180-day windows, postgres log
-  cap, heartbeat access-log filter, created_at index migration) — awaiting
-  owner's go + push; deploy from `/root`.
+- ~~Deploy of `49fce27`~~ — **done 2026-07-06**, deployed alongside Mobile
+  UI 2.0 (see CHANGELOG-SOLUTIONS.md entry for that date). The
+  `ix_device_heartbeats_created_at` index already existed in prod (applied
+  by hand previously) and was stamped in Alembic; the postgres log-cap
+  took effect as a side effect of an unplanned container recreation
+  (Compose auto-recreated postgres when it detected the compose-file
+  change) — verified healthy within ~30s, no heartbeat loss.
 - Agent 2.1.6 (branch `pending-agent-2.1.6`): log rotation + cache pruning —
   awaiting rollout completion.
 - Heartbeat storage redesign — **proposal only**, awaiting approval:

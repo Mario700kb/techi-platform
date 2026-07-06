@@ -27,6 +27,114 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-06] Mobile UI 2.0 — implementim i plotë (7 faza) + deploy në prodhim
+
+### Problemi
+
+Audit vizual (Playwright, live prod, 2026-07-05) zbuloi Mobile-in e TECHI si
+"companion view" jo enterprise-ready: BUG 1 (search i Devices nuk
+rifreskohej — cache-key mungues), BUG 2 (pa refresh), BUG 3 (ikona Android e
+RustDesk e pandryshuar), plus B2 (offline = ekran i bardhë), B9 (401 pa
+mesazh), Device Details si drawer jo faqe, Alerts si listë e sheshtë me
+"Device #93", sidebar mobile i papërdorshëm, etj. Owner-i aprovoi mockup-in
+(artifact `af146cd9`) dhe kërkoi implementim të plotë "design-locked" në 7
+faza, secila e commit-uar veçmas, pastaj push + deploy.
+
+### Zgjidhja
+
+Kontrata e dizajnit: `docs/reference/MOBILE-DESIGN-SPEC.md` (Vision →
+Implementation Notes, wireframe për çdo ekran, design tokens). Implementim
+sipas fazave:
+
+1. **Shell/Nav/Theme** — BottomNav 4-tab (More zëvendëson sidebar-in
+   mobile), MobileTopBar+FreshnessPill, MobileSheet/Snackbar/primitives,
+   tokens dark+light.
+2. **Dashboard** — theme-aware, Recent Activity e re, "Stale" si rresht
+   normal.
+3. **Devices** — DeviceMobileCard v2 (emri dominues), empty-search fix
+   (B1), FilterSheet v2 (Apply/Reset), infinite scroll.
+4. **Device Details** — faqe e re `/devices/:id` (jo drawer): header,
+   VitalsStrip live, 6 accordion sections, StickyActionBar. Ripërdor
+   drejtpërdrejt hooks/API ekzistuese (`useDeviceTelemetry`,
+   `useDeviceAlerts`, `useDeviceActivity`, `getDeviceInventory`, etj.) —
+   zero logjikë e duplikuar; drawer desktop i paprekur.
+5. **Alerts** — grupim sipas pajisjes (emra realë via `getDevice()`),
+   dismiss me UNDO real (resolveAlert i shtyrë 5s).
+6. **Remote Support mobile + Settings i plotë** — grupim Issues/Online/Not
+   installed brenda `RemoteSupport.tsx` ekzistues; Settings me System
+   theme, Default screen, Diagnostics.
+7. **Offline/A11y/Responsive** — `sw.js` me precache shell + runtime cache
+   (zgjidh B2); OfflineBanner; session-expired message (zgjidh B9);
+   `:focus-visible` global; landscape-compact BottomNav.
+
+### Bugs reale të zbuluara dhe rregulluara gjatë verifikimit (jo gjetje mockup-i)
+
+- **`MobileSheet`**: `history.back()` në mbyllje programatike anullonte
+  navigim tjetër që ndodhte njëkohësisht (p.sh. `setSearchParams` i
+  FilterSheet Apply) — hequr.
+- **`Devices.tsx`**: `setSearchParams` i thirrur >1 herë brenda të njëjtit
+  handler sinkron e anullonte njëri-tjetrin (react-router-dom resolon
+  "updater" kundër snapshot-it të render-it aktual, jo një gjendje
+  gjithmonë e freskët) — kaluar në functional-updater form + FilterSheet's
+  Apply e riorganizoi rendin (onQuickFilterChange i fundit).
+- **`AlertsMobile`**: `<button>` i ngulitur brenda `<button>` (header
+  grupi + "Dismiss all") shkaktonte `validateDOMNesting` + crash të plotë
+  të faqes kur klikohej në pikën qendrore — ndarë në elementë vëllazëror.
+- **`Login.tsx`**: leximi+fshirja e flag-ut session-expired brenda një
+  `useState` lazy-initializer ishte i papastër (side-effect); React
+  StrictMode e thërret dy herë në dev, thirrja e dytë e gjente flag-un
+  tashmë të fshirë → mesazhi s'shfaqej kurrë — zgjidhur me `useEffect` +
+  `useRef` guard.
+
+### Deploy (2026-07-06, https://rdp.techi.com.al)
+
+Push i 9 commits në `origin/stable/phase-2-heartbeat`: 7 fazat mobile
+(`27f1687`…`a8a35ea`) + 2 commits ekzistues të papushuara pa lidhje me
+mobile-in (`49fce27` storage optimization, `1fe93de` docs) — bashkimi u
+konfirmua shprehimisht nga owner-i pas një pyetjeje të drejtpërdrejtë mbi
+scope-in (dega është lineare, s'mund të ndaheshin pa krijuar degë të re).
+
+Në server (`/root`, projekt Docker Compose `techi-platform`): `git pull
+--ff-only` → `docker compose build backend` → indeksi
+`ix_device_heartbeats_created_at` (nga `49fce27`) ekzistonte tashmë në
+Postgres (aplikuar me dorë më parë) → `alembic stamp b2c3d4e5f8a9` (via
+imazhin e ri, `docker compose run --rm backend`) → `docker compose up -d
+backend` → `docker compose build frontend` → `docker compose up -d
+frontend`.
+
+**E papritur**: `docker compose run --rm backend` shkaktoi rikrijim
+automatik të kontejnerit `postgres` — Compose zbuloi që
+`docker-compose.yml` (nga `49fce27`) kishte shtuar cap-in e logging-ut për
+shërbimin postgres dhe e rikrijoi vetë për ta aplikuar, edhe pse komanda
+kërkonte vetëm `backend`. Postgres u rishëndosh brenda ~30s; heartbeats
+vazhduan (204-a në logje menjëherë pas); backend `/health` 200 gjatë
+gjithë kohës. Efekt anësor pozitiv: log-cap i postgres tani aktiv, pa u
+dashur një "dritare e qetë" e veçantë.
+
+### Rezultati
+
+Të tre kontejnerët "healthy". Verifikuar me Playwright kundër site-it real
+(login manual nga owner-i): Dashboard (720 pajisje, 86% online, "Live"),
+Devices, Device Details (`/devices/714`, vitals reale CPU 71%/RAM 76%/Disk
+41%), Alerts (grupim real "Recepsion-hr · Gffa"), More, Settings — 0
+gabime 4xx/5xx në sweep të pastër të 6 rrugëve kryesore.
+
+### Mësimet
+
+- `docker compose run --rm <svc>` respekton `depends_on` dhe rikrijon
+  varësi (si `postgres`) nëse config-u i tyre në compose file ka ndryshuar
+  që nga hera e fundit e krijimit — edhe kur kërkohet vetëm një shërbim
+  tjetër. Të pritet gjatë çdo deploy që përfshin ndryshime docker-compose.yml
+  për shërbime "silent" (postgres), jo vetëm ato eksplicitisht të prekura.
+- React StrictMode dev-only double-invoke i lazy state initializers /
+  effects zbulon efekte anësore të papastra (si mutacione
+  localStorage/sessionStorage) që në prodhim (single-invoke) do të kishin
+  kaluar pa u vënë re — trajtoji si gabime reale, jo zhurmë e StrictMode.
+- `setSearchParams` (react-router-dom) i thirrur disa herë sinkron brenda
+  të njëjtit handler NUK kompozohet si `useState`'s functional updater;
+  çdo flow i ri që kombinon disa ndryshime filtri/URL në një veprim duhet
+  ose një thirrje e vetme, ose kujdes eksplicit për renditjen.
+
 ## [2026-07-05] Shkrirja e historisë së munguar 19–26 qershor nga root CHANGELOG
 
 ### Problemi
