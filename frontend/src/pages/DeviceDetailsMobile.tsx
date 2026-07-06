@@ -24,6 +24,8 @@ import {
   updateDevice,
 } from "../api/devices";
 import { getDeviceInventory, DeviceInventory } from "../api/inventory";
+import { getDeviceTelemetryHistory } from "../api/telemetry";
+import { TelemetrySnapshot } from "../types/telemetry";
 import { createDeviceNote, getDeviceNotes, DeviceNote } from "../api/notes";
 import { queueDeviceAction } from "../api/actions";
 import { getConnectUrl } from "../api/remoteSupport";
@@ -43,6 +45,7 @@ import { timeAgo } from "../utils/time";
 import { StatusDot, MBadge, FreshnessState } from "../components/mobile/primitives";
 import { VitalsStrip } from "../components/mobile/VitalsStrip";
 import { AccordionSection } from "../components/mobile/AccordionSection";
+import { Sparkline } from "../components/mobile/Sparkline";
 import { StickyActionBar, ActionBarPrimary, ActionBarSecondary, ActionBarMore } from "../components/mobile/StickyActionBar";
 import { MobileSheet } from "../components/mobile/MobileSheet";
 import { Snackbar } from "../components/mobile/Snackbar";
@@ -94,16 +97,32 @@ export default function DeviceDetailsMobile() {
   const [actionBusy, setActionBusy] = useState(false);
   const [snack, setSnack] = useState<string | null>(null);
 
+  // Software inventory (full package list) is NOT auto-fetched — it's a
+  // heavier payload than anything else on this page, and mobile pages get
+  // opened far more casually/frequently than the desktop drawer. Only an
+  // explicit tap loads it (docs/reference/MOBILE-DESIGN-SPEC.md — Device
+  // Details, Implementation Note).
   const [software, setSoftware] = useState<DeviceInventory | null>(null);
   const [softwareLoading, setSoftwareLoading] = useState(false);
+  const [softwareRequested, setSoftwareRequested] = useState(false);
   const [notes, setNotes] = useState<DeviceNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [telemetryHistory, setTelemetryHistory] = useState<TelemetrySnapshot[]>([]);
 
   const telemetry = useDeviceTelemetry({ deviceId: device ? deviceId : null, latestEvent });
   const deviceAlerts = useDeviceAlerts({ deviceId });
   const activity = useDeviceActivity({ deviceId, latestEvent, enabled: timelineOpen });
+
+  useEffect(() => {
+    if (!Number.isFinite(deviceId)) return;
+    let cancelled = false;
+    void getDeviceTelemetryHistory(deviceId, 20).then((rows) => {
+      if (!cancelled) setTelemetryHistory(rows);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [deviceId]);
 
   const loadDevice = async () => {
     setLoading(true);
@@ -133,6 +152,7 @@ export default function DeviceDetailsMobile() {
 
   const loadSoftware = async () => {
     if (software || softwareLoading) return;
+    setSoftwareRequested(true);
     setSoftwareLoading(true);
     try {
       setSoftware(await getDeviceInventory(deviceId));
@@ -379,6 +399,27 @@ export default function DeviceDetailsMobile() {
                 ))}
               </ul>
             )}
+            {telemetryHistory.length >= 2 && (
+              <div className="flex flex-col gap-[4px]">
+                <Sparkline
+                  cpu={telemetryHistory.map((t) => t.cpu_percent ?? 0)}
+                  ram={telemetryHistory.map((t) => t.ram_percent ?? 0)}
+                />
+                <div className="flex items-center gap-3 text-[10.5px]" style={{ color: "var(--th-text-muted)" }}>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-[2px] w-3 rounded-full" style={{ background: "var(--th-status-online)" }} />
+                    CPU
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-[2px] w-3 rounded-full" style={{ background: "var(--th-status-agent)", opacity: 0.5 }} />
+                    RAM
+                  </span>
+                  <span className="ml-auto">
+                    last {telemetryHistory.length} heartbeats
+                  </span>
+                </div>
+              </div>
+            )}
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
               <dt style={{ color: "var(--th-text-muted)" }}>Uptime</dt>
               <dd className="num" style={{ color: "var(--th-text-primary)" }}>
@@ -386,7 +427,10 @@ export default function DeviceDetailsMobile() {
               </dd>
               <dt style={{ color: "var(--th-text-muted)" }}>Latency</dt>
               <dd className="num" style={{ color: "var(--th-text-primary)" }}>
-                {telemetry.snapshot?.heartbeat_latency_ms != null ? `${telemetry.snapshot.heartbeat_latency_ms} ms` : "—"}
+                {/* A reported 0 ms is treated as "not measured" rather than a
+                    real round-trip time — a genuine measurement is virtually
+                    never exactly zero. */}
+                {telemetry.snapshot?.heartbeat_latency_ms ? `${telemetry.snapshot.heartbeat_latency_ms} ms` : "—"}
               </dd>
             </dl>
           </>
@@ -411,25 +455,38 @@ export default function DeviceDetailsMobile() {
         title="Software"
         badge={software?.pending_updates ? <MBadge variant="warning">{software.pending_updates} upd</MBadge> : undefined}
       >
-        {(() => {
-          if (!software && !softwareLoading) void loadSoftware();
-          if (softwareLoading || (!software)) return <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>;
-          return (
-            <>
-              <p style={{ color: "var(--th-text-primary)" }}>
-                {software.patch_state === "up_to_date" ? "✓ Up to date" : software.patch_state === "reboot_required" ? "⚠ Reboot required" : software.patch_state === "updates_available" ? `${software.pending_updates ?? 0} update(s) pending` : "Patch status unknown"}
-              </p>
-              <div className="flex flex-col gap-[4px]" style={{ maxHeight: 220, overflowY: "auto" }}>
-                {software.software.slice(0, 30).map((s, i) => (
-                  <div key={i} className="flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate" style={{ color: "var(--th-text-secondary)" }}>{s.name}</span>
-                    <span className="flex-none font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>{s.version ?? "—"}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          );
-        })()}
+        {!softwareRequested ? (
+          <div className="flex flex-col gap-[8px]">
+            <p style={{ color: "var(--th-text-muted)" }}>
+              Not loaded automatically to avoid an unnecessary server request. Patch/reboot status
+              is already shown under Performance above.
+            </p>
+            <button
+              type="button"
+              onClick={() => void loadSoftware()}
+              className="flex min-h-[40px] items-center justify-center rounded-lg text-[12.5px] font-bold"
+              style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
+            >
+              Load software list
+            </button>
+          </div>
+        ) : softwareLoading || !software ? (
+          <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+        ) : (
+          <>
+            <p style={{ color: "var(--th-text-primary)" }}>
+              {software.patch_state === "up_to_date" ? "✓ Up to date" : software.patch_state === "reboot_required" ? "⚠ Reboot required" : software.patch_state === "updates_available" ? `${software.pending_updates ?? 0} update(s) pending` : "Patch status unknown"}
+            </p>
+            <div className="flex flex-col gap-[4px]" style={{ maxHeight: 220, overflowY: "auto" }}>
+              {software.software.slice(0, 30).map((s, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate" style={{ color: "var(--th-text-secondary)" }}>{s.name}</span>
+                  <span className="flex-none font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>{s.version ?? "—"}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </AccordionSection>
 
       <AccordionSection

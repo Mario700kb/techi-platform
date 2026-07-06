@@ -500,6 +500,23 @@ ndryshim dizajni.)*
    tabela të plota si "Management"/"Notes" e desktop DeviceDrawer) —
    mjaftueshëm për triage mobil; redaktim i plotë i shënimeve/software
    mbetet detyrë desktop.
+8. **[Amendament pas deploy-it, 2026-07-06] Software NUK fetch-ohet
+   automatikisht.** Owner-i vërejti (nga prodhimi) që lista e plotë e
+   software-it (20-50+ paketa, VC++ redistributables etj.) fetch-ohej
+   sapo hapej accordion-i, njësoj si desktop DeviceDrawer — por mobile
+   hapet më rastësisht/shpesh nga operatorët. `Software` tani kërkon një
+   tap eksplicit ("Load software list") përpara se të thërrasë
+   `getDeviceInventory`; patch/reboot status mbetet i dukshëm pa fetch
+   shtesë te seksioni Performance (nga `health.reasons`, tashmë i
+   ngarkuar). Asnjë ndryshim backend.
+9. **[Amendament pas deploy-it, 2026-07-06] Sparkline real i shtuar te
+   Performance** (mungonte në zbatimin e parë të Phase 4, edhe pse
+   mockup-i e kërkonte: "sparkline 1h CPU/RAM/latency"). Ndërtuar
+   komponenti i ri `Sparkline.tsx` (SVG, pa varësi të re), i ushqyer nga
+   `getDeviceTelemetryHistory(deviceId, 20)` (endpoint ekzistues, i
+   paprekur). "Latency 0 ms" trajtohet tani si "e pamatur" (shfaq "—")
+   në vend të një numri që dukej fals — një vlerë e vërtetë round-trip
+   pothuajse kurrë s'është saktësisht zero.
 3. **[Phase 1] Rreshtat e kombinuar të "Desktop console"** në mockup
    ("Enrollment · Packages") ndahen në rreshta më vete — një rresht i
    kombinuar s'mund të navigojë në dy faqe. Stili dim + "vetëm desktop"
