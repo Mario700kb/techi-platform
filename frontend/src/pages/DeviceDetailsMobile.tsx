@@ -75,6 +75,20 @@ function healthVariant(score: number | null): "online" | "warning" | "critical" 
   return "online";
 }
 
+// Mirrors DeviceDrawer.tsx's formatUptime exactly (same field, same
+// breakdown) — mobile previously divided uptime_seconds by 3600 only,
+// showing e.g. "123h" where desktop shows "5d 3h" for the identical
+// value. Same data, desktop's format is just readable at a glance.
+function formatUptime(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export default function DeviceDetailsMobile() {
   const { id } = useParams<{ id: string }>();
   const deviceId = Number(id);
@@ -423,14 +437,13 @@ export default function DeviceDetailsMobile() {
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
               <dt style={{ color: "var(--th-text-muted)" }}>Uptime</dt>
               <dd className="num" style={{ color: "var(--th-text-primary)" }}>
-                {telemetry.snapshot?.uptime_seconds ? `${Math.floor(telemetry.snapshot.uptime_seconds / 3600)}h` : "—"}
+                {formatUptime(telemetry.snapshot?.uptime_seconds ?? null)}
               </dd>
               <dt style={{ color: "var(--th-text-muted)" }}>Latency</dt>
               <dd className="num" style={{ color: "var(--th-text-primary)" }}>
-                {/* A reported 0 ms is treated as "not measured" rather than a
-                    real round-trip time — a genuine measurement is virtually
-                    never exactly zero. */}
-                {telemetry.snapshot?.heartbeat_latency_ms ? `${telemetry.snapshot.heartbeat_latency_ms} ms` : "—"}
+                {telemetry.snapshot?.heartbeat_latency_ms !== null && telemetry.snapshot?.heartbeat_latency_ms !== undefined
+                  ? `${telemetry.snapshot.heartbeat_latency_ms}ms`
+                  : "—"}
               </dd>
             </dl>
           </>

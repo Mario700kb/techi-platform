@@ -514,9 +514,20 @@ ndryshim dizajni.)*
    mockup-i e kërkonte: "sparkline 1h CPU/RAM/latency"). Ndërtuar
    komponenti i ri `Sparkline.tsx` (SVG, pa varësi të re), i ushqyer nga
    `getDeviceTelemetryHistory(deviceId, 20)` (endpoint ekzistues, i
-   paprekur). "Latency 0 ms" trajtohet tani si "e pamatur" (shfaq "—")
-   në vend të një numri që dukej fals — një vlerë e vërtetë round-trip
-   pothuajse kurrë s'është saktësisht zero.
+   paprekur).
+10. **[Amendament pas deploy-it 2, 2026-07-06] Uptime/Latency riformatuar
+    për konsistencë me Desktop.** Owner-i vërejti se Uptime në mobile
+    dukej "jo real" krahasuar me web — shkaku i vërtetë: **e njëjta e
+    dhënë** (`useDeviceTelemetry`, `uptime_seconds`/`heartbeat_latency_ms`,
+    identike me DeviceDrawer.tsx), por mobile e ndante vetëm në orë totale
+    (p.sh. "123h") ndërsa Desktop përdor `formatUptime()` me ndarje
+    ditë+orë+minuta (p.sh. "5d 4h") — thjesht formatim i ndryshëm i të
+    njëjtës vlerë, jo të dhëna të ndryshme. Latency: amendamenti #9 kishte
+    shtuar një supozim (0ms = "e pamatur") që s'përputhej me sjelljen
+    ekzistuese të Desktop-it (`!== null`, shfaq edhe 0ms si vlerë reale) —
+    hequr; mobile tani përdor saktësisht të njëjtin kontroll si Desktop.
+    Rregull: `formatUptime()` në DeviceDetailsMobile.tsx duhet të mbetet
+    identike me atë të DeviceDrawer.tsx.
 3. **[Phase 1] Rreshtat e kombinuar të "Desktop console"** në mockup
    ("Enrollment · Packages") ndahen në rreshta më vete — një rresht i
    kombinuar s'mund të navigojë në dy faqe. Stili dim + "vetëm desktop"
