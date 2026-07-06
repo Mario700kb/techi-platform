@@ -42,6 +42,13 @@ function mobileTitleFor(pathname: string): string {
   return MOBILE_TITLES[base] ?? "TECHI";
 }
 
+// Device Details (MOBILE-DESIGN-SPEC.md — Device Details) renders its own
+// header and sticky action bar in place of the generic MobileTopBar and
+// BottomNav.
+function isDeviceDetailRoute(pathname: string): boolean {
+  return /^\/devices\/\d+$/.test(pathname);
+}
+
 export default function AppShell({ children }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -56,6 +63,7 @@ export default function AppShell({ children }: AppShellProps) {
   };
 
   const isTabRoot = TAB_ROOTS.has(location.pathname);
+  const isDeviceDetail = isDeviceDetailRoute(location.pathname);
 
   return (
     <div
@@ -82,14 +90,16 @@ export default function AppShell({ children }: AppShellProps) {
                 onToggleSidebar={() => handleSidebarCollapsedChange(!sidebarCollapsed)}
               />
             </div>
-            {/* Mobile top bar */}
-            <MobileTopBar
-              title={mobileTitleFor(location.pathname)}
-              showBack={!isTabRoot}
-              onBack={() => navigate(-1)}
-            />
+            {/* Mobile top bar — Device Details renders its own header instead */}
+            {!isDeviceDetail && (
+              <MobileTopBar
+                title={mobileTitleFor(location.pathname)}
+                showBack={!isTabRoot}
+                onBack={() => navigate(-1)}
+              />
+            )}
             <main
-              className="min-w-0 flex-1 overflow-y-auto p-3 pb-16 md:pb-4 lg:p-4"
+              className={`min-w-0 flex-1 overflow-y-auto p-3 lg:p-4 ${isDeviceDetail ? "pb-3 md:pb-4" : "pb-16 md:pb-4"}`}
               style={{ background: "var(--th-bg-main)" }}
             >
               {children}
@@ -98,7 +108,8 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
       </div>
 
-      <BottomNav />
+      {/* Device Details renders its own StickyActionBar in this slot instead */}
+      {!isDeviceDetail && <BottomNav />}
     </div>
   );
 }

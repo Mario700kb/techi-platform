@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { Archive, AlertTriangle, ArrowUpDown, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
@@ -476,6 +477,7 @@ const DevicesTable = memo(function DevicesTable({
   activePackageSha256,
   agentsOutdated = 0,
 }: DevicesTableProps) {
+  const navigate = useNavigate();
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -1203,7 +1205,7 @@ const DevicesTable = memo(function DevicesTable({
                   isFavorite={favorites.has(device.id)}
                   activePackageVersion={activePackageVersion}
                   activePackageSha256={activePackageSha256}
-                  onSelect={() => onDeviceSelect?.(device)}
+                  onSelect={() => navigate(`/devices/${device.id}`)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
                   onConnect={async () => {
                     try {
