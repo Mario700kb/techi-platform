@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, AlertTriangle, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench } from "lucide-react";
+import { Archive, AlertTriangle, ArrowUpDown, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
+import { MobileSheet } from "./mobile/MobileSheet";
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
 import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
@@ -479,10 +480,18 @@ const DevicesTable = memo(function DevicesTable({
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
-  type SortKey = "hostname" | "client_name" | "last_seen";
+  type SortKey = "hostname" | "client_name" | "last_seen" | "health";
   const [sortKey, setSortKey] = useState<SortKey>("hostname");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [agentVersionFilter, setAgentVersionFilter] = useState<string>("all");
+  // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Devices/Sort): sort sheet, mobile-only.
+  const [sortSheetOpen, setSortSheetOpen] = useState(false);
+  const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+    { key: "hostname", label: "Name" },
+    { key: "last_seen", label: "Last seen" },
+    { key: "client_name", label: "Client" },
+    { key: "health", label: "Health" },
+  ];
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -595,12 +604,72 @@ const DevicesTable = memo(function DevicesTable({
         cmp = deviceDisplayName(a).localeCompare(deviceDisplayName(b));
       } else if (sortKey === "client_name") {
         cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
+      } else if (sortKey === "health") {
+        cmp = (healthMap[a.id]?.health_score ?? 100) - (healthMap[b.id]?.health_score ?? 100);
       } else {
         cmp = (a.last_seen ?? "").localeCompare(b.last_seen ?? "");
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, sortKey, sortDir]);
+
+  // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Devices/"chips aktive"): every
+  // applied filter — quick filter, client, and client subgroup — surfaces as
+  // a dismissible chip so the active filter state is never hidden.
+  const activeChips = useMemo(() => {
+    const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (quickFilter !== "all") {
+      chips.push({
+        key: "quick",
+        label: QUICK_FILTERS.find((f) => f.id === quickFilter)?.label ?? quickFilter,
+        onClear: () => onQuickFilterChange("all"),
+      });
+    }
+    if (filters.client_id) {
+      const clientName = clients?.find((c) => c.id === filters.client_id)?.name;
+      if (clientName) {
+        chips.push({
+          key: "client",
+          label: clientName,
+          onClear: () => {
+            onFilterChange("client_id", undefined);
+            onFilterChange("device_type", undefined);
+          },
+        });
+      }
+    }
+    if (filters.device_type === "server" || filters.device_type === "client") {
+      chips.push({
+        key: "devtype",
+        label: filters.device_type === "server" ? "Servers" : "Client PC",
+        onClear: () => onFilterChange("device_type", undefined),
+      });
+    }
+    return chips;
+  }, [quickFilter, filters.client_id, filters.device_type, clients, onQuickFilterChange, onFilterChange]);
+
+  const clearAllMobileFilters = () => {
+    onQuickFilterChange("all");
+    onFilterChange("client_id", undefined);
+    onFilterChange("device_type", undefined);
+  };
+
+  // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Devices/"Infinite scroll"): the
+  // sentinel below the list triggers onMobileLoadMore automatically.
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!mobileHasMore || !onMobileLoadMore) return;
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !mobileLoadingMore) onMobileLoadMore();
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [mobileHasMore, mobileLoadingMore, onMobileLoadMore, displayDevices.length]);
 
   const offlineSummaryByClient = useMemo(() => {
     const summaries = new Map<number, ClientOfflineSummary>();
@@ -991,112 +1060,131 @@ const DevicesTable = memo(function DevicesTable({
         </div>
       </div>
 
-      {/* States */}
-      {loading ? (
-        <div className="premium-card-soft overflow-hidden">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
-              style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.09 }}
-            >
-              <div className="h-2 w-2 flex-none rounded-full bg-slate-700" />
-              <div className="h-3 w-32 rounded bg-slate-700/80" />
-              <div className="h-3 w-20 rounded bg-slate-700/60 ml-4" />
-              <div className="h-3 w-24 rounded bg-slate-700/50 ml-auto" />
-              <div className="h-3 w-16 rounded bg-slate-700/40" />
-            </div>
-          ))}
-        </div>
-      ) : error ? (
-        <div className="premium-card-soft py-12 text-center">
-          <p className="text-[15px] font-semibold text-white">Unable to load devices</p>
-          <p className="mt-1 text-[13px] text-red-300">{error}</p>
-          <Button onClick={onRefresh} size="sm" className="mt-4">
-            Try again
-          </Button>
-        </div>
-      ) : devices.length === 0 ? (
-        <div className="premium-card-soft flex flex-col items-center gap-3 py-14 text-center">
-          <ServerOff className="h-8 w-8 text-slate-600" />
-          <div>
-            <p className="text-[15px] font-semibold text-slate-200">No devices found</p>
-            <p className="mt-1 text-[13px] text-slate-500">
-              Adjust filters or search terms to reveal devices.
-            </p>
-          </div>
-        </div>
-      ) : (
+      {/* ── Mobile (< 768px): sticky header ALWAYS visible + own state
+          handling (Mobile UI 2.0 — fixes the empty-search dead-end where
+          Search/Filters used to disappear entirely; MOBILE-DESIGN-SPEC.md
+          — Devices/Empty States). ── */}
+      <div
+        className="md:hidden overflow-hidden rounded-xl"
+        style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+      >
         <div
-          className="overflow-hidden rounded-xl"
-          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+          className="sticky top-0 z-10"
+          style={{ background: "var(--th-bg-card)", borderBottom: "1px solid var(--th-border-subtle)" }}
         >
-          {/* ── Mobile card list (< 768px) ── */}
-          <div className="md:hidden">
-            {/* Sticky search + active filter chip + Filters button */}
-            <div
-              className="sticky top-0 z-10"
-              style={{
-                background: "var(--th-bg-card)",
-                borderBottom: "1px solid var(--th-border-subtle)",
-              }}
-            >
-              <div className="p-3">
-                <div className="relative">
-                  <Search
-                    className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-                    style={{ color: "var(--th-text-muted)" }}
-                  />
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => onSearch(e.target.value)}
-                    placeholder="Search devices..."
-                    className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-[13px] font-medium focus:outline-none"
-                    style={{
-                      background: "rgba(255,255,255,0.04)",
-                      borderColor: "var(--th-border-subtle)",
-                      color: "var(--th-text-primary)",
-                    }}
-                  />
-                </div>
-              </div>
-              <div
-                className="flex items-center gap-2 overflow-x-auto px-3 pb-2.5"
-                style={{ scrollbarWidth: "none" }}
-              >
-                {quickFilter !== "all" && (
-                  <button
-                    type="button"
-                    onClick={() => onQuickFilterChange("all")}
-                    className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                    style={{
-                      background: "rgba(249,115,22,0.15)",
-                      border: "1px solid rgba(249,115,22,0.3)",
-                      color: "#fb923c",
-                    }}
-                  >
-                    {QUICK_FILTERS.find((f) => f.id === quickFilter)?.label}
-                    <span className="ml-0.5 text-[13px] leading-none">×</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setFilterSheetOpen(true)}
-                  className="ml-auto inline-flex flex-none items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold"
-                  style={{
-                    border: "1px solid var(--th-border-subtle)",
-                    color: "var(--th-text-secondary)",
-                    background: "rgba(255,255,255,0.04)",
-                  }}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  Filters
-                </button>
-              </div>
+          <div className="flex items-center gap-2 p-3">
+            <div className="relative flex-1">
+              <Search
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                style={{ color: "var(--th-text-muted)" }}
+              />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => onSearch(e.target.value)}
+                placeholder="Search devices..."
+                enterKeyHint="search"
+                className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-[13px] font-medium focus:outline-none"
+                style={{
+                  background: "var(--th-chip-bg)",
+                  borderColor: "var(--th-border-subtle)",
+                  color: "var(--th-text-primary)",
+                }}
+              />
             </div>
+            <button
+              type="button"
+              onClick={() => setFilterSheetOpen(true)}
+              aria-label="Filters"
+              className="flex h-11 w-11 flex-none items-center justify-center rounded-lg"
+              style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", background: "var(--th-chip-bg)" }}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortSheetOpen(true)}
+              aria-label="Sort"
+              className="flex h-11 w-11 flex-none items-center justify-center rounded-lg"
+              style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", background: "var(--th-chip-bg)" }}
+            >
+              <ArrowUpDown className="h-4 w-4" />
+            </button>
+          </div>
+          {activeChips.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto px-3 pb-2.5" style={{ scrollbarWidth: "none" }}>
+              {activeChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.onClear}
+                  className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold"
+                  style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
+                >
+                  {chip.label}
+                  <X className="h-3 w-3" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-            {/* Device cards */}
+        {loading ? (
+          <div className="overflow-hidden">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
+                style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.12 }}
+              >
+                <div className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: "var(--th-ring-track)" }} />
+                <div className="h-3 w-32 rounded" style={{ background: "var(--th-ring-track)" }} />
+                <div className="ml-auto h-3 w-16 rounded" style={{ background: "var(--th-ring-track)" }} />
+              </div>
+            ))}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 py-14 text-center">
+            <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>Unable to load devices</p>
+            <p className="text-[13px]" style={{ color: "var(--th-status-critical)" }}>{error}</p>
+            <Button onClick={onRefresh} size="sm">Try again</Button>
+          </div>
+        ) : displayDevices.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+            <ServerOff className="h-8 w-8" style={{ color: "var(--th-text-faint)" }} />
+            {searchQuery ? (
+              <>
+                <div>
+                  <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>
+                    No results for "{searchQuery}"
+                  </p>
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                    Searched across name, hostname, user, domain and IP.
+                  </p>
+                </div>
+                <button type="button" onClick={() => onSearch("")} className="rounded-lg px-4 py-2 text-[12.5px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
+                  Clear search
+                </button>
+              </>
+            ) : activeChips.length > 0 ? (
+              <>
+                <div>
+                  <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>No devices match these filters</p>
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>Adjust or clear filters to see more devices.</p>
+                </div>
+                <button type="button" onClick={clearAllMobileFilters} className="rounded-lg px-4 py-2 text-[12.5px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <div>
+                <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>No devices found</p>
+                <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>Adjust filters or search terms to reveal devices.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
             {displayDevices.map((device) => {
               const canConnect =
                 isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
@@ -1133,31 +1221,76 @@ const DevicesTable = memo(function DevicesTable({
               );
             })}
 
-            {/* Load More button */}
-            {mobileHasMore && !loading && (
-              <div className="p-4">
-                <button
-                  type="button"
-                  onClick={onMobileLoadMore}
-                  disabled={mobileLoadingMore}
-                  className="w-full rounded-xl py-3 text-[13px] font-semibold transition-opacity disabled:opacity-50"
-                  style={{
-                    background: "rgba(249,115,22,0.08)",
-                    border: "1px solid rgba(249,115,22,0.2)",
-                    color: "#fb923c",
-                  }}
-                >
-                  {mobileLoadingMore ? (
-                    <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                  ) : (
-                    `Load more (${Math.max(0, (total ?? 0) - displayDevices.length)} remaining)`
-                  )}
-                </button>
+            {mobileHasMore && (
+              <div ref={loadMoreSentinelRef} className="flex items-center justify-center p-4">
+                {mobileLoadingMore && <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--th-accent)" }} />}
               </div>
             )}
-          </div>
+          </>
+        )}
+      </div>
 
-          {/* ── Desktop table (≥ 768px) — layout unchanged ── */}
+      <MobileSheet open={sortSheetOpen} onClose={() => setSortSheetOpen(false)} title="Sort devices">
+        <div className="flex flex-col gap-1">
+          {SORT_OPTIONS.map((opt) => {
+            const active = sortKey === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => { handleSort(opt.key); setSortSheetOpen(false); }}
+                className="flex min-h-[48px] items-center justify-between rounded-lg px-3 text-[13.5px] font-bold"
+                style={{ color: active ? "var(--th-accent)" : "var(--th-text-primary)", background: active ? "var(--th-accent-glow)" : "transparent" }}
+              >
+                {opt.label}
+                {active && <span aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </MobileSheet>
+
+      {/* ── Desktop (≥ 768px) — unchanged states/table/footer, now scoped
+          to desktop only since Mobile has its own block above ── */}
+      {loading ? (
+        <div className="hidden md:block premium-card-soft overflow-hidden">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
+              style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.09 }}
+            >
+              <div className="h-2 w-2 flex-none rounded-full bg-slate-700" />
+              <div className="h-3 w-32 rounded bg-slate-700/80" />
+              <div className="h-3 w-20 rounded bg-slate-700/60 ml-4" />
+              <div className="h-3 w-24 rounded bg-slate-700/50 ml-auto" />
+              <div className="h-3 w-16 rounded bg-slate-700/40" />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="hidden md:block premium-card-soft py-12 text-center">
+          <p className="text-[15px] font-semibold text-white">Unable to load devices</p>
+          <p className="mt-1 text-[13px] text-red-300">{error}</p>
+          <Button onClick={onRefresh} size="sm" className="mt-4">
+            Try again
+          </Button>
+        </div>
+      ) : devices.length === 0 ? (
+        <div className="hidden md:block premium-card-soft flex flex-col items-center gap-3 py-14 text-center">
+          <ServerOff className="h-8 w-8 text-slate-600" />
+          <div>
+            <p className="text-[15px] font-semibold text-slate-200">No devices found</p>
+            <p className="mt-1 text-[13px] text-slate-500">
+              Adjust filters or search terms to reveal devices.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="hidden md:block overflow-hidden rounded-xl"
+          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+        >
           <div className="hidden md:block">
           <div
             ref={scrollRef}

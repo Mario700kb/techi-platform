@@ -34,7 +34,16 @@ export function MobileSheet({
     };
   }, [open]);
 
-  // Browser/hardware Back closes the sheet instead of leaving the page
+  // Browser/hardware Back closes the sheet instead of leaving the page.
+  // Deliberately does NOT call history.back() on programmatic close (X,
+  // backdrop, Apply): a sheet action that itself navigates — e.g.
+  // FilterSheet's Apply, which updates the URL via setSearchParams — races
+  // with React Router's own history write, and history.back() can revert
+  // that navigation out from under it (confirmed: Apply's ?filter= param
+  // was silently undone). The one harmless trade-off is a inert duplicate
+  // history entry if the sheet is closed without any other navigation —
+  // pressing Back then just consumes it silently (same URL) before the
+  // next real Back takes effect.
   useEffect(() => {
     if (!open) return;
     const onPop = () => onCloseRef.current();
@@ -42,7 +51,6 @@ export function MobileSheet({
     window.addEventListener("popstate", onPop);
     return () => {
       window.removeEventListener("popstate", onPop);
-      if (window.history.state?.mSheet) window.history.back();
     };
   }, [open]);
 

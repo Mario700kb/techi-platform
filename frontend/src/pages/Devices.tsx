@@ -101,12 +101,21 @@ export default function Devices() {
   })();
 
   const handleQuickFilterChange = useCallback((f: QuickFilter) => {
-    const next = new URLSearchParams(searchParams);
-    if (f === "all") next.delete("filter");
-    else next.set("filter", f);
-    next.delete("page");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    // Functional updater (not a `next` built from the closed-over
+    // `searchParams`): Mobile UI 2.0's FilterSheet Apply calls this
+    // together with handleFilterChange in the same synchronous handler,
+    // and two `setSearchParams(next, ...)` calls built from the same
+    // stale snapshot would otherwise clobber each other (the second call
+    // silently drops the first's change — confirmed while wiring
+    // FilterSheet v2's Apply button).
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (f === "all") next.delete("filter");
+      else next.set("filter", f);
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // tableDevices: the current page from the API (seed from cache for instant navigation)
   const [tableDevices, setTableDevices] = useState<Device[]>(() => {
@@ -472,9 +481,11 @@ export default function Devices() {
       }
       setFilters(nextFilters);
       // Reset to page 1 when tree selection changes
-      const next = new URLSearchParams(searchParams);
-      next.delete("page");
-      setSearchParams(next, { replace: true });
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("page");
+        return next;
+      }, { replace: true });
     }, 200);
   };
 
@@ -483,12 +494,14 @@ export default function Devices() {
     window.clearTimeout(searchTimerRef.current);
     searchTimerRef.current = window.setTimeout(() => {
       setDebouncedSearch(value);
-      const next = new URLSearchParams(searchParams);
-      if (value) next.set("q", value); else next.delete("q");
-      next.delete("page");
-      setSearchParams(next, { replace: true });
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("q", value); else next.delete("q");
+        next.delete("page");
+        return next;
+      }, { replace: true });
     }, 300);
-  }, [searchParams, setSearchParams]);
+  }, [setSearchParams]);
 
   const handleFilterChange = (key: keyof DeviceFilters, value: string | boolean | undefined) => {
     let nextValue: string | number | boolean | undefined;
@@ -506,24 +519,35 @@ export default function Devices() {
       [key]: nextValue,
       ...(key === "client_id" ? { group_id: undefined } : {}),
     }));
-    // Reset to page 1 when filter changes
-    const next = new URLSearchParams(searchParams);
-    next.delete("page");
-    setSearchParams(next, { replace: true });
+    // Functional updater — Mobile UI 2.0's FilterSheet Apply calls
+    // onFilterChange twice in a row (client_id, then device_type) together
+    // with onQuickFilterChange in the same handler; building `next` from
+    // the closed-over `searchParams` would let the later call silently
+    // clobber the earlier one's pending update (confirmed while wiring
+    // FilterSheet v2's Apply button — the "filter" param was dropped).
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("page");
+      return next;
+    }, { replace: true });
   };
 
   const handlePageChange = useCallback((page: number) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(page));
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("page", String(page));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const handleLimitChange = useCallback((limit: number) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("limit", String(limit));
-    next.delete("page");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("limit", String(limit));
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const handleRefresh = async () => {
     appCache.invalidatePrefix("devices-table");
