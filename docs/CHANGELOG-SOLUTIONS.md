@@ -27,19 +27,21 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
-## [2026-07-06] Mobile UI 2.0 — 3 raunde rregullimesh pas deploy-it
+## [2026-07-06] Mobile UI 2.0 — 4 raunde rregullimesh pas deploy-it
 
 ### Problemi
 
 Pas deploy-it të Mobile UI 2.0 (shih entry-n më poshtë), owner-i rishikoi
-prodhimin live dhe raportoi tre probleme në tre raunde të veçanta:
+prodhimin live dhe raportoi katër probleme në katër raunde të veçanta:
 Raundi 1 — Software te Device Details fetch-ohej automatikisht sapo hapej
 accordion-i (rrezik ngarkese DB të panevojshme) dhe seksioni Performance i
 mungonte sparkline-i i mockup-it dhe dukej me "të dhëna jo reale". Raundi 2
 — Uptime/Latency në Device Details mobile "s'janë reale" krahasuar me web.
 Raundi 3 — Fleet Tree mobile i mungon opsioni "No Client" (i pranishëm në
 Desktop), dhe Alerts mobile s'ka kategori filtri "Disk"/"Storage" për
-alertet e diskut.
+alertet e diskut. Raundi 4 — screenshot nga prodhimi tregoi që kur
+shtypej brenda fushës "Search devices…", e gjithë faqja zoom-ohej dhe
+kërkonte zoom-out manual.
 
 ### Analiza
 
@@ -54,7 +56,12 @@ identike me desktop-un — divergjenca ishte thjesht formatimi
 3: `DeviceTree.tsx` (Desktop) konfirmoi konventën `client_id = -1` +
 `treeCounts.unassigned` për "No Client"; `AlertsMobile.tsx` konfirmoi se
 `low_disk` ekzistonte tashmë plotësisht në `AlertKind`/`KIND_LABEL`/
-`KindIcon` por mungonte thjesht nga `FilterId`/`FILTER_PILLS`.
+`KindIcon` por mungonte thjesht nga `FilterId`/`FILTER_PILLS`. Raundi 4:
+sjellje e njohur e iOS Safari-t — çdo `<input>`/`<select>`/`<textarea>` i
+fokusuar me `font-size` të llogaritur nën 16px shkakton auto-zoom të
+viewport-it; disa fusha teksti të Mobile UI 2.0 (Devices search
+`text-[13px]`, Remote Support search `text-[13px]`, notes te Device
+Details `text-[12.5px]`) përdorin madhësi nën 16px për densitet.
 
 ### Shkaku
 
@@ -62,7 +69,10 @@ Raundi 1: mungesë gate-i eksplicit për një fetch të shtrenjtë në payload.
 Raundi 2: divergjencë formatimi e prezantuar gjatë implementimit fillestar
 të Phase 4 (mobile s'e riprodhoi `formatUptime()` e Desktop-it). Raundi 3:
 dy feature paritetesh Desktop→Mobile të harruara gjatë Phase 3/5 fillestare
-(elementë additivë, jo bug logjike).
+(elementë additivë, jo bug logjike). Raundi 4: asnjë nga input-et e reja të
+Mobile UI 2.0 s'u projektua me kufizimin "≥16px" të iOS Safari-t në mendje
+gjatë fazave 1–7 — densiteti vizual u prioritizua pa e ditur këtë sjellje
+specifike browser-i.
 
 ### Zgjidhja
 
@@ -72,11 +82,17 @@ software list") para se të thërrasë `getDeviceInventory`; shtuar
 Raundi 2 (commit `7161f73`): `formatUptime()` në `DeviceDetailsMobile.tsx`
 bërë identike me `DeviceDrawer.tsx`; hequr heuristika e gabuar "0ms =
 e pamatur" — Latency tani përdor saktësisht të njëjtin kontroll `!== null`
-si Desktop. Raundi 3: shtuar buton "No Client" te `FilterSheet.tsx`
-(menjëherë pas "All clients", ikonë `Box`, ripërdor `client_id = -1`
-ekzistues, `unassignedCount` nga `fleetOverview.tree_counts.unassigned`);
-shtuar `low_disk`/"Disk" te `FilterId`/`FILTER_PILLS` në `AlertsMobile.tsx`
-(aditiv i pastër, `applyFilter`'s fallback tashmë e mbulonte).
+si Desktop. Raundi 3 (commit `c1b5f9f`): shtuar buton "No Client" te
+`FilterSheet.tsx` (menjëherë pas "All clients", ikonë `Box`, ripërdor
+`client_id = -1` ekzistues, `unassignedCount` nga
+`fleetOverview.tree_counts.unassigned`); shtuar `low_disk`/"Disk" te
+`FilterId`/`FILTER_PILLS` në `AlertsMobile.tsx` (aditiv i pastër,
+`applyFilter`'s fallback tashmë e mbulonte). Raundi 4: një rregull CSS
+global te `index.css` — `@media (max-width: 767px) { input:focus,
+select:focus, textarea:focus { font-size: 16px !important; } }` — forcon
+16px vetëm gjatë fokusit dhe vetëm nën të njëjtin breakpoint `md:768px`
+që përdor pjesa tjetër e Mobile UI 2.0, në vend të ndryshimit të çdo
+input-i individualisht.
 
 ### Ndryshimet
 
@@ -85,19 +101,23 @@ Raundi 1: `frontend/src/pages/DeviceDetailsMobile.tsx`,
 `frontend/src/pages/DeviceDetailsMobile.tsx`. Raundi 3:
 `frontend/src/components/FilterSheet.tsx`,
 `frontend/src/components/DevicesTable.tsx`, `frontend/src/pages/Devices.tsx`,
-`frontend/src/pages/AlertsMobile.tsx`. Të tre raundet: vetëm frontend, zero
-ndryshim backend/API, zero prekje Desktop (verifikuar me smoke test
-Playwright kundër komponentëve desktop përkatës). `docs/reference/
-MOBILE-DESIGN-SPEC.md` përditësuar me Implementation Notes #8–#11 dhe
-rreshta Progress Log pas secilit raund.
+`frontend/src/pages/AlertsMobile.tsx`. Raundi 4: `frontend/src/index.css`.
+Të katër raundet: vetëm frontend, zero ndryshim backend/API, zero prekje
+Desktop (verifikuar me smoke test Playwright kundër komponentëve desktop
+përkatës, dhe në rastin e Raundit 4 nga vetë kufiri i media query-t).
+`docs/reference/MOBILE-DESIGN-SPEC.md` përditësuar me Implementation Notes
+#8–#12 dhe rreshta Progress Log pas secilit raund.
 
 ### Rezultati
 
-Të tre raundet u verifikuan me Playwright (mock data + build prodhimi
+Të katër raundet u verifikuan me Playwright (mock data + build prodhimi
 `vite preview`) para push+deploy, dhe me verifikim live kundër
 https://rdp.techi.com.al pas deploy-it. 0 gabime console në çdo rast.
-Deploy: `docker compose -p techi-platform build frontend && ... up -d
-frontend` (frontend-only, pa prekur backend/postgres).
+Raundi 4 u verifikua përmes mekanizmit shkaktar (`getComputedStyle` para/
+gjatë/pas fokusit: 13px→16px→13px) — vetë zoom-i i Safari-t s'riprodhohet
+me Chromium headless. Deploy: `docker compose -p techi-platform build
+frontend && ... up -d frontend` (frontend-only, pa prekur backend/
+postgres).
 
 ### Mësimet
 
@@ -106,7 +126,10 @@ shpesh do të thotë **divergjencë formatimi/veçorie**, jo të dhëna false �
 krahasimi drejtpërdrejt me komponentin ekuivalent të Desktop-it (para se
 të supozohet një bug backend-i) e zgjidhi çdo raund më shpejt dhe me
 ndryshim më të vogël se sa do të kishte kërkuar një "rregullim" i ri
-spekulativ.
+spekulativ. Raundi 4 shton: një bug UX specifik për iOS Safari (font-size
+<16px → auto-zoom) është më i lirë për t'u eliminuar me një rregull CSS
+global i kufizuar me media query sesa duke kaluar çdo input individualisht
+— zvogëlon rrezikun e harresës për input-e të ardhshme.
 
 ## [2026-07-06] Mobile UI 2.0 — implementim i plotë (7 faza) + deploy në prodhim
 

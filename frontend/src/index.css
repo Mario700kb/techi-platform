@@ -1109,3 +1109,18 @@ textarea:focus-visible,
     padding-bottom: 6px !important;
   }
 }
+
+/* Bug fix (reported on live prod, 2026-07-06): iOS Safari auto-zooms the
+   whole page when a focused <input>/<select>/<textarea> has a computed
+   font-size under 16px — several Mobile UI 2.0 inputs (Devices search,
+   Remote Support search, note/rename fields) use smaller type sizes for
+   density. Forcing 16px only on focus, only under the same md:768px
+   breakpoint the rest of Mobile UI 2.0 uses, kills the zoom without
+   changing the visual size the rest of the time or touching Desktop. */
+@media (max-width: 767px) {
+  input:focus,
+  select:focus,
+  textarea:focus {
+    font-size: 16px !important;
+  }
+}
