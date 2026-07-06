@@ -1,8 +1,9 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { getPreferredDefaultScreen } from "./Settings";
+import { SESSION_EXPIRED_FLAG } from "../store/sessionStore";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -10,6 +11,25 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Mobile UI 2.0 (audit finding B9): tell the user WHY they landed here
+  // instead of silently dropping them on /login after a 401. Read (and
+  // clear) the flag in an effect, not a useState lazy initializer or
+  // module-scope code — the former is double-invoked by React StrictMode
+  // in dev (the second call finds the flag already cleared by the first
+  // and silently drops it), and the latter would miss a client-side
+  // redirect to /login that happens long after this module was first
+  // imported. The ranRef guard keeps the effect's own StrictMode
+  // double-invoke from doing the same thing to itself.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const ranRef = useRef(false);
+  useEffect(() => {
+    if (ranRef.current) return;
+    ranRef.current = true;
+    if (window.sessionStorage.getItem(SESSION_EXPIRED_FLAG) === "1") {
+      window.sessionStorage.removeItem(SESSION_EXPIRED_FLAG);
+      setSessionExpired(true);
+    }
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Settings/Preferences): honor the
@@ -66,6 +86,11 @@ export default function Login() {
             <p className="mt-1 text-sm font-medium text-slate-400">Secure access for TECHI operators</p>
           </div>
         </div>
+        {sessionExpired && !error && (
+          <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">
+            Session expired — please sign in again.
+          </div>
+        )}
         {error && (
           <div className="mb-4 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300">
             {error}

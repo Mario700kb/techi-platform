@@ -87,7 +87,20 @@ export function clearSession(): void {
   emit({ token: null, user: null, permissions: null, loading: false });
 }
 
-setUnauthorizedHandler(clearSession);
+// Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Login/Error States, audit finding
+// B9): a 401 must not silently drop the user on /login with no explanation.
+// Only THIS path (the API client's unauthorized callback) sets the flag —
+// a manual logout() still calls clearSession() directly, unflagged.
+export const SESSION_EXPIRED_FLAG = "techi.auth.expired";
+
+function handleUnauthorized(): void {
+  if (typeof window !== "undefined") {
+    window.sessionStorage.setItem(SESSION_EXPIRED_FLAG, "1");
+  }
+  clearSession();
+}
+
+setUnauthorizedHandler(handleUnauthorized);
 
 export function bootstrapSession(): Promise<void> {
   if (!snapshot.token || (snapshot.user && snapshot.permissions)) {

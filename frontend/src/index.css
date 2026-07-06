@@ -1079,3 +1079,33 @@ html.light .drawer-table-head {
   .m-live-dot { animation: none; }
   .m-anim { transition: none !important; }
 }
+
+/* Accessibility Rules (MOBILE-DESIGN-SPEC.md — Accessibility Rules):
+   a visible keyboard-focus ring on every interactive element. Invisible
+   during mouse interaction (:focus-visible), so this does not change the
+   default appearance of any existing desktop screen. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="radio"]:focus-visible {
+  outline: 2px solid var(--th-accent);
+  outline-offset: 2px;
+}
+
+/* Responsive Rules (MOBILE-DESIGN-SPEC.md — Responsive Rules): a short
+   landscape viewport (phone rotated) gets a compact BottomNav — icons
+   only, less vertical padding — instead of competing with page content
+   for the little height available. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .m-bottomnav-label {
+    display: none;
+  }
+  .m-bottomnav-btn {
+    min-height: 40px !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+  }
+}

@@ -4,6 +4,8 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import { BottomNav } from "../components/BottomNav";
 import { MobileTopBar } from "../components/mobile/MobileTopBar";
+import { OfflineBanner } from "../components/mobile/OfflineBanner";
+import { useAppData } from "../contexts/AppDataContext";
 
 interface AppShellProps {
   children: ReactNode;
@@ -64,6 +66,7 @@ export default function AppShell({ children }: AppShellProps) {
 
   const isTabRoot = TAB_ROOTS.has(location.pathname);
   const isDeviceDetail = isDeviceDetailRoute(location.pathname);
+  const { lastFetchTime } = useAppData();
 
   return (
     <div
@@ -98,6 +101,7 @@ export default function AppShell({ children }: AppShellProps) {
                 onBack={() => navigate(-1)}
               />
             )}
+            <OfflineBanner lastFetchTime={lastFetchTime} />
             <main
               className={`min-w-0 flex-1 overflow-y-auto p-3 lg:p-4 ${isDeviceDetail ? "pb-3 md:pb-4" : "pb-16 md:pb-4"}`}
               style={{ background: "var(--th-bg-main)" }}

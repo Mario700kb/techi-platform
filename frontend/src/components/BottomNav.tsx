@@ -83,7 +83,7 @@ export function BottomNav() {
             aria-label={
               badge > 0 ? `${label}, ${totalAlerts} open` : label
             }
-            className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
+            className="m-bottomnav-btn relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
             style={{
               color: active ? "var(--th-accent)" : "var(--th-text-muted)",
             }}
@@ -112,7 +112,7 @@ export function BottomNav() {
                 </span>
               )}
             </span>
-            <span className="text-[11px] font-bold">{label}</span>
+            <span className="m-bottomnav-label text-[11px] font-bold">{label}</span>
           </button>
         ))}
       </div>
