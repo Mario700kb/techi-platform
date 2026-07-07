@@ -27,6 +27,56 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Platform Expansion Phase 3 (pjesa 2, PËRFUNDIM) — tree auto-classification + Command Center engine
+
+### Problemi
+
+Të përfundohet Faza 3: (1) Device Tree me sub-foldera platforme me **klasifikim
+automatik** (asnjë vendosje manuale), (2) Command Center i vetëm me **engine
+automatik** (Windows→PowerShell, Linux→Bash). Flag OFF = identik.
+
+### Zgjidhja (deploy prod tip `dfd601b`)
+
+**Tree auto-classification (3e):**
+- Backend: `_platform_class_case()` — klasifikim i centralizuar platforme (NULL⇒
+  windows, audit §8) + `count_by_client_category_platform()` — agregim i veçantë
+  i lehtë GROUP BY, që **NUK prek** path-in e nxehtë 2-query të overview-t.
+  `DeviceTreeCounts.by_client_category_platform` llogaritet **vetëm kur
+  FEATURE_LINUX on** → overview mbetet 2 query në prodhimin e sotëm (testi ende
+  `==2`, i fiksuar në flag-off).
+- Frontend: DeviceTree rendon sub-foldera platforme (PlatformIcon) nën Servers/
+  Client PC kur `showPlatformFolders`; Devices mapon `client-N-servers-linux` →
+  filtër device_type+platform. Klasifikim automatik nga OS/device_type — asnjë
+  lëvizje manuale. Flag off ⇒ tree identik (backend kthen {}).
+
+**Command Center engine (3c):**
+- Agent: dispatch case i ri `run_command` + `handleRunCommand` (Linux real:
+  bash/sh/busybox/python3 via runLinuxCommand; Windows/other stub — Windows
+  përdor run_powershell, s'merr kurrë run_command). Ndërton të 4 targetet.
+- Backend: `run_command` në BULK_COMMAND_TYPES + ADMIN_ONLY; payload
+  {command,engine} kalon si pending action (pa ndryshim shërbimi).
+- Frontend: command type `run_command` + PayloadEditor (engine select + script),
+  i dukshëm **vetëm kur FEATURE_LINUX on** → Command Center flag-off identik.
+
+### Rezultati
+
+Suita backend **424 passed + 4 të njohura, flag off DHE on** (testet e
+invariantit 2-query të overview-t fiksuar në flag-off). Agent: 4 targetet
+ndërtohen, go test green. tsc + build clean. Deploy: health 200, frontend 200,
+0 gabime reale; heartbeats ~98/min (400 pajisje aktive @ 250s — konsistente),
+FEATURE_LINUX False verifikuar. **Faza 3 e plotë.**
+
+### Shtimi i një platforme të ardhshme kërkon tani vetëm
+
+(1) një degë te `_platform_class_case`, (2) një adapter backend + capability
+mapping, (3) një etiketë + hyrje te `PlatformIcon`. Asnjë ridizajn UI.
+
+### Mësimet
+
+Invariantet e performancës (overview 2-query) shprehen si garanci flag-OFF:
+puna e re shtesë gate-ohet nga flag-u, dhe testet fiksohen në flag-off që të
+dokumentojnë prodhimin e sotëm pa u prishur nga env-i.
+
 ## [2026-07-07] Platform Expansion Phase 3 (pjesa 1) — UI Linux native (flag-gated)
 
 ### Problemi
