@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     DEFAULT_DEPLOYMENT_TOKEN_MAX_USES: int = 500
     DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS: int = 0
 
+    # Platform Expansion feature flags (docs/reference/PLATFORM-EXPANSION-AUDIT.md §11).
+    # Default OFF. Contract: any flag OFF ⇒ behavior bit-identical to production.
+    FEATURE_PLATFORM_CORE: bool = False
+    FEATURE_LINUX: bool = False
+    FEATURE_VAULT: bool = False
+    FEATURE_TERMINAL: bool = False
+    FEATURE_MIKROTIK: bool = False
+    FEATURE_STORAGE: bool = False
+    FEATURE_HYPERVISOR: bool = False
+
     @model_validator(mode="before")
     @classmethod
     def resolve_secret_key(cls, data: Any) -> Any:
