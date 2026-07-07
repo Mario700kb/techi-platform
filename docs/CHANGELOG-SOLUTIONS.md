@@ -27,6 +27,69 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Vendim: Platform Expansion — arkitektura APROVOHET dhe DESIGN LOCKED
+
+### Problemi
+
+TECHI Platform (LIVE, ~750 pajisje Windows) duhet të zgjerohet në multi-platform
+(Linux i pari; më pas MikroTik, Synology, QNAP, VMware, Hyper-V, Proxmox) pa
+prishur asgjë nga sistemi aktual dhe pa krijuar produkt paralel.
+
+### Analiza
+
+Auditi u krye në 4 raunde iterative (2026-07-06 → 2026-07-07) nën mbikëqyrjen e
+owner-it: (1) draft "Linux Support" + mockups; (2) mockups të rindërtuara mbi
+design language-in real të frontend-it; (3) draft "V3" i zgjeruar; (4) pas
+urdhrit të owner-it "dokumentacioni para kodit", u lexuan të plota
+PROJECT_STATE.md, CHANGELOG-SOLUTIONS.md, MOBILE-DESIGN-SPEC.md dhe u raportuan
+8 konflikte draft-vs-dokumentacion (kryesorët: agjentët NUK kanë kanal
+WebSocket — komandat udhëtojnë vetëm si `pending_actions` në heartbeat; policy
+globale 250 s; asnjë punë në `agent/` gjatë rollout-it 2.1.5; kufiri me Zabbix).
+Gjetje pozitive: `Device.platform`, selektori Platform në Enrollment Bootstrap,
+`linux-amd64` te Packages dhe stubs `_other.go` të agjentit ekzistojnë tashmë.
+
+### Shkaku
+
+n/a — vendim arkitekturor, jo incident.
+
+### Zgjidhja
+
+**Arkitektura u APROVUA dhe u shpall DESIGN LOCKED nga owner-i (2026-07-07).**
+Dokumenti bazë: `docs/reference/PLATFORM-EXPANSION-AUDIT.md` (riemërtuar nga
+`LINUX-AGENT-DESIGN-SPEC.md`). Vendimet kryesore të ngrira:
+
+- **No Rewrite policy**: asnjë ridizajn i platformës/UI/backend; vetëm zgjerim
+  aditiv i komponentëve ekzistues; Windows mbetet reference implementation.
+- **Feature Flags policy**: gjithçka e re pas flags (FEATURE_PLATFORM_CORE,
+  FEATURE_LINUX, FEATURE_VAULT, FEATURE_TERMINAL, …), default OFF;
+  **flag OFF = sjellje BIT-IDENTIKE me prodhimin e sotëm**.
+- **Platform Expansion nis** me roadmap fazor (audit §12), një fazë në një kohë,
+  me STOP + aprovim manual të owner-it mes fazave; çdo fazë mbyllet vetëm me
+  Definition of Done (Appendix A) + Regression Matrix (Appendix B) +
+  Platform Certification (Appendix C).
+- **Linux shtyhet** derisa rollout-i i Windows Agent 2.1.5 të shpallet
+  zyrtarisht i përfunduar (standing order — asnjë prekje e `agent/`).
+- Dy porta me aprovim të veçantë të owner-it: rruga WS në NPM (Faza Terminal)
+  dhe data e nisjes së punës në `agent/`.
+
+### Ndryshimet
+
+`docs/reference/LINUX-AGENT-DESIGN-SPEC.md` → riemërtuar
+`docs/reference/PLATFORM-EXPANSION-AUDIT.md` (+ banner ARCHITECTURE STATUS:
+DESIGN LOCKED); hyrje të reja në PROJECT_STATE.md (seksioni PLATFORM EXPANSION);
+kjo hyrje. Zero ndryshime kodi/prodhimi në këtë vendim.
+
+### Rezultati
+
+Baseline zyrtar i ngrirë; implementimi nis me Fazën 0 (Platform Core Foundation
+— dark, pa ndryshim sjelljeje), e cila raportohet më vete pas përfundimit.
+
+### Mësimet
+
+Dokumentacioni ka përparësi mbi kodin — auditi kodi-i-parë prodhoi 8 supozime
+të gabuara që u kapën vetëm nga leximi i plotë i PROJECT_STATE/CHANGELOG.
+Çdo iniciativë e re duhet të fillojë me leximin e dy dokumenteve kanonike.
+
 ## [2026-07-06] JetBrains Mono self-hosted — hiqet varësia nga Google Fonts CDN
 
 ### Problemi

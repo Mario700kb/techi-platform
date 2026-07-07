@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-06 |
+| **Last Updated** | 2026-07-07 |
 | **Production Verified** | 2026-07-06 (live server deploy + Playwright verification against https://rdp.techi.com.al) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `a8a35ea`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
@@ -21,6 +21,9 @@
 1. ✅ Documentation Baseline — completed (2026-07-05, this standard)
 2. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)
+2b. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
+   (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
+   section below). Dark code only, flags OFF, zero behavior change.
 3. Complete the Agent **2.1.5** rollout (~700 devices via NETLOGON/GPO)
 4. Start Agent **2.1.6** (from branch `pending-agent-2.1.6`, only after the
    rollout completes; SHA-alignment procedure)
@@ -266,6 +269,18 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
     `backend/tests/test_enrollment_audit_diagnostics.py` (missing
     `trusted_domains` table in test setup) — not caused by recent work.
 13. Deployments page serves mock data (`/deployments/recent` is hardcoded).
+
+# PLATFORM EXPANSION
+
+| | |
+|---|---|
+| **Status** | Architecture **APPROVED & DESIGN LOCKED** by the owner (2026-07-07). Implementation started: **Phase 0 — Platform Core Foundation** (dark, flags OFF). |
+| **Baseline document** | [reference/PLATFORM-EXPANSION-AUDIT.md](reference/PLATFORM-EXPANSION-AUDIT.md) — frozen; architectural changes require an Architecture Amendment. Renamed from `LINUX-AGENT-DESIGN-SPEC.md` on approval. |
+| **Objective** | Multi-platform RMM (Linux first; then MikroTik, Synology, QNAP, VMware, Hyper-V, Proxmox) by **extending** the existing platform — No Rewrite policy: no UI/backend/platform redesign, Windows remains the reference implementation. |
+| **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
+| **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
+| **Constraints** | No `agent/` work until the 2.1.5 rollout is officially completed (standing order). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
+| **Current Phase** | Phase 0: feature-flags infrastructure + Platform Registry + Capability Registry (backend, dark). Report + owner approval required before Phase 1. |
 
 # RDP TECHI MOBILE UI 2.0
 
