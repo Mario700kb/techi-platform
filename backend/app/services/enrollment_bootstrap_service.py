@@ -1735,6 +1735,24 @@ class EnrollmentBootstrapService:
         config_template: str,
     ) -> tuple[str, str]:
         backend_url = self.normalize_backend_url(backend_url)
+
+        # Linux (Platform Expansion): when FEATURE_LINUX is on, use the real
+        # one-line installer served by GET /api/v1/install/linux — it installs
+        # the systemd service and enrolls. Automatic placement into
+        # Client → Group → platform folder is handled by the token + backend.
+        from app.platform_core.flags import feature_enabled
+
+        if platform == EnrollmentBootstrapPlatform.LINUX and feature_enabled("FEATURE_LINUX"):
+            base = backend_url.rstrip("/")
+            command = f'curl -fsSL "{base}/api/v1/install/linux?token={enrollment_token}" | sudo bash'
+            script = "\n".join([
+                "#!/usr/bin/env bash",
+                "# TECHI Linux enrollment — run as root:",
+                command,
+                "",
+            ])
+            return command, script
+
         binary_name = "darwin" if platform == EnrollmentBootstrapPlatform.MACOS else "linux"
         # Bash here-doc is fine: 'JSON' terminator must be at column 0,
         # which it is since we join lines ourselves.
