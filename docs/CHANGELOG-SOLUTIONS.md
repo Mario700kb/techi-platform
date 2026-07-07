@@ -27,6 +27,54 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Platform Expansion Phase 3 (pjesa 1) — UI Linux native (flag-gated)
+
+### Problemi
+
+Të bëhet Linux "native" në Desktop UI ekzistuese, pa ridizajn, pa faqe të reja,
+me flag OFF = UI identik me sot. Çdo komponent duhet të mbështesë platformat e
+ardhshme pa ridizajn.
+
+### Zgjidhja (deploy prod tip `5212753`, të gjitha pas FEATURE_LINUX OFF)
+
+- **PlatformIcon** (`components/PlatformIcon.tsx`): burim i vetëm ikonash
+  (Windows/Linux/MikroTik/generic, SVG inline). Në katalog para emrit, vetëm kur
+  FEATURE_LINUX on; flag off → markup origjinal verbatim.
+- **Packages**: toggle Windows|Linux (vetëm flag on) → `LinuxPackagesPanel`
+  (upload/list/activate/delete `agent_binary` per arch: amd64/arm64/armhf).
+  Windows scope i paprekur. Backend enum + arch të reja; të ardhmet = config.
+- **Enrollment**: opsioni Linux gjeneron one-liner-in real
+  `curl … /api/v1/install/linux?token=… | sudo bash` (flag on); flag off → script
+  legacy.
+- **Device Drawer**: Overview shton Kernel, Architecture dhe rreshtin
+  Capabilities (chips) — të dhëna reale nga agjenti, vetëm flag on + kur pajisja
+  raporton; Windows kurrë s'raporton → drawer Windows identik. Backend Device
+  schema kthen `capabilities`.
+- **Platform filter** (themel): devices list/count + repository marrin filtër
+  opsional `platform` (`_apply_platform_filter`); "windows" përfshin edhe
+  rreshtat legacy me platform NULL (audit §8). Aditiv/inert kur i pasetuar.
+
+### Rezultati
+
+Suita backend 422 passed + 4 të njohura (flag off **dhe** on); tsc + build
+clean. Deploy: health 200, frontend 200, `/api/v1/devices?platform=linux` → 401
+(auth, filtri i lidhur), 186 hb/min, 0 gabime reale. Flags OFF → UI identik.
+
+### Mbetet për Fazën 3 (pjesa 2)
+
+(1) **Device Tree platform sub-folders** — kërkon zgjerim të agregimit
+`get_overview_inputs` (GROUP BY + platform) në një path të nxehtë + trajtim
+key-i te Devices.tsx; u shty për të mos rrezikuar navigimin SACRED Windows pa
+verifikim vizual. Themeli (filtri platform) është gati.
+(2) **Command Center platform-aware execution** — kërkon një action type të ri
+`run_command` (engine bash/sh/python) end-to-end agent+backend+frontend.
+
+### Mësimet
+
+Tree merr `tableDevices` (faqja aktuale, jo flota) → numëratorët e sub-folderave
+duhen nga backend, jo client-side. Çdo sipërfaqe e re UI u ndërtua flag-gated me
+degë të veçantë "windows" të pandryshuar.
+
 ## [2026-07-07] Platform Expansion Phase 2 — Linux Agent MVP (flag-gated, Windows bit-identik në sjellje)
 
 ### Problemi

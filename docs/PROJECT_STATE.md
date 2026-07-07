@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | **Last Updated** | 2026-07-07 |
-| **Production Verified** | 2026-07-07 (Phase 2 deploy: health 200, 206 heartbeats/min, install/linux 404 with FEATURE_LINUX off, 0 real errors) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `59a781b`) |
+| **Production Verified** | 2026-07-07 (Phase 3 part-1 deploy: health 200, frontend 200, platform filter live, 186 heartbeats/min, 0 real errors) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `5212753`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
 | **Agent Version** | **2.1.5** — fleet target, NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |

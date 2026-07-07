@@ -20,17 +20,17 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `█████████░░░░░░░░░░░` **45%** (Phases 0, 1, 4, 2 + Vault Operational Safety COMPLETED) |
-| **Current Phase** | **Phase 3 — Linux Platform Integration (UI)** (status: IN PROGRESS). Phase 2 (Linux Agent MVP) closed 2026-07-07. |
-| **Current Milestone** | Phase 3: PlatformIcon, tree sub-folders + auto-grouping, OS cells, Drawer capability tabs, Enrollment Linux generator, Packages Linux tab (all flag-gated FEATURE_LINUX) |
+| **Overall Progress** | `██████████░░░░░░░░░░` **50%** (Phases 0, 1, 4, 2 + Vault Safety done; Phase 3 mostly done) |
+| **Current Phase** | **Phase 3 — Linux UI** (status: IN PROGRESS, ~70%). Deployed: PlatformIcon, Packages Linux, Enrollment one-liner, Drawer capabilities, platform filter. Remaining: tree sub-folders + Command Center execution. |
+| **Current Milestone** | Phase 3 part 2: Device Tree platform sub-folders (needs backend overview aggregation by platform) + Command Center run_command engine |
 | **Next Milestone** | Phase 5 — Web Terminal (needs Phase 2 ✅ + NPM WS route owner approval) |
-| **Estimated Remaining Phases** | 6 (Phases 3, 5, 7, 8, 9, 6) |
-| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → **3 Linux UI** → 5 Web Terminal → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
-| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 2 deploy: `/install/linux` 404, `FEATURE_LINUX=False`) |
-| **Deployment status** | Prod tip `59a781b` (Phase 2); backend-only rebuild; install endpoint 404 with flag off |
-| **Production status** | Healthy: `/health` 200, 206 heartbeats/min (~750 devices @ 250s), 0 real errors; Linux agent builds all targets + smoke-tested on Ubuntu |
-| **Risks (top)** | Linux agent needs a real canary before Internal cert (enabling FEATURE_LINUX = Manual Approval); Phase 5 NPM WS route needs approval; single-VPS/25 GB disk |
-| **Last Update** | 2026-07-07 (Phase 2 closed; Linux → Experimental) |
+| **Estimated Remaining Phases** | 6 (Phase 3 tail, 5, 7, 8, 9, 6) |
+| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → **3 Linux UI (~70%)** → 5 Web Terminal → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
+| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 3 deploy) |
+| **Deployment status** | Prod tip `5212753`; backend+frontend rebuilt; `?platform=linux` filter live (401 w/o auth), all Linux UI flag-gated |
+| **Production status** | Healthy: `/health` 200, frontend 200, 186 heartbeats/min, 0 real errors; flag-off UI identical |
+| **Risks (top)** | Tree sub-folders touch the sacred Windows navigation (deferred, needs visual verification); Linux canary needs FEATURE_LINUX on (Manual Approval); Phase 5 NPM route needs approval |
+| **Last Update** | 2026-07-07 (Phase 3 part 1 deployed) |
 
 ## Phase Table (in execution order)
 
@@ -41,7 +41,7 @@
 | 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 · tsc/build clean · prod: vault 404 flag-off ✅ |
 | — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
 | 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
-| 3 | Linux Platform Integration (UI / Drawer / Catalog) | **IN PROGRESS** | `69aa088` (PlatformIcon slice) | ✅ 2026-07-07 (frontend, flag off = identical UI) | tsc/build clean; PlatformIcon in catalog flag-gated. Remaining: tree sub-folders, Drawer capability tabs, Enrollment/Packages/Command Center Linux |
+| 3 | Linux Platform Integration (UI / Drawer / Catalog) | **IN PROGRESS ~70%** | `5212753` | ✅ 2026-07-07 (backend+frontend, flag off = identical) | Done: PlatformIcon, Packages Linux (armhf), Enrollment one-liner, Drawer capabilities/kernel/arch, platform filter (3 tests). Suite 422✅+4, tsc/build clean. Remaining: tree platform sub-folders (needs overview aggregation by platform), Command Center run_command engine |
 | 5 | Embedded Web Terminal | NOT STARTED (needs Phase 2 + NPM WS route owner approval) | — | — | — |
 | 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
