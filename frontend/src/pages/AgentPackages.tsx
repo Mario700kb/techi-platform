@@ -14,6 +14,9 @@ import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
 import { parseUTC } from "../utils/time";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import PlatformIcon from "../components/PlatformIcon";
+import LinuxPackagesPanel from "./LinuxPackagesPanel";
 
 const PLATFORMS: AgentPackagePlatform[] = ["windows", "windows-amd64", "windows-arm64", "linux-amd64", "darwin-arm64"];
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
@@ -48,6 +51,10 @@ const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string }[
 export default function AgentPackages() {
   const { can } = useAuth();
   const canManage = can("admin");
+  // Platform Expansion: a Windows|Linux scope toggle appears only when Linux
+  // is enabled. Default "windows" ⇒ flag-off UI is identical to today.
+  const showLinux = usePlatformFeatures().FEATURE_LINUX;
+  const [platformScope, setPlatformScope] = useState<"windows" | "linux">("windows");
   const [tab, setTab] = useState<TabId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
   const [version, setVersion] = useState("");
@@ -167,30 +174,55 @@ export default function AgentPackages() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => { setTab(t.id); setError(null); }}
-              className={[
-                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
-                tab === t.id
-                  ? "border-b-2 border-techi-orange text-techi-orange"
-                  : "text-slate-400 hover:text-slate-200",
-              ].join(" ")}
-            >
-              {t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />}
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {/* Platform scope toggle — only when Linux is enabled */}
+        {showLinux && (
+          <div className="mt-4 inline-flex rounded-lg border border-white/[0.08] p-0.5">
+            {(["windows", "linux"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => { setPlatformScope(scope); setError(null); }}
+                className={[
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
+                  platformScope === scope ? "bg-[#3A1A14] text-[#FF6B47]" : "text-slate-400 hover:text-slate-200",
+                ].join(" ")}
+              >
+                <PlatformIcon platform={scope} size={13} />
+                {scope}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
+        {/* Windows tabs (unchanged) — only in the Windows scope */}
+        {platformScope === "windows" && (
+          <>
+            <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { setTab(t.id); setError(null); }}
+                  className={[
+                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
+                    tab === t.id
+                      ? "border-b-2 border-techi-orange text-techi-orange"
+                      : "text-slate-400 hover:text-slate-200",
+                  ].join(" ")}
+                >
+                  {t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
+          </>
+        )}
       </div>
 
-      {canManage && (
+      {platformScope === "linux" && <LinuxPackagesPanel canManage={canManage} />}
+
+      {platformScope === "windows" && canManage && (
         <div className="premium-card-soft p-4">
           <div className="mb-3 flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-techi-orange" />
@@ -246,6 +278,7 @@ export default function AgentPackages() {
         </div>
       )}
 
+      {platformScope === "windows" && (
       <div className="premium-card-soft overflow-hidden">
         <div className="border-b border-white/[0.08] px-4 py-3">
           <div className="flex items-center gap-2">
@@ -337,6 +370,7 @@ export default function AgentPackages() {
           </table>
         </div>
       </div>
+      )}
 
       {deleteTarget && (
         <ConfirmationModal

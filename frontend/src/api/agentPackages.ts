@@ -1,6 +1,6 @@
 import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
 
-export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "darwin-arm64";
+export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "linux-arm64" | "linux-armhf" | "darwin-arm64";
 export type AgentFileType = "msi" | "agent_binary" | "agent_update_msi";
 
 export interface AgentPackage {
