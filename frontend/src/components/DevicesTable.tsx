@@ -16,6 +16,8 @@ import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
 import { parseUTC } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
+import PlatformIcon from "./PlatformIcon";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -480,6 +482,10 @@ const DevicesTable = memo(function DevicesTable({
   agentsOutdated = 0,
 }: DevicesTableProps) {
   const navigate = useNavigate();
+  // Platform Expansion: show the platform icon only when Linux is enabled, so
+  // with the flag off the catalog is visually identical to today.
+  const platformFeatures = usePlatformFeatures();
+  const showPlatformIcon = platformFeatures.FEATURE_LINUX;
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -1424,13 +1430,24 @@ const DevicesTable = memo(function DevicesTable({
                           const hostname = deviceHostnameSubtitle(device);
                           return (
                             <>
-                              <div
-                                className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
-                                style={{ color: "var(--th-text-primary)" }}
-                                title={label}
-                              >
-                                {label}
-                              </div>
+                              {showPlatformIcon ? (
+                                <div
+                                  className="flex max-w-[180px] items-center gap-1.5 text-[12px] font-bold leading-[1.3]"
+                                  style={{ color: "var(--th-text-primary)" }}
+                                  title={label}
+                                >
+                                  <PlatformIcon platform={device.platform} size={13} className="shrink-0" />
+                                  <span className="truncate">{label}</span>
+                                </div>
+                              ) : (
+                                <div
+                                  className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
+                                  style={{ color: "var(--th-text-primary)" }}
+                                  title={label}
+                                >
+                                  {label}
+                                </div>
+                              )}
                               {hostname && (
                                 <div className="max-w-[180px] truncate font-mono text-[10px] leading-4" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
                                   {hostname}
