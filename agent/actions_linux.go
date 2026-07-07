@@ -91,6 +91,35 @@ func handleRunPowerShell(_ context.Context, _ map[string]interface{}) actionResu
 	return notSupportedOnLinux("run_powershell")
 }
 
+// handleRunCommand executes a script via the requested engine (Command Center,
+// Platform Expansion). Auto-resolution to bash happens server-side; the agent
+// honors the engine it is given, defaulting to bash.
+func handleRunCommand(ctx context.Context, params map[string]interface{}) actionResult {
+	command, _ := params["command"].(string)
+	if strings.TrimSpace(command) == "" {
+		return actionResult{err: fmt.Errorf("run_command: empty command")}
+	}
+	engine, _ := params["engine"].(string)
+	engine = strings.ToLower(strings.TrimSpace(engine))
+
+	var name string
+	var args []string
+	switch engine {
+	case "sh":
+		name, args = "sh", []string{"-c", command}
+	case "python", "python3":
+		name, args = "python3", []string{"-c", command}
+	case "busybox":
+		name, args = "busybox", []string{"sh", "-c", command}
+	default: // bash / auto
+		name, args = "bash", []string{"-c", command}
+	}
+	if _, err := exec.LookPath(name); err != nil {
+		return actionResult{err: fmt.Errorf("run_command: %s not available", name)}
+	}
+	return runLinuxCommand(ctx, name, args...)
+}
+
 func handleSelfUpdate(_ context.Context, _ map[string]interface{}) actionResult {
 	// Self-update is normally triggered by the heartbeat response
 	// (performSelfUpdate); this action path lets an operator force it.

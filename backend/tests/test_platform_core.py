@@ -147,6 +147,7 @@ class TestWiringBoundary:
             "app/api/v1/endpoints/vault.py",  # flag gate (Phase 4)
             "app/api/v1/endpoints/install.py",  # Linux installer flag gate (Phase 2)
             "app/services/enrollment_bootstrap_service.py",  # Linux one-liner (Phase 3b)
+            "app/services/device_overview_service.py",  # tree platform aggregation (Phase 3e)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

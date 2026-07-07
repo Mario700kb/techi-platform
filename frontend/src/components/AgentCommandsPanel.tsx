@@ -34,6 +34,7 @@ import {
 import { AgentPackage, getAgentPackages } from "../api/agentPackages";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useAppData } from "../contexts/AppDataContext";
 
 const POLL_INTERVAL = 3000;
@@ -535,6 +536,45 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
     );
   }
 
+  if (commandType === "run_command") {
+    return (
+      <div className="space-y-3">
+        <div>
+          <FieldLabel>Execution Engine</FieldLabel>
+          <select
+            value={payload["engine"] ?? "bash"}
+            onChange={(e) => set("engine", e.target.value)}
+            className={inputCls}
+            style={{ ...inputStyle, maxWidth: "12rem" }}
+          >
+            <option value="bash">Bash</option>
+            <option value="sh">sh</option>
+            <option value="busybox">BusyBox</option>
+            <option value="python3">Python 3</option>
+          </select>
+          <p className="mt-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+            Auto: Linux → Bash. Future platforms resolve via their adapter.
+          </p>
+        </div>
+        <div>
+          <FieldLabel>Command / Script</FieldLabel>
+          <textarea
+            rows={5}
+            placeholder={"# Runs on Linux targets\nsystemctl status 3cxpbx"}
+            value={payload["command"] ?? ""}
+            onChange={(e) => set("command", e.target.value)}
+            className={inputCls}
+            style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace" }}
+          />
+        </div>
+        <div className="flex items-start gap-2 rounded-md px-3 py-2 text-xs" style={{ background: "rgba(232,90,60,0.08)", color: "var(--th-text-secondary)" }}>
+          <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--th-accent)" }} />
+          <span>Runs on Linux devices via the selected engine. Windows targets use Run PowerShell instead. Admin role required.</span>
+        </div>
+      </div>
+    );
+  }
+
   if (commandType === "register_protocol") {
     return (
       <InfoNote>
@@ -562,6 +602,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
 export default function AgentCommandsPanel() {
   const { user } = useAuth();
   const { fleetOverview } = useAppData();
+  const platformFeatures = usePlatformFeatures();
   const isAdmin = user?.role === "admin" || user?.role === "owner";
   const isOwner = user?.role === "owner";
 
@@ -635,6 +676,7 @@ export default function AgentCommandsPanel() {
       set_remote_password: 300,
       change_heartbeat_interval: 20,
       run_powershell: 60,
+      run_command: 60,
       register_protocol: 20,
       self_update: 180,
     };
@@ -677,6 +719,12 @@ export default function AgentCommandsPanel() {
         timeout_seconds: parseInt(payload["timeout_seconds"] ?? "30", 10),
       };
     }
+    if (commandType === "run_command") {
+      return {
+        command: payload["command"] ?? "",
+        engine: payload["engine"] ?? "bash",
+      };
+    }
     return {};
   }
 
@@ -689,6 +737,7 @@ export default function AgentCommandsPanel() {
       if (payload["password"] !== payload["confirm"]) return false;
     }
     if (commandType === "run_powershell" && !payload["script"]) return false;
+    if (commandType === "run_command" && !payload["command"]) return false;
     if (OWNER_ONLY_BULK_COMMANDS.has(commandType) && !isOwner) return false;
     if (ADMIN_ONLY_BULK_COMMANDS.has(commandType) && !isAdmin) return false;
     return true;
@@ -790,6 +839,9 @@ export default function AgentCommandsPanel() {
 
   // Which commands this user can see
   const visibleCommands = BULK_COMMAND_TYPES.filter((t) => {
+    // Platform Expansion: run_command (Linux) only when FEATURE_LINUX is on, so
+    // the flag-off Command Center is identical to today.
+    if (t === "run_command" && !platformFeatures.FEATURE_LINUX) return false;
     if (OWNER_ONLY_BULK_COMMANDS.has(t)) return isOwner;
     if (ADMIN_ONLY_BULK_COMMANDS.has(t)) return isAdmin;
     return true;

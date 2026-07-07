@@ -31,6 +31,7 @@ from app.models.alert import DeviceAlert
 from app.models.operator import Operator
 from app.models.team import Team, TeamMember, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess
 from app.core.auth import get_current_operator
+from app.core.config import settings
 from app.core.time import utcnow
 from app.api.v1.endpoints import devices as devices_module
 from app.services import device_service as device_service_module
@@ -231,7 +232,9 @@ class TestDeviceScopeByClientId:
         assert [item["device_id"] for item in body["health"]] == [visible.id]
         assert [item["device_id"] for item in body["patches"]] == [visible.id]
 
-    def test_overview_is_scope_filtered_and_compact(self, db):
+    def test_overview_is_scope_filtered_and_compact(self, db, monkeypatch):
+        # Documents the flag-OFF production invariant (compact tree_counts).
+        monkeypatch.setattr(settings, "FEATURE_LINUX", False)
         _overview_cache.clear()
         op = _operator(db, "op_overview")
         _team_with_client(db, op, client_id=1)
@@ -521,7 +524,10 @@ def test_summary_uses_bounded_queries_for_700_devices(db):
     assert statements <= 4
 
 
-def test_overview_uses_two_queries_and_cache(db):
+def test_overview_uses_two_queries_and_cache(db, monkeypatch):
+    # The 2-query overview is a flag-OFF guarantee; with FEATURE_LINUX on the
+    # tree adds one platform-aggregation query by design (see Phase 3e).
+    monkeypatch.setattr(settings, "FEATURE_LINUX", False)
     _overview_cache.clear()
     db.add_all([
         Device(

@@ -138,6 +138,8 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleRebootPC(ctx, action.Parameters)
 	case "run_powershell":
 		return handleRunPowerShell(ctx, action.Parameters)
+	case "run_command":
+		return handleRunCommand(ctx, action.Parameters)
 	case "self_update":
 		return handleSelfUpdate(ctx, action.Parameters)
 	default:

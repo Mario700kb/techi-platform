@@ -25,12 +25,14 @@ BULK_COMMAND_TYPES = frozenset({
     "set_remote_password",
     "change_heartbeat_interval",
     "run_powershell",
+    "run_command",
     "register_protocol",
     "self_update",
 })
 
-# Requires admin or owner role
-ADMIN_ONLY_COMMAND_TYPES = frozenset({"set_remote_password", "reboot_pc", "run_powershell", "self_update"})
+# Requires admin or owner role. run_command (Linux/Platform Expansion bash/sh/
+# python execution) is admin+ (run_powershell stays owner-only below).
+ADMIN_ONLY_COMMAND_TYPES = frozenset({"set_remote_password", "reboot_pc", "run_powershell", "run_command", "self_update"})
 
 # Requires owner role only
 OWNER_ONLY_COMMAND_TYPES = frozenset({"run_powershell"})

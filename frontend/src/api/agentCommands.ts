@@ -13,6 +13,7 @@ export type BulkCommandType =
   | "set_remote_password"
   | "change_heartbeat_interval"
   | "run_powershell"
+  | "run_command"
   | "register_protocol"
   | "self_update";
 
@@ -27,6 +28,7 @@ export const BULK_COMMAND_LABELS: Record<BulkCommandType, string> = {
   set_remote_password: "Set Remote Password",
   change_heartbeat_interval: "Change Heartbeat Interval",
   run_powershell: "Run PowerShell Script",
+  run_command: "Run Command (Linux)",
   register_protocol: "Register Protocol",
   self_update: "Përditëso Agjentin",
 };
@@ -42,6 +44,7 @@ export const BULK_COMMAND_TYPES: BulkCommandType[] = [
   "set_remote_password",
   "change_heartbeat_interval",
   "run_powershell",
+  "run_command",
   "register_protocol",
   "self_update",
 ];
@@ -54,7 +57,7 @@ export interface BulkCommandCategory {
 /** Visual grouping only — command values/payloads below are untouched. */
 export const BULK_COMMAND_CATEGORIES: BulkCommandCategory[] = [
   { label: "Diagnostikë", commands: ["ping", "collect_inventory"] },
-  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "self_update"] },
+  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "run_command", "self_update"] },
   { label: "Pajisje", commands: ["reboot_pc", "restart_device"] },
   {
     label: "RustDesk / Remote",
@@ -68,6 +71,7 @@ export const BULK_COMMAND_DESCRIPTIONS: Record<BulkCommandType, string> = {
   restart_agent: "Restarts the TechiAgent Windows service — no device reboot.",
   change_heartbeat_interval: "Changes how often targeted devices send heartbeats, live, for this session.",
   run_powershell: "Runs a custom PowerShell script as SYSTEM on each targeted device.",
+  run_command: "Runs a shell command/script on Linux targets via the selected engine (bash/sh/python).",
   reboot_pc: "Reboots the physical device after an optional delay.",
   restart_device: "Forces an immediate OS restart (shutdown /r, no delay).",
   sync_rustdesk: "Re-checks and repairs the RustDesk/TECHI Remote install and ID on the device.",
@@ -85,6 +89,7 @@ export const DESTRUCTIVE_BULK_COMMANDS = new Set<BulkCommandType>([
   "restart_agent",
   "reboot_pc",
   "run_powershell",
+  "run_command",
   "set_remote_password",
   "restart_rustdesk",
   "change_heartbeat_interval",
@@ -99,6 +104,7 @@ export const ADMIN_ONLY_BULK_COMMANDS = new Set<BulkCommandType>([
   "set_remote_password",
   "reboot_pc",
   "run_powershell",
+  "run_command",
   "self_update",
 ]);
 

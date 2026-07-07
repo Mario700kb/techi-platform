@@ -760,3 +760,9 @@ func handleApplyPowerPolicy(ctx context.Context, cfg *Config) actionResult {
 		return r
 	}
 }
+
+// handleRunCommand: on Windows the Command Center uses run_powershell; this
+// path exists only so the shared dispatch compiles. Never sent to Windows.
+func handleRunCommand(_ context.Context, _ map[string]interface{}) actionResult {
+	return actionResult{err: fmt.Errorf("run_command: use run_powershell on Windows")}
+}

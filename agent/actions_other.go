@@ -58,3 +58,7 @@ func handleRunPowerShell(_ context.Context, _ map[string]interface{}) actionResu
 func handleSelfUpdate(_ context.Context, _ map[string]interface{}) actionResult {
 	return actionResult{err: fmt.Errorf("self_update: Windows-only action")}
 }
+
+func handleRunCommand(_ context.Context, _ map[string]interface{}) actionResult {
+	return actionResult{err: fmt.Errorf("run_command: not supported on this platform")}
+}
