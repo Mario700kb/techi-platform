@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -54,6 +54,15 @@ class Device(Base):
     cpu = Column(String(120), nullable=True)
     ram = Column(String(120), nullable=True)
     storage = Column(String(120), nullable=True)
+    # Platform Expansion (PLATFORM-EXPANSION-AUDIT.md §8) — additive, nullable,
+    # populated only by platform-aware agents; always absent for today's fleet.
+    fqdn = Column(String(255), nullable=True)
+    kernel_version = Column(String(120), nullable=True)
+    architecture = Column(String(40), nullable=True)
+    mac_address = Column(String(64), nullable=True)
+    timezone = Column(String(64), nullable=True)
+    last_boot_at = Column(DateTime, nullable=True)
+    capabilities = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)
     archived_at = Column(DateTime, nullable=True)

@@ -27,6 +27,87 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Platform Expansion Phase 1 — Platform Core Integration (dark wiring + kolona DB)
+
+### Problemi
+
+Faza 1 e roadmap-it: themeli i Fazës 0 duhej bërë i përdorshëm pa ndryshuar
+sjelljen — kolona aditive në `devices`, nxjerrja e Windows adapter-it dhe
+parsing i capabilities në side effects, të gjitha nën `FEATURE_PLATFORM_CORE`.
+
+### Analiza
+
+Seam-i i klasifikimit: `DeviceHeartbeatService.classify_device_type` (statike,
+Windows-specifike) — logjika u zhvendos FJALË PËR FJALË te
+`platform_adapters/windows.py::classify_windows_device_type`; metoda statike
+tani delegon aty (API publike + testet ekzistuese të paprekura). Dispatch
+flag-gated në `process_heartbeat_core`: flag OFF → rruga legacy identike;
+flag ON → `get_adapter(payload.platform)`. Kujdes i veçantë te tre
+`payload.model_dump(...)` (update / create / reuse) — `capabilities`
+përjashtohet që të mos rrjedhë raw në DeviceCreate/DeviceUpdate; normalizohet
+vetëm në `_run_side_effects._process_capabilities` (jashtë fast path).
+Fallback i sigurt: platformë e panjohur ose pa adapter → Windows adapter
+(sjellja legacy), me log.
+
+### Shkaku
+
+n/a — fazë e planifikuar e roadmap-it.
+
+### Zgjidhja
+
+Kod: `app/services/platform_adapters/{__init__,base,windows,linux,registry}.py`;
+`device_heartbeat_service.py` (delegim + dispatch + `_process_capabilities` +
+3 përjashtime dump); `models/device.py` +7 kolona nullable; skemat
+DeviceBase/DeviceUpdate +6 fusha, `AgentHeartbeatPayload` +7 fusha opsionale;
+`schema_compat_service.DEVICE_COLUMNS` +7 (SQLite dev). Teste:
+`test_platform_adapters.py` (13 teste: golden corpus me pritshmëri të
+ngurtësuara para-ekstraktimit, ekuivalenca adapter↔legacy, fallbacks,
+filtrimi per-platform i capabilities, side-effect flag on/off);
+`test_platform_core.py` — invarianti i errësirës u zëvendësua me kufi wiring
+(vetëm 3 module të aprovuara importojnë platform_core) dhe testet e flags u
+bënë imune ndaj env override (lexojnë defaults të klasës Settings).
+
+**SQL i aplikuar në prodhim PARA deploy-it** (schema-first, hapi 4):
+
+```sql
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS fqdn VARCHAR(255);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS kernel_version VARCHAR(120);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS architecture VARCHAR(40);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS mac_address VARCHAR(64);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS timezone VARCHAR(64);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_boot_at TIMESTAMP;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS capabilities JSONB;
+```
+
+Rollback SQL (VETËM me aprovim të owner-it — rregulli i drop-eve):
+
+```sql
+ALTER TABLE devices DROP COLUMN IF EXISTS fqdn, DROP COLUMN IF EXISTS kernel_version,
+  DROP COLUMN IF EXISTS architecture, DROP COLUMN IF EXISTS mac_address,
+  DROP COLUMN IF EXISTS timezone, DROP COLUMN IF EXISTS last_boot_at,
+  DROP COLUMN IF EXISTS capabilities;
+```
+
+Rollback sjelljeje: `FEATURE_PLATFORM_CORE=false` (default) — i menjëhershëm.
+
+### Ndryshimet
+
+Shih listën e file-ve më lart; zero ndryshime frontend; zero endpoints të reja.
+
+### Rezultati
+
+Suita e plotë **2×**: me flag OFF → 403 passed + 4 dështimet e njohura;
+me `FEATURE_PLATFORM_CORE=true` → identike (403 + 4) — dispatch-i i adapter-it
+nuk ndryshon asnjë klasifikim (golden corpus 10 rastesh e provon fushë më
+fushë). Deploy + validimi i prodhimit: shih rreshtat e roadmap-it (Phase 1).
+
+### Mësimet
+
+Tre vendet e `model_dump` (update/create/reuse) janë kontrata e heshtur e
+heartbeat-it me skemat Device* — çdo fushë e re e payload-it duhet ose të
+ekzistojë në DeviceUpdate/DeviceCreate, ose të përjashtohet shprehimisht në
+të tre vendet, përndryshe heartbeat 500 fleet-wide.
+
 ## [2026-07-07] Deploy: Platform Expansion Phase 0 (Platform Core Foundation) + gotcha e emrit të compose project
 
 ### Problemi

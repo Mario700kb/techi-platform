@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.device_activity_event import DeviceActivityEvent
+from app.platform_core.flags import feature_enabled
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
@@ -23,6 +24,8 @@ from app.services.device_maintenance_service import DeviceMaintenanceService, is
 from app.services.device_status_service import DeviceStatusService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_activity_event_service import DeviceActivityEventService
+from app.services.platform_adapters import get_adapter
+from app.services.platform_adapters.windows import classify_windows_device_type
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload, device_payload_delta
 from app.websocket.publisher import realtime_publisher
@@ -78,25 +81,16 @@ class DeviceHeartbeatService:
         os_build: Optional[str] = None,
         windows_product_type: Optional[int] = None,
     ) -> DeviceType:
-        if not domain or domain.strip().upper() == "WORKGROUP":
-            return DeviceType.UNASSIGNED
-
-        if windows_product_type in {2, 3}:
-            return DeviceType.SERVER
-        if windows_product_type == 1:
-            return DeviceType.CLIENT
-
-        normalized = " ".join(
-            value.strip().lower()
-            for value in (os_name, os_version, os_caption, os_build)
-            if value and value.strip()
+        # Logic moved verbatim to platform_adapters.windows (Phase 1 adapter
+        # extraction); this delegation keeps the public API and all callers.
+        return classify_windows_device_type(
+            os_name,
+            domain,
+            os_version=os_version,
+            os_caption=os_caption,
+            os_build=os_build,
+            windows_product_type=windows_product_type,
         )
-        if "windows server" in normalized or "server" in normalized:
-            return DeviceType.SERVER
-        if "windows 10" in normalized or "windows 11" in normalized:
-            return DeviceType.CLIENT
-
-        return DeviceType.UNASSIGNED
 
     def process_heartbeat(self, payload: AgentHeartbeatPayload):
         """Synchronous wrapper — keeps existing callers and tests working."""
@@ -109,14 +103,17 @@ class DeviceHeartbeatService:
         Fast path: resolve/create/update device record + write heartbeat row.
         Returns (device, heartbeat, ctx) where ctx carries data needed by _run_side_effects.
         """
-        device_type = self.classify_device_type(
-            payload.os_name,
-            payload.domain,
-            os_version=payload.os_version,
-            os_caption=payload.os_caption,
-            os_build=payload.os_build,
-            windows_product_type=payload.windows_product_type,
-        )
+        if feature_enabled("FEATURE_PLATFORM_CORE"):
+            device_type = get_adapter(payload.platform).classify_device_type(payload)
+        else:
+            device_type = self.classify_device_type(
+                payload.os_name,
+                payload.domain,
+                os_version=payload.os_version,
+                os_caption=payload.os_caption,
+                os_build=payload.os_build,
+                windows_product_type=payload.windows_product_type,
+            )
         now = utcnow()
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
@@ -148,6 +145,8 @@ class DeviceHeartbeatService:
             self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)
+            # Capabilities are normalized + persisted in side effects only
+            update_data.pop("capabilities", None)
             if has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
                 conflict = self.device_repo.get_conflicting_rustdesk_id(normalized_rustdesk_id, exclude_device_id=device.id)
                 if conflict is None:
@@ -280,7 +279,23 @@ class DeviceHeartbeatService:
         self._maybe_emit_rustdesk_repaired(device, prev_repair_count)
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
+        self._process_capabilities(payload, device)
         self._evaluate_post_heartbeat_alerts(device)
+
+    def _process_capabilities(self, payload: AgentHeartbeatPayload, device) -> None:
+        """Persist normalized capabilities (Platform Expansion, flag-gated).
+
+        Off the heartbeat fast path by design; a no-op unless the agent sent a
+        capabilities payload AND FEATURE_PLATFORM_CORE is enabled — today's
+        Windows fleet never sends one, so this never executes in production
+        until the flag is deliberately turned on.
+        """
+        if payload.capabilities is None or not feature_enabled("FEATURE_PLATFORM_CORE"):
+            return
+        normalized = get_adapter(device.platform).normalize_capabilities(payload.capabilities)
+        if normalized != (device.capabilities or {}):
+            device.capabilities = normalized
+            self.db.commit()
 
     def _resolve_via_fingerprint(
         self, payload: AgentHeartbeatPayload, device_type: DeviceType, now: datetime
@@ -327,7 +342,9 @@ class DeviceHeartbeatService:
         if effective_match.confidence == "high" and effective_match.device is not None:
             return self._reuse_device(effective_match.device, payload, device_type, now)
 
-        create_data = payload.model_dump(exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id"})
+        create_data = payload.model_dump(
+            exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id", "capabilities"}
+        )
         self._drop_stale_repair_counter(create_data, now)
         create_data["agent_id"] = payload.agent_id
         create_data["rustdesk_id"] = fingerprint_rustdesk_id  # None when agent has no numeric RustDesk ID yet
@@ -428,7 +445,7 @@ class DeviceHeartbeatService:
         """
         update_data = payload.model_dump(
             exclude_unset=True,
-            exclude={"device_id", "rustdesk_id"},
+            exclude={"device_id", "rustdesk_id", "capabilities"},
         )
         self._drop_stale_repair_counter(update_data, now)
 

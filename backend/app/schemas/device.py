@@ -39,6 +39,12 @@ class DeviceBase(BaseModel):
     os_build: Optional[str] = None
     windows_product_type: Optional[int] = None
     platform: Optional[str]
+    fqdn: Optional[str] = None
+    kernel_version: Optional[str] = None
+    architecture: Optional[str] = None
+    mac_address: Optional[str] = None
+    timezone: Optional[str] = None
+    last_boot_at: Optional[datetime] = None
     device_type: DeviceType = DeviceType.UNASSIGNED
     status: DeviceStatus = DeviceStatus.OFFLINE
     last_seen: Optional[datetime] = None
@@ -105,6 +111,12 @@ class DeviceUpdate(BaseModel):
     os_build: Optional[str] = None
     windows_product_type: Optional[int] = None
     platform: Optional[str] = None
+    fqdn: Optional[str] = None
+    kernel_version: Optional[str] = None
+    architecture: Optional[str] = None
+    mac_address: Optional[str] = None
+    timezone: Optional[str] = None
+    last_boot_at: Optional[datetime] = None
     device_type: Optional[DeviceType] = None
     status: Optional[DeviceStatus] = None
     client_id: Optional[int] = None

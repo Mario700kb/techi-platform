@@ -10,6 +10,14 @@ logger = logging.getLogger(__name__)
 
 DEVICE_COLUMNS = {
     "agent_id": "VARCHAR(80)",
+    # Platform Expansion Phase 1 (PLATFORM-EXPANSION-AUDIT.md §8)
+    "fqdn": "VARCHAR(255)",
+    "kernel_version": "VARCHAR(120)",
+    "architecture": "VARCHAR(40)",
+    "mac_address": "VARCHAR(64)",
+    "timezone": "VARCHAR(64)",
+    "last_boot_at": "DATETIME",
+    "capabilities": "TEXT",
     "last_enrollment_at": "DATETIME",
     "enrollment_count": "INTEGER NOT NULL DEFAULT 0",
     "reenrolled_from_agent_id": "VARCHAR(80)",

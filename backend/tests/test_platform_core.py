@@ -20,13 +20,23 @@ from app.platform_core import (
 ALL_FLAGS = tuple(FEATURE_DEPENDENCIES.keys())
 
 
+def _force_all_flags_off(monkeypatch):
+    for flag in ALL_FLAGS:
+        monkeypatch.setattr(settings, flag, False)
+
+
 class TestFeatureFlags:
-    def test_all_flags_exist_on_settings_and_default_off(self):
+    def test_all_flags_exist_and_code_defaults_are_off(self):
+        # Assert the CODE defaults (class fields), immune to env overrides —
+        # the "default OFF" contract lives in the code, not the environment.
+        from app.core.config import Settings
+
         for flag in ALL_FLAGS:
             assert hasattr(settings, flag), f"{flag} missing from Settings"
-            assert getattr(settings, flag) is False, f"{flag} must default OFF"
+            assert Settings.model_fields[flag].default is False, f"{flag} must default OFF"
 
-    def test_feature_enabled_is_false_by_default(self):
+    def test_feature_enabled_is_false_when_flags_off(self, monkeypatch):
+        _force_all_flags_off(monkeypatch)
         for flag in ALL_FLAGS:
             assert feature_enabled(flag) is False
 
@@ -34,6 +44,7 @@ class TestFeatureFlags:
         assert feature_enabled("FEATURE_DOES_NOT_EXIST") is False
 
     def test_dependencies_gate_enablement(self, monkeypatch):
+        _force_all_flags_off(monkeypatch)
         # FEATURE_LINUX alone is not effective without FEATURE_PLATFORM_CORE.
         monkeypatch.setattr(settings, "FEATURE_LINUX", True)
         assert feature_enabled("FEATURE_LINUX") is False
@@ -121,16 +132,24 @@ class TestCapabilityRegistry:
         assert normalize_capabilities([42, None, {"a": 1}]) == {}
 
 
-class TestPhase0Darkness:
-    def test_nothing_in_app_imports_platform_core(self):
-        """Phase 0 contract: platform_core is dark — no existing module wires it."""
+class TestWiringBoundary:
+    def test_platform_core_imported_only_by_approved_modules(self):
+        """Phase 1 contract: platform_core is wired ONLY through the approved
+        seams (config-adjacent flags + platform_adapters + heartbeat service).
+        Any new importer must be a deliberate, reviewed decision."""
         import pathlib
 
+        approved = {
+            "app/services/device_heartbeat_service.py",
+            "app/services/platform_adapters/base.py",
+            "app/services/platform_adapters/registry.py",
+        }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []
         for path in app_dir.rglob("*.py"):
             if "platform_core" in path.parts:
                 continue
-            if "platform_core" in path.read_text(encoding="utf-8"):
-                offenders.append(str(path))
-        assert offenders == [], f"platform_core imported outside itself: {offenders}"
+            rel = str(path.relative_to(app_dir.parent))
+            if "platform_core" in path.read_text(encoding="utf-8") and rel not in approved:
+                offenders.append(rel)
+        assert offenders == [], f"platform_core imported outside approved seams: {offenders}"

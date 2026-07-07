@@ -27,6 +27,15 @@ class AgentHeartbeatPayload(BaseModel):
     os_build: Optional[str] = None
     windows_product_type: Optional[int] = None
     platform: Optional[str] = None
+    # Platform Expansion — optional, sent only by platform-aware agents
+    # (Windows agents never send these; contract stays backward compatible).
+    fqdn: Optional[str] = None
+    kernel_version: Optional[str] = None
+    architecture: Optional[str] = None
+    mac_address: Optional[str] = None
+    timezone: Optional[str] = None
+    last_boot_at: Optional[datetime] = None
+    capabilities: Optional[Any] = None  # list[str] or {name: version}; normalized server-side
     cpu: Optional[str] = None
     ram: Optional[str] = None
     storage: Optional[str] = None
