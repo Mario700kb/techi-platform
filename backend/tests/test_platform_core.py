@@ -143,6 +143,8 @@ class TestWiringBoundary:
             "app/services/device_heartbeat_service.py",
             "app/services/platform_adapters/base.py",
             "app/services/platform_adapters/registry.py",
+            "app/api/v1/endpoints/platform.py",  # features endpoint (Phase 4)
+            "app/api/v1/endpoints/vault.py",  # flag gate (Phase 4)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

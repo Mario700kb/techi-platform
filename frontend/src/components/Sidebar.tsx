@@ -1,7 +1,8 @@
-import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ChangePasswordModal from "./ChangePasswordModal";
 
 type NavItem = {
@@ -9,6 +10,7 @@ type NavItem = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   permission: string | null; // null = always visible for authenticated users
+  feature?: "FEATURE_VAULT"; // Platform Expansion flag; item hidden unless ON
 };
 
 const navItems: NavItem[] = [
@@ -23,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "Teams",      to: "/teams",                icon: UsersRound,    permission: "manage_teams" },
   { label: "Audit Log",  to: "/audit",                icon: ClipboardList,      permission: "audit_log" },
   { label: "Agent Config", to: "/agent-config",       icon: SlidersHorizontal,  permission: "system_settings" },
+  { label: "Credential Vault", to: "/vault",          icon: ShieldCheck,   permission: "system_settings", feature: "FEATURE_VAULT" },
 ];
 
 interface SidebarProps {
@@ -36,10 +39,13 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
   const { user, logout, hasPermission } = useAuth();
+  const features = usePlatformFeatures();
   const expanded = !collapsed || hovered;
 
   const visibleItems = navItems.filter(
-    (item) => item.permission === null || hasPermission(item.permission),
+    (item) =>
+      (item.permission === null || hasPermission(item.permission)) &&
+      (!item.feature || features[item.feature]),
   );
 
   const userInitial = user

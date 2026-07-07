@@ -89,6 +89,37 @@ TRUSTED_DOMAIN_COLUMNS = {
 }
 
 DEV_TABLES = {
+    "vault_credentials": """
+        CREATE TABLE IF NOT EXISTS vault_credentials (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(160) NOT NULL,
+            credential_type VARCHAR(32) NOT NULL,
+            scope_type VARCHAR(16) NOT NULL DEFAULT 'global',
+            client_id INTEGER,
+            group_id INTEGER,
+            device_id INTEGER,
+            username VARCHAR(160),
+            ciphertext TEXT NOT NULL,
+            dek_wrapped TEXT NOT NULL,
+            notes VARCHAR(500),
+            created_by VARCHAR(128),
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            rotated_at DATETIME,
+            last_used_at DATETIME
+        )
+    """,
+    "vault_credential_usage": """
+        CREATE TABLE IF NOT EXISTS vault_credential_usage (
+            id INTEGER PRIMARY KEY,
+            credential_id INTEGER NOT NULL,
+            operator_username VARCHAR(128),
+            device_id INTEGER,
+            action VARCHAR(24) NOT NULL,
+            reason VARCHAR(300),
+            created_at DATETIME NOT NULL
+        )
+    """,
     "audit_logs": """
         CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY,

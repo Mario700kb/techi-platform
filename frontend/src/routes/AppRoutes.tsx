@@ -20,6 +20,8 @@ import AlertsMobile from "../pages/AlertsMobile";
 import More from "../pages/More";
 import Settings from "../pages/Settings";
 import DeviceDetailsMobile from "../pages/DeviceDetailsMobile";
+import CredentialVault from "../pages/CredentialVault";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -34,6 +36,14 @@ function RequirePermission({ perm, children }: { perm: string; children: ReactNo
   const location = useLocation();
   if (loading) return <div className="p-4 text-sm font-medium text-slate-400">Loading session...</div>;
   if (!hasPermission(perm)) return <Navigate to="/" replace state={{ from: location }} />;
+  return <>{children}</>;
+}
+
+// Platform Expansion route guard: while flags load, treat as off; a route
+// gated by an OFF flag redirects home so nothing new is reachable.
+function RequireFeature({ flag, children }: { flag: "FEATURE_VAULT"; children: ReactNode }) {
+  const features = usePlatformFeatures();
+  if (!features[flag]) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -55,6 +65,7 @@ export default function AppRoutes() {
       <Route path="/audit" element={<RequireAuth><RequirePermission perm="audit_log"><Audit /></RequirePermission></RequireAuth>} />
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
       <Route path="/agent-config" element={<RequireAuth><RequirePermission perm="system_settings"><AgentConfigPage /></RequirePermission></RequireAuth>} />
+      <Route path="/vault" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_VAULT"><CredentialVault /></RequireFeature></RequirePermission></RequireAuth>} />
       <Route path="/alerts" element={<RequireAuth><AlertsMobile /></RequireAuth>} />
       <Route path="/more" element={<RequireAuth><More /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />

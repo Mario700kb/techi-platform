@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     DEFAULT_DEPLOYMENT_TOKEN_MAX_USES: int = 500
     DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS: int = 0
 
+    # Enterprise Credential Vault (Phase 4). Key lives OUTSIDE repo/DB; in the
+    # backend container "data/" is the backend_data volume (same as agent_policy).
+    VAULT_MASTER_KEY_FILE: str = "data/vault_master.key"
+
     # Platform Expansion feature flags (docs/reference/PLATFORM-EXPANSION-AUDIT.md §11).
     # Default OFF. Contract: any flag OFF ⇒ behavior bit-identical to production.
     FEATURE_PLATFORM_CORE: bool = False
