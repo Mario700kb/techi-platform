@@ -280,7 +280,8 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
 | **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
 | **Constraints** | No `agent/` work until the 2.1.5 rollout is officially completed (standing order). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
-| **Current Phase** | Phase 0: feature-flags infrastructure + Platform Registry + Capability Registry (backend, dark). Report + owner approval required before Phase 1. |
+| **Current Phase** | Phase 0: feature-flags infrastructure + Platform Registry + Capability Registry (backend, dark). Implemented + committed (`f1975ed`); awaiting owner-approved deploy + closure. |
+| **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
 # RDP TECHI MOBILE UI 2.0
 
