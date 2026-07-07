@@ -20,23 +20,23 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `██░░░░░░░░░░░░░░░░░░` **10%** (Phase 0 COMPLETED — deployed + validated in production) |
-| **Current Phase** | **Phase 1 — Platform Core Integration** (status: IN PROGRESS) |
-| **Current Milestone** | Phase 1: DB columns + Windows adapter extraction (verbatim) + flag-gated capability parsing, golden tests |
-| **Next Milestone** | Phase 2 — Linux Agent MVP (**BLOCKED** until the owner declares the 2.1.5 rollout complete) |
-| **Estimated Remaining Phases** | 9 (Phases 1–9) |
-| **Feature Flags status** | 7 flags live in production code, **all OFF** (verified inside the prod container 2026-07-07) |
-| **Deployment status** | Phase 0 deployed 2026-07-07: prod tip `c60ff62`, backend-only rebuild (`-p techi-platform`), zero SQL |
-| **Production status** | Healthy post-deploy: `/health` 200, containers healthy, 740 heartbeats/5min, operators reconnected to `/ws/devices` |
-| **Risks (top)** | Phase 1 adapter extraction touches heartbeat-adjacent services (golden tests mandatory); 2.1.5 rollout in progress (blocks Phase 2); single-VPS/25 GB disk (watch at every phase gate) |
-| **Last Update** | 2026-07-07 (Phase 0 closed) |
+| **Overall Progress** | `████░░░░░░░░░░░░░░░░` **20%** (Phases 0–1 COMPLETED — deployed + validated in production) |
+| **Current Phase** | **Phase 4 — Credential Vault** (status: IN PROGRESS). Phases 2–3 skipped for now: Phase 2 BLOCKED on the 2.1.5 rollout, Phase 3 depends on Phase 2; phases develop independently per the deployment policy. |
+| **Current Milestone** | Phase 4: vault tables + AES-256-GCM envelope cipher + API + usage audit (flag-gated, RS-password system untouched) |
+| **Next Milestone** | Phase 2/3 when the owner declares the 2.1.5 rollout complete; otherwise Phase 6 (IAM) after Phase 4 |
+| **Estimated Remaining Phases** | 8 (Phases 2–9) |
+| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified in the prod container after the Phase 1 deploy) |
+| **Deployment status** | Phase 1 deployed 2026-07-07: prod tip `a1c323e`; schema-first SQL applied (7 columns on `devices`, verified via information_schema); backend-only rebuild |
+| **Production status** | Healthy: `/health` 200, container healthy, 392 heartbeats/3min post-deploy, zero real errors in logs, adapters loadable in container, `FEATURE_PLATFORM_CORE=False` verified |
+| **Risks (top)** | Vault key management (R7 — master key outside DB/repo, in backup tar); 2.1.5 rollout in progress (blocks Phase 2); single-VPS/25 GB disk (watch at every phase gate) |
+| **Last Update** | 2026-07-07 (Phase 1 closed) |
 
 ## Phase Table
 
 | Phase | Name | Status | Commit | Deploy | Validation |
 |------|------|--------|--------|---------|------------|
 | 0 | Platform Core Foundation (flags, registries) | **COMPLETED** (2026-07-07) | `f1975ed` (+docs `d19f5d9`, `c60ff62`) | ✅ 2026-07-07 (`-p techi-platform`, backend only) | unit 17/17 ✅ · suite 390✅+4 known · prod: health 200, 740 hb/5min, flags OFF verified ✅ |
-| 1 | Platform Core Integration (dark wiring + DB) | **IN PROGRESS** | — | — | — |
+| 1 | Platform Core Integration (dark wiring + DB) | **COMPLETED** (2026-07-07) | `a1c323e` | ✅ 2026-07-07 (SQL schema-first + backend rebuild) | suite 403✅+4 known, **flag OFF & ON** · golden corpus 10/10 · prod: health 200, 392 hb/3min, flags OFF verified ✅ |
 | 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must complete) | — | — | — |
 | 3 | Linux UI Integration | NOT STARTED | — | — | — |
 | 4 | Credential Vault | NOT STARTED | — | — | — |
@@ -80,11 +80,11 @@ Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED ·
 | **API impact** | None visible; heartbeat accepts optional fields it already ignores today |
 | **Frontend impact** | None |
 | **Backend impact** | Adapter extraction (highest-care step — golden tests before/after); side-effects-only parsing (fast path untouched) |
-| **Testing** | Golden tests on live-shaped heartbeat payloads; full suite; flag-on/off matrix |
-| **Regression** | Full Appendix B before deploy; fast-path timing before/after (DoD #8) |
-| **Rollback** | Flag OFF (instant behavioral rollback) + revert; inverse SQL recorded in changelog entry |
-| **Deployment / Validation** | Standard checklists (schema-first SQL step REQUIRED) — filled when phase runs |
-| **Completion date / Commit** | — |
+| **Testing** | ✅ 13 adapter tests (golden corpus w/ pre-extraction expectations, adapter↔legacy equivalence, fallbacks, capability filtering, flag-gated side effect); full suite **twice** (flag OFF and `FEATURE_PLATFORM_CORE=true`): both 403 passed + 4 known |
+| **Regression** | ✅ Appendix B #15 API (no shape changes), #21 flag-off bit-identity (suite + dispatch fallback tests); prod rows via post-deploy validation (health/heartbeats/WS/logs) |
+| **Rollback** | Flag OFF (instant); `git revert a1c323e`; inverse SQL in the changelog entry (column drops need owner approval) |
+| **Deployment / Validation** | ✅ 2026-07-07: SQL applied schema-first + verified via information_schema → push `a1c323e` → pull + backend rebuild (`-p techi-platform`) → health 200, healthy, 392 hb/3min, zero real errors, adapters loadable, flag verified OFF in container |
+| **Completion date / Commit** | **2026-07-07** · `a1c323e` |
 
 ## Phase 2 — Linux Agent MVP  ⛔ gated
 

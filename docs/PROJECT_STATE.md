@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | **Last Updated** | 2026-07-07 |
-| **Production Verified** | 2026-07-07 (Phase 0 deploy: health 200, containers healthy, 740 heartbeats/5min, flags verified OFF in container) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `c60ff62`) |
+| **Production Verified** | 2026-07-07 (Phase 1 deploy: schema-first SQL, health 200, 392 heartbeats/3min, flags verified OFF in container) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `a1c323e`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
 | **Agent Version** | **2.1.5** — fleet target, NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
@@ -280,7 +280,7 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
 | **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
 | **Constraints** | No `agent/` work until the 2.1.5 rollout is officially completed (standing order). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
-| **Current Phase** | ✅ Phase 0 (Platform Core Foundation) **deployed to production 2026-07-07** (`c60ff62`; flags verified OFF in the container; 740 heartbeats/5min post-deploy). **Phase 1 (Platform Core Integration) in progress** under the owner's standing implementation authority of 2026-07-07 (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). |
+| **Current Phase** | ✅ Phases 0–1 **deployed & closed 2026-07-07** (prod tip `a1c323e`): platform_core (flags/registries) + platform_adapters (Windows adapter extracted verbatim, flag-gated dispatch, capability parsing in side effects) + 7 nullable columns on `devices` (applied schema-first, verified). All behind `FEATURE_PLATFORM_CORE` (OFF). **Phase 4 (Credential Vault) in progress**; Phases 2–3 wait on the 2.1.5 rollout completion. Standing implementation authority granted 2026-07-07 (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). |
 | **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
 # RDP TECHI MOBILE UI 2.0
