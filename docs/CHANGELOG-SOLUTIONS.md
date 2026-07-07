@@ -27,6 +27,45 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Vault Operational Safety — backup + recovery i çelësit master (hardening, pa ndryshim sjelljeje)
+
+### Problemi
+
+Çelësi master i Credential Vault (`vault_master.key`, në volume `backend_data`)
+nuk ishte në backup — humbja e tij = çdo sekret vault i parikuperueshëm.
+Boshllëk i regjistruar te deploy-i i Fazës 4; duhej mbyllur PARA se
+`FEATURE_VAULT` të ndizej ndonjëherë. Kjo NUK është feature platforme; është
+hardening operacional. Zero ndryshim sjelljeje, asnjë flag i ndezur.
+
+### Zgjidhja
+
+`scripts/techi-backup.sh` (i versionuar tani në repo, i deploy-uar në
+`/root/techi-backup.sh`) shton një hap: resolve i mountpoint-it të volume-it
+`techi-platform_backend_data` (dinamik — që një recreation i compose të mos
+çojë te path i vjetër), tar i `vault_master.key` me `chmod 600`, dhe një file
+integriteti `vault-key-<date>.sha256`. Hyn në retention-in ekzistues 14-ditor.
+Nëse çelësi mungon (vault i painicializuar) → warning, jo error.
+
+### Procedura e restaurimit (dokumentuar te PROJECT_STATE › Disaster Recovery)
+
+Extract `vault-key-<date>.tar.gz` → verifiko `sha256sum` kundër `.sha256` →
+vendos te `data/vault_master.key` (`0400`) në volume → restart backend.
+
+### Rezultati (verifikim end-to-end, 2026-07-07)
+
+Backup u ekzekutua: çelësi u ruajt, sha `e7bcd67f…710b`. Verifikim integriteti:
+sha e restauruar = e regjistruar = live. **Verifikim rikuperimi**: një sekret i
+enkriptuar me çelësin LIVE u dekriptua saktë duke ngarkuar çelësin nga kopja e
+RESTAURUAR e backup-it (`recovery-canary-42`) — pra artefakti i backup-it është
+i vlefshëm dhe funksional për recovery. Temp files u pastruan. Prodhimi i
+paprekur; asnjë flag i ndryshuar.
+
+### Mësimet
+
+Ky është i vetmi komponent DR me restore të provuar realisht (postgres/NPM/
+offsite mbeten të pa-provuara — boshllëqe para-ekzistuese). Sekretet e reja
+persistente kërkojnë hyrje në backup + provë recovery që në deploy-in e parë.
+
 ## [2026-07-07] Platform Expansion Phase 4 — Enterprise Credential Vault (flag-gated)
 
 ### Problemi

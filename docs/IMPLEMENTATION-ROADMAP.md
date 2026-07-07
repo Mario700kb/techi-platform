@@ -20,31 +20,33 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `██████░░░░░░░░░░░░░░` **30%** (Phases 0, 1, 4 COMPLETED — deployed + validated in production) |
-| **Current Phase** | **Phase 6 — IAM Evolution** (status: IN PROGRESS). Phases 2–3 remain BLOCKED on the 2.1.5 rollout; Phase 5 (Terminal) needs Phase 2 + the NPM approval, so IAM (independent, needs only Phase 1) is next. |
-| **Current Milestone** | Phase 6: granular permission matrix + custom roles + session listing on existing operators/teams/scopes (1:1 role migration, no-lockout invariant) |
-| **Next Milestone** | Phase 2/3 when the owner declares the 2.1.5 rollout complete |
-| **Estimated Remaining Phases** | 7 (Phases 2, 3, 5, 6, 7, 8, 9) |
+| **Overall Progress** | `███████░░░░░░░░░░░░░` **35%** (Phases 0, 1, 4 + Vault Operational Safety COMPLETED) |
+| **Current Phase** | **Phase 2 — Linux Agent MVP** (status: **BLOCKED** — 2.1.5 rollout not officially closed). Per owner instruction, only the implementation plan is produced now (below); no `agent/` changes until the rollout is declared complete. |
+| **Current Milestone** | Owner declares the 2.1.5 rollout closed → begin Phase 2 implementation |
+| **Next Milestone** | Phase 3 — Linux UI Integration (after Phase 2) |
+| **Estimated Remaining Phases** | 7 (Phases 2, 3, 5, 7, 8, 9, 6) |
+| **Execution order** | **Re-prioritized 2026-07-07 (owner): platform support before IAM.** Vault Safety ✅ → **2 Linux Agent → 3 Linux UI → 5 Web Terminal → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last)** |
 | **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 4 deploy: `/vault` 404, `FEATURE_VAULT=False`) |
-| **Deployment status** | Phase 4 deployed 2026-07-07: prod tip `9a119a7`; vault tables created schema-first; backend+frontend rebuilt; `cryptography==42.0.8` added |
-| **Production status** | Healthy: `/health` 200, both containers healthy, 380 heartbeats/2min, vault 404 with flag off, cipher round-trip verified in container |
-| **Risks (top)** | ⚠️ **vault master key not yet in backup** — MUST be added before FEATURE_VAULT is ever turned on (documented in CHANGELOG); 2.1.5 rollout (blocks Phase 2); single-VPS/25 GB disk |
-| **Last Update** | 2026-07-07 (Phase 4 closed) |
+| **Deployment status** | Prod tip `9a119a7` (Phase 4); Vault Operational Safety applied on-server (backup script `scripts/techi-backup.sh`, recovery rehearsed) — no app deploy |
+| **Production status** | Healthy: `/health` 200, both containers healthy, 380 heartbeats/2min, vault 404 with flag off; vault key backup + recovery verified end-to-end |
+| **Risks (top)** | 2.1.5 rollout in progress (blocks Phase 2 — the current priority); single-VPS/25 GB disk; adapter/proxy work (Phases 7–9) has real external dependencies |
+| **Last Update** | 2026-07-07 (Vault Operational Safety closed; roadmap re-prioritized) |
 
-## Phase Table
+## Phase Table (in execution order)
 
 | Phase | Name | Status | Commit | Deploy | Validation |
 |------|------|--------|--------|---------|------------|
-| 0 | Platform Core Foundation (flags, registries) | **COMPLETED** (2026-07-07) | `f1975ed` (+docs `d19f5d9`, `c60ff62`) | ✅ 2026-07-07 (`-p techi-platform`, backend only) | unit 17/17 ✅ · suite 390✅+4 known · prod: health 200, 740 hb/5min, flags OFF verified ✅ |
-| 1 | Platform Core Integration (dark wiring + DB) | **COMPLETED** (2026-07-07) | `a1c323e` | ✅ 2026-07-07 (SQL schema-first + backend rebuild) | suite 403✅+4 known, **flag OFF & ON** · golden corpus 10/10 · prod: health 200, 392 hb/3min, flags OFF verified ✅ |
-| 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must complete) | — | — | — |
-| 3 | Linux UI Integration | NOT STARTED | — | — | — |
-| 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 (flags off & on) · tsc/build clean · prod: vault 404 flag-off, cipher OK, health 200 ✅ |
-| 5 | Embedded Web Terminal | NOT STARTED (NPM WS route needs separate owner approval) | — | — | — |
-| 6 | IAM Evolution (permission matrix, sessions) | NOT STARTED | — | — | — |
-| 7 | MikroTik Pilot (proxy adapter pattern) | NOT STARTED | — | — | — |
+| 0 | Platform Core Foundation (flags, registries) | **COMPLETED** (2026-07-07) | `f1975ed` (+docs `d19f5d9`, `c60ff62`) | ✅ 2026-07-07 (`-p techi-platform`, backend only) | unit 17/17 ✅ · suite 390✅+4 known · prod: health 200, 740 hb/5min, flags OFF ✅ |
+| 1 | Platform Core Integration (dark wiring + DB) | **COMPLETED** (2026-07-07) | `a1c323e` | ✅ 2026-07-07 (SQL schema-first + backend rebuild) | suite 403✅+4, **flag OFF & ON** · golden 10/10 · prod: 392 hb/3min ✅ |
+| 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 · tsc/build clean · prod: vault 404 flag-off ✅ |
+| — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
+| 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must be officially closed) | — | — | plan below |
+| 3 | Linux Platform Integration (UI / Drawer / Catalog) | NOT STARTED (needs Phase 2) | — | — | — |
+| 5 | Embedded Web Terminal | NOT STARTED (needs Phase 2 + NPM WS route owner approval) | — | — | — |
+| 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
+| 6 | Enterprise IAM (permission matrix, sessions) | NOT STARTED (**moved last** — security-model change, needs separate approval) | — | — | — |
 
 Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED · BLOCKED
 
@@ -86,20 +88,80 @@ Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED ·
 | **Deployment / Validation** | ✅ 2026-07-07: SQL applied schema-first + verified via information_schema → push `a1c323e` → pull + backend rebuild (`-p techi-platform`) → health 200, healthy, 392 hb/3min, zero real errors, adapters loadable, flag verified OFF in container |
 | **Completion date / Commit** | **2026-07-07** · `a1c323e` |
 
-## Phase 2 — Linux Agent MVP  ⛔ gated
+## Phase 2 — Linux Agent MVP  ⛔ GATED (2.1.5 rollout not closed)
+
+**Status 2026-07-07: implementation plan only.** The owner has NOT declared the
+Windows Agent 2.1.5 rollout closed, so per the standing order and the explicit
+instruction, **no file under `agent/` is touched**. The full plan below is
+ready to execute the moment the rollout is declared complete.
 
 | | |
 |---|---|
-| **Objective** | First Linux device managed end-to-end: enroll (token one-liner), heartbeat, basic facts, action subset, systemd unit, self-update. |
-| **Gate** | **Starts ONLY after the owner declares the Windows Agent 2.1.5 rollout officially completed** (standing order — no `agent/` work before that). |
-| **Deliverables** | `pal/` interfaces + `platform_linux.go`; installer endpoint `/install/linux`; `agent_binary_linux_{amd64,arm64}` package type; canary on 2–3 internal hosts ≥1 week |
-| **Feature Flags affected** | `FEATURE_LINUX` |
-| **DB / API impact** | None beyond Phase 1 columns; enroll/heartbeat optional fields only |
-| **Frontend impact** | None (UI comes in Phase 3) |
-| **Backend impact** | Linux adapter in registry; installer endpoint |
-| **Testing / Regression / Rollback** | `go vet` + `go test ./...` both GOOS; Windows binaries never rebuilt (SHA-alignment); rollback = uninstall canaries + flag OFF |
-| **Certification** | Linux enters **Experimental** (Appendix C) at phase start |
-| **Completion date / Commit** | — |
+| **Objective** | First Linux device managed end-to-end with the SAME contract as Windows: token enroll → heartbeat (250 s global policy) → basic inventory → remote command subset → self-update. No new platform-specific paths where the Platform/Capability Registry already serves. |
+| **Gate** | Start ONLY after the owner declares the 2.1.5 rollout officially completed. |
+| **Feature Flags affected** | `FEATURE_LINUX` (+ its dep `FEATURE_PLATFORM_CORE`), default OFF. |
+| **Certification** | Linux enters **Experimental** (Appendix C) at phase start; → Internal after Phase 3 on TECHI's own hosts. |
+
+### A. Reuse audit — Windows components (what the Linux agent inherits)
+
+| Component | Verdict | How Linux reuses it |
+|---|---|---|
+| `agent/config.go` (+`config_other.go`) | **REUSE** | Config struct is OS-neutral; `_other.go` already compiles on Linux. Same `agent.config.json` shape at `/etc/techi-agent/`. |
+| `agent/enrollment.go` | **REUSE** | Enroll handshake + `/api/v1/agent/enroll` are platform-neutral; sends `platform="linux"` + optional Phase-1 fields (kernel, arch…). |
+| `agent/heartbeat.go` | **REUSE (extend payload)** | Same POST, same retry loop, same response handling (interval/pending_actions). Adds optional fields the backend already accepts. |
+| `agent/update.go` (+`update_other.go`) | **REUSE (adapt swap)** | Download→SHA256 verify→swap→restart philosophy is identical; Linux swap is atomic rename + `systemctl restart` (no Scheduled Task). |
+| `agent/paths.go` / identity cache | **REUSE** | Path resolution already build-tagged; Linux paths under `/etc` + `/var/lib/techi-agent`. |
+| Backend enroll/heartbeat/packages/commands services | **REUSE UNCHANGED** | Linux is just another `platform` value through the existing pipeline (Phases 0–1 already dispatch by adapter). |
+| `platform_adapters/linux.py` | **DONE (Phase 1)** | Classification skeleton already merged; extend if needed. |
+
+### B. Windows-specific code (must NOT be reused / must stay isolated)
+
+`actions_windows.go`, `service_windows.go` (SCM), `bootstrap_windows.go`,
+`watchdog_windows.go`, `power_policy_windows.go`, `swap_windows.go`,
+`inventory_windows.go`, RustDesk/`rustdesk*` management, registry/WMI reads,
+Scheduled-Task self-update, MSI/GPO deployment. Linux equivalents live in new
+`*_linux.go` files behind build tags; the Windows files are never compiled into
+the Linux binary (compile-time isolation, audit §7).
+
+### C. New Linux-only deliverables
+
+- `agent/pal/` interfaces (formalize the split): `Collector, Actioner,
+  ServiceManager, PackageManager, Updater, Watchdog, Capabilities()`.
+- `agent/*_linux.go`: inventory (procfs, `os-release`, `systemctl`, `dpkg`/`rpm`
+  presence, docker.sock detection, interfaces/MAC), actions (restart_agent,
+  service restart, reboot [admin-gated], execute command [flag-gated]),
+  systemd service manager, updater (atomic swap + `systemctl restart`),
+  watchdog (systemd `Restart=always` + internal).
+- `platform_windows.go` wrapper: existing Windows code wrapped in the PAL
+  interfaces **verbatim** (behavior byte-identical; `go test` proves it).
+- Installer: backend endpoint `GET /install/linux` serving a signed
+  `curl -fsSL … | sudo bash -s -- --token …` script → detect distro/arch →
+  download binary → create `techi-agent` user + narrow sudoers allowlist →
+  install+start `techi-agent.service` → enroll → print device URL.
+- Packages: new file types `agent_binary_linux_amd64` / `_arm64` in the
+  existing manifest store (SHA-alignment rule applies).
+- Capabilities: Linux agent reports `{terminal,bash,systemd,docker?,packages,
+  services,interfaces,logs}` — normalized by the Phase-1 side-effect path.
+
+### D. Implementation checklist (execute top-to-bottom once unblocked)
+
+1. Branch `pending-linux-agent` off `stable/phase-2-heartbeat` (never build/merge Windows binaries).
+2. Introduce `pal/` interfaces; wrap Windows impl verbatim; `GOOS=windows go build` + `go test ./...` green (bit-identical proof).
+3. Implement `*_linux.go` (inventory → heartbeat → actions → updater → watchdog); `GOOS=linux GOARCH=amd64/arm64 go build` static (CGO off).
+4. systemd unit + installer script; backend `/install/linux` endpoint (flag-gated).
+5. New Linux package types in the store; upload canary binaries (SHA-aligned).
+6. Backend: confirm adapter dispatch + capability persistence for real Linux payloads (extend `platform_adapters/linux.py` if classification gaps appear).
+7. Tests: `go test ./...` both GOOS; backend heartbeat/enroll tests with `platform="linux"` payloads; flag-off invisibility.
+8. Canary: 2–3 internal Linux hosts ≥1 week; watch heartbeat cadence, dedupe, no Windows-fleet impact.
+9. Deploy behind `FEATURE_LINUX=OFF`; enable only for the canary devices; Appendix A DoD + Appendix B regression.
+10. Docs (all four) + owner closure.
+
+### E. Risks / Rollback
+
+`go build` both GOOS in CI; Windows binary never rebuilt as a side effect
+(SHA-alignment); branch isolation until rollout closes; rollback = uninstall
+canaries + `FEATURE_LINUX` OFF (Windows fleet mathematically untouched — it
+shares no compiled code and no changed endpoint).
 
 ## Phase 3 — Linux UI Integration
 
@@ -119,10 +181,19 @@ desktop, flag-off snapshots. Rollback: flag OFF. Certification: Linux →
 key 0400 outside repo/DB), CRUD + `/reveal` (reason+audit) API, `/platform/
 features`, minimal `CredentialVault.tsx` + flag-gated route/sidebar, usage
 audit, 22 tests. `secret_cipher.py`/RS-password untouched (verified separate).
-**Open follow-up (gate before enabling FEATURE_VAULT): add `vault_master.key`
-to the backup — it lives in the `backend_data` volume, not yet in the backup
-tar; losing it = unrecoverable secrets.** Turning FEATURE_VAULT on is itself a
-Manual-Approval action (owner).
+Turning FEATURE_VAULT on is itself a Manual-Approval action (owner).
+
+## Vault Operational Safety  (hardening — COMPLETED 2026-07-07)
+
+Not a platform feature — operational DR hardening; no behavior change, no flag
+enabled. Delivered: `scripts/techi-backup.sh` extended to back up the vault
+master key from the `backend_data` volume (dynamic mountpoint resolution,
+`chmod 600` archive + `.sha256` integrity file, 14-day retention); restore +
+DR procedure documented in PROJECT_STATE › Disaster Recovery. **Verified
+end-to-end**: backup sha `e7bcd67f…710b` = live = recorded; a live-encrypted
+secret decrypted with a RESTORED copy of the key (`recovery-canary-42`). This
+is the one DR component with a rehearsed restore. Closes the pre-enable gate
+for FEATURE_VAULT.
 
 ## Phase 5 — Embedded Web Terminal
 
@@ -134,13 +205,16 @@ requires separate explicit owner approval (frozen edge config).** Load test
 the relay on staging (single-worker cap documented in audit R5). Rollback:
 flag OFF (channel refuses connections) + NPM route removal.
 
-## Phase 6 — IAM Evolution
+## Phase 6 — Enterprise IAM  (MOVED LAST — 2026-07-07)
 
-Objective: granular permission matrix + custom roles + session manager on the
-existing operators/teams/scopes tables. Flags: `FEATURE_IAM_V2` *(flag added
-to config when the phase starts — Architecture Amendment not required; audit
-§11 lists it)*. Migration: existing roles map 1:1; dual-read until GA;
-no-lockout invariant (Owner bypass) tested. Rollback: flag OFF → legacy checks.
+**Re-prioritized after all platform work** (owner, 2026-07-07): IAM is
+important but not the primary objective; it must not delay multi-platform
+support. Also a **security-model change** → separate Manual Approval before it
+starts. Objective: granular permission matrix + custom roles + session manager
+on the existing operators/teams/scopes tables. Flags: `FEATURE_IAM_V2`
+*(added to config when the phase starts; audit §11 lists it)*. Migration:
+existing roles map 1:1; dual-read until GA; no-lockout invariant (Owner bypass)
+tested. Rollback: flag OFF → legacy checks.
 
 ## Phase 7 — MikroTik Pilot
 

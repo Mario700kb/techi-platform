@@ -280,7 +280,7 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
 | **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
 | **Constraints** | No `agent/` work until the 2.1.5 rollout is officially completed (standing order). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
-| **Current Phase** | ✅ Phases 0, 1, 4 **deployed & closed 2026-07-07** (prod tip `9a119a7`): platform_core (flags/registries) + platform_adapters (Windows adapter verbatim, flag-gated dispatch, capability parsing) + 7 nullable `devices` columns + **Enterprise Credential Vault** (AES-256-GCM envelope, `/vault` API + minimal UI, all behind `FEATURE_VAULT`). All expansion flags OFF in prod (verified). **Phase 6 (IAM) in progress**; Phases 2–3 wait on the 2.1.5 rollout, Phase 5 needs Phase 2 + NPM approval. Standing implementation authority granted 2026-07-07 (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). **⚠️ Before FEATURE_VAULT is ever enabled: add `vault_master.key` (in `backend_data` volume) to the backup — see CHANGELOG 2026-07-07.** |
+| **Current Phase** | ✅ Phases 0, 1, 4 **deployed & closed 2026-07-07** (prod tip `9a119a7`): platform_core (flags/registries) + platform_adapters (Windows adapter verbatim, flag-gated dispatch, capability parsing) + 7 nullable `devices` columns + **Enterprise Credential Vault** (AES-256-GCM envelope, `/vault` API + minimal UI, all behind `FEATURE_VAULT`). All expansion flags OFF in prod (verified). **Execution order re-prioritized 2026-07-07** (owner): platform support before enterprise IAM. Next: ✅ Vault Operational Safety (done 2026-07-07) → Phase 2 Linux Agent → Phase 3 Linux UI → Phase 5 Web Terminal → Phase 7 MikroTik → Phase 8 Storage → Phase 9 Hypervisors → **Phase 6 IAM last**. Phase 2 is gated on the 2.1.5 rollout being officially closed — until then only its implementation plan exists (in IMPLEMENTATION-ROADMAP.md), no `agent/` changes. Standing implementation authority granted 2026-07-07 (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). |
 | **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
 # RDP TECHI MOBILE UI 2.0
@@ -384,8 +384,18 @@ downsampling; move binaries out of git history (.git ≈ 183 MB of exe/msi/dll).
   `/opt/backups/techi/postgres-<date>.sql.gz` (daily pg_dumpall, 14-day
   retention), `rustdesk-keys-<date>.tar.gz` (hbbs/hbbr `id_ed25519*` — losing
   these breaks remote support fleet-wide: every endpoint pins the public key),
-  `techi-platform-config-<date>.tar.gz` (.env + compose), git repo (GitHub
-  `Mario700kb/techi-platform`).
+  `techi-platform-config-<date>.tar.gz` (.env + compose),
+  `vault-key-<date>.tar.gz` + `vault-key-<date>.sha256` (Credential Vault
+  master key from the `backend_data` volume — **losing it makes every vault
+  secret unrecoverable, same disaster class as the RustDesk keys**; added
+  2026-07-07, verified end-to-end), git repo (GitHub `Mario700kb/techi-platform`).
+  The backup script is versioned at `scripts/techi-backup.sh`.
+- **Vault master key recovery** (verified 2026-07-07): extract
+  `vault-key-<date>.tar.gz` → `vault_master.key`, confirm `sha256sum` matches
+  the sibling `.sha256`, place it at the container's `data/vault_master.key`
+  (volume `techi-platform_backend_data`, mode `0400`), restart backend. A
+  live-encrypted secret was proven to decrypt with a restored copy of the key.
+  The key must exist **before** `FEATURE_VAULT` is enabled.
 - **Restore outline**: provision host with Docker → clone repo → restore
   `.env`/compose → `docker compose up -d postgres` → `gunzip -c dump | docker
   exec -i … psql -U techi` → up backend/frontend → restore RustDesk keys into
@@ -394,7 +404,9 @@ downsampling; move binaries out of git history (.git ≈ 183 MB of exe/msi/dll).
   in any backup (verified)**).
 - **A full restore has never been rehearsed (needs verification).** Known gaps:
   NPM config unbackuped; backups have no offsite copy; config tar comes from
-  the stale checkout.
+  the stale checkout. **The vault master key backup + recovery path WAS
+  rehearsed end-to-end (2026-07-07)** — the one DR component with a proven
+  restore.
 - Fleet continuity: agents retry and re-enroll via NETLOGON bootstrap; device
   identity survives via agent_id/fingerprint resolution as long as the DB dump
   is restored.
