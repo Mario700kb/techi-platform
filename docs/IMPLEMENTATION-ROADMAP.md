@@ -20,23 +20,23 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `█░░░░░░░░░░░░░░░░░░░` **~5%** (Phase 0 implemented + committed; not yet deployed/closed) |
-| **Current Phase** | **Phase 0 — Platform Core Foundation** (status: TESTING — code + tests done, awaiting owner-approved deploy) |
-| **Current Milestone** | Close Phase 0: push → deploy → production validation → owner closure |
-| **Next Milestone** | Phase 1 — Platform Core Integration (dark wiring + DB columns) |
+| **Overall Progress** | `██░░░░░░░░░░░░░░░░░░` **10%** (Phase 0 COMPLETED — deployed + validated in production) |
+| **Current Phase** | **Phase 1 — Platform Core Integration** (status: IN PROGRESS) |
+| **Current Milestone** | Phase 1: DB columns + Windows adapter extraction (verbatim) + flag-gated capability parsing, golden tests |
+| **Next Milestone** | Phase 2 — Linux Agent MVP (**BLOCKED** until the owner declares the 2.1.5 rollout complete) |
 | **Estimated Remaining Phases** | 9 (Phases 1–9) |
-| **Feature Flags status** | All 7 flags exist in code, **all OFF** everywhere (dev + prod defaults) |
-| **Deployment status** | Phase 0 committed locally (`f1975ed`, docs `d19f5d9`) on `stable/phase-2-heartbeat`; **not pushed, not deployed** |
-| **Production status** | Untouched — prod runs pre-expansion code (`a8a35ea` tip); flag-off bit-identity holds by construction |
-| **Risks (top)** | R1 Windows regression (mitigated: dark code + darkness test); 2.1.5 rollout still in progress (blocks Phase 2); single-VPS/25 GB disk (watch at every phase gate) |
-| **Last Update** | 2026-07-07 |
+| **Feature Flags status** | 7 flags live in production code, **all OFF** (verified inside the prod container 2026-07-07) |
+| **Deployment status** | Phase 0 deployed 2026-07-07: prod tip `c60ff62`, backend-only rebuild (`-p techi-platform`), zero SQL |
+| **Production status** | Healthy post-deploy: `/health` 200, containers healthy, 740 heartbeats/5min, operators reconnected to `/ws/devices` |
+| **Risks (top)** | Phase 1 adapter extraction touches heartbeat-adjacent services (golden tests mandatory); 2.1.5 rollout in progress (blocks Phase 2); single-VPS/25 GB disk (watch at every phase gate) |
+| **Last Update** | 2026-07-07 (Phase 0 closed) |
 
 ## Phase Table
 
 | Phase | Name | Status | Commit | Deploy | Validation |
 |------|------|--------|--------|---------|------------|
-| 0 | Platform Core Foundation (flags, registries) | **TESTING** | `f1975ed` | pending owner approval | unit 17/17 ✅ · suite 390✅+4 known · prod validation pending |
-| 1 | Platform Core Integration (dark wiring + DB) | NOT STARTED | — | — | — |
+| 0 | Platform Core Foundation (flags, registries) | **COMPLETED** (2026-07-07) | `f1975ed` (+docs `d19f5d9`, `c60ff62`) | ✅ 2026-07-07 (`-p techi-platform`, backend only) | unit 17/17 ✅ · suite 390✅+4 known · prod: health 200, 740 hb/5min, flags OFF verified ✅ |
+| 1 | Platform Core Integration (dark wiring + DB) | **IN PROGRESS** | — | — | — |
 | 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must complete) | — | — | — |
 | 3 | Linux UI Integration | NOT STARTED | — | — | — |
 | 4 | Credential Vault | NOT STARTED | — | — | — |
@@ -64,10 +64,10 @@ Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED ·
 | **Testing** | `tests/test_platform_core.py` 17/17 ✅; full suite 390 passed + only the 4 known pre-existing failures (`test_enrollment_audit_diagnostics.py`, Known Issue #12) |
 | **Regression** | Appendix B rows #15 (API) and #21 (flag-off bit-identity) ✅ locally; rows needing prod/Windows device run at deploy |
 | **Rollback** | `git revert f1975ed` (self-contained); no SQL to reverse; flags OFF makes code inert regardless |
-| **Deployment checklist** | ☐ owner approves push+deploy · ☐ push `stable/phase-2-heartbeat` · ☐ no schema step needed · ☐ `/root` pull + backend rebuild · ☐ containers healthy |
-| **Validation checklist** | ☐ `/health` 200 · ☐ heartbeats flowing at normal rate · ☐ no error burst in logs · ☐ operator walk-through (Dashboard→Devices→Drawer) clean · ☐ Appendix B prod rows green · ☐ owner declares closure |
-| **Completion date** | — (implementation finished 2026-07-07; phase OPEN until deploy + owner closure) |
-| **Git commit** | `f1975ed` (code) + `d19f5d9` (docs: approval/design-lock/two-doc) |
+| **Deployment checklist** | ✅ standing authority granted (owner, 2026-07-07) · ✅ pushed `stable/phase-2-heartbeat` (`9644634→c60ff62`) · ✅ no schema step needed · ✅ `/root` pull + backend rebuild **with `-p techi-platform`** (gotcha discovered & documented) · ✅ containers healthy |
+| **Validation checklist** | ✅ `/health` 200 · ✅ 740 heartbeats/5min (normal for ~750 devices @ 250 s) · ✅ no error burst in logs · ✅ operators reconnected to `/ws/devices` · ✅ flags verified OFF inside prod container (8 platforms in registry, `feature_enabled`=False) · ✅ closed under standing implementation authority |
+| **Completion date** | **2026-07-07** |
+| **Git commit** | `f1975ed` (code) + `d19f5d9` (docs) + `c60ff62` (roadmap) |
 
 ## Phase 1 — Platform Core Integration (dark wiring + DB)
 

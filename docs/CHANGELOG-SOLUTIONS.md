@@ -27,6 +27,62 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Deploy: Platform Expansion Phase 0 (Platform Core Foundation) + gotcha e emrit të compose project
+
+### Problemi
+
+Deploy i Fazës 0 (flags + Platform Registry + Capability Registry — kod dark,
+flags OFF) në prodhim, sipas standing approval të owner-it për workflow-in e
+plotë të fazave.
+
+### Analiza
+
+Para deploy-it u verifikua me evidencë: live dir `/root` (docker label),
+prod në `9644634`, working tree i pastër. Gjatë deploy-it u zbulua një
+**gotcha kritike**: `cd /root && docker compose build backend && up -d backend`
+krijoi projekt të ri compose të quajtur **`root`** (nga emri i direktorisë) —
+kontejnerë `root-backend-1`/`root-postgres-1` paralelë me projektin real
+`techi-platform`. `root-postgres-1` dështoi në nisje (porta 5432 e zënë nga
+postgres-i real) — prodhimi mbeti i paprekur, por procesi i dokumentuar i
+deploy-it ishte i paplotë: kërkon **`-p techi-platform`** (ose
+`COMPOSE_PROJECT_NAME=techi-platform`), sepse emri i projektit nuk del nga
+compose file, po nga direktoria.
+
+### Shkaku
+
+Compose project name i pa-fiksuar në `/root/.env` ose në compose file;
+deploy-et e mëparshme duket se e kanë dhënë manualisht.
+
+### Zgjidhja
+
+Pastrim i menjëhershëm (`docker rm root-backend-1 root-postgres-1`,
+`docker network rm root_default`, heqja e imazhit `root-backend`) dhe rideploy
+me `docker compose -p techi-platform build backend && … up -d backend`.
+Hapi 5 i Deploy Process në PROJECT_STATE.md u përditësua me `-p techi-platform`.
+
+### Ndryshimet
+
+Prodhimi: `9644634` → `c60ff62` (3 commits: `d19f5d9` docs aprovimi/design-lock,
+`f1975ed` Phase 0 platform_core, `c60ff62` roadmap). Vetëm imazhi backend u
+rindërtua; frontend/postgres të paprekur. Zero SQL (Faza 0 s'ka ndryshime skeme).
+
+### Rezultati
+
+`/health` 200; `techi-platform-backend-1` healthy; operatorët u rilidhën në
+`/ws/devices`; **740 heartbeats në 5 min** (~750 pajisje @ 250 s — normale);
+verifikuar në kontejner: të 7 flags OFF, `feature_enabled('FEATURE_LINUX')` =
+False, 8 platforma në registry. Sjellja e prodhimit bit-identike (kod dark i
+pa-importuar nga asnjë modul ekzistues — invariant i testuar).
+
+### Mësimet
+
+(1) **Gjithmonë `docker compose -p techi-platform` në `/root`** — pa të,
+compose krijon projekt paralel "root" dhe tenton postgres të dytë në 5432.
+Vlen ta fiksojmë me `COMPOSE_PROJECT_NAME=techi-platform` në `/root/.env`
+(kërkon vendim të owner-it — prek edhe backup/restore docs). (2) Filtri i
+heartbeat access-log (deploy 2026-07-06) do të thotë që rrjedha e heartbeat-eve
+verifikohet me DB (`device_heartbeats.created_at`), jo me logje.
+
 ## [2026-07-07] Vendim: Platform Expansion — arkitektura APROVOHET dhe DESIGN LOCKED
 
 ### Problemi
