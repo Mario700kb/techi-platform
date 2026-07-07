@@ -27,6 +27,60 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Platform Expansion Phase 4 — Enterprise Credential Vault (flag-gated)
+
+### Problemi
+
+Vault enterprise për sekrete (password/ssh_key/api_token/snmp/winbox/cert),
+me scope Global→Client→Group→Device, i ndarë PLOTËSISHT nga sistemi i
+RS-password (secret_cipher), pa u prekur asgjë me flags OFF. (Fazat 2–3 u
+anashkaluan për momentin: Faza 2 e bllokuar nga rollout-i 2.1.5; fazat
+zhvillohen në mënyrë të pavarur.)
+
+### Analiza / Zgjidhja
+
+Envelope AES-256-GCM në `core/vault_cipher.py`: master key file jashtë
+repo/DB (`data/vault_master.key`, `0400`, në volume `backend_data`) → DEK
+per-credential → payload; rotation me re-wrap (payload i paprekur). E ndarë
+nga `secret_cipher` (keystream i RS-password — i ngrirë). Tabela të reja
+`vault_credentials` + `vault_credential_usage` (append-only audit). Service
+me integritet scope-i (scope_type ↔ target id), reveal me arsye + audit,
+rotim. API `/vault` me role gates (list operator+, mutim admin+) dhe **404
+kur FEATURE_VAULT është OFF** (i padukshëm, jo "i çaktivizuar"). Endpoint i ri
+read-only `/platform/features` për frontend-in. UI: faqe `CredentialVault.tsx`
++ hook `usePlatformFeatures` (default all-off) + rrugë + zë Sidebar-i, të
+gjitha të gated nga FEATURE_VAULT.
+
+**SQL i aplikuar në prodhim para deploy-it** (dy tabela + indekse; shih
+commit). Rollback: `FEATURE_VAULT=false` (default, i menjëhershëm) + `git
+revert`; DROP TABLE vault_* vetëm me aprovim.
+
+Varësi e re: `cryptography==42.0.8` (vjen me docker build).
+
+### Rezultati
+
+Deploy 2026-07-07 (backend+frontend, prod tip `9a119a7`): health 200, të dy
+kontejnerët healthy, `/api/v1/vault` → **404** me flag OFF, `/platform/features`
+→ 401 pa auth (i mbrojtur), cipher round-trip OK në kontejner, çelësi master
+`0400` në `/app/data` (volume `techi-platform_backend_data`), 380 heartbeats/
+2min. Suita 2×: flags OFF dhe FEATURE_PLATFORM_CORE+FEATURE_VAULT ON → 414
+passed + 4 të njohura; tsc pastër; frontend build OK.
+
+### ⚠️ Veprim i detyrueshëm PARA se FEATURE_VAULT të ndizet në prodhim
+
+Çelësi master `vault_master.key` **nuk është ende në backup**. Skripti
+`techi-backup.sh` merr postgres + RustDesk keys + config tar, JO volume-in
+`backend_data`. Humbja e këtij çelësi = çdo sekret vault i parikuperueshëm
+(si RustDesk keys). Përpara ndezjes së flag-ut (që kërkon aprovim owner-i —
+kusht Manual Approval): (1) shto `vault_master.key` te config tar-i i
+backup-it; (2) rishiko rotation. Deri atëherë vault është i zbrazët dhe OFF,
+pa rrezik real.
+
+### Mësimet
+
+Sekretet e reja persistente kërkojnë hyrje në DR/backup që në ditën e parë —
+u regjistrua si gate para ndezjes së flag-ut, jo si borxh i heshtur.
+
 ## [2026-07-07] Platform Expansion Phase 1 — Platform Core Integration (dark wiring + kolona DB)
 
 ### Problemi

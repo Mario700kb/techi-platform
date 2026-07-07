@@ -20,16 +20,16 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `████░░░░░░░░░░░░░░░░` **20%** (Phases 0–1 COMPLETED — deployed + validated in production) |
-| **Current Phase** | **Phase 4 — Credential Vault** (status: IN PROGRESS). Phases 2–3 skipped for now: Phase 2 BLOCKED on the 2.1.5 rollout, Phase 3 depends on Phase 2; phases develop independently per the deployment policy. |
-| **Current Milestone** | Phase 4: vault tables + AES-256-GCM envelope cipher + API + usage audit (flag-gated, RS-password system untouched) |
-| **Next Milestone** | Phase 2/3 when the owner declares the 2.1.5 rollout complete; otherwise Phase 6 (IAM) after Phase 4 |
-| **Estimated Remaining Phases** | 8 (Phases 2–9) |
-| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified in the prod container after the Phase 1 deploy) |
-| **Deployment status** | Phase 1 deployed 2026-07-07: prod tip `a1c323e`; schema-first SQL applied (7 columns on `devices`, verified via information_schema); backend-only rebuild |
-| **Production status** | Healthy: `/health` 200, container healthy, 392 heartbeats/3min post-deploy, zero real errors in logs, adapters loadable in container, `FEATURE_PLATFORM_CORE=False` verified |
-| **Risks (top)** | Vault key management (R7 — master key outside DB/repo, in backup tar); 2.1.5 rollout in progress (blocks Phase 2); single-VPS/25 GB disk (watch at every phase gate) |
-| **Last Update** | 2026-07-07 (Phase 1 closed) |
+| **Overall Progress** | `██████░░░░░░░░░░░░░░` **30%** (Phases 0, 1, 4 COMPLETED — deployed + validated in production) |
+| **Current Phase** | **Phase 6 — IAM Evolution** (status: IN PROGRESS). Phases 2–3 remain BLOCKED on the 2.1.5 rollout; Phase 5 (Terminal) needs Phase 2 + the NPM approval, so IAM (independent, needs only Phase 1) is next. |
+| **Current Milestone** | Phase 6: granular permission matrix + custom roles + session listing on existing operators/teams/scopes (1:1 role migration, no-lockout invariant) |
+| **Next Milestone** | Phase 2/3 when the owner declares the 2.1.5 rollout complete |
+| **Estimated Remaining Phases** | 7 (Phases 2, 3, 5, 6, 7, 8, 9) |
+| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 4 deploy: `/vault` 404, `FEATURE_VAULT=False`) |
+| **Deployment status** | Phase 4 deployed 2026-07-07: prod tip `9a119a7`; vault tables created schema-first; backend+frontend rebuilt; `cryptography==42.0.8` added |
+| **Production status** | Healthy: `/health` 200, both containers healthy, 380 heartbeats/2min, vault 404 with flag off, cipher round-trip verified in container |
+| **Risks (top)** | ⚠️ **vault master key not yet in backup** — MUST be added before FEATURE_VAULT is ever turned on (documented in CHANGELOG); 2.1.5 rollout (blocks Phase 2); single-VPS/25 GB disk |
+| **Last Update** | 2026-07-07 (Phase 4 closed) |
 
 ## Phase Table
 
@@ -39,7 +39,7 @@
 | 1 | Platform Core Integration (dark wiring + DB) | **COMPLETED** (2026-07-07) | `a1c323e` | ✅ 2026-07-07 (SQL schema-first + backend rebuild) | suite 403✅+4 known, **flag OFF & ON** · golden corpus 10/10 · prod: health 200, 392 hb/3min, flags OFF verified ✅ |
 | 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must complete) | — | — | — |
 | 3 | Linux UI Integration | NOT STARTED | — | — | — |
-| 4 | Credential Vault | NOT STARTED | — | — | — |
+| 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 (flags off & on) · tsc/build clean · prod: vault 404 flag-off, cipher OK, health 200 ✅ |
 | 5 | Embedded Web Terminal | NOT STARTED (NPM WS route needs separate owner approval) | — | — | — |
 | 6 | IAM Evolution (permission matrix, sessions) | NOT STARTED | — | — | — |
 | 7 | MikroTik Pilot (proxy adapter pattern) | NOT STARTED | — | — | — |
@@ -114,13 +114,15 @@ desktop, flag-off snapshots. Rollback: flag OFF. Certification: Linux →
 
 ## Phase 4 — Credential Vault
 
-Objective: enterprise secrets, fully separate from the RS-password system.
-Deliverables: `vault_credentials` + `vault_credential_usage` tables (+inverse
-SQL), `core/vault_cipher.py` (AES-256-GCM envelope; master key file 0400
-outside repo/DB, added to config backup), CRUD + `/reveal` API, minimal UI,
-usage audit. Flags: `FEATURE_VAULT`. Rollback: flag OFF (tables inert).
-Testing: crypto round-trip, permission tests, reveal-audit verification.
-**Constraint: `secret_cipher.py` and the RS-password flow untouched.**
+**COMPLETED 2026-07-07 (`9a119a7`).** Delivered: `vault_credentials` +
+`vault_credential_usage`, `core/vault_cipher.py` (AES-256-GCM envelope, master
+key 0400 outside repo/DB), CRUD + `/reveal` (reason+audit) API, `/platform/
+features`, minimal `CredentialVault.tsx` + flag-gated route/sidebar, usage
+audit, 22 tests. `secret_cipher.py`/RS-password untouched (verified separate).
+**Open follow-up (gate before enabling FEATURE_VAULT): add `vault_master.key`
+to the backup — it lives in the `backend_data` volume, not yet in the backup
+tar; losing it = unrecoverable secrets.** Turning FEATURE_VAULT on is itself a
+Manual-Approval action (owner).
 
 ## Phase 5 — Embedded Web Terminal
 
