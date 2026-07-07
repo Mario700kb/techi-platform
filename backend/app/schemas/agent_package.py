@@ -10,6 +10,7 @@ class AgentPackagePlatform(str, Enum):
     WINDOWS_AMD64 = "windows-amd64"
     WINDOWS_ARM64 = "windows-arm64"
     LINUX_AMD64 = "linux-amd64"
+    LINUX_ARM64 = "linux-arm64"
     DARWIN_ARM64 = "darwin-arm64"
 
 

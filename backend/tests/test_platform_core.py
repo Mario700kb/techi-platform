@@ -145,6 +145,7 @@ class TestWiringBoundary:
             "app/services/platform_adapters/registry.py",
             "app/api/v1/endpoints/platform.py",  # features endpoint (Phase 4)
             "app/api/v1/endpoints/vault.py",  # flag gate (Phase 4)
+            "app/api/v1/endpoints/install.py",  # Linux installer flag gate (Phase 2)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []
