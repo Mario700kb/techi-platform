@@ -41,7 +41,7 @@
 | 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 · tsc/build clean · prod: vault 404 flag-off ✅ |
 | — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
 | 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
-| 3 | Linux Platform Integration (UI / Drawer / Catalog) | **IN PROGRESS** (needs Phase 2 ✅) | — | — | — |
+| 3 | Linux Platform Integration (UI / Drawer / Catalog) | **IN PROGRESS** | `69aa088` (PlatformIcon slice) | ✅ 2026-07-07 (frontend, flag off = identical UI) | tsc/build clean; PlatformIcon in catalog flag-gated. Remaining: tree sub-folders, Drawer capability tabs, Enrollment/Packages/Command Center Linux |
 | 5 | Embedded Web Terminal | NOT STARTED (needs Phase 2 + NPM WS route owner approval) | — | — | — |
 | 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
