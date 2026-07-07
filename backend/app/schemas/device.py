@@ -202,6 +202,8 @@ class Device(DeviceBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # Platform Expansion: capabilities reported by platform-aware agents.
+    capabilities: Optional[dict] = None
     registered_at: datetime
     last_seen: Optional[datetime]
     client_id: Optional[int]

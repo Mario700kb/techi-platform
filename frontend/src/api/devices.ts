@@ -33,6 +33,11 @@ export interface Device {
   os_name?: string;
   os_version?: string;
   platform?: string;
+  // Platform Expansion: capabilities reported by platform-aware agents
+  // (Linux+). Absent for Windows. UI renders capability-gated surfaces.
+  capabilities?: Record<string, string> | null;
+  kernel_version?: string | null;
+  architecture?: string | null;
   device_type: "server" | "client" | "unassigned";
   status: "online" | "offline";
   freshness_state?: "online" | "stale" | "offline";

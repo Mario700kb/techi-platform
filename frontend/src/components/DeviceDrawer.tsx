@@ -35,6 +35,7 @@ import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRea
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { Alert, AlertSeverity } from "../types/alert";
 import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
@@ -238,6 +239,7 @@ export default function DeviceDrawer({
   const [serviceSearch, setServiceSearch] = useState("");
   const [softwareSearch, setSoftwareSearch] = useState("");
   const inventoryLoadedFor = useRef<number | null>(null);
+  const platformFeatures = usePlatformFeatures();
   const [activeTab, setActiveTab] = useState<DrawerTab>("overview");
   const [notes, setNotes] = useState<DeviceNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -1176,12 +1178,34 @@ export default function DeviceDrawer({
               <DetailRow label="Domain" value={device.domain} />
               <DetailRow label="OS" value={device.os_name} />
               <DetailRow label="Platform" value={device.platform} />
+              {platformFeatures.FEATURE_LINUX && device.kernel_version && (
+                <DetailRow label="Kernel" value={device.kernel_version} mono />
+              )}
+              {platformFeatures.FEATURE_LINUX && device.architecture && (
+                <DetailRow label="Architecture" value={device.architecture} mono />
+              )}
               {(device.cpu || device.ram || device.storage) && (
                 <div className="col-span-2">
                   <p className="premium-kicker mb-1">Hardware</p>
                   <p className="text-xs font-medium leading-5 text-slate-200">
                     {[device.cpu, device.ram, device.storage].filter(Boolean).join(" · ")}
                   </p>
+                </div>
+              )}
+              {/* Capabilities — capability-driven, real data reported by the
+                  agent. Only rendered when Linux is enabled and the device
+                  reported some (Windows never does → Windows drawer unchanged). */}
+              {platformFeatures.FEATURE_LINUX && device.capabilities && Object.keys(device.capabilities).length > 0 && (
+                <div className="col-span-2">
+                  <p className="premium-kicker mb-1.5">Capabilities</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(device.capabilities).map(([name, version]) => (
+                      <span key={name}
+                        className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        {name}{version ? <span className="font-mono text-slate-500">{version}</span> : null}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
