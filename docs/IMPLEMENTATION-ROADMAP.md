@@ -20,17 +20,17 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `███████░░░░░░░░░░░░░` **35%** (Phases 0, 1, 4 + Vault Operational Safety COMPLETED) |
-| **Current Phase** | **Phase 2 — Linux Agent MVP** (status: **BLOCKED** — 2.1.5 rollout not officially closed). Per owner instruction, only the implementation plan is produced now (below); no `agent/` changes until the rollout is declared complete. |
-| **Current Milestone** | Owner declares the 2.1.5 rollout closed → begin Phase 2 implementation |
-| **Next Milestone** | Phase 3 — Linux UI Integration (after Phase 2) |
-| **Estimated Remaining Phases** | 7 (Phases 2, 3, 5, 7, 8, 9, 6) |
-| **Execution order** | **Re-prioritized 2026-07-07 (owner): platform support before IAM.** Vault Safety ✅ → **2 Linux Agent → 3 Linux UI → 5 Web Terminal → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last)** |
-| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 4 deploy: `/vault` 404, `FEATURE_VAULT=False`) |
-| **Deployment status** | Prod tip `9a119a7` (Phase 4); Vault Operational Safety applied on-server (backup script `scripts/techi-backup.sh`, recovery rehearsed) — no app deploy |
-| **Production status** | Healthy: `/health` 200, both containers healthy, 380 heartbeats/2min, vault 404 with flag off; vault key backup + recovery verified end-to-end |
-| **Risks (top)** | 2.1.5 rollout in progress (blocks Phase 2 — the current priority); single-VPS/25 GB disk; adapter/proxy work (Phases 7–9) has real external dependencies |
-| **Last Update** | 2026-07-07 (Vault Operational Safety closed; roadmap re-prioritized) |
+| **Overall Progress** | `█████████░░░░░░░░░░░` **45%** (Phases 0, 1, 4, 2 + Vault Operational Safety COMPLETED) |
+| **Current Phase** | **Phase 3 — Linux Platform Integration (UI)** (status: IN PROGRESS). Phase 2 (Linux Agent MVP) closed 2026-07-07. |
+| **Current Milestone** | Phase 3: PlatformIcon, tree sub-folders + auto-grouping, OS cells, Drawer capability tabs, Enrollment Linux generator, Packages Linux tab (all flag-gated FEATURE_LINUX) |
+| **Next Milestone** | Phase 5 — Web Terminal (needs Phase 2 ✅ + NPM WS route owner approval) |
+| **Estimated Remaining Phases** | 6 (Phases 3, 5, 7, 8, 9, 6) |
+| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → **3 Linux UI** → 5 Web Terminal → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
+| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 2 deploy: `/install/linux` 404, `FEATURE_LINUX=False`) |
+| **Deployment status** | Prod tip `59a781b` (Phase 2); backend-only rebuild; install endpoint 404 with flag off |
+| **Production status** | Healthy: `/health` 200, 206 heartbeats/min (~750 devices @ 250s), 0 real errors; Linux agent builds all targets + smoke-tested on Ubuntu |
+| **Risks (top)** | Linux agent needs a real canary before Internal cert (enabling FEATURE_LINUX = Manual Approval); Phase 5 NPM WS route needs approval; single-VPS/25 GB disk |
+| **Last Update** | 2026-07-07 (Phase 2 closed; Linux → Experimental) |
 
 ## Phase Table (in execution order)
 
@@ -40,8 +40,8 @@
 | 1 | Platform Core Integration (dark wiring + DB) | **COMPLETED** (2026-07-07) | `a1c323e` | ✅ 2026-07-07 (SQL schema-first + backend rebuild) | suite 403✅+4, **flag OFF & ON** · golden 10/10 · prod: 392 hb/3min ✅ |
 | 4 | Credential Vault | **COMPLETED** (2026-07-07) | `9a119a7` | ✅ 2026-07-07 (vault tables SQL + backend/frontend rebuild) | 22 vault tests + suite 414✅+4 · tsc/build clean · prod: vault 404 flag-off ✅ |
 | — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
-| 2 | Linux Agent MVP | **BLOCKED** (2.1.5 rollout must be officially closed) | — | — | plan below |
-| 3 | Linux Platform Integration (UI / Drawer / Catalog) | NOT STARTED (needs Phase 2) | — | — | — |
+| 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
+| 3 | Linux Platform Integration (UI / Drawer / Catalog) | **IN PROGRESS** (needs Phase 2 ✅) | — | — | — |
 | 5 | Embedded Web Terminal | NOT STARTED (needs Phase 2 + NPM WS route owner approval) | — | — | — |
 | 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
@@ -88,12 +88,23 @@ Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED ·
 | **Deployment / Validation** | ✅ 2026-07-07: SQL applied schema-first + verified via information_schema → push `a1c323e` → pull + backend rebuild (`-p techi-platform`) → health 200, healthy, 392 hb/3min, zero real errors, adapters loadable, flag verified OFF in container |
 | **Completion date / Commit** | **2026-07-07** · `a1c323e` |
 
-## Phase 2 — Linux Agent MVP  ⛔ GATED (2.1.5 rollout not closed)
+## Phase 2 — Linux Agent MVP  ✅ COMPLETED 2026-07-07
 
-**Status 2026-07-07: implementation plan only.** The owner has NOT declared the
-Windows Agent 2.1.5 rollout closed, so per the standing order and the explicit
-instruction, **no file under `agent/` is touched**. The full plan below is
-ready to execute the moment the rollout is declared complete.
+**Delivered** (owner declared the 2.1.5 rollout CLOSED, 2026-07-07). 7 milestones,
+small commits, prod tip `59a781b`:
+`agent/pal.go` (Platform contract) + `platform_{windows,linux,other}.go`;
+7 additive omitempty inventory/payload fields wired from `currentPlatform()`
+(`pal_test.go` proves the non-Linux payload is unchanged); Linux `collectOSInfo`
+(os-release + kernel); Linux actions (systemd restart/reboot); Linux service
+management (systemd install/uninstall/start/stop/status) + self-update (download
+→ SHA256 → atomic swap → `systemctl restart`); backend `GET /install/linux`
+(flag-gated) + `linux-arm64` package type. Builds all 4 targets; Windows agent
+NOT rebuilt/redeployed (fleet stays 2.1.5); smoke-tested on the Ubuntu server.
+FEATURE_LINUX remains OFF (enabling it for a canary = Manual Approval).
+Certification: Linux → **Experimental**. The original plan is retained below for
+traceability.
+
+<details><summary>Original Phase 2 plan (executed)</summary>
 
 | | |
 |---|---|
@@ -162,6 +173,13 @@ the Linux binary (compile-time isolation, audit §7).
 (SHA-alignment); branch isolation until rollout closes; rollback = uninstall
 canaries + `FEATURE_LINUX` OFF (Windows fleet mathematically untouched — it
 shares no compiled code and no changed endpoint).
+
+</details>
+
+**Follow-ups before Linux → Internal**: build+upload the Linux binaries as
+`linux-amd64`/`linux-arm64` packages (SHA-recorded); add a CI job to
+cross-build the Linux agent; enable FEATURE_LINUX for an internal canary
+(Manual Approval); run Appendix B on a real Linux enroll.
 
 ## Phase 3 — Linux UI Integration
 

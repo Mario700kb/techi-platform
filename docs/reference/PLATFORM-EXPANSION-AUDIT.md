@@ -428,7 +428,7 @@ and reflected in PROJECT_STATE.md (platform + stage), plus one row here:
 | Platform | Current stage | Promoted on | Approved by | Evidence (changelog entry) |
 |---|---|---|---|---|
 | Windows | **LTS** (reference implementation, grandfathered) | 2026-07-07 (baseline) | owner | this audit, §1 |
-| Linux | Experimental (upon Phase 2 start) | — | — | — |
+| Linux | **Experimental** | 2026-07-07 | owner (Phase 2 authorization) | CHANGELOG 2026-07-07 "Phase 2 — Linux Agent MVP" |
 | MikroTik | — (pre-Experimental) | — | — | — |
 | Synology / QNAP | — | — | — | — |
 | VMware / Hyper-V / Proxmox | — | — | — | — |

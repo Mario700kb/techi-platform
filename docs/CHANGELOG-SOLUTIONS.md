@@ -27,6 +27,73 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-07] Platform Expansion Phase 2 — Linux Agent MVP (flag-gated, Windows bit-identik në sjellje)
+
+### Problemi
+
+Agjenti i parë native jo-Windows: enroll → heartbeat → inventory → actions →
+self-update → systemd, me të njëjtën kontratë si Windows, pa prekur sjelljen
+Windows. Autorizuar pas shpalljes zyrtare të owner-it që rollout-i 2.1.5 është
+i mbyllur.
+
+### Analiza / Zgjidhja (7 milestone, commits të vegjël)
+
+Ndarja ekzistuese build-tag (`_windows.go`/`_other.go`) u formalizua në një
+kontratë PAL të dokumentuar (`agent/pal.go`: `Platform` me `Capabilities()` +
+`ExtraInventory()`). Windows-i implementon kontratën me kthime bosh → payload-i
+i heartbeat-it byte-identik (të gjitha fushat e reja `omitempty`); Linux-i
+raporton realisht. Për të shmangur simbole të dyfishta, `_other.go`-t përkatëse
+u ritag-uan `!windows && !linux` (darwin mbetet fallback) dhe u shtuan
+`*_linux.go`.
+
+- **M1**: `pal.go` + `platform_{windows,linux,other}.go`.
+- **M2**: 7 fusha aditive (`fqdn, kernel_version, architecture, mac_address,
+  timezone, last_boot_at, capabilities`) në Inventory + HeartbeatPayload,
+  populuar nga `currentPlatform()`. Test `pal_test.go` provon që payload-i
+  jo-Linux nuk përmban asnjë nga fushat e reja.
+- **M3**: `collectOSInfo` real në Linux nga `/etc/os-release` + kernel (uname).
+- **M4**: actions Linux (restart_agent/restart_device/reboot via systemd;
+  RustDesk/PowerShell → "not supported on Linux").
+- **M5**: service management systemd (install shkruan unit + enable --now;
+  uninstall/start/stop/status) + self-update (download → SHA256 → atomic
+  rename me `.old` për rollback → `systemctl restart`).
+- **M6**: backend `GET /api/v1/install/linux?token=` (bash one-liner, 404 kur
+  FEATURE_LINUX OFF) + `linux-arm64` te AgentPackagePlatform.
+
+### Windows protection — provë
+
+Baseline i binarit Windows u kap PARA punës. Byte-identik i binarit është i
+pamundur kur shtohet kod i përbashkët (pal.go kompilohet edhe në Windows),
+prandaj garancia është **sjellje bit-identike**: (1) test që provon payload-i
+jo-Linux s'ka fushat e reja; (2) suita Go e gjelbër; (3) **agjenti Windows NUK
+u rindërtua/rideploy-ua — flota mbetet në 2.1.5**. Të katër targetet ndërtohen
+(linux amd64/arm64, windows, darwin).
+
+### Smoke test (server Ubuntu)
+
+Binari `linux/amd64` (ELF statik ~9.5MB) u ekzekutua me `--once`: mblodhi
+inventory + RustDesk discovery (`not_installed` — saktë në Linux) dhe dështoi
+me elegancë te enrollment pa token. Kodi Linux u ushtrua pa gabime.
+
+### Deploy + validim
+
+Backend prod tip `59a781b` (backend-only rebuild). health 200;
+`/api/v1/install/linux` → **404** (FEATURE_LINUX OFF, verifikuar); 206
+heartbeats/min (~750 pajisje @ 250s — normale); 0 gabime reale në logje.
+FEATURE_LINUX mbetet OFF — Linux është dark. Binarët Linux nuk u ngarkuan si
+paketa (kërkon ndezjen e flag-ut për canary — Manual Approval).
+
+### Certifikim
+
+Linux → **Experimental** (Appendix C): kod i implementuar, dark, pa pajisje
+prodhimi. Internal kërkon UI-n e Fazës 3 + një host të brendshëm.
+
+### Mësimet
+
+Ritag-imi build-tag (`!windows && !linux`) është mënyra e pastër të shtosh një
+platformë të tretë pa prekur dy të parat: kompajlleri garanton izolim, jo
+disiplina. Çdo funksion i hequr nga `_other.go` duhet ripërkufizuar për Linux.
+
 ## [2026-07-07] Vault Operational Safety — backup + recovery i çelësit master (hardening, pa ndryshim sjelljeje)
 
 ### Problemi
