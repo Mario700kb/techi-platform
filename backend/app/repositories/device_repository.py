@@ -107,6 +107,7 @@ class DeviceRepository:
         smart_folder: Optional[str] = None,
         active_agent_version: Optional[str] = None,
         active_agent_sha256: Optional[str] = None,
+        platform: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
@@ -115,6 +116,7 @@ class DeviceRepository:
             query = query.filter(Device.status == status)
         if device_type:
             query = query.filter(Device.device_type == device_type)
+        query = self._apply_platform_filter(query, platform)
         query = self._apply_freshness_filter(query, freshness_state)
         if client_id == -1:
             query = query.filter(Device.client_id.is_(None))
@@ -195,6 +197,16 @@ class DeviceRepository:
                 )
             )
         return query.filter(Device.assignment_source == source)
+
+    def _apply_platform_filter(self, query, platform: Optional[str]):
+        """Platform Expansion additive filter. "windows" also matches legacy
+        rows with a NULL platform (absence ⇒ windows, audit §8)."""
+        if not platform:
+            return query
+        p = platform.strip().lower()
+        if p == "windows":
+            return query.filter(or_(Device.platform.ilike("%windows%"), Device.platform.is_(None)))
+        return query.filter(Device.platform.ilike(f"%{p}%"))
 
     def _apply_smart_folder_filter(self, query, smart_folder: Optional[str]):
         if not smart_folder:
@@ -362,6 +374,7 @@ class DeviceRepository:
         smart_folder: Optional[str] = None,
         active_agent_version: Optional[str] = None,
         active_agent_sha256: Optional[str] = None,
+        platform: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         query = self.db.query(Device)
@@ -370,6 +383,7 @@ class DeviceRepository:
             query = query.filter(Device.status == status)
         if device_type:
             query = query.filter(Device.device_type == device_type)
+        query = self._apply_platform_filter(query, platform)
         query = self._apply_freshness_filter(query, freshness_state)
         if client_id == -1:
             query = query.filter(Device.client_id.is_(None))

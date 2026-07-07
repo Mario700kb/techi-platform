@@ -107,6 +107,8 @@ export interface DeviceFilters {
   maintenance_state?: "maintenance" | "normal";
   smart_folder?: "windows_server" | "windows_workstation" | "laptop" | "domain" | "workgroup" | "unassigned" | "offline" | "rustdesk_missing";
   agent_update_state?: "outdated";
+  // Platform Expansion: additive platform filter (e.g. "windows", "linux").
+  platform?: string;
 }
 
 const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
@@ -148,6 +150,7 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   appendIfAllowed(params, "maintenance_state", filters.maintenance_state, allowedMaintenanceStates);
   appendIfAllowed(params, "smart_folder", filters.smart_folder, allowedSmartFolders);
   appendIfAllowed(params, "agent_update_state", filters.agent_update_state, allowedAgentUpdateStates);
+  if (filters.platform?.trim()) params.append("platform", filters.platform.trim().toLowerCase());
 }
 
 export interface DevicesResponse {
