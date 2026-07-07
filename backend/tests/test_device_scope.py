@@ -250,6 +250,8 @@ class TestDeviceScopeByClientId:
             "unassigned": 0,
             "by_client": {"1": 1},
             "by_client_category": {"1": {"clientpc": 1}},
+            # Platform Expansion: empty with FEATURE_LINUX off (default).
+            "by_client_category_platform": {},
         }
         assert body["critical"] == 0
         assert body["warnings"] == 0

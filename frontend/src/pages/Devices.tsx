@@ -14,6 +14,7 @@ import {
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
 import NotificationCenter from "../components/NotificationCenter";
 import { Button } from "../components/ui";
@@ -42,6 +43,8 @@ interface TreeCounts {
   unassigned: number;
   byClient: Map<number, number>;
   byClientCategory: Map<number, Map<string, number>>;
+  // Platform Expansion: clientId → category → platform → count.
+  byClientCategoryPlatform: Map<number, Map<string, Map<string, number>>>;
 }
 
 function computeTreeCounts(devices: Device[]): TreeCounts {
@@ -52,7 +55,7 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
     if (cid === null) unassigned++;
     else byClient.set(cid, (byClient.get(cid) ?? 0) + 1);
   }
-  return { total: devices.length, unassigned, byClient, byClientCategory: new Map() };
+  return { total: devices.length, unassigned, byClient, byClientCategory: new Map(), byClientCategoryPlatform: new Map() };
 }
 
 // Map quick filter pills to backend API params where possible.
@@ -72,6 +75,7 @@ function quickFilterToApiFilters(qf: QuickFilter): Partial<DeviceFilters> {
 
 export default function Devices() {
   const { can, user } = useAuth();
+  const platformFeatures = usePlatformFeatures();
   const {
     fleetOverview,
     fleetOverviewLoading,
@@ -176,6 +180,14 @@ export default function Devices() {
         Object.entries(fleetOverview.tree_counts.by_client_category ?? {}).map(([clientId, counts]) => [
           Number(clientId),
           new Map(Object.entries(counts)),
+        ]),
+      ),
+      byClientCategoryPlatform: new Map(
+        Object.entries(fleetOverview.tree_counts.by_client_category_platform ?? {}).map(([clientId, cats]) => [
+          Number(clientId),
+          new Map(
+            Object.entries(cats).map(([category, plats]) => [category, new Map(Object.entries(plats))]),
+          ),
         ]),
       ),
     };
@@ -468,14 +480,23 @@ export default function Devices() {
         nextFilters.client_id = -1;
         nextFilters.group_id = undefined;
       } else if (key.startsWith("client-")) {
-        const match = key.match(/^client-(\d+)(?:-(servers|clientpc))?$/);
-        if (match) {
-          nextFilters.client_id = Number(match[1]);
+        // Platform sub-folder: client-N-servers-linux etc. (Platform Expansion).
+        const platformMatch = key.match(/^client-(\d+)-(servers|clientpc)-([a-z0-9]+)$/);
+        if (platformMatch) {
+          nextFilters.client_id = Number(platformMatch[1]);
           nextFilters.group_id = undefined;
-          if (match[2] === "servers") {
-            nextFilters.smart_folder = "windows_server";
-          } else if (match[2] === "clientpc") {
-            nextFilters.smart_folder = "windows_workstation";
+          nextFilters.device_type = platformMatch[2] === "servers" ? "server" : "client";
+          nextFilters.platform = platformMatch[3];
+        } else {
+          const match = key.match(/^client-(\d+)(?:-(servers|clientpc))?$/);
+          if (match) {
+            nextFilters.client_id = Number(match[1]);
+            nextFilters.group_id = undefined;
+            if (match[2] === "servers") {
+              nextFilters.smart_folder = "windows_server";
+            } else if (match[2] === "clientpc") {
+              nextFilters.smart_folder = "windows_workstation";
+            }
           }
         }
       }
@@ -710,6 +731,7 @@ export default function Devices() {
             clients={clients}
             groups={groups}
             treeCounts={treeCounts}
+            showPlatformFolders={platformFeatures.FEATURE_LINUX}
             onRefreshCounts={() => void refreshFleetOverview(true)}
           />
         </div>

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.scope import AllowedScope
 from app.core.time import utcnow
+from app.platform_core.flags import feature_enabled
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import DeviceFleetOverview, DeviceStats, DeviceTreeCounts
 from app.services.agent_package_service import AgentPackageService
@@ -124,6 +125,13 @@ class DeviceOverviewService:
                 unassigned=unassigned,
                 by_client=by_client,
                 by_client_category=by_client_category,
+                # Extra aggregation query ONLY when Linux is enabled — the
+                # overview stays a 2-query hot path in today's production.
+                by_client_category_platform=(
+                    self.repository.count_by_client_category_platform(scope=scope)
+                    if feature_enabled("FEATURE_LINUX")
+                    else {}
+                ),
             ),
             critical=critical,
             warnings=warnings,

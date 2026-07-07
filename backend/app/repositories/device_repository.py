@@ -454,11 +454,10 @@ class DeviceRepository:
 
         return DeviceTreeCounts(total=total, unassigned=unassigned, by_client=by_client)
 
-    def get_overview_inputs(self, scope: Optional["AllowedScope"] = None):
-        """Return fleet counts and health inputs in two database queries."""
-        now = utcnow()
-        online_cutoff = now - timedelta(minutes=6)
-        stale_cutoff = now - timedelta(minutes=25)
+    @staticmethod
+    def _tree_category_case():
+        """SERVERS vs CLIENTPC classification — the reference (Windows) logic,
+        reused unchanged so platform sub-folders nest under the same folders."""
         server_group = or_(
             DeviceGroup.name.ilike("servers"),
             DeviceGroup.name.ilike("server"),
@@ -476,12 +475,62 @@ class DeviceRepository:
             Device.os_version.ilike("%windows server%"),
             Device.os_caption.ilike("%windows server%"),
         )
-        category = case(
+        return case(
             (server_group, "servers"),
             (client_pc_group, "clientpc"),
             (server_os, "servers"),
             else_="clientpc",
         ).label("category")
+
+    @staticmethod
+    def _platform_class_case():
+        """Centralized platform classification for tree aggregation. NULL or
+        anything Windows ⇒ 'windows' (audit §8: absence ⇒ windows). Extending
+        to a new platform is one more branch here — no UI change."""
+        return case(
+            (Device.platform.ilike("%linux%"), "linux"),
+            (Device.platform.ilike("%mikrotik%"), "mikrotik"),
+            (Device.platform.ilike("%routeros%"), "mikrotik"),
+            (Device.platform.ilike("%synology%"), "synology"),
+            (Device.platform.ilike("%qnap%"), "qnap"),
+            (Device.platform.ilike("%vmware%"), "vmware"),
+            (Device.platform.ilike("%esxi%"), "vmware"),
+            (Device.platform.ilike("%proxmox%"), "proxmox"),
+            (Device.platform.ilike("%hyperv%"), "hyperv"),
+            else_="windows",
+        ).label("platform_class")
+
+    def count_by_client_category_platform(
+        self, scope: Optional["AllowedScope"] = None
+    ) -> dict[int, dict[str, dict[str, int]]]:
+        """Additive tree aggregation: {client_id: {category: {platform: total}}}.
+        A separate lightweight GROUP BY — it does NOT touch get_overview_inputs
+        (the sacred Windows path)."""
+        category = self._tree_category_case()
+        platform_class = self._platform_class_case()
+        q = self.db.query(
+            Device.client_id,
+            category,
+            platform_class,
+            func.count(Device.id).label("total"),
+        ).outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
+        q = self._apply_lifecycle_filter(q, "active")
+        q = self._apply_scope_filter(q, scope)
+        rows = q.group_by(Device.client_id, category, platform_class).all()
+
+        result: dict[int, dict[str, dict[str, int]]] = {}
+        for client_id, cat, plat, total in rows:
+            if client_id is None:
+                continue
+            result.setdefault(client_id, {}).setdefault(cat, {})[plat] = total
+        return result
+
+    def get_overview_inputs(self, scope: Optional["AllowedScope"] = None):
+        """Return fleet counts and health inputs in two database queries."""
+        now = utcnow()
+        online_cutoff = now - timedelta(minutes=6)
+        stale_cutoff = now - timedelta(minutes=25)
+        category = self._tree_category_case()
 
         counts_query = self.db.query(
             Device.client_id,
