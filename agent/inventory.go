@@ -37,6 +37,15 @@ type Inventory struct {
 	CPU                string `json:"cpu"`
 	RAM                string `json:"ram"`
 	Storage            string `json:"storage"`
+	// Platform Expansion additive fields — populated only by platform-aware
+	// implementations (Linux+); empty on Windows so its payload is unchanged.
+	FQDN          string   `json:"fqdn,omitempty"`
+	KernelVersion string   `json:"kernel_version,omitempty"`
+	Architecture  string   `json:"architecture,omitempty"`
+	MACAddress    string   `json:"mac_address,omitempty"`
+	Timezone      string   `json:"timezone,omitempty"`
+	LastBootAt    string   `json:"last_boot_at,omitempty"`
+	Capabilities  []string `json:"capabilities,omitempty"`
 }
 
 func collectInventory(cfg *Config) (*Inventory, error) {
@@ -72,6 +81,17 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 		RAM:                ramInfo,
 		Storage:            storageInfo,
 	}
+
+	// Additive platform facts (empty on Windows/other → payload unchanged).
+	platform := currentPlatform()
+	extra := platform.ExtraInventory()
+	inventory.FQDN = extra.FQDN
+	inventory.KernelVersion = extra.KernelVersion
+	inventory.Architecture = extra.Architecture
+	inventory.MACAddress = extra.MACAddress
+	inventory.Timezone = extra.Timezone
+	inventory.LastBootAt = extra.LastBootAt
+	inventory.Capabilities = platform.Capabilities()
 
 	return inventory, nil
 }

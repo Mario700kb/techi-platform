@@ -41,6 +41,14 @@ type HeartbeatPayload struct {
 	CPU                   string         `json:"cpu"`
 	RAM                   string         `json:"ram"`
 	Storage               string         `json:"storage"`
+	// Platform Expansion additive fields — omitempty; empty on Windows.
+	FQDN                  string         `json:"fqdn,omitempty"`
+	KernelVersion         string         `json:"kernel_version,omitempty"`
+	Architecture          string         `json:"architecture,omitempty"`
+	MACAddress            string         `json:"mac_address,omitempty"`
+	Timezone              string         `json:"timezone,omitempty"`
+	LastBootAt            string         `json:"last_boot_at,omitempty"`
+	Capabilities          []string       `json:"capabilities,omitempty"`
 	RustDeskInstallStatus string         `json:"rustdesk_install_status"`
 	RustDeskStatus        string         `json:"rustdesk_status"`
 	RustDeskVersion       string         `json:"rustdesk_version"`
@@ -86,6 +94,13 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		CPU:                   inv.CPU,
 		RAM:                   inv.RAM,
 		Storage:               inv.Storage,
+		FQDN:                  inv.FQDN,
+		KernelVersion:         inv.KernelVersion,
+		Architecture:          inv.Architecture,
+		MACAddress:            inv.MACAddress,
+		Timezone:              inv.Timezone,
+		LastBootAt:            inv.LastBootAt,
+		Capabilities:          inv.Capabilities,
 		RustDeskInstallStatus: rustdesk.InstallStatus,
 		RustDeskStatus:        rustdesk.Status,
 		RustDeskVersion:       rustdesk.Version,
