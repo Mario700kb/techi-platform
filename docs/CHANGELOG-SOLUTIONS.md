@@ -27,6 +27,29 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] Production Validation window — FILLIM (feature-t në pauzë)
+
+### Vendimi
+
+Owner-i pauzoi çdo punë feature. Hyjmë në dritaren **Production Stabilization /
+Validation** (24–48h): asnjë fazë e re, vetëm bug fixes prodhimi me verifikim të
+plotë (root cause → fix vetëm atë bug → contract+regression+preflight+smoke →
+deploy → vazhdo dritaren). Zero scope creep. Roadmap vazhdon VETËM me
+konfirmimin e owner-it për stabilitet.
+
+### Baseline i shëndetit të prodhimit (fillim dritareje, prod tip `3cdcc82`)
+
+- Të 8 FEATURE_* flags **OFF** (prodhimi = sjellje para-expansion, bit-identike).
+- 723 pajisje (603 online); 605 aktive/5min; **141.6 heartbeats/min** (~605 @ 250s).
+- **0 gabime reale** në 30 min; të gjithë kontejnerët healthy; smoke **7/7**.
+- DB 2010 MB, retention 7-ditor i shëndetshëm (heartbeat më i vjetër 2026-07-01).
+- Disk 70% (16/25 GB); backend mem 31% (247/800 MB).
+
+### Statusi
+
+Dritarja e hapur. Vëzhgimet, bug-et (nëse ka) dhe raporti final do të shtohen
+këtu gjatë/në fund të dritares.
+
 ## [2026-07-08] Hardening: Deployment Contract Verification (contract tests + preflight + smoke)
 
 ### Problemi

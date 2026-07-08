@@ -57,9 +57,9 @@ contract test when built.
 | | |
 |---|---|
 | **Overall Progress** | `████████████████░░░░` **80%** (Phases 0–5, 7 code-complete; 5+7 dark-deployed) |
-| **Current Phase** | **Phase 7 — MikroTik Proxy Adapter + Connect Framework** DARK COMPLETE (deployed, flags off). |
-| **Current Milestone** | Framework proven — a new platform = adapter + capability mapping + icon + connect methods, no UI change |
-| **Next Milestone** | Owner's choice: Phase 8 Storage (Synology/QNAP), the connection-launcher phase, or Phase 5 enablement |
+| **Current Phase** | ⏸️ **PRODUCTION VALIDATION window (started 2026-07-08, 24–48h)** — feature work PAUSED. Phase 7 (MikroTik + Connect Framework) was the last dark deploy. |
+| **Current Milestone** | Stabilization: production runs 24–48h, only bug fixes (full contract+regression+preflight+smoke each), resume roadmap on owner confirmation |
+| **Next Milestone** | (paused) Owner's choice after validation: Phase 8 Storage, connection launchers, or Phase 5 enablement |
 | **Estimated Remaining Phases** | 3 (8, 9, 6) + connection launchers + Phase 5 enablement |
 | **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → 3 Linux UI ✅ → 5 Web Terminal (dark ✅) → **7 MikroTik + Connect Framework (dark ✅)** → 8 Storage → 9 Hypervisors → 6 IAM (last) |
 | **Feature Flags status** | 8 flags in production, **all OFF** (verified: FEATURE_MIKROTIK + CORE False) |
