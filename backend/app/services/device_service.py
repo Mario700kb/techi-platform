@@ -61,6 +61,7 @@ class DeviceService:
         smart_folder: Optional[str] = None,
         agent_update_state: Optional[str] = None,
         platform: Optional[str] = None,
+        category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
@@ -81,6 +82,7 @@ class DeviceService:
             active_agent_version=active_agent_version,
             active_agent_sha256=active_agent_sha256,
             platform=platform,
+            category=category,
             scope=scope,
         )
         return self.assignment.apply_resolution_many(devices)
@@ -169,6 +171,7 @@ class DeviceService:
         smart_folder: Optional[str] = None,
         agent_update_state: Optional[str] = None,
         platform: Optional[str] = None,
+        category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
@@ -187,6 +190,7 @@ class DeviceService:
             active_agent_version=active_agent_version,
             active_agent_sha256=active_agent_sha256,
             platform=platform,
+            category=category,
             scope=scope,
         )
 

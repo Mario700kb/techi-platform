@@ -22,6 +22,12 @@ const SHOW_EMPTY_STORAGE_KEY = "techi.deviceTree.showEmptyGroups";
 const CLIENT_FOLDERS = [
   { id: "servers", label: "Servers", smartFolder: "windows_server" },
   { id: "clientpc", label: "Client PC", smartFolder: "windows_workstation" },
+  // Platform-class categories (Phase 7). Shown only when they have devices
+  // (folderCount > 0) → with all platform flags off they never appear, so the
+  // tree is identical to today. Placement is automatic (backend classifies).
+  { id: "network", label: "Network", smartFolder: "" },
+  { id: "storage", label: "Storage", smartFolder: "" },
+  { id: "hypervisors", label: "Hypervisors", smartFolder: "" },
 ] as const;
 
 const readShowEmptyGroups = () => {
@@ -54,7 +60,7 @@ interface DeviceTreeProps {
 const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups, treeCounts, showPlatformFolders = false, onRefreshCounts }: DeviceTreeProps) {
   void groups;
   const activeClientFolder = useMemo(() => {
-    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc)$/);
+    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors)$/);
     if (!match) return null;
     return { clientId: Number(match[1]), folderId: match[2] };
   }, [selectedKey]);

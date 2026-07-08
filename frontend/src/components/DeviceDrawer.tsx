@@ -36,6 +36,7 @@ import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import ConnectMenu from "./ConnectMenu";
 import { Alert, AlertSeverity } from "../types/alert";
 import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
@@ -1206,6 +1207,15 @@ export default function DeviceDrawer({
                   <p className="text-xs font-medium leading-5 text-slate-200">
                     {[device.cpu, device.ram, device.storage].filter(Boolean).join(" · ")}
                   </p>
+                </div>
+              )}
+              {/* Connect Framework (Phase 7): a single capability-driven Connect
+                  menu. Gated by FEATURE_PLATFORM_CORE so the flag-off drawer is
+                  unchanged; the dropdown is generated from connect-methods. */}
+              {platformFeatures.FEATURE_PLATFORM_CORE && (
+                <div className="col-span-2 flex items-center justify-between">
+                  <p className="premium-kicker">Connect</p>
+                  <ConnectMenu deviceId={device.id} />
                 </div>
               )}
               {/* Capabilities — capability-driven, real data reported by the

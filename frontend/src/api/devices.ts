@@ -109,6 +109,8 @@ export interface DeviceFilters {
   agent_update_state?: "outdated";
   // Platform Expansion: additive platform filter (e.g. "windows", "linux").
   platform?: string;
+  // Phase 7: platform-class tree category (network|storage|hypervisors).
+  category?: string;
 }
 
 const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
@@ -151,6 +153,7 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   appendIfAllowed(params, "smart_folder", filters.smart_folder, allowedSmartFolders);
   appendIfAllowed(params, "agent_update_state", filters.agent_update_state, allowedAgentUpdateStates);
   if (filters.platform?.trim()) params.append("platform", filters.platform.trim().toLowerCase());
+  if (filters.category?.trim()) params.append("category", filters.category.trim().toLowerCase());
 }
 
 export interface DevicesResponse {
