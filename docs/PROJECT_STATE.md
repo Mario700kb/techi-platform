@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | **Last Updated** | 2026-07-07 |
-| **Production Verified** | 2026-07-08 (Phase 7 dark deploy: health 200, frontend 200, 131 heartbeats/min, connect-methods 404 with flags off, MikroTik adapter registered, 0 real errors) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `7df3cba`) |
+| **Production Verified** | 2026-07-08 (Device Catalog 500 regression FIXED — `/devices/` no longer 500s; get_devices verified against real DB: 723 devices; health 200, 0 real errors) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `2dae09a`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
 | **Agent Version** | **2.1.5** — fleet target, NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |

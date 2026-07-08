@@ -27,6 +27,65 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] INCIDENT: Device Catalog 500 — commit i paplotë hoqi `category` nga repository
+
+### Problemi
+
+Device Catalog nuk ngarkohej: "Unable to load devices / Failed to fetch". Çdo
+`GET /api/v1/devices/` kthente 500. Release blocker — path-i SACRED i katalogut
+Windows i prishur pa kushte (pavarësisht flags).
+
+### Analiza (frontend → API → endpoint → service → repository → SQL)
+
+Logu i backend-it dha shkakun ekzakt:
+```
+File "/app/app/services/device_service.py", line 68, in get_devices
+    devices = self.repository.get_multi(
+TypeError: DeviceRepository.get_multi() got an unexpected keyword argument 'category'
+```
+`git status`: `device_repository.py` i modifikuar por **i pa-commit-uar** (5
+referenca `category` në working tree, 0 në HEAD). `device_service.py` (që i
+kalon `category=category`) ishte commit-uar dhe deployuar; `device_repository.py`
+(që e pranon) JO. "Failed to fetch" në browser = 500-i pa header-at e duhur në
+rrugën e gabimit.
+
+### Shkaku
+
+Commit-i **`c042724`** ("feat: tree Network/Storage/Hypervisor folders +
+ConnectMenu", Phase 7 M3-M4) përfshiu `device_service.py` (forward i `category`)
+por harroi `git add backend/app/repositories/device_repository.py`. Testet
+lokale kaluan sepse working tree e kishte fix-in; prodhimi mori vetëm gjysmën.
+
+### Zgjidhja
+
+Commit i ndryshimit të tashmë-shkruar te repository (`_apply_category_filter` +
+parametri `category` te `get_multi`/`count`) — pa ndryshim sjelljeje, vetëm
+plotëson kontratën service→repository. Fajl: `device_repository.py` (+22),
+`tests/test_device_service_filter_contract.py` (i ri).
+
+### Rezultati
+
+Deploy prod tip `2dae09a` (vetëm backend). health 200; `/api/v1/devices/` → 401
+(auth), JO 500; 0 `get_multi` TypeErrors; 0 gabime reale. Validim end-to-end
+kundër DB-së reale në kontejner: `DeviceService.get_devices(limit=20)` → 20
+rreshta, total 723 pajisje, windows 723, network 0. **Katalogu i rikthyer.**
+
+### Testet e regresionit
+
+`test_device_service_filter_contract.py` ekzekuton **shërbimin** (jo repository-n
+drejtpërdrejt) me të gjithë `filter_kwargs` e endpoint-it (incl. platform+
+category) — **verifikuar që DËSHTON kundër repository-t të deployuar (të prishur)
+me TypeError-in ekzakt të prodhimit** (via git stash), dhe kalon me fix-in. Ky
+lloc mismatch (shërbimi forward-on një kwarg që repository s'e ka) tani kapet.
+
+### Mësimet
+
+`git add` selektiv për ndryshime multi-file është i rrezikshëm — një commit që
+prek service+repository duhet t'i përfshijë të dyja. Testet duhet të ekzekutojnë
+**shërbimin** (kontrata publike), jo vetëm repository-n, që mismatch-et
+service→repository të kapen para deploy-it. Deploy-i i backend-it duhet të bëjë
+një smoke të `/devices/` me auth (jo vetëm `/health`).
+
 ## [2026-07-08] Platform Expansion Phase 7 — MikroTik Proxy Adapter + Connect Framework (DARK)
 
 ### Problemi
