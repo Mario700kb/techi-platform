@@ -20,17 +20,17 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `████████████░░░░░░░░` **60%** (Phases 0, 1, 4, 2, **3** + Vault Safety COMPLETED) |
-| **Current Phase** | **Phase 5 — Web Terminal** (next). Phase 3 (Linux UI) COMPLETED 2026-07-07. |
-| **Current Milestone** | Phase 5: new optional agent WS channel + terminal in Drawer (dark; STOP at the NPM WS route = Manual Approval) |
-| **Next Milestone** | Phase 7 — MikroTik (proxy adapter) after Phase 5 |
-| **Estimated Remaining Phases** | 5 (5, 7, 8, 9, 6) |
-| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → 3 Linux UI ✅ → **5 Web Terminal** → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
-| **Feature Flags status** | 7 flags in production, **all OFF** (re-verified after the Phase 3 deploy: FEATURE_LINUX False) |
-| **Deployment status** | Prod tip `dfd601b`; backend+frontend rebuilt; all Linux UI flag-gated, `?platform=linux` + run_command live |
-| **Production status** | Healthy: `/health` 200, frontend 200, ~98 heartbeats/min (400 active devices @ 250s), 0 real errors; flag-off UI identical |
-| **Risks (top)** | Phase 5 NPM WS route needs owner approval (Manual Approval gate); enabling FEATURE_LINUX for a canary = Manual Approval; single-VPS/25 GB disk |
-| **Last Update** | 2026-07-07 (Phase 3 COMPLETED) |
+| **Overall Progress** | `██████████████░░░░░░` **70%** (Phases 0–5 code-complete; 5 dark-deployed, awaiting NPM+flag) |
+| **Current Phase** | **Phase 5 — Web Terminal** DARK COMPLETE (deployed, FEATURE_TERMINAL off). Only NPM WS route + flag-enable remain (both Manual Approval). |
+| **Current Milestone** | Owner decision: NPM WS route + FEATURE_TERMINAL canary (STOP condition reached) |
+| **Next Milestone** | Phase 7 — MikroTik (proxy adapter) |
+| **Estimated Remaining Phases** | 4 (7, 8, 9, 6) + Phase 5 enablement |
+| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → 3 Linux UI ✅ → **5 Web Terminal (dark ✅)** → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
+| **Feature Flags status** | 8 flags in production (FEATURE_TERMINAL added), **all OFF** (verified in container) |
+| **Deployment status** | Prod tip `991ae07`; backend+frontend rebuilt; `terminal_sessions` table created schema-first; terminal endpoint 404 with flag off |
+| **Production status** | Healthy: `/health` 200, frontend 200, 142 heartbeats/min, 0 real errors; flag-off UI+behavior identical |
+| **Risks (top)** | Phase 5 NPM WS route + flag enable = Manual Approval (not done); terminal wake latency = 1 heartbeat (enablement tuning); relay in-memory per-worker (R5 at scale) |
+| **Last Update** | 2026-07-08 (Phase 5 dark complete) |
 
 ## Phase Table (in execution order)
 
@@ -42,7 +42,7 @@
 | — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
 | 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
 | 3 | Linux Platform Integration (UI / Drawer / Catalog) | **COMPLETED** (2026-07-07) | `dfd601b` | ✅ 2026-07-07 (backend+frontend, flag off = identical) | PlatformIcon, Packages Linux (armhf), Enrollment one-liner, Drawer capabilities/kernel/arch, platform filter, tree auto-classification sub-folders, Command Center run_command engine (bash/sh/python). Suite 424✅+4 (flag off & on), all-4 agent builds, tsc/build clean, prod healthy |
-| 5 | Embedded Web Terminal | NOT STARTED (needs Phase 2 + NPM WS route owner approval) | — | — | — |
+| 5 | Embedded Web Terminal | **DARK COMPLETE** (2026-07-08) | `991ae07` | ✅ 2026-07-08 (dark, FEATURE_TERMINAL off) | Session model+service, endpoint+WS relay, agent PTY channel, Drawer terminal tab (lazy xterm). Suite 434✅+4 (flag off & on), agent 4 targets, tsc/build clean. **Remaining: NPM WS route + flag enable (Manual Approval)** |
 | 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
@@ -215,13 +215,22 @@ for FEATURE_VAULT.
 
 ## Phase 5 — Embedded Web Terminal
 
-Objective: terminal in the Device Drawer via a NEW optional agent WS channel.
-Deliverables: `/ws/agent` + ticket endpoint + in-backend relay; agent PTY
-(Linux first); xterm.js Drawer tab; session audit + idle timeout + recording.
-Flags: `FEATURE_TERMINAL` (needs CORE+LINUX+VAULT). **Gate: NPM WS route
-requires separate explicit owner approval (frozen edge config).** Load test
-the relay on staging (single-worker cap documented in audit R5). Rollback:
-flag OFF (channel refuses connections) + NPM route removal.
+**DARK COMPLETE 2026-07-08 (`991ae07`).** Delivered behind FEATURE_TERMINAL
+(off): `TerminalSession` model + lifecycle service (two hashed one-time tickets,
+TTL/idle/max caps, recording_path prepared); `POST /devices/{id}/terminal/
+sessions` (admin+, capability-gated, audited) enqueuing an `open_terminal`
+action; in-memory `TerminalRelay` + operator/agent WS routes (`/ws/terminal/{id}`,
+`/ws/agent/terminal/{id}`, accept-close 4003 when off); Linux agent PTY channel
+(gorilla/websocket + creack/pty, isolated goroutine); Drawer Terminal tab
+(lazy xterm.js, only when FEATURE_TERMINAL + terminal capability). Session
+recording NOT implemented (architecture prepared). Suite 434+4 flag off & on;
+agent 4 targets; tsc/build clean (xterm code-split); prod dark-deployed.
+**Remaining (Manual Approval — NOT done): (1) NPM WS route for
+`/ws/terminal/*` + `/ws/agent/terminal/*`; (2) enable FEATURE_TERMINAL for a
+canary.** Enablement notes: terminal wake latency = 1 heartbeat (reuses
+pending_actions — lower the interval for terminal-enabled devices or add a
+faster signal before real use); relay is per-worker in-memory (audit R5 — move
+out-of-process if enabled at fleet scale).
 
 ## Phase 6 — Enterprise IAM  (MOVED LAST — 2026-07-07)
 

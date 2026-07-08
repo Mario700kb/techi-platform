@@ -27,6 +27,66 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] Platform Expansion Phase 5 — Web Terminal (implementim DARK, pa NPM, pa flag)
+
+### Problemi
+
+Të ndërtohet i gjithë Web Terminal-i pas `FEATURE_TERMINAL` (OFF), pa prekur
+NPM, pa ekspozuar rrugë publike, pa canary. Arkitekturë platform-independent:
+Linux i pari, platformat e ardhshme ripërdorin të njëjtën. Flow: Browser →
+Backend → Agent WS → PTY → Shell.
+
+### Zgjidhja (5 milestone, prod tip `991ae07`, FEATURE_TERMINAL OFF)
+
+- **M1 backend model+service**: `TerminalSession` (tabelë e izoluar) +
+  `TerminalService` (create→attach→active→close/expire) me dy tickets një-
+  përdorimshe të hash-uara (operator+agent, side-specific, TTL 60s), idle/max
+  caps, `recording_path` i përgatitur por i papërdorur. 6 teste.
+- **M2 backend endpoint+relay**: `POST /devices/{id}/terminal/sessions` (admin+,
+  gated → 404; kontrollon capability `terminal`; krijon sesion; radhit
+  `open_terminal` remote action; audit; kthen operator WS path + ticket).
+  `TerminalRelay` in-memory çift operator↔agent; rrugët WS `/ws/terminal/{id}`
+  + `/ws/agent/terminal/{id}` (accept+close 4003 kur flag off). 4 teste.
+- **M3 agent (Linux)**: dispatch `open_terminal` → `handleOpenTerminal` dial WS
+  (gorilla/websocket) + PTY (creack/pty) bash/sh, relay binar + resize + cap 60
+  min. Goroutine e izoluar — s'prek heartbeat/enrollment/inventory/update/
+  RustDesk. Deps importohen vetëm në files linux → Windows/darwin të paprekur.
+  Windows/other stub. 4 targetet ndërtohen.
+- **M4 frontend**: `DeviceTerminal` (xterm.js + fit, lazy) — session→operator WS
+  →relay+resize. Tab "Terminal" te Drawer VETËM kur FEATURE_TERMINAL on DHE
+  pajisja raporton capability `terminal`. xterm në chunk të veçantë (293KB, jo
+  në main path). Windows s'ka terminal cap → tab s'shfaqet → drawer identik.
+
+### Siguria
+
+Sesione: authenticated (JWT admin+), authorized (device scope), audited,
+time-limited (TTL 60s ticket, cap 60 min, idle 15 min), tickets një-përdorimshe
+side-specific të hash-uara, zero sekret në browser. E ndarë nga Remote Support
+(RustDesk). E gatshme për integrim me Vault (SSH-mode i ardhshëm).
+
+### Rezultati
+
+Suita backend **434 passed + 4 të njohura, flag OFF DHE ON**; agent 4 targetet +
+go test green; tsc + build clean (xterm code-split). SQL `terminal_sessions`
+aplikuar schema-first. Deploy: health 200, frontend 200, terminal endpoint 401
+pa auth (i mbrojtur; 404 me auth + flag off), **FEATURE_TERMINAL False**, 0
+gabime reale, 142 hb/min. Sjellja e prodhimit e paprekur.
+
+### STOP — mbeten VETËM (Manual Approval)
+
+(1) shtimi i rrugës WS në NPM (`/ws/terminal/*`, `/ws/agent/terminal/*`),
+(2) ndezja e `FEATURE_TERMINAL` për canary. Të dyja presin aprovimin eksplicit
+të owner-it — NUK u prekën.
+
+### Mësimet
+
+Sinjali "hap terminal" ripërdor rrugën ekzistuese `pending_actions` (pa lidhje
+persistente të re per-pajisje) → latencë deri në një heartbeat (250s) për të
+nisur; e pranueshme dark, por para canary-t vlen një sinjal më i shpejtë ose
+interval më i ulët për pajisjet me terminal aktiv. Relay-i in-memory është
+per-worker — nëse terminali ndizet në shkallë të gjerë, ky komponent lëviz
+out-of-process (audit R5), pa ndryshuar protokollin.
+
 ## [2026-07-07] Platform Expansion Phase 3 (pjesa 2, PËRFUNDIM) — tree auto-classification + Command Center engine
 
 ### Problemi
