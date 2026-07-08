@@ -20,17 +20,17 @@
 
 | | |
 |---|---|
-| **Overall Progress** | `██████████████░░░░░░` **70%** (Phases 0–5 code-complete; 5 dark-deployed, awaiting NPM+flag) |
-| **Current Phase** | **Phase 5 — Web Terminal** DARK COMPLETE (deployed, FEATURE_TERMINAL off). Only NPM WS route + flag-enable remain (both Manual Approval). |
-| **Current Milestone** | Owner decision: NPM WS route + FEATURE_TERMINAL canary (STOP condition reached) |
-| **Next Milestone** | Phase 7 — MikroTik (proxy adapter) |
-| **Estimated Remaining Phases** | 4 (7, 8, 9, 6) + Phase 5 enablement |
-| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → 3 Linux UI ✅ → **5 Web Terminal (dark ✅)** → 7 MikroTik → 8 Storage → 9 Hypervisors → 6 IAM (last) |
-| **Feature Flags status** | 8 flags in production (FEATURE_TERMINAL added), **all OFF** (verified in container) |
-| **Deployment status** | Prod tip `991ae07`; backend+frontend rebuilt; `terminal_sessions` table created schema-first; terminal endpoint 404 with flag off |
-| **Production status** | Healthy: `/health` 200, frontend 200, 142 heartbeats/min, 0 real errors; flag-off UI+behavior identical |
-| **Risks (top)** | Phase 5 NPM WS route + flag enable = Manual Approval (not done); terminal wake latency = 1 heartbeat (enablement tuning); relay in-memory per-worker (R5 at scale) |
-| **Last Update** | 2026-07-08 (Phase 5 dark complete) |
+| **Overall Progress** | `████████████████░░░░` **80%** (Phases 0–5, 7 code-complete; 5+7 dark-deployed) |
+| **Current Phase** | **Phase 7 — MikroTik Proxy Adapter + Connect Framework** DARK COMPLETE (deployed, flags off). |
+| **Current Milestone** | Framework proven — a new platform = adapter + capability mapping + icon + connect methods, no UI change |
+| **Next Milestone** | Owner's choice: Phase 8 Storage (Synology/QNAP), the connection-launcher phase, or Phase 5 enablement |
+| **Estimated Remaining Phases** | 3 (8, 9, 6) + connection launchers + Phase 5 enablement |
+| **Execution order** | Vault Safety ✅ → 2 Linux Agent ✅ → 3 Linux UI ✅ → 5 Web Terminal (dark ✅) → **7 MikroTik + Connect Framework (dark ✅)** → 8 Storage → 9 Hypervisors → 6 IAM (last) |
+| **Feature Flags status** | 8 flags in production, **all OFF** (verified: FEATURE_MIKROTIK + CORE False) |
+| **Deployment status** | Prod tip `7df3cba`; backend+frontend rebuilt; connect-methods 404 with flag off, MikroTik adapter registered |
+| **Production status** | Healthy: `/health` 200, frontend 200, 131 heartbeats/min, 0 real errors; flag-off UI+behavior identical |
+| **Risks (top)** | Connection launchers (Winbox/WebFig/SSH) + RouterOS API = next phase; Phase 5 NPM route + FEATURE_TERMINAL = Manual Approval |
+| **Last Update** | 2026-07-08 (Phase 7 dark complete) |
 
 ## Phase Table (in execution order)
 
@@ -43,7 +43,7 @@
 | 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
 | 3 | Linux Platform Integration (UI / Drawer / Catalog) | **COMPLETED** (2026-07-07) | `dfd601b` | ✅ 2026-07-07 (backend+frontend, flag off = identical) | PlatformIcon, Packages Linux (armhf), Enrollment one-liner, Drawer capabilities/kernel/arch, platform filter, tree auto-classification sub-folders, Command Center run_command engine (bash/sh/python). Suite 424✅+4 (flag off & on), all-4 agent builds, tsc/build clean, prod healthy |
 | 5 | Embedded Web Terminal | **DARK COMPLETE** (2026-07-08) | `991ae07` | ✅ 2026-07-08 (dark, FEATURE_TERMINAL off) | Session model+service, endpoint+WS relay, agent PTY channel, Drawer terminal tab (lazy xterm). Suite 434✅+4 (flag off & on), agent 4 targets, tsc/build clean. **Remaining: NPM WS route + flag enable (Manual Approval)** |
-| 7 | MikroTik Platform (proxy adapter) | NOT STARTED (needs Phase 3 pattern) | — | — | — |
+| 7 | MikroTik Proxy Adapter + Connect Framework | **DARK COMPLETE** (2026-07-08) | `7df3cba` | ✅ 2026-07-08 (dark, flags off) | Connect Framework (metadata + `/connect-methods` + ConnectMenu), MikroTik proxy adapter, Network/Storage/Hypervisor auto-classification + tree folders + `category` filter. Suite 444✅+4 (flag off & on), agent 4 targets, tsc/build clean. **Launchers/RouterOS API = next phase (per boundary)** |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
 | 6 | Enterprise IAM (permission matrix, sessions) | NOT STARTED (**moved last** — security-model change, needs separate approval) | — | — | — |

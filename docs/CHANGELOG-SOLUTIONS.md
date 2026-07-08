@@ -27,6 +27,56 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] Platform Expansion Phase 7 — MikroTik Proxy Adapter + Connect Framework (DARK)
+
+### Problemi
+
+Të provohet se Platform Expansion mbështet platformat pa-agent me të njëjtën
+arkitekturë: Linux = platforma e parë native, MikroTik = e para proxy-managed.
+Të ndërtohet **Connect Framework** gjenerik (metadata capability-driven), pa
+launchers, pa RouterOS API/SSH/credentials (ato janë faza tjetër). Flag OFF =
+identik.
+
+### Zgjidhja (deploy prod tip `7df3cba`, të gjitha flags OFF)
+
+- **Connect Framework** (`platform_core/connect.py`): metadata e strukturuar
+  `ConnectMethod` (id, label, surface desktop/browser, capability, priority,
+  scheme) per platformë; `methods_for(device)` = metoda native (capability
+  None) + gjenerike ku pajisja raporton capability-n. **SSH/Web Terminal
+  varen nga capability `terminal`** → SSH gjenerik, jo Linux-only; Winbox/
+  WebFig/DSM/QTS/vSphere janë thjesht metoda native, jo feature speciale.
+  `GET /devices/{id}/connect-methods` (gated CORE→404) ndërton dropdown-in
+  dinamikisht. Frontend `ConnectMenu` — dropdown 100% nga metadata; launcher-at
+  vijnë fazën tjetër (klikimi shfaq metadata, jo veprim fiktiv). 10 teste.
+- **MikroTik proxy adapter** (`platform_adapters/mikrotik.py`, `is_proxy=True`)
+  i regjistruar — provon kontratën adapter platform-neutrale (pa RouterOS API).
+- **Auto-classification**: `_tree_category_case` klasifikon platformat pa-agent
+  me platform-class FIRST (network/storage/hypervisors); platformat agent mbajnë
+  logjikën referencë servers/clientpc. Filtër i ri aditiv `category`
+  (network/storage/hypervisors). Tree: foldera Network/Storage/Hypervisors +
+  nën-foldera platforme, shfaqen vetëm kur kanë pajisje → flag-off tree identik.
+  Vendosje automatike (MikroTik→Network→MikroTik), zero lëvizje manuale.
+
+### Rezultati
+
+Suita backend **444 passed + 4 të njohura, flag OFF DHE ON**; agent 4 targetet;
+tsc + build clean. Deploy: health 200, frontend 200, connect-methods 401 pa
+auth (404 me auth+flag off), FEATURE_MIKROTIK+CORE False, adapter i ngarkuar,
+0 gabime reale, 131 hb/min. Sjellja e prodhimit e paprekur.
+
+### Objektivi arkitekturor — arritur
+
+Shtimi i një platforme të re tani kërkon VETËM: (1) Platform Adapter, (2)
+Capability Mapping, (3) Platform Icon, (4) Connect Methods (rreshta te
+`connect.py` + `_platform_class_case`). PA ndryshim te Device Tree/Catalog/
+Drawer/Command Center/Navigation. Synology/QNAP/VMware/Proxmox/Hyper-V tashmë
+kanë connect-methods të deklaruara + klasifikim; u mbetet vetëm adapter-i.
+
+### Boundary — çfarë NUK u implementua (faza tjetër)
+
+Winbox/WebFig launcher, RouterOS API, SSH, credential management, terminal
+integration. Phase 7 ndërtoi vetëm framework-un ku këto plug-in pa ridizajn.
+
 ## [2026-07-08] Platform Expansion Phase 5 — Web Terminal (implementim DARK, pa NPM, pa flag)
 
 ### Problemi
