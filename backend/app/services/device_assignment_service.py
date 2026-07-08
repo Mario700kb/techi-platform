@@ -56,6 +56,21 @@ class DeviceAssignmentService:
         TRUSTED_DOMAIN_SOURCE,
         ENROLLMENT_SOURCE,
     }
+    # Sources that lock client/group placement against ANY automatic re-assignment
+    # (enrollment, heartbeat, trusted-domain reconcile). Trusted-domain is NOT here:
+    # it is auto and is allowed to follow the domain. Single source of truth for the
+    # "never undo a manual assignment" invariant — consumed by enrollment, heartbeat
+    # and reconcile instead of each re-listing the set.
+    MANUAL_LOCK_SOURCES = {
+        MANUAL_SOURCE,
+        LEGACY_MANUAL_SOURCE,
+        ENROLLMENT_SOURCE,
+    }
+
+    @classmethod
+    def is_manual_locked(cls, assignment_source: Optional[str]) -> bool:
+        """True if this assignment must never be overwritten by automatic logic."""
+        return (assignment_source or "").strip().lower() in cls.MANUAL_LOCK_SOURCES
 
     def __init__(self, db: Session):
         self.clients = ClientRepository(db)
@@ -158,7 +173,7 @@ class DeviceAssignmentService:
         if not self._is_domain_managed(signal.domain):
             return device
         source = self._resolved_source(device)
-        if source in {self.MANUAL_SOURCE, self.LEGACY_MANUAL_SOURCE, self.ENROLLMENT_SOURCE}:
+        if self.is_manual_locked(source):
             return device
 
         client_name = self._normalize_domain_to_client_name(signal.domain) or TrustedDomainService.normalize_to_client_name(signal.domain or "")

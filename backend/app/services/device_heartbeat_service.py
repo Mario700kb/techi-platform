@@ -151,15 +151,20 @@ class DeviceHeartbeatService:
                 conflict = self.device_repo.get_conflicting_rustdesk_id(normalized_rustdesk_id, exclude_device_id=device.id)
                 if conflict is None:
                     update_data["rustdesk_id"] = normalized_rustdesk_id
-            if device.assignment_source in {
-                DeviceAssignmentService.MANUAL_SOURCE,
-                DeviceAssignmentService.ENROLLMENT_SOURCE,
-            }:
+            manual_locked = DeviceAssignmentService.is_manual_locked(device.assignment_source)
+            if manual_locked:
                 for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
                     update_data.pop(field, None)
             update_data["device_type"] = device_type
-            # If device_type changed (e.g. CLIENT → SERVER), allow re-grouping
-            if device.device_type != device_type and device_type in (DeviceType.SERVER, DeviceType.CLIENT):
+            # If device_type changed (e.g. CLIENT → SERVER), allow re-grouping — but
+            # NEVER for a manually / enrollment locked device. Clearing the lock here
+            # would let reconcile re-assign it, undoing the operator's placement
+            # (invariant: heartbeat must never undo a manual assignment).
+            if (
+                not manual_locked
+                and device.device_type != device_type
+                and device_type in (DeviceType.SERVER, DeviceType.CLIENT)
+            ):
                 update_data.pop("client_id", None)
                 update_data.pop("group_id", None)
                 update_data.pop("assignment_source", None)
@@ -469,10 +474,7 @@ class DeviceHeartbeatService:
                 update_data["rustdesk_id"] = normalized_rustdesk_id
 
         # Preserve manual / enrollment-token assignment — never override on reuse
-        if existing.assignment_source in {
-            DeviceAssignmentService.MANUAL_SOURCE,
-            DeviceAssignmentService.ENROLLMENT_SOURCE,
-        }:
+        if DeviceAssignmentService.is_manual_locked(existing.assignment_source):
             for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
                 update_data.pop(field, None)
 
