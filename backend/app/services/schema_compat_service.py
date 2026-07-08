@@ -89,6 +89,24 @@ TRUSTED_DOMAIN_COLUMNS = {
 }
 
 DEV_TABLES = {
+    "terminal_sessions": """
+        CREATE TABLE IF NOT EXISTS terminal_sessions (
+            id VARCHAR(64) PRIMARY KEY,
+            device_id INTEGER NOT NULL,
+            operator_id INTEGER,
+            operator_username VARCHAR(128),
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            engine VARCHAR(24) NOT NULL DEFAULT 'bash',
+            operator_ticket_hash VARCHAR(64) NOT NULL,
+            agent_ticket_hash VARCHAR(64) NOT NULL,
+            created_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            started_at DATETIME,
+            ended_at DATETIME,
+            disconnect_reason VARCHAR(64),
+            recording_path VARCHAR(512)
+        )
+    """,
     "vault_credentials": """
         CREATE TABLE IF NOT EXISTS vault_credentials (
             id INTEGER PRIMARY KEY,
