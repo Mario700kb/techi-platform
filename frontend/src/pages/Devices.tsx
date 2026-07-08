@@ -480,7 +480,7 @@ export default function Devices() {
         nextFilters.client_id = -1;
         nextFilters.group_id = undefined;
       } else if (key.startsWith("client-")) {
-        const CATS = "servers|clientpc|network|storage|hypervisors";
+        const CATS = "servers|clientpc|network|storage|hypervisors|other";
         // Platform sub-folder: client-N-<category>-<platform> (Platform Expansion).
         const platformMatch = key.match(new RegExp(`^client-(\\d+)-(${CATS})-([a-z0-9]+)$`));
         if (platformMatch) {

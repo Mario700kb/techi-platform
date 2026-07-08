@@ -28,6 +28,10 @@ const CLIENT_FOLDERS = [
   { id: "network", label: "Network", smartFolder: "" },
   { id: "storage", label: "Storage", smartFolder: "" },
   { id: "hypervisors", label: "Hypervisors", smartFolder: "" },
+  // Devices in a custom (non-standard) group. Shown only when non-empty, like
+  // the platform-class folders — with today's fleet (0 custom groups) it never
+  // appears. Category comes from the Unified Classification Engine.
+  { id: "other", label: "Other", smartFolder: "" },
 ] as const;
 
 const readShowEmptyGroups = () => {
@@ -60,7 +64,7 @@ interface DeviceTreeProps {
 const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups, treeCounts, showPlatformFolders = false, onRefreshCounts }: DeviceTreeProps) {
   void groups;
   const activeClientFolder = useMemo(() => {
-    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors)$/);
+    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors|other)$/);
     if (!match) return null;
     return { clientId: Number(match[1]), folderId: match[2] };
   }, [selectedKey]);
