@@ -119,8 +119,11 @@ def test_golden_windows_outcomes_are_locked():
     assert clf.classify_category(ci(group_id=8, group_name="Kiosks", windows_product_type=1)) == "other"
     # Caption fallback.
     assert clf.classify_category(ci(os_caption="Microsoft Windows Server 2022")) == "servers"
-    # Truly unassigned.
-    assert clf.classify_category(ci(client_id=None, group_id=None)) == "unassigned"
+    # Category is independent of ownership: an unowned Windows box is still a
+    # workstation kind (the "Unassigned" bucket is layered on client_id elsewhere).
+    assert clf.classify_category(ci(client_id=None, group_id=None)) == "clientpc"
+    # An unowned non-agent device is still categorized by its platform.
+    assert clf.classify_category(ci(client_id=None, group_id=None, platform="mikrotik")) == "network"
     # NULL platform => windows.
     assert clf.classify_platform(None) == "windows"
     assert clf.classify_platform("") == "windows"

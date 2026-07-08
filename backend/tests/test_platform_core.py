@@ -151,6 +151,7 @@ class TestWiringBoundary:
             "app/api/v1/endpoints/terminal.py",  # terminal flag gate (Phase 5)
             "app/websocket/terminal_routes.py",  # terminal WS flag gate (Phase 5)
             "app/api/v1/endpoints/connect.py",  # Connect Framework flag gate (Phase 7)
+            "app/repositories/device_repository.py",  # Unified Classification Engine consumer (P2)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

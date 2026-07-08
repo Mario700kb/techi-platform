@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from sqlalchemy import and_, case, or_
+from sqlalchemy import case, or_
 
 from app.models.device import Device, DeviceType
 from app.models.device_group import DeviceGroup
@@ -197,14 +197,15 @@ def _nonagent_sql(category: str):
 
 
 # The single ordered rule list. Order == owner precedence:
-#   0 unassigned guard · 1 Existing DB Group (standard) · 2 Windows/structural
-#   (non-agent platform class) · 3 OS heuristic · 4 Other · default clientpc.
+#   1 Existing DB Group (standard) · 2 Windows/structural (non-agent platform
+#   class) · 3 OS heuristic · 4 Other (custom group) · default clientpc.
+#
+# NOTE: category answers *what kind of device* this is — it is intentionally
+# independent of client ownership. The "Unassigned" bucket (a device with no
+# client) is an ASSIGNMENT concept layered by callers on client_id (the tree's
+# unassigned folder, resolve_device_assignment), NOT a category. A network /
+# storage / hypervisor device is categorized by its platform even when unowned.
 _CATEGORY_RULES: tuple[_Rule, ...] = (
-    _Rule(
-        py=lambda r: r.client_id is None and r.group_id is None,
-        sql=and_(Device.client_id.is_(None), Device.group_id.is_(None)),
-        result=CATEGORY_UNASSIGNED,
-    ),
     _Rule(
         py=lambda r: r._group_norm in _SERVER_GROUP_NAMES,
         sql=or_(*[DeviceGroup.name.ilike(name) for name in sorted(_SERVER_GROUP_NAMES)]),

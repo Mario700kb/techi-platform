@@ -11,6 +11,7 @@ from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.device_inventory import DeviceInventory
 from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
+from app.platform_core import classification as clf
 from app.schemas.device import DeviceCreate, DeviceTreeCounts, DeviceUpdate
 
 if TYPE_CHECKING:
@@ -112,6 +113,8 @@ class DeviceRepository:
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
+        if self._needs_group_join(category, smart_folder):
+            query = self._ensure_group_join(query)
 
         if status:
             query = query.filter(Device.status == status)
@@ -201,14 +204,12 @@ class DeviceRepository:
         return query.filter(Device.assignment_source == source)
 
     def _apply_platform_filter(self, query, platform: Optional[str]):
-        """Platform Expansion additive filter. "windows" also matches legacy
-        rows with a NULL platform (absence ⇒ windows, audit §8)."""
+        """Additive platform filter via the Unified Classification Engine — the
+        single platform definition. "windows" matches NULL/unknown platforms too
+        (absence ⇒ windows, audit §8)."""
         if not platform:
             return query
-        p = platform.strip().lower()
-        if p == "windows":
-            return query.filter(or_(Device.platform.ilike("%windows%"), Device.platform.is_(None)))
-        return query.filter(Device.platform.ilike(f"%{p}%"))
+        return query.filter(clf.platform_case() == platform.strip().lower())
 
     # Platform-class categories (Phase 7) — used by the tree's Network/Storage/
     # Hypervisors parent folders. Purely platform-based (no group join needed).
@@ -219,66 +220,39 @@ class DeviceRepository:
     }
 
     def _apply_category_filter(self, query, category: Optional[str]):
-        """Additive tree-category filter. Uses the SAME classification as the
-        tree counts (_tree_category_case) so a node's filtered result matches its
-        count badge — the hierarchy is cumulative (client AND category AND
-        platform). network/storage/hypervisors are platform-based; servers/
-        clientpc reuse the reference server-vs-client logic (needs the group
-        join to see group-name placement)."""
+        """Additive tree-category filter via the Unified Classification Engine —
+        the SAME expression the tree counts use, so a node's filtered result
+        always equals its count badge (client AND category AND platform).
+        Requires the caller to have outer-joined DeviceGroup (see
+        `_ensure_group_join`)."""
         if not category:
             return query
-        cat = category.strip().lower()
-        patterns = self._CATEGORY_PLATFORM_PATTERNS.get(cat)
-        if patterns:
-            return query.filter(or_(*[Device.platform.ilike(f"%{p}%") for p in patterns]))
-        if cat in ("servers", "clientpc"):
-            query = query.outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
-            return query.filter(self._tree_category_case() == cat)
-        return query
+        return query.filter(clf.category_case() == category.strip().lower())
+
+    @staticmethod
+    def _needs_group_join(category: Optional[str], smart_folder: Optional[str]) -> bool:
+        """The category engine + the server/client smart folders read the group
+        name, so the query must outer-join DeviceGroup for them."""
+        if category:
+            return True
+        return (smart_folder or "").strip().lower() in ("windows_server", "windows_workstation")
+
+    @staticmethod
+    def _ensure_group_join(query):
+        return query.outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
 
     def _apply_smart_folder_filter(self, query, smart_folder: Optional[str]):
         if not smart_folder:
             return query
         key = smart_folder.strip().lower()
-        server_group = Device.group.has(or_(DeviceGroup.name.ilike("servers"), DeviceGroup.name.ilike("server")))
-        client_pc_group = Device.group.has(
-            or_(
-                DeviceGroup.name.ilike("client pc"),
-                DeviceGroup.name.ilike("client pcs"),
-                DeviceGroup.name.ilike("workstation"),
-                DeviceGroup.name.ilike("workstations"),
-            )
-        )
-        ungrouped = Device.group_id.is_(None)
+        # The Servers / Client PC smart folders are the SAME category as the tree:
+        # route them through the Unified Classification Engine (keys kept for
+        # back-compat with saved views / API callers). Requires the DeviceGroup
+        # outer-join (added by the caller via _ensure_group_join).
         if key == "windows_server":
-            return query.filter(
-                or_(
-                    server_group,
-                    and_(
-                        ungrouped,
-                        or_(
-                            Device.windows_product_type.in_([2, 3]),
-                            Device.os_name.ilike("%windows server%"),
-                            Device.os_version.ilike("%windows server%"),
-                            Device.os_caption.ilike("%windows server%"),
-                        ),
-                    ),
-                )
-            )
+            return query.filter(clf.category_case() == clf.CATEGORY_SERVERS)
         if key == "windows_workstation":
-            return query.filter(
-                or_(
-                    client_pc_group,
-                    and_(
-                        ungrouped,
-                        or_(Device.os_name.ilike("%windows%"), Device.platform.ilike("%windows%")),
-                        or_(Device.os_name.is_(None), not_(Device.os_name.ilike("%windows server%"))),
-                        or_(Device.os_version.is_(None), not_(Device.os_version.ilike("%windows server%"))),
-                        or_(Device.os_caption.is_(None), not_(Device.os_caption.ilike("%windows server%"))),
-                        or_(Device.windows_product_type.is_(None), Device.windows_product_type == 1),
-                    ),
-                )
-            )
+            return query.filter(clf.category_case() == clf.CATEGORY_CLIENTPC)
         if key == "laptop":
             return query.filter(or_(Device.hostname.ilike("%laptop%"), Device.group.has(name="laptop")))
         if key == "domain":
@@ -407,6 +381,8 @@ class DeviceRepository:
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         query = self.db.query(Device)
+        if self._needs_group_join(category, smart_folder):
+            query = self._ensure_group_join(query)
 
         if status:
             query = query.filter(Device.status == status)
@@ -486,72 +462,15 @@ class DeviceRepository:
 
     @staticmethod
     def _tree_category_case():
-        """Top-level tree category. Non-agent platforms are placed by platform
-        class (Network/Storage/Hypervisors) FIRST; agent platforms keep the
-        reference Windows/Linux SERVERS-vs-CLIENTPC logic unchanged. With every
-        platform flag off no device carries those platforms, so the output is
-        identical to today's production."""
-        network_platform = or_(
-            Device.platform.ilike("%mikrotik%"),
-            Device.platform.ilike("%routeros%"),
-            Device.platform.ilike("%unifi%"),
-            Device.platform.ilike("%switch%"),
-            Device.platform.ilike("%cisco%"),
-        )
-        storage_platform = or_(
-            Device.platform.ilike("%synology%"),
-            Device.platform.ilike("%qnap%"),
-        )
-        hypervisor_platform = or_(
-            Device.platform.ilike("%vmware%"),
-            Device.platform.ilike("%esxi%"),
-            Device.platform.ilike("%proxmox%"),
-            Device.platform.ilike("%hyperv%"),
-        )
-        server_group = or_(
-            DeviceGroup.name.ilike("servers"),
-            DeviceGroup.name.ilike("server"),
-        )
-        client_pc_group = or_(
-            DeviceGroup.name.ilike("client pc"),
-            DeviceGroup.name.ilike("client pcs"),
-            DeviceGroup.name.ilike("workstation"),
-            DeviceGroup.name.ilike("workstations"),
-        )
-        server_os = or_(
-            Device.device_type == DeviceType.SERVER,
-            Device.windows_product_type.in_([2, 3]),
-            Device.os_name.ilike("%windows server%"),
-            Device.os_version.ilike("%windows server%"),
-            Device.os_caption.ilike("%windows server%"),
-        )
-        return case(
-            (network_platform, "network"),
-            (storage_platform, "storage"),
-            (hypervisor_platform, "hypervisors"),
-            (server_group, "servers"),
-            (client_pc_group, "clientpc"),
-            (server_os, "servers"),
-            else_="clientpc",
-        ).label("category")
+        """DEPRECATED shim — delegates to the Unified Classification Engine.
+        Retained only until P5 removes the last references; do NOT add logic here."""
+        return clf.category_case()
 
     @staticmethod
     def _platform_class_case():
-        """Centralized platform classification for tree aggregation. NULL or
-        anything Windows ⇒ 'windows' (audit §8: absence ⇒ windows). Extending
-        to a new platform is one more branch here — no UI change."""
-        return case(
-            (Device.platform.ilike("%linux%"), "linux"),
-            (Device.platform.ilike("%mikrotik%"), "mikrotik"),
-            (Device.platform.ilike("%routeros%"), "mikrotik"),
-            (Device.platform.ilike("%synology%"), "synology"),
-            (Device.platform.ilike("%qnap%"), "qnap"),
-            (Device.platform.ilike("%vmware%"), "vmware"),
-            (Device.platform.ilike("%esxi%"), "vmware"),
-            (Device.platform.ilike("%proxmox%"), "proxmox"),
-            (Device.platform.ilike("%hyperv%"), "hyperv"),
-            else_="windows",
-        ).label("platform_class")
+        """DEPRECATED shim — delegates to the Unified Classification Engine.
+        Retained only until P5 removes the last references; do NOT add logic here."""
+        return clf.platform_case()
 
     def count_by_client_category_platform(
         self, scope: Optional["AllowedScope"] = None
@@ -559,8 +478,8 @@ class DeviceRepository:
         """Additive tree aggregation: {client_id: {category: {platform: total}}}.
         A separate lightweight GROUP BY — it does NOT touch get_overview_inputs
         (the sacred Windows path)."""
-        category = self._tree_category_case()
-        platform_class = self._platform_class_case()
+        category = clf.category_case()
+        platform_class = clf.platform_case()
         q = self.db.query(
             Device.client_id,
             category,
@@ -583,7 +502,7 @@ class DeviceRepository:
         now = utcnow()
         online_cutoff = now - timedelta(minutes=6)
         stale_cutoff = now - timedelta(minutes=25)
-        category = self._tree_category_case()
+        category = clf.category_case()
 
         counts_query = self.db.query(
             Device.client_id,
