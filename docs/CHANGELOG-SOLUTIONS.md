@@ -27,6 +27,42 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] UX: Deployment dialog bëhet platform-aware (Windows byte-identik)
+
+### Konteksti / Vendimi
+Kompletim UX i dialogut ekzistues të Deployment (jo feature i ri, jo faqe e re).
+Dialogu i token-it (Deployment ▸ View) u bë **platform-aware, metadata-driven**,
+i gated nga flamujt e Platform Expansion. **Një token i vetëm ndahet nga të gjitha
+platformat** (nxjerrur nga i njëjti Windows bootstrap URL) → rigjenerimi përditëson
+të gjitha, pa deploy të dyfishtë.
+
+### Zgjidhja
+- **Windows: BYTE-IDENTIK** — të njëjtat CommandBlocks (Safe one-time / GPO Startup /
+  GPO Scheduled Task / Bootstrap URL), të njëjtat Copy targets, i njëjti Download PS1.
+  Asnjë skript/endpoint/workflow Windows i prekur. **Zero ndryshime backend.**
+- **Linux** (`FEATURE_LINUX`, Experimental): One-Time Install (`curl … | sudo bash`),
+  Manual URL, arkitekturat (amd64/arm64/armhf), paketa Linux aktive.
+- **macOS / MikroTik / Synology / QNAP / VMware / Hyper-V / Proxmox**: placeholder-a
+  UI të rezervuar (Coming soon + metoda të planifikuara), gated nga
+  `FEATURE_MACOS`/`FEATURE_MIKROTIK`/`FEATURE_STORAGE`/`FEATURE_HYPERVISOR`.
+- Regjistër i vetëm `DEPLOYMENT_PLATFORMS` në frontend, i gated nga flamujt e backend-it;
+  shtimi i një platforme = një hyrje + ikonë, pa rishkrim UI.
+
+### Ndryshimet
+- `frontend/src/pages/Deployment.tsx` (DeploymentModal → metadata-driven + PlatformSection)
+- `frontend/src/api/enrollmentBootstrap.ts` (buildLinuxInstallUrl/Command, tokenFromBootstrapUrl)
+- `docs/reference/OPERATOR-MANUAL.md` (§8a + matrica e statuseve)
+- Commit `6fa72c7`.
+
+### Rezultati
+tsc + build OK; preflight PASSED (suite 472+4 baseline, flags OFF & ON); smoke 7/7.
+Windows byte-identik; token i përbashkët Windows+Linux; responsive + dark/light
+(përdor tokenat ekzistues `--th-*`). Deployed (frontend), prod tip `6fa72c7`.
+
+### Mësimet
+Zgjerimi metadata-driven i një dialogu ekzistues e mban Windows-in sacred: platformat
+e reja janë të dhëna, jo degë kodi. Shih [[platform-v3-design]].
+
 ## [2026-07-09] BUG: Zinxhiri i paketës Linux jofunksional (upload→lookup→download→install)
 
 ### Problemi
