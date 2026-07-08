@@ -35,9 +35,12 @@ class ActionType(str, Enum):
     APPLY_POWER_POLICY = "apply_power_policy"
     DEPLOY_REMOTE_SUPPORT = "deploy_remote_support"
     SELF_UPDATE = "self_update"
+    # Platform Expansion Phase 5 — tells the agent to dial the terminal WS.
+    OPEN_TERMINAL = "open_terminal"
 
 
 ACTION_LABELS: Dict[str, str] = {
+    ActionType.OPEN_TERMINAL: "Open Web Terminal",
     ActionType.PING: "Ping",
     ActionType.RESTART_DEVICE: "Restart Device",
     ActionType.REFRESH_INVENTORY: "Refresh Inventory",

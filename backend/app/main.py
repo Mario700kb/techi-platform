@@ -155,6 +155,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)
+# Web Terminal relay WS (Platform Expansion Phase 5) — gated by FEATURE_TERMINAL
+# inside the handlers (accept+close 4003 when off). No public NPM route yet.
+from app.websocket.terminal_routes import router as terminal_ws_router  # noqa: E402
+app.include_router(terminal_ws_router)
 app.include_router(legacy_compat_router)
 
 
