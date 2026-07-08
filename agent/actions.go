@@ -140,6 +140,8 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleRunPowerShell(ctx, action.Parameters)
 	case "run_command":
 		return handleRunCommand(ctx, action.Parameters)
+	case "open_terminal":
+		return handleOpenTerminal(ctx, cfg, action.Parameters)
 	case "self_update":
 		return handleSelfUpdate(ctx, action.Parameters)
 	default:

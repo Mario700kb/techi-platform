@@ -62,3 +62,7 @@ func handleSelfUpdate(_ context.Context, _ map[string]interface{}) actionResult 
 func handleRunCommand(_ context.Context, _ map[string]interface{}) actionResult {
 	return actionResult{err: fmt.Errorf("run_command: not supported on this platform")}
 }
+
+func handleOpenTerminal(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
+	return actionResult{err: fmt.Errorf("open_terminal: not supported on this platform")}
+}
