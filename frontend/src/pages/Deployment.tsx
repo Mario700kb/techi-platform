@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clipboard, Copy, Download, Eye, KeyRound, Loader2, Package, Pencil, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { Boxes, Check, Clipboard, Copy, Download, Eye, HardDrive, KeyRound, Laptop, Layers, Loader2, LucideIcon, Monitor, Package, Pencil, RefreshCcw, Router, Search, Server, Terminal, Trash2 } from "lucide-react";
 import { API_BASE_URL, getAuthToken } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { AgentPackage, getLatestPackage } from "../api/agentPackages";
@@ -8,6 +8,8 @@ import {
   EnrollmentToken,
   EnrollmentTokenDeployment,
   RustDeskConfig,
+  buildLinuxInstallCommand,
+  buildLinuxInstallUrl,
   buildWindowsBootstrapCommand,
   buildWindowsBootstrapUrl,
   createEnrollmentToken,
@@ -18,9 +20,60 @@ import {
   getRustDeskConfig,
   regenerateEnrollmentToken,
   revokeEnrollmentToken,
+  tokenFromBootstrapUrl,
   updateEnrollmentToken,
 } from "../api/enrollmentBootstrap";
+import { PlatformFeatures } from "../api/platform";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { Button } from "../components/ui";
+
+// ── Deployment platform registry (metadata-driven) ─────────────────────────
+// The Deployment dialog renders from this table, gated by the backend Platform
+// Expansion feature flags. Windows is always shown and production-proven; every
+// other platform is opt-in via its flag. Adding a future platform = one entry
+// here + its icon (+ the backend flag). No UI rewrite. macOS is gated on a flag
+// that does not exist yet (FEATURE_MACOS) so it stays hidden until introduced.
+type DeployKind = "windows" | "linux" | "placeholder";
+type PlatformStatus = "Production" | "Experimental" | "Planned";
+
+interface DeploymentPlatformMeta {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  // null → always visible (Windows). Otherwise visible only when that flag is on.
+  featureFlag: keyof PlatformFeatures | "FEATURE_MACOS" | null;
+  status: PlatformStatus;
+  kind: DeployKind;
+  arches?: string[];        // Linux: supported architectures
+  futureMethods?: string[]; // placeholders: planned deployment methods
+}
+
+const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
+  { id: "windows", label: "Windows", icon: Monitor, featureFlag: null, status: "Production", kind: "windows" },
+  { id: "linux", label: "Linux", icon: Terminal, featureFlag: "FEATURE_LINUX", status: "Experimental", kind: "linux",
+    arches: ["linux-amd64", "linux-arm64", "linux-armhf"] },
+  { id: "macos", label: "macOS", icon: Laptop, featureFlag: "FEATURE_MACOS", status: "Planned", kind: "placeholder" },
+  { id: "mikrotik", label: "MikroTik", icon: Router, featureFlag: "FEATURE_MIKROTIK", status: "Planned", kind: "placeholder",
+    futureMethods: ["RouterOS Script", "API Push", "SSH Bootstrap"] },
+  { id: "synology", label: "Synology DSM", icon: HardDrive, featureFlag: "FEATURE_STORAGE", status: "Planned", kind: "placeholder",
+    futureMethods: ["Package", "SSH Installer"] },
+  { id: "qnap", label: "QNAP QTS", icon: HardDrive, featureFlag: "FEATURE_STORAGE", status: "Planned", kind: "placeholder",
+    futureMethods: ["Package", "SSH Installer"] },
+  { id: "vmware", label: "VMware ESXi", icon: Server, featureFlag: "FEATURE_HYPERVISOR", status: "Planned", kind: "placeholder" },
+  { id: "hyperv", label: "Hyper-V", icon: Boxes, featureFlag: "FEATURE_HYPERVISOR", status: "Planned", kind: "placeholder" },
+  { id: "proxmox", label: "Proxmox", icon: Layers, featureFlag: "FEATURE_HYPERVISOR", status: "Planned", kind: "placeholder" },
+];
+
+function isPlatformVisible(meta: DeploymentPlatformMeta, features: PlatformFeatures): boolean {
+  if (meta.featureFlag === null) return true; // Windows — always
+  return (features as unknown as Record<string, boolean>)[meta.featureFlag] === true;
+}
+
+const STATUS_BADGE: Record<PlatformStatus, string> = {
+  Production: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+  Experimental: "border-amber-400/25 bg-amber-400/10 text-amber-300",
+  Planned: "border-slate-400/25 bg-slate-400/10 text-slate-400",
+};
 
 type CopyTarget = string | null;
 
@@ -58,6 +111,8 @@ export default function Deployment() {
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [rustdesk, setRustdesk] = useState<RustDeskConfig | null>(null);
   const [activePackage, setActivePackage] = useState<AgentPackage | null>(null);
+  const [linuxPackage, setLinuxPackage] = useState<AgentPackage | null>(null);
+  const features = usePlatformFeatures();
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [copied, setCopied] = useState<CopyTarget>(null);
@@ -93,6 +148,7 @@ export default function Deployment() {
       .catch(() => getLatestPackage("windows"))
       .then(setActivePackage)
       .catch(() => setActivePackage(null));
+    getLatestPackage("linux-amd64").then(setLinuxPackage).catch(() => setLinuxPackage(null));
     void loadTokens();
   }, []);
 
@@ -294,6 +350,8 @@ export default function Deployment() {
       {viewDeployment && (
         <DeploymentModal
           deployment={viewDeployment}
+          features={features}
+          linuxPackage={linuxPackage}
           copied={copied}
           onCopy={copy}
           onDownload={() => void downloadTokenScript(viewDeployment.token_id)}
@@ -337,7 +395,11 @@ function CommandBlock({ label, value, copied, onCopy }: { label: string; value: 
   );
 }
 
-function DeploymentModal({ deployment, copied, onCopy, onDownload, onClose }: { deployment: EnrollmentTokenDeployment; copied: CopyTarget; onCopy: (target: string, value: string) => Promise<void>; onDownload: () => void; onClose: () => void }) {
+function DeploymentModal({ deployment, features, linuxPackage, copied, onCopy, onDownload, onClose }: { deployment: EnrollmentTokenDeployment; features: PlatformFeatures; linuxPackage: AgentPackage | null; copied: CopyTarget; onCopy: (target: string, value: string) => Promise<void>; onDownload: () => void; onClose: () => void }) {
+  // Every platform shares the SAME token — derived from the Windows bootstrap
+  // URL the backend already returns — so regenerating a token updates all.
+  const token = tokenFromBootstrapUrl(deployment.bootstrap_url);
+  const visible = DEPLOYMENT_PLATFORMS.filter((meta) => isPlatformVisible(meta, features));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg border p-5" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)", color: "var(--th-text-primary)" }}>
@@ -346,12 +408,21 @@ function DeploymentModal({ deployment, copied, onCopy, onDownload, onClose }: { 
           <Button size="sm" type="button" onClick={onClose}>Close</Button>
         </div>
         {!deployment.token_available && <div className="mb-4 rounded-lg border border-yellow-400/30 bg-yellow-400/10 p-3 text-sm text-yellow-100">This token has no recoverable value. Regenerate it to copy a usable command.</div>}
-        <CommandBlock label="Safe one-time/manual command" value={deployment.manual_command} copied={copied === "modal-manual"} onCopy={() => void onCopy("modal-manual", deployment.manual_command)} />
-        <CommandBlock label="GPO startup command" value={deployment.gpo_command} copied={copied === "modal-gpo"} onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)} />
-        <CommandBlock label="GPO Scheduled Task Deploy (Domain Controller)" value={deployment.gpo_deploy_command} copied={copied === "modal-gpo-deploy"} onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)} />
-        <CommandBlock label="Bootstrap URL" value={deployment.bootstrap_url} copied={copied === "modal-url"} onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)} />
-        <Button type="button" onClick={onDownload} disabled={!deployment.token_available}><Download className="mr-2 h-4 w-4" />Download PS1</Button>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="space-y-5">
+          {visible.map((meta) => (
+            <PlatformSection
+              key={meta.id}
+              meta={meta}
+              deployment={deployment}
+              token={token}
+              linuxPackage={linuxPackage}
+              copied={copied}
+              onCopy={onCopy}
+              onDownload={onDownload}
+            />
+          ))}
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="Status" value={deployment.token_metadata.status} />
           <Info label="Uses" value={`${deployment.token_metadata.use_count} / ${deployment.token_metadata.max_uses}`} />
           <Info label="Expires" value={fmtDate(deployment.token_metadata.expires_at)} />
@@ -359,6 +430,73 @@ function DeploymentModal({ deployment, copied, onCopy, onDownload, onClose }: { 
         </div>
       </div>
     </div>
+  );
+}
+
+function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy, onDownload }: { meta: DeploymentPlatformMeta; deployment: EnrollmentTokenDeployment; token: string | null; linuxPackage: AgentPackage | null; copied: CopyTarget; onCopy: (target: string, value: string) => Promise<void>; onDownload: () => void }) {
+  const Icon = meta.icon;
+  return (
+    <section className="rounded-lg border p-4" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-main)" }}>
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-techi-orange" />
+        <h4 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-primary)" }}>{meta.label}</h4>
+        <span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[meta.status]}`}>{meta.status}</span>
+      </div>
+
+      {/* WINDOWS — production-proven; byte-identical to the original block. */}
+      {meta.kind === "windows" && (
+        <>
+          <CommandBlock label="Safe one-time/manual command" value={deployment.manual_command} copied={copied === "modal-manual"} onCopy={() => void onCopy("modal-manual", deployment.manual_command)} />
+          <CommandBlock label="GPO startup command" value={deployment.gpo_command} copied={copied === "modal-gpo"} onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)} />
+          <CommandBlock label="GPO Scheduled Task Deploy (Domain Controller)" value={deployment.gpo_deploy_command} copied={copied === "modal-gpo-deploy"} onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)} />
+          <CommandBlock label="Bootstrap URL" value={deployment.bootstrap_url} copied={copied === "modal-url"} onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)} />
+          <Button type="button" onClick={onDownload} disabled={!deployment.token_available}><Download className="mr-2 h-4 w-4" />Download PS1</Button>
+        </>
+      )}
+
+      {/* LINUX — same token, one-liner installer (Experimental). */}
+      {meta.kind === "linux" && (
+        token ? (
+          <>
+            <CommandBlock label="One-Time Install" value={buildLinuxInstallCommand(token)} copied={copied === "modal-linux-cmd"} onCopy={() => void onCopy("modal-linux-cmd", buildLinuxInstallCommand(token))} />
+            <CommandBlock label="Manual URL" value={buildLinuxInstallUrl(token)} copied={copied === "modal-linux-url"} onCopy={() => void onCopy("modal-linux-url", buildLinuxInstallUrl(token))} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <div className="mb-1 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Supported architectures</div>
+                <ul className="space-y-0.5 font-mono text-xs" style={{ color: "var(--th-text-primary)" }}>
+                  {meta.arches?.map((a) => <li key={a}>• {a}</li>)}
+                </ul>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Package source</div>
+                {linuxPackage ? (
+                  <div className="text-xs" style={{ color: "var(--th-text-primary)" }}>Active Linux Package · <span className="font-mono">{linuxPackage.version}</span> · <span className="font-mono">{linuxPackage.filename}</span></div>
+                ) : (
+                  <div className="text-xs" style={{ color: "var(--th-text-muted)" }}>No active Linux package — upload one in <a href="/agent-packages" className="text-techi-orange hover:underline">Agent Packages</a>.</div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-muted)" }}>Token value not recoverable. Regenerate the token to reveal the Linux install command.</div>
+        )
+      )}
+
+      {/* PLACEHOLDER — reserved UI only, no commands. */}
+      {meta.kind === "placeholder" && (
+        <div className="rounded-lg border border-dashed p-3 text-xs" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-muted)" }}>
+          <p className="font-medium" style={{ color: "var(--th-text-secondary)" }}>Coming soon. This platform is not yet available.</p>
+          {meta.futureMethods && meta.futureMethods.length > 0 && (
+            <>
+              <p className="mt-2">Future deployment methods:</p>
+              <ul className="mt-1 space-y-0.5">
+                {meta.futureMethods.map((m) => <li key={m}>• {m}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

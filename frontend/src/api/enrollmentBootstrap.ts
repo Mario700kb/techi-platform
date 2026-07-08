@@ -239,3 +239,25 @@ export function buildWindowsBootstrapCommand(token: string): string {
 export function enrollmentTokenBootstrapDownloadUrl(tokenId: number): string {
   return `${API_BASE_URL}/api/v1/enrollment-tokens/${tokenId}/bootstrap.ps1`;
 }
+
+// Linux uses the SAME enrollment token as Windows — the one-liner served by
+// GET /api/v1/install/linux downloads + installs the Linux agent. No Windows
+// path is touched.
+export function buildLinuxInstallUrl(token: string): string {
+  return `${API_BASE_URL}/api/v1/install/linux?token=${encodeURIComponent(token)}`;
+}
+
+export function buildLinuxInstallCommand(token: string): string {
+  return `curl -fsSL ${buildLinuxInstallUrl(token)} | sudo bash`;
+}
+
+// The deployment endpoint embeds the (recoverable) token in the Windows
+// bootstrap URL; every platform derives its command from that same token so
+// generating/regenerating a token updates all platforms at once.
+export function tokenFromBootstrapUrl(bootstrapUrl: string): string | null {
+  try {
+    return new URL(bootstrapUrl).searchParams.get("token");
+  } catch {
+    return null;
+  }
+}

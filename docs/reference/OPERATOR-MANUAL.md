@@ -158,6 +158,31 @@ Windows devices enroll via **Enrollment / Deployment**:
 
 Requires the **Deployment** permission.
 
+### 8a. Platform-aware Deployment dialog
+
+The token **Deployment** dialog (Deployment page ▸ token row ▸ **View**) is
+platform-aware. **One enrollment token is shared by every platform** — generating
+or regenerating a token updates all sections at once; there are no duplicate
+deployments. Sections are metadata-driven and appear only when their Platform
+Expansion flag is enabled (Windows is always shown):
+
+| Platform | Status | Visible when | Deployment |
+|----------|--------|--------------|------------|
+| **Windows** | **Production** | always | Safe one-time command · GPO Startup · GPO Scheduled Task · Bootstrap URL · Download PS1 *(unchanged, production-proven)* |
+| **Linux** | Experimental | `FEATURE_LINUX` | One-Time Install (`curl … \| sudo bash`) · Manual URL · arches (amd64/arm64/armhf) · active Linux package |
+| **macOS** | Planned | `FEATURE_MACOS` (not yet defined) | placeholder only |
+| **MikroTik** | Planned | `FEATURE_MIKROTIK` | placeholder — RouterOS Script / API Push / SSH Bootstrap |
+| **Synology DSM** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
+| **QNAP QTS** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
+| **VMware ESXi** | Planned | `FEATURE_HYPERVISOR` | placeholder |
+| **Hyper-V** | Planned | `FEATURE_HYPERVISOR` | placeholder |
+| **Proxmox** | Planned | `FEATURE_HYPERVISOR` | placeholder |
+
+The **Windows** block is byte-identical to the original dialog and its scripts are
+never modified. Placeholders reserve the UI only — no commands, no backend. Adding
+a future platform is metadata-only: register the platform + its deployment metadata
+entry + an icon; the dialog needs no rewrite.
+
 ---
 
 ## 9. Agent Installation (Windows)
