@@ -456,8 +456,28 @@ class DeviceRepository:
 
     @staticmethod
     def _tree_category_case():
-        """SERVERS vs CLIENTPC classification — the reference (Windows) logic,
-        reused unchanged so platform sub-folders nest under the same folders."""
+        """Top-level tree category. Non-agent platforms are placed by platform
+        class (Network/Storage/Hypervisors) FIRST; agent platforms keep the
+        reference Windows/Linux SERVERS-vs-CLIENTPC logic unchanged. With every
+        platform flag off no device carries those platforms, so the output is
+        identical to today's production."""
+        network_platform = or_(
+            Device.platform.ilike("%mikrotik%"),
+            Device.platform.ilike("%routeros%"),
+            Device.platform.ilike("%unifi%"),
+            Device.platform.ilike("%switch%"),
+            Device.platform.ilike("%cisco%"),
+        )
+        storage_platform = or_(
+            Device.platform.ilike("%synology%"),
+            Device.platform.ilike("%qnap%"),
+        )
+        hypervisor_platform = or_(
+            Device.platform.ilike("%vmware%"),
+            Device.platform.ilike("%esxi%"),
+            Device.platform.ilike("%proxmox%"),
+            Device.platform.ilike("%hyperv%"),
+        )
         server_group = or_(
             DeviceGroup.name.ilike("servers"),
             DeviceGroup.name.ilike("server"),
@@ -476,6 +496,9 @@ class DeviceRepository:
             Device.os_caption.ilike("%windows server%"),
         )
         return case(
+            (network_platform, "network"),
+            (storage_platform, "storage"),
+            (hypervisor_platform, "hypervisors"),
             (server_group, "servers"),
             (client_pc_group, "clientpc"),
             (server_os, "servers"),

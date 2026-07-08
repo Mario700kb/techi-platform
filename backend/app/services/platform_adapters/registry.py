@@ -4,12 +4,13 @@ from typing import Dict, Optional
 from app.platform_core.registry import DEFAULT_PLATFORM_ID, resolve_platform
 from app.services.platform_adapters.base import PlatformAdapter
 from app.services.platform_adapters.linux import LinuxAdapter
+from app.services.platform_adapters.mikrotik import MikroTikAdapter
 from app.services.platform_adapters.windows import WindowsAdapter
 
 logger = logging.getLogger(__name__)
 
 _ADAPTERS: Dict[str, PlatformAdapter] = {
-    adapter.platform_id: adapter for adapter in (WindowsAdapter(), LinuxAdapter())
+    adapter.platform_id: adapter for adapter in (WindowsAdapter(), LinuxAdapter(), MikroTikAdapter())
 }
 
 
