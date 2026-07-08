@@ -151,6 +151,16 @@ off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`
    folder. Specs: `CLASSIFICATION-ARCHITECTURE-REVIEW.md`,
    `UNIFIED-CLASSIFICATION-ENGINE-SPEC.md`.
 
+4. **[2026-07-08] Device Tree click not syncing with Device Catalog** (FIXED,
+   `dd976af`). Frontend SWR cache key `deviceTableCacheKey` omitted
+   `category`/`platform`; after the tree moved onto those filters (e08544d),
+   selections within a client collided → `loadTableData` served a fresh cached
+   entry and sent no request, so the catalog kept stale rows until manual Refresh
+   (which invalidates the prefix). Fix: add category + platform to the key
+   (classification engine proven NOT the cause). Contract 13/13, suite 463+4,
+   tsc/build OK, smoke 7/7. Residual documented risk: `device_type` /
+   `assignment_source` (mobile FilterSheet) are also absent from the key.
+
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
 PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the

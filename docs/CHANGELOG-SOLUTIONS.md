@@ -27,6 +27,43 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] BUG: Device Tree click nuk sinkronizohej me Device Catalog (cache key i frontend-it)
+
+### Problemi
+Klikimi i një nyje Client/Servers/Client PC/Platform ndonjëherë nuk rifreskonte
+Catalog-un (mbetej rezultati i mëparshëm / All Devices); "Refresh List" e rregullonte
+menjëherë; disa klientë punonin, të tjerë kërkonin refresh manual.
+
+### Analiza / Shkaku (NUK është motori i klasifikimit)
+Backend-i kthen të dhëna korrekte. Regresioni është te çelësi i cache-it SWR në
+frontend: `deviceTableCacheKey` (`src/store/appCache.ts`) përfshinte `smart_folder`
+por JO `category`/`platform`. Kur fix-i i pemës `e08544d` i kaloi nyjet e pemës në
+filtrat `category`/`platform`, ky allow-list nuk u përditësua. Dy përzgjedhje brenda
+të njëjtit klient (Servers vs Client PC, ose një nën-folder platforme) prodhonin
+çelës IDENTIK → `loadTableData` gjente një hyrje "fresh" përplasëse dhe kthehej herët
+(**0 kërkesa API**), pra Catalog mbante rreshtat e vjetër derisa "Refresh" bënte
+`invalidatePrefix("devices-table")` → refetch i detyruar. Riprodhuar: `client-4-servers`,
+`client-4-clientpc`, `client-4-servers-windows` → i njëjti çelës `devices-table|1|50||||||4||||`.
+
+### Zgjidhja (fiksi më i vogël)
+Shto `category` + `platform` te `deviceTableCacheKey`. Çdo përzgjedhje pemë → çelës
+unik → saktësisht një kërkesë për klik → Catalog përditësohet automatikisht. Motori
+i klasifikimit i paprekur (u vërtetua se s'ishte shkaku).
+
+### Ndryshimet
+- `frontend/src/store/appCache.ts` — `deviceTableCacheKey` (+category, +platform)
+- Commit `dd976af`.
+
+### Rezultati
+Çelësat tani distinktë (verifikuar për client/servers/clientpc/servers+windows).
+Contract 13/13; suite 463+4 baseline; tsc + build OK; smoke 7/7. Deployed (frontend).
+
+### Mësimet
+Një çelës cache-i SWR duhet të përmbajë ÇDO fushë që ndikon kërkesën. Allow-list-et
+statike divergjojnë kur ndryshojnë filtrat — kjo është e njëjta klasë me divergjencën
+C1–C4. Rrezik i mbetur (i dokumentuar, jashtë këtij regresioni): `device_type` dhe
+`assignment_source` (FilterSheet mobF) gjithashtu mungojnë te çelësi. Shih [[platform-v3-design]].
+
 ## [2026-07-08] ARKITEKTURË: Unified Classification Engine (një motor, zëvendëson C1–C4)
 
 ### Konteksti
