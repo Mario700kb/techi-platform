@@ -139,19 +139,22 @@ class TrustedDomainService:
         os_caption: Optional[str] = None,
         windows_product_type: Optional[int] = None,
     ) -> str:
-        """Return 'Servers' or 'Client PC' based on the reported OS."""
-        if windows_product_type in {2, 3}:
-            return "Servers"
-        os_lower = " ".join(
-            value.lower()
-            for value in (os_name or "", os_version or "", os_caption or "")
-            if value
+        """Standard group name for trusted-domain placement. The Servers-vs-client
+        decision comes from the Unified Classification Engine (single source);
+        the Mac/Linux Devices placement is a platform-axis organizational policy
+        layered on top."""
+        from app.platform_core import classification as clf
+
+        ci = clf.ClassificationInput(
+            client_id=None, group_id=None, group_name=None,
+            platform=platform, device_type=None, windows_product_type=windows_product_type,
+            os_name=os_name, os_version=os_version, os_caption=os_caption,
         )
-        platform_lower = (platform or "").lower()
-        if any(tok in os_lower for tok in _SERVER_OS_TOKENS):
+        if clf.classify_category(ci) == clf.CATEGORY_SERVERS:
             return "Servers"
-        if "darwin" in platform_lower or "mac" in os_lower:
+        pclass = clf.classify_platform(platform)
+        if pclass == "macos":
             return "Mac Devices"
-        if "linux" in platform_lower or "linux" in os_lower:
+        if pclass == "linux":
             return "Linux Devices"
         return "Client PC"

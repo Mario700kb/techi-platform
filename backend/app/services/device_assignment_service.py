@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.client import Client
 from app.models.device import Device, DeviceType
 from app.models.device_group import DeviceGroup
+from app.platform_core import classification as clf
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_group_repository import DeviceGroupRepository
 from app.repositories.device_repository import DeviceRepository
@@ -210,30 +211,22 @@ class DeviceAssignmentService:
             self._get_or_create_group(client_id, name)
 
     def _detect_group(self, signal: AssignmentSignal) -> str:
-        platform = self._clean(signal.platform).lower()
-        os_values = " ".join(
-            self._clean(value).lower()
-            for value in (signal.os_name, signal.os_version, signal.os_caption)
-            if self._clean(value)
-        )
-        if signal.device_type == DeviceType.SERVER or signal.windows_product_type in {2, 3} or "server" in os_values:
-            return "Servers"
-        return "Client PC"
+        """Standard group name for a device being placed. Uses the Unified
+        Classification Engine (server-ness = device_type SERVER / product-type /
+        'windows server') so write-time placement and read-time counts agree."""
+        category = clf.classify_category(clf.ClassificationInput(
+            client_id=None, group_id=None, group_name=None,
+            platform=signal.platform, device_type=signal.device_type,
+            windows_product_type=signal.windows_product_type,
+            os_name=signal.os_name, os_version=signal.os_version, os_caption=signal.os_caption,
+        ))
+        return "Servers" if category == clf.CATEGORY_SERVERS else "Client PC"
 
     def resolve_device_assignment(self, device: Device) -> AssignmentResolution:
         source = self._resolved_source(device)
-        category = self._category_from_group(device.group.name if device.group else None)
-        if category is None and device.group_id:
-            category = "other"
-        if category is None:
-            category = self._category_from_os(
-                device.os_name,
-                device.platform,
-                device.device_type,
-                os_version=device.os_version,
-                os_caption=device.os_caption,
-                windows_product_type=device.windows_product_type,
-            )
+        # Category via the one engine (device-KIND). Ownership ("unassigned") is
+        # layered below on client/group presence.
+        category = clf.classify_category(device)
 
         if device.client_id or device.group_id:
             return AssignmentResolution(
