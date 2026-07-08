@@ -27,6 +27,48 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] BUG: Zinxhiri i paketës Linux jofunksional (upload→lookup→download→install)
+
+### Problemi
+Gjatë përgatitjes së provës së parë Linux (server 3CX mbi Debian), ngarkimi i binarit
+Linux dështoi me "Unsupported package file extension". Hetimi zbuloi se e gjithë rruga
+e paketimit Linux e Fazës 2 kishte shkuar **dark** dhe s'ishte ekzekutuar kurrë
+end-to-end (0 ngarkime Linux ndonjëherë).
+
+### Shkaku (tre boshllëqe, vetëm Linux)
+1. **Upload**: `ALLOWED_EXTENSIONS` s'kishte tip për binar raw → refuzonte binarin Linux.
+2. **Public download**: `PUBLIC_DOWNLOAD_PLATFORMS` s'përfshinte `linux-*` → **400**.
+3. **Zgjidhja e paketës**: download-i publik kishte `file_type="msi"` hardcoded → një
+   `agent_binary` Linux jepte **404**.
+Instaluesi ([install.py]) shkruan binar RAW + `chmod +x`, pra pret binar të papaketuar.
+
+### Zgjidhja (më e vogla; Windows byte-identik)
+- `ALLOWED_EXTENSIONS += ".bin"` (konventë për binar raw; shërbehet si-është).
+- `PUBLIC_DOWNLOAD_PLATFORMS += linux-amd64/arm64/armhf`.
+- `/platform/{platform}/download`: dega `linux-*` → `file_type=agent_binary`
+  (me fallback te çdo aktiv i platformës); **dega Windows e pandryshuar**
+  (`latest_active(platform, file_type="msi")`) → MSI bootstrap / GPO / self-update PREKUR ASPAK.
+- `install.py`: `armv7l|armv6l|armhf → armhf` që `linux-armhf` të jetë i arritshëm.
+
+### Ndryshimet
+- `backend/app/services/agent_package_service.py` (ALLOWED_EXTENSIONS)
+- `backend/app/api/v1/endpoints/agent_packages.py` (PUBLIC_DOWNLOAD_PLATFORMS + resolution)
+- `backend/app/api/v1/endpoints/install.py` (arch armhf)
+- `backend/tests/test_agent_package_public_download.py` (Linux + platformë e paskualifikuar e re)
+- `backend/tests/test_agent_package_upload_linux.py` (i ri)
+- Commit `c80a621`.
+
+### Rezultati (provë prodhimi live)
+- Contract 13/13; suite 472+4 baseline (flags OFF & ON); tsc/build/agent OK; smoke 7/7.
+- Live: `linux-amd64` → **404** (i arritshëm; ishte 400), `freebsd-amd64` → **400**
+  (ende i paskualifikuar), `windows-amd64` → **200** (MSI i pandryshuar).
+- Prod tip `c80a621`. Artefakti i parë `linux-amd64` gati: `techi-agent-linux-amd64.bin`.
+
+### Mësimet
+Një rrugë e dërguar "dark" nuk është e provuar derisa të ekzekutohet end-to-end me
+artefakt real. Ndryshimet e zgjeruara (Linux) duhet të ndajnë degën nga Windows që
+sjellja referencë të mbetet byte-identike. Shih [[platform-v3-design]].
+
 ## [2026-07-08] BUG: Device Tree click nuk sinkronizohej me Device Catalog (cache key i frontend-it)
 
 ### Problemi

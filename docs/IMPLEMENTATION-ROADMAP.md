@@ -161,6 +161,18 @@ off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`
    tsc/build OK, smoke 7/7. Residual documented risk: `device_type` /
    `assignment_source` (mobile FilterSheet) are also absent from the key.
 
+5. **[2026-07-09] Linux agent package chain broken end-to-end** (FIXED,
+   `c80a621`). Phase 2's Linux enrollment shipped dark and was never runnable:
+   upload rejected raw binaries, public download excluded `linux-*` (400), and it
+   hard-coded `file_type="msi"` (404 for a Linux agent binary). Fix: allow `.bin`,
+   add `linux-amd64/arm64/armhf` to the public allow-list, resolve `linux-*` via
+   `agent_binary`, map armhf in the installer — **Windows path byte-identical**
+   (separate branch; MSI/GPO/self-update untouched). Regression tests added
+   (Windows + Linux download, unsupported platform, missing package, active
+   selection, upload validation). Contract 13/13, suite 472+4, smoke 7/7. Live:
+   linux-amd64→404 reachable, freebsd→400, windows-amd64→200. First `linux-amd64`
+   binary built; first upload + first live Linux enrollment (3CX/Debian) next.
+
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
 PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the
