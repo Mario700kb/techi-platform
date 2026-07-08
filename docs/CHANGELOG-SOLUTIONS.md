@@ -27,6 +27,44 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] BUG: Heartbeat mund të prishte një caktim manual kur ndryshonte device_type
+
+### Problemi
+Invariant i pronarit: heartbeat/re-enrollment nuk duhet KURRË të prishë një caktim
+manual. Por blloku i ri-grupimit në heartbeat aktivizohej sa herë ndryshonte
+`device_type` (p.sh. CLIENT→SERVER) dhe e detyronte `assignment_source=trusted_domain`,
+duke mposkaluar mbrojtjen manuale te `reconcile` → pajisja e vendosur manualisht
+ri-grupohej sipas domain-it.
+
+### Shkaku
+Blloku `if device.device_type != device_type ...` (device_heartbeat_service.py) fshinte
+`client_id/group_id/assignment_source/auto_assigned` dhe mbishkruante burimin në
+`trusted_domain` PA kontrolluar nëse burimi ishte manual. Gjithashtu bllojtë e ruajtjes
+listonin burimet me dorë në 3 vende të ndryshme, jo konsistentë (reuse-path i mungonte
+`legacy_manual`).
+
+### Zgjidhja (fiks i vogël, PR i veçantë)
+- `DeviceAssignmentService.is_manual_locked()` — burim i vetëm i së vërtetës për
+  "lock"-un (manual / legacy_manual / enrollment_token; trusted_domain MBETET auto).
+- Blloku i ri-grupimit në device_type-flip tani është i gated me `not manual_locked`.
+- `reconcile_trusted_domain_assignment` dhe reuse-path guard kalojnë të njëjtin predikat.
+
+### Ndryshimet
+- `backend/app/services/device_assignment_service.py` — `MANUAL_LOCK_SOURCES` + `is_manual_locked`
+- `backend/app/services/device_heartbeat_service.py` — dy bllojtë e ruajtjes + flip guard
+- `backend/tests/test_heartbeat_manual_lock.py` — test i predikatit + test real me SQLite
+  që `process_heartbeat_core` ruan client/group/source kur device_type kthehet në SERVER.
+- Commit `96020cd`.
+
+### Rezultati
+Contract 13/13; suite 460+4 baseline (flags OFF & ON); tsc + build + agent OK; smoke 7/7.
+Deployed në prod (tip `96020cd`).
+
+### Mësimet
+Një invariant duhet të ketë NJË përkufizim të vetëm. Tri kopje inline të "manual set"
+divergjuan (njëra harroi `legacy_manual`). Tani ekziston `is_manual_locked()` i vetëm —
+lidhet me punën e ardhshme të Unified Classification Engine ([[platform-v3-design]]).
+
 ## [2026-07-08] BUG: Tree filtering jo-kumulativ — Client→Servers→Windows kthente TË GJITHA Windows-at
 
 ### Problemi
