@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import {
   getConnectUrl,
@@ -57,7 +57,7 @@ interface DeviceDrawerProps {
   onToggleFavorite?: (deviceId: number) => void;
 }
 
-type DrawerTab = "overview" | "remote_support" | "management" | "notes" | "timeline";
+type DrawerTab = "overview" | "remote_support" | "terminal" | "management" | "notes" | "timeline";
 
 const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
   { id: "overview",       label: "Overview" },
@@ -66,6 +66,10 @@ const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
   { id: "notes",          label: "Notes" },
   { id: "timeline",       label: "Timeline" },
 ];
+
+// Lazy so xterm.js only loads when a terminal is actually opened — the main
+// bundle and the flag-off experience are unchanged.
+const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
 function DetailRow({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
   return (
@@ -548,7 +552,19 @@ export default function DeviceDrawer({
     : device.rustdesk_sync_state;
   const hasInventoryDetails =
     Boolean(inventory && (inventory.processes.length > 0 || inventory.services.length > 0 || (inventory.software ?? []).length > 0));
-  const visibleDrawerTabs = drawerTabs;
+  // Capability-driven Terminal tab: only when FEATURE_TERMINAL is on AND the
+  // device reports the terminal capability. Inserted after Remote Support so the
+  // Connect-oriented tabs sit together; Windows (no terminal cap) never sees it.
+  const hasTerminal =
+    platformFeatures.FEATURE_TERMINAL &&
+    Boolean(device.capabilities && "terminal" in device.capabilities);
+  const visibleDrawerTabs = hasTerminal
+    ? [
+        ...drawerTabs.slice(0, 2),
+        { id: "terminal" as DrawerTab, label: "Terminal" },
+        ...drawerTabs.slice(2),
+      ]
+    : drawerTabs;
 
 
 
@@ -1979,6 +1995,15 @@ export default function DeviceDrawer({
             <ActivityTimeline events={events} loading={loading} onReload={reload} />
           </section>
           </div>
+
+          {/* ── Terminal tab (Platform Expansion Phase 5) ── */}
+          {hasTerminal && activeTab === "terminal" && (
+            <div className="min-h-[340px]">
+              <Suspense fallback={<div className="p-4 text-xs" style={{ color: "var(--th-text-muted)" }}>Loading terminal…</div>}>
+                <DeviceTerminal deviceId={device.id} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ── Remote Support tab ── */}
           <div className={activeTab === "remote_support" ? "" : "hidden"}>
