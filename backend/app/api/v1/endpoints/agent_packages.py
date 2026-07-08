@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger("techi.agent_packages")
-PUBLIC_DOWNLOAD_PLATFORMS = {"windows", "windows-amd64", "windows-arm64"}
+PUBLIC_DOWNLOAD_PLATFORMS = {
+    "windows", "windows-amd64", "windows-arm64",
+    "linux-amd64", "linux-arm64", "linux-armhf",
+}
 
 _require_deployment = require_team_permission(DEPLOYMENT)
 
@@ -184,7 +187,14 @@ def download_latest_active_agent_package(platform: str):
         raise HTTPException(status_code=400, detail="Unsupported public download platform")
 
     service = AgentPackageService()
-    package = service.latest_active(platform, file_type="msi")
+    if platform.startswith("linux-"):
+        # Linux ships a RAW agent binary (file_type=agent_binary). Prefer that
+        # type, then fall back to any active package for the platform so an
+        # operator upload is never silently invisible.
+        package = service.latest_active(platform, file_type="agent_binary") or service.latest_active(platform)
+    else:
+        # Windows path — UNCHANGED: the active combined bootstrap MSI.
+        package = service.latest_active(platform, file_type="msi")
     if package is None:
         logger.info("Public agent package download returned no active package for platform=%s", platform)
         raise HTTPException(status_code=404, detail="No active package for platform")

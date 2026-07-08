@@ -192,10 +192,96 @@ def test_public_unsupported_platform_rejected(monkeypatch):
 
     monkeypatch.setattr(agent_packages, "AgentPackageService", UnexpectedAgentPackageService)
 
-    response = _client().get("/api/v1/agent-packages/platform/linux-amd64/download")
+    # freebsd-amd64 is not in PUBLIC_DOWNLOAD_PLATFORMS (linux-* now IS supported).
+    response = _client().get("/api/v1/agent-packages/platform/freebsd-amd64/download")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported public download platform"
+
+
+def test_public_linux_amd64_download_returns_active_agent_binary(monkeypatch, tmp_path):
+    binary_file = tmp_path / "techi-agent-linux-amd64.bin"
+    binary_file.write_bytes(b"\x7fELF-linux-agent")
+    package = SimpleNamespace(
+        id="pkg-linux",
+        platform=SimpleNamespace(value="linux-amd64"),
+        filename="techi-agent-linux-amd64.bin",
+        version="2.1.5",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "linux-amd64"
+            # Linux resolves via agent_binary, NOT msi.
+            assert file_type == "agent_binary"
+            return package
+
+        def package_path(self, selected_package):
+            assert selected_package is package
+            return binary_file
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/platform/linux-amd64/download")
+
+    assert response.status_code == 200
+    assert response.content == b"\x7fELF-linux-agent"
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert "techi-agent-linux-amd64.bin" in response.headers["content-disposition"]
+
+
+def test_public_linux_download_falls_back_to_any_active(monkeypatch, tmp_path):
+    binary_file = tmp_path / "techi-agent-linux-amd64.bin"
+    binary_file.write_bytes(b"raw-binary")
+    package = SimpleNamespace(
+        id="pkg-linux",
+        platform=SimpleNamespace(value="linux-amd64"),
+        filename="techi-agent-linux-amd64.bin",
+        version="2.1.5",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            # No agent_binary typed package → fall back to any active for platform.
+            if file_type == "agent_binary":
+                return None
+            assert file_type is None
+            return package
+
+        def package_path(self, selected_package):
+            return binary_file
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/platform/linux-amd64/download")
+
+    assert response.status_code == 200
+    assert response.content == b"raw-binary"
+
+
+def test_public_linux_download_404_when_missing(monkeypatch):
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            return None
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/platform/linux-amd64/download")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No active package for platform"
+
+
+def test_public_linux_arm_platforms_are_supported(monkeypatch):
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            return None  # 404, but NOT 400 — proves the platform is allowed
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+    client = _client()
+    for platform in ("linux-arm64", "linux-armhf"):
+        response = client.get(f"/api/v1/agent-packages/platform/{platform}/download")
+        assert response.status_code == 404, platform  # reached the service, not rejected
 
 
 def test_public_agent_update_msi_download_returns_active_bridge(monkeypatch, tmp_path):

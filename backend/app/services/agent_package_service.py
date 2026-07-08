@@ -14,7 +14,9 @@ from app.schemas.agent_package import AgentFileType, AgentPackageOut, AgentPacka
 
 
 ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
-ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz")
+# .bin = a raw Linux agent binary (served as-is; the installer chmod +x's it).
+# Windows artifacts keep their existing extensions unchanged.
+ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin")
 ALLOWED_FILE_TYPES = {ft.value for ft in AgentFileType}
 
 
