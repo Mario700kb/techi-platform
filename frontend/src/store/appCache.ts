@@ -71,6 +71,12 @@ export function deviceTableCacheKey(
     filters.status ?? "", filters.freshness_state ?? "",
     filters.maintenance_state ?? "", filters.client_id ?? "",
     filters.group_id ?? "", filters.smart_folder ?? "",
+    // category + platform are tree-node filters (Platform Expansion). They MUST
+    // be in the key: two selections within a client differ only by these, so
+    // omitting them collides the SWR cache and serves the previous selection's
+    // rows until a manual Refresh (regression after the tree moved off
+    // smart_folder/device_type to category/platform).
+    filters.category ?? "", filters.platform ?? "",
     filters.duplicate_candidates ?? "", filters.lifecycle_state ?? "",
   ].join("|");
 }
