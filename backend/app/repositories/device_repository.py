@@ -219,14 +219,22 @@ class DeviceRepository:
     }
 
     def _apply_category_filter(self, query, category: Optional[str]):
-        """Additive filter for the platform-class tree categories. servers/
-        clientpc are NOT handled here (they use smart_folder — reference logic)."""
+        """Additive tree-category filter. Uses the SAME classification as the
+        tree counts (_tree_category_case) so a node's filtered result matches its
+        count badge — the hierarchy is cumulative (client AND category AND
+        platform). network/storage/hypervisors are platform-based; servers/
+        clientpc reuse the reference server-vs-client logic (needs the group
+        join to see group-name placement)."""
         if not category:
             return query
-        patterns = self._CATEGORY_PLATFORM_PATTERNS.get(category.strip().lower())
-        if not patterns:
-            return query
-        return query.filter(or_(*[Device.platform.ilike(f"%{p}%") for p in patterns]))
+        cat = category.strip().lower()
+        patterns = self._CATEGORY_PLATFORM_PATTERNS.get(cat)
+        if patterns:
+            return query.filter(or_(*[Device.platform.ilike(f"%{p}%") for p in patterns]))
+        if cat in ("servers", "clientpc"):
+            query = query.outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
+            return query.filter(self._tree_category_case() == cat)
+        return query
 
     def _apply_smart_folder_filter(self, query, smart_folder: Optional[str]):
         if not smart_folder:

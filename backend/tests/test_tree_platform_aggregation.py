@@ -67,3 +67,47 @@ def test_mikrotik_classifies_as_network():
     assert counts[1]["network"] == {"mikrotik": 1}
     assert counts[1]["storage"] == {"synology": 1}
     assert counts[1]["servers"] == {"windows": 1}
+
+
+def test_category_filter_matches_tree_count_cumulative():
+    """Regression: a tree node's filtered result must equal its count badge.
+    Reproduces the Agroblend0 case — servers identified by windows_product_type
+    (device_type UNASSIGNED) were counted under Servers but excluded by the old
+    device_type=server leaf filter. category=servers must match the count."""
+    from app.models.device import Device, DeviceStatus, DeviceType
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    import app.models  # noqa: F401
+    from app.db.base import Base
+    from app.repositories.device_repository import DeviceRepository
+    from app.services.device_service import DeviceService
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    s = sessionmaker(bind=engine)()
+    s.add_all([
+        # 1 explicit server + 2 servers-by-product-type (device_type UNASSIGNED)
+        Device(hostname="srv-1", client_id=4, platform="windows", windows_product_type=2,
+               device_type=DeviceType.SERVER, status=DeviceStatus.OFFLINE),
+        Device(hostname="srv-2", client_id=4, platform="windows", windows_product_type=3,
+               device_type=DeviceType.UNASSIGNED, status=DeviceStatus.OFFLINE),
+        Device(hostname="srv-3", client_id=4, platform="windows", windows_product_type=3,
+               device_type=DeviceType.UNASSIGNED, status=DeviceStatus.OFFLINE),
+        # 4 workstations
+        *[Device(hostname=f"pc-{i}", client_id=4, platform="windows", windows_product_type=1,
+                 device_type=DeviceType.CLIENT, status=DeviceStatus.OFFLINE) for i in range(4)],
+    ])
+    s.commit()
+    repo = DeviceRepository(s)
+    svc = DeviceService(s)
+
+    agg = repo.count_by_client_category_platform()[4]
+    assert agg["servers"]["windows"] == 3
+    assert agg["clientpc"]["windows"] == 4
+
+    # THE FIX: category filter reproduces the count (was 1 with device_type=server).
+    assert svc.get_devices_count(client_id=4, category="servers", platform="windows") == 3
+    assert svc.get_devices_count(client_id=4, category="clientpc", platform="windows") == 4
+    # Parent category (no platform) also matches its count.
+    assert svc.get_devices_count(client_id=4, category="servers") == 3

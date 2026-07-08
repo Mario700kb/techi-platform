@@ -484,20 +484,21 @@ export default function Devices() {
         // Platform sub-folder: client-N-<category>-<platform> (Platform Expansion).
         const platformMatch = key.match(new RegExp(`^client-(\\d+)-(${CATS})-([a-z0-9]+)$`));
         if (platformMatch) {
+          // Leaf: cumulative client AND category AND platform. Category uses the
+          // SAME classification as the tree counts, so the result matches the
+          // sub-folder badge (fixes servers→windows returning the wrong set).
           const [, cid, cat, plat] = platformMatch;
           nextFilters.client_id = Number(cid);
           nextFilters.group_id = undefined;
-          if (cat === "servers") nextFilters.device_type = "server";
-          else if (cat === "clientpc") nextFilters.device_type = "client";
+          nextFilters.category = cat;
           nextFilters.platform = plat;
         } else {
           const match = key.match(new RegExp(`^client-(\\d+)(?:-(${CATS}))?$`));
           if (match) {
             nextFilters.client_id = Number(match[1]);
             nextFilters.group_id = undefined;
-            if (match[2] === "servers") nextFilters.smart_folder = "windows_server";
-            else if (match[2] === "clientpc") nextFilters.smart_folder = "windows_workstation";
-            else if (match[2]) nextFilters.category = match[2]; // network|storage|hypervisors
+            // Parent category node: same category classification as its count.
+            if (match[2]) nextFilters.category = match[2];
           }
         }
       }
