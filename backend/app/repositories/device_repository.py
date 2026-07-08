@@ -108,6 +108,7 @@ class DeviceRepository:
         active_agent_version: Optional[str] = None,
         active_agent_sha256: Optional[str] = None,
         platform: Optional[str] = None,
+        category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> List[Device]:
         query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
@@ -117,6 +118,7 @@ class DeviceRepository:
         if device_type:
             query = query.filter(Device.device_type == device_type)
         query = self._apply_platform_filter(query, platform)
+        query = self._apply_category_filter(query, category)
         query = self._apply_freshness_filter(query, freshness_state)
         if client_id == -1:
             query = query.filter(Device.client_id.is_(None))
@@ -207,6 +209,24 @@ class DeviceRepository:
         if p == "windows":
             return query.filter(or_(Device.platform.ilike("%windows%"), Device.platform.is_(None)))
         return query.filter(Device.platform.ilike(f"%{p}%"))
+
+    # Platform-class categories (Phase 7) — used by the tree's Network/Storage/
+    # Hypervisors parent folders. Purely platform-based (no group join needed).
+    _CATEGORY_PLATFORM_PATTERNS = {
+        "network": ("mikrotik", "routeros", "unifi", "switch", "cisco"),
+        "storage": ("synology", "qnap"),
+        "hypervisors": ("vmware", "esxi", "proxmox", "hyperv"),
+    }
+
+    def _apply_category_filter(self, query, category: Optional[str]):
+        """Additive filter for the platform-class tree categories. servers/
+        clientpc are NOT handled here (they use smart_folder — reference logic)."""
+        if not category:
+            return query
+        patterns = self._CATEGORY_PLATFORM_PATTERNS.get(category.strip().lower())
+        if not patterns:
+            return query
+        return query.filter(or_(*[Device.platform.ilike(f"%{p}%") for p in patterns]))
 
     def _apply_smart_folder_filter(self, query, smart_folder: Optional[str]):
         if not smart_folder:
@@ -375,6 +395,7 @@ class DeviceRepository:
         active_agent_version: Optional[str] = None,
         active_agent_sha256: Optional[str] = None,
         platform: Optional[str] = None,
+        category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> int:
         query = self.db.query(Device)
@@ -384,6 +405,7 @@ class DeviceRepository:
         if device_type:
             query = query.filter(Device.device_type == device_type)
         query = self._apply_platform_filter(query, platform)
+        query = self._apply_category_filter(query, category)
         query = self._apply_freshness_filter(query, freshness_state)
         if client_id == -1:
             query = query.filter(Device.client_id.is_(None))
