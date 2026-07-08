@@ -211,14 +211,6 @@ class DeviceRepository:
             return query
         return query.filter(clf.platform_case() == platform.strip().lower())
 
-    # Platform-class categories (Phase 7) — used by the tree's Network/Storage/
-    # Hypervisors parent folders. Purely platform-based (no group join needed).
-    _CATEGORY_PLATFORM_PATTERNS = {
-        "network": ("mikrotik", "routeros", "unifi", "switch", "cisco"),
-        "storage": ("synology", "qnap"),
-        "hypervisors": ("vmware", "esxi", "proxmox", "hyperv"),
-    }
-
     def _apply_category_filter(self, query, category: Optional[str]):
         """Additive tree-category filter via the Unified Classification Engine —
         the SAME expression the tree counts use, so a node's filtered result
@@ -459,18 +451,6 @@ class DeviceRepository:
                 by_client[client_id] = cnt
 
         return DeviceTreeCounts(total=total, unassigned=unassigned, by_client=by_client)
-
-    @staticmethod
-    def _tree_category_case():
-        """DEPRECATED shim — delegates to the Unified Classification Engine.
-        Retained only until P5 removes the last references; do NOT add logic here."""
-        return clf.category_case()
-
-    @staticmethod
-    def _platform_class_case():
-        """DEPRECATED shim — delegates to the Unified Classification Engine.
-        Retained only until P5 removes the last references; do NOT add logic here."""
-        return clf.platform_case()
 
     def count_by_client_category_platform(
         self, scope: Optional["AllowedScope"] = None

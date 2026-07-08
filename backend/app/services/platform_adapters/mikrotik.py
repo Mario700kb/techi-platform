@@ -8,7 +8,7 @@ and capability mapping — proving the adapter contract is platform-neutral.
 Phase 7 boundary: NO RouterOS API / SSH / Winbox / credential code here. Those
 plug in later without touching this contract. A RouterOS device is neither a
 server nor a client PC; it classifies UNASSIGNED at device_type level and lands
-under the tree's Network category (see _tree_category_case / _platform_class_case).
+under the tree's Network category (see the Unified Classification Engine).
 """
 
 from app.models.device import DeviceType

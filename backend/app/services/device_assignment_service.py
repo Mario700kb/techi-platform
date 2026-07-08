@@ -292,36 +292,6 @@ class DeviceAssignmentService:
         label = cls._clean_static(domain).strip(".").split(".", 1)[0]
         return cls._humanize(label)
 
-    @staticmethod
-    def _category_from_group(group_name: Optional[str]) -> Optional[str]:
-        normalized = (group_name or "").strip().lower()
-        if normalized in {"servers", "server"}:
-            return "servers"
-        if normalized in {"client pc", "client pcs", "workstation", "workstations"}:
-            return "clientpc"
-        return None
-
-    def _category_from_os(
-        self,
-        os_name: Optional[str],
-        platform: Optional[str],
-        device_type: Optional[DeviceType],
-        *,
-        os_version: Optional[str] = None,
-        os_caption: Optional[str] = None,
-        windows_product_type: Optional[int] = None,
-    ) -> str:
-        os_value = " ".join(
-            self._clean(value).lower()
-            for value in (os_name, os_version, os_caption)
-            if self._clean(value)
-        )
-        platform_value = self._clean(platform).lower()
-        if device_type == DeviceType.SERVER or windows_product_type in {2, 3} or "windows server" in os_value or "server" in os_value:
-            return "servers"
-        if "windows" in os_value or "windows" in platform_value:
-            return "clientpc"
-        return "clientpc"
 
     def _get_or_create_client(self, name: str) -> Client:
         existing = self.clients.get_by_name_normalized(name)

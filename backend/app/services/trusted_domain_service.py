@@ -12,12 +12,6 @@ _WORKGROUP_NAMES = frozenset({
     "workgroup", "mshome", "workgroup.local", "home", "localdomain",
 })
 
-# OS substrings that indicate Windows Server family
-_SERVER_OS_TOKENS = ("server", "2008", "2012", "2016", "2019", "2022", "2025")
-
-# OS substrings that indicate Windows client OS
-_CLIENT_OS_TOKENS = ("windows 10", "windows 11", "windows 8", "windows 7", "vista", "xp")
-
 # Private domain suffixes to strip when humanizing
 _STRIP_SUFFIXES = (".local", ".lan", ".internal", ".home", ".corp", ".ad")
 

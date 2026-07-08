@@ -40,6 +40,18 @@ run_pytest() {
   [ "${failed:-0}" -gt "$baseline" ] && { grep FAILED "$logf"; fail "$label: new failures (${failed} > ${baseline})"; }
 }
 
+# 0. Single-engine guard — the retired C1–C4 classifiers must never come back.
+# Category/platform classification lives ONLY in platform_core/classification.py.
+step "Single classification engine guard"
+RETIRED_SYMBOLS='_tree_category_case|_platform_class_case|_category_from_os|_category_from_group|_CATEGORY_PLATFORM_PATTERNS|_SERVER_OS_TOKENS'
+guard_hits="$(grep -rnE "$RETIRED_SYMBOLS" "$BACKEND/app" 2>/dev/null \
+  | grep -v "app/platform_core/classification.py" || true)"
+if [ -n "$guard_hits" ]; then
+  echo "$guard_hits"
+  fail "retired classifier symbol reintroduced outside the Unified Classification Engine"
+fi
+echo "  OK — one engine (platform_core/classification.py)"
+
 # 1. Contract tests — the hard gate. ZERO tolerance.
 step "Backend contract tests (service↔repository interface)"
 run_pytest "contract tests" 0 /tmp/preflight_contracts.log \
