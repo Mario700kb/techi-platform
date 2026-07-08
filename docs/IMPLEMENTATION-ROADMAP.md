@@ -139,6 +139,17 @@ off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`
    count for all 28 clients with Windows devices, 0 mismatches. Contract 13/13,
    suite 458+4 (flags off & on), tsc/build/agent OK, smoke 7/7. Full entry in
    CHANGELOG-SOLUTIONS.md.
+2. **[2026-07-08] Heartbeat could undo a manual assignment on `device_type` flip**
+   (FIXED, `96020cd`). Single `DeviceAssignmentService.is_manual_locked()` gates
+   the re-group; manual/legacy_manual/enrollment are never overwritten.
+3. **[2026-07-08] Unified Classification Engine** (SHIPPED P1–P5, prod tip
+   `d543b70`). Architecture hardening from the tree-filter review: replaced the
+   four duplicated category classifiers (C1–C4) with one engine
+   (`platform_core/classification.py`) rendered as SQL + in-memory, kept identical
+   by a parity test + preflight guard. Verified byte-identical on the live fleet
+   (SQL counts 28/28 clients, resolved category 723/723). Additive `Other` tree
+   folder. Specs: `CLASSIFICATION-ARCHITECTURE-REVIEW.md`,
+   `UNIFIED-CLASSIFICATION-ENGINE-SPEC.md`.
 
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation

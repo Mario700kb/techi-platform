@@ -27,6 +27,45 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] ARKITEKTURË: Unified Classification Engine (një motor, zëvendëson C1–C4)
+
+### Konteksti
+Audit i klasifikimit (`docs/reference/CLASSIFICATION-ARCHITECTURE-REVIEW.md`) zbuloi
+**katër** klasifikues kategorish të dublikuar që divergonin në skajet: C1 resolution
+(`_category_from_group`/`_category_from_os`), C2 smart_folder, C3 tree-case
+(`_tree_category_case`), C4 write-time (`_detect_group`/`detect_group_name`). Owner-i
+urdhëroi NJË motor të ri (jo të kurorëzohej ndonjë nga bug-et ekzistuese).
+
+### Vendimi / Zgjidhja
+`app/platform_core/classification.py`: NJË tabelë e renditur rregullash + NJË set
+konstantesh, e renderuar në dy mënyra nga i njëjti burim — SQL (`category_case()`,
+`platform_case()`) dhe in-memory (`classify_category()`, `classify_platform()`).
+Precedencë e kategorisë: (1) grup standard DB → servers/clientpc, (2) platformë
+non-agent → network/storage/hypervisors, (3) heuristikë OS → servers, (4) grup custom
+→ **other**, default clientpc. Kategoria është e pavarur nga pronësia; kova
+"Unassigned" mbetet koncept i boshtit Client (client_id), jo kategori.
+Owner decisions: **D1** other-folder e re (aditive), **D2** ruaj çelësat
+`windows_server`/`windows_workstation` (implementim përmes motorit).
+
+### Rollout (5 faza, secila contract+preflight+smoke, deploy)
+- **P1** `4559a64` — motor + parity test (~2800 rreshta matricë: SQL==in-memory) + golden Windows/non-agent. Dead code.
+- **P2** `2137119` — migrimi i konsumatorëve SQL (tree counts, overview, category/platform/smart_folder filters). **Provë live: counts byte-identike për të 28 klientët.**
+- **P3** `26c84a8` — migrimi i konsumatorëve in-memory (resolution/Drawer, write-time placement). **Provë live: resolved_device_category identik për të 723 pajisjet.**
+- **P4** `864cf8f` — folder "Other" në Device Tree (shfaqet vetëm kur jo bosh, si Network/Storage).
+- **P5** `d543b70` — fshirja e C1–C4 + guard në preflight.sh (simbolet e vjetra s'kthehen dot jashtë motorit).
+
+### Rezultati
+Prod tip `d543b70`. Contract 13/13; suite 463+4 baseline (flags OFF & ON); tsc + build
++ agent OK; smoke 7/7. Fleti (723 pajisje, 0 grupe custom) → sjellje BYTE-IDENTIKE;
+`other` është vetëm future-proofing. Tani: **Tree badges == catalog filters == overview
+== Drawer**, të garantuara nga parity test-i + preflight guard.
+
+### Mësimet
+Kur e njëjta pyetje ("çfarë kategorie?") implementohet në >1 vend, kopjet divergojnë.
+Zgjidhja s'është të zgjedhësh një kopje, por një motor të vetëm i renderuar në SQL +
+Python me një test parity që i mban të pandashme. Klasifikimi ≠ pronësia (Client axis).
+Shih [[platform-v3-design]].
+
 ## [2026-07-08] BUG: Heartbeat mund të prishte një caktim manual kur ndryshonte device_type
 
 ### Problemi
