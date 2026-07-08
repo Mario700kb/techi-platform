@@ -27,6 +27,57 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] BUG: Tree filtering jo-kumulativ — Client→Servers→Windows kthente TË GJITHA Windows-at
+
+### Problemi
+Në Device Tree, hierarkia `Client → Servers → Windows` injoronte filtrin prind:
+kthente të gjitha pajisjet Windows të klientit, jo vetëm Windows Server-at. Pritej
+filtër kumulativ: **Client AND Device Category AND Platform** — çdo nyje duhet të
+trashëgojë të gjithë filtrat e prindit.
+
+### Analiza
+Numëruesi i badge-it të pemës (`count_by_client_category_platform`) klasifikon një
+server me `_tree_category_case()`: `device_type==SERVER` **OSE**
+`windows_product_type in (2,3)` **OSE** os caption ilike "windows server". Por
+filtri i leaf-it (frontend `handleTreeSelect`) dërgonte `device_type=server +
+platform=windows`. Serverat e identifikuar VETËM nga product-type (me
+`device_type=UNASSIGNED`) numëroheshin te Servers por përjashtoheshin nga filtri.
+Provë me të dhëna reale: Agroblend0 (cid=4) badge Servers.Windows=3, filtër i vjetër=1;
+Eugreen (cid=24) 3 vs 2.
+
+### Shkaku
+Dy klasifikime të ndryshme për të njëjtën nyje: numëruesi përdorte
+`_tree_category_case()`, filtri përdorte `device_type`. Prandaj rezultati i filtruar
+≠ numri i badge-it.
+
+### Zgjidhja (fiksi më i vogël, pa ridizajn)
+- Backend `_apply_category_filter`: `category=servers/clientpc` tani ripërdor
+  `_tree_category_case() == cat` (me `outerjoin(DeviceGroup)` që të shohë
+  vendosjen sipas emrit të grupit) — i njëjti klasifikim si numëruesi.
+- Frontend `Devices.tsx handleTreeSelect`: nyja leaf dhe parent dërgojnë tani
+  `category + platform` në vend të `device_type + platform`. Çdo nyje trashëgon
+  client + category + platform.
+
+### Ndryshimet
+- `backend/app/repositories/device_repository.py` — `_apply_category_filter`
+- `frontend/src/pages/Devices.tsx` — `handleTreeSelect`
+- `backend/tests/test_tree_platform_aggregation.py` — test regresioni: filtri ==
+  numëruesi për rastin server-nga-product-type + provë `get_multi` pa dyfishim rreshtash.
+- Commit `e08544d`, branch `stable/phase-2-heartbeat`.
+
+### Rezultati
+- Contract tests 13/13; suite 458 pass + 4 baseline (flags OFF & ON); tsc + build
+  + agent OK (preflight ✅). Smoke 7/7 (asnjë 500).
+- **Provë live në PostgreSQL prod**: për të 28 klientët me pajisje Windows,
+  `filter(category, platform)` == badge i pemës, **0 mospërputhje**.
+- `get_multi` verifikuar pa dyfishim rreshtash nga `outerjoin` + `joinedload`.
+
+### Mësimet
+Kur një badge numërimi dhe filtri i tij vijnë nga dy klasifikime të ndryshme, do
+të divergjojnë. Nyja e pemës dhe numëruesi i saj DUHET të ndajnë të njëjtin funksion
+klasifikimi. `_tree_category_case()` është burimi i vetëm i së vërtetës për
+servers/clientpc — filtri s'duhet të riimplementojë logjikën me `device_type`.
+
 ## [2026-07-08] LIVE VALIDATION: u ndezën 4 feature flags në prodhim (CORE+LINUX+VAULT+MIKROTIK)
 
 ### Vendimi

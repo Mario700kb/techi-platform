@@ -128,10 +128,17 @@ off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`
 - [x] ✅ Logs — techi.log 7.4 MB (< 10 MB rotation cap); no error bursts
 
 ### Production bugs found (this window)
-1. *(none reported yet — window open 2026-07-08)*
-   Any issue is added to CHANGELOG-SOLUTIONS.md in the standard format, then
-   root-caused, fixed (that bug only), verified (contract + preflight + smoke),
-   deployed, and logged here.
+1. **[2026-07-08] Tree filter not cumulative — Client→Servers→Windows returned
+   all Windows devices** (FIXED, commit `e08544d`). Root cause: the tree count
+   badge classified servers via `_tree_category_case()` (device_type SERVER **OR**
+   `windows_product_type in (2,3)` OR "windows server" caption) while the leaf
+   filter used `device_type=server + platform`, so product-type servers were
+   counted but excluded by the filter. Fix: `category=servers/clientpc` now reuses
+   `_tree_category_case()` in `_apply_category_filter`, and the frontend tree node
+   sends `category + platform` (not `device_type`). Verified live: filter == tree
+   count for all 28 clients with Windows devices, 0 mismatches. Contract 13/13,
+   suite 458+4 (flags off & on), tsc/build/agent OK, smoke 7/7. Full entry in
+   CHANGELOG-SOLUTIONS.md.
 
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
