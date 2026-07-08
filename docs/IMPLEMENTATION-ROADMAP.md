@@ -60,7 +60,13 @@ Legend: ✅ verified now (evidence noted) · 🖥 needs an operator browser walk
 OFF (validated instead by the preflight test suite with flags ON; live validation
 would require enabling the flag = Manual Approval, out of scope for this window).
 
-**Last checked:** 2026-07-08, prod tip `da2647e`, all 8 FEATURE_* flags OFF.
+**Last checked:** 2026-07-08. **LIVE VALIDATION: 4 flags ENABLED in production**
+(owner-approved) — `FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`,
+`FEATURE_MIKROTIK` ON; `FEATURE_TERMINAL`/`FEATURE_STORAGE`/`FEATURE_HYPERVISOR`
+OFF. Operator Manual: `docs/reference/OPERATOR-MANUAL.md`. Production is no longer
+bit-identical to the classic Windows RMM — Linux/Connect/Vault/MikroTik surfaces
+are live for operator testing. The ⚪ items below are now ACTIVE (no longer flag-
+off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`.
 
 ### SYSTEM HEALTH
 - [x] ✅ Backend healthy — `/health` 200, response 2–8 ms, container "Up (healthy)"

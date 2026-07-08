@@ -27,6 +27,54 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] LIVE VALIDATION: u ndezën 4 feature flags në prodhim (CORE+LINUX+VAULT+MIKROTIK)
+
+### Vendimi
+
+Pas Operator Manual-it, owner-i aprovoi ndezjen e setit të rekomanduar për
+validim live. **U ndezën VETËM 4**: `FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`,
+`FEATURE_VAULT`, `FEATURE_MIKROTIK`. Mbetën OFF: `FEATURE_TERMINAL` (kërkon
+rrugën NPM WS — jo e bërë), `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`. (Shënim:
+emri real i flag-ut është `FEATURE_PLATFORM_CORE`, jo `FEATURE_CORE`.)
+
+### Ndryshimet (pa kod)
+
+Backend-i i merr flags nga `env_file: .env` (`/root/.env`, injektuar si env i
+kontejnerit). Hapat: (1) backup `/root/.env` → `/root/.env.bak-2026-07-08`;
+(2) shtuar 4 rreshtat `FEATURE_*=true`; (3) `docker compose -p techi-platform
+up -d backend` — **vetëm backend** (frontend-i i lexon flags nga
+`/platform/features` në runtime, s'kërkon rebuild). Zero ndryshim kodi.
+
+### Verifikimi
+
+- **Flags në backend-in që xhiron**: CORE/LINUX/VAULT/MIKROTIK = True
+  (`feature_enabled` = True, varësitë e plotësuara); TERMINAL/STORAGE/HYPERVISOR
+  = False.
+- **Provë flag-on**: `GET /install/linux?token=test` → **200** (ishte 404 me
+  flag off); `/connect-methods` dhe `/vault` → **401** (auth, jo më 404 —
+  endpoint-et të arritshme).
+- **Kod paths në kontejner**: Platform Registry 8; MikroTik adapter proxy;
+  Connect(mikrotik+terminal)=[winbox,webfig,ssh,web_terminal]; Connect(windows)=
+  [remote_support]; Vault list []; Catalog get_devices → 723 total.
+- **smoke.sh**: 7/7 OK (health 200, të tjerat 401, 0×500).
+- **preflight.sh** (kod): 457 passed + 4 të njohura (flags OFF & ON), tsc,
+  frontend build, agent go build/test — **PASSED**.
+- Post-ndezje: 0 gabime reale, ~115 hb/min, backend healthy.
+
+### Prodhimi tani
+
+**NUK është më bit-identik me Windows RMM klasik** — sipërfaqet Linux (katalog
+ikona, tree sub-folders, one-liner, packages tab, drawer capabilities, Command
+Center Run Command), Connect Framework (dropdown), dhe Credential Vault janë
+tani të dukshme për operatorët. MikroTik: klasifikim + connect metadata (adapter
+framework; RouterOS API/launchers = fazë tjetër). Windows sjellja bazë e
+pandryshuar.
+
+### Rollback
+
+`cp /root/.env.bak-2026-07-08 /root/.env && docker compose -p techi-platform up
+-d backend` → kthen të gjitha flags OFF (prodhim bit-identik me para).
+
 ## [2026-07-08] Production Validation window — FILLIM (feature-t në pauzë)
 
 ### Vendimi
