@@ -16,6 +16,42 @@
 > only when its Definition of Done is fully satisfied and **the owner declares
 > closure**. No phase starts before the previous one is closed here.
 
+## 🚦 Deployment Contract Verification (PERMANENT — mandatory before EVERY deploy)
+
+Introduced 2026-07-08 after the Device Catalog 500 regression (a service
+forwarded a filter the repository did not accept — an interface mismatch that
+tests didn't catch because they exercised the repository directly, not the
+service). This milestone is **mandatory before every production deployment** and
+before closing any phase.
+
+**Gate 1 — Preflight (`scripts/preflight.sh`), run locally before pushing:**
+1. **Contract tests** (`tests/test_service_repository_contracts.py` +
+   `tests/test_device_service_filter_contract.py`) — ZERO tolerance. Every public
+   service is verified against its repository: (a) signature contract — the kwargs
+   a service forwards MUST be a subset of what the repository accepts; (b)
+   end-to-end — each service's read path runs through to SQL. A collection error
+   or any failure aborts the deploy.
+2. Full backend suite, **flags OFF and ON** — no new failures beyond the known
+   baseline (currently 4, PROJECT_STATE Known Issue #12).
+3. Frontend `tsc --noEmit`.
+4. Frontend production build.
+5. Agent `go build` (windows + linux) + `go test`.
+
+Preflight **exits non-zero on any failure** → do not deploy.
+
+**Gate 2 — Smoke (`scripts/smoke.sh <base_url> [token]`), run immediately after deploy:**
+verifies `/health`, `/api/v1/devices/`, `/api/v1/platform/features`,
+`/api/v1/auth/me`, `/api/v1/devices/overview`, `/api/v1/enrollment-tokens`,
+`/api/v1/agent-packages`. A **500 on any endpoint = deployment FAILED**; protected
+endpoints must be 401 (no token) or 200 (with token), never 500. Exits non-zero
+on any unexpected response.
+
+**Coverage of public services** (grows with each new service — never skip a new one):
+DeviceService ✅, DeviceOverviewService ✅, VaultService ✅, EnrollmentTokenService ✅,
+TerminalService ✅, ConnectService (platform_core.connect) ✅, AgentPackageService ✅,
+RemoteActionService ✅. Future MikroTikService / StorageService adapters MUST add a
+contract test when built.
+
 ## Project Status
 
 | | |

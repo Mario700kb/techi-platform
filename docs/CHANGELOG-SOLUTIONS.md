@@ -27,6 +27,50 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-08] Hardening: Deployment Contract Verification (contract tests + preflight + smoke)
+
+### Problemi
+
+Pas regresionit të katalogut (shërbimi forward-oi një param që repository s'e
+kishte), duhej një mekanizëm permanent që kap mismatch-et service↔repository
+PARA deploy-it, dhe një smoke pas deploy-it.
+
+### Zgjidhja
+
+- **Contract tests** (`tests/test_service_repository_contracts.py`): dy shtresa —
+  (1) signature contract (DB-free): kwargs që shërbimi forward-on ⊆ params që
+  repository pranon (kap ekzaktësisht regresionin `category`); (2) end-to-end:
+  çdo shërbim publik instancohet dhe metoda read ekzekutohet deri në SQL.
+  Mbulon DeviceService, DeviceOverviewService, VaultService,
+  EnrollmentTokenService, TerminalService, ConnectService, AgentPackageService,
+  RemoteActionService. Plus `test_device_service_filter_contract.py`.
+- **`scripts/preflight.sh`** (gate para push/deploy): contract tests (zero
+  tolerancë) + suita e plotë flags OFF & ON (pa dështime të reja mbi baseline
+  4) + tsc + frontend build + agent go build/test. Del non-zero në çdo dështim.
+  Detekton edhe collection errors dhe "collected no tests" (një version i parë
+  kishte false-pass kur pytest gabonte importin — u rregullua me `cd backend` +
+  numërim passed/failed/errors).
+- **`scripts/smoke.sh`** (pas deploy-it): `/health`, `/api/v1/devices/`,
+  `/platform/features`, `/auth/me`, `/devices/overview`, `/enrollment-tokens`,
+  `/agent-packages`. 500 kudo = deployment FAILED.
+- Milestone permanent "Deployment Contract Verification" te IMPLEMENTATION-
+  ROADMAP.md; hapi 0 i Deploy Process te PROJECT_STATE.
+
+### Rezultati
+
+`preflight.sh`: **13 contract passed** + suita 457 passed + 4 të njohura (flags
+OFF & ON) + tsc + build + agent — **PASSED**. Provuar që gate-i punon: kapi një
+flakiness izolimi (overview cache modul-nivel) gjatë ndërtimit dhe u rregullua.
+`smoke.sh` kundër prodhimit: 7/7 endpoints OK (health 200, të tjerat 401, zero
+500). Të dy skriptet dalin non-zero në dështim → ndalojnë deploy-in/e shënojnë
+FAILED.
+
+### Mësimet
+
+Testet duhet të ekzekutojnë kontratën publike (shërbimin), jo vetëm repository-n.
+Një gate deploy-i që parse-on output pytest duhet të kontrollojë passed>0 +
+errors==0 + failed≤baseline (përndryshe një import error jep false-pass).
+
 ## [2026-07-08] INCIDENT: Device Catalog 500 — commit i paplotë hoqi `category` nga repository
 
 ### Problemi

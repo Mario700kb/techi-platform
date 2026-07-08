@@ -358,6 +358,12 @@ downsampling; move binaries out of git history (.git ≈ 183 MB of exe/msi/dll).
 
 # Deploy Process
 
+0. **Deployment Contract Verification (MANDATORY)**: run `scripts/preflight.sh`
+   (contract tests + full suite flags off/on + tsc + frontend build + agent
+   go build/test). It exits non-zero on any failure — do NOT deploy if it
+   fails. After deploy, run `scripts/smoke.sh <base_url>` — a 500 on any
+   endpoint = deployment FAILED. See IMPLEMENTATION-ROADMAP.md "Deployment
+   Contract Verification".
 1. Local: backend tests green (`backend/venv/bin/python -m pytest tests -q`,
    `LOG_DIR=<writable>` env; expect only the 4 known failures in
    test_enrollment_audit_diagnostics), `npx tsc --noEmit` for frontend.
