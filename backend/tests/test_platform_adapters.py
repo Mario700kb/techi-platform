@@ -84,9 +84,14 @@ class TestAdapterDispatch:
     def test_linux_resolves_to_linux_adapter(self):
         assert get_adapter("linux").platform_id == "linux"
 
-    def test_unknown_and_adapterless_platforms_fall_back_to_windows(self):
+    def test_unknown_platform_falls_back_to_windows(self):
         assert get_adapter("templeos").platform_id == "windows"  # unknown value
-        assert get_adapter("mikrotik").platform_id == "windows"  # known, no adapter yet
+        # synology has no adapter yet → falls back to the Windows adapter.
+        assert get_adapter("synology").platform_id == "windows"
+
+    def test_mikrotik_has_a_proxy_adapter(self):
+        # Phase 7: MikroTik is the first proxy-managed platform.
+        assert get_adapter("mikrotik").platform_id == "mikrotik"
 
     def test_capability_filtering_per_platform(self):
         reported = {"docker": "26.1", "powershell": "5.1", "bash": ""}
