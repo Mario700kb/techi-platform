@@ -52,6 +52,86 @@ TerminalService ✅, ConnectService (platform_core.connect) ✅, AgentPackageSer
 RemoteActionService ✅. Future MikroTikService / StorageService adapters MUST add a
 contract test when built.
 
+## Production Validation Checklist
+
+**Official validation guide for the 2026-07-08 window (24–48h). No feature work.**
+Legend: ✅ verified now (evidence noted) · 🖥 needs an operator browser walkthrough
+(cannot be clicked from here) · ⚪ N/A in production because its FEATURE flag is
+OFF (validated instead by the preflight test suite with flags ON; live validation
+would require enabling the flag = Manual Approval, out of scope for this window).
+
+**Last checked:** 2026-07-08, prod tip `da2647e`, all 8 FEATURE_* flags OFF.
+
+### SYSTEM HEALTH
+- [x] ✅ Backend healthy — `/health` 200, response 2–8 ms, container "Up (healthy)"
+- [x] ✅ Frontend healthy — `:80` 200, container "Up (healthy)"
+- [x] ✅ Database healthy — postgres "Up (healthy)", 2010 MB, 7-day retention OK (oldest hb 2026-07-01)
+- [x] ✅ Containers healthy — backend/frontend/postgres/hbbs/hbbr/nginx all up
+- [x] ✅ Heartbeat stable — 163,619 heartbeats/24h from 660 devices; ~142/min steady
+- [x] ✅ No unexpected errors — 0 real errors/30min, 0 × 5xx in access log/1h
+
+### DEVICE MANAGEMENT  (backend/API verified; UI interaction = operator walkthrough)
+- [x] ✅ Device Catalog — `/api/v1/devices/` serves (get_devices verified against real DB: 723 rows); regression fixed & guarded
+- [x] ✅ Dashboard — `/api/v1/devices/overview` 200 (no 5xx)
+- [x] ✅ Device Tree — `/api/v1/devices/tree` + overview counts serve
+- [ ] 🖥 Search — operator browser walkthrough
+- [ ] 🖥 Filters — operator browser walkthrough
+- [ ] 🖥 Device Drawer — operator browser walkthrough
+- [ ] 🖥 Notes — operator browser walkthrough
+- [ ] 🖥 Timeline — operator browser walkthrough
+- [x] ✅ Alerts — `/api/v1/alerts` serves; alert engine running
+
+### WINDOWS  (the reference implementation — live in production)
+- [x] ✅ Enrollment — 8 devices enrolled in the last 24h; `/agent/enroll` live
+- [x] ✅ Heartbeat — 163,619/24h across 660 devices, 0 errors
+- [x] ✅ Packages — `/api/v1/agent-packages` serves; SHA-alignment intact
+- [x] ✅ Updates — self_update path unchanged (Windows agent NOT rebuilt; fleet 2.1.5)
+- [ ] 🖥 Remote Support — operator: Connect from a device row (RustDesk)
+- [ ] 🖥 Command Center — operator: run a bulk command, check progress/history
+- [ ] 🖥 Device Details — operator: open drawer, verify tabs/actions
+- [ ] 🖥 Connect — operator: existing RustDesk Connect button (unchanged)
+
+### LINUX  (FEATURE_LINUX OFF in production)
+- [ ] ⚪ Enrollment — validated via test suite (flags ON); not live (flag OFF)
+- [ ] ⚪ Inventory — validated via agent build + Ubuntu smoke; not live
+- [ ] ⚪ Heartbeat — validated via test suite; not live
+- [ ] ⚪ Auto Classification — validated via `test_tree_platform_aggregation`; not live
+- [ ] ⚪ Device Drawer (capability tabs) — validated via tsc/build; not live
+- [ ] ⚪ Packages — `linux-*` types validated via tests; not live
+- [ ] ⚪ Connect metadata — validated via `test_connect_framework`; not live
+> Live Linux validation requires enabling FEATURE_LINUX for a canary (Manual Approval) — out of scope for this validation window.
+
+### CONNECT FRAMEWORK  (FEATURE_PLATFORM_CORE OFF in production)
+- [ ] ⚪ Connect button / dynamic Connect Menu — endpoint 404 & menu not rendered while flag OFF; validated via `test_connect_framework` + tsc/build
+- [x] ✅ Platform Registry — 8 platforms load in the prod container (verified: `resolve_platform`, adapters)
+- [x] ✅ Capability Registry — vocabulary + normalize covered by tests; loads in container
+- [x] ✅ Platform Icons — `PlatformIcon` in bundle (rendered only when a flag is on)
+
+### PERMISSIONS  (current model only — owner/admin/operator; no IAM)
+- [x] ✅ Model live — operators authenticate daily; role gating covered by `test_permission_enforcement`, `test_team_scope`, `test_device_scope`
+- [ ] 🖥 Owner — operator spot-check (full access)
+- [ ] 🖥 Admin — operator spot-check (admin-gated commands)
+- [ ] 🖥 Operator — operator spot-check (scoped devices, no security config)
+
+### PERFORMANCE
+- [x] ✅ Memory — backend 247 MB/800 MB (31%); postgres 247 MB/1.9 GB
+- [x] ✅ CPU — backend 11.6%, postgres 4% (idle-normal)
+- [x] ✅ Database — 2010 MB, autovacuum on, 7-day retention healthy
+- [x] ✅ Response time — `/health` 2–8 ms
+- [x] ✅ Heartbeats — ~142/min steady, no backlog
+- [x] ✅ Logs — techi.log 7.4 MB (< 10 MB rotation cap); no error bursts
+
+### Production bugs found (this window)
+1. *(none reported yet — window open 2026-07-08)*
+   Any issue is added to CHANGELOG-SOLUTIONS.md in the standard format, then
+   root-caused, fixed (that bug only), verified (contract + preflight + smoke),
+   deployed, and logged here.
+
+### END OF VALIDATION
+On the owner's confirmation of 24–48h stability, mark **Production Validation
+PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the
+roadmap. Until then: no new features.
+
 ## Project Status
 
 | | |
