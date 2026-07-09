@@ -91,7 +91,7 @@ async def heartbeat_legacy(request: Request, db: Session = Depends(get_db)):
         # would treat every heartbeat as failed and hammer this endpoint in a
         # tight retry loop (2026-07-03 CPU incident).
         background_tasks = BackgroundTasks()
-        response = agent_heartbeat(payload, background_tasks, db)
+        response = agent_heartbeat(payload, request, background_tasks, db)
         await background_tasks()
     except Exception as exc:
         db.rollback()

@@ -31,14 +31,15 @@ class TestMetadata:
         assert without == []  # no terminal capability → no methods
 
     def test_ssh_is_generic_not_linux_only(self):
-        # Any platform reporting `terminal` exposes SSH.
-        assert "ssh" in [m.id for m in methods_for("mikrotik", {"terminal": ""})]
+        # SSH is not Linux-only. MikroTik exposes it through its connector
+        # capability; other platforms may expose it through terminal.
+        assert "ssh" in [m.id for m in methods_for("mikrotik", {"connect": ""})]
         assert "ssh" in [m.id for m in methods_for("synology", {"terminal": ""})]
 
     def test_mikrotik_native_methods_always_present(self):
         ids = [m.id for m in methods_for("mikrotik", None)]
         assert ids[:2] == ["winbox", "webfig"]  # native, priority-ordered
-        assert "ssh" not in ids  # ssh needs the terminal capability
+        assert "ssh" not in ids  # ssh needs the connector capability
 
     def test_ordered_by_priority(self):
         methods = methods_for("proxmox", {"terminal": ""})
@@ -67,7 +68,7 @@ class TestEndpoint:
         assert client.get("/devices/3/connect-methods").status_code == 404
 
     def test_returns_methods_when_on(self, monkeypatch):
-        client = _client(monkeypatch, flag_on=True, capabilities={"terminal": ""})
+        client = _client(monkeypatch, flag_on=True, capabilities={"connect": ""})
         r = client.get("/devices/3/connect-methods")
         assert r.status_code == 200
         body = r.json()

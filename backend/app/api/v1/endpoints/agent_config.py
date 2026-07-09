@@ -2,7 +2,7 @@
 Agent configuration policy endpoints.
 
 GET  /api/v1/agent-config                        — read current platform policy
-PUT  /api/v1/agent-config                        — update heartbeat_interval_seconds
+PUT  /api/v1/agent-config                        — update heartbeat/inventory policy
 GET  /api/v1/agent-config/heartbeat-script       — download PowerShell rollout script
 
 All three endpoints require admin or owner role.
@@ -13,7 +13,7 @@ the generated PowerShell script via GPO or running it manually per device.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
@@ -30,6 +30,8 @@ _require_admin = require_min_role(OperatorRole.ADMIN.value)
 
 class AgentConfigResponse(BaseModel):
     heartbeat_interval_seconds: int
+    platform_heartbeat_intervals: Dict[str, int]
+    platform_inventory_intervals: Dict[str, int]
     online_threshold_minutes: int
     stale_threshold_minutes: int
     remote_support_managed_password_enabled: bool
@@ -41,6 +43,14 @@ class AgentConfigUpdate(BaseModel):
         ge=_svc.HEARTBEAT_INTERVAL_MIN,
         le=_svc.HEARTBEAT_INTERVAL_MAX,
         description=f"Seconds between agent heartbeats ({_svc.HEARTBEAT_INTERVAL_MIN}–{_svc.HEARTBEAT_INTERVAL_MAX})",
+    )
+    platform_heartbeat_intervals: Optional[Dict[str, int]] = Field(
+        None,
+        description="Per-platform heartbeat intervals in seconds",
+    )
+    platform_inventory_intervals: Optional[Dict[str, int]] = Field(
+        None,
+        description="Per-platform inventory intervals in seconds",
     )
     remote_support_managed_password_enabled: Optional[bool] = None
 
@@ -60,6 +70,8 @@ def put_agent_config(
     try:
         return _svc.set_policy(
             heartbeat_interval_seconds=body.heartbeat_interval_seconds,
+            platform_heartbeat_intervals=body.platform_heartbeat_intervals,
+            platform_inventory_intervals=body.platform_inventory_intervals,
             remote_support_managed_password_enabled=body.remote_support_managed_password_enabled,
         )
     except ValueError as exc:

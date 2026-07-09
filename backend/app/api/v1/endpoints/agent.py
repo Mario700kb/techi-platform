@@ -90,6 +90,7 @@ def agent_enroll(
 @router.post("/heartbeat", response_model=AgentHeartbeatResponse)
 def agent_heartbeat(
     payload: AgentHeartbeatPayload,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
@@ -97,6 +98,12 @@ def agent_heartbeat(
     Agent heartbeat endpoint. Returns immediately after writing the device record;
     telemetry, inventory, alerts, and realtime events run in a background task.
     """
+    if not payload.public_ip:
+        forwarded_for = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+        client_ip = forwarded_for or (request.client.host if request.client else None)
+        if client_ip:
+            payload = payload.model_copy(update={"public_ip": client_ip})
+
     service = DeviceHeartbeatService(db)
     try:
         device, heartbeat, ctx = service.process_heartbeat_core(payload)
@@ -106,7 +113,7 @@ def agent_heartbeat(
     background_tasks.add_task(_heartbeat_side_effects, payload, device.id, heartbeat.id, ctx)
 
     pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
-    interval = _cfg_svc.get_policy()["heartbeat_interval_seconds"]
+    interval = _cfg_svc.get_heartbeat_interval(payload.platform)
 
     # Server-authoritative per-device RS password. Generated on first use and
     # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it.

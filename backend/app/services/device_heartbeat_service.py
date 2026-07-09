@@ -10,6 +10,7 @@ from typing import Optional
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.device_activity_event import DeviceActivityEvent
 from app.platform_core.flags import feature_enabled
+from app.platform_core.classification import classify_platform
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
@@ -115,6 +116,9 @@ class DeviceHeartbeatService:
                 windows_product_type=payload.windows_product_type,
             )
         now = utcnow()
+        platform_id = classify_platform(payload.platform)
+        if platform_id == "mikrotik" and not (payload.agent_id or "").startswith("mikrotik-"):
+            raise ValueError("MikroTik heartbeat requires stable agent_id starting with 'mikrotik-'")
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
         )
@@ -129,6 +133,8 @@ class DeviceHeartbeatService:
                 _AGENT_ID_CACHE.pop(payload.agent_id, None)
         if device is None and payload.agent_id:
             device = self.device_repo.get_by_agent_id(payload.agent_id)
+        if platform_id == "mikrotik" and device is None:
+            device = self._create_from_stable_identity(payload, device_type, now)
         if device is None:
             device = self.device_repo.get(payload.device_id) if payload.device_id else None
         if device is None and has_valid_rustdesk_id:
@@ -253,6 +259,28 @@ class DeviceHeartbeatService:
             "prev_repair_count": prev_repair_count,
         }
 
+    def _create_from_stable_identity(
+        self, payload: AgentHeartbeatPayload, device_type: DeviceType, now: datetime
+    ) -> Device:
+        create_data = payload.model_dump(
+            exclude_unset=True,
+            exclude={"device_id", "rustdesk_id", "capabilities"},
+        )
+        self._drop_stale_repair_counter(create_data, now)
+        create_data["agent_id"] = payload.agent_id
+        create_data["rustdesk_id"] = None
+        create_data["device_type"] = device_type
+        create_data["status"] = DeviceStatus.OFFLINE
+        create_data["last_seen"] = now
+        create_data["auto_assigned"] = False
+        create_data["assignment_source"] = "system_auto"
+        create_data["duplicate_candidate"] = False
+        create_data["duplicate_of_device_id"] = None
+        create_data["duplicate_score"] = None
+        for field in ("current_user", "domain", "public_ip", "local_ip", "cpu", "ram", "storage"):
+            create_data.setdefault(field, None)
+        return self.device_repo.create(DeviceCreate(**create_data))
+
     def _run_side_effects(self, payload: AgentHeartbeatPayload, device, heartbeat_id: int, ctx: dict) -> None:
         """
         Realtime events, telemetry, inventory, and alerts.
@@ -282,6 +310,20 @@ class DeviceHeartbeatService:
 
         self._maybe_emit_user_changed(device, prev_user)
         self._maybe_emit_rustdesk_repaired(device, prev_repair_count)
+        # Timeline gets a heartbeat entry only on a real transition (first
+        # heartbeat or offline→online recovery) — never per beat.
+        if (
+            classify_platform(device.platform) == "mikrotik"
+            and (previous_payload or {}).get("status") != DeviceStatus.ONLINE.value
+        ):
+            DeviceActivityEventService(self.db).record(
+                device_id=device.id,
+                event_type="heartbeat_received",
+                summary="Heartbeat received",
+                detail="MikroTik connector heartbeat accepted",
+                actor="connector",
+                fail_silently=True,
+            )
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
         self._process_capabilities(payload, device)
@@ -670,6 +712,15 @@ class DeviceHeartbeatService:
                 software=payload.software,
                 patch_status=payload.patch_status,
             )
+            if classify_platform(device.platform) == "mikrotik":
+                DeviceActivityEventService(self.db).record(
+                    device_id=device.id,
+                    event_type="inventory_updated",
+                    summary="Inventory updated",
+                    detail="MikroTik connector inventory snapshot accepted",
+                    actor="connector",
+                    fail_silently=True,
+                )
         except Exception:
             logger.warning("inventory snapshot failed for device %d — heartbeat continues", device.id, exc_info=True)
 

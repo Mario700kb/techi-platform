@@ -9,6 +9,7 @@ import { createDeviceNote, DeviceNote, getDeviceNotes } from "../api/notes";
 import { DrawerAction, DrawerMeta, getDrawerMeta } from "../api/platform";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
+import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
@@ -34,7 +35,7 @@ interface Props {
 
 const CAP_TAB_LABELS: Record<string, string> = {
   services: "Services", processes: "Processes", packages: "Packages",
-  docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
+  docker: "Docker", logs: "Logs", interfaces: "Interfaces", network: "Network", storage: "Storage",
 };
 
 export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, canOperate }: Props) {
@@ -49,6 +50,9 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   const [toast, setToast] = useState<string | null>(null);
   const { events, loading: tlLoading, reload: reloadTimeline } = useDeviceActivity({
     deviceId: device.id, latestEvent, enabled: isOpen && tab === "timeline",
+  });
+  const { healthScore, healthState } = useDeviceTelemetry({
+    deviceId: isOpen ? device.id : null, latestEvent,
   });
 
   useEffect(() => {
@@ -145,12 +149,12 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3">
           {!meta ? (
             <div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
           ) : (
             <>
-              {tab === "overview" && <Overview device={device} meta={meta} />}
+              {tab === "overview" && <Overview device={device} meta={meta} inventory={inventory} healthScore={healthScore} healthState={healthState} />}
               {tab === "remote_support" && (
                 <div className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
                   <p className="mb-3">Connect using this platform's native methods:</p>
@@ -162,8 +166,8 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                   <DeviceTerminal deviceId={device.id} />
                 </Suspense>
               )}
-              {["services", "processes", "packages", "docker", "logs", "network", "storage"].includes(tab) && (
-                <CapabilityPanel tab={tab} inventory={inventory} />
+              {["services", "processes", "packages", "docker", "logs", "interfaces", "network", "storage"].includes(tab) && (
+                <CapabilityPanel tab={tab} inventory={inventory} device={device} />
               )}
               {tab === "management" && (
                 <ManagementPanel meta={meta} busy={busy} canOperate={canOperate !== false} onAction={onAction} />
@@ -199,7 +203,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
-    <div className="flex justify-between gap-3 py-1 text-xs">
+    <div className="flex justify-between gap-3 py-0.5 text-[11px]">
       <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>{label}</span>
       <span className="max-w-[60%] truncate text-right font-medium" style={{ color: "var(--th-text-primary)" }}>{value}</span>
     </div>
@@ -208,47 +212,109 @@ function Row({ label, value }: { label: string; value?: string | null }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-4">
-      <p className="premium-kicker mb-1.5">{title}</p>
+    <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{title}</p>
       {children}
     </div>
   );
 }
 
-function Overview({ device, meta }: { device: Device; meta: DrawerMeta }) {
+function captionValue(caption: string | null | undefined, key: string): string | null {
+  if (!caption) return null;
+  const part = caption.split(";").map((p) => p.trim()).find((p) => p.toLowerCase().startsWith(`${key.toLowerCase()}=`));
+  return part ? part.slice(key.length + 1).trim() : null;
+}
+
+function Overview({ device, meta, inventory, healthScore, healthState }: { device: Device; meta: DrawerMeta; inventory: DeviceInventory | null; healthScore: number | null; healthState: string }) {
+  const board = captionValue(device.os_caption, "Board");
+  const serial = captionValue(device.os_caption, "Serial");
+  const firmware = captionValue(device.os_caption, "Firmware");
+  const uptime = captionValue(device.os_caption, "Uptime");
+  const defaultRoute = captionValue(device.os_caption, "DefaultRoute");
+  const dns = captionValue(device.os_caption, "DNS");
+  const bridgeCount = captionValue(device.os_caption, "Bridges");
+  const wirelessCount = captionValue(device.os_caption, "Wireless");
   return (
-    <>
-      <Section title="Connect">
-        <ConnectMenu deviceId={device.id} />
-      </Section>
+    <div className="space-y-3">
+      <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Connect</span>
+          <ConnectMenu deviceId={device.id} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Section title="Identity">
         <Row label="Hostname" value={device.hostname} />
         <Row label="Platform" value={meta.platform} />
-        <Row label="Kernel" value={device.kernel_version} />
-        <Row label="Architecture" value={device.architecture} />
         <Row label="OS" value={device.os_name} />
         <Row label="OS version" value={device.os_version} />
+        <Row label="Architecture" value={device.architecture} />
+        <Row label="Board" value={board} />
+        <Row label="Serial" value={serial} />
+        <Row label="Firmware" value={firmware} />
+        <Row label="Uptime" value={uptime} />
+        <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
+        <Row label="Health" value={healthScore != null ? `${healthScore} (${healthState})` : undefined} />
+        <Row label="Connector" value={device.agent_version ?? undefined} />
+      </Section>
+      <Section title="Network">
         <Row label="Local IP" value={device.local_ip} />
         <Row label="Public IP" value={device.public_ip} />
-        <Row label="User" value={device.current_user} />
+        <Row label="MAC" value={device.mac_address} />
+        <Row label="Default route" value={defaultRoute} />
+        <Row label="DNS" value={dns} />
+        <Row label="Bridges" value={bridgeCount} />
+        <Row label="Wireless" value={wirelessCount} />
+      </Section>
+      <Section title="Hardware">
+        <Row label="CPU" value={device.cpu} />
+        <Row label="RAM" value={device.ram} />
+        <Row label="Storage" value={device.storage} />
+        <Row label="Inventory" value={inventory?.collected_at ? timeAgo(inventory.collected_at) : undefined} />
       </Section>
       <Section title="Assignment">
         <Row label="Client" value={device.resolved_client_name ?? undefined} />
         <Row label="Group" value={device.resolved_group ?? undefined} />
         <Row label="Source" value={device.assignment_source ?? undefined} />
       </Section>
+      </div>
       <Section title="Capabilities">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
           {meta.capabilities.map((c) => (
-            <span key={c} className="rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{c}</span>
+            <span key={c} className="rounded border px-1.5 py-0.5 text-[10px] font-medium" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{c}</span>
           ))}
         </div>
       </Section>
-    </>
+    </div>
   );
 }
 
-function CapabilityPanel({ tab, inventory }: { tab: string; inventory: DeviceInventory | null }) {
+function CapabilityPanel({ tab, inventory, device }: { tab: string; inventory: DeviceInventory | null; device: Device }) {
+  if (tab === "interfaces") {
+    const rows = inventory?.services ?? [];
+    return <SimpleTable title="Interfaces" empty="No interfaces reported." head={["Name", "Status"]} rows={rows.map((s) => [s.display_name || s.name, s.status])} />;
+  }
+  if (tab === "network") {
+    const route = captionValue(device.os_caption, "DefaultRoute");
+    const dns = captionValue(device.os_caption, "DNS");
+    const bridges = captionValue(device.os_caption, "Bridges");
+    const wireless = captionValue(device.os_caption, "Wireless");
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Section title="Addresses">
+          <Row label="LAN/local" value={device.local_ip} />
+          <Row label="WAN/public" value={device.public_ip} />
+          <Row label="MAC" value={device.mac_address} />
+        </Section>
+        <Section title="Routing / DNS">
+          <Row label="Default route" value={route} />
+          <Row label="DNS" value={dns} />
+          <Row label="Bridges" value={bridges} />
+          <Row label="Wireless" value={wireless} />
+        </Section>
+      </div>
+    );
+  }
   if (tab === "services") {
     const rows = inventory?.services ?? [];
     return <SimpleTable title="Services" empty="No services reported." head={["Name", "Status"]} rows={rows.map((s) => [s.display_name || s.name, s.status])} />;

@@ -211,24 +211,35 @@ renderer (Appendix C) selected by the registry → byte-identical, no agent rebu
   Regression tests (Linux server/workstation, explicit group, Windows product-type).
   **Registry-driven Drawer + generic enrollment: both COMPLETE.**
 
-### MikroTik Platform Integration — deployment + registration only ✅ (`07a808b`, RouterOS syntax hotfix 2026-07-09)
-MikroTik as a Connector/Proxy platform (no RouterOS API/Winbox/WebFig/SSH launchers,
-no management). **Platform Registry is the single source**: `PlatformDescriptor`
-gains `deployment_method`/`deployment_template`/versioned deployment templates/
-`supported_architectures`/`supported_routeros_versions` (agent platforms leave them
-empty). MikroTik declares native RouterOS 6.x and 7.x enrollment templates + arches
-(chr/x86/arm/arm64/mipsbe/mmips/ppc/tile). `GET /install/mikrotik?token=...&
-routeros_version=6|7` (FEATURE_MIKROTIK-gated; default 7 for compatibility)
-generates the copy/paste RouterOS script from the registry — never hardcoded.
-Enrollment reuses the generic pipeline; `validate_architecture()` rejects unknown/
-absent arch (→ 400) for platforms that declare a set; the auto-group refinement lets
-non-agent platforms (MikroTik → Network) stay ungrouped and be categorized by platform
-(Client ▸ Network ▸ MikroTik). Deployment dialog renders MikroTik as a metadata-driven
-"script" section with a RouterOS Version selector. Connect (Winbox/WebFig/SSH)
-metadata-only, unchanged. Original suite 497+4, tsc/build/agent OK, smoke 7/7; hotfix
-validation: MikroTik tests 13/13, adjacent deployment regressions 136/136, tsc/build OK.
-Windows/Linux/macOS unchanged. **Future RouterOS management = only Adapter +
-Capability Mapping + Action Registry + Capability Renderer; no Drawer/Tree/UI change.**
+### MikroTik Platform Integration — Connector v1 ✅ (2026-07-09)
+MikroTik remains a Connector/Proxy platform (no Windows/Linux agent, no RouterOS
+API, no Winbox/WebFig/SSH launcher execution). **Platform Registry is the single
+source** for RouterOS 6.x and 7.x deployment templates, supported arches
+(chr/x86/arm/arm64/mipsbe/mmips/ppc/tile), and MikroTik capabilities. The
+generated RouterOS script now registers once through `/agent/enroll`, installs
+two RouterOS scheduler items (`TECHI-Heartbeat` and `TECHI-Inventory`), and
+embeds the current Agent Config values for MikroTik heartbeat and inventory
+intervals. Enrollment remains the generic token pipeline; the deterministic
+`mikrotik-<serial-or-software-id>` agent id lets heartbeat resolve the same
+device without parsing the enrollment response in RouterOS or falling back to
+hostname/MAC matching.
+
+Connector v1 separates lightweight heartbeat from slower inventory collection
+(default inventory 1800 s). Inventory reports RouterOS identity/inventory into
+existing fields (architecture, RouterOS version, board/model/serial/firmware/
+uptime/default route/DNS/bridge/wireless counts in details, CPU/RAM/storage,
+MAC/local/public IP, interface rows, RouterOS/RouterBOOT/package rows) and
+reports the MikroTik capability set (`interfaces`, `routes`, `firewall`,
+`wireless`, `bridge`, `dhcp`, `dns`, `logs`, `packages`, `identity`, `system`,
+`connect`). Generic Drawer selection now works because MikroTik reports
+capabilities; Remote Support/Web Terminal are absent, Connect shows
+Winbox/WebFig/SSH metadata only, and Action Registry exposes only Refresh
+Inventory / Restart Connector / Reconnect / Re-enroll. Timeline is
+transition-gated (`heartbeat_received` only on first heartbeat or
+offline→online recovery; `inventory_updated` per snapshot — never per beat).
+Windows/Linux/macOS deployment and enrollment paths unchanged. **Future RouterOS management =
+RouterOS API/adapter action execution + capability renderers, no Drawer/Tree
+redesign.**
 
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation

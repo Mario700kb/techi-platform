@@ -9,6 +9,7 @@ from app.models.device_telemetry import DeviceTelemetry
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.device_inventory_repository import DeviceInventoryRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
+from app.services import agent_config_service
 
 
 class DeviceHealthScoreService:
@@ -62,7 +63,9 @@ def compute_device_health_score(
     _add_freshness_penalties(penalties, device)
     _add_rustdesk_penalties(penalties, device)
     _add_user_penalties(penalties, device)
-    _add_patch_penalties(penalties, inventory)
+    if not _is_mikrotik(device):
+        _add_patch_penalties(penalties, inventory)
+    _add_inventory_freshness_penalties(penalties, device, inventory)
     _add_inventory_trust_penalties(penalties, device)
     _add_alert_penalties(penalties, alert_counts)
 
@@ -123,7 +126,32 @@ def _add_inventory_trust_penalties(penalties: List[Tuple[float, str]], device: D
         penalties.append((18.0, "Archived device is checking in"))
 
 
+def _add_inventory_freshness_penalties(
+    penalties: List[Tuple[float, str]],
+    device: Device,
+    inventory: Optional[DeviceInventory],
+) -> None:
+    if not _is_mikrotik(device):
+        return
+    if inventory is None or inventory.collected_at is None:
+        penalties.append((12.0, "Inventory has not been collected"))
+        return
+    interval = agent_config_service.get_inventory_interval("mikrotik")
+    age_seconds = max((datetime.utcnow() - inventory.collected_at).total_seconds(), 0)
+    if age_seconds > interval * 2:
+        penalties.append((12.0, "Inventory is stale"))
+
+
+def _is_mikrotik(device: Device) -> bool:
+    platform = (getattr(device, "platform", "") or "").strip().lower()
+    return "mikrotik" in platform or "routeros" in platform
+
+
 def _add_rustdesk_penalties(penalties: List[Tuple[float, str]], device: Device) -> None:
+    capabilities = getattr(device, "capabilities", None)
+    platform = (getattr(device, "platform", "") or "").strip().lower()
+    if platform in {"mikrotik", "routeros"} or (isinstance(capabilities, dict) and "remote_support" not in capabilities):
+        return
     install_status = (getattr(device, "rustdesk_install_status", "") or "").lower()
     status = (getattr(device, "rustdesk_status", "") or "").lower()
     if install_status in {"missing", "not_installed", "not installed", "absent"}:
@@ -133,6 +161,9 @@ def _add_rustdesk_penalties(penalties: List[Tuple[float, str]], device: Device) 
 
 
 def _add_user_penalties(penalties: List[Tuple[float, str]], device: Device) -> None:
+    platform = (getattr(device, "platform", "") or "").strip().lower()
+    if platform in {"mikrotik", "routeros"}:
+        return
     current_user = (getattr(device, "current_user", "") or "").strip()
     if current_user == "" or current_user.upper() in {"SYSTEM", "N/A", "UNKNOWN"}:
         penalties.append((6.0, "No active user"))

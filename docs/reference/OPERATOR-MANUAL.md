@@ -195,7 +195,7 @@ Expansion flag is enabled (Windows is always shown):
 | **Windows** | **Production** | always | Safe one-time command · GPO Startup · GPO Scheduled Task · Bootstrap URL · Download PS1 *(unchanged, production-proven)* |
 | **Linux** | Experimental | `FEATURE_LINUX` | One-Time Install (`curl … \| sudo bash`) · Manual URL · arches (amd64/arm64/armhf) · active Linux package |
 | **macOS** | Planned | `FEATURE_MACOS` (not yet defined) | placeholder only |
-| **MikroTik** | Experimental | `FEATURE_MIKROTIK` | **RouterOS Script** (deployment + registration only) — select RouterOS 6.x or 7.x, then copy/paste into RouterOS; generated from the Platform Registry template with the token injected; supported arches chr/x86/arm/arm64/mipsbe/mmips/ppc/tile |
+| **MikroTik** | Experimental | `FEATURE_MIKROTIK` | **RouterOS Script** (Connector v1) — select RouterOS 6.x or 7.x, then copy/paste into RouterOS; generated from the Platform Registry template with the token injected; supported arches chr/x86/arm/arm64/mipsbe/mmips/ppc/tile |
 | **Synology DSM** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
 | **QNAP QTS** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
 | **VMware ESXi** | Planned | `FEATURE_HYPERVISOR` | placeholder |
@@ -339,21 +339,37 @@ devices that report the `terminal` capability.
 MikroTik is the first **proxy-managed** platform (not a native agent). A proxy
 adapter reports RouterOS devices into the same catalog/drawer.
 
-**Deployment + registration (live).** On the **Deployment** dialog (token ▸ View),
+**Connector v1 (live after deploy).** On the **Deployment** dialog (token ▸ View),
 the MikroTik section shows a **RouterOS Version** selector (**RouterOS 6.x** or
 **RouterOS 7.x**) and a **RouterOS Script** — generated server-side from the
 Platform Registry template with the enrollment token injected (never hardcoded).
 Copy the matching script into the router's terminal (or import as a script). It
-POSTs the router's identity + token to the standard enrollment endpoint; the
-router self-detects its architecture (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile —
-an unknown arch is rejected). The device then appears automatically under
-**Client ▸ Network ▸ MikroTik** (no manual placement), with Connect methods
-**Winbox / WebFig / SSH** (metadata only).
+POSTs the router's identity + token to the standard enrollment endpoint and
+installs two RouterOS scheduler items: `TECHI-Heartbeat` and `TECHI-Inventory`.
+Both intervals come from **Agent Config** at generation time; default RouterOS
+heartbeat is 250 seconds and default inventory is 1800 seconds. The router
+self-detects its architecture (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile — an
+unknown arch is rejected). The device appears automatically under **Client ▸
+Network ▸ MikroTik** (no manual placement), with Connect methods **Winbox /
+WebFig / SSH** (metadata only).
 
-**Not in this build:** RouterOS API, Winbox/WebFig/SSH launchers, and all RouterOS
-management (monitoring, firewall, interfaces, wireless, VPN, backups, scripting) —
-a later phase that adds only a Platform Adapter + Action Registry entries, with no
-Drawer/Tree/UI changes. With the flag off there are no MikroTik surfaces.
+The RouterOS heartbeat updates Last Seen/freshness/status/health. RouterOS
+inventory is slower and reports identity, board/model/serial/firmware/uptime,
+architecture, CPU/RAM/storage, interfaces, LAN/local IP, WAN/public IP, MAC,
+default route, DNS, bridge/wireless counts, RouterOS/RouterBOOT/package rows,
+and capabilities. MikroTik uses the compact Generic Capability Drawer — the
+Overview shows identity, RouterOS version, board, architecture, Last Seen,
+Health, local/public IP and connector version; Remote Support and Web Terminal
+are absent; tabs are capability-driven; initial actions are Refresh Inventory,
+Restart Connector, Reconnect, and Re-enroll. The Timeline records Device
+Registered, Heartbeat Received (only on first heartbeat or offline→online
+recovery — not every beat), Inventory Updated, and assignment changes.
+
+**Not in this build:** RouterOS API and actual Winbox/WebFig/SSH launcher
+execution. Detailed RouterOS API management (firewall edits, interface changes,
+wireless/VPN/backups/scripting) is a later phase that adds adapter action
+execution + capability renderers, with no Drawer/Tree/UI redesign. With the flag
+off there are no MikroTik surfaces.
 
 ---
 
@@ -553,7 +569,7 @@ in Agent Config; every device adopts it on its next heartbeat.
 - **Connect launchers not implemented**: the Connect menu lists methods (Winbox/
   WebFig/SSH/DSM/…) but does not yet open them — that is the next phase. Windows
   Remote Support (RustDesk) works today.
-- **MikroTik**: adapter framework + classification only; **no RouterOS API** yet.
+- **MikroTik**: Connector v1 heartbeat/inventory/capability reporting; **no RouterOS API** yet.
 - **Web Terminal**: requires its edge WebSocket route + `FEATURE_TERMINAL`; not
   enabled by default. Session recording is prepared but not implemented.
 - **Linux**: certified **Experimental** — validate on a canary before broad use.

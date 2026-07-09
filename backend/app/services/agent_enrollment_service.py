@@ -275,6 +275,7 @@ class AgentEnrollmentService:
             "os_build": self._normalize(payload.os_build),
             "windows_product_type": payload.windows_product_type,
             "platform": self._normalize(payload.platform),
+            "architecture": self._normalize(payload.architecture),
             "cpu": None,
             "ram": None,
             "storage": None,

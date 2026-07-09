@@ -9,10 +9,22 @@ import {
 import AgentCommandsPanel from "../components/AgentCommandsPanel";
 
 type CopyTarget = "rollout" | "rollback" | null;
+const PLATFORM_ROWS = [
+  ["windows", "Windows"],
+  ["linux", "Linux"],
+  ["macos", "macOS"],
+  ["mikrotik", "RouterOS"],
+  ["synology", "Synology"],
+  ["qnap", "QNAP"],
+  ["truenas", "TrueNAS"],
+  ["vmware", "VMware"],
+  ["proxmox", "Proxmox"],
+] as const;
 
 export default function AgentConfigPage() {
   const [config, setConfig] = useState<AgentConfig | null>(null);
-  const [intervalInput, setIntervalInput] = useState<string>("");
+  const [heartbeatInputs, setHeartbeatInputs] = useState<Record<string, string>>({});
+  const [inventoryInputs, setInventoryInputs] = useState<Record<string, string>>({});
   const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,7 +44,8 @@ export default function AgentConfigPage() {
     getAgentConfig()
       .then((cfg) => {
         setConfig(cfg);
-        setIntervalInput(String(cfg.heartbeat_interval_seconds));
+        setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_heartbeat_intervals[id] ?? cfg.heartbeat_interval_seconds)])));
+        setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_inventory_intervals[id] ?? 1800)])));
         setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
       })
       .catch((err) => setError(String(err)))
@@ -40,17 +53,32 @@ export default function AgentConfigPage() {
   }, []);
 
   async function handleSaveHeartbeat() {
-    const val = parseInt(intervalInput, 10);
-    if (isNaN(val) || val < 60 || val > 600) {
-      setError("Heartbeat interval must be between 60 and 600 seconds.");
-      return;
+    const heartbeat: Record<string, number> = {};
+    const inventory: Record<string, number> = {};
+    for (const [id, label] of PLATFORM_ROWS) {
+      const hb = parseInt(heartbeatInputs[id], 10);
+      const inv = parseInt(inventoryInputs[id], 10);
+      if (isNaN(hb) || hb < 60 || hb > 600) {
+        setError(`${label} heartbeat must be between 60 and 600 seconds.`);
+        return;
+      }
+      if (isNaN(inv) || inv < 300 || inv > 86400) {
+        setError(`${label} inventory must be between 300 and 86400 seconds.`);
+        return;
+      }
+      heartbeat[id] = hb;
+      inventory[id] = inv;
     }
     setSaving(true);
     setError(null);
     try {
-      const updated = await putAgentConfig({ heartbeat_interval_seconds: val });
+      const updated = await putAgentConfig({
+        platform_heartbeat_intervals: heartbeat,
+        platform_inventory_intervals: inventory,
+      });
       setConfig(updated);
-      setIntervalInput(String(updated.heartbeat_interval_seconds));
+      setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
+      setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
       setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
       setSaved(true);
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -70,7 +98,8 @@ export default function AgentConfigPage() {
         remote_support_managed_password_enabled: managedPasswordEnabled,
       });
       setConfig(updated);
-      setIntervalInput(String(updated.heartbeat_interval_seconds));
+      setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
+      setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
       setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
       setRemoteSaved(true);
       if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
@@ -98,8 +127,12 @@ export default function AgentConfigPage() {
     }
   }
 
-  const currentInterval = config?.heartbeat_interval_seconds ?? 180;
-  const heartbeatDirty = config !== null && parseInt(intervalInput, 10) !== currentInterval;
+  const currentInterval = config?.platform_heartbeat_intervals?.windows ?? config?.heartbeat_interval_seconds ?? 300;
+  const heartbeatDirty = config !== null && PLATFORM_ROWS.some(([id]) => {
+    const hb = config.platform_heartbeat_intervals[id] ?? config.heartbeat_interval_seconds;
+    const inv = config.platform_inventory_intervals[id] ?? 1800;
+    return heartbeatInputs[id] !== String(hb) || inventoryInputs[id] !== String(inv);
+  });
   const remoteSupportDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
 
   return (
@@ -149,45 +182,50 @@ export default function AgentConfigPage() {
         }}
       >
         <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-          Heartbeat Policy
+          Heartbeat & Inventory Policy
         </p>
 
         {loading ? (
           <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
         ) : (
           <div className="space-y-4">
-            {/* Editable: heartbeat interval */}
-            <div>
-              <label
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wide"
-                style={{ color: "var(--th-text-muted)" }}
-              >
-                Heartbeat Interval (seconds)
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={60}
-                  max={600}
-                  id="heartbeat-interval"
-                  name="heartbeat-interval"
-                  aria-label="Heartbeat interval in seconds"
-                  value={intervalInput}
-                  onChange={(e) => {
-                    setIntervalInput(e.target.value);
-                    setError(null);
-                  }}
-                  className="w-28 rounded-md border px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                  style={{
-                    background: "var(--th-bg-input, var(--th-bg-shell))",
-                    borderColor: "var(--th-border-subtle)",
-                    color: "var(--th-text-primary)",
-                  }}
-                />
-                <span className="text-xs" style={{ color: "var(--th-text-muted)" }}>
-                  60 – 600 s &nbsp;·&nbsp; recommended: 180 s
-                </span>
+            <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--th-border-subtle)" }}>
+              <div className="grid grid-cols-[1fr_112px_112px] gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)", background: "var(--th-bg-shell)" }}>
+                <span>Platform</span>
+                <span>Heartbeat</span>
+                <span>Inventory</span>
               </div>
+              {PLATFORM_ROWS.map(([id, label]) => (
+                <div key={id} className="grid grid-cols-[1fr_112px_112px] items-center gap-2 border-t px-3 py-2" style={{ borderColor: "var(--th-border-subtle)" }}>
+                  <span className="text-sm font-medium" style={{ color: "var(--th-text-primary)" }}>{label}</span>
+                  <input
+                    type="number"
+                    min={60}
+                    max={600}
+                    aria-label={`${label} heartbeat interval`}
+                    value={heartbeatInputs[id] ?? ""}
+                    onChange={(e) => {
+                      setHeartbeatInputs((prev) => ({ ...prev, [id]: e.target.value }));
+                      setError(null);
+                    }}
+                    className="w-full rounded-md border px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                    style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                  />
+                  <input
+                    type="number"
+                    min={300}
+                    max={86400}
+                    aria-label={`${label} inventory interval`}
+                    value={inventoryInputs[id] ?? ""}
+                    onChange={(e) => {
+                      setInventoryInputs((prev) => ({ ...prev, [id]: e.target.value }));
+                      setError(null);
+                    }}
+                    className="w-full rounded-md border px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                    style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                  />
+                </div>
+              ))}
             </div>
 
             {/* Read-only thresholds */}
@@ -235,7 +273,7 @@ export default function AgentConfigPage() {
               ) : saving ? (
                 "Saving…"
               ) : (
-                <><Save className="h-3.5 w-3.5" /> Save heartbeat policy</>
+                <><Save className="h-3.5 w-3.5" /> Save interval policy</>
               )}
             </button>
           </div>

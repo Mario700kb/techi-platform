@@ -27,6 +27,110 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] FEATURE/FIX: MikroTik Connector v1 — heartbeat, inventory, capabilities, generic drawer
+
+### Problemi
+
+MikroTik deployment could register a RouterOS device, but the integration ended
+there: no heartbeat, no Last Seen/freshness lifecycle, no inventory/capabilities,
+and no capability signal to select the Generic Drawer. A registered MikroTik could
+therefore look like a capability-less device and expose Windows-oriented drawer
+concepts.
+
+### Analiza
+
+Read path stayed the existing architecture: Platform Registry generates
+`/install/mikrotik`; enrollment goes through `/agent/enroll`; heartbeat is the
+standard `/agent/heartbeat`; Generic Drawer metadata comes from Platform +
+Capability + Connect + Action registries. RouterOS cannot reliably parse and
+reuse the JSON enrollment response across RouterOS 6/7, so the connector needed a
+stable identity before enrollment.
+
+### Shkaku
+
+The previous MikroTik implementation was intentionally registration-only. It sent
+one enrollment POST and did not install any recurring RouterOS-side heartbeat or
+capability report, so the backend had no live signal to update status/health or
+select RouterOS-specific drawer/connect/action surfaces.
+
+### Zgjidhja
+
+- RouterOS 6/7 templates now set deterministic
+  `agent_id=mikrotik-<serial-or-software-id>`, enroll once, install two scripts
+  (`TECHI-Heartbeat`, `TECHI-Inventory`), add two schedulers, and run both once
+  immediately.
+- Agent Config now carries per-platform heartbeat intervals and per-platform
+  inventory intervals; RouterOS deployment embeds the current MikroTik values
+  instead of hardcoding scheduler intervals.
+- Heartbeat reuses the existing `/api/v1/agent/heartbeat` contract and reports
+  only lightweight live identity/capabilities. Inventory is separated from
+  heartbeat (default 1800 s) and reports RouterOS identity, version,
+  architecture, board/model/serial/firmware/uptime, CPU/RAM/storage,
+  interfaces, default route, DNS, bridge/wireless counts, MAC/local/public IP,
+  software rows, and the MikroTik capability set.
+- Capability Registry adds RouterOS vocabulary (`routes`, `bridge`, `dhcp`,
+  `dns`, `identity`, `system`, `connect`).
+- Connect Framework exposes MikroTik metadata-only Winbox/WebFig/SSH; no Web
+  Terminal capability.
+- Action Registry filters by platform and exposes only Refresh Inventory,
+  Restart Connector, Reconnect, Re-enroll for MikroTik.
+- Generic Drawer Overview shows existing identity/hardware fields; Remote
+  Support/Web Terminal are absent for MikroTik.
+- Heartbeat side effects record MikroTik timeline events without spamming:
+  `heartbeat_received` is transition-gated (first heartbeat or offline→online
+  recovery only — never one row per beat) and `inventory_updated` follows the
+  inventory cadence (default 1800 s); health skips Remote Support/user penalties
+  when a platform does not report Remote Support and scores RouterOS inventory
+  freshness instead of Windows patch state.
+
+### Ndryshimet
+
+- `backend/app/platform_core/registry.py`
+- `backend/app/platform_core/capabilities.py`
+- `backend/app/platform_core/connect.py`
+- `backend/app/platform_core/actions.py`
+- `backend/app/schemas/remote_action.py`
+- `backend/app/api/v1/endpoints/agent.py`
+- `backend/app/services/agent_enrollment_service.py`
+- `backend/app/services/device_heartbeat_service.py`
+- `backend/app/services/device_health_score_service.py`
+- `backend/app/services/agent_config_service.py`
+- `backend/app/api/v1/endpoints/agent_config.py`
+- `backend/app/api/v1/endpoints/install.py`
+- `frontend/src/api/devices.ts`
+- `frontend/src/api/agentConfig.ts`
+- `frontend/src/pages/AgentConfig.tsx`
+- `frontend/src/components/GenericDeviceDrawer.tsx`
+- Tests and docs.
+
+### Rezultati
+
+Validation passed locally:
+- Focused backend: 92 passed
+  (`test_agent_config.py`, `test_mikrotik_deployment.py`,
+  `test_connect_framework.py`, `test_action_registry.py`,
+  `test_platform_core.py`).
+- Adjacent deployment/connect/action regressions: 177 passed.
+- Frontend `tsc --noEmit`: passed.
+- Frontend production build: passed (existing large chunk warning only).
+- `scripts/preflight.sh`: PASSED — contract 13/13, backend suite 509 passed +
+  4 known baseline failures in both flag modes, frontend build OK, agent build
+  OK.
+
+Final pre-commit review (same day) tightened two things, re-validated with the
+full preflight (still PASSED, 509+4 both flag modes):
+- `heartbeat_received` timeline event is transition-gated (was: one activity
+  row per beat ≈ 345/day/device — timeline spam + unnecessary DB writes);
+  a regression assertion locks steady-state heartbeats to zero new events.
+- Generic Drawer Overview now also shows Last Seen, Health (score + state via
+  the existing telemetry hook) and Connector Version, completing the required
+  compact overview (Identity / RouterOS version / Board / Architecture /
+  Last Seen / Health / Local IP / Public IP / Connector Version).
+
+Remaining production validation requires pasting the generated script into a real
+RouterOS 6.x and 7.x device after deploy and verifying the scheduled heartbeat,
+device placement, drawer, timeline, and health against the live backend.
+
 ## [2026-07-09] BUGFIX: MikroTik deployment generated shell-like script; RouterOS 6/7 native templates
 
 ### Problemi

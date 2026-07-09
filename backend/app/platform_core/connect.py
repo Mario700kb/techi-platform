@@ -12,9 +12,9 @@ and *when* they are available.
 Availability rule: a method is available for a device iff the method belongs to
 the device's platform AND (its `capability` is None OR that capability is in the
 device's reported capabilities). Platform-native methods (Winbox, WebFig, DSM,
-remote support…) use `capability=None`; generic methods (SSH, web terminal) key
-off a real capability so "SSH is not Linux-only" holds — any platform that
-reports `terminal` exposes SSH.
+remote support…) use `capability=None`; generic methods key off real
+capabilities. SSH is not Linux-only: Linux/storage platforms expose it through
+`terminal`, while MikroTik exposes metadata-only SSH through `connect`.
 """
 
 from dataclasses import dataclass
@@ -47,8 +47,7 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
     "mikrotik": (
         ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://"),
         ConnectMethod("webfig", "WebFig", SURFACE_BROWSER, None, 20),
-        ConnectMethod("ssh", "SSH", SURFACE_DESKTOP, "terminal", 30, scheme="ssh://"),
-        ConnectMethod("web_terminal", "Web Terminal", SURFACE_BROWSER, "terminal", 40),
+        ConnectMethod("ssh", "SSH", SURFACE_DESKTOP, "connect", 30, scheme="ssh://"),
     ),
     "synology": (
         ConnectMethod("dsm", "DSM", SURFACE_BROWSER, None, 10),

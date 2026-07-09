@@ -4,7 +4,7 @@ Tests for agent configuration policy API.
 Verifies:
 - GET /agent-config requires admin or owner (operator/readonly → 403)
 - PUT /agent-config requires admin or owner
-- PUT /agent-config validates range 60–600 (outside → 422)
+- PUT /agent-config validates heartbeat 60–600 and inventory 300–86400
 - GET /agent-config/heartbeat-script requires admin or owner
 - Generated PowerShell contains the requested seconds
 - Generated PowerShell preserves JSON keys via ConvertFrom-Json / ConvertTo-Json
@@ -64,6 +64,9 @@ class TestGetAgentConfig:
         assert resp.status_code == 200
         body = resp.json()
         assert body["heartbeat_interval_seconds"] == svc.HEARTBEAT_INTERVAL_DEFAULT
+        assert body["platform_heartbeat_intervals"]["windows"] == svc.HEARTBEAT_INTERVAL_DEFAULT
+        assert body["platform_heartbeat_intervals"]["mikrotik"] == 250
+        assert body["platform_inventory_intervals"]["mikrotik"] == 1800
         assert body["online_threshold_minutes"] == svc.ONLINE_THRESHOLD_MINUTES
         assert body["stale_threshold_minutes"] == svc.STALE_THRESHOLD_MINUTES
 
@@ -141,6 +144,24 @@ class TestPutAgentConfig:
         resp = client.get("/agent-config")
         assert resp.status_code == 200
         assert resp.json()["heartbeat_interval_seconds"] == 240
+        assert resp.json()["platform_heartbeat_intervals"]["windows"] == 240
+
+    def test_admin_can_update_platform_intervals(self):
+        client = _make_client("admin")
+        resp = client.put("/agent-config", json={
+            "platform_heartbeat_intervals": {"mikrotik": 180, "linux": 240},
+            "platform_inventory_intervals": {"mikrotik": 900},
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["platform_heartbeat_intervals"]["mikrotik"] == 180
+        assert body["platform_heartbeat_intervals"]["linux"] == 240
+        assert body["platform_inventory_intervals"]["mikrotik"] == 900
+
+    def test_platform_inventory_below_minimum_is_rejected(self):
+        client = _make_client("admin")
+        resp = client.put("/agent-config", json={"platform_inventory_intervals": {"mikrotik": 299}})
+        assert resp.status_code == 422
 
     def test_thresholds_are_read_only(self):
         """Putting the config must never let the client change threshold values."""
@@ -226,6 +247,7 @@ class TestAgentConfigService:
     def test_set_and_get_roundtrip(self):
         svc.set_heartbeat_interval(120)
         assert svc.get_policy()["heartbeat_interval_seconds"] == 120
+        assert svc.get_policy()["platform_heartbeat_intervals"]["windows"] == 120
 
     def test_set_below_min_raises(self):
         with pytest.raises(ValueError):

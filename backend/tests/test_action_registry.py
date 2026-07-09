@@ -70,6 +70,21 @@ def test_linux_with_remote_support_capability_shows_it():
     assert "sync_rustdesk" in ids and "open_terminal" in ids
 
 
+def test_mikrotik_gets_connector_actions_only():
+    ids = [a.id for a in A.actions_for("mikrotik", {"connect": "", "interfaces": "", "logs": ""})]
+    assert ids == ["refresh_inventory", "restart_connector", "reconnect", "reenroll"]
+    assert "restart_agent" not in ids
+    assert "restart_device" not in ids
+    assert "sync_rustdesk" not in ids
+
+
 def test_dangerous_actions_flagged():
     dangerous = {a.id for a in A.ACTION_REGISTRY.values() if a.dangerous}
-    assert dangerous == {"restart_agent", "restart_device", "reinstall_rustdesk", "deploy_remote_support"}
+    assert dangerous == {
+        "restart_agent",
+        "restart_device",
+        "reinstall_rustdesk",
+        "deploy_remote_support",
+        "restart_connector",
+        "reenroll",
+    }

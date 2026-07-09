@@ -2,6 +2,8 @@ import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
 
 export interface AgentConfig {
   heartbeat_interval_seconds: number;
+  platform_heartbeat_intervals: Record<string, number>;
+  platform_inventory_intervals: Record<string, number>;
   online_threshold_minutes: number;
   stale_threshold_minutes: number;
   remote_support_managed_password_enabled: boolean;
@@ -9,6 +11,8 @@ export interface AgentConfig {
 
 export interface AgentConfigUpdate {
   heartbeat_interval_seconds?: number;
+  platform_heartbeat_intervals?: Record<string, number>;
+  platform_inventory_intervals?: Record<string, number>;
   remote_support_managed_password_enabled?: boolean;
 }
 

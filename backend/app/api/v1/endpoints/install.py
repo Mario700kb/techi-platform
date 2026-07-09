@@ -15,6 +15,7 @@ from fastapi.responses import PlainTextResponse
 
 from app.core.config import settings
 from app.platform_core.flags import feature_enabled
+from app.services import agent_config_service as _agent_cfg
 
 router = APIRouter()
 
@@ -112,6 +113,8 @@ def mikrotik_installer(
             "mikrotik", token=token, api_endpoint=_public_base(),
             version=MIKROTIK_CONNECTOR_VERSION,
             routeros_version=routeros_version,
+            heartbeat_interval_seconds=_agent_cfg.get_heartbeat_interval("mikrotik"),
+            inventory_interval_seconds=_agent_cfg.get_inventory_interval("mikrotik"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

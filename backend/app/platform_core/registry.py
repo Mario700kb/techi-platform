@@ -17,46 +17,122 @@ DEFAULT_PLATFORM_ID = "windows"
 MODE_NATIVE_AGENT = "native_agent"
 MODE_PROXY_ADAPTER = "proxy_adapter"
 
-# MikroTik RouterOS deployment/registration template. Deployment + registration
-# ONLY — the router POSTs its identity + the enrollment token to the generic
-# /agent/enroll endpoint; no on-device agent, no RouterOS management. Placeholders
-# ({{...}}) are filled server-side from the Platform Registry; RouterOS runtime
-# values ($arch/$rosver/$hostid) are self-detected on the router so one script
-# fits every architecture. Adding RouterOS management later touches ONLY the
-# Platform Adapter — never this template's consumers.
-MIKROTIK_ROUTEROS6_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterOS 6.x)
+# MikroTik RouterOS connector template. The router registers once via the
+# generic /agent/enroll endpoint and installs two scheduled RouterOS scripts:
+# a lightweight heartbeat and a slower inventory collection. This is still a
+# Platform Connector, not a Windows/Linux native agent and not RouterOS API
+# management. Placeholders ({{...}}) are filled server-side from the Platform
+# Registry and Agent Config.
+MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterOS {{ROUTEROS_VERSION_LABEL}})
 # Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
 {
-:local token "{{TOKEN}}"
-:local api "{{API_ENDPOINT}}"
-:local platform "{{PLATFORM}}"
-:local connver "{{VERSION}}"
+:global techiToken "{{TOKEN}}"
+:global techiApi "{{API_ENDPOINT}}"
+:global techiPlatform "{{PLATFORM}}"
+:global techiConnectorVersion "{{VERSION}}"
+:global techiHeartbeatInterval "{{HEARTBEAT_INTERVAL}}s"
+:global techiInventoryInterval "{{INVENTORY_INTERVAL}}s"
+:global techiAgentId
 :local arch [/system resource get architecture-name]
 :local rosver [/system resource get version]
 :local hostid [/system identity get name]
-:local enrollUrl ($api . "/api/v1/agent/enroll")
-:local body ("{\\"enrollment_token\\":\\"" . $token . "\\",\\"platform\\":\\"" . $platform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $connver . "\\"}")
-/tool fetch mode=https url=$enrollUrl http-method=post http-header-field="Content-Type:application/json" http-data=$body keep-result=no
-:log info "TECHI enrollment submitted: $hostid ($arch, RouterOS $rosver)"
+:local serial ""
+:do { :set serial [/system routerboard get serial-number] } on-error={}
+:if ($serial = "") do={ :do { :set serial [/system license get software-id] } on-error={} }
+:if ($serial = "") do={ :error "TECHI connector requires RouterOS serial-number or software-id" }
+:set techiAgentId ("mikrotik-" . $serial)
+:local enrollUrl ($techiApi . "/api/v1/agent/enroll")
+:local body ("{\\"agent_id\\":\\"" . $techiAgentId . "\\",\\"enrollment_token\\":\\"" . $techiToken . "\\",\\"platform\\":\\"" . $techiPlatform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $techiConnectorVersion . "\\"}")
+/tool fetch mode=https url=$enrollUrl http-method=post http-header-field="Content-Type:application/json" http-data=$body {{FETCH_RESULT}}
+/system scheduler remove [find name="TECHI-Heartbeat"]
+/system scheduler remove [find name="TECHI-Inventory"]
+/system script remove [find name="TECHI-Heartbeat"]
+/system script remove [find name="TECHI-Inventory"]
+/system script add name="TECHI-Heartbeat" policy=read,write,test source={
+:global techiApi
+:global techiPlatform
+:global techiConnectorVersion
+:global techiAgentId
+:local arch [/system resource get architecture-name]
+:local rosver [/system resource get version]
+:local hostid [/system identity get name]
+:local localip ""
+:do { :local addrs [/ip address find where disabled=no]; :if ([:len $addrs] > 0) do={ :set localip [/ip address get [:pick $addrs 0] address] } } on-error={}
+:local slash [:find $localip "/"]
+:if ($slash != nil) do={ :set localip [:pick $localip 0 $slash] }
+:local mac ""
+:do { :local ports [/interface ethernet find where disabled=no]; :if ([:len $ports] > 0) do={ :set mac [/interface ethernet get [:pick $ports 0] mac-address] } } on-error={}
+:local hbUrl ($techiApi . "/api/v1/agent/heartbeat")
+:local hb ("{\\"agent_id\\":\\"" . $techiAgentId . "\\",\\"platform\\":\\"" . $techiPlatform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"mac_address\\":\\"" . $mac . "\\",\\"local_ip\\":\\"" . $localip . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $techiConnectorVersion . "\\",\\"capabilities\\":[\\"interfaces\\",\\"routes\\",\\"firewall\\",\\"wireless\\",\\"bridge\\",\\"dhcp\\",\\"dns\\",\\"logs\\",\\"packages\\",\\"identity\\",\\"system\\",\\"connect\\"]}")
+/tool fetch mode=https url=$hbUrl http-method=post http-header-field="Content-Type:application/json" http-data=$hb {{FETCH_RESULT}}
+:log info ("TECHI heartbeat submitted: " . $hostid)
+}
+/system script add name="TECHI-Inventory" policy=read,write,test source={
+:global techiApi
+:global techiPlatform
+:global techiConnectorVersion
+:global techiAgentId
+:local arch [/system resource get architecture-name]
+:local rosver [/system resource get version]
+:local hostid [/system identity get name]
+:local model ""
+:local serial ""
+:local firmware ""
+:do { :set model [/system routerboard get model] } on-error={}
+:do { :set serial [/system routerboard get serial-number] } on-error={}
+:if ($serial = "") do={ :do { :set serial [/system license get software-id] } on-error={} }
+:do { :set firmware [/system routerboard get current-firmware] } on-error={}
+:local cpu [/system resource get cpu]
+:local ram [/system resource get total-memory]
+:local freehdd [/system resource get free-hdd-space]
+:local totalhdd [/system resource get total-hdd-space]
+:local uptime [/system resource get uptime]
+:local localip ""
+:do { :local addrs [/ip address find where disabled=no]; :if ([:len $addrs] > 0) do={ :set localip [/ip address get [:pick $addrs 0] address] } } on-error={}
+:local slash [:find $localip "/"]
+:if ($slash != nil) do={ :set localip [:pick $localip 0 $slash] }
+:local mac ""
+:do { :local ports [/interface ethernet find where disabled=no]; :if ([:len $ports] > 0) do={ :set mac [/interface ethernet get [:pick $ports 0] mac-address] } } on-error={}
+:local defgw ""
+:do { :local routes [/ip route find where dst-address="0.0.0.0/0"]; :if ([:len $routes] > 0) do={ :set defgw [/ip route get [:pick $routes 0] gateway] } } on-error={}
+:local dns ""
+:do { :set dns [/ip dns get servers] } on-error={}
+:local bridgeCount "0"
+:do { :set bridgeCount [:len [/interface bridge find]] } on-error={}
+:local wirelessCount "0"
+:do { :set wirelessCount [:len [/interface wireless find]] } on-error={}
+:local services "["
+:local first true
+:foreach i in=[/interface find] do={ :local name [/interface get $i name]; :local running [/interface get $i running]; :local status "down"; :if ($running = true) do={ :set status "up" }; :if ($first = false) do={ :set services ($services . ",") }; :set first false; :set services ($services . "{\\"name\\":\\"" . $name . "\\",\\"display_name\\":\\"" . $name . "\\",\\"status\\":\\"" . $status . "\\"}") }
+:set services ($services . "]")
+:local packages "[{\\"name\\":\\"RouterOS\\",\\"version\\":\\"" . $rosver . "\\"},{\\"name\\":\\"RouterBOOT\\",\\"version\\":\\"" . $firmware . "\\"}]"
+:do { :foreach p in=[/system package find] do={ :local pname [/system package get $p name]; :local pver [/system package get $p version]; :set packages ([:pick $packages 0 ([:len $packages] - 1)] . ",{\\"name\\":\\"" . $pname . "\\",\\"version\\":\\"" . $pver . "\\"}]") } } on-error={}
+:local hbUrl ($techiApi . "/api/v1/agent/heartbeat")
+:local caption ("Board=" . $model . "; Model=" . $model . "; Serial=" . $serial . "; Firmware=" . $firmware . "; Uptime=" . $uptime . "; DefaultRoute=" . $defgw . "; DNS=" . $dns . "; Bridges=" . $bridgeCount . "; Wireless=" . $wirelessCount)
+:local storage ("free=" . $freehdd . "; total=" . $totalhdd)
+:local hb ("{\\"agent_id\\":\\"" . $techiAgentId . "\\",\\"platform\\":\\"" . $techiPlatform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"mac_address\\":\\"" . $mac . "\\",\\"local_ip\\":\\"" . $localip . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"os_caption\\":\\"" . $caption . "\\",\\"agent_version\\":\\"" . $techiConnectorVersion . "\\",\\"cpu\\":\\"" . $cpu . "\\",\\"ram\\":\\"" . $ram . "\\",\\"storage\\":\\"" . $storage . "\\",\\"capabilities\\":[\\"interfaces\\",\\"routes\\",\\"firewall\\",\\"wireless\\",\\"bridge\\",\\"dhcp\\",\\"dns\\",\\"logs\\",\\"packages\\",\\"identity\\",\\"system\\",\\"connect\\"],\\"services\\":" . $services . ",\\"software\\":" . $packages . "}")
+/tool fetch mode=https url=$hbUrl http-method=post http-header-field="Content-Type:application/json" http-data=$hb {{FETCH_RESULT}}
+:log info ("TECHI inventory submitted: " . $hostid)
+}
+/system scheduler add name="TECHI-Heartbeat" interval=$techiHeartbeatInterval on-event="TECHI-Heartbeat"
+/system scheduler add name="TECHI-Inventory" interval=$techiInventoryInterval on-event="TECHI-Inventory"
+/system script run "TECHI-Heartbeat"
+/system script run "TECHI-Inventory"
+:log info "TECHI connector installed: $hostid ($arch, RouterOS $rosver)"
 }
 """
 
-MIKROTIK_ROUTEROS7_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterOS 7.x)
-# Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
-{
-:local token "{{TOKEN}}"
-:local api "{{API_ENDPOINT}}"
-:local platform "{{PLATFORM}}"
-:local connver "{{VERSION}}"
-:local arch [/system resource get architecture-name]
-:local rosver [/system resource get version]
-:local hostid [/system identity get name]
-:local enrollUrl ($api . "/api/v1/agent/enroll")
-:local body ("{\\"enrollment_token\\":\\"" . $token . "\\",\\"platform\\":\\"" . $platform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $connver . "\\"}")
-/tool fetch mode=https url=$enrollUrl http-method=post http-header-field="Content-Type:application/json" http-data=$body output=none
-:log info "TECHI enrollment submitted: $hostid ($arch, RouterOS $rosver)"
-}
-"""
+MIKROTIK_ROUTEROS6_TEMPLATE = (
+    MIKROTIK_ROUTEROS_BASE_TEMPLATE
+    .replace("{{ROUTEROS_VERSION_LABEL}}", "6.x")
+    .replace("{{FETCH_RESULT}}", "keep-result=no")
+)
+
+MIKROTIK_ROUTEROS7_TEMPLATE = (
+    MIKROTIK_ROUTEROS_BASE_TEMPLATE
+    .replace("{{ROUTEROS_VERSION_LABEL}}", "7.x")
+    .replace("{{FETCH_RESULT}}", "output=none")
+)
 
 MIKROTIK_ROUTEROS_TEMPLATE = MIKROTIK_ROUTEROS7_TEMPLATE
 
@@ -135,9 +211,22 @@ PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
             display_name="MikroTik",
             mode=MODE_PROXY_ADAPTER,
             feature_flag="FEATURE_MIKROTIK",
-            connect_methods=("winbox", "webfig", "ssh", "terminal"),
+            connect_methods=("winbox", "webfig", "ssh"),
             allowed_capabilities=frozenset(
-                {"terminal", "interfaces", "wireless", "firewall", "logs"}
+                {
+                    "interfaces",
+                    "routes",
+                    "firewall",
+                    "wireless",
+                    "bridge",
+                    "dhcp",
+                    "dns",
+                    "logs",
+                    "packages",
+                    "identity",
+                    "system",
+                    "connect",
+                }
             ),
             deployment_method="routeros_script",
             deployment_template=MIKROTIK_ROUTEROS_TEMPLATE,
@@ -226,6 +315,8 @@ def render_deployment_script(
     api_endpoint: str,
     version: str,
     routeros_version: Optional[str] = None,
+    heartbeat_interval_seconds: int = 250,
+    inventory_interval_seconds: int = 1800,
 ) -> str:
     """Fill a platform's registry deployment_template with the enrollment token,
     API endpoint, platform id and connector version. The template is the single
@@ -248,6 +339,8 @@ def render_deployment_script(
         .replace("{{API_ENDPOINT}}", api_endpoint.rstrip("/"))
         .replace("{{PLATFORM}}", descriptor.id)
         .replace("{{VERSION}}", version)
+        .replace("{{HEARTBEAT_INTERVAL}}", str(int(heartbeat_interval_seconds)))
+        .replace("{{INVENTORY_INTERVAL}}", str(int(inventory_interval_seconds)))
     )
 
 
