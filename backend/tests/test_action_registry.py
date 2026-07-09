@@ -9,9 +9,22 @@ from app.schemas.remote_action import ACTION_LABELS
 from app.services.permission_service import ACTION_PERMISSION_MAP
 
 
-def test_registry_permission_map_matches_live_map():
-    # Every gated action agrees with the enforced ACTION_PERMISSION_MAP exactly.
-    assert A.permission_map() == ACTION_PERMISSION_MAP
+def test_enforced_permission_map_derives_from_registry():
+    # The live enforcement map IS the registry's permission map (Step 1c).
+    assert ACTION_PERMISSION_MAP == A.permission_map()
+
+
+def test_permission_map_locks_known_values():
+    # Concrete guard so a bad descriptor edit is caught (not a tautology).
+    pm = A.permission_map()
+    assert pm["deploy_remote_support"] == "deployment"
+    assert pm["reinstall_rustdesk"] == "reinstall_remote_support"
+    assert pm["sync_rustdesk"] == "remote_support_manage"
+    assert pm["restart_agent"] == "restart_agent"
+    assert pm["restart_device"] == "restart_device"
+    assert pm["ping"] == "diagnostics"
+    # Ungated actions (no permission) are absent from the map.
+    assert "self_update" not in pm and "open_terminal" not in pm
 
 
 def test_registry_labels_match_live_labels():

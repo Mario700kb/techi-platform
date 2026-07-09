@@ -54,22 +54,13 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     }),
 }
 
-# Maps ActionType string values → permission key required to queue that action.
-ACTION_PERMISSION_MAP: Dict[str, str] = {
-    "ping": DIAGNOSTICS,
-    "immediate_heartbeat": DIAGNOSTICS,
-    "refresh_inventory": VIEW_INVENTORY,
-    "sync_inventory": VIEW_INVENTORY,
-    "sync_rustdesk": REMOTE_SUPPORT_MANAGE,
-    "restart_rustdesk": REMOTE_SUPPORT_MANAGE,
-    "reopen_rustdesk": REMOTE_SUPPORT_MANAGE,
-    "repair_config_rustdesk": REMOTE_SUPPORT_MANAGE,
-    "reinstall_rustdesk": REINSTALL_REMOTE_SUPPORT,
-    "deploy_remote_support": DEPLOYMENT,
-    "restart_agent": RESTART_AGENT,
-    "restart_device": RESTART_DEVICE,
-    "apply_power_policy": MAINTENANCE_MODE,
-}
+# ActionType string value → permission required to queue it. DERIVED from the
+# Action Registry (the single source of truth) — the registry descriptor's
+# `permission` is what the endpoint enforces. Do not edit here; add/adjust the
+# ActionDescriptor in app.platform_core.actions.
+from app.platform_core.actions import permission_map as _registry_permission_map  # noqa: E402
+
+ACTION_PERMISSION_MAP: Dict[str, str] = _registry_permission_map()
 
 
 def get_permissions_for_role(role: str) -> FrozenSet[str]:
