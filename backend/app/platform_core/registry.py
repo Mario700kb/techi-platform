@@ -26,6 +26,7 @@ MODE_PROXY_ADAPTER = "proxy_adapter"
 # Platform Adapter — never this template's consumers.
 MIKROTIK_ROUTEROS6_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterOS 6.x)
 # Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
+{
 :local token "{{TOKEN}}"
 :local api "{{API_ENDPOINT}}"
 :local platform "{{PLATFORM}}"
@@ -33,13 +34,16 @@ MIKROTIK_ROUTEROS6_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterO
 :local arch [/system resource get architecture-name]
 :local rosver [/system resource get version]
 :local hostid [/system identity get name]
+:local enrollUrl ($api . "/api/v1/agent/enroll")
 :local body ("{\\"enrollment_token\\":\\"" . $token . "\\",\\"platform\\":\\"" . $platform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $connver . "\\"}")
-/tool fetch mode=https url=($api . "/api/v1/agent/enroll") http-method=post http-header-field="Content-Type:application/json" http-data=$body keep-result=no
+/tool fetch mode=https url=$enrollUrl http-method=post http-header-field="Content-Type:application/json" http-data=$body keep-result=no
 :log info "TECHI enrollment submitted: $hostid ($arch, RouterOS $rosver)"
+}
 """
 
 MIKROTIK_ROUTEROS7_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterOS 7.x)
 # Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
+{
 :local token "{{TOKEN}}"
 :local api "{{API_ENDPOINT}}"
 :local platform "{{PLATFORM}}"
@@ -47,9 +51,11 @@ MIKROTIK_ROUTEROS7_TEMPLATE = """# TECHI Platform - MikroTik enrollment (RouterO
 :local arch [/system resource get architecture-name]
 :local rosver [/system resource get version]
 :local hostid [/system identity get name]
+:local enrollUrl ($api . "/api/v1/agent/enroll")
 :local body ("{\\"enrollment_token\\":\\"" . $token . "\\",\\"platform\\":\\"" . $platform . "\\",\\"hostname\\":\\"" . $hostid . "\\",\\"architecture\\":\\"" . $arch . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . $rosver . "\\",\\"agent_version\\":\\"" . $connver . "\\"}")
-/tool fetch mode=https url=($api . "/api/v1/agent/enroll") http-method=post http-header-field="Content-Type:application/json" http-data=$body output=none
+/tool fetch mode=https url=$enrollUrl http-method=post http-header-field="Content-Type:application/json" http-data=$body output=none
 :log info "TECHI enrollment submitted: $hostid ($arch, RouterOS $rosver)"
+}
 """
 
 MIKROTIK_ROUTEROS_TEMPLATE = MIKROTIK_ROUTEROS7_TEMPLATE

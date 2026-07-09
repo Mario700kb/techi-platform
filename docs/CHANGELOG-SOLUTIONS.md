@@ -73,6 +73,11 @@ Smallest registry-preserving fix:
 - Follow-up from a real RouterOS 7 terminal (`Mario Home`): omitting `mode=https`
   with `url=($api . "...")` produced `failure: Mode not specified`; RouterOS 7
   template now includes `mode=https` too.
+- Second real-terminal follow-up: pasting line-by-line meant each `:local`
+  variable was scoped to its own prompt command; `/tool fetch` then saw an empty
+  `$api` and returned `failure: Please provide IP address or host`. Both templates
+  are now wrapped in a RouterOS `{ ... }` block and use `:local enrollUrl (...)`
+  followed by `url=$enrollUrl`, so variables survive for the whole pasted script.
 
 ### Ndryshimet
 
@@ -85,7 +90,7 @@ Smallest registry-preserving fix:
 
 ### Rezultati
 
-Generated scripts are native RouterOS, single-command fetch lines with
+Generated scripts are native RouterOS blocks with single-command fetch lines,
 `mode=https`, no shell continuations, no `http-header-field-value`. Enrollment
 token/client/default group/classification flow unchanged; Windows/Linux/macOS
 deployment paths untouched.

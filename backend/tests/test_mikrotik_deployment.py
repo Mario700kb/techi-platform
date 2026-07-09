@@ -58,7 +58,10 @@ def test_routeros6_script_uses_routeros6_fetch_syntax():
     assert "keep-result=no" in script
     assert "output=none" not in script
     assert "\\\n" not in script
-    assert "/tool fetch mode=https url=($api . \"/api/v1/agent/enroll\")" in script
+    assert "{\n:local token" in script
+    assert ':local enrollUrl ($api . "/api/v1/agent/enroll")' in script
+    assert "/tool fetch mode=https url=$enrollUrl" in script
+    assert script.rstrip().endswith("}")
 
 
 def test_routeros7_script_uses_routeros7_fetch_syntax():
@@ -72,7 +75,10 @@ def test_routeros7_script_uses_routeros7_fetch_syntax():
     assert "output=none" in script
     assert "keep-result=no" not in script
     assert "\\\n" not in script
-    assert "/tool fetch mode=https url=($api . \"/api/v1/agent/enroll\")" in script
+    assert "{\n:local token" in script
+    assert ':local enrollUrl ($api . "/api/v1/agent/enroll")' in script
+    assert "/tool fetch mode=https url=$enrollUrl" in script
+    assert script.rstrip().endswith("}")
 
 
 def test_render_deployment_script_rejects_unknown_routeros_version():
