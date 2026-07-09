@@ -90,6 +90,15 @@ class DeviceAssignmentService:
         if self._has_authoritative_assignment(device):
             return device
         if client_id or group_id:
+            # Generic, platform-neutral placement: a token may carry a Client with
+            # no explicit Default Group. Resolve the standard group from the
+            # agent-reported signal via the Unified Classification Engine
+            # (_detect_group → Servers/Client PC), so ANY platform (Linux, MikroTik,
+            # future) lands under the correct Client ▸ Group with no manual step.
+            # Platform identity comes from the agent/adapter, never the token.
+            if client_id and not group_id:
+                self._ensure_standard_groups(client_id)
+                group_id = self._get_or_create_group(client_id, self._detect_group(signal)).id
             return self.devices.update(
                 device,
                 DeviceUpdate(
