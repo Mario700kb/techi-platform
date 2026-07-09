@@ -195,9 +195,12 @@ renderer (Appendix C) selected by the registry → byte-identical, no agent rebu
   the classic `DeviceDrawer` unchanged (zero edits). tsc/build/preflight/smoke OK.
   Live: Linux `rustdesk-srv` → generic Drawer, no RS; Windows → classic. (Desktop
   first; mobile Device Details still uses the classic drawer — follow-up.)
-- **Step 1c — Unify enforcement**: flip `ACTION_PERMISSION_MAP` + labels to derive
-  from the Action Registry, and route execution/audit through the descriptor
-  (verified byte-identical first).
+- **Step 1c — Unify enforcement** ✅ (`53854c5`). `ACTION_PERMISSION_MAP` now
+  derives from `platform_core.actions.permission_map()` — the permission layer,
+  UI (`/drawer`), execution (queue by action_type == descriptor id) and audit
+  (`ACTION_QUEUED`) all consume the same ActionDescriptor. Values unchanged (13
+  entries), concrete lock test added. Labels stay in `schemas.remote_action`
+  (ActionType enum-cycle), contract-locked to the registry. **Step 1 complete.**
 - **Step 2 — Platform-neutral enrollment pipeline**: token carries Client, optional
   Default Group, Assignment Source, policy; platform identity comes from the agent/
   adapter; generic auto-group via the Unified Classification Engine.

@@ -27,6 +27,18 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1c (enforcement unifikohet)
+
+`ACTION_PERMISSION_MAP` tani **derivon** nga `platform_core.actions.permission_map()`
+(jo më dict literal). Kështu të katër konsumatorët konsumojnë të njëjtin
+ActionDescriptor: UI (`/drawer`), permissions (mapi i derivuar), execution (queue
+me `action_type` == descriptor id) dhe audit (`ACTION_QUEUED`). Vlerat të
+pandryshuara (13 hyrje); test konkret që kap një edit të gabuar descriptor-i;
+`permission_service.py` u shtua në allowlist-in e wiring boundary. Labels mbeten te
+`schemas.remote_action` (ActionType enum-cycle), të kyçur me contract-test te
+registri. Contract 13/13, suite 484+4 baseline, smoke 7/7. Prod tip `53854c5`.
+**Step 1 (Drawer registry-driven) i plotë.** Shih [[platform-v3-design]].
+
 ## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1b (generic renderer)
 
 ### Zgjidhja
