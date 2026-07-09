@@ -117,8 +117,12 @@ class DeviceHeartbeatService:
             )
         now = utcnow()
         platform_id = classify_platform(payload.platform)
-        if platform_id == "mikrotik" and not (payload.agent_id or "").startswith("mikrotik-"):
-            raise ValueError("MikroTik heartbeat requires stable agent_id starting with 'mikrotik-'")
+        if platform_id == "mikrotik":
+            aid = payload.agent_id or ""
+            # A bare "mikrotik-" (empty serial/software-id) would collapse
+            # every such router into one shared device — reject it too.
+            if not aid.startswith("mikrotik-") or len(aid) <= len("mikrotik-"):
+                raise ValueError("MikroTik heartbeat requires stable agent_id 'mikrotik-<serial-or-software-id>'")
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
         )

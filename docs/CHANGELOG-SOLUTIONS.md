@@ -27,6 +27,81 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] SIMPLIFICATION: MikroTik Connector v1 — Connector, jo agjent; skripti RouterOS përgjysmohet
+
+### Problemi
+
+Pronari ndaloi rritjen e connector-it: skripti RouterOS ishte bërë tepër i
+rëndë (97 rreshta / 7.6 KB, 2 cikle `:foreach` mbi interfaces + packages,
+JSON të ndërtuar me string-e të mbivendosura, 15 blloqe on-error) dhe po
+rrëshqiste drejt replikimit të Linux Agent-it. TECHI është RMM, jo zëvendësim
+i Winbox-it — menaxhimi i avancuar RouterOS bëhet gjithmonë përmes Connect
+(Winbox/WebFig/SSH); connector-i duhet të japë vetëm dukshmëri operacionale.
+
+### Analiza
+
+U rilexuan 4 dokumentet kanonike; arkitektura mbetet e pandryshuar (Platform
+Registry si burim i vetëm i templateve, enrollment/heartbeat gjenerikë,
+Generic Drawer nga registrat). U gjet edhe një defekt real në v1: skriptet e
+skeduluara mbaheshin mbi RouterOS globals (`$techiApi`, `$techiAgentId`) që
+NUK i mbijetojnë reboot-it — pas rindezjes router-i do të dilte offline
+përgjithmonë deri në ri-ngjitje të skriptit.
+
+### Zgjidhja
+
+- **Skripti RouterOS**: 97 → **49 rreshta**, 7.6 → **4.6 KB**, `:foreach` 2 →
+  **0**, RouterOS globals → **0** (skriptet e skeduluara janë të
+  vetë-mjaftueshme — i mbijetojnë reboot-it), on-error 15 → 10. Test i ri
+  kontrate ndalon rirritjen (≤60 rreshta, pa `:foreach`/`:global`, pa
+  komanda enumerimi, capabilities vetëm `connect`).
+- **Heartbeat minimal (~250 B)**: agent_id/hostname/platform/os_name/
+  os_version/architecture/local_ip/agent_version/`connect`. Pa MAC, pa
+  health (llogaritet krejtësisht në backend), pa public IP (nxirret nga
+  X-Forwarded-For në edge).
+- **Inventory i lehtë (~450 B, çdo 1800 s)**: Board/Model/Serial/Firmware/
+  Uptime/Bridges/Wireless po-jo/DefaultRoute po-jo (në os_caption) +
+  CPU/RAM/storage + 2 rreshta statikë software (RouterOS, RouterBOOT — që
+  snapshot-i i inventory-t të ekzistojë dhe health freshness të punojë). Pa
+  enumerim interfaces/packages/routes/firewall/DHCP/DNS/ARP.
+- **Kapacitetet**: MikroTik raporton VETËM `connect`; fjalori i Capability
+  Registry u kthye mbrapsht (u hoqën routes/bridge/dhcp/dns/identity/system
+  të shtuara dje); `connect` nuk mapohet në asnjë tab → Drawer-i =
+  Overview / Management / Notes / Timeline, pa tabe kapacitetesh.
+- **Drawer Overview** (gjenerik, i përbashkët me Linux): kompakt në 9 fushat
+  e kërkuara — Identity, RouterOS Version, Board, Architecture, Last Seen,
+  Health, Local IP, Public IP, Connector Version (+ Connect, Assignment).
+  U hoqën seksionet Network/Hardware dhe tab-i "Interfaces".
+- **Actions**: hiqet `reconnect` — mbeten Refresh Inventory / Restart
+  Connector / Re-enroll.
+- **Forcim identiteti**: heartbeat-i mikrotik refuzon edhe `mikrotik-` të
+  zbrazët (serial bosh do të shkrinte routera të ndryshëm në një pajisje).
+
+### Ndryshimet
+
+- `backend/app/platform_core/registry.py` (templati i ri + capabilities `{connect}`)
+- `backend/app/platform_core/capabilities.py` (fjalori i kthyer, pa tab-order MikroTik)
+- `backend/app/platform_core/actions.py`, `backend/app/schemas/remote_action.py` (pa reconnect)
+- `backend/app/api/v1/endpoints/connect.py` (firma origjinale capability_tabs)
+- `backend/app/services/device_heartbeat_service.py` (guard `mikrotik-` bosh)
+- `frontend/src/components/GenericDeviceDrawer.tsx` (Overview kompakt, pa panele MikroTik)
+- Teste: `test_mikrotik_deployment.py` (+test madhësie/flatness), `test_action_registry.py`
+- 4 dokumentet.
+
+### Rezultati
+
+Preflight PASSED: contract 13/13, suite **510 passed + 4 baseline** (flags
+OFF dhe ON), tsc + frontend build, agent builds. Windows/Linux/macOS të
+paprekur (asnjë ndryshim në deployment/enrollment/heartbeat contract).
+Deploy + validim live: shih fundin e hyrjes së 2026-07-09 më poshtë;
+validimi në RouterOS real mbetet hapi i pronarit (ngjitja e skriptit të ri).
+
+### Mësimet
+
+- Një "connector" rrëshqet natyrshëm drejt "agjenti" — kufiri duhet mbajtur
+  me test kontrate (madhësi + flatness), jo me disiplinë.
+- RouterOS globals nuk i mbijetojnë reboot-it — skriptet e skeduluara duhet
+  të jenë të vetë-mjaftueshme.
+
 ## [2026-07-09] FEATURE/FIX: MikroTik Connector v1 — heartbeat, inventory, capabilities, generic drawer
 
 ### Problemi

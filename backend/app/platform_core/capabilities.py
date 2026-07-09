@@ -7,7 +7,7 @@ absent from this vocabulary is dropped on normalization, so a misbehaving or
 newer agent can never inject unknown UI surfaces into an older backend.
 """
 
-from typing import Any, Dict, FrozenSet, Optional
+from typing import Any, Dict, FrozenSet
 
 # Bounded by the Mission scope (audit §5): these gate remote-management
 # features, not monitoring. Extending this set is an Architecture Amendment.
@@ -30,16 +30,10 @@ KNOWN_CAPABILITIES: FrozenSet[str] = frozenset(
         "packages",
         "firewall",
         "interfaces",
-        "routes",
         "wireless",
-        "bridge",
-        "dhcp",
-        "dns",
         "storage",
         "hypervisor",
         "logs",
-        "identity",
-        "system",
         "connect",
     }
 )
@@ -60,23 +54,18 @@ _TAB_ORDER: tuple[tuple[str, frozenset], ...] = (
     ("packages", frozenset({"packages"})),
     ("docker", frozenset({"docker"})),
     ("logs", frozenset({"logs", "journal"})),
-    ("network", frozenset({"interfaces", "routes", "firewall", "wireless", "bridge", "dhcp", "dns", "connect"})),
+    # `connect` is deliberately NOT tab-mapped: a Connector platform
+    # (MikroTik) reports only `connect` and gets Overview / Management /
+    # Notes / Timeline — advanced work happens in Winbox/WebFig/SSH.
+    ("network", frozenset({"interfaces", "firewall", "wireless"})),
     ("storage", frozenset({"storage"})),
 )
 
-_MIKROTIK_TAB_ORDER: tuple[tuple[str, frozenset], ...] = (
-    ("interfaces", frozenset({"interfaces"})),
-    ("network", frozenset({"routes", "firewall", "wireless", "bridge", "dhcp", "dns", "connect"})),
-    ("packages", frozenset({"packages"})),
-    ("logs", frozenset({"logs"})),
-)
 
-
-def capability_tabs(effective_caps, platform_id: Optional[str] = None) -> list[str]:
+def capability_tabs(effective_caps) -> list[str]:
     """Ordered capability-driven Drawer tabs for a device's effective caps."""
     caps = {str(c).strip().lower() for c in (effective_caps or [])}
-    order = _MIKROTIK_TAB_ORDER if (platform_id or "").strip().lower() == "mikrotik" else _TAB_ORDER
-    return [tab for tab, needed in order if needed & caps]
+    return [tab for tab, needed in _TAB_ORDER if needed & caps]
 
 
 def normalize_capabilities(reported: Any) -> Dict[str, str]:

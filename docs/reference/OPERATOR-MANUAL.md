@@ -336,10 +336,14 @@ devices that report the `terminal` capability.
 
 ## 15. MikroTik 🚩 `FEATURE_MIKROTIK`
 
-MikroTik is the first **proxy-managed** platform (not a native agent). A proxy
-adapter reports RouterOS devices into the same catalog/drawer.
+MikroTik is the first **Connector** platform (not a native agent). TECHI is an
+RMM, not a Winbox replacement: the connector provides operational visibility
+only; advanced RouterOS management always happens through **Connect**
+(Winbox / WebFig / SSH). The RouterOS script is deliberately tiny (~49 lines,
+no loops) and its two scheduled scripts are self-contained, so they keep
+working after a router reboot.
 
-**Connector v1 (live after deploy).** On the **Deployment** dialog (token ▸ View),
+**Connector v1.** On the **Deployment** dialog (token ▸ View),
 the MikroTik section shows a **RouterOS Version** selector (**RouterOS 6.x** or
 **RouterOS 7.x**) and a **RouterOS Script** — generated server-side from the
 Platform Registry template with the enrollment token injected (never hardcoded).
@@ -353,17 +357,21 @@ unknown arch is rejected). The device appears automatically under **Client ▸
 Network ▸ MikroTik** (no manual placement), with Connect methods **Winbox /
 WebFig / SSH** (metadata only).
 
-The RouterOS heartbeat updates Last Seen/freshness/status/health. RouterOS
-inventory is slower and reports identity, board/model/serial/firmware/uptime,
-architecture, CPU/RAM/storage, interfaces, LAN/local IP, WAN/public IP, MAC,
-default route, DNS, bridge/wireless counts, RouterOS/RouterBOOT/package rows,
-and capabilities. MikroTik uses the compact Generic Capability Drawer — the
-Overview shows identity, RouterOS version, board, architecture, Last Seen,
-Health, local/public IP and connector version; Remote Support and Web Terminal
-are absent; tabs are capability-driven; initial actions are Refresh Inventory,
-Restart Connector, Reconnect, and Re-enroll. The Timeline records Device
-Registered, Heartbeat Received (only on first heartbeat or offline→online
-recovery — not every beat), Inventory Updated, and assignment changes.
+The RouterOS heartbeat is minimal (identity + version + local IP; public IP is
+inferred at the edge; **health is computed entirely by the backend**) and
+updates Last Seen/freshness/status/health. RouterOS inventory is slower
+(default every 30 min) and reports only: board, model, serial, firmware,
+uptime, architecture, CPU/RAM/storage, bridge count, wireless present (yes/no)
+and default-route present (yes/no) — it deliberately does NOT enumerate
+interfaces, packages, routes, firewall rules, DHCP leases or DNS; for those,
+use Connect. MikroTik uses the compact Generic Drawer with **no capability
+tabs**: Overview / Management / Notes / Timeline. The Overview shows identity,
+RouterOS version, board, architecture, Last Seen, Health, local/public IP and
+connector version; Remote Support and Web Terminal are absent; actions are
+Refresh Inventory, Restart Connector, and Re-enroll. The Timeline records
+Device Registered, Heartbeat Received (only on first heartbeat or
+offline→online recovery — not every beat), Inventory Updated, and assignment
+changes.
 
 **Not in this build:** RouterOS API and actual Winbox/WebFig/SSH launcher
 execution. Detailed RouterOS API management (firewall edits, interface changes,

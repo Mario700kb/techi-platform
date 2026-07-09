@@ -40,7 +40,6 @@ class ActionType(str, Enum):
     # MikroTik Connector v1 — metadata/queue surface; execution is future
     # connector work unless the RouterOS connector reports pending-action support.
     RESTART_CONNECTOR = "restart_connector"
-    RECONNECT = "reconnect"
     REENROLL = "reenroll"
 
 
@@ -61,7 +60,6 @@ ACTION_LABELS: Dict[str, str] = {
     ActionType.DEPLOY_REMOTE_SUPPORT: "Deploy / Upgrade TECHI Remote Support",
     ActionType.SELF_UPDATE: "Self Update Agent",
     ActionType.RESTART_CONNECTOR: "Restart Connector",
-    ActionType.RECONNECT: "Reconnect",
     ActionType.REENROLL: "Re-enroll",
 }
 

@@ -89,7 +89,6 @@ _ACTIONS: tuple[ActionDescriptor, ...] = (
     ActionDescriptor("open_terminal", "Open Web Terminal", None, "terminal", CONFIRM_NONE, "action_queued", TARGET_AGENT, ActionType.OPEN_TERMINAL, PLATFORMS_AGENT),
     # MikroTik Connector (metadata/queue surface, no Windows actions) --------
     ActionDescriptor("restart_connector", "Restart Connector", PERM_RESTART_AGENT, "connect", CONFIRM_REQUIRED, "action_queued", TARGET_AGENT, ActionType.RESTART_CONNECTOR, PLATFORMS_MIKROTIK),
-    ActionDescriptor("reconnect", "Reconnect", PERM_DIAGNOSTICS, "connect", CONFIRM_NONE, "action_queued", TARGET_AGENT, ActionType.RECONNECT, PLATFORMS_MIKROTIK),
     ActionDescriptor("reenroll", "Re-enroll", PERM_DEPLOYMENT, "connect", CONFIRM_REQUIRED, "action_queued", TARGET_AGENT, ActionType.REENROLL, PLATFORMS_MIKROTIK),
 )
 

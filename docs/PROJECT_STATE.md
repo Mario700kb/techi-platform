@@ -311,23 +311,32 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Current Phase** | ✅ Phases 0, 1, 4, **2** deployed & closed 2026-07-07 (prod tip `59a781b`): platform_core + platform_adapters + 7 nullable `devices` columns + Credential Vault (`FEATURE_VAULT`) + **Linux Agent MVP** (`agent/pal.go` + `platform_linux.go`: capabilities, os-release inventory, systemd service management + self-update; backend `GET /install/linux` + `linux-arm64` package type — all `FEATURE_LINUX`). Windows agent NOT rebuilt/redeployed — fleet stays 2.1.5; Linux → **Experimental** (Appendix C). All expansion flags OFF in prod (verified). **Execution order (owner 2026-07-07): platform before IAM** — Vault Safety ✅ → Linux Agent ✅ → Phase 3 Linux UI ✅ → Phase 5 Web Terminal DARK ✅ (behind `FEATURE_TERMINAL` OFF; NPM WS route + flag-enable = Manual Approval, not done) → **Phase 7 MikroTik Proxy Adapter + Connect Framework DARK ✅** (capability-driven `/connect-methods` + ConnectMenu, MikroTik proxy adapter registered, Network/Storage/Hypervisor auto-classification + tree folders + `category` filter — all flag-gated; launchers/RouterOS API = next phase per boundary) → 8 Storage → 9 Hypervisors → 6 IAM last. All 8 flags OFF. **Adding a platform now = adapter + capability mapping + icon + connect methods, no UI change.** Standing implementation authority (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). Enabling FEATURE_LINUX for a canary = Manual Approval. |
 | **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
-**MikroTik Connector v1 (2026-07-09, deployed):** the Platform Registry
-RouterOS 6/7 templates now install two RouterOS scheduler jobs,
-`TECHI-Heartbeat` and `TECHI-Inventory`, using the current Agent Config
-per-platform heartbeat and inventory intervals (RouterOS defaults: 250 s /
-1800 s). The connector reuses `/agent/enroll` and `/agent/heartbeat`; stable
-identity is `mikrotik-<serial-or-software-id>` with no hostname/MAC fallback;
-inventory reports RouterOS identity, board/serial/firmware, architecture,
-CPU/RAM/storage, interfaces, default route, DNS, bridge/wireless counts,
-MAC/local/public IP, RouterOS/RouterBOOT/package rows, and MikroTik capabilities.
-It uses the compact Generic Drawer (Overview: identity, RouterOS version,
-board, architecture, Last Seen, Health, local/public IP, connector version);
-hides Remote Support/Web Terminal; exposes Winbox/WebFig/SSH metadata only;
-and limits Action Registry output to Refresh Inventory, Restart Connector,
-Reconnect, and Re-enroll. Timeline stays lightweight: `heartbeat_received` is
-recorded only on a transition (first heartbeat / offline→online recovery),
-`inventory_updated` per inventory snapshot — never one row per beat. No
-Windows/Linux/macOS deployment or enrollment path changed.
+**MikroTik Connector v1 (2026-07-09, deployed; SIMPLIFIED 2026-07-10):**
+MikroTik is a **Connector, not an agent** — TECHI is an RMM, not a Winbox
+replacement; advanced RouterOS work happens through Connect (Winbox/WebFig/
+SSH). The Platform Registry RouterOS 6/7 templates generate a deliberately
+SMALL script (~49 lines / ~4.6 KB; zero `:foreach`, zero RouterOS globals —
+reboot-safe self-contained scripts; a size/flatness contract test forbids
+growth) that enrolls once and installs two scheduler jobs, `TECHI-Heartbeat`
+and `TECHI-Inventory`, with intervals from the Agent Config per-platform
+policy (RouterOS defaults: 250 s / 1800 s). Stable identity is
+`mikrotik-<serial-or-software-id>` with no hostname/MAC fallback (a bare
+`mikrotik-` is rejected). Heartbeat sends only agent_id/hostname/platform/
+os_name/os_version/architecture/local_ip/agent_version/`connect` (~250 B);
+public IP is inferred server-side from X-Forwarded-For; health is computed
+entirely by the backend. Inventory sends only Board/Model/Serial/Firmware/
+Uptime/Bridges/Wireless yes-no/DefaultRoute yes-no (packed in os_caption) +
+CPU/RAM/storage + 2 static software rows (RouterOS, RouterBOOT) — no
+interface/package/route/firewall/DNS enumeration (~450 B). The device reports
+only the `connect` capability → the compact Generic Drawer renders
+Overview / Management / Notes / Timeline with **no capability tabs**;
+Overview shows identity, RouterOS version, board, architecture, Last Seen,
+Health, local/public IP, connector version. Connect is Winbox/WebFig/SSH
+metadata only; Action Registry exposes Refresh Inventory, Restart Connector,
+Re-enroll. Timeline stays lightweight: `heartbeat_received` only on a
+transition (first heartbeat / offline→online), `inventory_updated` per
+snapshot — never one row per beat. No Windows/Linux/macOS deployment or
+enrollment path changed.
 
 # RDP TECHI MOBILE UI 2.0
 

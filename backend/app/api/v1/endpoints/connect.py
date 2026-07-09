@@ -118,7 +118,7 @@ def device_drawer_meta(
         capabilities=sorted(eff),
         remote_support="remote_support" in eff,
         terminal="terminal" in eff,
-        capability_tabs=capability_tabs(eff, platform_id),
+        capability_tabs=capability_tabs(eff),
         connect_methods=[
             ConnectMethodOut(id=m.id, label=m.label, surface=m.surface,
                              capability=m.capability, priority=m.priority, scheme=m.scheme)

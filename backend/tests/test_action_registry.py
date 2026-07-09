@@ -71,8 +71,8 @@ def test_linux_with_remote_support_capability_shows_it():
 
 
 def test_mikrotik_gets_connector_actions_only():
-    ids = [a.id for a in A.actions_for("mikrotik", {"connect": "", "interfaces": "", "logs": ""})]
-    assert ids == ["refresh_inventory", "restart_connector", "reconnect", "reenroll"]
+    ids = [a.id for a in A.actions_for("mikrotik", {"connect": ""})]
+    assert ids == ["refresh_inventory", "restart_connector", "reenroll"]
     assert "restart_agent" not in ids
     assert "restart_device" not in ids
     assert "sync_rustdesk" not in ids

@@ -224,20 +224,25 @@ intervals. Enrollment remains the generic token pipeline; the deterministic
 device without parsing the enrollment response in RouterOS or falling back to
 hostname/MAC matching.
 
-Connector v1 separates lightweight heartbeat from slower inventory collection
-(default inventory 1800 s). Inventory reports RouterOS identity/inventory into
-existing fields (architecture, RouterOS version, board/model/serial/firmware/
-uptime/default route/DNS/bridge/wireless counts in details, CPU/RAM/storage,
-MAC/local/public IP, interface rows, RouterOS/RouterBOOT/package rows) and
-reports the MikroTik capability set (`interfaces`, `routes`, `firewall`,
-`wireless`, `bridge`, `dhcp`, `dns`, `logs`, `packages`, `identity`, `system`,
-`connect`). Generic Drawer selection now works because MikroTik reports
-capabilities; Remote Support/Web Terminal are absent, Connect shows
-Winbox/WebFig/SSH metadata only, and Action Registry exposes only Refresh
-Inventory / Restart Connector / Reconnect / Re-enroll. Timeline is
-transition-gated (`heartbeat_received` only on first heartbeat or
-offline→online recovery; `inventory_updated` per snapshot — never per beat).
-Windows/Linux/macOS deployment and enrollment paths unchanged. **Future RouterOS management =
+**SIMPLIFIED 2026-07-10 (owner directive: Connector, NOT an agent).** The
+RouterOS script was cut from 97 lines / 7.6 KB (2 `:foreach` loops, 15
+on-error blocks, RouterOS globals) to **~49 lines / ~4.6 KB, zero loops,
+zero globals** (scheduled scripts are self-contained → survive reboot); a
+contract test forbids regrowth (≤60 lines, no `:foreach`/`:global`, no
+enumeration commands). Connector v1 separates a minimal heartbeat (~250 B:
+agent_id/hostname/platform/os_name/os_version/architecture/local_ip/
+agent_version/`connect`; public IP inferred from X-Forwarded-For; health
+computed server-side) from lightweight inventory (default 1800 s, ~450 B:
+Board/Model/Serial/Firmware/Uptime/Bridges/Wireless yes-no/DefaultRoute
+yes-no in os_caption + CPU/RAM/storage + 2 static software rows — no
+interface/package/route/firewall/DNS enumeration). MikroTik reports ONLY the
+`connect` capability → Generic Drawer renders Overview / Management / Notes /
+Timeline with no capability tabs; Remote Support/Web Terminal absent; Connect
+shows Winbox/WebFig/SSH metadata only; Action Registry exposes Refresh
+Inventory / Restart Connector / Re-enroll. Timeline is transition-gated
+(`heartbeat_received` only on first heartbeat or offline→online recovery;
+`inventory_updated` per snapshot — never per beat). Windows/Linux/macOS
+deployment and enrollment paths unchanged. **Future RouterOS management =
 RouterOS API/adapter action execution + capability renderers, no Drawer/Tree
 redesign.**
 

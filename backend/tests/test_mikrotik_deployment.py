@@ -38,9 +38,9 @@ def test_mikrotik_registry_declares_deployment_metadata():
     assert d.supported_architectures == ("chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile")
     assert d.supported_routeros_versions == ("6", "7")
     assert d.connect_methods == ("winbox", "webfig", "ssh")
-    assert "remote_support" not in d.allowed_capabilities
-    assert {"interfaces", "routes", "firewall", "wireless", "bridge", "dhcp", "dns",
-            "logs", "packages", "identity", "system", "connect"} <= d.allowed_capabilities
+    # Connector philosophy: MikroTik reports ONLY `connect` — no agent-style
+    # capability surface; advanced work happens through Winbox/WebFig/SSH.
+    assert d.allowed_capabilities == frozenset({"connect"})
 
 
 # --- Script generation (never hardcoded; from the registry template) -------- #
@@ -48,18 +48,16 @@ def test_render_deployment_script_injects_everything():
     script = render_deployment_script(
         "mikrotik", token="TKN-XYZ", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
     )
-    assert 'techiToken "TKN-XYZ"' in script
-    assert 'techiApi "https://api-rdp.techi.com.al"' in script  # trailing slash stripped
-    assert 'techiPlatform "mikrotik"' in script
-    assert 'techiConnectorVersion "1.0.0"' in script
-    assert 'techiHeartbeatInterval "250s"' in script
-    assert 'techiInventoryInterval "1800s"' in script
-    assert "/api/v1/agent/enroll" in script
-    assert "/api/v1/agent/heartbeat" in script
+    assert '\\"enrollment_token\\":\\"TKN-XYZ\\"' in script
+    assert 'url="https://api-rdp.techi.com.al/api/v1/agent/enroll"' in script  # trailing slash stripped
+    assert 'url="https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in script
+    assert '\\"platform\\":\\"mikrotik\\"' in script
+    assert '\\"agent_version\\":\\"1.0.0\\"' in script
+    assert '\\"agent_id\\":\\"mikrotik-" . $serial' in script  # stable identity
     assert "TECHI-Heartbeat" in script
     assert "TECHI-Inventory" in script
-    assert '/system scheduler add name="TECHI-Heartbeat" interval=$techiHeartbeatInterval on-event="TECHI-Heartbeat"' in script
-    assert '/system scheduler add name="TECHI-Inventory" interval=$techiInventoryInterval on-event="TECHI-Inventory"' in script
+    assert '/system scheduler add name="TECHI-Heartbeat" interval=250s on-event="TECHI-Heartbeat"' in script
+    assert '/system scheduler add name="TECHI-Inventory" interval=1800s on-event="TECHI-Inventory"' in script
     assert "architecture-name" in script  # arch self-detected on the router
     assert "{{" not in script  # every placeholder filled
 
@@ -73,8 +71,27 @@ def test_render_deployment_script_uses_configured_intervals():
         heartbeat_interval_seconds=123,
         inventory_interval_seconds=1801,
     )
-    assert 'techiHeartbeatInterval "123s"' in script
-    assert 'techiInventoryInterval "1801s"' in script
+    assert "interval=123s" in script
+    assert "interval=1801s" in script
+
+
+def test_connector_script_stays_small_and_flat():
+    """The connector is NOT an agent: the RouterOS script must stay tiny —
+    no loops, no enumeration, no RouterOS globals (reboot-safe), flat JSON."""
+    script = render_deployment_script(
+        "mikrotik", token="T", api_endpoint="https://api-rdp.techi.com.al", version="1.0.0",
+    )
+    lines = [l for l in script.strip().splitlines()]
+    assert len(lines) <= 60, f"RouterOS script grew to {len(lines)} lines"
+    assert len(script) <= 5000, f"RouterOS script grew to {len(script)} chars"
+    assert ":foreach" not in script          # no enumeration loops
+    assert ":global" not in script           # self-contained; survives reboot
+    # No agent-style enumeration in the payloads.
+    for forbidden in ("/system package find", "/interface find", "/ip dns get",
+                      '\\"services\\":', "http-header-field-value"):
+        assert forbidden not in script, forbidden
+    # Capabilities are connector-minimal.
+    assert '\\"capabilities\\":[\\"connect\\"]' in script
 
 
 def test_routeros6_script_uses_routeros6_fetch_syntax():
@@ -82,18 +99,17 @@ def test_routeros6_script_uses_routeros6_fetch_syntax():
         "mikrotik", token="TKN-6", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
         routeros_version="6",
     )
-    assert "# TECHI Platform - MikroTik enrollment (RouterOS 6.x)" in script
+    assert "# TECHI Platform - MikroTik connector (RouterOS 6.x)" in script
     assert 'http-header-field="Content-Type:application/json"' in script
     assert "http-header-field-value" not in script
     assert "keep-result=no" in script
     assert "output=none" not in script
     assert "\\\n" not in script
-    assert "{\n:global techiToken" in script
-    assert ':global techiToken "TKN-6"' in script
+    assert "{\n:local serial" in script
+    assert '\\"enrollment_token\\":\\"TKN-6\\"' in script
     assert "TECHI-Heartbeat" in script and "TECHI-Inventory" in script
-    assert ':local enrollUrl ($techiApi . "/api/v1/agent/enroll")' in script
-    assert "/tool fetch mode=https url=$enrollUrl" in script
-    assert "/tool fetch mode=https url=$hbUrl" in script
+    assert '/tool fetch mode=https url="https://api-rdp.techi.com.al/api/v1/agent/enroll"' in script
+    assert '/tool fetch mode=https url="https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in script
     assert script.rstrip().endswith("}")
 
 
@@ -102,17 +118,16 @@ def test_routeros7_script_uses_routeros7_fetch_syntax():
         "mikrotik", token="TKN-7", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
         routeros_version="7",
     )
-    assert "# TECHI Platform - MikroTik enrollment (RouterOS 7.x)" in script
+    assert "# TECHI Platform - MikroTik connector (RouterOS 7.x)" in script
     assert 'http-header-field="Content-Type:application/json"' in script
     assert "http-header-field-value" not in script
     assert "output=none" in script
     assert "keep-result=no" not in script
     assert "\\\n" not in script
-    assert "{\n:global techiToken" in script
+    assert "{\n:local serial" in script
     assert "TECHI-Heartbeat" in script and "TECHI-Inventory" in script
-    assert ':local enrollUrl ($techiApi . "/api/v1/agent/enroll")' in script
-    assert "/tool fetch mode=https url=$enrollUrl" in script
-    assert "/tool fetch mode=https url=$hbUrl" in script
+    assert '/tool fetch mode=https url="https://api-rdp.techi.com.al/api/v1/agent/enroll"' in script
+    assert '/tool fetch mode=https url="https://api-rdp.techi.com.al/api/v1/agent/heartbeat"' in script
     assert script.rstrip().endswith("}")
 
 
@@ -166,7 +181,7 @@ def test_installer_404_when_flag_off(monkeypatch):
 def test_installer_serves_script_when_on(monkeypatch):
     r = _client(monkeypatch, True).get("/api/v1/install/mikrotik", params={"token": "TKN-7", "routeros_version": "7"})
     assert r.status_code == 200
-    assert 'techiToken "TKN-7"' in r.text and "/api/v1/agent/enroll" in r.text
+    assert "TKN-7" in r.text and "/api/v1/agent/enroll" in r.text
     assert "RouterOS 7.x" in r.text
 
 
@@ -206,19 +221,18 @@ def test_mikrotik_token_enrollment_stays_ungrouped_and_network():
 
 
 def test_mikrotik_capabilities_drive_generic_drawer_surface():
-    caps = normalize_capabilities([
-        "interfaces", "routes", "firewall", "wireless", "bridge", "dhcp", "dns",
-        "logs", "packages", "identity", "system", "connect", "remote_support", "terminal",
-    ])
+    # Even a misbehaving connector reporting agent-style capabilities is
+    # clamped by the registry to the connector-minimal `connect`.
+    caps = normalize_capabilities(["connect", "remote_support", "terminal", "interfaces"])
     allowed = PLATFORM_REGISTRY["mikrotik"].allowed_capabilities
     reported = {name: version for name, version in caps.items() if name in allowed}
 
-    assert "remote_support" not in reported
-    assert "terminal" not in reported
-    assert capability_tabs(reported, "mikrotik") == ["interfaces", "network", "packages", "logs"]
+    assert reported == {"connect": ""}
+    # No capability tabs: the Drawer is Overview / Management / Notes / Timeline.
+    assert capability_tabs(reported) == []
     assert [m.id for m in methods_for("mikrotik", reported)] == ["winbox", "webfig", "ssh"]
     assert [a.id for a in actions_for("mikrotik", reported)] == [
-        "refresh_inventory", "restart_connector", "reconnect", "reenroll",
+        "refresh_inventory", "restart_connector", "reenroll",
     ]
 
 
@@ -242,17 +256,15 @@ def test_mikrotik_heartbeat_populates_connector_state(monkeypatch):
         hostname="rb-1",
         os_name="RouterOS",
         os_version="7.15.3",
-        os_caption="Board=RB5009; Serial=SERIAL1; Firmware=7.15.3; Uptime=1d2h",
+        os_caption="Board=RB5009; Model=RB5009UG; Serial=SERIAL1; Firmware=7.15.3; Uptime=1d2h; Bridges=1; Wireless=no; DefaultRoute=yes",
         architecture="arm64",
-        mac_address="AA:BB:CC:DD:EE:FF",
         local_ip="192.168.88.1",
         public_ip="203.0.113.10",
         agent_version="1.0.0",
         cpu="arm64",
         ram="1073741824",
         storage="free=123; total=456",
-        capabilities=["interfaces", "routes", "firewall", "wireless", "bridge", "dhcp",
-                      "dns", "logs", "packages", "identity", "system", "connect", "remote_support"],
+        capabilities=["connect", "remote_support"],
         software=[
             {"name": "RouterOS", "version": "7.15.3"},
             {"name": "RouterBOOT", "version": "7.15.3"},
@@ -266,7 +278,6 @@ def test_mikrotik_heartbeat_populates_connector_state(monkeypatch):
     assert device.platform == "mikrotik"
     assert device.device_type == DeviceType.UNASSIGNED
     assert device.architecture == "arm64"
-    assert device.mac_address == "AA:BB:CC:DD:EE:FF"
     assert device.public_ip == "203.0.113.10"
     assert device.capabilities
     assert "remote_support" not in device.capabilities
@@ -289,7 +300,7 @@ def test_mikrotik_repeated_heartbeats_resolve_by_stable_agent_id(monkeypatch):
         os_name="RouterOS",
         os_version="7.15.3",
         architecture="arm64",
-        capabilities=["interfaces", "connect"],
+        capabilities=["connect"],
     )
     first, _ = DeviceHeartbeatService(s).process_heartbeat(payload)
     second_payload = payload.model_copy(update={"hostname": "rb-renamed", "mac_address": "AA:BB:CC:00:00:02"})
@@ -316,6 +327,17 @@ def test_mikrotik_heartbeat_rejects_missing_stable_agent_id(monkeypatch):
         DeviceHeartbeatService(s).process_heartbeat(AgentHeartbeatPayload(
             platform="mikrotik",
             hostname="rb-no-id",
+            os_name="RouterOS",
+            os_version="7.15.3",
+            architecture="arm64",
+        ))
+    # A bare "mikrotik-" (empty serial) would collapse every such router into
+    # one shared device — rejected too.
+    with pytest.raises(ValueError):
+        DeviceHeartbeatService(s).process_heartbeat(AgentHeartbeatPayload(
+            agent_id="mikrotik-",
+            platform="mikrotik",
+            hostname="rb-empty-serial",
             os_name="RouterOS",
             os_version="7.15.3",
             architecture="arm64",

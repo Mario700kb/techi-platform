@@ -35,7 +35,7 @@ interface Props {
 
 const CAP_TAB_LABELS: Record<string, string> = {
   services: "Services", processes: "Processes", packages: "Packages",
-  docker: "Docker", logs: "Logs", interfaces: "Interfaces", network: "Network", storage: "Storage",
+  docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
 };
 
 export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, canOperate }: Props) {
@@ -154,7 +154,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
             <div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
           ) : (
             <>
-              {tab === "overview" && <Overview device={device} meta={meta} inventory={inventory} healthScore={healthScore} healthState={healthState} />}
+              {tab === "overview" && <Overview device={device} meta={meta} healthScore={healthScore} healthState={healthState} />}
               {tab === "remote_support" && (
                 <div className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
                   <p className="mb-3">Connect using this platform's native methods:</p>
@@ -166,8 +166,8 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                   <DeviceTerminal deviceId={device.id} />
                 </Suspense>
               )}
-              {["services", "processes", "packages", "docker", "logs", "interfaces", "network", "storage"].includes(tab) && (
-                <CapabilityPanel tab={tab} inventory={inventory} device={device} />
+              {["services", "processes", "packages", "docker", "logs", "network", "storage"].includes(tab) && (
+                <CapabilityPanel tab={tab} inventory={inventory} />
               )}
               {tab === "management" && (
                 <ManagementPanel meta={meta} busy={busy} canOperate={canOperate !== false} onAction={onAction} />
@@ -219,21 +219,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// os_caption packs connector inventory as "Key=value; Key=value" (e.g. the
+// MikroTik "Board=..."); Overview reads only the keys it displays.
 function captionValue(caption: string | null | undefined, key: string): string | null {
   if (!caption) return null;
   const part = caption.split(";").map((p) => p.trim()).find((p) => p.toLowerCase().startsWith(`${key.toLowerCase()}=`));
   return part ? part.slice(key.length + 1).trim() : null;
 }
 
-function Overview({ device, meta, inventory, healthScore, healthState }: { device: Device; meta: DrawerMeta; inventory: DeviceInventory | null; healthScore: number | null; healthState: string }) {
+// Compact operational overview — identity, freshness, health, addresses and
+// connector/agent version only. Anything deeper (tables, enumerations) either
+// has its own capability tab or belongs to Connect (Winbox/WebFig/SSH).
+function Overview({ device, meta, healthScore, healthState }: { device: Device; meta: DrawerMeta; healthScore: number | null; healthState: string }) {
   const board = captionValue(device.os_caption, "Board");
-  const serial = captionValue(device.os_caption, "Serial");
-  const firmware = captionValue(device.os_caption, "Firmware");
-  const uptime = captionValue(device.os_caption, "Uptime");
-  const defaultRoute = captionValue(device.os_caption, "DefaultRoute");
-  const dns = captionValue(device.os_caption, "DNS");
-  const bridgeCount = captionValue(device.os_caption, "Bridges");
-  const wirelessCount = captionValue(device.os_caption, "Wireless");
   return (
     <div className="space-y-3">
       <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
@@ -248,36 +246,22 @@ function Overview({ device, meta, inventory, healthScore, healthState }: { devic
         <Row label="Platform" value={meta.platform} />
         <Row label="OS" value={device.os_name} />
         <Row label="OS version" value={device.os_version} />
+        <Row label="Kernel" value={device.kernel_version} />
         <Row label="Architecture" value={device.architecture} />
         <Row label="Board" value={board} />
-        <Row label="Serial" value={serial} />
-        <Row label="Firmware" value={firmware} />
-        <Row label="Uptime" value={uptime} />
+      </Section>
+      <Section title="Status">
         <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
         <Row label="Health" value={healthScore != null ? `${healthScore} (${healthState})` : undefined} />
-        <Row label="Connector" value={device.agent_version ?? undefined} />
-      </Section>
-      <Section title="Network">
         <Row label="Local IP" value={device.local_ip} />
         <Row label="Public IP" value={device.public_ip} />
-        <Row label="MAC" value={device.mac_address} />
-        <Row label="Default route" value={defaultRoute} />
-        <Row label="DNS" value={dns} />
-        <Row label="Bridges" value={bridgeCount} />
-        <Row label="Wireless" value={wirelessCount} />
-      </Section>
-      <Section title="Hardware">
-        <Row label="CPU" value={device.cpu} />
-        <Row label="RAM" value={device.ram} />
-        <Row label="Storage" value={device.storage} />
-        <Row label="Inventory" value={inventory?.collected_at ? timeAgo(inventory.collected_at) : undefined} />
+        <Row label="Connector" value={device.agent_version ?? undefined} />
       </Section>
       <Section title="Assignment">
         <Row label="Client" value={device.resolved_client_name ?? undefined} />
         <Row label="Group" value={device.resolved_group ?? undefined} />
         <Row label="Source" value={device.assignment_source ?? undefined} />
       </Section>
-      </div>
       <Section title="Capabilities">
         <div className="flex flex-wrap gap-1">
           {meta.capabilities.map((c) => (
@@ -285,36 +269,12 @@ function Overview({ device, meta, inventory, healthScore, healthState }: { devic
           ))}
         </div>
       </Section>
+      </div>
     </div>
   );
 }
 
-function CapabilityPanel({ tab, inventory, device }: { tab: string; inventory: DeviceInventory | null; device: Device }) {
-  if (tab === "interfaces") {
-    const rows = inventory?.services ?? [];
-    return <SimpleTable title="Interfaces" empty="No interfaces reported." head={["Name", "Status"]} rows={rows.map((s) => [s.display_name || s.name, s.status])} />;
-  }
-  if (tab === "network") {
-    const route = captionValue(device.os_caption, "DefaultRoute");
-    const dns = captionValue(device.os_caption, "DNS");
-    const bridges = captionValue(device.os_caption, "Bridges");
-    const wireless = captionValue(device.os_caption, "Wireless");
-    return (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Section title="Addresses">
-          <Row label="LAN/local" value={device.local_ip} />
-          <Row label="WAN/public" value={device.public_ip} />
-          <Row label="MAC" value={device.mac_address} />
-        </Section>
-        <Section title="Routing / DNS">
-          <Row label="Default route" value={route} />
-          <Row label="DNS" value={dns} />
-          <Row label="Bridges" value={bridges} />
-          <Row label="Wireless" value={wireless} />
-        </Section>
-      </div>
-    );
-  }
+function CapabilityPanel({ tab, inventory }: { tab: string; inventory: DeviceInventory | null }) {
   if (tab === "services") {
     const rows = inventory?.services ?? [];
     return <SimpleTable title="Services" empty="No services reported." head={["Name", "Status"]} rows={rows.map((s) => [s.display_name || s.name, s.status])} />;
