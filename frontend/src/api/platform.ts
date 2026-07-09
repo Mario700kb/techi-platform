@@ -15,3 +15,38 @@ export interface PlatformFeatures {
 export async function getPlatformFeatures(): Promise<PlatformFeatures> {
   return fetchJson<PlatformFeatures>("/api/v1/platform/features");
 }
+
+// Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
+// generic renderer needs comes from the Platform / Capability / Action / Connect
+// registries — no per-platform UI. CORE-gated (404 when off).
+export interface DrawerAction {
+  id: string;
+  label: string;
+  permission?: string | null;
+  required_capability?: string | null;
+  confirm: string;   // "none" | "confirm"
+  target: string;    // "agent" | "device"
+}
+
+export interface DrawerConnectMethod {
+  id: string;
+  label: string;
+  surface: string;
+  capability?: string | null;
+  priority: number;
+  scheme?: string | null;
+}
+
+export interface DrawerMeta {
+  platform: string;
+  capabilities: string[];
+  remote_support: boolean;
+  terminal: boolean;
+  capability_tabs: string[];
+  connect_methods: DrawerConnectMethod[];
+  actions: DrawerAction[];
+}
+
+export async function getDrawerMeta(deviceId: number): Promise<DrawerMeta> {
+  return fetchJson<DrawerMeta>(`/api/v1/devices/${deviceId}/drawer`);
+}

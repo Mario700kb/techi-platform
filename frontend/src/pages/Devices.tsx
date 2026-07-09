@@ -13,6 +13,7 @@ import {
 } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
+import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
@@ -955,19 +956,35 @@ export default function Devices() {
       </div>
 
       {drawerDevice && (
-        <DeviceDrawer
-          device={drawerDevice}
-          isOpen={drawerOpen}
-          onClose={closeDrawer}
-          wsStatus={realtimeStatus}
-          latestEvent={latestEvent}
-          clients={clients}
-          groups={groups}
-          onDeviceUpdated={handleDeviceUpdated}
-          canOperate={can("operator")}
-          isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
-          onToggleFavorite={toggleFavorite}
-        />
+        // Registry selects the renderer: a device that reports capabilities
+        // (Linux + future platforms) uses the generic registry-driven Drawer;
+        // a device with no capabilities (every Windows agent) uses the classic
+        // DeviceDrawer, unchanged and byte-identical.
+        drawerDevice.capabilities && Object.keys(drawerDevice.capabilities).length > 0 ? (
+          <GenericDeviceDrawer
+            device={drawerDevice}
+            isOpen={drawerOpen}
+            onClose={closeDrawer}
+            latestEvent={latestEvent}
+            clients={clients}
+            groups={groups}
+            canOperate={can("operator")}
+          />
+        ) : (
+          <DeviceDrawer
+            device={drawerDevice}
+            isOpen={drawerOpen}
+            onClose={closeDrawer}
+            wsStatus={realtimeStatus}
+            latestEvent={latestEvent}
+            clients={clients}
+            groups={groups}
+            onDeviceUpdated={handleDeviceUpdated}
+            canOperate={can("operator")}
+            isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
+            onToggleFavorite={toggleFavorite}
+          />
+        )
       )}
     </section>
   );
