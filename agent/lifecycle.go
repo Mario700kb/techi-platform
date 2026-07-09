@@ -30,7 +30,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"runtime"
+	"path/filepath"
 	"time"
 )
 
@@ -61,14 +61,26 @@ type lifecycleStatus struct {
 	PID       int            `json:"pid"`
 }
 
-// lifecycleStateFile is a var so tests can point it at a temp dir.
+// lifecycleStateFile is a var so tests can point it at a temp dir. The file
+// always lives next to the config file — one rule for every platform:
+// Windows  C:\ProgramData\TechiAgent\agent.state.json
+// Linux    /etc/techi-agent/agent.state.json (one-line installer layout)
+// dev      ./agent.state.json (next to ./config.json)
+// External readers (watchdog-check on Windows) resolve the same default.
 var lifecycleStateFile = defaultLifecycleStatePath()
 
 func defaultLifecycleStatePath() string {
-	if runtime.GOOS == "windows" {
-		return `C:\ProgramData\TechiAgent\agent.state.json`
-	}
-	return "agent.state.json"
+	return lifecycleStatePathFor(defaultConfigPath())
+}
+
+func lifecycleStatePathFor(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "agent.state.json")
+}
+
+// initLifecycleStateFile pins the state file next to the config actually in
+// use (a custom -config path carries its state with it).
+func initLifecycleStateFile(configPath string) {
+	lifecycleStateFile = lifecycleStatePathFor(configPath)
 }
 
 // currentLifecycleState is only ever written from the agent loop goroutine

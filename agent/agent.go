@@ -10,7 +10,10 @@ import (
 func runAgent(ctx context.Context, configPath string, enrollmentToken string, once bool) error {
 	// Startup state machine (lifecycle.go): a config read failure keeps the
 	// agent in a retryable LoadingConfig state — it must never permanently
-	// silence the device while the service still reports RUNNING.
+	// silence the device while the service still reports RUNNING. The same
+	// engine runs on every platform; only the supervisor differs (Windows
+	// SCM failure actions vs systemd Restart=always).
+	initLifecycleStateFile(configPath)
 	cfg, err := loadConfigWithRetry(ctx, configPath, once)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

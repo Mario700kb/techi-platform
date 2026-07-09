@@ -21,6 +21,18 @@ func useTempLifecycleFile(t *testing.T) {
 	})
 }
 
+func TestLifecycleStatePathFollowsConfig(t *testing.T) {
+	// One rule on every platform: the state file sits next to the config.
+	got := lifecycleStatePathFor(filepath.Join("etc", "techi-agent", "agent.config.json"))
+	want := filepath.Join("etc", "techi-agent", "agent.state.json")
+	if got != want {
+		t.Fatalf("lifecycleStatePathFor = %q, want %q", got, want)
+	}
+	if got := lifecycleStatePathFor("config.json"); got != "agent.state.json" {
+		t.Fatalf("dev path = %q, want agent.state.json", got)
+	}
+}
+
 func TestLifecycleStateFileRoundtrip(t *testing.T) {
 	useTempLifecycleFile(t)
 
