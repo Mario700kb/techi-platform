@@ -18,6 +18,7 @@ from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.services.trusted_domain_service import TrustedDomainService
 from app.services.audit_service import AuditAction, system_audit_log
+from app.platform_core.registry import validate_architecture
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,18 @@ class AgentEnrollmentService:
         heartbeat_url: str,
         websocket_url: str,
     ) -> AgentEnrollmentResponse:
+        # Registry-driven architecture validation. Only platforms that DECLARE
+        # supported architectures (e.g. MikroTik) are checked; agent platforms
+        # (Windows/Linux/macOS) declare none and pass through unchanged.
+        try:
+            validate_architecture(payload.platform, payload.architecture)
+        except ValueError as exc:
+            self._record_audit(
+                payload=payload, result="failed",
+                reason="unsupported_architecture", raw_error=str(exc),
+            )
+            raise
+
         # Trusted domain path — no token required
         domain = (payload.domain or "").strip()
         if not payload.enrollment_token and TrustedDomainService(self.db).is_trusted_domain(domain, payload.hostname):

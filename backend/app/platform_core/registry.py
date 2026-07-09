@@ -17,6 +17,30 @@ DEFAULT_PLATFORM_ID = "windows"
 MODE_NATIVE_AGENT = "native_agent"
 MODE_PROXY_ADAPTER = "proxy_adapter"
 
+# MikroTik RouterOS deployment/registration template. Deployment + registration
+# ONLY — the router POSTs its identity + the enrollment token to the generic
+# /agent/enroll endpoint; no on-device agent, no RouterOS management. Placeholders
+# ({{...}}) are filled server-side from the Platform Registry; RouterOS runtime
+# values ($arch/$rosver/$hostid) are self-detected on the router so one script
+# fits every architecture. Adding RouterOS management later touches ONLY the
+# Platform Adapter — never this template's consumers.
+MIKROTIK_ROUTEROS_TEMPLATE = """# TECHI Platform — MikroTik enrollment (deployment + registration only)
+# Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
+:local token "{{TOKEN}}"
+:local api "{{API_ENDPOINT}}"
+:local platform "{{PLATFORM}}"
+:local connver "{{VERSION}}"
+:local arch [/system resource get architecture-name]
+:local rosver [/system resource get version]
+:local board [/system routerboard get model]
+:local hostid [/system identity get name]
+:local body "{\\"enrollment_token\\":\\"$token\\",\\"platform\\":\\"$platform\\",\\"hostname\\":\\"$hostid\\",\\"architecture\\":\\"$arch\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"$rosver\\",\\"agent_version\\":\\"$connver\\"}"
+/tool fetch url="$api/api/v1/agent/enroll" http-method=post \\
+  http-header-field-value="Content-Type: application/json" \\
+  http-data="$body" output=none
+:log info "TECHI enrollment submitted: $hostid ($arch, RouterOS $rosver)"
+"""
+
 
 @dataclass(frozen=True)
 class PlatformDescriptor:
@@ -29,6 +53,12 @@ class PlatformDescriptor:
     allowed_capabilities: FrozenSet[str] = field(default_factory=frozenset)
     # Appendix C stage. Windows is grandfathered LTS (reference implementation).
     certification_stage: str = "pre-experimental"
+    # Deployment metadata (additive; agent platforms leave these empty and are
+    # unaffected). The deployment UI + script generation read ONLY these.
+    deployment_method: str = ""                    # e.g. "routeros_script"
+    deployment_template: str = ""                  # script template with {{PLACEHOLDERS}}
+    supported_architectures: Tuple[str, ...] = ()  # empty = not arch-validated
+    supported_routeros_versions: Tuple[str, ...] = ()
 
 
 PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
@@ -89,6 +119,10 @@ PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
             allowed_capabilities=frozenset(
                 {"terminal", "interfaces", "wireless", "firewall", "logs"}
             ),
+            deployment_method="routeros_script",
+            deployment_template=MIKROTIK_ROUTEROS_TEMPLATE,
+            supported_architectures=("chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile"),
+            supported_routeros_versions=("6", "7"),
         ),
         PlatformDescriptor(
             id="synology",
@@ -159,3 +193,36 @@ def resolve_platform(value: Optional[str]) -> Optional[PlatformDescriptor]:
     if value is None or not str(value).strip():
         return PLATFORM_REGISTRY[DEFAULT_PLATFORM_ID]
     return PLATFORM_REGISTRY.get(str(value).strip().lower())
+
+
+def render_deployment_script(platform_id: str, *, token: str, api_endpoint: str, version: str) -> str:
+    """Fill a platform's registry deployment_template with the enrollment token,
+    API endpoint, platform id and connector version. The template is the single
+    source of truth — the UI never hardcodes a script."""
+    descriptor = PLATFORM_REGISTRY.get(str(platform_id).strip().lower())
+    if descriptor is None or not descriptor.deployment_template:
+        raise ValueError(f"Platform '{platform_id}' has no deployment template")
+    return (
+        descriptor.deployment_template
+        .replace("{{TOKEN}}", token)
+        .replace("{{API_ENDPOINT}}", api_endpoint.rstrip("/"))
+        .replace("{{PLATFORM}}", descriptor.id)
+        .replace("{{VERSION}}", version)
+    )
+
+
+def validate_architecture(platform_id: str, architecture: Optional[str]) -> str:
+    """Validate a reported architecture against the platform's declared set.
+    Returns the normalized arch. Raises ValueError for an unknown/absent arch when
+    the platform declares supported_architectures (e.g. MikroTik). Platforms with
+    no declared set (agent platforms) are not arch-validated."""
+    descriptor = PLATFORM_REGISTRY.get(str(platform_id).strip().lower())
+    if descriptor is None or not descriptor.supported_architectures:
+        return (architecture or "").strip().lower()
+    arch = (architecture or "").strip().lower()
+    if arch not in descriptor.supported_architectures:
+        raise ValueError(
+            f"Unsupported {descriptor.display_name} architecture: {architecture!r}. "
+            f"Supported: {', '.join(descriptor.supported_architectures)}"
+        )
+    return arch

@@ -87,3 +87,28 @@ echo "Installing systemd service and enrolling..."
 echo "TECHI agent installed. Check status: systemctl status techi-agent"
 """
     return PlainTextResponse(content=script, media_type="text/x-shellscript")
+
+
+# MikroTik connector protocol version (deployment + registration only; no
+# on-device agent). Bumped when the RouterOS enrollment template changes.
+MIKROTIK_CONNECTOR_VERSION = "1.0.0"
+
+
+@router.get("/mikrotik", response_class=PlainTextResponse)
+def mikrotik_installer(token: str = Query(..., min_length=1)) -> PlainTextResponse:
+    """RouterOS enrollment/registration script, generated from the Platform
+    Registry deployment template with the token + API endpoint injected. Gated by
+    FEATURE_MIKROTIK (404 off). Registration only — no RouterOS management."""
+    if not feature_enabled("FEATURE_MIKROTIK"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    from app.platform_core.registry import render_deployment_script
+
+    try:
+        script = render_deployment_script(
+            "mikrotik", token=token, api_endpoint=_public_base(),
+            version=MIKROTIK_CONNECTOR_VERSION,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return PlainTextResponse(content=script, media_type="text/plain")

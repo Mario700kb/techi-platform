@@ -91,14 +91,24 @@ class DeviceAssignmentService:
             return device
         if client_id or group_id:
             # Generic, platform-neutral placement: a token may carry a Client with
-            # no explicit Default Group. Resolve the standard group from the
-            # agent-reported signal via the Unified Classification Engine
-            # (_detect_group → Servers/Client PC), so ANY platform (Linux, MikroTik,
-            # future) lands under the correct Client ▸ Group with no manual step.
-            # Platform identity comes from the agent/adapter, never the token.
+            # no explicit Default Group. Resolve the category from the agent-reported
+            # signal via the Unified Classification Engine so ANY platform lands
+            # under the correct Client ▸ Group with no manual step. Agent platforms
+            # (servers/clientpc) get the standard group; non-agent platforms
+            # (network/storage/hypervisors — e.g. MikroTik) are categorized by the
+            # tree via their platform, so they stay ungrouped (a standard agent group
+            # would mis-classify them). Platform identity comes from the agent.
             if client_id and not group_id:
-                self._ensure_standard_groups(client_id)
-                group_id = self._get_or_create_group(client_id, self._detect_group(signal)).id
+                cat = clf.classify_category(clf.ClassificationInput(
+                    client_id=None, group_id=None, group_name=None,
+                    platform=signal.platform, device_type=signal.device_type,
+                    windows_product_type=signal.windows_product_type,
+                    os_name=signal.os_name, os_version=signal.os_version, os_caption=signal.os_caption,
+                ))
+                if cat in (clf.CATEGORY_SERVERS, clf.CATEGORY_CLIENTPC):
+                    self._ensure_standard_groups(client_id)
+                    name = "Servers" if cat == clf.CATEGORY_SERVERS else "Client PC"
+                    group_id = self._get_or_create_group(client_id, name).id
             return self.devices.update(
                 device,
                 DeviceUpdate(

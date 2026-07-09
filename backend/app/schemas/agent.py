@@ -125,6 +125,7 @@ class AgentEnrollmentRequest(BaseModel):
     os_caption: Optional[str] = None
     os_build: Optional[str] = None
     windows_product_type: Optional[int] = None
+    architecture: Optional[str] = None  # e.g. MikroTik chr/x86/arm/… (validated per platform)
     local_ip: Optional[str] = None
     public_ip: Optional[str] = None
     rustdesk_id: Optional[str] = None

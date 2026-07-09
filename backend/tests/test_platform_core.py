@@ -155,6 +155,7 @@ class TestWiringBoundary:
             "app/services/device_assignment_service.py",  # Unified Classification Engine consumer (P3)
             "app/services/trusted_domain_service.py",  # Unified Classification Engine consumer (P3)
             "app/services/permission_service.py",  # ACTION_PERMISSION_MAP derives from the Action Registry (Step 1c)
+            "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

@@ -33,7 +33,7 @@ import { Button } from "../components/ui";
 // other platform is opt-in via its flag. Adding a future platform = one entry
 // here + its icon (+ the backend flag). No UI rewrite. macOS is gated on a flag
 // that does not exist yet (FEATURE_MACOS) so it stays hidden until introduced.
-type DeployKind = "windows" | "linux" | "placeholder";
+type DeployKind = "windows" | "linux" | "script" | "placeholder";
 type PlatformStatus = "Production" | "Experimental" | "Planned";
 
 interface DeploymentPlatformMeta {
@@ -44,8 +44,10 @@ interface DeploymentPlatformMeta {
   featureFlag: keyof PlatformFeatures | "FEATURE_MACOS" | null;
   status: PlatformStatus;
   kind: DeployKind;
-  arches?: string[];        // Linux: supported architectures
-  futureMethods?: string[]; // placeholders: planned deployment methods
+  arches?: string[];         // Linux/script: supported architectures (display)
+  futureMethods?: string[];  // placeholders: planned deployment methods
+  scriptEndpoint?: string;   // kind "script": backend endpoint that generates the copy-paste script
+  scriptLabel?: string;      // kind "script": the block label (e.g. "RouterOS Script")
 }
 
 const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
@@ -53,8 +55,9 @@ const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
   { id: "linux", label: "Linux", icon: Terminal, featureFlag: "FEATURE_LINUX", status: "Experimental", kind: "linux",
     arches: ["linux-amd64", "linux-arm64", "linux-armhf"] },
   { id: "macos", label: "macOS", icon: Laptop, featureFlag: "FEATURE_MACOS", status: "Planned", kind: "placeholder" },
-  { id: "mikrotik", label: "MikroTik", icon: Router, featureFlag: "FEATURE_MIKROTIK", status: "Planned", kind: "placeholder",
-    futureMethods: ["RouterOS Script", "API Push", "SSH Bootstrap"] },
+  { id: "mikrotik", label: "MikroTik", icon: Router, featureFlag: "FEATURE_MIKROTIK", status: "Experimental", kind: "script",
+    scriptEndpoint: "/api/v1/install/mikrotik", scriptLabel: "RouterOS Script",
+    arches: ["chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile"] },
   { id: "synology", label: "Synology DSM", icon: HardDrive, featureFlag: "FEATURE_STORAGE", status: "Planned", kind: "placeholder",
     futureMethods: ["Package", "SSH Installer"] },
   { id: "qnap", label: "QNAP QTS", icon: HardDrive, featureFlag: "FEATURE_STORAGE", status: "Planned", kind: "placeholder",
@@ -482,6 +485,16 @@ function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy
         )
       )}
 
+      {/* SCRIPT — server-generated deployment script from the Platform Registry
+          template (e.g. MikroTik RouterOS). Same token; nothing hardcoded. */}
+      {meta.kind === "script" && (
+        token ? (
+          <ScriptSection meta={meta} token={token} copied={copied} onCopy={onCopy} />
+        ) : (
+          <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-muted)" }}>Token value not recoverable. Regenerate the token to reveal the {meta.scriptLabel ?? "deployment"} script.</div>
+        )
+      )}
+
       {/* PLACEHOLDER — reserved UI only, no commands. */}
       {meta.kind === "placeholder" && (
         <div className="rounded-lg border border-dashed p-3 text-xs" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-muted)" }}>
@@ -497,6 +510,48 @@ function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy
         </div>
       )}
     </section>
+  );
+}
+
+function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatformMeta; token: string; copied: CopyTarget; onCopy: (target: string, value: string) => Promise<void> }) {
+  const [script, setScript] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setScript(null);
+    setError(null);
+    // The script is generated server-side from the Platform Registry template
+    // with this token injected (unauthenticated, like the Linux installer — the
+    // enrollment token is the credential).
+    fetch(`${API_BASE_URL}${meta.scriptEndpoint}?token=${encodeURIComponent(token)}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((t) => { if (active) setScript(t); })
+      .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to generate script"); });
+    return () => { active = false; };
+  }, [meta.scriptEndpoint, token]);
+
+  const label = meta.scriptLabel ?? "Deployment Script";
+  return (
+    <>
+      {error ? (
+        <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">Could not generate the {label}: {error}</div>
+      ) : script === null ? (
+        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating {label}…</div>
+      ) : (
+        <CommandBlock label={label} value={script} copied={copied === `modal-${meta.id}-script`} onCopy={() => void onCopy(`modal-${meta.id}-script`, script)} />
+      )}
+      {meta.arches && meta.arches.length > 0 && (
+        <div className="mt-1">
+          <div className="mb-1 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Supported architectures</div>
+          <div className="flex flex-wrap gap-1.5">
+            {meta.arches.map((a) => <span key={a} className="rounded-full border px-2 py-0.5 text-[11px] font-mono" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{a}</span>)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
