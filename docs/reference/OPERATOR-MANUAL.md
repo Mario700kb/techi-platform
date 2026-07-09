@@ -195,7 +195,7 @@ Expansion flag is enabled (Windows is always shown):
 | **Windows** | **Production** | always | Safe one-time command · GPO Startup · GPO Scheduled Task · Bootstrap URL · Download PS1 *(unchanged, production-proven)* |
 | **Linux** | Experimental | `FEATURE_LINUX` | One-Time Install (`curl … \| sudo bash`) · Manual URL · arches (amd64/arm64/armhf) · active Linux package |
 | **macOS** | Planned | `FEATURE_MACOS` (not yet defined) | placeholder only |
-| **MikroTik** | Experimental | `FEATURE_MIKROTIK` | **RouterOS Script** (deployment + registration only) — copy/paste into RouterOS; generated from the Platform Registry template with the token injected; supported arches chr/x86/arm/arm64/mipsbe/mmips/ppc/tile |
+| **MikroTik** | Experimental | `FEATURE_MIKROTIK` | **RouterOS Script** (deployment + registration only) — select RouterOS 6.x or 7.x, then copy/paste into RouterOS; generated from the Platform Registry template with the token injected; supported arches chr/x86/arm/arm64/mipsbe/mmips/ppc/tile |
 | **Synology DSM** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
 | **QNAP QTS** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
 | **VMware ESXi** | Planned | `FEATURE_HYPERVISOR` | placeholder |
@@ -340,13 +340,15 @@ MikroTik is the first **proxy-managed** platform (not a native agent). A proxy
 adapter reports RouterOS devices into the same catalog/drawer.
 
 **Deployment + registration (live).** On the **Deployment** dialog (token ▸ View),
-the MikroTik section shows a **RouterOS Script** — generated server-side from the
+the MikroTik section shows a **RouterOS Version** selector (**RouterOS 6.x** or
+**RouterOS 7.x**) and a **RouterOS Script** — generated server-side from the
 Platform Registry template with the enrollment token injected (never hardcoded).
-Copy it into the router's terminal (or import as a script). It POSTs the router's
-identity + token to the standard enrollment endpoint; the router self-detects its
-architecture (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile — an unknown arch is rejected).
-The device then appears automatically under **Client ▸ Network ▸ MikroTik** (no
-manual placement), with Connect methods **Winbox / WebFig / SSH** (metadata only).
+Copy the matching script into the router's terminal (or import as a script). It
+POSTs the router's identity + token to the standard enrollment endpoint; the
+router self-detects its architecture (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile —
+an unknown arch is rejected). The device then appears automatically under
+**Client ▸ Network ▸ MikroTik** (no manual placement), with Connect methods
+**Winbox / WebFig / SSH** (metadata only).
 
 **Not in this build:** RouterOS API, Winbox/WebFig/SSH launchers, and all RouterOS
 management (monitoring, firewall, interfaces, wireless, VPN, backups, scripting) —

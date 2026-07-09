@@ -48,6 +48,7 @@ interface DeploymentPlatformMeta {
   futureMethods?: string[];  // placeholders: planned deployment methods
   scriptEndpoint?: string;   // kind "script": backend endpoint that generates the copy-paste script
   scriptLabel?: string;      // kind "script": the block label (e.g. "RouterOS Script")
+  routerosVersions?: { value: "6" | "7"; label: string }[];
 }
 
 const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
@@ -57,6 +58,7 @@ const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
   { id: "macos", label: "macOS", icon: Laptop, featureFlag: "FEATURE_MACOS", status: "Planned", kind: "placeholder" },
   { id: "mikrotik", label: "MikroTik", icon: Router, featureFlag: "FEATURE_MIKROTIK", status: "Experimental", kind: "script",
     scriptEndpoint: "/api/v1/install/mikrotik", scriptLabel: "RouterOS Script",
+    routerosVersions: [{ value: "6", label: "RouterOS 6.x" }, { value: "7", label: "RouterOS 7.x" }],
     arches: ["chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile"] },
   { id: "synology", label: "Synology DSM", icon: HardDrive, featureFlag: "FEATURE_STORAGE", status: "Planned", kind: "placeholder",
     futureMethods: ["Package", "SSH Installer"] },
@@ -516,6 +518,7 @@ function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy
 function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatformMeta; token: string; copied: CopyTarget; onCopy: (target: string, value: string) => Promise<void> }) {
   const [script, setScript] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [routerosVersion, setRouterosVersion] = useState<"6" | "7">("7");
   useEffect(() => {
     let active = true;
     setScript(null);
@@ -523,7 +526,9 @@ function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatfo
     // The script is generated server-side from the Platform Registry template
     // with this token injected (unauthenticated, like the Linux installer — the
     // enrollment token is the credential).
-    fetch(`${API_BASE_URL}${meta.scriptEndpoint}?token=${encodeURIComponent(token)}`)
+    const params = new URLSearchParams({ token });
+    if (meta.routerosVersions) params.set("routeros_version", routerosVersion);
+    fetch(`${API_BASE_URL}${meta.scriptEndpoint}?${params.toString()}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
@@ -531,11 +536,30 @@ function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatfo
       .then((t) => { if (active) setScript(t); })
       .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to generate script"); });
     return () => { active = false; };
-  }, [meta.scriptEndpoint, token]);
+  }, [meta.routerosVersions, meta.scriptEndpoint, routerosVersion, token]);
 
   const label = meta.scriptLabel ?? "Deployment Script";
   return (
     <>
+      {meta.routerosVersions && (
+        <div className="mb-3">
+          <div className="mb-1 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>RouterOS Version</div>
+          <div className="flex flex-wrap gap-2">
+            {meta.routerosVersions.map((version) => (
+              <label key={version.value} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: routerosVersion === version.value ? "var(--th-accent)" : "var(--th-border-card)", color: "var(--th-text-primary)" }}>
+                <input
+                  type="radio"
+                  name={`${meta.id}-routeros-version`}
+                  value={version.value}
+                  checked={routerosVersion === version.value}
+                  onChange={() => setRouterosVersion(version.value)}
+                />
+                {version.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       {error ? (
         <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">Could not generate the {label}: {error}</div>
       ) : script === null ? (

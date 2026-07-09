@@ -27,6 +27,7 @@ def test_mikrotik_registry_declares_deployment_metadata():
     d = PLATFORM_REGISTRY["mikrotik"]
     assert d.deployment_method == "routeros_script"
     assert d.deployment_template  # non-empty
+    assert set(d.deployment_templates_by_version) == {"6", "7"}
     assert d.supported_architectures == ("chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile")
     assert d.supported_routeros_versions == ("6", "7")
     assert d.connect_methods[:3] == ("winbox", "webfig", "ssh")
@@ -44,6 +45,42 @@ def test_render_deployment_script_injects_everything():
     assert "/api/v1/agent/enroll" in script
     assert "architecture-name" in script  # arch self-detected on the router
     assert "{{" not in script  # every placeholder filled
+
+
+def test_routeros6_script_uses_routeros6_fetch_syntax():
+    script = render_deployment_script(
+        "mikrotik", token="TKN-6", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
+        routeros_version="6",
+    )
+    assert "# TECHI Platform - MikroTik enrollment (RouterOS 6.x)" in script
+    assert 'http-header-field="Content-Type:application/json"' in script
+    assert "http-header-field-value" not in script
+    assert "keep-result=no" in script
+    assert "output=none" not in script
+    assert "\\\n" not in script
+    assert "/tool fetch mode=https url=($api . \"/api/v1/agent/enroll\")" in script
+
+
+def test_routeros7_script_uses_routeros7_fetch_syntax():
+    script = render_deployment_script(
+        "mikrotik", token="TKN-7", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
+        routeros_version="7",
+    )
+    assert "# TECHI Platform - MikroTik enrollment (RouterOS 7.x)" in script
+    assert 'http-header-field="Content-Type:application/json"' in script
+    assert "http-header-field-value" not in script
+    assert "output=none" in script
+    assert "keep-result=no" not in script
+    assert "\\\n" not in script
+    assert "/tool fetch mode=https url=($api . \"/api/v1/agent/enroll\")" in script
+
+
+def test_render_deployment_script_rejects_unknown_routeros_version():
+    with pytest.raises(ValueError):
+        render_deployment_script(
+            "mikrotik", token="TKN", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
+            routeros_version="5",
+        )
 
 
 def test_render_deployment_script_unknown_platform_raises():
@@ -86,9 +123,17 @@ def test_installer_404_when_flag_off(monkeypatch):
 
 
 def test_installer_serves_script_when_on(monkeypatch):
-    r = _client(monkeypatch, True).get("/api/v1/install/mikrotik", params={"token": "TKN-7"})
+    r = _client(monkeypatch, True).get("/api/v1/install/mikrotik", params={"token": "TKN-7", "routeros_version": "7"})
     assert r.status_code == 200
     assert 'token "TKN-7"' in r.text and "/api/v1/agent/enroll" in r.text
+    assert "RouterOS 7.x" in r.text
+
+
+def test_installer_serves_routeros6_script_when_requested(monkeypatch):
+    r = _client(monkeypatch, True).get("/api/v1/install/mikrotik", params={"token": "TKN-6", "routeros_version": "6"})
+    assert r.status_code == 200
+    assert "RouterOS 6.x" in r.text
+    assert "keep-result=no" in r.text
 
 
 # --- Enrollment places MikroTik under Network (not Servers/Client PC) ------- #

@@ -95,7 +95,10 @@ MIKROTIK_CONNECTOR_VERSION = "1.0.0"
 
 
 @router.get("/mikrotik", response_class=PlainTextResponse)
-def mikrotik_installer(token: str = Query(..., min_length=1)) -> PlainTextResponse:
+def mikrotik_installer(
+    token: str = Query(..., min_length=1),
+    routeros_version: str = Query("7", pattern="^(6|7)$"),
+) -> PlainTextResponse:
     """RouterOS enrollment/registration script, generated from the Platform
     Registry deployment template with the token + API endpoint injected. Gated by
     FEATURE_MIKROTIK (404 off). Registration only — no RouterOS management."""
@@ -108,6 +111,7 @@ def mikrotik_installer(token: str = Query(..., min_length=1)) -> PlainTextRespon
         script = render_deployment_script(
             "mikrotik", token=token, api_endpoint=_public_base(),
             version=MIKROTIK_CONNECTOR_VERSION,
+            routeros_version=routeros_version,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

@@ -27,6 +27,78 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] BUGFIX: MikroTik deployment generated shell-like script; RouterOS 6/7 native templates
+
+### Problemi
+
+Deployment ▸ token ▸ View generated one MikroTik RouterOS script. When pasted
+into a real MikroTik terminal it failed immediately with `expected end of command`
+/ `syntax error`. The generated command looked like shell:
+
+```routeros
+/tool fetch url="..." http-method=post \
+  http-header-field-value="Content-Type: application/json" \
+  http-data="$body" output=none
+```
+
+### Analiza
+
+Read path: Platform Registry (`platform_core/registry.py`) held the template;
+`GET /install/mikrotik?token=` rendered it; Deployment UI fetched that endpoint
+from the metadata-driven `ScriptSection`; enrollment still went through the
+generic `/agent/enroll` pipeline. MikroTik documentation for `/tool fetch`
+uses `http-header-field="Content-Type:application/json"` for POST JSON; the
+generated template used the unsupported `http-header-field-value` property and
+shell-style line continuations.
+
+### Shkaku
+
+The template mixed shell habits with RouterOS syntax: backslash continuations,
+an unsupported fetch parameter, and one versionless fetch command. RouterOS 6
+and 7 both support POST via `/tool fetch`, but both templates must specify
+`mode=https` when the URL is built from a variable expression. RouterOS 6 uses
+`keep-result=no`; RouterOS 7 uses `output=none`.
+
+### Zgjidhja
+
+Smallest registry-preserving fix:
+- Platform Registry now declares two versioned MikroTik templates:
+  RouterOS 6.x and RouterOS 7.x.
+- `render_deployment_script()` accepts an optional `routeros_version` and keeps
+  the existing default template for backward compatibility.
+- `/install/mikrotik` accepts `routeros_version=6|7`, defaulting to `7` for old
+  callers.
+- Deployment UI adds a RouterOS Version radio selector inside the existing
+  metadata-driven MikroTik script section.
+- Follow-up from a real RouterOS 7 terminal (`Mario Home`): omitting `mode=https`
+  with `url=($api . "...")` produced `failure: Mode not specified`; RouterOS 7
+  template now includes `mode=https` too.
+
+### Ndryshimet
+
+- `backend/app/platform_core/registry.py`
+- `backend/app/api/v1/endpoints/install.py`
+- `backend/tests/test_mikrotik_deployment.py`
+- `frontend/src/pages/Deployment.tsx`
+- Docs: `PROJECT_STATE.md`, `IMPLEMENTATION-ROADMAP.md`,
+  `reference/OPERATOR-MANUAL.md`, this changelog.
+
+### Rezultati
+
+Generated scripts are native RouterOS, single-command fetch lines with
+`mode=https`, no shell continuations, no `http-header-field-value`. Enrollment
+token/client/default group/classification flow unchanged; Windows/Linux/macOS
+deployment paths untouched.
+
+Validation:
+- `tests/test_mikrotik_deployment.py`: 13 passed.
+- Windows/Linux/platform deployment regressions:
+  `test_install_linux.py`, `test_linux_enrollment_oneliner.py`,
+  `test_enrollment_token_workflow.py`, `test_enrollment_bootstrap_script.py`,
+  `test_platform_core.py`: 136 passed.
+- Frontend `npx tsc --noEmit`: passed.
+- Frontend production build: passed.
+
 ## [2026-07-09] RELEASE: Agent 2.1.6 — baseline i ri prodhimi (zëvendëson 2.1.5); NJË lifecycle engine për Windows + Linux
 
 ### Problemi
