@@ -27,6 +27,22 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] ARKITEKTURË: Enrollment gjenerik platform-neutral — Step 2 (auto-group)
+
+Token-at mbeten **platform-neutral** (Client + Default Group opsional + assignment
+source + policy; identiteti i platformës vjen nga agjenti/adapter, jo nga token-i).
+Kur një token jep Client por JO Default Group, `apply_enrollment_assignment` tani
+zgjidh grupin standard nga sinjali i agjentit përmes Unified Classification Engine
+(`_detect_group` → Servers/Client PC) dhe krijon grupet standarde → **çdo platformë**
+(Linux/MikroTik/e ardhshme) ulet te Client ▸ Group i saktë **pa caktim manual**
+(zgjidh problemin që pajisja e parë Linux u desh të vendosej me dorë). Token me
+Default Group eksplicit respektohet i pandryshuar; token pa client ndjek path-in
+ekzistues auto. Pa logjikë specifike Linux — pipeline gjenerik i ripërdorshëm.
+
+Ndryshimet: `backend/app/services/device_assignment_service.py`,
+`backend/tests/test_enrollment_auto_group.py` (i ri). Suite 488+4 baseline;
+tsc/build/agent OK; smoke 7/7. Prod tip `a5a9b86`. Shih [[platform-v3-design]].
+
 ## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1c (enforcement unifikohet)
 
 `ACTION_PERMISSION_MAP` tani **derivon** nga `platform_core.actions.permission_map()`

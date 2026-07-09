@@ -174,6 +174,11 @@ Windows devices enroll via **Enrollment / Deployment**:
   Support), which enrolls with the token.
 - Tokens are shown once (copy immediately). Enrollment is audited.
 - After enrollment the device appears under its Client automatically.
+- **Default Group is optional.** A token carries a Client and an *optional* Default
+  Group. If you set a group, the device goes there. If you leave it empty, the
+  device is auto-placed in the correct standard group (**Servers** / **Client PC**)
+  based on what the agent reports — for **any** platform, with no manual step.
+  Platform identity always comes from the agent, never the token.
 
 Requires the **Deployment** permission.
 

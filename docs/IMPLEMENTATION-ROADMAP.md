@@ -201,9 +201,15 @@ renderer (Appendix C) selected by the registry → byte-identical, no agent rebu
   (`ACTION_QUEUED`) all consume the same ActionDescriptor. Values unchanged (13
   entries), concrete lock test added. Labels stay in `schemas.remote_action`
   (ActionType enum-cycle), contract-locked to the registry. **Step 1 complete.**
-- **Step 2 — Platform-neutral enrollment pipeline**: token carries Client, optional
-  Default Group, Assignment Source, policy; platform identity comes from the agent/
-  adapter; generic auto-group via the Unified Classification Engine.
+- **Step 2 — Platform-neutral enrollment pipeline** ✅ (`a5a9b86`). Tokens stay
+  platform-neutral (Client + optional Default Group + assignment source + policy;
+  platform identity from the agent). When a token gives a Client but no Default
+  Group, `apply_enrollment_assignment` auto-resolves the standard group from the
+  agent signal via the Unified Classification Engine (`_detect_group` →
+  Servers/Client PC) and auto-creates the standard groups — any platform lands in
+  the correct Client ▸ Group with no manual step. Explicit Default Group respected.
+  Regression tests (Linux server/workstation, explicit group, Windows product-type).
+  **Registry-driven Drawer + generic enrollment: both COMPLETE.**
 
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
