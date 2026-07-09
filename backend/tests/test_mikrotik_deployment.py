@@ -16,7 +16,9 @@ from app.db.base import Base
 from app.models.client import Client
 from app.models.device_activity_event import DeviceActivityEvent
 from app.models.device_inventory import DeviceInventory
+from app.models.device_telemetry import DeviceTelemetry
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.enrollment_token import EnrollmentToken, EnrollmentTokenStatus
 from app.platform_core.actions import actions_for
 from app.platform_core import classification as clf
 from app.platform_core.capabilities import capability_tabs, normalize_capabilities
@@ -24,9 +26,11 @@ from app.platform_core.connect import methods_for
 from app.platform_core.registry import (
     PLATFORM_REGISTRY, render_deployment_script, validate_architecture,
 )
-from app.schemas.agent import AgentHeartbeatPayload
+from app.schemas.agent import AgentEnrollmentRequest, AgentHeartbeatPayload
+from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
+from app.services.enrollment_token_service import EnrollmentTokenService
 
 
 # --- Platform Registry metadata -------------------------------------------- #
@@ -77,13 +81,20 @@ def test_render_deployment_script_uses_configured_intervals():
 
 def test_connector_script_stays_small_and_flat():
     """The connector is NOT an agent: the RouterOS script must stay tiny —
-    no loops, no enumeration, no RouterOS globals (reboot-safe), flat JSON."""
+    no loops, no enumeration, no RouterOS globals (reboot-safe), flat JSON.
+    Ceiling raised 2026-07-10 (60->70 lines, 5000->6000 chars) to add: (a) an
+    on-error guard around the enroll fetch so a failed enrollment halts the
+    script instead of silently falling through to auto-create an unassigned
+    device, and (b) cpu_percent/ram_percent/disk_percent — single-property
+    RouterOS queries (no loops) feeding the SAME generic telemetry fields
+    Windows/Linux already use for Overview resource cards. Still zero loops,
+    zero globals, zero enumeration."""
     script = render_deployment_script(
         "mikrotik", token="T", api_endpoint="https://api-rdp.techi.com.al", version="1.0.0",
     )
     lines = [l for l in script.strip().splitlines()]
-    assert len(lines) <= 60, f"RouterOS script grew to {len(lines)} lines"
-    assert len(script) <= 5000, f"RouterOS script grew to {len(script)} chars"
+    assert len(lines) <= 70, f"RouterOS script grew to {len(lines)} lines"
+    assert len(script) <= 6000, f"RouterOS script grew to {len(script)} chars"
     assert ":foreach" not in script          # no enumeration loops
     assert ":global" not in script           # self-contained; survives reboot
     # No agent-style enumeration in the payloads.
@@ -92,6 +103,12 @@ def test_connector_script_stays_small_and_flat():
         assert forbidden not in script, forbidden
     # Capabilities are connector-minimal.
     assert '\\"capabilities\\":[\\"connect\\"]' in script
+    # Enrollment failure halts the script (no unassigned auto-create).
+    assert ':error "TECHI enrollment failed"' in script
+    # Resource utilization reuses the existing generic telemetry fields.
+    assert '\\"cpu_percent\\":' in script
+    assert '\\"ram_percent\\":' in script
+    assert '\\"disk_percent\\":' in script
 
 
 def test_routeros6_script_uses_routeros6_fetch_syntax():
@@ -342,3 +359,96 @@ def test_mikrotik_heartbeat_rejects_missing_stable_agent_id(monkeypatch):
             os_version="7.15.3",
             architecture="arm64",
         ))
+
+
+def test_mikrotik_real_enroll_then_heartbeat_keeps_token_assignment(monkeypatch):
+    """Reproduces the exact RouterOS connector sequence: a real /agent/enroll
+    call (generic AgentEnrollmentService, same code path as every platform)
+    immediately followed by /agent/heartbeat with no token. This is the
+    generic enrollment pipeline the connector is required to reuse — no
+    MikroTik-specific assignment logic anywhere in this path."""
+    monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", True)
+    s = _session()
+    client = Client(name="Acme", slug="acme", is_active=True)
+    s.add(client)
+    s.commit()
+
+    raw_token = "mikrotik-real-token-1234567890"
+    token = EnrollmentToken(
+        name="mikrotik-real",
+        token_hash=EnrollmentTokenService.hash_token(raw_token),
+        token_prefix=raw_token[:8],
+        client_id=client.id,
+        group_id=None,
+        status=EnrollmentTokenStatus.ACTIVE,
+        max_uses=10,
+        use_count=0,
+    )
+    s.add(token)
+    s.commit()
+
+    enroll_response = AgentEnrollmentService(s).enroll(
+        AgentEnrollmentRequest(
+            agent_id="mikrotik-REALSERIAL1",
+            enrollment_token=raw_token,
+            platform="mikrotik",
+            hostname="rb-real",
+            architecture="arm64",
+            os_name="RouterOS",
+            os_version="7.15.3",
+            agent_version="1.0.0",
+        ),
+        heartbeat_url="x", websocket_url="y",
+    )
+    assert enroll_response.assigned_client_id == client.id
+
+    device = s.query(Device).filter(Device.agent_id == "mikrotik-REALSERIAL1").one()
+    assert device.client_id == client.id
+    assert device.assignment_source == "enrollment_token"
+    assert clf.classify_category(device) == clf.CATEGORY_NETWORK
+
+    # The heartbeat script never carries the token (connector is minimal) —
+    # the enroll-created device must be found by stable agent_id and its
+    # assignment left untouched, exactly like every other platform's heartbeat.
+    device, _ = DeviceHeartbeatService(s).process_heartbeat(AgentHeartbeatPayload(
+        agent_id="mikrotik-REALSERIAL1",
+        platform="mikrotik",
+        hostname="rb-real",
+        architecture="arm64",
+        local_ip="192.168.88.1",
+        os_name="RouterOS",
+        os_version="7.15.3",
+        agent_version="1.0.0",
+        cpu_percent=12.0,
+        ram_percent=34.0,
+        capabilities=["connect"],
+    ))
+    assert device.client_id == client.id
+    assert device.assignment_source == "enrollment_token"
+    assert s.query(Device).count() == 1
+
+    # Resource-card percentages reuse the existing generic telemetry pipeline —
+    # no MikroTik-specific storage.
+    telemetry = s.query(DeviceTelemetry).filter(DeviceTelemetry.device_id == device.id).one()
+    assert telemetry.cpu_percent == 12.0
+    assert telemetry.ram_percent == 34.0
+
+
+def test_mikrotik_heartbeat_without_enrollment_stays_unassigned(monkeypatch):
+    """Documents the failure mode the RouterOS on-error guard now prevents:
+    if enrollment never ran (e.g. the enroll fetch failed), a bare heartbeat
+    auto-creates a device with no client — this is why the connector script
+    must halt on enrollment failure rather than continue to the scheduler."""
+    monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", True)
+    s = _session()
+    device, _ = DeviceHeartbeatService(s).process_heartbeat(AgentHeartbeatPayload(
+        agent_id="mikrotik-NEVERENROLLED",
+        platform="mikrotik",
+        hostname="rb-orphan",
+        architecture="arm64",
+        os_name="RouterOS",
+        os_version="7.15.3",
+        capabilities=["connect"],
+    ))
+    assert device.client_id is None
+    assert device.assignment_source == "system_auto"

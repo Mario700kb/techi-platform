@@ -47,18 +47,22 @@ class TestMetadata:
         assert priorities == sorted(priorities)
 
 
-def _client(monkeypatch, flag_on: bool, platform="mikrotik", capabilities=None):
+def _client(monkeypatch, flag_on: bool, platform="mikrotik", capabilities=None,
+            local_ip=None, public_ip=None, role="owner"):
     monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", flag_on)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     db.add(Device(id=3, hostname="rb", platform=platform, capabilities=capabilities,
+                  local_ip=local_ip, public_ip=public_ip,
                   device_type=DeviceType.UNASSIGNED, status=DeviceStatus.OFFLINE))
     db.commit()
     app = FastAPI()
     app.include_router(connect_endpoint.router)
     app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_operator] = lambda: SimpleNamespace(id=1, username="m")
+    # role="owner" bypasses require_team_permission (admin/owner always pass);
+    # tests that need the permission gate to actually reject pass a lesser role.
+    app.dependency_overrides[get_current_operator] = lambda: SimpleNamespace(id=1, username="m", role=role)
     return TestClient(app)
 
 
@@ -81,6 +85,58 @@ class TestEndpoint:
         r = client.get("/devices/3/connect-methods")
         assert r.json()["platform"] == "windows"
         assert [m["id"] for m in r.json()["methods"]] == ["remote_support"]
+
+
+class TestLaunch:
+    def test_404_when_flag_off(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=False, local_ip="192.168.88.1")
+        assert client.get("/devices/3/connect-methods/winbox/launch").status_code == 404
+
+    def test_winbox_uses_scheme_and_local_ip(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1", public_ip="203.0.113.9")
+        r = client.get("/devices/3/connect-methods/winbox/launch")
+        assert r.status_code == 200
+        assert r.json() == {"url": "winbox://192.168.88.1", "surface": "desktop"}
+
+    def test_ssh_requires_connect_capability(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1")
+        assert client.get("/devices/3/connect-methods/ssh/launch").status_code == 404
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1", capabilities={"connect": ""})
+        r = client.get("/devices/3/connect-methods/ssh/launch")
+        assert r.json()["url"] == "ssh://192.168.88.1"
+
+    def test_webfig_uses_web_path_not_scheme(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1")
+        r = client.get("/devices/3/connect-methods/webfig/launch")
+        assert r.json() == {"url": "http://192.168.88.1/webfig/", "surface": "browser"}
+
+    def test_falls_back_to_public_ip_when_no_local_ip(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9")
+        r = client.get("/devices/3/connect-methods/winbox/launch")
+        assert r.json()["url"] == "winbox://203.0.113.9"
+
+    def test_409_when_no_ip_known(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True)
+        assert client.get("/devices/3/connect-methods/winbox/launch").status_code == 409
+
+    def test_dedicated_methods_rejected(self, monkeypatch):
+        # remote_support / web_terminal keep their own existing flows.
+        client = _client(monkeypatch, flag_on=True, platform="windows", local_ip="10.0.0.5")
+        assert client.get("/devices/3/connect-methods/remote_support/launch").status_code == 400
+
+    def test_permission_denied_for_unscoped_operator(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1", role="readonly")
+        assert client.get("/devices/3/connect-methods/winbox/launch").status_code == 403
+
+    def test_audited(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1")
+        client.get("/devices/3/connect-methods/winbox/launch")
+        from app.models.audit_log import AuditLog
+        # Reach into the same db the app used via dependency override.
+        db = client.app.dependency_overrides[get_db]()
+        entry = db.query(AuditLog).filter(AuditLog.action == "remote_connect").one()
+        assert entry.entity_id == 3
+        assert entry.details_json and "winbox" in entry.details_json
 
 
 class TestDrawerMeta:

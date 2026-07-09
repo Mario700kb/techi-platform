@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Monitor, Globe } from "lucide-react";
 
 import { fetchJson } from "../api/client";
+import { clickProtocolUrl } from "../services/rustdeskLaunch";
 
 // Connect Framework UI (Platform Expansion Phase 7). The dropdown is built
 // ENTIRELY from GET /devices/{id}/connect-methods — no hardcoded per-platform
-// menus. Launchers are the NEXT phase: selecting a method surfaces its metadata
-// (a clearly-labelled stub), so the framework is proven without a fake action.
+// menus. Selecting a method calls the generic launcher
+// (`/connect-methods/{id}/launch`) which returns a scheme:// or http(s):// URL;
+// desktop methods navigate via a protocol link, browser methods open a new tab.
+// `remote_support`/`web_terminal` keep their own existing dedicated flows
+// (Remote Support tab / Terminal tab) and are not launched from here.
 
 interface ConnectMethod {
   id: string;
@@ -21,10 +25,13 @@ interface Props {
   deviceId: number;
 }
 
+const DEDICATED_METHOD_IDS = new Set(["remote_support", "web_terminal"]);
+
 export default function ConnectMenu({ deviceId }: Props) {
   const [methods, setMethods] = useState<ConnectMethod[] | null>(null);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [launching, setLaunching] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -49,6 +56,29 @@ export default function ConnectMenu({ deviceId }: Props) {
   // to connect with; render nothing rather than an empty menu.
   if (methods !== null && methods.length === 0) return null;
 
+  const launch = async (m: ConnectMethod) => {
+    setOpen(false);
+    if (DEDICATED_METHOD_IDS.has(m.id)) {
+      setNote(`${m.label} has its own Connect flow (see the ${m.id === "remote_support" ? "Remote Support" : "Terminal"} tab).`);
+      return;
+    }
+    setLaunching(m.id);
+    try {
+      const res = await fetchJson<{ url: string; surface: "desktop" | "browser" }>(
+        `/api/v1/devices/${deviceId}/connect-methods/${m.id}/launch`,
+      );
+      if (res.surface === "desktop") {
+        clickProtocolUrl(res.url);
+      } else {
+        window.open(res.url, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : `Could not launch ${m.label}`);
+    } finally {
+      setLaunching(null);
+    }
+  };
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -70,14 +100,12 @@ export default function ConnectMenu({ deviceId }: Props) {
             <button
               key={m.id}
               type="button"
-              onClick={() => {
-                setOpen(false);
-                setNote(`${m.label}: launcher arrives in the next phase (${m.surface}${m.scheme ? `, ${m.scheme}` : ""}).`);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-200 transition hover:bg-white/[0.05]"
+              disabled={launching === m.id}
+              onClick={() => void launch(m)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-200 transition hover:bg-white/[0.05] disabled:opacity-50"
             >
               {m.surface === "browser" ? <Globe className="h-3.5 w-3.5 text-slate-400" /> : <Monitor className="h-3.5 w-3.5 text-slate-400" />}
-              <span className="flex-1">{m.label}</span>
+              <span className="flex-1">{launching === m.id ? "Opening…" : m.label}</span>
               <span className="text-[9px] uppercase tracking-wide text-slate-500">{m.surface}</span>
             </button>
           ))}

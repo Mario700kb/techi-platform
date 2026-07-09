@@ -296,9 +296,12 @@ Two things share the name "Connect":
    unchanged.
 2. 🚩 **Connect Framework menu** (`FEATURE_PLATFORM_CORE`): in the Drawer Overview,
    a **Connect** dropdown built dynamically from the device's platform +
-   capabilities. It lists the available methods per platform (see §16). During
-   this validation build, selecting a method shows the method's metadata —
-   **the launchers (actually opening Winbox/WebFig/SSH) are a later phase**.
+   capabilities. It lists the available methods per platform (see §16).
+   **Launchers are live (2026-07-10):** selecting a desktop method (Winbox,
+   SSH) navigates to its `scheme://<device-ip>` protocol link; selecting a
+   browser method (WebFig) opens `http://<device-ip>/webfig/` in a new tab.
+   The connect action is permission-gated (`remote_support_connect`) and
+   audited, the same as the Windows Remote Support connect flow.
 
 The operator always uses one Connect entry point; the platform decides which
 methods exist.
@@ -365,13 +368,24 @@ uptime, architecture, CPU/RAM/storage, bridge count, wireless present (yes/no)
 and default-route present (yes/no) — it deliberately does NOT enumerate
 interfaces, packages, routes, firewall rules, DHCP leases or DNS; for those,
 use Connect. MikroTik uses the compact Generic Drawer with **no capability
-tabs**: Overview / Management / Notes / Timeline. The Overview shows identity,
-RouterOS version, board, architecture, Last Seen, Health, local/public IP and
-connector version; Remote Support and Web Terminal are absent; actions are
-Refresh Inventory, Restart Connector, and Re-enroll. The Timeline records
-Device Registered, Heartbeat Received (only on first heartbeat or
-offline→online recovery — not every beat), Inventory Updated, and assignment
-changes.
+tabs**: Overview / Management / Notes / Timeline. The Overview shows Device
+ID, identity, RouterOS version, board, architecture, Last Seen, Health,
+local/public IP, connector version, **CPU/Memory/Storage utilization bars**
+(current usage only — same `ResourceBar` component Windows/Linux use) and an
+**editable Client/Group assignment** (same assign flow as every platform);
+Remote Support and Web Terminal are absent; actions are Refresh Inventory,
+Restart Connector, and Re-enroll. The Timeline records Device Registered,
+Heartbeat Received (only on first heartbeat or offline→online recovery — not
+every beat), Inventory Updated, and assignment changes.
+
+**Enrollment reliability (2026-07-10):** if the router's `/agent/enroll` call
+fails (expired/reused token, network issue), the script now halts immediately
+— it will NOT install the heartbeat/inventory scheduler or create a device.
+A device that appears in the platform is guaranteed to have gone through a
+successful enrollment, inheriting the token's Client/Group automatically
+(Client ▸ Network ▸ MikroTik, no manual placement). If a router paste
+produces a "TECHI enrollment failed" log entry, check the token (not expired/
+revoked) and outbound HTTPS, then re-paste the script.
 
 **Not in this build:** RouterOS API and actual Winbox/WebFig/SSH launcher
 execution. Detailed RouterOS API management (firewall edits, interface changes,
@@ -392,7 +406,7 @@ platform:
 |---|---|
 | Windows | TECHI Remote Support |
 | Linux | Web Terminal, SSH, (Remote Support if a GUI) |
-| MikroTik | Winbox, WebFig, SSH, Web Terminal |
+| MikroTik | Winbox, WebFig, SSH |
 | Synology | DSM, SSH |
 | QNAP | QTS, SSH |
 | VMware | vSphere, SSH |
@@ -405,16 +419,22 @@ Rules that matter operationally:
 - **Winbox / WebFig / DSM / QTS / vSphere are just methods**, not special
   features — they appear because the platform declares them.
 - Adding a future platform means declaring its methods here + an adapter + an
-  icon; **no UI redesign**. Launchers for these methods are the next phase.
+  icon; **no UI redesign**. Launchers (2026-07-10): desktop methods (scheme
+  set, e.g. Winbox/SSH) navigate to `scheme://<device-ip>`; browser methods
+  with a declared `web_path` (WebFig) open `http://<device-ip><web_path>` in
+  a new tab; browser methods with no `web_path` fall back to
+  `http://<device-ip>/`. `remote_support`/`web_terminal` keep their own
+  dedicated flows and are not launched from this generic mechanism.
 
 ---
 
 ## 17. Winbox / 18. WebFig / 19. SSH (MikroTik) 🚩
 
 These are **connection methods** exposed by the MikroTik Connect menu (§16), not
-separate features. In this build they are listed by the Connect Framework;
-**actually launching them (winbox://, WebFig web UI, SSH) is the next phase.**
-SSH additionally appears for any platform reporting `terminal`.
+separate features. **Launchers are live (2026-07-10)**: Winbox and SSH open
+`winbox://<device-ip>` / `ssh://<device-ip>`; WebFig opens
+`http://<device-ip>/webfig/` in a new tab. SSH additionally appears for any
+platform reporting `terminal`.
 
 ---
 
@@ -559,7 +579,8 @@ in Agent Config; every device adopts it on its next heartbeat.
 
 - **Do I ever pick a device's folder?** No — placement is automatic.
 - **Is SSH only for Linux?** No — SSH is a generic capability; any device
-  reporting `terminal` offers it (once launchers ship).
+  reporting `terminal` (or, for MikroTik, `connect`) offers it, and clicking
+  it opens `ssh://<device-ip>` directly.
 - **Can I run a bash script on Linux from the UI?** Yes 🚩 — Command Center ▸
   Run Command (Linux, admin+).
 - **Where are secrets stored?** 🚩 In the Credential Vault (encrypted); the
@@ -574,10 +595,14 @@ in Agent Config; every device adopts it on its next heartbeat.
 
 ## 30. Known Limitations (this build)
 
-- **Connect launchers not implemented**: the Connect menu lists methods (Winbox/
-  WebFig/SSH/DSM/…) but does not yet open them — that is the next phase. Windows
-  Remote Support (RustDesk) works today.
-- **MikroTik**: Connector v1 heartbeat/inventory/capability reporting; **no RouterOS API** yet.
+- **Connect launchers**: Winbox/SSH/WebFig open now (2026-07-10). DSM/QTS/
+  vSphere/Web UI (Synology/QNAP/VMware/Proxmox) fall back to a generic
+  `http://<device-ip>/` link since those platforms have no live devices yet —
+  refine per platform when they onboard. Windows Remote Support (RustDesk)
+  works today via its own dedicated flow.
+- **MikroTik**: Connector v1 heartbeat/inventory/capability reporting +
+  resource utilization; **no RouterOS API** yet (firewall/interface/DHCP
+  edits stay in Winbox/WebFig/SSH).
 - **Web Terminal**: requires its edge WebSocket route + `FEATURE_TERMINAL`; not
   enabled by default. Session recording is prepared but not implemented.
 - **Linux**: certified **Experimental** — validate on a canary before broad use.

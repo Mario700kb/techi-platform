@@ -51,7 +51,10 @@ function cancelPendingFallback(): void {
   }
 }
 
-function clickProtocolUrl(url: string): void {
+// Exported so any desktop-scheme launcher (Connect Framework's Winbox/SSH,
+// not just TECHI Remote Support) can trigger the same click-an-anchor
+// navigation without duplicating it.
+export function clickProtocolUrl(url: string): void {
   const a = document.createElement("a");
   a.href = url;
   a.style.display = "none";

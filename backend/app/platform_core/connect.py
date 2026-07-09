@@ -5,9 +5,7 @@ The Connect button/dropdown is generated ENTIRELY from this metadata + the
 device's reported capabilities — never a hardcoded per-platform dropdown.
 
 Adding a platform's connectivity = adding rows here (id, label, surface,
-capability, priority, scheme). No UI change, no launcher change. Launchers
-themselves are a later phase; this module only declares *what* methods exist
-and *when* they are available.
+capability, priority, scheme/web_path). No UI change, no launcher change.
 
 Availability rule: a method is available for a device iff the method belongs to
 the device's platform AND (its `capability` is None OR that capability is in the
@@ -15,6 +13,13 @@ device's reported capabilities). Platform-native methods (Winbox, WebFig, DSM,
 remote support…) use `capability=None`; generic methods key off real
 capabilities. SSH is not Linux-only: Linux/storage platforms expose it through
 `terminal`, while MikroTik exposes metadata-only SSH through `connect`.
+
+Launchers: `GET /devices/{id}/connect-methods/{method_id}/launch`
+(api/v1/endpoints/connect.py) builds a `scheme://<host>` or
+`http://<host><web_path>` URL from the device's local/public IP — generic
+for every platform, no per-platform launcher code. `remote_support` and
+`web_terminal` are excluded (they have their own dedicated, already-audited
+flows: `/remote-support/devices/{id}/connect-url` and the Terminal tab).
 """
 
 from dataclasses import dataclass
@@ -31,7 +36,8 @@ class ConnectMethod:
     surface: str            # SURFACE_DESKTOP | SURFACE_BROWSER
     capability: Optional[str]  # required device capability, or None = platform-native
     priority: int           # lower = listed first / preferred default
-    scheme: Optional[str] = None  # reserved for the future desktop launcher (e.g. "winbox://")
+    scheme: Optional[str] = None    # desktop launcher protocol, e.g. "winbox://", "ssh://"
+    web_path: Optional[str] = None  # browser launcher path appended to http://<host>, e.g. "/webfig/"
 
 
 # Keyed by platform id. Ordered by priority within each platform.
@@ -46,7 +52,7 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
     ),
     "mikrotik": (
         ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://"),
-        ConnectMethod("webfig", "WebFig", SURFACE_BROWSER, None, 20),
+        ConnectMethod("webfig", "WebFig", SURFACE_BROWSER, None, 20, web_path="/webfig/"),
         ConnectMethod("ssh", "SSH", SURFACE_DESKTOP, "connect", 30, scheme="ssh://"),
     ),
     "synology": (

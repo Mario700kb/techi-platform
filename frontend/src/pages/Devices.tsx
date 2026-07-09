@@ -969,6 +969,7 @@ export default function Devices() {
             clients={clients}
             groups={groups}
             canOperate={can("operator")}
+            onDeviceUpdated={handleDeviceUpdated}
           />
         ) : (
           <DeviceDrawer

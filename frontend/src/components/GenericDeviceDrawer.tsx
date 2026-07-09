@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Loader2, X } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
-import { Device } from "../api/devices";
+import { assignDeviceClient, assignDeviceGroup, Device } from "../api/devices";
 import { queueDeviceAction, ActionType } from "../api/actions";
 import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, DeviceNote, getDeviceNotes } from "../api/notes";
@@ -15,6 +15,7 @@ import { timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
+import ResourceBar from "./ResourceBar";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
@@ -23,6 +24,8 @@ const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 // (Platform + Capability + Action + Connect registries) — no per-platform code.
 // Windows devices (no reported capabilities) never reach here; the render site
 // selects the classic DeviceDrawer for them, so Windows stays byte-identical.
+// Overview reuses the SAME building blocks as the classic Drawer (ResourceBar,
+// assignDeviceClient/Group, the same telemetry hook) for enterprise parity.
 interface Props {
   device: Device;
   isOpen: boolean;
@@ -31,6 +34,7 @@ interface Props {
   groups?: DeviceGroup[];
   latestEvent?: DeviceRealtimeEvent | null;
   canOperate?: boolean;
+  onDeviceUpdated?: (device: Device) => void;
 }
 
 const CAP_TAB_LABELS: Record<string, string> = {
@@ -38,7 +42,7 @@ const CAP_TAB_LABELS: Record<string, string> = {
   docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
 };
 
-export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, canOperate }: Props) {
+export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated }: Props) {
   const features = usePlatformFeatures();
   const [meta, setMeta] = useState<DrawerMeta | null>(null);
   const [tab, setTab] = useState<string>("overview");
@@ -51,7 +55,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   const { events, loading: tlLoading, reload: reloadTimeline } = useDeviceActivity({
     deviceId: device.id, latestEvent, enabled: isOpen && tab === "timeline",
   });
-  const { healthScore, healthState } = useDeviceTelemetry({
+  const { snapshot, healthScore, healthState } = useDeviceTelemetry({
     deviceId: isOpen ? device.id : null, latestEvent,
   });
 
@@ -154,7 +158,19 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
             <div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
           ) : (
             <>
-              {tab === "overview" && <Overview device={device} meta={meta} healthScore={healthScore} healthState={healthState} />}
+              {tab === "overview" && (
+                <Overview
+                  device={device}
+                  meta={meta}
+                  healthScore={healthScore}
+                  healthState={healthState}
+                  snapshot={snapshot}
+                  clients={clients ?? []}
+                  groups={groups ?? []}
+                  canOperate={canOperate !== false}
+                  onDeviceUpdated={onDeviceUpdated}
+                />
+              )}
               {tab === "remote_support" && (
                 <div className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
                   <p className="mb-3">Connect using this platform's native methods:</p>
@@ -227,11 +243,38 @@ function captionValue(caption: string | null | undefined, key: string): string |
   return part ? part.slice(key.length + 1).trim() : null;
 }
 
-// Compact operational overview — identity, freshness, health, addresses and
-// connector/agent version only. Anything deeper (tables, enumerations) either
-// has its own capability tab or belongs to Connect (Winbox/WebFig/SSH).
-function Overview({ device, meta, healthScore, healthState }: { device: Device; meta: DrawerMeta; healthScore: number | null; healthState: string }) {
+function AssignmentSourceBadge({ source }: { source?: string | null }) {
+  const normalized = (source || "unassigned").toLowerCase();
+  const label =
+    normalized === "manual" || normalized === "legacy_manual" ? "manual" :
+    normalized === "trusted_domain" ? "domain" :
+    normalized === "enrollment_token" ? "token" :
+    normalized === "auto_os" || normalized === "system_auto" ? "auto" :
+    "unassigned";
+  return (
+    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
+      {label}
+    </span>
+  );
+}
+
+// Enterprise operational overview — identity (incl. Device ID, same style as
+// the classic Windows Drawer), freshness/health, addresses, resource
+// utilization (reusing ResourceBar — current usage only, no monitoring
+// graphs), and Client/Group assignment (reusing the exact assignDeviceClient/
+// assignDeviceGroup flow every other platform uses). Deeper detail either has
+// its own capability tab or belongs to Connect (Winbox/WebFig/SSH).
+function Overview({
+  device, meta, healthScore, healthState, snapshot, clients, groups, canOperate, onDeviceUpdated,
+}: {
+  device: Device; meta: DrawerMeta; healthScore: number | null; healthState: string;
+  snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
+  clients: Client[]; groups: DeviceGroup[]; canOperate: boolean;
+  onDeviceUpdated?: (device: Device) => void;
+}) {
   const board = captionValue(device.os_caption, "Board");
+  const availableGroups = groups.filter((g) => g.client_id === device.client_id);
+
   return (
     <div className="space-y-3">
       <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
@@ -242,6 +285,7 @@ function Overview({ device, meta, healthScore, healthState }: { device: Device; 
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Section title="Identity">
+        <Row label="Device ID" value={String(device.id)} />
         <Row label="Hostname" value={device.hostname} />
         <Row label="Platform" value={meta.platform} />
         <Row label="OS" value={device.os_name} />
@@ -257,10 +301,57 @@ function Overview({ device, meta, healthScore, healthState }: { device: Device; 
         <Row label="Public IP" value={device.public_ip} />
         <Row label="Connector" value={device.agent_version ?? undefined} />
       </Section>
+      <Section title="Resources">
+        <div className="space-y-2 py-1">
+          <ResourceBar label="CPU" percent={snapshot?.cpu_percent ?? null} />
+          <ResourceBar label="Memory" percent={snapshot?.ram_percent ?? null} />
+          <ResourceBar label="Storage" percent={snapshot?.disk_percent ?? null} />
+        </div>
+      </Section>
       <Section title="Assignment">
         <Row label="Client" value={device.resolved_client_name ?? undefined} />
         <Row label="Group" value={device.resolved_group ?? undefined} />
-        <Row label="Source" value={device.assignment_source ?? undefined} />
+        <div className="flex items-center justify-between gap-3 py-0.5 text-[11px]">
+          <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>Source</span>
+          <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
+        </div>
+        {canOperate && (
+          <div className="mt-2 space-y-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
+              <select
+                value={device.client_id ?? "none"}
+                onChange={async (e) => {
+                  const value = e.target.value === "none" ? null : Number(e.target.value);
+                  const updated = await assignDeviceClient(device.id, value);
+                  onDeviceUpdated?.(updated);
+                }}
+                className="w-full rounded-md border px-2 py-1 text-xs font-medium outline-none"
+                style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+              >
+                <option value="none">No client</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Group</span>
+              <select
+                value={device.group_id ?? "none"}
+                disabled={!device.client_id}
+                onChange={async (e) => {
+                  const value = e.target.value === "none" ? null : Number(e.target.value);
+                  const updated = await assignDeviceGroup(device.id, value);
+                  onDeviceUpdated?.(updated);
+                }}
+                className="w-full rounded-md border px-2 py-1 text-xs font-medium outline-none disabled:opacity-50"
+                style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+              >
+                <option value="none">No group</option>
+                {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
       </Section>
       <Section title="Capabilities">
         <div className="flex flex-wrap gap-1">

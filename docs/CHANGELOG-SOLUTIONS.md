@@ -27,6 +27,92 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FIX/FEATURE: MikroTik Enterprise Completion — enrollment root cause, Connect launchers, resource cards, Drawer parity
+
+### Problemi
+
+Katër boshllëqe operacionale mbi Connector v1: (1) një pajisje reale ishte
+regjistruar por s'kishte trashëguar Client/Group nga token-i; (2) menyja
+Connect vetëm listonte metoda pa i hapur (Winbox/WebFig/SSH); (3) Overview
+s'kishte kartat e burimeve (CPU/Memory/Storage); (4) Overview s'kishte
+Device ID dhe Client/Group ishin vetëm-lexim, ndryshe nga Windows Drawer.
+
+### Analiza
+
+U rilexuan 4 dokumentet + u eksplorua kodi (DeviceDrawer.tsx për paritet
+vizual, agent_enrollment_service.py + device_assignment_service.py për rrjedhën
+e caktimit, connect.py + remote_support.py për pattern-in ekzistues të
+lidhjes/audit-it). Test i drejtpërdrejtë që riprodhon SAKTËSISHT sekuencën e
+skriptit RouterOS (enroll real me token → heartbeat pa token, njësoj si
+routeri) provoi se `AgentEnrollmentService`/`DeviceAssignmentService` e
+caktojnë saktë Client/Group që në krijim (asnjë kod specifik MikroTik) dhe e
+ruajnë atë nëpër heartbeat-e — pipeline-i gjenerik ishte tashmë korrekt.
+
+### Shkaku
+
+`/tool fetch` në RouterOS NUK ngre gabim skripti për një status HTTP jo-2xx
+(token i skaduar/i përdorur, problem rrjeti) — skripti vazhdonte në heshtje te
+instalimi i scheduler-it dhe heartbeat-i i parë, dhe rruga ekzistuese e
+auto-krijimit me identitet stabil (`_create_from_stable_identity`, e nevojshme
+sepse connector-i s'e mban token-in) krijonte pajisjen me
+`assignment_source="system_auto"` dhe pa client — asnjëherë e trashëguar nga
+enrollment-i real që dështoi në heshtje.
+
+### Zgjidhja
+
+- **Enrollment**: `/tool fetch` i enroll-it mbështillet me
+  `:do{...}on-error={:error "TECHI enrollment failed"}` — një enrollment i
+  dështuar NDALON skriptin (asnjë scheduler, asnjë heartbeat, asnjë pajisje
+  e pashoqëruar). Skripti rritet 49→62 rreshta; tavani i kontratës ngrihet
+  60→70 (ende zero loops/globals/enumerim, e testuar).
+- **Connect launchers**: endpoint i ri `GET /devices/{id}/connect-methods/
+  {method_id}/launch` — ripërdor lejen ekzistuese `remote_support_connect`
+  dhe audit action-in `remote_connect` (i njëjti pattern si
+  `/connect-url` i Windows). Ndërton `scheme://<ip>` (Winbox/SSH) ose
+  `http://<ip><web_path>` (WebFig, fushë e re `ConnectMethod.web_path`) nga
+  local_ip/public_ip i pajisjes — gjenerik për çdo platformë. `ConnectMenu.tsx`
+  tani lundron/hap tab të ri në vend të toast-it "coming soon";
+  `remote_support`/`web_terminal` mbajnë rrjedhat e tyre ekzistuese.
+- **Resource cards**: heartbeat/inventory i MikroTik mbushin TANI fushat e
+  NJËJTA gjenerike `cpu_percent`/`ram_percent`/`disk_percent` që Windows/Linux
+  përdorin tashmë (lexime të vetme RouterOS — `cpu-load`, `free-memory`,
+  `free-hdd-space` — pa loops); Overview i ri i rendon me `ResourceBar`
+  ekzistues (vetëm përdorimi aktual, pa grafikë monitorimi).
+- **Paritet Overview/Assignment**: rresht Device ID + seksion Client/Group i
+  redaktueshëm, duke ripërdorur SAKTËSISHT `assignDeviceClient`/
+  `assignDeviceGroup` dhe `AssignmentSourceBadge` e Windows Drawer-it klasik.
+  **Zero ndryshime te `DeviceDrawer.tsx`** — Windows byte-identik.
+
+### Ndryshimet
+
+- `backend/app/platform_core/registry.py` (on-error guard + cpu/ram/disk_percent)
+- `backend/app/platform_core/connect.py` (`web_path` field)
+- `backend/app/api/v1/endpoints/connect.py` (endpoint `/launch`)
+- `backend/tests/test_mikrotik_deployment.py`, `test_connect_framework.py`
+- `frontend/src/components/ConnectMenu.tsx` (launch real)
+- `frontend/src/components/GenericDeviceDrawer.tsx` (Overview enterprise)
+- `frontend/src/services/rustdeskLaunch.ts` (`clickProtocolUrl` exported)
+- `frontend/src/pages/Devices.tsx` (`onDeviceUpdated` prop)
+- 4 dokumentet.
+
+### Rezultati
+
+`test_mikrotik_real_enroll_then_heartbeat_keeps_token_assignment` PROVON
+rrjedhën e vërtetë (enroll→heartbeat) ruan Client/Group; `test_mikrotik_
+heartbeat_without_enrollment_stays_unassigned` dokumenton defektin e
+parandaluar. Preflight PASSED: contract 13/13, backend 521 passed + 4 baseline
+(flags OFF/ON), tsc + frontend build, agent builds. `DeviceDrawer.tsx` (Windows)
+0 ndryshime; Linux Generic Drawer i paprekur në sjellje (vetëm Overview i ri
+i përbashkët).
+
+### Mësimet
+
+- Kur "pipeline gjenerik" duket i thyer, testo SEKUENCËN REALE (enroll pastaj
+  heartbeat) përpara se të supozosh defekt logjik — defekti ishte te
+  qëndrueshmëria e skriptit RouterOS, jo te backend-i.
+- `/tool fetch` i RouterOS s'ngre gabim për HTTP jo-2xx — çdo hap kritik
+  (enrollment) duhet mbështjellë me `:do/on-error` + `:error` eksplicit.
+
 ## [2026-07-10] SIMPLIFICATION: MikroTik Connector v1 — Connector, jo agjent; skripti RouterOS përgjysmohet
 
 ### Problemi

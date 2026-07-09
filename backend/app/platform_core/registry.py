@@ -35,7 +35,12 @@ MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik connector (Rout
 :if ($serial = "") do={ :do { :set serial [/system license get software-id] } on-error={} }
 :if ($serial = "") do={ :error "TECHI connector requires RouterOS serial-number or software-id" }
 :local body ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"enrollment_token\\":\\"{{TOKEN}}\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"agent_version\\":\\"{{VERSION}}\\"}")
-/tool fetch mode=https url="{{API_ENDPOINT}}/api/v1/agent/enroll" http-method=post http-header-field="Content-Type:application/json" http-data=$body {{FETCH_RESULT}}
+:do {
+  /tool fetch mode=https url="{{API_ENDPOINT}}/api/v1/agent/enroll" http-method=post http-header-field="Content-Type:application/json" http-data=$body {{FETCH_RESULT}}
+} on-error={
+  :log error ("TECHI enrollment failed for mikrotik-" . $serial . " - check token/network, then re-run this script")
+  :error "TECHI enrollment failed"
+}
 /system scheduler remove [find name="TECHI-Heartbeat"]
 /system scheduler remove [find name="TECHI-Inventory"]
 /system script remove [find name="TECHI-Heartbeat"]
@@ -49,7 +54,11 @@ MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik connector (Rout
 :do { :local addrs [/ip address find where disabled=no]; :if ([:len $addrs] > 0) do={ :set localip [/ip address get [:pick $addrs 0] address] } } on-error={}
 :local slash [:find $localip "/"]
 :if ($slash != nil) do={ :set localip [:pick $localip 0 $slash] }
-:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"local_ip\\":\\"" . $localip . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"capabilities\\":[\\"connect\\"]}")
+:local cpuPct 0
+:do { :set cpuPct [/system resource get cpu-load] } on-error={}
+:local ramPct 0
+:do { :local rt [/system resource get total-memory]; :local ru ($rt / 100); :if ($ru > 0) do={ :set ramPct (($rt - [/system resource get free-memory]) / $ru) } } on-error={}
+:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"local_ip\\":\\"" . $localip . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"cpu_percent\\":" . $cpuPct . ",\\"ram_percent\\":" . $ramPct . ",\\"capabilities\\":[\\"connect\\"]}")
 /tool fetch mode=https url="{{API_ENDPOINT}}/api/v1/agent/heartbeat" http-method=post http-header-field="Content-Type:application/json" http-data=$hb {{FETCH_RESULT}}
 }
 /system script add name="TECHI-Inventory" policy=read,write,test source={
@@ -67,7 +76,11 @@ MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik connector (Rout
 :local defroute "no"
 :do { :if ([:len [/ip route find where dst-address="0.0.0.0/0"]] > 0) do={ :set defroute "yes" } } on-error={}
 :local caption ("Board=" . $board . "; Model=" . $model . "; Serial=" . $serial . "; Firmware=" . $fw . "; Uptime=" . [/system resource get uptime] . "; Bridges=" . $bridges . "; Wireless=" . $wifi . "; DefaultRoute=" . $defroute)
-:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"os_caption\\":\\"" . $caption . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"cpu\\":\\"" . [/system resource get cpu] . "\\",\\"ram\\":\\"" . [/system resource get total-memory] . "\\",\\"storage\\":\\"free=" . [/system resource get free-hdd-space] . "; total=" . [/system resource get total-hdd-space] . "\\",\\"capabilities\\":[\\"connect\\"],\\"software\\":[{\\"name\\":\\"RouterOS\\",\\"version\\":\\"" . [/system resource get version] . "\\"},{\\"name\\":\\"RouterBOOT\\",\\"version\\":\\"" . $fw . "\\"}]}")
+:local hddFree [/system resource get free-hdd-space]
+:local hddTotal [/system resource get total-hdd-space]
+:local diskPct 0
+:do { :local hu ($hddTotal / 100); :if ($hu > 0) do={ :set diskPct (($hddTotal - $hddFree) / $hu) } } on-error={}
+:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"os_caption\\":\\"" . $caption . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"cpu\\":\\"" . [/system resource get cpu] . "\\",\\"ram\\":\\"" . [/system resource get total-memory] . "\\",\\"storage\\":\\"free=" . $hddFree . "; total=" . $hddTotal . "\\",\\"disk_percent\\":" . $diskPct . ",\\"capabilities\\":[\\"connect\\"],\\"software\\":[{\\"name\\":\\"RouterOS\\",\\"version\\":\\"" . [/system resource get version] . "\\"},{\\"name\\":\\"RouterBOOT\\",\\"version\\":\\"" . $fw . "\\"}]}")
 /tool fetch mode=https url="{{API_ENDPOINT}}/api/v1/agent/heartbeat" http-method=post http-header-field="Content-Type:application/json" http-data=$hb {{FETCH_RESULT}}
 }
 /system scheduler add name="TECHI-Heartbeat" interval={{HEARTBEAT_INTERVAL}}s on-event="TECHI-Heartbeat"

@@ -338,6 +338,45 @@ transition (first heartbeat / offline→online), `inventory_updated` per
 snapshot — never one row per beat. No Windows/Linux/macOS deployment or
 enrollment path changed.
 
+**Enterprise completion (2026-07-10, deployed):** four fixes/additions, all
+reusing existing registries — no redesign, no MikroTik-specific backend code.
+(1) **Enrollment-loss root cause found and closed**: the generic enrollment
+pipeline (`AgentEnrollmentService` → `apply_enrollment_assignment`) already
+assigns Client/Group from the token correctly and a new regression test
+proves it end-to-end (real enroll → heartbeat, same as the router does).
+The actual failure mode was that `/tool fetch` on RouterOS does not raise a
+script error on a non-2xx HTTP response, so a failed enroll (bad/used token,
+network hiccup) let the script silently continue to install the scheduler
+and start heartbeating — auto-creating an unassigned device via the existing
+stable-identity fast path. Fixed at the connector, not the backend: the
+enroll `/tool fetch` is now wrapped in `:do{...}on-error={:error "TECHI
+enrollment failed"}`, halting the script (no scheduler install, no
+heartbeat) so a device can never appear without its token's Client/Group. A
+second regression test documents the prevented failure mode. Script grew
+49→62 lines (ceiling raised 60→70, contract test still forbids
+loops/globals/enumeration). (2) **Connect launchers implemented**: `GET
+/devices/{id}/connect-methods/{method_id}/launch` (new, permission-gated by
+the existing `remote_support_connect` permission, audited via the existing
+`remote_connect` audit action — same pattern as Windows Remote Support's
+`/connect-url`) builds `scheme://<host>` (Winbox, SSH) or
+`http://<host><web_path>` (WebFig) from the device's local/public IP;
+generic for any platform via new `ConnectMethod.web_path` field, no
+per-platform code. Frontend `ConnectMenu` now actually navigates
+(`clickProtocolUrl`, exported from the existing RustDesk launch service) or
+opens a new tab instead of showing a "coming soon" toast; `remote_support`/
+`web_terminal` keep their own existing dedicated flows untouched. RouterOS
+API and Terminal remain explicitly out of scope. (3) **Resource cards**:
+MikroTik heartbeat/inventory now populate the SAME generic `cpu_percent`/
+`ram_percent`/`disk_percent` telemetry fields Windows/Linux already use
+(single RouterOS property reads — `cpu-load`, `free-memory`, `free-hdd-space`
+— no loops); the Generic Drawer Overview renders them with the existing
+`ResourceBar` component, current utilization only, no monitoring graphs.
+(4) **Overview/assignment parity with Windows**: added a Device ID row and
+an editable Client/Group assignment section reusing the exact
+`assignDeviceClient`/`assignDeviceGroup` API calls and `AssignmentSourceBadge`
+pattern the classic Windows Drawer uses — zero edits to `DeviceDrawer.tsx`
+(Windows stays byte-identical).
+
 # RDP TECHI MOBILE UI 2.0
 
 | | |

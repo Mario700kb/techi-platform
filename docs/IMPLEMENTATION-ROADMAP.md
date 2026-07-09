@@ -246,6 +246,36 @@ deployment and enrollment paths unchanged. **Future RouterOS management =
 RouterOS API/adapter action execution + capability renderers, no Drawer/Tree
 redesign.**
 
+**ENTERPRISE COMPLETION 2026-07-10.** Owner audit of a real enrollment found a
+device that enrolled but landed with no Client/Group. Root-cause: the generic
+pipeline (`AgentEnrollmentService`/`DeviceAssignmentService`) was already
+correct — a new test (`test_mikrotik_real_enroll_then_heartbeat_keeps_token_
+assignment`) proves enroll→heartbeat preserves the token's assignment exactly
+like every platform. The real gap is that RouterOS `/tool fetch` does not
+raise a script error on a non-2xx HTTP response, so a failed `/agent/enroll`
+(bad/used token, network hiccup) let the script fall through to installing
+the scheduler anyway, and the stable-identity heartbeat auto-create path then
+created an unassigned device (`test_mikrotik_heartbeat_without_enrollment_
+stays_unassigned` documents this). Fix is connector-side only: the enroll
+fetch is now wrapped in `:do{...}on-error={:error "TECHI enrollment failed"}`
+so a failed enroll halts the whole script — no scheduler, no heartbeat, no
+orphan device. Script grew 49→62 lines; ceiling raised 60→70 (still zero
+loops/globals/enumeration, contract-tested). Three more completions, all
+registry-reuse, zero redesign: (1) **Connect launchers** — new `GET
+/devices/{id}/connect-methods/{method_id}/launch` (permission `remote_support_
+connect`, audit `remote_connect`, same pattern as Windows `/connect-url`)
+builds `scheme://<host>` or `http://<host><web_path>` from the device's IP;
+`ConnectMenu` now calls it and actually navigates/opens instead of showing a
+stub toast. RouterOS API and Terminal stay out of scope. (2) **Resource
+cards** — MikroTik now populates the existing generic `cpu_percent`/
+`ram_percent`/`disk_percent` telemetry fields (single-property RouterOS
+reads, no loops); Overview renders them with the existing `ResourceBar`
+component (current utilization only). (3) **Overview/assignment parity** —
+Device ID row + editable Client/Group assignment reusing
+`assignDeviceClient`/`assignDeviceGroup` and `AssignmentSourceBadge` exactly
+as the classic Windows Drawer does. `DeviceDrawer.tsx` (Windows) has zero
+edits across this whole work item.
+
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
 PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the
