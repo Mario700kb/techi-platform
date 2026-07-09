@@ -9,7 +9,7 @@
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `2dae09a`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
-| **Agent Version** | **2.1.5** — fleet target, NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
+| **Agent Version** | **2.1.6** — production baseline (owner-declared 2026-07-09, replaces 2.1.5); NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
@@ -24,9 +24,12 @@
 2b. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
    (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
    section below). Dark code only, flags OFF, zero behavior change.
-3. Complete the Agent **2.1.5** rollout (~700 devices via NETLOGON/GPO)
-4. Start Agent **2.1.6** (from branch `pending-agent-2.1.6`, only after the
-   rollout completes; SHA-alignment procedure)
+3. Complete the Agent **2.1.6** rollout (~700 devices via NETLOGON/GPO;
+   artifact replacement only, monitor to 100% — then 2.1.6 is the official
+   baseline and 2.1.7+ distribute primarily via self_update)
+4. ✅ Agent 2.1.6 released to stable (2026-07-09, `1b0ddf3` — lifecycle
+   engine shared Windows+Linux, log rotation, cache pruning; SHA-alignment
+   via single CI run)
 5. Standardize the deployment working directory (decision pending — see
    Known Issues #1)
 6. Recreate the postgres container's log-cap benefit was already applied
@@ -155,7 +158,7 @@ Three package types in Agent Packages UI, all can be active simultaneously
 | Backend/frontend containers | docker json-file 10m × 5 | OK **(verified)** |
 | Postgres container | none | Unbounded (fix committed, not deployed) **(verified)** |
 | NPM edge logs | host logrotate hourly, 100 MB cap, 3 gz | OK **(verified)**; heartbeats of the whole fleet hit `proxy-host-2_access.log` |
-| Agent `agent.log` (endpoints) | `C:\ProgramData\TechiAgent\logs\agent.log`, append-only | **No rotation in 2.1.5** (~0.5–1.5 MB/day/device); rotation parked in `pending-agent-2.1.6` |
+| Agent `agent.log` (endpoints) | `C:\ProgramData\TechiAgent\logs\agent.log`, append-only | **No rotation ≤ 2.1.5** (~0.5–1.5 MB/day/device); 2.1.6 rotates at 5 MB (keeps `.1`) |
 | journald | SystemMaxUse=200M | OK **(verified)** |
 
 # Security
@@ -234,17 +237,29 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | Branch | State |
 |---|---|
 | `stable/phase-2-heartbeat` | THE working + deploy branch. Local has **unpushed `49fce27`** (see Pending) |
-| `pending-agent-2.1.6` | Parked agent changes (log rotation + cache pruning, commit `313cb74`). **Do not build/merge/deploy until the 2.1.5 rollout completes** (owner's order) |
+| `pending-agent-2.1.6` | **MERGED into stable 2026-07-09** (`cd06f3b`) — historical; do not add new work here |
 | `main` | Stale initial commit — not used |
 
 # Versionet
 
-- **Agent fleet target: 2.1.5** — rolling out to ~700 devices via
-  NETLOGON/GPO; fleet is mixed during rollout (`agent_version` per device in
-  UI). Source constant is `0.0.0-dev`; real version set at build.
+- **Agent fleet target: 2.1.6** (owner-declared production baseline,
+  2026-07-09; replaces 2.1.5) — release commit `1b0ddf3` on
+  `stable/phase-2-heartbeat` (merge of `pending-agent-2.1.6`). Ships the
+  startup lifecycle state machine (ONE engine shared by Windows + Linux),
+  agent.log rotation, and cache pruning. Rollout via the existing
+  NETLOGON/GPO mechanism (artifact replacement only — no GPO/script
+  changes); fleet is mixed during rollout (`agent_version` per device in
+  UI). From 2.1.7 on, self_update is the PRIMARY distribution channel;
+  NETLOGON/GPO remains bootstrap + recovery. Source constant is
+  `0.0.0-dev`; real version set at build. Official Windows artifacts
+  (combined MSI + bridge MSI + standalone exe, SHA-aligned) come from ONE
+  CI run of `build-agent-msi.yml`; Linux binaries built with
+  `-X main.AgentVersion=2.1.6 -trimpath` (amd64/arm64/armhf).
 - **Backend/frontend prod: content of `e0df46a`** (verified by container md5).
-- Exact standalone 2.1.5 exe SHA and rollout wave status: **(needs
-  verification** — check Agent Packages UI / fleet dashboard**)**.
+- Exact 2.1.6 artifact SHAs come from the single CI run of
+  `build-agent-msi.yml` for release commit `1b0ddf3` (SHA-alignment rule);
+  Linux binary SHAs in `agent/dist/SHA256SUMS-2.1.6-linux.txt`. Rollout
+  wave status: check fleet dashboard (`agent_version` per device).
 
 # Known Issues (real, current — not a backlog)
 
@@ -254,8 +269,9 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 3. `49fce27` unpushed → in prod: 5 tables grow unbounded (device_alerts ~224k,
    audit_logs, remote_actions incl. PowerShell output, enrollment_audit ~87k,
    device_status_history ~172k), postgres log unbounded, techi.log hourly churn.
-4. Agent 2.1.5: `agent.log` unrotated on endpoints; stale MSI/exe caches
-   accumulate per version (fixes parked in `pending-agent-2.1.6`).
+4. Agents ≤ 2.1.5 (shrinking during rollout): `agent.log` unrotated on
+   endpoints; stale MSI/exe caches accumulate per version — **fixed in
+   2.1.6**, clears as the fleet upgrades.
 5. Alembic two-head fork.
 6. ~365 MB duplicate/never-used indexes in prod DB (approval needed to drop).
 7. `change_heartbeat_interval` per-device is overridden by global policy in the
@@ -269,16 +285,17 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
     `backend/tests/test_enrollment_audit_diagnostics.py` (missing
     `trusted_domains` table in test setup) — not caused by recent work.
 13. Deployments page serves mock data (`/deployments/recent` is hardcoded).
-14. **Agents ≤ 2.1.5: a transient startup failure silently kills the agent
-    forever behind a RUNNING service** (root-caused 2026-07-09: one failed
-    read of `agent.config.json` at first service start — e.g. AV/EDR
-    `Access is denied` on a freshly formatted domain PC — exits the agent
-    loop before the first heartbeat; the service keeps reporting RUNNING, so
-    SCM recovery and the watchdog never react and the device never appears
-    in the platform). Fleet-wide latent; **fix (startup lifecycle state
-    machine) is committed on `pending-agent-2.1.6`**, ships with 2.1.6.
-    Workaround on an affected device: restart the TechiAgent service. See
-    CHANGELOG-SOLUTIONS 2026-07-09 and OPERATOR-MANUAL §9a.
+14. **Agents ≤ 2.1.5 (shrinking during rollout): a transient startup failure
+    silently kills the agent forever behind a RUNNING service** (root-caused
+    2026-07-09: one failed read of `agent.config.json` at first service
+    start — e.g. AV/EDR `Access is denied` on a freshly formatted domain
+    PC — exits the agent loop before the first heartbeat; the service keeps
+    reporting RUNNING, so SCM recovery and the watchdog never react and the
+    device never appears in the platform). **Fixed in 2.1.6** (startup
+    lifecycle state machine, merged to stable in `cd06f3b`/`1b0ddf3`) —
+    clears as the fleet upgrades. Workaround on an affected ≤ 2.1.5 device:
+    restart the TechiAgent service. See CHANGELOG-SOLUTIONS 2026-07-09 and
+    OPERATOR-MANUAL §9a.
 
 # PLATFORM EXPANSION
 
@@ -290,7 +307,7 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
 | **Feature work status** | ⏸️ **LIVE VALIDATION (started 2026-07-08)** — NO new features. Operator Manual published (`docs/reference/OPERATOR-MANUAL.md`). **4 flags ENABLED in production for live testing (owner-approved 2026-07-08): `FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_MIKROTIK`.** OFF: `FEATURE_TERMINAL` (needs NPM WS route), `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`. **Production is no longer bit-identical to the classic Windows RMM** — Linux/Connect-menu/Vault/MikroTik surfaces are now visible. Only production bug fixes allowed (root-cause → fix that bug → contract+regression+preflight+smoke → deploy → document). Rollback: `cp /root/.env.bak-2026-07-08 /root/.env && docker compose -p techi-platform up -d backend`. Enablement verified: flags loaded True in container; install/linux 200; connect/vault reachable; smoke 7/7; preflight PASSED; 0 real errors. **Prod tip now `a5a9b86`.** 2026-07-09: **Step 2 — generic enrollment auto-group shipped.** A token carrying a Client but no Default Group now auto-places the device in the correct standard group (Servers/Client PC) via the Unified Classification Engine — any platform, no manual assignment; explicit Default Group respected; platform identity from the agent. Was: **Registry-driven Device Drawer — Step 1 COMPLETE (1a+1b+1c).** The Action Registry (`platform_core/actions.py`) is the single source of truth for every executable operation; `ACTION_PERMISSION_MAP` now derives from it, and the UI (`/drawer`), execution (queue by action_type == descriptor id) and audit (`ACTION_QUEUED`) all consume the same descriptor. Was: **Steps 1a + 1b shipped.** Capability-reporting devices (Linux + future platforms) now render via the new `GenericDeviceDrawer`, driven entirely by `GET /devices/{id}/drawer` (Platform + Capability + Action + Connect registries): Connect-primary Overview, capability tabs (Services/Docker/Logs/Network/…), Action-Registry Management buttons, Terminal when capable, and **no Remote Support unless the device reports the `remote_support` capability**. Renderer is selected at the render site — devices with no capabilities (every Windows agent) use the classic `DeviceDrawer`, **untouched and byte-identical** (zero edits to DeviceDrawer.tsx). Adding a platform needs no Drawer changes. Was: **Step 1a shipped dark.** The Drawer is being completed into a generic renderer fed by Platform + Capability + **Action** + Connect registries (no Windows/Linux branching; Windows selected as the grandfathered renderer → byte-identical). `platform_core/actions.py` is the single source of truth per executable operation (id/label/permission/required_capability/confirm/audit/target/handler); `effective_capabilities()` uses "absence ⇒ platform's declared capabilities" so the capability-less Windows fleet keeps its full surface with no agent rebuild. New dark `GET /devices/{id}/drawer` (CORE-gated) is the renderer's single feed. Verified live: Linux `rustdesk-srv` (no RS, capability tabs, SSH/terminal) and Windows (full RS surface). UI untouched. Next: Step 1b (frontend generic renderer + Windows renderer selection), Step 1c (permission/label/audit derive from the registry), then Step 2 (platform-neutral enrollment). Earlier 2026-07-09: Deployment dialog is now platform-aware — the token Deployment modal (Deployment ▸ View) renders metadata-driven, feature-flag-gated sections (Windows always; Linux when `FEATURE_LINUX`; macOS/MikroTik/Synology/QNAP/VMware/Hyper-V/Proxmox as reserved placeholders gated by their flags). **One shared token across all platforms** (derived from the Windows bootstrap URL). **Windows block byte-identical**, zero backend changes. Earlier 2026-07-09: Linux agent package chain fixed end-to-end (was shipped dark, never runnable) — upload accepts raw `.bin`, public download supports `linux-amd64/arm64/armhf` and resolves `linux-*` via `file_type=agent_binary`, installer maps armhf; **Windows package path (MSI bootstrap / GPO / self-update / selection) byte-identical** (separate branch). Live: linux-amd64→404 reachable, freebsd→400, windows-amd64→200. First `linux-amd64` binary built (`agent/dist/techi-agent-linux-amd64.bin`, AgentVersion 2.1.5), pending first upload + first live Linux enrollment (3CX/Debian). Earlier 2026-07-08 work: [0] Device Tree click not syncing with Catalog — frontend SWR cache key `deviceTableCacheKey` omitted `category`/`platform` (regression after the tree moved to those filters in e08544d) so selections within a client collided and served stale rows until manual Refresh; fixed by adding both to the key (engine untouched); [1] Device Tree filtering made cumulative (filter==badge, 28/28 clients); [2] heartbeat manual-lock hole closed via single `DeviceAssignmentService.is_manual_locked()`; [3] **Unified Classification Engine SHIPPED** — `app/platform_core/classification.py` is now the ONE source of truth for device Category + Platform, replacing the four duplicated classifiers (C1 resolution / C2 smart_folder / C3 tree-case / C4 write-time). One ordered rule table rendered as SQL (`category_case`/`platform_case`) **and** in-memory (`classify_category`/`classify_platform`), kept identical by a parity contract test and a `preflight.sh` guard that forbids the retired symbols. All consumers (tree badges, overview, catalog/search filters, smart folders, Drawer/resolution, enrollment placement) read it; new additive `Other` tree folder (custom-group devices). Delivered P1–P5, each contract+preflight+smoke then deploy; verified byte-identical on the live fleet (723 devices, 0 custom groups) for both SQL counts (28/28 clients) and resolved category (723/723). Specs: `docs/reference/CLASSIFICATION-ARCHITECTURE-REVIEW.md` + `docs/reference/UNIFIED-CLASSIFICATION-ENGINE-SPEC.md`. |
 | **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
-| **Constraints** | No `agent/` work until the 2.1.5 rollout is officially completed (standing order). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
+| **Constraints** | Agent work lands on `stable/phase-2-heartbeat` again (2.1.6 is the baseline; the 2.1.5-freeze standing order is closed, owner 2026-07-09). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
 | **Current Phase** | ✅ Phases 0, 1, 4, **2** deployed & closed 2026-07-07 (prod tip `59a781b`): platform_core + platform_adapters + 7 nullable `devices` columns + Credential Vault (`FEATURE_VAULT`) + **Linux Agent MVP** (`agent/pal.go` + `platform_linux.go`: capabilities, os-release inventory, systemd service management + self-update; backend `GET /install/linux` + `linux-arm64` package type — all `FEATURE_LINUX`). Windows agent NOT rebuilt/redeployed — fleet stays 2.1.5; Linux → **Experimental** (Appendix C). All expansion flags OFF in prod (verified). **Execution order (owner 2026-07-07): platform before IAM** — Vault Safety ✅ → Linux Agent ✅ → Phase 3 Linux UI ✅ → Phase 5 Web Terminal DARK ✅ (behind `FEATURE_TERMINAL` OFF; NPM WS route + flag-enable = Manual Approval, not done) → **Phase 7 MikroTik Proxy Adapter + Connect Framework DARK ✅** (capability-driven `/connect-methods` + ConnectMenu, MikroTik proxy adapter registered, Network/Storage/Hypervisor auto-classification + tree folders + `category` filter — all flag-gated; launchers/RouterOS API = next phase per boundary) → 8 Storage → 9 Hypervisors → 6 IAM last. All 8 flags OFF. **Adding a platform now = adapter + capability mapping + icon + connect methods, no UI change.** Standing implementation authority (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). Enabling FEATURE_LINUX for a canary = Manual Approval. |
 | **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
@@ -348,12 +365,15 @@ Dashboard/Devices/Device Details (`/devices/714`)/Alerts/More/Settings —
   took effect as a side effect of an unplanned container recreation
   (Compose auto-recreated postgres when it detected the compose-file
   change) — verified healthy within ~30s, no heartbeat loss.
-- Agent 2.1.6 (branch `pending-agent-2.1.6`): log rotation + cache pruning +
-  **startup lifecycle state machine** (LoadingConfig → Enrolling →
-  FirstHeartbeat → Operational; config load retried with exponential backoff,
-  state mirrored to `C:\ProgramData\TechiAgent\agent.state.json`, Faulted loop
-  crashes the process so SCM recovery applies, watchdog restarts a wedged
-  initializing agent — fixes Known Issue 14) — awaiting rollout completion.
+- Agent 2.1.6 — **RELEASED to stable 2026-07-09** (`pending-agent-2.1.6`
+  merged in `cd06f3b`; release commit `1b0ddf3`): log rotation + cache
+  pruning + startup lifecycle state machine (LoadingConfig → Enrolling →
+  FirstHeartbeat → Operational; config load retried with exponential
+  backoff; state mirrored to `agent.state.json` next to the config on every
+  platform; Faulted loop crashes the process so SCM/systemd recovery
+  applies; watchdog restarts a wedged initializing agent — fixes Known
+  Issues 4 + 14). GPO rollout to the Windows fleet in progress; 100% =
+  official baseline.
 - Heartbeat storage redesign — **proposal only**, awaiting approval:
   [architecture/heartbeat-storage-redesign.md](architecture/heartbeat-storage-redesign.md).
 - NPM `access_log off` for heartbeat locations — proposed, awaiting approval.
@@ -363,7 +383,7 @@ Dashboard/Devices/Device Details (`/devices/714`)/Alerts/More/Settings —
 
 # Roadmap
 
-**High**: complete 2.1.5 rollout; push+deploy `49fce27`; deploy-dir
+**High**: complete 2.1.6 rollout (100% fleet = official baseline); push+deploy `49fce27`; deploy-dir
 standardization + backup script fix.
 **Medium**: cut agent 2.1.6 from the parked branch (SHA-alignment procedure);
 NPM heartbeat access_log off; drop duplicate PK indexes (with approval);
@@ -461,8 +481,9 @@ current state.
 1. **Apply the PROJECT DOCUMENTATION POLICY above** — it is the first and
    non-negotiable working rule for every session.
 2. **Standing orders** (as of 2026-07-04): do NOT touch agent code, builds, or
-   the agent↔backend protocol while the 2.1.5 rollout is in progress —
-   agent-side work goes to branch `pending-agent-2.1.6`. No DB deletions,
+   the agent↔backend protocol during an active fleet rollout without owner
+   approval. (The 2.1.5-era freeze + `pending-agent-2.1.6` parking branch
+   are closed — owner promoted 2.1.6 to baseline 2026-07-09.) No DB deletions,
    volume/backup removal, VACUUM FULL, index drops, or proxy-config changes
    without explicit owner approval. Server hygiene of the pre-approved kind
    (build cache, tmp, journal vacuum, log rotation setup) has precedent.
@@ -498,7 +519,7 @@ current state.
    `C:\ProgramData\TechiAgent\agent.config.json` (+ legacy
    `C:\ProgramData\TECHI\agent.config.json` migration path).
 6. **RustDesk server keys** (`/opt/techi/rustdesk-server/data/id_ed25519*`).
-7. **Agent code during an active fleet rollout** (current: 2.1.5).
+7. **Agent code during an active fleet rollout** (current: 2.1.6 rollout).
 8. **SHA-alignment procedure** for agent packages (never upload a
    separately-built exe as agent_binary).
 9. **Production NPM proxy config** without approval (and keep "Cache Assets"

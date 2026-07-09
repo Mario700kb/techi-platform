@@ -27,6 +27,69 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] RELEASE: Agent 2.1.6 — baseline i ri prodhimi (zëvendëson 2.1.5); NJË lifecycle engine për Windows + Linux
+
+### Problemi
+
+Pronari promovoi 2.1.6 si baseline zyrtar prodhimi: duheshin (1) merge i
+përmirësimeve Lifecycle të miratuara, (2) i njëjti Lifecycle Engine edhe për
+Linux (JO implementime të ndara — retry, state machine, first heartbeat,
+operational, recovery identike; kodi platformë-specifik vetëm operacione
+platforme), (3) build + validim i plotë, (4) përgatitja e artifakteve për
+NETLOGON pa asnjë ndryshim GPO/skriptesh.
+
+### Zgjidhja
+
+- **Merge**: `pending-agent-2.1.6` → `stable/phase-2-heartbeat` (`cd06f3b`,
+  pa konflikte): lifecycle state machine (64f70ed) + log rotation/cache
+  pruning (313cb74). Urdhri i ngrirjes së agent-code për rrjedhojë mbyllet —
+  2.1.6 është baseline i ri.
+- **Unifikim Linux** (release commit `1b0ddf3`): engine ishte tashmë
+  platformë-neutral; u mbyllën dy hendeqet e fundit: (a) `agent.state.json`
+  tani gjithmonë NGJITUR me config-un — Windows
+  `C:\ProgramData\TechiAgent\`, Linux `/etc/techi-agent/`, dev `./`;
+  `-config` i personalizuar e mbart me vete (initLifecycleStateFile);
+  (b) hiqet migrate i dyfishtë para-lifecycle në `main.go` — konsola,
+  Windows service dhe systemd (Type=simple, `Restart=always`) ndajnë
+  SAKTËSISHT të njëjtin path nisjeje/retry. Recovery: SCM failure actions
+  (Windows) ≡ systemd Restart=always (Linux) — semantikë crash-and-restart
+  identike. VERSION → 2.1.6.
+- **Artifaktet Windows** dalin nga NJË run i CI `build-agent-msi.yml`
+  (rregulli SHA-alignment): `TECHI-Endpoint-Deployment-2.1.6.msi` (kombinuar),
+  `TECHI-Agent-Update-2.1.6.msi` (bridge), `techi-agent-2.1.6.exe`
+  (standalone, i njëjti binar si në MSI) + .sha256 secili. **Linux**: build
+  lokal `-s -w -X main.AgentVersion=2.1.6 -trimpath` →
+  `techi-agent-linux-{amd64,arm64,armhf}.bin`, SHA në
+  `agent/dist/SHA256SUMS-2.1.6-linux.txt`
+  (amd64 8e398a90…, arm64 06174baa…, armhf 972dcbf8…).
+- **Deployment (vetëm zëvendësim artifaktesh)**: në NETLOGON zëvendësohen
+  `TECHI-Agent-2.1.6.msi` (MSI i kombinuar i RIEMËRUAR — techi-deploy.cmd
+  pret `TECHI-Agent-%%VERSION%%.msi`), `techi-version.txt` → `2.1.6`, bridge
+  MSI, agent binary (upload si Agent Binary package nga i njëjti CI run).
+  ASNJË ndryshim në GPO/techi-deploy.cmd/komanda — Scheduled Task ekzistues
+  e ngre flotën automatikisht. Pas 100%: 2.1.7+ shpërndahen kryesisht me
+  self_update; NETLOGON/GPO mbetet bootstrap + recovery.
+
+### Rezultati
+
+Preflight PASSED në baseline: contract 13/13; backend 488 passed + 4 baseline
+(flags OFF dhe ON); tsc + frontend build; agent builds. `go vet` + `go test`
+(me testet e reja lifecycle); build 5 targete (windows/amd64,
+linux/amd64+arm64+armv7, darwin dev). Smoke lokal 7/7 (skripti kërkon bash ≥4;
+në macOS bash 3.2 `"${hdr[@]}"` bosh + `set -u` jep false-fail — në serverin
+prod s'ka problem). Provë e gjallë: `-config` custom → `agent.state.json`
+ngjitur me të, tranzicionet loading_config → enrolling të logruara.
+
+### Mësimet
+
+- Lifecycle platformë-neutral që nga dita zero i bëri "ndryshimet Linux"
+  gati zero — vetëm vendndodhja e state file dhe heqja e një dublimi.
+- Rregulli SHA-alignment mbetet ligj: MSI + exe standalone VETËM nga i njëjti
+  CI run, ndryshe flota bëhet portokalli.
+- deploy.cmd pret emrin `TECHI-Agent-<version>.msi` — CI prodhon
+  `TECHI-Endpoint-Deployment-<version>.msi`; riemërtimi në NETLOGON është
+  hap i detyrueshëm i deployment-it.
+
 ## [2026-07-09] INCIDENT PRODHIMI: PC i sapo-formatuar nuk shfaqet kurrë në platformë — "Access is denied" te agent.config.json; agjenti vdes në heshtje pas një service RUNNING
 
 ### Problemi

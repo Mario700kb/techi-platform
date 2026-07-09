@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat` (Platform Expansion Phases 0–7 deployed). |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat` (Platform Expansion Phases 0–7 deployed). **Agent baseline: 2.1.6** (released 2026-07-09; GPO rollout in progress — mixed fleet until 100%). |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -231,14 +231,23 @@ longer says whether the agent is healthy:
 | **Operational** | First heartbeat succeeded. Later transient heartbeat failures never leave this state (the regular interval keeps retrying). |
 | **Faulted** | The loop exited with an unexpected error. The service process deliberately **crashes** (exit 2) so the SCM failure actions (restart 1 m/1 m/5 m) restart it — a dead loop never hides behind a RUNNING service. |
 
-The current state is mirrored to `C:\ProgramData\TechiAgent\agent.state.json`
-(`state`, `detail`, `updated_at`, `pid`). The **TECHI Agent Watchdog** task
-reads it every 5 minutes and distinguishes *Service Running* / *Agent
-Initializing* / *Agent Operational* / *Agent Faulted*: it restarts the service
-when the state is Faulted, or stuck initializing with a stale state file
-(> 30 min). Operational agents produce no watchdog log noise. Nothing in the
-installer, enrollment, deployment scripts, or the config format changed — the
-state file is a new, purely diagnostic artifact.
+The current state is mirrored to `agent.state.json` **next to the config
+file** — Windows: `C:\ProgramData\TechiAgent\agent.state.json`, Linux:
+`/etc/techi-agent/agent.state.json` (`state`, `detail`, `updated_at`, `pid`).
+The **TECHI Agent Watchdog** task (Windows) reads it every 5 minutes and
+distinguishes *Service Running* / *Agent Initializing* / *Agent Operational* /
+*Agent Faulted*: it restarts the service when the state is Faulted, or stuck
+initializing with a stale state file (> 30 min). Operational agents produce no
+watchdog log noise. Nothing in the installer, enrollment, deployment scripts,
+or the config format changed — the state file is a new, purely diagnostic
+artifact.
+
+**One lifecycle engine for every platform.** Windows and Linux run the exact
+same state machine, retry policy, and recovery semantics; only the supervisor
+differs — Windows uses SCM failure actions (restart 1 m/1 m/5 m), Linux uses
+systemd `Restart=always` (10 s). Future platforms (macOS, MikroTik proxy,
+storage adapters) reuse this engine; platform code implements platform
+operations only.
 
 ---
 

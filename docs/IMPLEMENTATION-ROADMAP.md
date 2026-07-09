@@ -480,11 +480,28 @@ on the host. Flags: `FEATURE_HYPERVISOR`. Demand-driven.
 - Manual-SQL prod discipline — every phase ships SQL + inverse in its changelog entry.
 
 **Technical debt** (pre-existing, tracked in PROJECT_STATE Known Issues — not created by this program)
-- 4 known test failures in `test_enrollment_audit_diagnostics.py`; Alembic two-head fork; split-brain deploy dirs; agent.log rotation parked in `pending-agent-2.1.6`; Deployments page mock data.
+- 4 known test failures in `test_enrollment_audit_diagnostics.py`; Alembic two-head fork; split-brain deploy dirs; Deployments page mock data. (agent.log rotation shipped in Agent 2.1.6, 2026-07-09.)
 - Program-created debt: none yet. `TestPhase0Darkness` must be removed/adjusted in the phase that first wires `platform_core` (expected: Phase 1) — intentional.
 
 **Future improvements** (post-expansion, need separate approval)
 - Heartbeat storage redesign (proposal exists, unimplemented); offsite backups + DR rehearsal; multi-worker backend (needed before ~10k devices); Future Platform SDK docs.
+
+## 🚚 Agent 2.1.6 — Production Release (2026-07-09)
+
+Owner-declared new production baseline (replaces 2.1.5). Contents: **startup
+lifecycle state machine** (one engine shared by Windows + Linux — LoadingConfig
+→ Enrolling → FirstHeartbeat → Operational; exponential-backoff config retry;
+`agent.state.json` next to the config; Faulted = crash-and-restart via SCM /
+systemd; watchdog distinguishes Initializing/Operational/Faulted), plus the
+parked 2.1.6 items (agent.log rotation, cache pruning). Release commit
+`1b0ddf3` (merge `cd06f3b`); preflight PASSED at baseline (contract 13/13,
+backend 488+4, tsc/frontend, agent builds), local smoke 7/7. Windows artifacts
+(combined MSI, bridge MSI, standalone exe — SHA-aligned) from ONE CI run of
+`build-agent-msi.yml`; Linux binaries amd64/arm64/armhf. Deployment: NETLOGON
+artifact replacement only (`TECHI-Agent-2.1.6.msi` + `techi-version.txt`), the
+existing GPO Scheduled Task upgrades the fleet — no GPO/script changes. After
+100%: 2.1.7+ distribute primarily via TECHI self_update; NETLOGON/GPO stays
+bootstrap + recovery. Full entry: CHANGELOG-SOLUTIONS 2026-07-09.
 
 ## PROJECT HEALTH
 
@@ -494,8 +511,8 @@ on the host. Flags: `FEATURE_HYPERVISOR`. Demand-driven.
 | Documentation | 🟢 Healthy | Two-Doc standard live; audit + roadmap current |
 | Backend | 🟢 Healthy | Prod verified 2026-07-06; storage batch deployed |
 | Frontend | 🟢 Healthy | Mobile UI 2.0 live; no known regressions |
-| Windows Agent | 🟡 Attention | 2.1.5 rollout in progress (mixed fleet); agent.log unrotated until 2.1.6 |
-| Linux Agent | 🟡 Attention | Does not exist yet — by plan (Phase 2, gated); yellow until first canary is green |
+| Windows Agent | 🟡 Attention | **2.1.6 released 2026-07-09** (startup lifecycle state machine + log rotation + cache pruning; commit `1b0ddf3`); GPO rollout in progress — 100% fleet = official baseline, then 2.1.7+ primarily via self_update |
+| Linux Agent | 🟡 Attention | MVP delivered (Phase 2, 2026-07-07); shares the 2.1.6 lifecycle engine (identical state machine/retry/recovery — systemd Restart=always); FEATURE_LINUX canary pending |
 | Mobile UI | 🟢 Healthy | Deployed + 5 post-deploy fix rounds verified |
 | Deployment | 🟡 Attention | Split-brain deploy dirs (`/root` vs stale `/opt`); DR never rehearsed; no offsite backup |
 | Security | 🟡 Attention | NETLOGON token plaintext (ACL pending); vault not yet built (Phase 4) |
