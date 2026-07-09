@@ -54,7 +54,16 @@ func (s *techiService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 	go func() {
 		defer close(done)
 		if err := runAgent(ctx, s.configPath, s.enrollmentToken, false); err != nil {
+			// A dead agent loop must not hide behind a RUNNING service — that
+			// is exactly how a transiently unreadable config used to remove a
+			// device from the platform forever (see lifecycle.go). Config
+			// loading now retries internally, so an error here is unexpected;
+			// exit WITHOUT reporting SERVICE_STOPPED so the SCM failure
+			// actions (restart 1m/1m/5m, set at install) treat it as a crash
+			// and restart the service.
 			log.Printf("agent loop exited with error: %v", err)
+			setLifecycleState(stateFaulted, err.Error())
+			os.Exit(2)
 		}
 	}()
 

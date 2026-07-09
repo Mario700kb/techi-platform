@@ -8,12 +8,15 @@ import (
 )
 
 func runAgent(ctx context.Context, configPath string, enrollmentToken string, once bool) error {
-	if err := migrateLegacyConfigIfNeeded(configPath); err != nil {
-		return err
-	}
-
-	cfg, err := loadConfig(configPath)
+	// Startup state machine (lifecycle.go): a config read failure keeps the
+	// agent in a retryable LoadingConfig state — it must never permanently
+	// silence the device while the service still reports RUNNING.
+	cfg, err := loadConfigWithRetry(ctx, configPath, once)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Printf("agent loop stopped while loading configuration")
+			return nil
+		}
 		return err
 	}
 	applyEnvironment(cfg)
@@ -45,8 +48,14 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	// background so startup and the first heartbeat are never delayed.
 	go cleanupAgentCaches(cfg)
 
+	startupState := startupHeartbeatState(cfg)
+	setLifecycleState(startupState, "")
+
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 		log.Printf("heartbeat cycle failed: %v", err)
+		recordHeartbeatOutcome(startupState, err)
+	} else {
+		recordHeartbeatOutcome(startupState, nil)
 	}
 	applyPendingInterval(&interval)
 
@@ -64,6 +73,9 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 		case <-ticker.C:
 			if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 				log.Printf("heartbeat cycle failed: %v", err)
+				recordHeartbeatOutcome(startupState, err)
+			} else {
+				recordHeartbeatOutcome(startupState, nil)
 			}
 			if changed := applyPendingInterval(&interval); changed {
 				ticker.Reset(interval)

@@ -341,6 +341,12 @@ func runWatchdogCheckCommand() int {
 	} else if err := ensureAgentServiceRunning(m, targetExe); err != nil {
 		writeDeployLog("[watchdog]", "service not running: "+err.Error())
 		agentRC = 1
+	} else {
+		// The service being RUNNING says nothing about the agent loop inside
+		// it (a startup failure used to leave a dead loop behind a healthy-
+		// looking service). The lifecycle state file distinguishes Service
+		// Running / Agent Initializing / Agent Operational / Agent Faulted.
+		checkAgentLifecycleFromWatchdog(m, targetExe)
 	}
 
 	// Also keep TECHI Remote Support alive: if an operator (or the user) stops
@@ -350,6 +356,64 @@ func runWatchdogCheckCommand() int {
 	// is the agent's job (rustdesk_manage.go ensureRustDeskService).
 	ensureRemoteSupportRunningFromWatchdog(m)
 	return agentRC
+}
+
+// lifecycleStaleAfter marks an initializing agent as wedged: while starting
+// up, the agent refreshes agent.state.json on every config retry (backoff
+// caps at 5 minutes) and every heartbeat attempt, so a startup-state file
+// this old means the loop is stuck, not retrying.
+const lifecycleStaleAfter = 30 * time.Minute
+
+// checkAgentLifecycleFromWatchdog inspects the lifecycle state file written
+// by the agent loop (lifecycle.go) and restarts the service when the agent
+// is Faulted or has been stuck initializing past lifecycleStaleAfter. A
+// healthy Operational agent logs nothing — deploy.log stays quiet.
+func checkAgentLifecycleFromWatchdog(m *mgr.Mgr, targetExe string) {
+	status, err := readLifecycleStatus()
+	if err != nil {
+		// Missing file: agent predates the lifecycle or hasn't started yet.
+		if !os.IsNotExist(err) {
+			writeDeployLog("[watchdog]", "lifecycle state unreadable: "+err.Error())
+		}
+		return
+	}
+	if status.State == stateOperational {
+		return
+	}
+
+	age := time.Since(status.UpdatedAt)
+	bucket := "Agent Initializing"
+	if status.State == stateFaulted {
+		bucket = "Agent Faulted"
+	}
+	writeDeployLog("[watchdog]", fmt.Sprintf(
+		"service RUNNING but agent state=%s (%s) age=%s detail=%q",
+		status.State, bucket, age.Round(time.Second), status.Detail))
+
+	if status.State != stateFaulted && age <= lifecycleStaleAfter {
+		return // still initializing and actively retrying — leave it alone
+	}
+
+	writeDeployLog("[watchdog]", "agent loop unhealthy; restarting TechiAgent service")
+	if service, err := m.OpenService(serviceName); err == nil {
+		if _, err := service.Control(svc.Stop); err != nil {
+			writeDeployLog("[watchdog]", "lifecycle restart: stop control error: "+err.Error())
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			st, qerr := service.Query()
+			if qerr != nil || st.State == svc.Stopped {
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+		service.Close()
+	}
+	if err := ensureAgentServiceRunning(m, targetExe); err != nil {
+		writeDeployLog("[watchdog]", "lifecycle restart failed: "+err.Error())
+		return
+	}
+	writeDeployLog("[watchdog]", "lifecycle restart: service restarted")
 }
 
 // ensureRemoteSupportRunningFromWatchdog starts the "TECHI Remote Support"
