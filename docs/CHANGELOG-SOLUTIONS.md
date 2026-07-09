@@ -27,6 +27,86 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] INCIDENT PRODHIMI: PC i sapo-formatuar nuk shfaqet kurrë në platformë — "Access is denied" te agent.config.json; agjenti vdes në heshtje pas një service RUNNING
+
+### Problemi
+
+PC Windows i formatuar dhe i ri-bashkuar në domain: MSI instalohet me sukses,
+service `TechiAgent` RUNNING, RustDesk OK — por pajisja nuk shfaqet kurrë në
+platformë. `agent.log`: `open C:\ProgramData\TECHI\agent.config.json: Access
+is denied`.
+
+### Analiza
+
+Hetim i plotë kodi (pa supozuar ACL): u gjurmuan TË GJITHË krijuesit/lexuesit
+e `agent.config.json` — `bootstrap-config` (MSI CA `WriteAgentConfig`,
+deferred + `Impersonate="no"` → SYSTEM), migrimi në start
+(`paths.go` `migrateConfigIfNeeded` → `os.Open` i file-it legacy — **thirrja
+që dështon**, mesazhi përputhet fjalë-për-fjalë), `refreshEnrollmentTokenIfNeeded`,
+`swap_windows.go`, `techi-deploy.cmd`. Të dy manipulimet ACL
+(`LockdownTechiDataDir` në MSI, `lockdownConfigACL` në agjent) japin
+`*S-1-5-18:F` — SYSTEM ka gjithmonë akses; service-i, GPO task-u dhe CA-të
+xhirojnë të gjithë si SYSTEM. Pra denial-i NUK prodhohet dot nga ACL-të e
+kodit tonë; prodhuesi realist është shtresa AV/EDR në makinat e sapo-formatuara
+(saktësisht arsyeja pse ekziston GPO "TECHI Agent - Defender Exclusions" për
+`C:\ProgramData\TECHI` + `techi-agent.exe`), para se exclusions të aplikohen.
+
+### Shkaku
+
+Defekti real në kod: **një dështim i vetëm, kalimtar, i leximit të config-ut
+në startup e vret agent loop-in përgjithmonë ndërsa service-i vazhdon të
+raportojë RUNNING** — `Execute` (service_windows.go) vetëm e logonte gabimin
+e goroutine-s; procesi nuk dilte, SCM recovery (restart 1m/1m/5m) s'aktivizohej
+kurrë, watchdog-u shihte service "të shëndetshëm". Asnjë retry, asnjë gjendje.
+
+### Zgjidhja
+
+**Agent Startup State Machine** (miratuar nga pronari): Installing (MSI) →
+LoadingConfig → Enrolling → FirstHeartbeat → Operational.
+
+- Leximi i config-ut retry pa fund me backoff eksponencial (5s → cap 5min);
+  çdo retry logohet — gjendje startup-i gjithmonë e rikuperueshme.
+- Gjendja eksplicite, e logruar në çdo tranzicion dhe e pasqyruar në
+  `C:\ProgramData\TechiAgent\agent.state.json` (state/detail/updated_at/pid).
+- Heartbeat-i i parë i suksesshëm → Operational; dështimet kalimtare pas tij
+  nuk e largojnë nga Operational.
+- Nëse loop-i del me gabim gjithsesi: shkruhet `faulted` dhe procesi bën
+  `os.Exit(2)` PA raportuar SERVICE_STOPPED → SCM failure actions bëhen
+  përsëri kuptimplota.
+- `watchdog-check` dallon Service Running / Agent Initializing / Agent
+  Operational / Agent Faulted nga state file dhe e riniset service-in kur
+  agjenti është Faulted ose i ngecur në initializing me file të vjetruar
+  (>30min). I heshtur kur Operational.
+- **Pa ndryshime** në installer, enrollment, skriptet e deployment, apo
+  formatin e `agent.config.json`.
+
+### Ndryshimet
+
+Branch `pending-agent-2.1.6`, commit `64f70ed` (sipas urdhrit në fuqi: kodi i
+agjentit nuk preket në `stable/phase-2-heartbeat` gjatë rollout-it 2.1.5):
+`agent/lifecycle.go` (i ri), `agent/lifecycle_test.go` (i ri),
+`agent/agent.go`, `agent/service_windows.go`, `agent/swap_windows.go`.
+Dokumentim: OPERATOR-MANUAL §9a + Troubleshooting, PROJECT_STATE (Known
+Issue 14, Pending 2.1.6).
+
+### Rezultati
+
+`go vet`, `GOOS=windows go build`, `go test ./...` OK. Provë e drejtpërdrejtë
+(host build): config me permission denied → `loading_config` me retry 5s/10s
+të logruara → config u riparua gjatë xhirimit → tranzicion në `enrolling`,
+state file i saktë. Kodi i vjetër dilte fatalisht në tentativën 1.
+
+### Mësimet
+
+- Service RUNNING ≠ agjent i gjallë: çdo daemon me loop në goroutine duhet
+  ose të vdesë bashkë me loop-in (që SCM të veprojë) ose të ekspozojë gjendje.
+- `Return="ignore"` në MSI CA + gabime të gëlltitura në service = incidente
+  të padukshme; verifikimi kërkon evidencë nga endpoint-i (state file).
+- Në makina të sapo-formatuara AV/EDR godet para GPO exclusions — startup-i
+  i agjentit duhet ta mbijetojë këtë me retry, jo të varet nga rendi i GPO-ve.
+- Workaround për flotën 2.1.5 deri në rollout 2.1.6: restart i service-it
+  `TechiAgent` në pajisjen e prekur.
+
 ## [2026-07-09] ARKITEKTURË: Enrollment gjenerik platform-neutral — Step 2 (auto-group)
 
 Token-at mbeten **platform-neutral** (Client + Default Group opsional + assignment

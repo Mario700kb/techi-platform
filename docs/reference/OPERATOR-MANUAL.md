@@ -217,6 +217,29 @@ self-updates from the UI, and self-heals Remote Support. **Do not reinstall the
 MSI manually** unless instructed — "the MSI installs once, everything else from
 the UI."
 
+### 9a. Agent Startup Lifecycle (agent ≥ 2.1.6)
+
+The agent runs an explicit startup state machine; "service RUNNING" alone no
+longer says whether the agent is healthy:
+
+| State | Meaning |
+|---|---|
+| **Installing** | MSI / `bootstrap-config` phase — outside the agent process. |
+| **LoadingConfig** | Reading/migrating `agent.config.json`. Failures (e.g. a transient `Access is denied` from AV/EDR at first boot) are **retried forever** with exponential backoff (5 s → 5 min cap); every retry is logged in `agent.log`. |
+| **Enrolling** | Config loaded, device has no identity yet — heartbeat cycles run until enrollment succeeds. |
+| **FirstHeartbeat** | Enrolled, waiting for the first successful heartbeat. |
+| **Operational** | First heartbeat succeeded. Later transient heartbeat failures never leave this state (the regular interval keeps retrying). |
+| **Faulted** | The loop exited with an unexpected error. The service process deliberately **crashes** (exit 2) so the SCM failure actions (restart 1 m/1 m/5 m) restart it — a dead loop never hides behind a RUNNING service. |
+
+The current state is mirrored to `C:\ProgramData\TechiAgent\agent.state.json`
+(`state`, `detail`, `updated_at`, `pid`). The **TECHI Agent Watchdog** task
+reads it every 5 minutes and distinguishes *Service Running* / *Agent
+Initializing* / *Agent Operational* / *Agent Faulted*: it restarts the service
+when the state is Faulted, or stuck initializing with a stale state file
+(> 30 min). Operational agents produce no watchdog log noise. Nothing in the
+installer, enrollment, deployment scripts, or the config format changed — the
+state file is a new, purely diagnostic artifact.
+
 ---
 
 ## 10. Linux One-Line Installation 🚩 `FEATURE_LINUX`
@@ -466,6 +489,12 @@ in Agent Config; every device adopts it on its next heartbeat.
 - **A device shows Offline / Stale**: it hasn't sent a heartbeat within 6 / 25
   min. Check the endpoint's network and that the TechiAgent service (Windows) or
   `techi-agent.service` (Linux) is running.
+- **Service RUNNING but the device never appears in the platform**: check
+  `C:\ProgramData\TechiAgent\agent.state.json` (§9a) — `loading_config` with a
+  growing retry count in `agent.log` means the config is unreadable (AV/EDR or
+  ACL; verify `icacls C:\ProgramData\TECHI\agent.config.json` shows `SYSTEM:(F)`).
+  On agents ≤ 2.1.5 this state was silent and permanent — restart the TechiAgent
+  service to recover; ≥ 2.1.6 retries and self-recovers automatically.
 - **"Needs Agent Update" won't clear**: confirm the active Agent Binary matches
   the deployed exe (SHA-alignment). Re-upload the exe extracted from the active
   MSI.

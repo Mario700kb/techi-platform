@@ -269,6 +269,16 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
     `backend/tests/test_enrollment_audit_diagnostics.py` (missing
     `trusted_domains` table in test setup) — not caused by recent work.
 13. Deployments page serves mock data (`/deployments/recent` is hardcoded).
+14. **Agents ≤ 2.1.5: a transient startup failure silently kills the agent
+    forever behind a RUNNING service** (root-caused 2026-07-09: one failed
+    read of `agent.config.json` at first service start — e.g. AV/EDR
+    `Access is denied` on a freshly formatted domain PC — exits the agent
+    loop before the first heartbeat; the service keeps reporting RUNNING, so
+    SCM recovery and the watchdog never react and the device never appears
+    in the platform). Fleet-wide latent; **fix (startup lifecycle state
+    machine) is committed on `pending-agent-2.1.6`**, ships with 2.1.6.
+    Workaround on an affected device: restart the TechiAgent service. See
+    CHANGELOG-SOLUTIONS 2026-07-09 and OPERATOR-MANUAL §9a.
 
 # PLATFORM EXPANSION
 
@@ -338,8 +348,12 @@ Dashboard/Devices/Device Details (`/devices/714`)/Alerts/More/Settings —
   took effect as a side effect of an unplanned container recreation
   (Compose auto-recreated postgres when it detected the compose-file
   change) — verified healthy within ~30s, no heartbeat loss.
-- Agent 2.1.6 (branch `pending-agent-2.1.6`): log rotation + cache pruning —
-  awaiting rollout completion.
+- Agent 2.1.6 (branch `pending-agent-2.1.6`): log rotation + cache pruning +
+  **startup lifecycle state machine** (LoadingConfig → Enrolling →
+  FirstHeartbeat → Operational; config load retried with exponential backoff,
+  state mirrored to `C:\ProgramData\TechiAgent\agent.state.json`, Faulted loop
+  crashes the process so SCM recovery applies, watchdog restarts a wedged
+  initializing agent — fixes Known Issue 14) — awaiting rollout completion.
 - Heartbeat storage redesign — **proposal only**, awaiting approval:
   [architecture/heartbeat-storage-redesign.md](architecture/heartbeat-storage-redesign.md).
 - NPM `access_log off` for heartbeat locations — proposed, awaiting approval.
