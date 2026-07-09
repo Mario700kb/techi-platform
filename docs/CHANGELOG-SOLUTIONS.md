@@ -170,6 +170,51 @@ state file i saktë. Kodi i vjetër dilte fatalisht në tentativën 1.
 - Workaround për flotën 2.1.5 deri në rollout 2.1.6: restart i service-it
   `TechiAgent` në pajisjen e prekur.
 
+## [2026-07-09] PHASE: MikroTik Platform Integration (deployment + registration only)
+
+### Objektivi
+Vetëm pipeline-i i enrollment-it MikroTik (pa RouterOS API/Winbox/WebFig/SSH
+launchers, pa menaxhim). MikroTik si **Connector/Proxy** — adapteri i vetëm që flet
+RouterOS; pjesa tjetër e platformës mbetet platform-independent. Additive, Windows
+byte-identik.
+
+### Zgjidhja
+- **Platform Registry si burim i vetëm**: `PlatformDescriptor` merr fusha shtesë
+  `deployment_method` / `deployment_template` / `supported_architectures` /
+  `supported_routeros_versions` (platformat agent i lënë bosh → të paprekura).
+  MikroTik deklaron template RouterOS + arkitektura (chr/x86/arm/arm64/mipsbe/mmips/
+  ppc/tile) + RouterOS 6/7. `render_deployment_script()` mbush template-in;
+  `validate_architecture()` refuzon arch të panjohur/mungues për platformat që
+  deklarojnë set (platformat agent nuk arch-validohen).
+- **Gjenerim skripti**: `GET /install/mikrotik?token=` (FEATURE_MIKROTIK-gated 404)
+  gjeneron skriptin RouterOS nga template-i i registry-t — kurrë hardcoded. Skripti
+  bën `/tool fetch` POST te `/agent/enroll` me token + platform + arch (self-detektuar).
+- **Enrollment**: ripërdor pipeline-in gjenerik. Arch validohet në enroll
+  (`AgentEnrollmentRequest` merr `architecture` opsionale). Auto-group u rafinua —
+  platformat non-agent (MikroTik → Network sipas platformës) NUK detyrohen në
+  Servers/Client PC; agent të pandryshuar. Pema: Client ▸ Network ▸ MikroTik automatik.
+- **Deployment dialog**: MikroTik tani është seksion "script" i drejtuar nga metadata
+  (RouterOS Script + arkitekturat), i renderuar sipas `kind` — jo sipas platform id.
+- **Connect** (Winbox/WebFig/SSH) tashmë i deklaruar në registry; metadata-only, i paprekur.
+
+### Ndryshimet
+- `backend/app/platform_core/registry.py` (fusha + template + render + validate)
+- `backend/app/api/v1/endpoints/install.py` (`/mikrotik`)
+- `backend/app/schemas/agent.py` (`architecture`), `agent_enrollment_service.py` (validim)
+- `backend/app/services/device_assignment_service.py` (auto-group non-agent)
+- `frontend/src/pages/Deployment.tsx` (kind "script" + ScriptSection)
+- `backend/tests/test_mikrotik_deployment.py` (i ri). Commit `07a808b`.
+
+### Rezultati (provë live)
+Suite 497+4 baseline (flags OFF & ON); tsc/build/agent OK; smoke 7/7. Prod tip
+`07a808b`. Live: `/install/mikrotik?token=DEMO` → skript RouterOS me token të injektuar;
+enroll me arch `sparc` → **400** (validim registry). Windows/Linux/macOS të pandryshuara.
+
+### Mësimet
+Metadata-driven i vërtetë: shtimi i menaxhimit RouterOS më vonë = vetëm Platform
+Adapter + Capability Mapping + Action Registry + Capability Renderer, pa ndryshime
+Drawer/Tree/UI. Shih [[platform-v3-design]].
+
 ## [2026-07-09] ARKITEKTURË: Enrollment gjenerik platform-neutral — Step 2 (auto-group)
 
 Token-at mbeten **platform-neutral** (Client + Default Group opsional + assignment

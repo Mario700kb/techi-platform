@@ -211,6 +211,23 @@ renderer (Appendix C) selected by the registry → byte-identical, no agent rebu
   Regression tests (Linux server/workstation, explicit group, Windows product-type).
   **Registry-driven Drawer + generic enrollment: both COMPLETE.**
 
+### MikroTik Platform Integration — deployment + registration only ✅ (`07a808b`)
+MikroTik as a Connector/Proxy platform (no RouterOS API/Winbox/WebFig/SSH launchers,
+no management). **Platform Registry is the single source**: `PlatformDescriptor`
+gains `deployment_method`/`deployment_template`/`supported_architectures`/
+`supported_routeros_versions` (agent platforms leave them empty). MikroTik declares
+the RouterOS enrollment template + arches (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile)
++ RouterOS 6/7. `GET /install/mikrotik?token=` (FEATURE_MIKROTIK-gated) generates the
+copy/paste RouterOS script from the template — never hardcoded. Enrollment reuses the
+generic pipeline; `validate_architecture()` rejects unknown/absent arch (→ 400) for
+platforms that declare a set; the auto-group refinement lets non-agent platforms
+(MikroTik → Network) stay ungrouped and be categorized by platform (Client ▸ Network
+▸ MikroTik). Deployment dialog renders MikroTik as a metadata-driven "script" section.
+Connect (Winbox/WebFig/SSH) metadata-only, unchanged. Suite 497+4, tsc/build/agent OK,
+smoke 7/7; live: RouterOS script generated with token; bad-arch enroll → 400. Windows/
+Linux/macOS unchanged. **Future RouterOS management = only Adapter + Capability Mapping
++ Action Registry + Capability Renderer; no Drawer/Tree/UI change.**
+
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
 PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the
