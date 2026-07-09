@@ -27,6 +27,39 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1b (generic renderer)
+
+### Zgjidhja
+`frontend/src/components/GenericDeviceDrawer.tsx` (i ri) renderon TËRËSISHT nga
+`GET /devices/{id}/drawer` (Platform + Capability + Action + Connect registries):
+Overview me **Connect si veprimi primar**, tabs të gjeneruar nga capabilities
+(Services/Processes/Packages/Docker/Logs/Network/Storage — vetëm kur capability
+raportohet), tab **Management me butona nga Action Registry** (confirm policy
+respektohet), Terminal (kur `terminal` + `FEATURE_TERMINAL`), Notes, Timeline.
+**Remote Support shfaqet vetëm kur pajisja raporton capability `remote_support`**
+→ Linux nuk ripërdor më sipërfaqen Windows RS.
+
+**Përzgjedhja e renderer-it në render-site** (Devices.tsx): pajisje që raporton
+capabilities → GenericDeviceDrawer; pajisje pa capabilities (çdo agjent Windows) →
+DeviceDrawer klasik, **i paprekur dhe byte-identik**. Platformat e reja janë gjithnjë
+capability-reporting → path gjenerik → **shtimi i një platforme s'kërkon ndryshim Drawer**.
+
+### Ndryshimet
+- `frontend/src/components/GenericDeviceDrawer.tsx` (i ri)
+- `frontend/src/api/platform.ts` (`getDrawerMeta` + tipat)
+- `frontend/src/pages/Devices.tsx` (përzgjedhja e renderer-it)
+- Commit `7d405c8`.
+
+### Rezultati
+tsc + build OK; preflight PASSED (suite 483+4 baseline, flags OFF & ON); smoke 7/7.
+Prod tip `7d405c8`. Linux `rustdesk-srv` → Drawer gjenerik (pa RS, capability tabs,
+Connect); Windows → Drawer klasik i pandryshuar. Reuse: ConnectMenu, ActivityTimeline,
+DeviceTerminal, notes/inventory/actions API, ConfirmationModal.
+
+### Mësimet
+Përzgjedhja e renderer-it në call-site (jo degëzim brenda komponentit) mban Windows-in
+byte-identik me zero edits te DeviceDrawer.tsx. Shih [[platform-v3-design]].
+
 ## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1a (Action Registry, dark)
 
 ### Vendimi (owner)

@@ -187,10 +187,14 @@ renderer (Appendix C) selected by the registry → byte-identical, no agent rebu
   target/handler); `effective_capabilities`/`actions_for`; `capability_tabs`; dark
   CORE-gated `GET /devices/{id}/drawer`. Contract locks `permission_map()` ==
   `ACTION_PERMISSION_MAP`, labels == `ACTION_LABELS`. Live-verified Linux + Windows.
-- **Step 1b — Generic renderer (frontend)**: Drawer renders from `/drawer` for
-  capability-reporting devices (tabs + Connect + Actions from the registry);
-  Windows (no capabilities) keeps its exact current renderer. No per-new-platform
-  UI code.
+- **Step 1b — Generic renderer (frontend)** ✅ (`7d405c8`). New
+  `GenericDeviceDrawer` renders from `/drawer` for capability-reporting devices
+  (Connect-primary Overview, capability tabs, Action-Registry Management, Terminal,
+  Notes, Timeline; Remote Support only when the `remote_support` capability is
+  reported). Renderer selected at the render site; Windows (no capabilities) keeps
+  the classic `DeviceDrawer` unchanged (zero edits). tsc/build/preflight/smoke OK.
+  Live: Linux `rustdesk-srv` → generic Drawer, no RS; Windows → classic. (Desktop
+  first; mobile Device Details still uses the classic drawer — follow-up.)
 - **Step 1c — Unify enforcement**: flip `ACTION_PERMISSION_MAP` + labels to derive
   from the Action Registry, and route execution/audit through the descriptor
   (verified byte-identical first).

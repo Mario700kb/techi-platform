@@ -137,9 +137,15 @@ information in a mobile layout.
 > methods** (SSH / Web Terminal) instead of the Windows Remote Support panel, and
 > its Management actions come from the Action Registry. **Windows is unchanged** —
 > devices that report no capabilities (today's entire Windows fleet) resolve to
-> Windows' declared surface and render exactly as before. Step 1a (backend Action
-> Registry + `GET /devices/{id}/drawer` feed) is live and dark; the operator-visible
-> renderer follows.
+> Windows' declared surface and render exactly as before.
+>
+> **Live now:** a capability-reporting device (e.g. the Linux agent) opens the
+> generic Drawer — Overview with **Connect** as the primary action, capability tabs
+> (Services / Packages / Docker / Logs / Network / …), a Management tab whose buttons
+> come from the Action Registry, Terminal when the device is terminal-capable, plus
+> Notes and Timeline. It shows **no Remote Support** unless the device reports the
+> `remote_support` capability. Windows devices continue to open the classic Drawer,
+> unchanged. (Desktop; the mobile Device Details page still uses the classic layout.)
 
 ---
 
