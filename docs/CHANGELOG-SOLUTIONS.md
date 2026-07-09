@@ -27,6 +27,46 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-09] ARKITEKTURË: Registry-driven Device Drawer — Step 1a (Action Registry, dark)
+
+### Vendimi (owner)
+Pas enrollment-it të parë real Linux, Drawer-i s'duhet të bëhet "Linux Drawer" por
+një **Device Drawer gjenerik** i renderuar tërësisht nga Platform Registry +
+Capability Registry + **Action Registry** + Connect Registry → një **Generic
+Renderer**, pa degëzim Windows/Linux. **Action Registry = burimi i vetëm i së
+vërtetës** për çdo operacion të ekzekutueshëm (id, label, permission, required
+capability, confirmation policy, audit metadata, execution target, execution
+handler); UI, permissions, audit dhe execution konsumojnë të njëjtin descriptor.
+Rendi: **Step 1 = Drawer gjenerik**, pastaj **Step 2 = enrollment gjenerik**.
+Objektivi: shtimi i një platforme të re = vetëm Platform Adapter + Capability
+Mapping + Connect Methods + Action Registry entries + (opsionale) Capability
+Renderers — pa ndryshime Drawer/Management/Tree/UI. Windows selektohet nga
+registry si renderer i grandfathered (Appendix C) → byte-identik.
+
+### Zgjidhja — Step 1a (dark, backend-only)
+- `backend/app/platform_core/actions.py`: `ActionDescriptor` (single source) +
+  `ACTION_REGISTRY` + `actions_for()`/`effective_capabilities()`. Disponueshmëria
+  vendoset nga capability; **"mungesa e capabilities ⇒ capabilities e deklaruara
+  të platformës"** → floti aktual Windows (pa capabilities) ruan tërë sipërfaqen
+  byte-identike pa rebuild agjenti. Contract test: `permission_map() ==
+  ACTION_PERMISSION_MAP` dhe labels == `ACTION_LABELS` (që hard-mapet t'i derivojmë
+  më vonë pa drift).
+- `capabilities.py`: `capability_tabs()` — capability→tab, pa degë platforme.
+- `GET /devices/{id}/drawer` (dark, CORE-gated 404): feed-i i vetëm i renderer-it
+  gjenerik (platform, effective capabilities, remote_support/terminal, capability
+  tabs, connect methods, actions).
+
+### Rezultati (provë live)
+Contract 13/13; suite 483+4 baseline (flags OFF & ON); tsc/build/agent OK; smoke 7/7.
+Prod tip `14f7103`. Feed live: Linux `rustdesk-srv` → remote_support=false, tabs
+[services,processes,packages,docker,logs,network], connect [web_terminal,ssh], pa
+veprime RS; Windows `kds-03dr` → remote_support=true, set i plotë veprimesh RS,
+connect [remote_support]. **UI e paprekur (dark).**
+
+### Mësimet
+Foundation-i i regjistrave zbresim dark + contract test që lidh regjistrin me
+hard-mapet ekzistuese → migrim pa risk i sipërfaqes prodhuese. Shih [[platform-v3-design]].
+
 ## [2026-07-09] UX: Deployment dialog bëhet platform-aware (Windows byte-identik)
 
 ### Konteksti / Vendimi

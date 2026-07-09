@@ -128,6 +128,19 @@ Tabs (rendered from what the device supports):
 Mobile devices open Device Details as a page (`/devices/:id`) with the same
 information in a mobile layout.
 
+> **Registry-driven Drawer (in progress).** The Drawer is being completed into a
+> fully registry-rendered workspace: tabs, Connect methods and Management actions
+> are generated from the Platform / Capability / **Action** registries and the
+> device's reported capabilities — not from platform assumptions. A device that
+> reports capabilities (e.g. Linux) shows only the tabs its capabilities enable
+> (Services, Packages, Docker, Logs, Network, …), exposes its **native Connect
+> methods** (SSH / Web Terminal) instead of the Windows Remote Support panel, and
+> its Management actions come from the Action Registry. **Windows is unchanged** —
+> devices that report no capabilities (today's entire Windows fleet) resolve to
+> Windows' declared surface and render exactly as before. Step 1a (backend Action
+> Registry + `GET /devices/{id}/drawer` feed) is live and dark; the operator-visible
+> renderer follows.
+
 ---
 
 ## 7. Automatic Classification

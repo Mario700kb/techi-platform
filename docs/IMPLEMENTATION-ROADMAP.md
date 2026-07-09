@@ -173,6 +173,31 @@ off) except Terminal/Storage/Hypervisor. Rollback: restore `.env.bak-2026-07-08`
    linux-amd64→404 reachable, freebsd→400, windows-amd64→200. First `linux-amd64`
    binary built; first upload + first live Linux enrollment (3CX/Debian) next.
 
+### Registry-driven Device Drawer (owner-directed after first live Linux enroll)
+Complete the generic, registry-rendered Device Drawer **before** the enrollment
+work. Goal: a new platform (Synology/QNAP/TrueNAS/Proxmox/VMware/MikroTik/Docker
+Host/Kubernetes Node…) requires ONLY — Platform Adapter · Capability Mapping ·
+Connect Methods · Action Registry entries · (optional) Capability Renderers — with
+**no Drawer/Management/Tree/UI-branching changes**. Windows is the grandfathered
+renderer (Appendix C) selected by the registry → byte-identical, no agent rebuild
+("absence of reported capabilities ⇒ the platform's declared capabilities").
+
+- **Step 1a — Action Registry + dark Drawer feed** ✅ (`14f7103`). `platform_core/
+  actions.py` single source (id/label/permission/required_capability/confirm/audit/
+  target/handler); `effective_capabilities`/`actions_for`; `capability_tabs`; dark
+  CORE-gated `GET /devices/{id}/drawer`. Contract locks `permission_map()` ==
+  `ACTION_PERMISSION_MAP`, labels == `ACTION_LABELS`. Live-verified Linux + Windows.
+- **Step 1b — Generic renderer (frontend)**: Drawer renders from `/drawer` for
+  capability-reporting devices (tabs + Connect + Actions from the registry);
+  Windows (no capabilities) keeps its exact current renderer. No per-new-platform
+  UI code.
+- **Step 1c — Unify enforcement**: flip `ACTION_PERMISSION_MAP` + labels to derive
+  from the Action Registry, and route execution/audit through the descriptor
+  (verified byte-identical first).
+- **Step 2 — Platform-neutral enrollment pipeline**: token carries Client, optional
+  Default Group, Assignment Source, policy; platform identity comes from the agent/
+  adapter; generic auto-group via the Unified Classification Engine.
+
 ### END OF VALIDATION
 On the owner's confirmation of 24–48h stability, mark **Production Validation
 PASSED** here + in PROJECT_STATE.md + CHANGELOG-SOLUTIONS.md, then resume the
