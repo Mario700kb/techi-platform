@@ -230,6 +230,23 @@ clean, agent builds clean.
   them (hiding methods that need credentials) is what made Winbox "missing"
   on MikroTik instead of "needs a credential."
 
+### Remaining limitations
+
+- **No live browser click-through validation performed by AI this release** —
+  this environment has no browser-automation tool, and the bootstrap owner
+  password in prod `.env` no longer matches the live `owner` account
+  (rotated at some point after bootstrap, not a bug), so a scripted
+  API/WebSocket login-and-drive wasn't possible either (same constraint hit
+  during the 2026-07-10 Embedded SSH Connect deploy). Deployed and smoke-
+  tested (health/401 contracts only); owner should click through the 12
+  validation steps in the original task (create a Device-scoped credential,
+  confirm Group scope works, open Connect on a Linux/MikroTik device, set/
+  reset a default method, etc.) via the real browser UI.
+- Winbox/WebFig credential status is type-matching and messaging only — the
+  resolved credential is not injected into the `winbox://`/`http://` launch
+  URL (see OPERATOR-MANUAL §30). Only Embedded SSH Connect performs a real
+  authenticated connection end-to-end.
+
 ## [2026-07-10] FEATURE: Embedded SSH Connect — Device Drawer ▸ Connect ▸ SSH ▸ Embedded TECHI Terminal
 
 ### Problemi

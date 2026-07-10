@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | **Last Updated** | 2026-07-11 |
-| **Production Verified** | 2026-07-10 (Embedded SSH Connect deployed `ea49eb3`: schema-first SQL applied, backend/frontend rebuilt with the new `asyncssh` dependency, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, heartbeats unaffected. `FEATURE_TERMINAL` is now **scoped ON for device #729 only** — `FEATURE_TERMINAL_SCOPE=device`, `FEATURE_TERMINAL_ALLOWED_DEVICE_IDS=729` — left live at the owner's request for a real browser click-through validation; every other device remains outside scope, fail-closed. `.env` backed up to `.env.bak-ssh-connect-validation-2026-07-10` before the change) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `ea49eb3`) |
+| **Production Verified** | 2026-07-11 (Vault scope fix + Connect resolution/status/preferences deployed `9b99a07`: new `operator_connect_preferences` table applied schema-first and verified via `\d`, backend/frontend rebuilt, both containers healthy within seconds, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, new endpoints confirmed live 401-not-500. **This deploy is NOT dark** — the Vault form and Device Catalog Connect button behavior changed live for every operator immediately (no flag). Live browser click-through not yet performed by AI — bootstrap credentials in `.env` don't match the live `owner` account and this session has no browser tool; owner validation via the real UI is the remaining step, see "Remaining limitations" in the 2026-07-11 CHANGELOG-SOLUTIONS entry) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `9b99a07`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
 | **Agent Version** | **2.1.6** — production baseline (owner-declared 2026-07-09, replaces 2.1.5); NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
