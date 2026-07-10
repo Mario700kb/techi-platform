@@ -1,10 +1,14 @@
-"""Web Terminal session API (Platform Expansion Phase 5, dark).
+"""Web Terminal session API (Platform Expansion Phase 5).
 
 POST /devices/{id}/terminal/sessions creates a session, enqueues an
 `open_terminal` action for the agent, and returns the operator WS URL + a
-one-time ticket. Gated by FEATURE_TERMINAL (404 when off) AND by the device
-reporting the `terminal` capability — the tab/endpoint simply doesn't exist
-otherwise. Operator-scoped and audited; nothing here stores a device secret.
+one-time ticket. Gated by, in order: FEATURE_TERMINAL (404 when off), the
+device reporting the `terminal` capability (400 otherwise — capability-driven,
+not a platform check; only the Linux agent reports it today), and the
+FEATURE_TERMINAL rollout scope (403 otherwise — see
+app.platform_core.rollout, generic across future features). Operator-scoped
+(admin+) and audited on both grant and denial; nothing here stores a device
+secret.
 """
 
 import logging
@@ -19,9 +23,10 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
 from app.platform_core.flags import feature_enabled
+from app.platform_core.rollout import is_device_in_rollout
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.remote_action import ActionType, RemoteActionCreate
-from app.services.audit_service import audit_log
+from app.services.audit_service import AuditAction, audit_log
 from app.services.remote_action_service import RemoteActionService
 from app.services.terminal_service import TerminalService, TICKET_TTL_SECONDS
 
@@ -74,6 +79,20 @@ def create_terminal_session(
         raise HTTPException(status_code=404, detail="Device not found")
     if not _has_terminal_capability(device):
         raise HTTPException(status_code=400, detail="Device does not report the terminal capability")
+    if not is_device_in_rollout("FEATURE_TERMINAL", device):
+        logger.info(
+            "terminal session denied: device_id=%s operator=%s (not in FEATURE_TERMINAL rollout scope)",
+            device_id, operator.username,
+        )
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.TERMINAL_SESSION_DENIED,
+            entity_type="device",
+            entity_id=device_id,
+            details={"reason": "outside_rollout_scope"},
+        )
+        raise HTTPException(status_code=403, detail="Terminal is not yet enabled for this device (rollout scope)")
 
     svc = TerminalService(db)
     session, operator_ticket, agent_ticket = svc.create_session(
@@ -85,8 +104,9 @@ def create_terminal_session(
 
     # Tell the agent to dial the terminal WS (delivered via heartbeat
     # pending_actions — reuses the existing command path; no new persistent
-    # connection). ws_url routes through the same api-rdp host once the NPM WS
-    # route exists.
+    # connection). ws_url routes through the same api-rdp host NPM already
+    # proxies for /ws/devices (verified 2026-07-10: NPM's websocket support
+    # is host-wide, not path-scoped — no separate NPM route was needed).
     ws_base = _ws_base()
     RemoteActionService(db).queue_action(
         device_id,
@@ -102,10 +122,14 @@ def create_terminal_session(
         ),
     )
 
+    logger.info(
+        "terminal session opened: session_id=%s device_id=%s operator=%s engine=%s",
+        session.id, device_id, operator.username, session.engine,
+    )
     audit_log(
         db,
         operator=operator,
-        action="terminal_session_opened",
+        action=AuditAction.TERMINAL_SESSION_OPENED,
         entity_type="terminal_session",
         entity_id=None,
         details={"session_id": session.id, "device_id": device_id, "engine": session.engine},

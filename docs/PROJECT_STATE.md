@@ -307,7 +307,7 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 | **Feature Flags policy** | All new functionality behind env-driven flags (`FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_TERMINAL`, `FEATURE_MIKROTIK`, `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`), **default OFF; flag OFF = bit-identical production behavior**. |
 | **Feature work status** | ⏸️ **LIVE VALIDATION (started 2026-07-08)** — NO new features. Operator Manual published (`docs/reference/OPERATOR-MANUAL.md`). **4 flags ENABLED in production for live testing (owner-approved 2026-07-08): `FEATURE_PLATFORM_CORE`, `FEATURE_LINUX`, `FEATURE_VAULT`, `FEATURE_MIKROTIK`.** OFF: `FEATURE_TERMINAL` (needs NPM WS route), `FEATURE_STORAGE`, `FEATURE_HYPERVISOR`. **Production is no longer bit-identical to the classic Windows RMM** — Linux/Connect-menu/Vault/MikroTik surfaces are now visible. Only production bug fixes allowed (root-cause → fix that bug → contract+regression+preflight+smoke → deploy → document). Rollback: `cp /root/.env.bak-2026-07-08 /root/.env && docker compose -p techi-platform up -d backend`. Enablement verified: flags loaded True in container; install/linux 200; connect/vault reachable; smoke 7/7; preflight PASSED; 0 real errors. **Prod tip now `07a808b`.** 2026-07-09: **MikroTik Platform Integration initially shipped as deployment + registration, then Connector v1 heartbeat/inventory was implemented** — additive, Windows byte-identical. Platform Registry is the single source: `PlatformDescriptor` gains `deployment_method`/`deployment_template`/versioned deployment templates/`supported_architectures`/`supported_routeros_versions`; MikroTik declares native RouterOS 6.x and 7.x enrollment templates + arches (chr/x86/arm/arm64/mipsbe/mmips/ppc/tile). `GET /install/mikrotik?token=...&routeros_version=6|7` (FEATURE_MIKROTIK-gated, default 7) generates the RouterOS script from the registry (never hardcoded); enrollment reuses the generic pipeline with registry arch-validation (unknown/absent arch → 400); MikroTik auto-lands under Client ▸ Network by platform (non-agent platforms no longer forced into Servers/Client PC). Deployment dialog renders MikroTik as a metadata-driven "script" section with a RouterOS Version selector (RouterOS 6.x / 7.x). Connect (Winbox/WebFig/SSH) metadata-only. Future RouterOS management = only Adapter+Capability+Action+Renderer, no Drawer/Tree/UI change. Was: **Prod tip `a5a9b86`. Step 2 — generic enrollment auto-group shipped.** A token carrying a Client but no Default Group now auto-places the device in the correct standard group (Servers/Client PC) via the Unified Classification Engine — any platform, no manual assignment; explicit Default Group respected; platform identity from the agent. Was: **Registry-driven Device Drawer — Step 1 COMPLETE (1a+1b+1c).** The Action Registry (`platform_core/actions.py`) is the single source of truth for every executable operation; `ACTION_PERMISSION_MAP` now derives from it, and the UI (`/drawer`), execution (queue by action_type == descriptor id) and audit (`ACTION_QUEUED`) all consume the same descriptor. Was: **Steps 1a + 1b shipped.** Capability-reporting devices (Linux + future platforms) now render via the new `GenericDeviceDrawer`, driven entirely by `GET /devices/{id}/drawer` (Platform + Capability + Action + Connect registries): Connect-primary Overview, capability tabs (Services/Docker/Logs/Network/…), Action-Registry Management buttons, Terminal when capable, and **no Remote Support unless the device reports the `remote_support` capability**. Renderer is selected at the render site — devices with no capabilities (every Windows agent) use the classic `DeviceDrawer`, **untouched and byte-identical** (zero edits to DeviceDrawer.tsx). Adding a platform needs no Drawer changes. Was: **Step 1a shipped dark.** The Drawer is being completed into a generic renderer fed by Platform + Capability + **Action** + Connect registries (no Windows/Linux branching; Windows selected as the grandfathered renderer → byte-identical). `platform_core/actions.py` is the single source of truth per executable operation (id/label/permission/required_capability/confirm/audit/target/handler); `effective_capabilities()` uses "absence ⇒ platform's declared capabilities" so the capability-less Windows fleet keeps its full surface with no agent rebuild. New dark `GET /devices/{id}/drawer` (CORE-gated) is the renderer's single feed. Verified live: Linux `rustdesk-srv` (no RS, capability tabs, SSH/terminal) and Windows (full RS surface). UI untouched. Next: Step 1b (frontend generic renderer + Windows renderer selection), Step 1c (permission/label/audit derive from the registry), then Step 2 (platform-neutral enrollment). Earlier 2026-07-09: Deployment dialog is now platform-aware — the token Deployment modal (Deployment ▸ View) renders metadata-driven, feature-flag-gated sections (Windows always; Linux when `FEATURE_LINUX`; macOS/MikroTik/Synology/QNAP/VMware/Hyper-V/Proxmox as reserved placeholders gated by their flags). **One shared token across all platforms** (derived from the Windows bootstrap URL). **Windows block byte-identical**, zero backend changes. Earlier 2026-07-09: Linux agent package chain fixed end-to-end (was shipped dark, never runnable) — upload accepts raw `.bin`, public download supports `linux-amd64/arm64/armhf` and resolves `linux-*` via `file_type=agent_binary`, installer maps armhf; **Windows package path (MSI bootstrap / GPO / self-update / selection) byte-identical** (separate branch). Live: linux-amd64→404 reachable, freebsd→400, windows-amd64→200. First `linux-amd64` binary built (`agent/dist/techi-agent-linux-amd64.bin`, AgentVersion 2.1.5), pending first upload + first live Linux enrollment (3CX/Debian). Earlier 2026-07-08 work: [0] Device Tree click not syncing with Catalog — frontend SWR cache key `deviceTableCacheKey` omitted `category`/`platform` (regression after the tree moved to those filters in e08544d) so selections within a client collided and served stale rows until manual Refresh; fixed by adding both to the key (engine untouched); [1] Device Tree filtering made cumulative (filter==badge, 28/28 clients); [2] heartbeat manual-lock hole closed via single `DeviceAssignmentService.is_manual_locked()`; [3] **Unified Classification Engine SHIPPED** — `app/platform_core/classification.py` is now the ONE source of truth for device Category + Platform, replacing the four duplicated classifiers (C1 resolution / C2 smart_folder / C3 tree-case / C4 write-time). One ordered rule table rendered as SQL (`category_case`/`platform_case`) **and** in-memory (`classify_category`/`classify_platform`), kept identical by a parity contract test and a `preflight.sh` guard that forbids the retired symbols. All consumers (tree badges, overview, catalog/search filters, smart folders, Drawer/resolution, enrollment placement) read it; new additive `Other` tree folder (custom-group devices). Delivered P1–P5, each contract+preflight+smoke then deploy; verified byte-identical on the live fleet (723 devices, 0 custom groups) for both SQL counts (28/28 clients) and resolved category (723/723). Specs: `docs/reference/CLASSIFICATION-ARCHITECTURE-REVIEW.md` + `docs/reference/UNIFIED-CLASSIFICATION-ENGINE-SPEC.md`. |
 | **Process** | One phase at a time; hard STOP + explicit owner approval between phases; each phase closes only via the audit's Appendix A (Definition of Done) + Appendix B (Regression Matrix) + Appendix C (Platform Certification). |
-| **Constraints** | Agent work lands on `stable/phase-2-heartbeat` again (2.1.6 is the baseline; the 2.1.5-freeze standing order is closed, owner 2026-07-09). NPM WS route (Terminal phase) requires separate explicit owner approval. Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
+| **Constraints** | Agent work lands on `stable/phase-2-heartbeat` again (2.1.6 is the baseline; the 2.1.5-freeze standing order is closed, owner 2026-07-09). Enabling `FEATURE_TERMINAL` + choosing its rollout scope (`FEATURE_TERMINAL_SCOPE` + allowlist, see Embedded Connect entry below) requires separate explicit owner approval — NPM itself needs no change (verified 2026-07-10). Zabbix boundary: TECHI stays a remote-management platform — basic device facts only, no monitoring buildout. |
 | **Current Phase** | ✅ Phases 0, 1, 4, **2** deployed & closed 2026-07-07 (prod tip `59a781b`): platform_core + platform_adapters + 7 nullable `devices` columns + Credential Vault (`FEATURE_VAULT`) + **Linux Agent MVP** (`agent/pal.go` + `platform_linux.go`: capabilities, os-release inventory, systemd service management + self-update; backend `GET /install/linux` + `linux-arm64` package type — all `FEATURE_LINUX`). Windows agent NOT rebuilt/redeployed — fleet stays 2.1.5; Linux → **Experimental** (Appendix C). All expansion flags OFF in prod (verified). **Execution order (owner 2026-07-07): platform before IAM** — Vault Safety ✅ → Linux Agent ✅ → Phase 3 Linux UI ✅ → Phase 5 Web Terminal DARK ✅ (behind `FEATURE_TERMINAL` OFF; NPM WS route + flag-enable = Manual Approval, not done) → **Phase 7 MikroTik Proxy Adapter + Connect Framework DARK ✅** (capability-driven `/connect-methods` + ConnectMenu, MikroTik proxy adapter registered, Network/Storage/Hypervisor auto-classification + tree folders + `category` filter — all flag-gated; launchers/RouterOS API = next phase per boundary) → 8 Storage → 9 Hypervisors → 6 IAM last. All 8 flags OFF. **Adding a platform now = adapter + capability mapping + icon + connect methods, no UI change.** Standing implementation authority (manual approval reserved for: architecture changes, breaking DB/API changes, behavior removal, security-model changes, default-ON flags, downtime migrations). Enabling FEATURE_LINUX for a canary = Manual Approval. |
 | **Execution roadmap** | [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) — single source of truth for implementation **progress** (phases, status, health); updated after every phase. Every phase begins by reading PROJECT_STATE → CHANGELOG-SOLUTIONS → PLATFORM-EXPANSION-AUDIT → IMPLEMENTATION-ROADMAP. |
 
@@ -476,6 +476,70 @@ and light theme before shipping.
   in tests); Resource meters show purple/amber/red correctly at 63/78/91%;
   light theme renders every card/badge/icon correctly with no hardcoded
   dark-only colors; Management tab actions and tab overflow scroll checked.
+
+**Embedded Connect / Web Terminal — production-ready, code complete
+(2026-07-10, deployed dark; FEATURE_TERMINAL stays OFF).** Phase 5's two
+documented "Manual Approval" blockers, and the remaining lifecycle gaps, are
+now closed:
+
+- **NPM WS route blocker didn't exist.** Live inspection of
+  `/root/nginx-proxy-manager/data/nginx/proxy_host/2.conf` on production
+  shows `api-rdp.techi.com.al` has a single catch-all `location /` with
+  `proxy_set_header Upgrade`/`Connection`/`proxy_http_version 1.1` applied
+  host-wide (not scoped to `/ws/devices`) — NPM's websocket toggle is per
+  proxy-host, not per-path, so `/ws/terminal/{id}` and
+  `/ws/agent/terminal/{id}` are already reachable through the existing
+  config. No NPM change was needed.
+- **Generic rollout scoping** (`backend/app/platform_core/rollout.py`, new):
+  a fleet-wide `FEATURE_*` flag alone has no per-device concept, so this adds
+  a second, reusable axis — `{PREFIX}_SCOPE` (`none`/`device`/`group`/
+  `client`/`fleet`) plus `{PREFIX}_ALLOWED_DEVICE_IDS`/`_ALLOWED_GROUPS`/
+  `_ALLOWED_CLIENTS` — enforced server-side only, default `none` (fail
+  closed regardless of the flag). `FEATURE_TERMINAL_*` is the first
+  consumer; the mechanism takes the feature prefix as a parameter so future
+  features (Remote Actions, an SSH relay, future connector platforms) reuse
+  it without inventing their own allowlist shape. Enforced in
+  `POST /devices/{id}/terminal/sessions` (403 outside scope, audited both on
+  grant and denial via new `AuditAction.TERMINAL_SESSION_*` constants).
+- **Lifecycle completed, reusing the existing session/relay architecture**
+  (no redesign): `TerminalRelay` (`backend/app/services/terminal_relay.py`)
+  now tracks per-pair activity/start time and exposes a read-only
+  `idle_and_expired_sessions()` snapshot; a new `TerminalWatchdog`
+  (`backend/app/workers/terminal_watchdog.py`, same start/stop pattern as
+  `device_reconciliation_worker`) sweeps every 30 s — expires stale PENDING
+  tickets and force-closes ACTIVE pairs past the existing
+  `IDLE_TIMEOUT_SECONDS` (900 s) / `SESSION_MAX_SECONDS` (3600 s) constants,
+  closing the relay, marking the DB session, and writing an audit entry so a
+  forgotten tab or a wedged agent connection can never leak an orphan
+  session/PTY/websocket. Only started when `FEATURE_TERMINAL` is enabled
+  (`main.py` lifespan) — flag OFF stays zero-extra-behavior (no new periodic
+  queries). Both WS handlers (`terminal_routes.py`) now log every
+  attach/reject/close and write a `terminal_session_closed` audit entry on
+  every disconnect (`operator_closed`/`agent_gone`), not just the watchdog
+  path. Resize was already implemented (frontend sends a `{t:"resize"}`
+  control frame over the data channel; the Linux agent's `pty.Setsize` — no
+  change needed). Frontend (`DeviceTerminal.tsx`) gained bounded
+  auto-reconnect (up to 2 attempts on an abnormal WS close, i.e.
+  `event.code !== 4001/4003`) plus a manual "Reconnect" button — a
+  reconnect always opens a **new** backend session/PTY (the architecture is
+  one-shot end-to-end; there is no mid-session state to resume), which is
+  surfaced to the operator via a `[reconnected — new session]` marker rather
+  than pretending continuity.
+- **Linux-only, capability-driven, no platform-specific code**: every new
+  gate (flag, rollout scope, capability check) is generic; nothing added
+  checks `platform == "linux"` anywhere — Linux is the only platform live
+  today purely because it's the only agent that reports the `terminal`
+  capability.
+
+Preflight PASSED: contract 13/13, backend suite 566 passed + 4 known
+baseline (flags off & on, +28 new tests: rollout scope, relay idle/
+max-duration sweep, watchdog sweep+audit, endpoint scope enforcement),
+tsc/build clean, agent builds. **Deployed to production with
+`FEATURE_TERMINAL=false` unchanged** — code is live but inert (flag-off
+behavior byte-identical, matching Phase 5's original darkness invariant).
+Remaining manual step: owner sets `FEATURE_TERMINAL=true` +
+`FEATURE_TERMINAL_SCOPE`/allowlist in prod `.env` and restarts backend —
+still Manual Approval, now a config-only change with zero further code work.
 
 # RDP TECHI MOBILE UI 2.0
 

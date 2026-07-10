@@ -22,9 +22,11 @@ from app.schemas.agent import AgentEnrollmentRequest
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
 from app.services.auth_service import ensure_bootstrap_owner
 from app.services.enrollment_token_service import EnrollmentTokenService
+from app.platform_core.flags import feature_enabled
 from app.websocket.publisher import realtime_publisher
 from app.websocket.routes import router as websocket_router
 from app.workers.device_reconciliation_worker import device_reconciliation_worker
+from app.workers.terminal_watchdog import terminal_watchdog
 
 logger = logging.getLogger("techi.startup")
 
@@ -110,6 +112,10 @@ async def lifespan(app: FastAPI):
     realtime_publisher.start()
     device_reconciliation_worker.start()
     cleanup_task = asyncio.create_task(_heartbeat_cleanup_scheduler())
+    # Only runs when the feature is actually reachable — flag OFF stays
+    # zero-extra-behavior (no new periodic queries).
+    if feature_enabled("FEATURE_TERMINAL"):
+        terminal_watchdog.start()
 
     yield
 
@@ -118,6 +124,7 @@ async def lifespan(app: FastAPI):
         await cleanup_task
     except asyncio.CancelledError:
         pass
+    await terminal_watchdog.stop()
     await device_reconciliation_worker.stop()
     await realtime_publisher.stop()
 
@@ -156,7 +163,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)
 # Web Terminal relay WS (Platform Expansion Phase 5) — gated by FEATURE_TERMINAL
-# inside the handlers (accept+close 4003 when off). No public NPM route yet.
+# inside the handlers (accept+close 4003 when off) plus the FEATURE_TERMINAL
+# rollout scope enforced at session creation (app/platform_core/rollout.py).
+# NPM already proxies this host's WS traffic.
 from app.websocket.terminal_routes import router as terminal_ws_router  # noqa: E402
 app.include_router(terminal_ws_router)
 app.include_router(legacy_compat_router)

@@ -26,6 +26,10 @@ TICKET_TTL_SECONDS = 60          # both sides must attach within this window
 SESSION_MAX_SECONDS = 3600       # hard cap on a single session
 IDLE_TIMEOUT_SECONDS = 900       # 15 min no traffic → closed
 
+# Rollout scoping (who FEATURE_TERMINAL is live for) lives in the platform
+# expansion package's "rollout" module — reusable by future features, not
+# terminal-specific. See app/api/v1/endpoints/terminal.py for the enforcement point.
+
 
 def _hash_ticket(ticket: str) -> str:
     return hashlib.sha256(ticket.encode("utf-8")).hexdigest()

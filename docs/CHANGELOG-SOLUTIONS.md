@@ -27,6 +27,159 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Embedded Connect (Web Terminal) completed to production-ready — generic rollout framework, full lifecycle, deployed dark
+
+### Problemi
+
+Owner directive ("Phase Next") prioritizes Embedded Connect as the top
+item, with explicit requirements: complete the existing Web Terminal
+(Phase 5, dark-complete since `991ae07` 2026-07-08) to enterprise-ready
+without redesigning it — session lifecycle, resize, reconnect, cleanup,
+timeout, audit, error handling, logging all need to be real; and replace
+any device-ID-only canary with a generic rollout mechanism
+(`none`/`device`/`group`/`client`/`fleet`) reusable by future features
+(Remote Actions, SSH Relay, future connector platforms). Linux only —
+no MikroTik/NAS/VMware relay work. Two Manual Approval blockers were on
+record: an NPM edge WebSocket route, and enabling `FEATURE_TERMINAL`.
+
+### Analiza
+
+**NPM blocker re-verified live** (read-only `ssh techi-server`):
+`/root/nginx-proxy-manager/data/nginx/proxy_host/2.conf`
+(`api-rdp.techi.com.al`) has exactly one `location /` block with
+`proxy_set_header Upgrade $http_upgrade;` / `Connection $http_connection;`
+/ `proxy_http_version 1.1;` set host-wide, not scoped to `/ws/devices`.
+NPM's "Websockets Support" toggle is per proxy-host, not per-path — the
+two new terminal WS paths were already reachable. No NPM change needed.
+
+**Lifecycle gap audit** (reading `terminal_service.py`, `terminal_relay.py`,
+`terminal_routes.py`, `agent/terminal_linux.go`, `DeviceTerminal.tsx`):
+resize was already implemented end-to-end (frontend `{t:"resize"}` control
+frame → agent `pty.Setsize`, not the flat WS-only relay code); authorization
+(admin+) already existed. But `IDLE_TIMEOUT_SECONDS`/`SESSION_MAX_SECONDS`
+were declared constants nobody enforced, `expire_stale()` existed but
+nothing called it periodically, no session-end audit existed (only
+session-open was audited), no logging existed in the WS routes at all, and
+a half-attached relay pair (operator connects, agent never dials in — e.g.
+device offline) could sit in memory forever since `pump()` only exits on a
+message or a disconnect, not on inactivity. Root risk: exactly the "leak an
+orphan session" failure mode the owner called out.
+
+### Shkaku
+
+Phase 5 shipped the wire protocol and the happy path but stopped at "dark
+complete" — the hardening pass (idle/max-duration enforcement, a periodic
+sweep, audit-on-close, structured logging, reconnect UX) was explicitly
+deferred and never revisited. Separately, `FEATURE_TERMINAL` (like every
+`FEATURE_*` flag) is a single fleet-wide boolean with no per-device concept,
+so any prior "enable for a canary" plan for it was unimplementable as
+written.
+
+### Zgjidhja
+
+**Generic rollout framework** (`backend/app/platform_core/rollout.py`,
+new) — `is_rollout_allowed(feature_prefix, *, device_id, group_id,
+client_id)` reads `{PREFIX}_SCOPE` (`none`/`device`/`group`/`client`/
+`fleet`) + `{PREFIX}_ALLOWED_DEVICE_IDS`/`_ALLOWED_GROUPS`/
+`_ALLOWED_CLIENTS` off Settings; default scope `none` fails closed
+regardless of the flag. Takes the prefix as a parameter (not
+Terminal-specific) and is unit-tested standalone including with a
+synthetic future prefix to prove genericity. `FEATURE_TERMINAL_SCOPE`/
+`_ALLOWED_DEVICE_IDS`/`_ALLOWED_GROUPS`/`_ALLOWED_CLIENTS`
+(`backend/app/core/config.py`) replace the previous device-only
+`TERMINAL_CANARY_DEVICE_IDS` draft (never committed) before it shipped.
+No DB migration — group/client scope reuses the existing `Device.group_id`/
+`client_id` columns.
+
+**Lifecycle completed, architecture reused, nothing redesigned**:
+- `TerminalRelay` (`terminal_relay.py`) now tracks `started_monotonic` /
+  `last_activity_monotonic` per pair and exposes a read-only
+  `idle_and_expired_sessions(idle_timeout, max_session)` snapshot — the
+  relay itself stays a pure transport with no DB/audit side effects.
+- New `TerminalWatchdog` (`backend/app/workers/terminal_watchdog.py`, same
+  start/stop pattern as `device_reconciliation_worker`) sweeps every 30 s:
+  calls `TerminalService.expire_stale()` (now actually wired up) and closes
+  any relay pair the snapshot flags, marking the DB session
+  closed/expired and writing a `terminal_session_closed` /
+  `terminal_session_expired` audit entry either way. Started only when
+  `FEATURE_TERMINAL` is enabled (`main.py` lifespan) so flag-OFF stays
+  zero-extra-behavior — no new periodic queries when the feature doesn't
+  exist in this deployment.
+- Both WS handlers (`terminal_routes.py`) now log every attach/reject/close
+  and write a `terminal_session_closed` audit entry on every disconnect
+  (`operator_closed`/`agent_gone`), wrapped in `try/except Exception` so a
+  relay/DB error can't leave a session stuck without ever being marked
+  closed.
+- `POST /devices/{id}/terminal/sessions` (`terminal.py`) now audits BOTH
+  grant (`terminal_session_opened`) and denial
+  (`terminal_session_denied`, reason `outside_rollout_scope`), plus
+  structured logging on both paths. New `AuditAction.TERMINAL_SESSION_*`
+  constants added to `audit_service.py` alongside the existing action list.
+- Frontend (`DeviceTerminal.tsx`): bounded auto-reconnect (up to 2 attempts,
+  1.5 s/3 s backoff) on an abnormal WS close (`event.code` not 4001/4003 —
+  those are permanent: expired ticket / flag off), plus a manual
+  "Reconnect" button in the closed/error state. A reconnect always opens a
+  **new** backend session (the architecture is one-shot end-to-end — the
+  agent tears down its PTY when the WS drops, so there is no session state
+  to resume); the UI is honest about this with a
+  `[reconnected — new session]` marker instead of faking continuity.
+
+**Linux-only, capability-driven, zero platform-specific code**: verified
+by grep that none of the new/changed files contain a `platform ==`
+check anywhere — every new gate (flag, rollout scope, `terminal`
+capability) is generic. Linux stays the only live platform purely because
+it's the only agent reporting the `terminal` capability today; MikroTik/
+NAS/VMware relays were explicitly out of scope and untouched.
+
+### Ndryshimet
+
+- `backend/app/platform_core/rollout.py` (new) — generic rollout scoping.
+- `backend/app/core/config.py` — `FEATURE_TERMINAL_SCOPE` +
+  `_ALLOWED_DEVICE_IDS`/`_ALLOWED_GROUPS`/`_ALLOWED_CLIENTS`.
+- `backend/app/services/terminal_relay.py` — activity/duration tracking +
+  `idle_and_expired_sessions()`.
+- `backend/app/workers/terminal_watchdog.py` (new) — 30 s cleanup sweep.
+- `backend/app/websocket/terminal_routes.py` — logging + close-audit on
+  every disconnect path, `try/except` hardening.
+- `backend/app/api/v1/endpoints/terminal.py` — rollout-scope 403 (replacing
+  the device-only draft), grant/denial audit + logging.
+- `backend/app/services/audit_service.py` — `TERMINAL_SESSION_*` constants.
+- `backend/app/main.py` — starts/stops `terminal_watchdog`, gated by
+  `feature_enabled("FEATURE_TERMINAL")`; added to the platform_core wiring
+  allowlist in `tests/test_platform_core.py` (deliberate, reviewed).
+- `frontend/src/components/DeviceTerminal.tsx` — bounded auto-reconnect +
+  manual Reconnect button.
+- New tests: `tests/test_platform_rollout.py` (9), `tests/test_terminal_relay.py`
+  (10), `tests/test_terminal_watchdog.py` (4); `tests/test_terminal_endpoint.py`
+  rewritten for scope enforcement (device/group/client/fleet/none, +audit
+  assertions); `tests/test_terminal_service.py` trimmed of the retired
+  canary helpers.
+
+### Rezultati
+
+Preflight PASSED: contract 13/13, backend suite 566 passed + 4 known
+baseline (flags off & on — +28 net new tests), tsc/build clean, agent
+builds (windows+linux). Committed as a single commit, pushed to
+`stable/phase-2-heartbeat`, deployed to production. **`FEATURE_TERMINAL`
+was left `false` in prod `.env` — untouched, no rollout scope selected.**
+Code is live in the running containers but fully inert (identical to
+flag-off behavior, matching Phase 5's original darkness invariant).
+
+### Mësimet
+
+- A documented "blocker" should be re-verified against live state before
+  planning around it — the NPM route requirement had been carried forward
+  as fact since 2026-07-08 without anyone re-checking the actual proxy
+  config; a 90-second `ssh` + `grep` settled it.
+- "Dark complete" and "production ready" are different bars — the wire
+  protocol working end-to-end in a demo does not imply cleanup/timeout/
+  audit paths exist; those are easy to defer silently because nothing
+  fails until a real orphaned session shows up in production.
+- Building the rollout scope as a standalone, prefix-parameterized module
+  (rather than inlining a Terminal-specific allowlist) cost almost nothing
+  extra here and removes a whole category of future "let's add canary
+  support to feature X" work.
+
 ## [2026-07-10] POLISH: Generic Device Drawer visual pass — enterprise-grade standard interface
 
 ### Problemi

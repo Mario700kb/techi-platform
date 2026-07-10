@@ -11,16 +11,26 @@ import { getAuthToken } from "../api/client";
 // operator side of the relay; the agent side is provided by whatever platform
 // adapter implements the terminal capability (Linux today).
 
-type Phase = "connecting" | "open" | "closed" | "error";
+type Phase = "connecting" | "open" | "closed" | "error" | "reconnecting";
 
 interface Props {
   deviceId: number;
 }
 
+// WS close codes the backend never retries on its own — the session/ticket
+// itself is invalid or the feature is off, so a brand-new session would fail
+// identically. Auto-reconnect only makes sense for an abnormal network drop.
+const NON_RETRYABLE_CODES = new Set([4001, 4003]);
+const MAX_AUTO_RECONNECTS = 2;
+const AUTO_RECONNECT_DELAY_MS = [1500, 3000];
+
 export default function DeviceTerminal({ deviceId }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>("connecting");
   const [message, setMessage] = useState<string>("Requesting terminal session…");
+  // Bumping this re-runs the connect effect — used for both the automatic
+  // retry and the manual "Reconnect" button, so there is one connect path.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let disposed = false;
@@ -28,22 +38,36 @@ export default function DeviceTerminal({ deviceId }: Props) {
     let term: Terminal | null = null;
     let fit: FitAddon | null = null;
     let onResize: (() => void) | null = null;
+    let autoReconnects = 0;
 
-    (async () => {
+    const connect = async () => {
+      setPhase(attempt === 0 ? "connecting" : "reconnecting");
+      setMessage(attempt === 0 ? "Requesting terminal session…" : "Reconnecting…");
       try {
         const session = await createTerminalSession(deviceId, "bash");
         if (disposed || !containerRef.current) return;
 
-        term = new Terminal({
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 13,
-          theme: { background: "#0B0B0D", foreground: "#F5F5F7" },
-          cursorBlink: true,
-        });
-        fit = new FitAddon();
-        term.loadAddon(fit);
-        term.open(containerRef.current);
-        fit.fit();
+        if (!term) {
+          term = new Terminal({
+            fontFamily: '"JetBrains Mono", monospace',
+            fontSize: 13,
+            theme: { background: "#0B0B0D", foreground: "#F5F5F7" },
+            cursorBlink: true,
+          });
+          fit = new FitAddon();
+          term.loadAddon(fit);
+          term.open(containerRef.current);
+          fit.fit();
+          term.onData((data) => {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+          });
+        } else {
+          // Reconnect got a fresh backend session (fresh shell — the prior
+          // PTY was already torn down with the old connection); keep the
+          // same terminal widget but make that visible to the operator.
+          term.reset();
+          term.writeln("\x1b[2m[reconnected — new session]\x1b[0m");
+        }
 
         // Token is passed as a query param (WebSocket has no header support);
         // the operator ticket already scopes this to one session.
@@ -52,8 +76,14 @@ export default function DeviceTerminal({ deviceId }: Props) {
         ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
 
+        const sendResize = () => {
+          if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
+          ws.send(JSON.stringify({ t: "resize", cols: term.cols, rows: term.rows }));
+        };
+
         ws.onopen = () => {
           if (disposed) return;
+          autoReconnects = 0;
           setPhase("open");
           setMessage("");
           sendResize();
@@ -63,10 +93,27 @@ export default function DeviceTerminal({ deviceId }: Props) {
           if (ev.data instanceof ArrayBuffer) term.write(new Uint8Array(ev.data));
           else term.write(ev.data as string);
         };
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
           if (disposed) return;
+          const retryable = !NON_RETRYABLE_CODES.has(ev.code);
+          if (retryable && autoReconnects < MAX_AUTO_RECONNECTS) {
+            const delay = AUTO_RECONNECT_DELAY_MS[autoReconnects] ?? 3000;
+            autoReconnects += 1;
+            setPhase("reconnecting");
+            setMessage(`Connection lost — reconnecting (${autoReconnects}/${MAX_AUTO_RECONNECTS})…`);
+            window.setTimeout(() => {
+              if (!disposed) setAttempt((a) => a + 1);
+            }, delay);
+            return;
+          }
           setPhase("closed");
-          setMessage("Terminal session closed.");
+          setMessage(
+            ev.code === 4003
+              ? "Web Terminal is not enabled."
+              : ev.code === 4001
+                ? "Terminal session expired."
+                : "Terminal session closed.",
+          );
         };
         ws.onerror = () => {
           if (disposed) return;
@@ -74,14 +121,6 @@ export default function DeviceTerminal({ deviceId }: Props) {
           setMessage("Terminal connection failed.");
         };
 
-        term.onData((data) => {
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
-        });
-
-        const sendResize = () => {
-          if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
-          ws.send(JSON.stringify({ t: "resize", cols: term.cols, rows: term.rows }));
-        };
         onResize = () => {
           fit?.fit();
           sendResize();
@@ -92,7 +131,9 @@ export default function DeviceTerminal({ deviceId }: Props) {
         setPhase("error");
         setMessage(e instanceof Error ? e.message : "Failed to open terminal.");
       }
-    })();
+    };
+
+    void connect();
 
     return () => {
       disposed = true;
@@ -100,20 +141,33 @@ export default function DeviceTerminal({ deviceId }: Props) {
       try { ws?.close(); } catch { /* noop */ }
       try { term?.dispose(); } catch { /* noop */ }
     };
-  }, [deviceId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, attempt]);
+
+  const canManualReconnect = phase === "closed" || phase === "error";
 
   return (
     <div className="flex h-full min-h-[320px] flex-col gap-2">
       {phase !== "open" && (
         <div
-          className="rounded-md px-3 py-2 text-xs"
+          className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-xs"
           style={{
             color: phase === "error" ? "#f87171" : "var(--th-text-secondary)",
             background: "var(--th-bg-drawer-section)",
             border: "1px solid var(--th-border-drawer-section)",
           }}
         >
-          {message}
+          <span>{message}</span>
+          {canManualReconnect && (
+            <button
+              type="button"
+              onClick={() => setAttempt((a) => a + 1)}
+              className="rounded px-2 py-1 text-xs font-medium"
+              style={{ background: "var(--th-accent)", color: "#fff" }}
+            >
+              Reconnect
+            </button>
+          )}
         </div>
       )}
       <div

@@ -345,19 +345,42 @@ and self-healed by the agent every heartbeat:
 
 ---
 
-## 14. Web Terminal 🚩 `FEATURE_TERMINAL` (+ `terminal` capability)
+## 14. Web Terminal 🚩 `FEATURE_TERMINAL` (+ rollout scope + `terminal` capability)
 
 An in-browser terminal inside the Device Drawer (a **Terminal** tab), for Linux
-devices that report the `terminal` capability.
+devices that report the `terminal` capability. Production-ready as of
+2026-07-10; not yet enabled in production (see Availability note).
 
 - The operator opens the Terminal tab → the backend creates a one-time session
   (short-lived ticket) → the agent opens a PTY (bash/sh) and streams it to your
   browser (xterm.js). No inbound ports; the agent connects outbound only.
-- Sessions are authenticated, operator-scoped, time-limited (idle/max caps), and
-  audited.
-- **Availability note:** this feature needs its edge WebSocket route configured
-  and the flag enabled. If `FEATURE_TERMINAL` is OFF, the Terminal tab does not
-  appear and the terminal endpoints return 404 / close.
+- **Resize**: the terminal follows your browser window size automatically
+  (sent as a control frame over the same channel — no separate connection).
+- **Reconnect**: if the connection drops unexpectedly, the terminal
+  auto-retries (up to 2 attempts) before falling back to a manual
+  **Reconnect** button. A reconnect always opens a **new** shell session —
+  there is no mid-session state to resume, so anything mid-command is lost;
+  the terminal shows a `[reconnected — new session]` marker so this is
+  never silent.
+- **Timeout**: idle sessions close automatically after 15 minutes of no
+  activity; any session is hard-capped at 60 minutes regardless of
+  activity. A background sweep (every 30 s) also cleans up a session where
+  only one side ever connected (e.g. the device went offline mid-session),
+  so a forgotten tab never keeps a session open indefinitely.
+- Sessions are authenticated, operator-scoped (admin+), and every open,
+  deny, and close (by either side or by timeout) is written to the Audit
+  Log.
+- **Rollout scope**: even with the flag ON, Web Terminal is only reachable
+  for devices within the configured rollout scope
+  (`FEATURE_TERMINAL_SCOPE` = none/device/group/client/fleet — an owner
+  `.env` setting, not visible in the UI). A device outside scope still
+  shows the Terminal tab (capability-driven) but the session request is
+  denied. This is the same generic mechanism future staged rollouts
+  (Remote Actions, SSH Relay, future connector platforms) will reuse.
+- **Availability note:** with `FEATURE_TERMINAL` OFF, the Terminal tab does
+  not appear and the terminal endpoints return 404 / close. The prior "edge
+  WebSocket route" caveat no longer applies — production's proxy already
+  supports it, verified 2026-07-10.
 
 ---
 
@@ -643,8 +666,10 @@ in Agent Config; every device adopts it on its next heartbeat.
 - **MikroTik**: Connector v1 heartbeat/inventory/capability reporting +
   resource utilization; **no RouterOS API** yet (firewall/interface/DHCP
   edits stay in Winbox/WebFig/SSH).
-- **Web Terminal**: requires its edge WebSocket route + `FEATURE_TERMINAL`; not
-  enabled by default. Session recording is prepared but not implemented.
+- **Web Terminal**: production-ready (2026-07-10); requires `FEATURE_TERMINAL`
+  + a rollout scope, neither enabled by default. Reconnect always opens a new
+  shell session (no mid-session state resume). Session recording is prepared
+  but not implemented.
 - **Linux**: certified **Experimental** — validate on a canary before broad use.
   Tier-1 distros: Ubuntu LTS, Debian, RHEL family.
 - **IAM**: the granular permission matrix / sessions manager is a future phase;

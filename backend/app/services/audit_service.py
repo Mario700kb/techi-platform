@@ -48,6 +48,10 @@ class AuditAction:
     TEAM_MEMBER_REMOVED = "team_member_removed"
     TEAM_ACCESS_UPDATED = "team_access_updated"
     UPDATE_OPERATOR = "operator_updated"
+    TERMINAL_SESSION_OPENED = "terminal_session_opened"
+    TERMINAL_SESSION_DENIED = "terminal_session_denied"
+    TERMINAL_SESSION_CLOSED = "terminal_session_closed"
+    TERMINAL_SESSION_EXPIRED = "terminal_session_expired"
 
 
 def audit_log(

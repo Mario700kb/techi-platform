@@ -294,7 +294,7 @@ roadmap. Until then: no new features.
 | **Feature Flags status** | 8 flags in production, **all OFF** (verified: FEATURE_MIKROTIK + CORE False) |
 | **Deployment status** | Prod tip `7df3cba`; backend+frontend rebuilt; connect-methods 404 with flag off, MikroTik adapter registered |
 | **Production status** | Healthy: `/health` 200, frontend 200, 131 heartbeats/min, 0 real errors; flag-off UI+behavior identical |
-| **Risks (top)** | Connection launchers (Winbox/WebFig/SSH) + RouterOS API = next phase; Phase 5 NPM route + FEATURE_TERMINAL = Manual Approval |
+| **Risks (top)** | Connection launchers (Winbox/WebFig/SSH) + RouterOS API = next phase; Phase 5 production-ready (2026-07-10) — only remaining step is the owner enabling `FEATURE_TERMINAL` + rollout scope (Manual Approval, config-only) |
 | **Last Update** | 2026-07-08 (Phase 7 dark complete) |
 
 ## Phase Table (in execution order)
@@ -307,7 +307,7 @@ roadmap. Until then: no new features.
 | — | **Vault Operational Safety** (hardening) | **COMPLETED** (2026-07-07) | `scripts/techi-backup.sh` | ✅ on-server (no app change) | backup sha `e7bcd67f…` · integrity + end-to-end recovery rehearsed ✅ |
 | 2 | Linux Agent MVP | **COMPLETED** (2026-07-07) | `59a781b` (agent+backend, 7 commits) | ✅ 2026-07-07 (backend, flag off) | Go builds all 4 targets · Windows-payload test PASS · smoke-tested on Ubuntu · install 404 flag-off · 206 hb/min ✅ |
 | 3 | Linux Platform Integration (UI / Drawer / Catalog) | **COMPLETED** (2026-07-07) | `dfd601b` | ✅ 2026-07-07 (backend+frontend, flag off = identical) | PlatformIcon, Packages Linux (armhf), Enrollment one-liner, Drawer capabilities/kernel/arch, platform filter, tree auto-classification sub-folders, Command Center run_command engine (bash/sh/python). Suite 424✅+4 (flag off & on), all-4 agent builds, tsc/build clean, prod healthy |
-| 5 | Embedded Web Terminal | **DARK COMPLETE** (2026-07-08) | `991ae07` | ✅ 2026-07-08 (dark, FEATURE_TERMINAL off) | Session model+service, endpoint+WS relay, agent PTY channel, Drawer terminal tab (lazy xterm). Suite 434✅+4 (flag off & on), agent 4 targets, tsc/build clean. **Remaining: NPM WS route + flag enable (Manual Approval)** |
+| 5 | Embedded Connect (Web Terminal) | **PRODUCTION READY, DEPLOYED DARK** (2026-07-10) | `991ae07` + completion commit | ✅ deployed 2026-07-10 (`FEATURE_TERMINAL` left `false`) | Session model+service, endpoint+WS relay, agent PTY channel, Drawer terminal tab (lazy xterm) — original Phase 5. Completed 2026-07-10: generic rollout framework (`platform_core/rollout.py`, none/device/group/client/fleet, reusable by future features), `TerminalWatchdog` idle/max-duration/expired sweep (no orphan sessions), close-audit + logging on every disconnect path, frontend bounded auto-reconnect. Suite 566✅+4 (flag off & on, +28 new tests), agent 4 targets, tsc/build clean. NPM route blocker resolved 2026-07-10 (no infra change needed — verified live). **Remaining: owner sets `FEATURE_TERMINAL=true` + rollout scope in prod `.env` — config-only, zero code work left** |
 | 7 | MikroTik Proxy Adapter + Connect Framework | **DARK COMPLETE** (2026-07-08) | `7df3cba` | ✅ 2026-07-08 (dark, flags off) | Connect Framework (metadata + `/connect-methods` + ConnectMenu), MikroTik proxy adapter, Network/Storage/Hypervisor auto-classification + tree folders + `category` filter. Suite 444✅+4 (flag off & on), agent 4 targets, tsc/build clean. **Launchers/RouterOS API = next phase (per boundary)** |
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
@@ -478,7 +478,7 @@ secret decrypted with a RESTORED copy of the key (`recovery-canary-42`). This
 is the one DR component with a rehearsed restore. Closes the pre-enable gate
 for FEATURE_VAULT.
 
-## Phase 5 — Embedded Web Terminal
+## Phase 5 — Embedded Connect (Web Terminal)
 
 **DARK COMPLETE 2026-07-08 (`991ae07`).** Delivered behind FEATURE_TERMINAL
 (off): `TerminalSession` model + lifecycle service (two hashed one-time tickets,
@@ -490,12 +490,47 @@ action; in-memory `TerminalRelay` + operator/agent WS routes (`/ws/terminal/{id}
 (lazy xterm.js, only when FEATURE_TERMINAL + terminal capability). Session
 recording NOT implemented (architecture prepared). Suite 434+4 flag off & on;
 agent 4 targets; tsc/build clean (xterm code-split); prod dark-deployed.
-**Remaining (Manual Approval — NOT done): (1) NPM WS route for
-`/ws/terminal/*` + `/ws/agent/terminal/*`; (2) enable FEATURE_TERMINAL for a
-canary.** Enablement notes: terminal wake latency = 1 heartbeat (reuses
-pending_actions — lower the interval for terminal-enabled devices or add a
-faster signal before real use); relay is per-worker in-memory (audit R5 — move
-out-of-process if enabled at fleet scale).
+
+**PRODUCTION READY 2026-07-10 (completion commit, deployed dark).** Closed
+every remaining gap without redesigning the above:
+- **NPM WS route resolved** — live inspection of production NPM config
+  showed `api-rdp.techi.com.al` already applies websocket upgrade headers
+  host-wide (not path-scoped), so no NPM change was needed.
+- **Generic rollout framework** replaces the never-shipped device-only
+  canary idea: `app/platform_core/rollout.py` — `FEATURE_TERMINAL_SCOPE`
+  (`none`/`device`/`group`/`client`/`fleet`) + `_ALLOWED_DEVICE_IDS`/
+  `_ALLOWED_GROUPS`/`_ALLOWED_CLIENTS`, server-side only, fail-closed
+  default, prefix-parameterized so Remote Actions / SSH Relay / future
+  connector platforms reuse it verbatim.
+- **Cleanup/timeout enforced**: new `TerminalWatchdog`
+  (`app/workers/terminal_watchdog.py`) sweeps every 30 s — expires stale
+  PENDING tickets, force-closes ACTIVE relay pairs past
+  `IDLE_TIMEOUT_SECONDS` (900 s) / `SESSION_MAX_SECONDS` (3600 s), audits
+  every closure. Only runs when `FEATURE_TERMINAL` is on (flag-off stays
+  zero-extra-behavior). No orphan session/PTY/websocket can leak
+  indefinitely — covers both a forgotten browser tab and a half-attached
+  pair where the agent never dials in (device offline).
+- **Audit + logging completed**: session open AND deny (`outside_rollout_
+  scope`) audited; every WS disconnect (`operator_closed`/`agent_gone`)
+  audited and logged; watchdog closures audited and logged.
+- **Reconnect** added to `DeviceTerminal.tsx` — bounded auto-retry (2
+  attempts) on an abnormal close plus a manual button; always opens a new
+  session (one-shot architecture, no mid-session state to resume — the
+  agent tears down its PTY per connection).
+- **Resize** was already implemented (frontend control frame → agent
+  `pty.Setsize`) — verified, no change needed.
+- Suite 566✅+4 (flags off & on, +28 net new tests: rollout scope, relay
+  idle/max-duration, watchdog sweep+audit, endpoint scope enforcement),
+  agent 4 targets, tsc/build clean. Deployed with `FEATURE_TERMINAL=false`
+  unchanged in prod `.env` — code live, fully inert.
+
+**Remaining (Manual Approval — NOT done, config-only now): owner sets
+`FEATURE_TERMINAL=true` + `FEATURE_TERMINAL_SCOPE` + the matching allowlist
+in prod `.env` and restarts backend.** Enablement notes unchanged: terminal
+wake latency = 1 heartbeat (reuses pending_actions — lower the interval for
+terminal-enabled devices or add a faster signal before real use); relay is
+per-worker in-memory (audit R5 — move out-of-process if enabled at fleet
+scale).
 
 ### Embedded SSH for connector platforms (MikroTik) — architecture recommendation, NOT implemented (2026-07-10)
 
@@ -574,7 +609,10 @@ on the host. Flags: `FEATURE_HYPERVISOR`. Demand-driven.
 **Current blockers**
 - Phase 0 closure: waiting on owner-approved deploy.
 - Phase 2: Windows Agent 2.1.5 rollout not yet officially completed.
-- Phase 5 (future): NPM WS route approval.
+- Phase 5: code deployed 2026-07-10, production ready. Only remaining step
+  is owner approval to set `FEATURE_TERMINAL=true` + `FEATURE_TERMINAL_SCOPE`
+  + allowlist in prod `.env` (config-only; NPM route approval no longer
+  needed — resolved 2026-07-10).
 
 **Known risks** (full analysis: audit §7/§13)
 - R1 Windows regression — mitigated by dark code + darkness test + golden tests in Phase 1.

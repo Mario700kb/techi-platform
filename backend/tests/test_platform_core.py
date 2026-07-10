@@ -157,6 +157,7 @@ class TestWiringBoundary:
             "app/services/permission_service.py",  # ACTION_PERMISSION_MAP derives from the Action Registry (Step 1c)
             "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)
             "app/services/version_service.py",  # Version Service reads Platform Registry's latest_connector_version
+            "app/main.py",  # gates terminal_watchdog startup by FEATURE_TERMINAL (Phase 5 completion)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

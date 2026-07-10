@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     FEATURE_STORAGE: bool = False
     FEATURE_HYPERVISOR: bool = False
 
+    # Generic rollout scoping (see the "rollout" module under the platform
+    # expansion package) — narrows a fleet-wide FEATURE_* flag to a subset of
+    # the fleet for staged enablement. Reusable by any feature; Web Terminal
+    # is the first consumer. Default scope "none" = nobody, even if the flag
+    # is ON (fail closed).
+    FEATURE_TERMINAL_SCOPE: str = "none"
+    FEATURE_TERMINAL_ALLOWED_DEVICE_IDS: str = ""
+    FEATURE_TERMINAL_ALLOWED_GROUPS: str = ""
+    FEATURE_TERMINAL_ALLOWED_CLIENTS: str = ""
+
     @model_validator(mode="before")
     @classmethod
     def resolve_secret_key(cls, data: Any) -> Any:
