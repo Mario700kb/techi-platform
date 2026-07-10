@@ -27,6 +27,60 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] DECISION: Feature flags default-ON once complete + validated — supersedes the "default OFF" rule for new work
+
+### Problemi
+
+Since Phase 0 (2026-07-07), every Platform Expansion feature shipped
+default-OFF and required a separate, explicit owner Manual Approval to
+flip on — even after implementation, automated tests, `preflight.sh`,
+`smoke.sh`, and (for the 4 currently-live flags) a full production
+validation window had already passed. The owner directed a change: once a
+feature clears that bar, it should ship enabled by default instead of
+sitting dark waiting for a second approval round-trip. Long-lived dark
+features don't get exercised by real usage, so bugs that only show up
+under real traffic/devices stay hidden longer than necessary.
+
+### Zgjidhja
+
+Adopted **going forward only** — nothing already shipped today (e.g. the
+Embedded Connect / Web Terminal work completed earlier in this same
+session, still `FEATURE_TERMINAL=false` in prod) is retroactively flipped
+by this decision. For new work from this date forward:
+
+- A `FEATURE_*` flag is still the mechanism for incomplete or
+  intentionally-hidden work — nothing about dark development changes.
+- Once a feature has implementation + automated tests + `preflight.sh` +
+  `smoke.sh` + a production validation window, it ships flipped ON
+  (`.env` value only) as a normal part of closing that work — not as a
+  separate Manual-Approval request.
+- The flag/if-checks stay in the code as a rollback switch — "remove the
+  gate" means flip the `.env` default, not delete the code path. A fully
+  matured feature can still have its flag deleted later as a deliberate
+  cleanup, but that's a separate, explicit decision, not implied by this one.
+- Deploy rigor is unchanged: preflight, smoke, a CHANGELOG entry, and a
+  rollback plan are still mandatory every time a flag flips, in prod or not.
+
+### Ndryshimet
+
+- `docs/PROJECT_STATE.md` — "Feature Flags policy" row under PLATFORM
+  EXPANSION rewritten to state the new default-ON-when-complete rule,
+  with an explicit note that it doesn't retroactively touch flags already
+  sitting OFF in prod.
+
+### Rezultati
+
+Policy-only change — no code, no deploy, no flag flipped in prod as part
+of this entry. Applies to the next feature that reaches "done."
+
+### Mësimet
+
+- Worth distinguishing, in future "ship it enabled" decisions, between
+  flipping a `.env` value (cheap, reversible, what was decided here) and
+  deleting the flag/code path outright (essentially permanent) — they were
+  conflated in the original ask and are meaningfully different levels of
+  commitment.
+
 ## [2026-07-10] FEATURE: Embedded Connect (Web Terminal) completed to production-ready — generic rollout framework, full lifecycle, deployed dark
 
 ### Problemi
