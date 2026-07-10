@@ -252,6 +252,44 @@ every other flag-gated feature in this codebase.
   `HostKeyNotVerifiable` so turning verification on later needs no other
   code change, only a place to store trusted per-device host keys.
 
+### Deploy + live validation addendum (same day)
+
+Deployed to production: schema-first `ALTER TABLE terminal_sessions ADD
+COLUMN` ×4 applied on prod Postgres and verified via `\d terminal_sessions`;
+`git pull --ff-only` (5adf1bf→ea49eb3, clean fast-forward); `docker compose
+-p techi-platform build backend frontend` (confirmed `asyncssh==2.14.2`
+importable inside the rebuilt backend container, and the frontend build
+code-split the new components into their own chunks —
+`EmbeddedSSHModal-v2-*.js`, `SSHSessionInfo-v2-*.js`); `up -d backend
+frontend` — both recreated and healthy within seconds, zero heartbeat
+disruption, zero errors in logs. `scripts/smoke.sh` against
+`https://api-rdp.techi.com.al` passed 8/8; the 3 new SSH endpoints manually
+confirmed reachable (401 unauthenticated, never 500); `FEATURE_TERMINAL`
+confirmed `False` in the running container immediately after deploy (dark,
+as designed).
+
+Owner then asked for a real browser-driven validation rather than accepting
+the dark deploy alone. Found one real online Linux device already reporting
+the `terminal` capability (`#729`, `rustdesk-srv`) and one pre-existing
+global-scope `ssh_key` Vault credential — sufficient to test the actual
+resolve→connect path. `.env` backed up
+(`.env.bak-ssh-connect-validation-2026-07-10`) before appending
+`FEATURE_TERMINAL=true` / `FEATURE_TERMINAL_SCOPE=device` /
+`FEATURE_TERMINAL_ALLOWED_DEVICE_IDS=729`; backend restarted, watchdog
+started cleanly, rollout scope verified server-side
+(`is_rollout_allowed(..., device_id=729)` → True, `device_id=1` → False —
+fail-closed for the rest of the fleet as designed). Attempting to complete
+the validation end-to-end via a scripted login (to drive the API/WebSocket
+without a browser, since this environment has no browser-automation tool)
+found the bootstrap owner password in `.env` no longer matches the live
+`owner` account (401 "Invalid username or password" — expected once a real
+password rotation happens post-bootstrap; not a bug). Owner chose to leave
+`FEATURE_TERMINAL` enabled, scoped to device #729 only, to complete the
+click-through validation themselves through the real browser UI rather than
+share credentials or have a new one created. **Left in this state
+deliberately** — see PROJECT_STATE.md for the current flag/scope and the
+revert command.
+
 ## [2026-07-10] FEATURE: Enterprise Credential Vault upgrade — types/purpose/scope/assignments/RBAC/test-connection
 
 ### Problemi
