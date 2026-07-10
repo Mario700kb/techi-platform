@@ -16,7 +16,7 @@ Gated by FEATURE_PLATFORM_CORE (404 when off) so today's production, where the
 existing Windows Connect button is untouched, is unchanged.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -24,18 +24,27 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, require_team_permission
 from app.db.session import get_db
+from app.models.device import Device
 from app.models.operator import Operator
 from app.platform_core.actions import actions_for, effective_capabilities
 from app.platform_core.capabilities import capability_tabs
-from app.platform_core.connect import methods_for
+from app.platform_core.connect import ConnectMethod, methods_for
 from app.platform_core.flags import feature_enabled
 from app.platform_core.registry import resolve_platform
 from app.repositories.device_repository import DeviceRepository
 from app.services import version_service
 from app.services.audit_service import AuditAction, audit_log
+from app.services.connect_preference_service import ConnectPreferenceService
 from app.services.permission_service import REMOTE_SUPPORT_CONNECT
+from app.services.vault_service import METHOD_CREDENTIAL_TYPES, VaultService
 
 router = APIRouter()
+
+# remote_support/web_terminal have their own dedicated, already-audited flows
+# (Remote Support tab / Terminal tab) — always "ready" from Connect's point of
+# view; readiness there is governed by their own tab/capability, not a Vault
+# credential.
+_DEDICATED_METHOD_IDS = frozenset({"remote_support", "web_terminal"})
 
 
 class ConnectMethodOut(BaseModel):
@@ -49,18 +58,66 @@ class ConnectMethodOut(BaseModel):
     # for Winbox), or None if it works on any OS. The frontend hides methods
     # that don't match the operator's detected OS.
     requires_client_os: Optional[str] = None
+    # Section E: separates "does this method exist for the platform" (it's in
+    # this list at all) from "can the operator actually use it right now".
+    status: str = "ready"  # ready | credential_required
+    status_reason: Optional[str] = None
+    # Which Vault scope tier resolved the credential that makes this method
+    # Ready (device|group|client|global) — None when no credential is
+    # involved (native methods) or when status != ready.
+    credential_source: Optional[str] = None
 
 
 class ConnectMethodsResponse(BaseModel):
     platform: str
     methods: List[ConnectMethodOut]
+    # Section G: the operator's effective default for this device, after
+    # applying the 4-tier hierarchy (device override > platform default >
+    # registry priority > first Ready method).
+    preferred_method_id: Optional[str] = None
+    # What the operator actually configured (device or platform level), even
+    # if it isn't the effective default right now because it's not Ready —
+    # lets the frontend say "X isn't available, using Y instead".
+    configured_preference_id: Optional[str] = None
+
+
+def _method_status(db: Session, device: Device, method: ConnectMethod) -> Tuple[str, Optional[str], Optional[str]]:
+    """Returns (status, reason, credential_source). Section D/F: a method
+    that needs a Vault credential (ssh/winbox/webfig) is "credential_required"
+    until resolve_credentials_for_method finds at least one ACTIVE, type-
+    matched candidate — never silently treated as usable."""
+    if method.id in _DEDICATED_METHOD_IDS or method.id not in METHOD_CREDENTIAL_TYPES:
+        return "ready", None, None
+    tier, candidates = VaultService(db).resolve_credentials_for_method(device, method.id)
+    if candidates:
+        return "ready", None, tier
+    return "credential_required", "No compatible credential configured", None
+
+
+def _resolve_preferred_method(
+    methods: List[ConnectMethod],
+    statuses: List[Tuple[str, Optional[str], Optional[str]]],
+    configured_preference: Optional[str],
+) -> Optional[str]:
+    """Tiers 3-4 of the Section G hierarchy, applied on top of whatever tiers
+    1-2 (device override / platform default) resolved into
+    `configured_preference`."""
+    ready_ids = [m.id for m, (status, _, _) in zip(methods, statuses) if status == "ready"]
+    if configured_preference and configured_preference in ready_ids:
+        return configured_preference
+    # Configured preference (if any) isn't Ready right now, or none was set —
+    # fall back to the registry's own priority order (methods_for() already
+    # sorts by ConnectMethod.priority), else the first genuinely Ready method.
+    if methods and methods[0].id in ready_ids:
+        return methods[0].id
+    return ready_ids[0] if ready_ids else (methods[0].id if methods else None)
 
 
 @router.get("/devices/{device_id}/connect-methods", response_model=ConnectMethodsResponse)
 def device_connect_methods(
     device_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    operator: Operator = Depends(get_current_operator),
 ):
     if not feature_enabled("FEATURE_PLATFORM_CORE"):
         raise HTTPException(status_code=404, detail="Not Found")
@@ -72,6 +129,13 @@ def device_connect_methods(
     descriptor = resolve_platform(device.platform)
     platform_id = descriptor.id if descriptor is not None else "windows"
     methods = methods_for(platform_id, device.capabilities)
+    statuses = [_method_status(db, device, m) for m in methods]
+
+    configured_preference = ConnectPreferenceService(db).get_preferred_method_id(
+        operator.id, platform_id, device_id,
+    )
+    preferred_method_id = _resolve_preferred_method(list(methods), statuses, configured_preference)
+
     return ConnectMethodsResponse(
         platform=platform_id,
         methods=[
@@ -79,19 +143,70 @@ def device_connect_methods(
                 id=m.id, label=m.label, surface=m.surface,
                 capability=m.capability, priority=m.priority, scheme=m.scheme,
                 requires_client_os=m.requires_client_os,
+                status=status, status_reason=reason, credential_source=credential_source,
             )
-            for m in methods
+            for m, (status, reason, credential_source) in zip(methods, statuses)
         ],
+        preferred_method_id=preferred_method_id,
+        configured_preference_id=configured_preference,
     )
+
+
+class ConnectPreferenceIn(BaseModel):
+    platform: str
+    method_id: str
+    device_id: Optional[int] = None
+
+
+class ConnectPreferenceOut(BaseModel):
+    platform: str
+    device_id: Optional[int] = None
+    method_id: str
+
+
+class ConnectPreferenceResetIn(BaseModel):
+    platform: str
+    device_id: Optional[int] = None
+
+
+@router.get("/connect-preferences", response_model=List[ConnectPreferenceOut])
+def list_connect_preferences(
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+):
+    """Section G "settings to view/reset defaults" — always the CALLING
+    operator's own preferences (never global, never another operator's)."""
+    prefs = ConnectPreferenceService(db).list_preferences(operator.id)
+    return [ConnectPreferenceOut(platform=p.platform, device_id=p.device_id, method_id=p.method_id) for p in prefs]
+
+
+@router.put("/connect-preferences", response_model=ConnectPreferenceOut)
+def set_connect_preference(
+    payload: ConnectPreferenceIn,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+):
+    """"Always use this method" — sets a per-operator+platform default, or a
+    per-operator+device override when `device_id` is given."""
+    pref = ConnectPreferenceService(db).set_preference(
+        operator.id, payload.platform, payload.method_id, device_id=payload.device_id,
+    )
+    return ConnectPreferenceOut(platform=pref.platform, device_id=pref.device_id, method_id=pref.method_id)
+
+
+@router.delete("/connect-preferences", status_code=204)
+def reset_connect_preference(
+    payload: ConnectPreferenceResetIn,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+):
+    ConnectPreferenceService(db).reset_preference(operator.id, payload.platform, device_id=payload.device_id)
+    return None
 
 
 class ConnectLaunchResponse(BaseModel):
     url: str
     surface: str  # desktop | browser — tells the frontend how to open `url`
-
-
-# Methods with their own dedicated, already-audited flow — not launched here.
-_DEDICATED_METHOD_IDS = frozenset({"remote_support", "web_terminal"})
 
 
 @router.get("/devices/{device_id}/connect-methods/{method_id}/launch", response_model=ConnectLaunchResponse)

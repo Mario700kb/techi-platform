@@ -107,6 +107,18 @@ TERMINAL_SESSION_COLUMNS = {
 }
 
 DEV_TABLES = {
+    "operator_connect_preferences": """
+        CREATE TABLE IF NOT EXISTS operator_connect_preferences (
+            id INTEGER PRIMARY KEY,
+            operator_id INTEGER NOT NULL,
+            platform VARCHAR(32) NOT NULL,
+            device_id INTEGER,
+            method_id VARCHAR(32) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            UNIQUE(operator_id, platform, device_id)
+        )
+    """,
     "terminal_sessions": """
         CREATE TABLE IF NOT EXISTS terminal_sessions (
             id VARCHAR(64) PRIMARY KEY,

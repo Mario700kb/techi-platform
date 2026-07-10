@@ -524,11 +524,32 @@ Rules that matter operationally:
   with a declared `web_path` (WebFig) open `http://<device-ip><web_path>` in
   a new tab; browser methods with no `web_path` fall back to
   `http://<device-ip>/`. `remote_support`/`web_terminal` keep their own
-  dedicated flows and are not launched from this generic mechanism.
-- **Platform-aware (2026-07-10):** a method only appears if it can actually
-  work on YOUR machine. Winbox is a Windows-only desktop app — the Connect
-  menu hides it automatically when you're on macOS or Linux and offers
-  WebFig + SSH instead. This is detected from your browser, not the device.
+  dedicated flows and are not launched from this generic mechanism. SSH's
+  default action is the Embedded SSH Connect terminal (§14a).
+- **Every method is always shown (2026-07-11)** — never hidden just because
+  a credential is missing. Each one carries a status:
+  - **Ready** — usable now; shows which Vault scope resolved its credential
+    (Device/Group/Client/Global credential).
+  - **Credential required** — the method exists for this platform, but no
+    compatible Vault credential resolves yet. Clicking it opens the
+    Credential Vault's "Add credential" form, pre-filled with this device,
+    scope, and the matching credential type.
+  - **Unavailable on this operating system** — shown disabled with the
+    reason, not hidden. Winbox is a Windows-only desktop app; the Connect
+    menu detects this from YOUR browser (not the device) and disables it
+    with an explanation on macOS/Linux, offering WebFig/SSH instead.
+- **Credential matching is type-specific** — SSH matches SSH credentials,
+  Winbox matches Winbox credentials, WebFig matches WebFig credentials (or a
+  Generic username/password credential, but only when its Purpose field
+  explicitly mentions "WebFig"). A credential is never borrowed across an
+  unrelated method.
+- **"Always use this method"**: pin any Ready method as your default for
+  that platform (or a specific device, which takes priority over the
+  platform-wide choice) — shown with a "Default" badge afterward. View or
+  reset your defaults from **Settings ▸ Connect Defaults**. These are
+  per-operator, never shared or global. If your pinned method stops being
+  Ready (e.g. its credential was disabled), Connect automatically falls back
+  to the platform's own priority order or the next Ready method.
 
 ---
 
@@ -538,8 +559,12 @@ These are **connection methods** exposed by the MikroTik Connect menu (§16), no
 separate features. **Launchers are live (2026-07-10)**: Winbox and SSH open
 `winbox://<device-ip>` / `ssh://<device-ip>`; WebFig opens
 `http://<device-ip>/webfig/` in a new tab. SSH additionally appears for any
-platform reporting `terminal`. Winbox is hidden automatically on macOS/Linux
-operators (§16).
+platform reporting `terminal`. Winbox is shown **disabled with an
+"Unavailable on this operating system" reason** on macOS/Linux operators
+(§16) rather than hidden. Each method's Vault credential is resolved by type
+(Winbox → a Winbox credential, WebFig → a WebFig or purpose-marked generic
+credential) — if none resolves yet, the method still shows in the menu as
+"Credential required" with a one-click "Add credential" action.
 
 **SSH's default action is now the Embedded SSH Connect terminal (§14a)** — a
 click on SSH in the Connect menu opens the in-browser terminal, not your own
@@ -569,13 +594,19 @@ manager — same encryption, same storage layer, no rewrite.
 - **Purpose** is a separate, free-text field from Type — e.g. Type =
   "SSH (username/password)", Purpose = "Embedded Terminal". Purpose is
   filterable and shown in the list; it does not affect encryption or scope.
-- **Scope**: Global / Client / Group (legacy) / Device. Global is
-  platform-wide (permission-gated); Client/Device are restricted to that
-  target. A `resolve_for_context()` scope-resolution service exists
-  (Device → Group → Client → Global precedence, only ACTIVE credentials,
-  optionally filtered by Purpose) for future SSH/SNMP/Connect consumers to
-  call — **nothing calls it automatically today**; it is not wired into any
-  live connection path yet.
+- **Scope**: Global / Client / Group / Device — all four fully supported in
+  the create/edit form with searchable pickers (type to search Client/Group/
+  Device by name; the Device picker also shows its Client, Group, platform,
+  and Device ID). Global is platform-wide (permission-gated); Client/Group/
+  Device are restricted to that target — picking a scope shows only the
+  relevant picker(s) and clears every other scope's fields. A Device- or
+  Group-scoped credential's Client/Group are derived and shown read-only
+  ("Client: TECHI shpk (derived context)") — they're joined from the
+  device/group at read time, never stored on the credential row itself.
+  **Live consumers**: Embedded SSH Connect (§14a) and the Connect menu's
+  Winbox/WebFig status (§16) both resolve credentials through this same
+  Device → Group → Client → Global precedence — no longer just a
+  future-consumer service.
 - **Assignments**: beyond a credential's primary scope, it can be explicitly
   linked ("assigned") to one or more additional clients/devices from its
   detail panel — this documents where a credential's blast radius reaches and
@@ -841,6 +872,12 @@ in Agent Config; every device adopts it on its next heartbeat.
 - **MikroTik**: Connector v1 heartbeat/inventory/capability reporting +
   resource utilization; **no RouterOS API** yet (firewall/interface/DHCP
   edits stay in Winbox/WebFig/Embedded SSH Connect).
+- **Winbox/WebFig credential-aware status (2026-07-11)**: the Connect menu
+  shows Ready/Credential required per method and matches the correct Vault
+  credential type, but launching Winbox/WebFig still opens the plain
+  `winbox://`/`http://` link — the credential is not auto-injected into
+  Winbox's own login screen or WebFig's HTTP auth. Only Embedded SSH Connect
+  actually establishes an authenticated session end-to-end.
 - **Web Terminal / Embedded SSH Connect**: both production-ready (2026-07-10);
   both require `FEATURE_TERMINAL` + a rollout scope, neither enabled by
   default. Reconnect always opens a new shell/SSH session (no mid-session

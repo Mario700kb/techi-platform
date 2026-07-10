@@ -79,6 +79,14 @@ export interface VaultCredential {
   // future_consumers (a static "meant for" hint). Optional so existing test
   // fixtures/mocks predating this field don't need updating.
   used_by?: string[];
+  // Derived, read-only display context (never stored) — a Device/Group
+  // scoped credential has no client_id column of its own (scope integrity
+  // forbids it); these are joined through the device/group server-side.
+  device_hostname?: string | null;
+  context_client_id?: number | null;
+  context_client_name?: string | null;
+  context_group_id?: number | null;
+  context_group_name?: string | null;
 }
 
 export interface VaultCredentialCreate {

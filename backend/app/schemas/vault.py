@@ -81,6 +81,16 @@ class VaultCredentialOut(BaseModel):
     # opposed to future_consumers (a static registry hint). See
     # VaultService.record_credential_use()/enrich().
     used_by: List[str] = Field(default_factory=list)
+    # Derived, read-only display context (VaultService.resolve_display_context)
+    # — never stored on the row. A Device-scoped credential has no client_id/
+    # group_id column (scope integrity forbids it); these are joined through
+    # the device/group at display time so the UI can still show "Client:
+    # TECHI shpk (derived context)" / "Group: Network (derived context)".
+    device_hostname: Optional[str] = None
+    context_client_id: Optional[int] = None
+    context_client_name: Optional[str] = None
+    context_group_id: Optional[int] = None
+    context_group_name: Optional[str] = None
 
 
 class VaultRevealRequest(BaseModel):

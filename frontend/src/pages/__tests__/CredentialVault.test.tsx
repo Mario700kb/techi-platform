@@ -50,6 +50,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     let resolveList: (v: vaultApi.VaultCredential[]) => void = () => {};
     vi.spyOn(vaultApi, "listVaultCredentials").mockReturnValue(
       new Promise((resolve) => { resolveList = resolve; }),
@@ -66,6 +67,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([
       credential({ name: "srv ssh", used_by: ["Embedded SSH"] }),
     ]);
@@ -79,6 +81,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
 
     renderPage();
@@ -90,6 +93,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockRejectedValue(new Error("network down"));
 
     renderPage();
@@ -100,6 +104,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([
       credential({ id: 1, name: "srv ssh" }),
       credential({ id: 2, name: "mail relay" }),
@@ -120,6 +125,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth({ can: () => false, hasPermission: (perm: string) => perm === "vault_view" });
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential()]);
 
     renderPage();
@@ -131,6 +137,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth({ can: () => false, hasPermission: () => false });
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
 
     renderPage();
@@ -141,6 +148,7 @@ describe("CredentialVault enterprise UI", () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
     vi.spyOn(vaultApi, "deleteVaultCredential").mockRejectedValue(
       new ApiError('Credential "srv ssh" is still referenced by: Client #1 (Acme). Delete again with confirmation to override.', 409),

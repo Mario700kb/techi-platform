@@ -27,6 +27,209 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] FIX: Vault scope assignment (production 400) + Connect credential resolution/status/preferences
+
+### Problemi
+
+Owner reported five production problems in one bundle: (1) creating a
+Device-scoped Vault credential failed with `scope 'device' must not set
+client_id`; (2) Client/Group/Device assignment "wasn't working correctly" in
+the Vault UI; (3) suspicion that the SSH username shown for a device
+("root") came from heartbeat `current_user` rather than a real credential;
+(4) Connect methods were inconsistent — Winbox missing/unavailable on
+MikroTik, Linux SSH/Web options shown but inert, and the Device Catalog
+Connect button permanently grey with no explanation; (5) no way for an
+operator to set a default Connect method per platform/device.
+
+### Analiza
+
+Read the actual Vault form code (`frontend/src/pages/CredentialVault.tsx`).
+`FormState` had a single `client_id` field serving two purposes at once: the
+real "Client" scope target, AND the narrowing filter used to populate the
+Device dropdown when scope="device". `handleSave()`'s payload builder:
+```ts
+client_id: form.scope_type === "client" || form.scope_type === "device" ? Number(form.client_id) || null : null,
+```
+sent `client_id` for BOTH scopes — so picking a client to filter the device
+list (a UI convenience) also submitted that client_id as the credential's
+own, which `VaultService._validate_scope` correctly rejects for scope=
+"device" (device scope must carry ONLY `device_id`). The backend validation
+was never the bug — it caught a real frontend defect. Separately, the form
+had **no "Group" option in the Scope `<select>` at all** — only Global/
+Client/Device existed, despite the backend, schema, and
+`VaultCredentialCreate` type all fully supporting Group scope since Phase 4.
+
+Investigated `current_user` (the device's OS-logged-in username, reported by
+heartbeat) end-to-end: `EmbeddedSSHModal.tsx`, `SSHSessionInfo.tsx`,
+`ConnectMenu.tsx`, `DeviceTerminal.tsx`, `terminal.py`, `ssh_connector.py`,
+and `connect.py` — zero references. SSH username resolution
+(`app/api/v1/endpoints/terminal.py`) only ever reads the resolved Vault
+credential's `username` column or the operator's explicit Temporary Session
+input. **No bug found** — the observed "root" username was the real,
+correctly-resolved Vault credential's own username, not a heartbeat
+fallback. Added 5 regression tests pinning this invariant defensively (a
+credential resolving to a DIFFERENT username than `current_user` proves the
+field is never consulted).
+
+Investigated Connect: `ConnectMenu.tsx` fetched `/connect-methods` and
+filtered by `requires_client_os` — a method failing that check was **removed
+from the array entirely**, with no "why" ever reaching the UI; the backend
+had no concept of credential-aware readiness at all (Winbox/WebFig always
+looked identical whether a credential existed or not). Separately, the
+Device Catalog's per-row Connect button (`DevicesTable.tsx`/
+`DeviceMobileCard.tsx`) turned out to be a completely different, older,
+Windows/RustDesk-only affordance (`canConnect = isValidRustDeskId(...) &&
+!conflict`) — unrelated to the Connect Framework dropdown used elsewhere.
+Since non-Windows devices never have a `rustdesk_id`, this button was
+**permanently grey for every Linux/MikroTik device**, independent of whether
+real Connect methods existed for them.
+
+### Shkaku
+
+1. Frontend payload bug: the Vault form's client-filter state doubled as the
+   submitted `client_id` field regardless of scope, and Group scope's UI was
+   simply never built.
+2. Design gap, not a bug: Connect Framework had no credential-awareness or
+   per-operator preference concept yet (both explicitly out of scope until
+   this release).
+3. Legacy UI collision: the Device Catalog table's Connect button predates
+   the Connect Framework and was never updated to know about non-Windows
+   platforms.
+
+### Zgjidhja
+
+**A/B — Vault scope + selectors** (`CredentialVault.tsx`, new
+`EntitySearchSelect.tsx`): separated the submitted scope target from the
+narrowing filter (`scope_client_filter`, never submitted); added the missing
+Group option + picker (Client-filtered Group dropdown, submitting only
+`group_id`); replaced every plain `<select>` for Client/Group/Device with a
+searchable combobox (type-to-filter locally for Client/Group, debounced
+server search via `GET /devices?search=` for Device — shows hostname,
+client, group, platform, device ID). Backend: new
+`VaultService.resolve_display_context()`/`enrich()` field additions
+(`device_hostname`, `context_client_id/name`, `context_group_id/name`) join
+a Device/Group-scoped credential's Client/Group through the device/group row
+at **read time only** — nothing is stored, scope integrity (`_validate_scope`)
+is completely unchanged and still correctly rejects an over-specified
+payload.
+
+**C — current_user isolation**: no code change (none needed); 5 regression
+tests added (`test_ssh_current_user_isolation.py`).
+
+**D/F — Generic credential resolution**: `VaultService._tier_candidates()`
+extracted as the shared Device>Group>Client>Global tiering helper (both
+`resolve_ssh_candidates` and the new `resolve_credentials_for_method` build
+on it — zero duplicated precedence logic). `METHOD_CREDENTIAL_TYPES` maps
+`ssh`→SSH types, `winbox`→`winbox`, `webfig`→`webfig` (+ a
+`generic_username_password` credential, but only when its `purpose` field
+mentions "webfig" — an explicit operator marking, never an automatic
+assumption).
+
+**E/I — Connect method status**: `ConnectMethodOut` gained `status`
+(`ready`|`credential_required`), `status_reason`, `credential_source`.
+`GET /devices/{id}/connect-methods` now computes per-method status via
+`resolve_credentials_for_method` (dedicated methods `remote_support`/
+`web_terminal` are always "ready" — they have their own tab/flow).
+`ConnectMenu.tsx` **never hides a method** — it renders all three states:
+Ready (with the resolving scope tier shown), Credential required (with an
+"Add credential" action that deep-links to `/vault?prefill_scope=device&
+prefill_device_id=..&prefill_credential_type=..`, which `CredentialVault.tsx`
+now reads on mount to auto-open the form pre-populated), and Unavailable on
+this OS (computed client-side from `requires_client_os`, shown disabled with
+a reason instead of removed from the list).
+
+**G — Per-operator default Connect method**: new table
+`operator_connect_preferences` (`operator_id`, `platform`, nullable
+`device_id`, `method_id`; unique on the triple) — deliberately NOT global,
+every read/write scoped to the calling operator. New
+`ConnectPreferenceService` implements the 4-tier hierarchy (device override
+→ platform default → registry priority order → first Ready method);
+`_resolve_preferred_method()` in `connect.py` applies tiers 3-4 on top of
+whatever tier 1-2 resolves, and the response separates `preferred_method_id`
+(the effective choice, post-fallback) from `configured_preference_id` (what
+the operator actually set, even if it's not usable right now) so the UI can
+say "X isn't ready, using Y instead." New endpoints:
+`GET/PUT/DELETE /connect-preferences`. `ConnectMenu.tsx` gained a pin icon
+("Always use this method") and a "Default" badge; Settings gained a "Connect
+Defaults" section (view/reset, only rendered when the operator has any).
+
+**Device Catalog Connect button**: `DevicesTable.tsx`/`DeviceMobileCard.tsx`
+now branch on platform. Windows rows are **byte-identical** (same RustDesk
+`canConnect`/`onConnect`/tooltip). Non-Windows rows use a new
+`hasStructuralConnectMethod()` — platforms whose Connect Framework entry has
+an always-present native method (Winbox/WebFig for MikroTik, DSM/QTS/
+vSphere/Web UI/Remote Support for Synology/QNAP/VMware/Proxmox/Hyper-V) are
+always connectable; Linux needs at least one reported capability (mirrors
+`methods_for("linux", {})` returning empty). Clicking a non-Windows row's
+Connect button opens the Drawer (real, credential-aware `ConnectMenu`)
+instead of attempting the RustDesk flow — deliberately NOT a live per-row
+credential status fetch (would be N+1 across a ~700-device table).
+
+### Ndryshimet
+
+New: `backend/app/models/connect_preference.py`,
+`backend/app/services/connect_preference_service.py`,
+`frontend/src/components/EntitySearchSelect.tsx`,
+`frontend/src/api/connect.ts`, 5 new backend test files, 4 new frontend test
+files (see test file names in the repo — all under
+`tests/test_vault_scope_display_context.py`,
+`tests/test_ssh_current_user_isolation.py`,
+`tests/test_connect_method_status_and_preferences.py`,
+`src/pages/__tests__/CredentialVaultScopeForm.test.tsx`,
+`src/pages/__tests__/Settings.connectDefaults.test.tsx`,
+`src/components/__tests__/DevicesTable.connectButton.test.tsx`). Modified:
+`vault_service.py`, `schemas/vault.py`, `api/v1/endpoints/vault.py`,
+`api/v1/endpoints/connect.py`, `models/__init__.py`,
+`services/schema_compat_service.py` (new dev table),
+`pages/CredentialVault.tsx`, `api/vault.ts`, `components/ConnectMenu.tsx`,
+`pages/Settings.tsx`, `components/DevicesTable.tsx`,
+`components/DeviceMobileCard.tsx`.
+
+**Schema (additive, new table, apply schema-first before deploy)**:
+```sql
+CREATE TABLE IF NOT EXISTS operator_connect_preferences (
+    id SERIAL PRIMARY KEY,
+    operator_id INTEGER NOT NULL REFERENCES operators(id),
+    platform VARCHAR(32) NOT NULL,
+    device_id INTEGER REFERENCES devices(id),
+    method_id VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uq_connect_pref_operator_platform_device UNIQUE (operator_id, platform, device_id)
+);
+CREATE INDEX IF NOT EXISTS ix_operator_connect_preferences_operator_id ON operator_connect_preferences (operator_id);
+CREATE INDEX IF NOT EXISTS ix_operator_connect_preferences_platform ON operator_connect_preferences (platform);
+CREATE INDEX IF NOT EXISTS ix_operator_connect_preferences_device_id ON operator_connect_preferences (device_id);
+```
+Inverse (rollback): `DROP TABLE IF EXISTS operator_connect_preferences;`
+
+No new `FEATURE_*` flag — Vault/Connect endpoints are gated by the existing
+`FEATURE_VAULT`/`FEATURE_PLATFORM_CORE` flags exactly as before.
+
+### Rezultati
+
+58 new tests (38 backend, 20 frontend). Preflight PASSED: contract 15/15,
+backend suite 767 passed + the 4 known baseline failures (flags OFF and ON),
+full frontend vitest suite 61/61, `tsc --noEmit` clean, production build
+clean, agent builds clean.
+
+### Mësimet
+
+- The exact bug class here (a UI convenience field silently reused as a
+  submitted field) is easy to miss in review because the code "looks"
+  scope-aware — `form.scope_type === "client" || form.scope_type ===
+  "device"` reads like a deliberate scope check, not a leaked filter.
+  Renaming the filter field (`scope_client_filter`) to be unmistakably
+  non-submitted is cheaper insurance than a comment.
+- Backend validation that rejects a real frontend bug should be trusted, not
+  loosened — `_validate_scope`'s strict "must not set X" behavior was
+  correct the whole time; the fix belonged entirely on the frontend side.
+- A credential-aware "is this actually usable" status is a genuinely
+  different question from "does this method exist for the platform" — the
+  Connect Framework had only ever answered the second question; conflating
+  them (hiding methods that need credentials) is what made Winbox "missing"
+  on MikroTik instead of "needs a credential."
+
 ## [2026-07-10] FEATURE: Embedded SSH Connect — Device Drawer ▸ Connect ▸ SSH ▸ Embedded TECHI Terminal
 
 ### Problemi

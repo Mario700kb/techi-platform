@@ -126,6 +126,30 @@ function resolveActiveVersion(device: Device, activePackageVersion?: string | nu
   return activeConnectorVersions?.[platform] ?? null;
 }
 
+// Production bug fix (Device Catalog Connect button): this row action used
+// to be RustDesk-only (`isValidRustDeskId` + no conflict) regardless of
+// platform, so every non-Windows device — which never has a rustdesk_id —
+// showed a permanently grey Connect button with no explanation, even though
+// those devices have real Connect Framework methods (SSH/Winbox/WebFig/
+// Terminal) available in the Drawer. Platforms whose Connect Framework
+// entry declares at least one capability=None (native, always-present)
+// method never need a reported capability to be connectable; Linux (and any
+// future capability-gated platform) needs at least one reported capability.
+// This is a structural/cheap check — NOT a live credential-aware status
+// (that would need one API call per row across a ~700-device table); the
+// accurate, credential-aware ConnectMenu is what opens when the operator
+// gets to the Drawer.
+const PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD = new Set([
+  "mikrotik", "synology", "qnap", "vmware", "proxmox", "hyperv",
+]);
+
+export function hasStructuralConnectMethod(device: Device): boolean {
+  const platform = (device.platform || "windows").toLowerCase();
+  if (platform === "windows") return false; // Windows uses the RustDesk-specific check instead.
+  if (PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD.has(platform)) return true;
+  return Object.keys(device.capabilities || {}).length > 0;
+}
+
 // ─── Visual constants ────────────────────────────────────────────────────────
 
 const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[10px] !leading-3";
@@ -1220,8 +1244,10 @@ const DevicesTable = memo(function DevicesTable({
         ) : (
           <>
             {displayDevices.map((device) => {
-              const canConnect =
-                isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+              const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+              const canConnect = isWindowsDevice
+                ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                : hasStructuralConnectMethod(device);
               return (
                 <DeviceMobileCard
                   key={device.id}
@@ -1239,18 +1265,29 @@ const DevicesTable = memo(function DevicesTable({
                   activePackageSha256={activePackageSha256}
                   onSelect={() => navigate(`/devices/${device.id}`)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
-                  onConnect={async () => {
-                    try {
-                      const res = await getConnectUrl(device.id);
-                      launchConnect(
-                        res.connect_url,
-                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                        () => showBulkToast("Opening with RustDesk instead", true)
-                      );
-                    } catch (err) {
-                      showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
-                    }
-                  }}
+                  onConnect={
+                    isWindowsDevice
+                      ? async () => {
+                          try {
+                            const res = await getConnectUrl(device.id);
+                            launchConnect(
+                              res.connect_url,
+                              buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                              () => showBulkToast("Opening with RustDesk instead", true)
+                            );
+                          } catch (err) {
+                            showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                          }
+                        }
+                      : async () => navigate(`/devices/${device.id}`)
+                  }
+                  connectTitle={
+                    isWindowsDevice
+                      ? undefined
+                      : canConnect
+                      ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                      : "No Connect method available for this device yet"
+                  }
                 />
               );
             })}
@@ -1389,9 +1426,10 @@ const DevicesTable = memo(function DevicesTable({
                 {displayDevices.map((device, rowIdx) => {
                   const health = healthMap[device.id];
                   const ls = getLastSeenDisplay(device.last_seen);
-                  const canConnect =
-                    isValidRustDeskId(device.rustdesk_id) &&
-                    !device.rustdesk_conflict_detected;
+                  const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+                  const canConnect = isWindowsDevice
+                    ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                    : hasStructuralConnectMethod(device);
                   const devAlerts = alertsMap[device.id];
                   const offlineBadge = getOfflineReasonBadge(
                     device,
@@ -1634,28 +1672,40 @@ const DevicesTable = memo(function DevicesTable({
                               <Star className={`h-3 w-3 ${favorites.has(device.id) ? "fill-current" : ""}`} />
                             </button>
                           )}
-                          {/* Connect button — styled like RS page */}
+                          {/* Connect button — styled like RS page. Windows keeps its
+                              existing dedicated RustDesk flow, byte-identical. Non-Windows
+                              platforms open the Drawer's Connect menu instead — it has the
+                              real, credential-aware, per-method status this row can't cheaply
+                              compute for every visible device. */}
                           <button
                             type="button"
                             disabled={!canConnect}
-                            onClick={async () => {
-                              try {
-                                const res = await getConnectUrl(device.id);
-                                launchConnect(
-                                  res.connect_url,
-                                  buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                  () => showBulkToast("Opening with RustDesk instead", true)
-                                );
-                              } catch (err) {
-                                showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
-                              }
-                            }}
+                            onClick={
+                              isWindowsDevice
+                                ? async () => {
+                                    try {
+                                      const res = await getConnectUrl(device.id);
+                                      launchConnect(
+                                        res.connect_url,
+                                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                                        () => showBulkToast("Opening with RustDesk instead", true)
+                                      );
+                                    } catch (err) {
+                                      showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                                    }
+                                  }
+                                : () => onDeviceSelect?.(device)
+                            }
                             title={
-                              device.rustdesk_conflict_detected
-                                ? "Remote Support ID conflict"
+                              isWindowsDevice
+                                ? device.rustdesk_conflict_detected
+                                  ? "Remote Support ID conflict"
+                                  : canConnect
+                                  ? "Open TECHI Remote Support"
+                                  : "Remote ID not resolved yet"
                                 : canConnect
-                                ? "Open TECHI Remote Support"
-                                : "Remote ID not resolved yet"
+                                ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                                : "No Connect method available for this device yet"
                             }
                             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
                             style={{

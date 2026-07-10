@@ -214,3 +214,84 @@ class TestRecordCredentialUse:
 
         rows = svc.usage(cred.id)
         assert all(r.action != "reveal" for r in rows)
+
+
+class TestResolveCredentialsForMethod:
+    """Generic Connect-method credential resolution (Section D/F): Winbox and
+    WebFig get the same Device>Group>Client>Global precedence as SSH, matched
+    by credential TYPE — never an unrelated type."""
+
+    def test_winbox_matches_only_winbox_type(self):
+        db = _session()
+        device = _device(db, platform="mikrotik", capabilities={"connect": ""})
+        svc = VaultService(db)
+        _ssh_cred(svc, name="ssh-cred", credential_type="ssh_password", scope_type="device", device_id=device.id)
+        _ssh_cred(svc, name="winbox-cred", credential_type="winbox", scope_type="device", device_id=device.id, secret="x")
+        tier, candidates = svc.resolve_credentials_for_method(device, "winbox")
+        assert tier == "device"
+        assert [c.name for c in candidates] == ["winbox-cred"]
+
+    def test_webfig_matches_webfig_type(self):
+        db = _session()
+        device = _device(db, platform="mikrotik", capabilities={"connect": ""})
+        svc = VaultService(db)
+        _ssh_cred(svc, name="webfig-cred", credential_type="webfig", scope_type="device", device_id=device.id, secret="x")
+        tier, candidates = svc.resolve_credentials_for_method(device, "webfig")
+        assert tier == "device"
+        assert [c.name for c in candidates] == ["webfig-cred"]
+
+    def test_webfig_matches_generic_username_password_only_when_purpose_marked(self):
+        db = _session()
+        device = _device(db, platform="mikrotik", capabilities={"connect": ""})
+        svc = VaultService(db)
+        _ssh_cred(
+            svc, name="unmarked-generic", credential_type="generic_username_password",
+            scope_type="device", device_id=device.id, secret="x",
+        )
+        tier, candidates = svc.resolve_credentials_for_method(device, "webfig")
+        assert tier == "none"
+        assert candidates == []
+
+        _ssh_cred(
+            svc, name="marked-generic", credential_type="generic_username_password",
+            scope_type="device", device_id=device.id, secret="x", purpose="WebFig login",
+        )
+        tier, candidates = svc.resolve_credentials_for_method(device, "webfig")
+        assert tier == "device"
+        assert [c.name for c in candidates] == ["marked-generic"]
+
+    def test_winbox_does_not_match_unrelated_type_even_by_name(self):
+        db = _session()
+        device = _device(db, platform="mikrotik", capabilities={"connect": ""})
+        svc = VaultService(db)
+        _ssh_cred(svc, name="webfig-cred", credential_type="webfig", scope_type="device", device_id=device.id, secret="x")
+        tier, candidates = svc.resolve_credentials_for_method(device, "winbox")
+        assert tier == "none"
+        assert candidates == []
+
+    def test_unknown_method_returns_none(self):
+        db = _session()
+        device = _device(db)
+        svc = VaultService(db)
+        tier, candidates = svc.resolve_credentials_for_method(device, "remote_support")
+        assert tier == "none"
+        assert candidates == []
+
+    def test_ssh_still_works_through_generic_resolver(self):
+        db = _session()
+        device = _device(db)
+        svc = VaultService(db)
+        _ssh_cred(svc, name="device-cred", scope_type="device", device_id=device.id)
+        tier, candidates = svc.resolve_credentials_for_method(device, "ssh")
+        assert tier == "device"
+        assert [c.name for c in candidates] == ["device-cred"]
+
+    def test_winbox_precedence_device_over_global(self):
+        db = _session()
+        device = _device(db, platform="mikrotik", capabilities={"connect": ""})
+        svc = VaultService(db)
+        _ssh_cred(svc, name="global-winbox", credential_type="winbox", scope_type="global", secret="x")
+        _ssh_cred(svc, name="device-winbox", credential_type="winbox", scope_type="device", device_id=device.id, secret="x")
+        tier, candidates = svc.resolve_credentials_for_method(device, "winbox")
+        assert tier == "device"
+        assert [c.name for c in candidates] == ["device-winbox"]

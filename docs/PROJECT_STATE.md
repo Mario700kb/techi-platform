@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-10 |
+| **Last Updated** | 2026-07-11 |
 | **Production Verified** | 2026-07-10 (Embedded SSH Connect deployed `ea49eb3`: schema-first SQL applied, backend/frontend rebuilt with the new `asyncssh` dependency, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, heartbeats unaffected. `FEATURE_TERMINAL` is now **scoped ON for device #729 only** — `FEATURE_TERMINAL_SCOPE=device`, `FEATURE_TERMINAL_ALLOWED_DEVICE_IDS=729` — left live at the owner's request for a real browser click-through validation; every other device remains outside scope, fail-closed. `.env` backed up to `.env.bak-ssh-connect-validation-2026-07-10` before the change) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `ea49eb3`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
@@ -73,6 +73,36 @@
    (`known_hosts=None` — no shared per-device trusted-key store exists);
    requires the backend to have network reachability to the device (no NAT
    traversal, same constraint already documented for MikroTik SSH).
+2b. ✅ **Vault scope assignment + Connect credential resolution — production
+   bug fix** (2026-07-11): fixes a real production 400 (`scope 'device' must
+   not set client_id`) — the Vault create/edit form conflated the "filter by
+   client" picker used to narrow the Device/Group dropdown with the actual
+   submitted `client_id`, so choosing Device scope still sent a `client_id`
+   the backend correctly rejects. Also **Group scope had no UI at all**
+   (only Global/Client/Device existed in the form). Both fixed, plus new
+   searchable Client/Group/Device pickers (`EntitySearchSelect`, new shared
+   component) and derived-context display (a Device/Group-scoped
+   credential's Client/Group are joined server-side at read time —
+   `VaultService.resolve_display_context()` — never stored on the row,
+   scope integrity unchanged). **`current_user` (heartbeat's OS-logged-in
+   username) investigated and confirmed NEVER used as an SSH/Winbox/WebFig
+   credential** — 5 regression tests lock this invariant. Credential
+   resolution generalized beyond SSH to Winbox/WebFig
+   (`VaultService.resolve_credentials_for_method`, type-matched, WebFig also
+   accepts a purpose-marked `generic_username_password`). Connect methods
+   now carry live status (`ready`/`credential_required`) + which Vault scope
+   tier resolved the credential — surfaced in the Connect menu with an
+   "Add credential" action prefilled with device/scope/type. New
+   **per-operator default Connect method** (`operator_connect_preferences`,
+   new table): device override > platform default > registry priority >
+   first Ready method, with an "Always use this method" pin in the Connect
+   menu and a "Connect Defaults" section in Settings to view/reset. Fixed
+   the Device Catalog Connect button showing permanently grey for every
+   non-Windows device (it only ever checked Windows/RustDesk fields) —
+   non-Windows rows now open the Drawer's real, credential-aware Connect
+   menu instead. 58 new tests (38 backend, 20 frontend); preflight PASSED
+   (contract 15/15, backend suite 767+4 known baseline both flag modes,
+   full frontend vitest 61/61, tsc/build/agent clean).
 3. ✅ Documentation Baseline — completed (2026-07-05, this standard)
 4. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)

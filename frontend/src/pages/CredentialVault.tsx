@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   KeyRound, Plus, RefreshCcw, Trash2, Eye, Link2, PlayCircle, ShieldCheck, Globe, Building2,
   Server, Radio, Mail, Key, MonitorCog, Router, UserCog, FileKey, Terminal as TerminalIcon,
-  Webhook, AlertTriangle, PauseCircle, PlusCircle,
+  Webhook, AlertTriangle, PauseCircle, PlusCircle, Users,
 } from "lucide-react";
 
 import {
@@ -12,12 +13,13 @@ import {
   removeVaultAssignment, revealVaultCredential, setVaultCredentialStatus, testVaultCredential,
   updateVaultCredential,
 } from "../api/vault";
-import { getClients, Client } from "../api/clients";
-import { getDevices, Device } from "../api/devices";
+import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
+import { getDevice, getDevices } from "../api/devices";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
+import EntitySearchSelect, { type EntityOption } from "../components/EntitySearchSelect";
 import { parseUTC } from "../utils/time";
 
 const INPUT_CLS =
@@ -81,8 +83,20 @@ interface FormState {
   name: string;
   credential_type: VaultCredentialType;
   scope_type: VaultScopeType;
-  client_id: string;
-  device_id: string;
+  client_id: string;   // submitted only when scope_type === "client"
+  group_id: string;    // submitted only when scope_type === "group"
+  device_id: string;   // submitted only when scope_type === "device"
+  // UI-only narrowing filter for the Group/Device pickers — NEVER submitted.
+  // This is the field the original bug conflated with `client_id` itself:
+  // picking a client to narrow the device list also set `client_id` in the
+  // submitted payload even when scope was "device", which the backend
+  // correctly rejects ("scope 'device' must not set client_id").
+  scope_client_filter: string;
+  // Display-only labels for the searchable pickers (never submitted) — lets
+  // the selector show a human name immediately in edit mode, before any
+  // search has run.
+  group_label: string;
+  device_label: string;
   purpose: string;
   username: string;
   secret_fields: Record<string, string>;
@@ -93,7 +107,9 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: "", credential_type: "generic_username_password", scope_type: "global",
-  client_id: "", device_id: "", purpose: "", username: "", secret_fields: {}, metadata: {}, notes: "", expires_at: "",
+  client_id: "", group_id: "", device_id: "", scope_client_filter: "",
+  group_label: "", device_label: "",
+  purpose: "", username: "", secret_fields: {}, metadata: {}, notes: "", expires_at: "",
 };
 
 export default function CredentialVault() {
@@ -110,7 +126,7 @@ export default function CredentialVault() {
   const [items, setItems] = useState<VaultCredential[]>([]);
   const [types, setTypes] = useState<VaultCredentialTypeDescriptor[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,12 +154,13 @@ export default function CredentialVault() {
     setLoading(true);
     setError(null);
     try {
-      const [credentials, typeList, clientList] = await Promise.all([
-        listVaultCredentials(), listVaultCredentialTypes(), getClients(),
+      const [credentials, typeList, clientList, groupList] = await Promise.all([
+        listVaultCredentials(), listVaultCredentialTypes(), getClients(), getGroups(),
       ]);
       setItems(credentials);
       setTypes(typeList);
       setClients(clientList);
+      setGroups(groupList);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load vault");
     } finally {
@@ -153,25 +170,123 @@ export default function CredentialVault() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // "Add credential" from the Connect menu (Section D/E) — deep-links here
+  // with ?prefill_scope=device&prefill_device_id=..&prefill_credential_type=..
+  // and opens the form pre-populated instead of making the operator
+  // re-select everything by hand.
   useEffect(() => {
-    if (form.scope_type !== "device" || !form.client_id) {
-      setDevices([]);
-      return;
-    }
-    void getDevices({ client_id: Number(form.client_id) }, 0, 200).then((res) => setDevices(res.devices));
-  }, [form.scope_type, form.client_id]);
+    const scope = searchParams.get("prefill_scope");
+    const deviceIdParam = searchParams.get("prefill_device_id");
+    const credentialType = searchParams.get("prefill_credential_type");
+    const purpose = searchParams.get("prefill_purpose");
+    if (!scope && !deviceIdParam && !credentialType) return;
+
+    (async () => {
+      let deviceLabel = "";
+      let clientFilter = "";
+      if (scope === "device" && deviceIdParam) {
+        try {
+          const device = await getDevice(Number(deviceIdParam));
+          deviceLabel = device.display_name || device.hostname || `Device #${device.id}`;
+          clientFilter = device.client_id ? String(device.client_id) : "";
+        } catch {
+          // Best-effort — still open the form pre-scoped even if the
+          // device lookup fails (e.g. permission edge case).
+        }
+      }
+      setForm({
+        ...EMPTY_FORM,
+        scope_type: (scope as VaultScopeType) || "device",
+        device_id: deviceIdParam || "",
+        device_label: deviceLabel,
+        scope_client_filter: clientFilter,
+        credential_type: (credentialType as VaultCredentialType) || EMPTY_FORM.credential_type,
+        purpose: purpose || "",
+      });
+      setShowForm(true);
+      // Clear the prefill params so a later refresh doesn't reopen the form.
+      setSearchParams({}, { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const typeById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t])), [types]);
   const clientById = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c.name])), [clients]);
+  const groupById = useMemo(() => Object.fromEntries(groups.map((g) => [g.id, g])), [groups]);
+
+  // Scope + derived context cell (Client/Group/Device column). A Device- or
+  // Group-scoped credential never stores its client_id/group_id on the row
+  // itself (scope integrity forbids it) — the backend joins through the
+  // device/group at read time and returns it as context_client_name/
+  // context_group_name, which this renders as "(derived context)".
+  function renderScopeTarget(c: VaultCredential) {
+    if (c.scope_type === "client") {
+      return c.client_id ? (clientById[c.client_id] ?? `Client #${c.client_id}`) : "—";
+    }
+    if (c.scope_type === "group") {
+      return (
+        <div className="flex flex-col">
+          <span>{c.context_group_name ?? (c.group_id ? `Group #${c.group_id}` : "—")}</span>
+          {c.context_client_name && (
+            <span className="text-[11px] text-slate-500" title="Derived context">{c.context_client_name}</span>
+          )}
+        </div>
+      );
+    }
+    if (c.scope_type === "device") {
+      return (
+        <div className="flex flex-col">
+          <span>{c.device_hostname ?? (c.device_id ? `Device #${c.device_id}` : "—")}</span>
+          {(c.context_client_name || c.context_group_name) && (
+            <span className="text-[11px] text-slate-500" title="Derived context">
+              {[c.context_client_name, c.context_group_name].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </div>
+      );
+    }
+    return "—";
+  }
+
+  const clientOptions: EntityOption[] = useMemo(
+    () => clients.map((c) => ({ value: String(c.id), label: c.name })),
+    [clients],
+  );
+  // Groups narrowed by the chosen client filter (mirrors the existing
+  // Clients.tsx / Deployment.tsx pattern of scoping a group picker to a client).
+  const groupOptions: EntityOption[] = useMemo(() => {
+    const filterClientId = form.scope_client_filter ? Number(form.scope_client_filter) : null;
+    return groups
+      .filter((g) => filterClientId === null || g.client_id === filterClientId)
+      .map((g) => ({ value: String(g.id), label: g.name, sublabel: clientById[g.client_id] }));
+  }, [groups, form.scope_client_filter, clientById]);
+
+  const loadDeviceOptions = useMemo(() => {
+    return async (query: string): Promise<EntityOption[]> => {
+      const filterClientId = form.scope_client_filter ? Number(form.scope_client_filter) : undefined;
+      const res = await getDevices({ client_id: filterClientId, search: query || undefined }, 0, 20);
+      return res.devices.map((d) => ({
+        value: String(d.id),
+        label: d.display_name || d.hostname || `Device #${d.id}`,
+        sublabel: `${d.client_id ? clientById[d.client_id] ?? `Client #${d.client_id}` : "No client"}` +
+          `${d.group_id ? ` · ${groupById[d.group_id]?.name ?? `Group #${d.group_id}`}` : ""}` +
+          ` · ${d.platform ?? "windows"} · #${d.id}`,
+      }));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.scope_client_filter, clientById, groupById]);
 
   const summary = useMemo(() => {
     const s = {
-      total: items.length, global: 0, client: 0, device: 0,
+      total: items.length, global: 0, client: 0, group: 0, device: 0,
       ssh: 0, windows: 0, network: 0, api: 0, attention: 0,
     };
     for (const item of items) {
       if (item.scope_type === "global") s.global += 1;
       if (item.scope_type === "client") s.client += 1;
+      if (item.scope_type === "group") s.group += 1;
       if (item.scope_type === "device") s.device += 1;
       const category = typeById[item.credential_type]?.category;
       if (category === "ssh") s.ssh += 1;
@@ -198,7 +313,7 @@ export default function CredentialVault() {
       if (view === "attention" && !["expiring_soon", "expired", "validation_failed"].includes(item.lifecycle_status)) return false;
       if (filterType && item.credential_type !== filterType) return false;
       if (filterScope && item.scope_type !== filterScope) return false;
-      if (filterClient && String(item.client_id ?? "") !== filterClient) return false;
+      if (filterClient && String(item.client_id ?? item.context_client_id ?? "") !== filterClient) return false;
       if (filterStatus && item.lifecycle_status !== filterStatus) return false;
       if (search.trim()) {
         const needle = search.trim().toLowerCase();
@@ -218,7 +333,14 @@ export default function CredentialVault() {
   function startEdit(item: VaultCredential) {
     setForm({
       name: item.name, credential_type: item.credential_type, scope_type: item.scope_type,
-      client_id: item.client_id ? String(item.client_id) : "", device_id: item.device_id ? String(item.device_id) : "",
+      client_id: item.scope_type === "client" && item.client_id ? String(item.client_id) : "",
+      group_id: item.scope_type === "group" && item.group_id ? String(item.group_id) : "",
+      device_id: item.scope_type === "device" && item.device_id ? String(item.device_id) : "",
+      // Prefill the narrowing filter from the derived context so the
+      // picker's list is scoped sensibly even though it's never submitted.
+      scope_client_filter: item.context_client_id ? String(item.context_client_id) : "",
+      group_label: item.context_group_name ?? "",
+      device_label: item.device_hostname ?? "",
       purpose: item.purpose ?? "", username: item.username ?? "", secret_fields: {},
       metadata: item.credential_metadata ?? {}, notes: item.notes ?? "",
       expires_at: item.expires_at ? item.expires_at.slice(0, 10) : "",
@@ -232,11 +354,16 @@ export default function CredentialVault() {
     setSaving(true);
     setError(null);
     try {
+      // Each scope type submits EXACTLY its own target identifier — this is
+      // the fix for the production bug where scope="device" also sent
+      // client_id (reused from the picker's narrowing filter), which the
+      // backend correctly rejects ("scope 'device' must not set client_id").
       const payload: VaultCredentialCreate = {
         name: form.name.trim(),
         credential_type: form.credential_type,
         scope_type: form.scope_type,
-        client_id: form.scope_type === "client" || form.scope_type === "device" ? Number(form.client_id) || null : null,
+        client_id: form.scope_type === "client" ? Number(form.client_id) || null : null,
+        group_id: form.scope_type === "group" ? Number(form.group_id) || null : null,
         device_id: form.scope_type === "device" ? Number(form.device_id) || null : null,
         purpose: form.purpose.trim() || null,
         username: form.username.trim() || null,
@@ -407,6 +534,7 @@ export default function CredentialVault() {
           { label: "Total", value: summary.total, icon: KeyRound },
           { label: "Global", value: summary.global, icon: Globe },
           { label: "Client scoped", value: summary.client, icon: Building2 },
+          { label: "Group scoped", value: summary.group, icon: Users },
           { label: "Device scoped", value: summary.device, icon: Server },
           { label: "SSH", value: summary.ssh, icon: TerminalIcon },
           { label: "Windows", value: summary.windows, icon: MonitorCog },
@@ -450,6 +578,7 @@ export default function CredentialVault() {
           <option value="">All scopes</option>
           <option value="global">Global</option>
           <option value="client">Client</option>
+          <option value="group">Group</option>
           <option value="device">Device</option>
         </select>
         <select className={INPUT_CLS} value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
@@ -478,24 +607,61 @@ export default function CredentialVault() {
             >
               {types.filter((t) => !t.legacy).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
-            <select className={INPUT_CLS} value={form.scope_type} disabled={!!editingId} onChange={(e) => setForm({ ...form, scope_type: e.target.value as VaultScopeType, client_id: "", device_id: "" })}>
+            <select
+              aria-label="Scope"
+              className={INPUT_CLS} value={form.scope_type} disabled={!!editingId}
+              onChange={(e) => setForm({
+                ...form, scope_type: e.target.value as VaultScopeType,
+                // Selecting a new scope clears every other scope's fields —
+                // this is what the production bug was missing for the
+                // client_id/device_id combination, generalized to all four.
+                client_id: "", group_id: "", device_id: "", scope_client_filter: "",
+                group_label: "", device_label: "",
+              })}
+            >
               <option value="global">Global</option>
               <option value="client">Client</option>
+              <option value="group">Group</option>
               <option value="device">Device</option>
             </select>
             <input className={INPUT_CLS} placeholder="Purpose (e.g. embedded_terminal)" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
 
-            {(form.scope_type === "client" || form.scope_type === "device") && (
-              <select className={INPUT_CLS} value={form.client_id} disabled={!!editingId} onChange={(e) => setForm({ ...form, client_id: e.target.value, device_id: "" })}>
-                <option value="">Select client</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+            {form.scope_type === "client" && (
+              <EntitySearchSelect
+                value={form.client_id} disabled={!!editingId} placeholder="Select client"
+                options={clientOptions}
+                onChange={(v) => setForm({ ...form, client_id: v })}
+              />
             )}
+
+            {form.scope_type === "group" && (
+              <>
+                <EntitySearchSelect
+                  value={form.scope_client_filter} disabled={!!editingId} placeholder="Filter by client (optional)"
+                  options={clientOptions}
+                  onChange={(v) => setForm({ ...form, scope_client_filter: v, group_id: "", group_label: "" })}
+                />
+                <EntitySearchSelect
+                  value={form.group_id} disabled={!!editingId} placeholder="Select group"
+                  options={groupOptions} selectedLabel={form.group_label}
+                  onChange={(v, label) => setForm({ ...form, group_id: v, group_label: label ?? form.group_label })}
+                />
+              </>
+            )}
+
             {form.scope_type === "device" && (
-              <select className={INPUT_CLS} value={form.device_id} disabled={!!editingId} onChange={(e) => setForm({ ...form, device_id: e.target.value })}>
-                <option value="">Select device</option>
-                {devices.map((d) => <option key={d.id} value={d.id}>{d.display_name || d.hostname}</option>)}
-              </select>
+              <>
+                <EntitySearchSelect
+                  value={form.scope_client_filter} disabled={!!editingId} placeholder="Filter by client (optional)"
+                  options={clientOptions}
+                  onChange={(v) => setForm({ ...form, scope_client_filter: v, device_id: "", device_label: "" })}
+                />
+                <EntitySearchSelect
+                  value={form.device_id} disabled={!!editingId} placeholder="Search device by hostname…"
+                  loadOptions={loadDeviceOptions} selectedLabel={form.device_label}
+                  onChange={(v, label) => setForm({ ...form, device_id: v, device_label: label ?? form.device_label })}
+                />
+              </>
             )}
             {selectedType?.requires_username && (
               <input className={INPUT_CLS} placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
@@ -576,9 +742,7 @@ export default function CredentialVault() {
                       <td className="px-4 py-3"><Badge variant="ghost">{typeById[c.credential_type]?.label ?? c.credential_type}</Badge></td>
                       <td className="px-4 py-3 text-slate-300">{c.purpose || "—"}</td>
                       <td className="px-4 py-3 text-slate-300 capitalize">{c.scope_type}</td>
-                      <td className="px-4 py-3 text-slate-400">
-                        {c.client_id ? (clientById[c.client_id] ?? `Client #${c.client_id}`) : c.device_id ? `Device #${c.device_id}` : "—"}
-                      </td>
+                      <td className="px-4 py-3 text-slate-400">{renderScopeTarget(c)}</td>
                       <td className="px-4 py-3 font-mono text-slate-400">{c.username || "—"}</td>
                       <td className="px-4 py-3">
                         <button type="button" onClick={() => void openAssignments(c)} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-techi-orange">

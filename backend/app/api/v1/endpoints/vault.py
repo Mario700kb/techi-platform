@@ -102,6 +102,11 @@ def _out(service: VaultService, credential) -> VaultCredentialOut:
     out.consumer_status = enriched["consumer_status"]
     out.future_consumers = enriched["future_consumers"]
     out.used_by = enriched["used_by"]
+    out.device_hostname = enriched["device_hostname"]
+    out.context_client_id = enriched["context_client_id"]
+    out.context_client_name = enriched["context_client_name"]
+    out.context_group_id = enriched["context_group_id"]
+    out.context_group_name = enriched["context_group_name"]
     return out
 
 

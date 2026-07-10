@@ -54,6 +54,18 @@ logger = logging.getLogger(__name__)
 # pre-2026-07-10 credential works with Embedded SSH Connect with zero migration.
 SSH_CREDENTIAL_TYPES = ("ssh_password", "ssh_private_key", "ssh_key")
 
+# Connect Framework method id -> compatible Vault credential type(s).
+# resolve_credentials_for_method() is the single source of truth for "does a
+# usable credential exist for this Connect method" (Section D/F: never use
+# an unrelated credential type for a method). WebFig also accepts
+# generic_username_password, but only when purpose-marked (see
+# resolve_credentials_for_method).
+METHOD_CREDENTIAL_TYPES = {
+    "ssh": SSH_CREDENTIAL_TYPES,
+    "winbox": ("winbox",),
+    "webfig": ("webfig",),
+}
+
 _SCOPE_TARGET_FIELD = {
     VaultScopeType.GLOBAL.value: None,
     VaultScopeType.CLIENT.value: "client_id",
@@ -474,23 +486,15 @@ class VaultService:
                 return by_scope[tier]
         return None
 
-    def resolve_ssh_candidates(self, device: Device) -> "tuple[str, List[VaultCredential]]":
-        """Embedded SSH Connect credential resolution: Device > Group > Client
-        > Global, same precedence as resolve_for_context, but returns EVERY
-        ACTIVE SSH-type credential at the first non-empty tier (never mixes
-        tiers) so the caller can auto-connect when there's exactly one, or
-        offer a selector when there's more than one. Never guesses across
-        tiers and never falls back to asking for a password — that is an
-        explicit operator choice ("Temporary Session") handled elsewhere."""
-        candidates = (
-            self.db.query(VaultCredential)
-            .filter(
-                VaultCredential.status == VaultCredentialStatus.ACTIVE.value,
-                VaultCredential.credential_type.in_(SSH_CREDENTIAL_TYPES),
-            )
-            .order_by(VaultCredential.name)
-            .all()
-        )
+    def _tier_candidates(
+        self, device: Device, candidates: List[VaultCredential]
+    ) -> "tuple[str, List[VaultCredential]]":
+        """Shared Device > Group > Client > Global tiering: given a flat list
+        of ACTIVE credential candidates (already filtered by type), returns
+        every candidate at the first non-empty tier — never mixes tiers.
+        Used by both resolve_ssh_candidates (Embedded SSH Connect) and
+        resolve_credentials_for_method (generic Connect method status, e.g.
+        Winbox/WebFig)."""
         tiers: Dict[str, List[VaultCredential]] = {"device": [], "group": [], "client": [], "global": []}
         for cred in candidates:
             if cred.scope_type == VaultScopeType.DEVICE.value and cred.device_id == device.id:
@@ -514,6 +518,60 @@ class VaultService:
                 return tier, tiers[tier]
         return "none", []
 
+    def resolve_ssh_candidates(self, device: Device) -> "tuple[str, List[VaultCredential]]":
+        """Embedded SSH Connect credential resolution: Device > Group > Client
+        > Global, same precedence as resolve_for_context, but returns EVERY
+        ACTIVE SSH-type credential at the first non-empty tier (never mixes
+        tiers) so the caller can auto-connect when there's exactly one, or
+        offer a selector when there's more than one. Never guesses across
+        tiers and never falls back to asking for a password — that is an
+        explicit operator choice ("Temporary Session") handled elsewhere."""
+        candidates = (
+            self.db.query(VaultCredential)
+            .filter(
+                VaultCredential.status == VaultCredentialStatus.ACTIVE.value,
+                VaultCredential.credential_type.in_(SSH_CREDENTIAL_TYPES),
+            )
+            .order_by(VaultCredential.name)
+            .all()
+        )
+        return self._tier_candidates(device, candidates)
+
+    def resolve_credentials_for_method(
+        self, device: Device, method_id: str
+    ) -> "tuple[str, List[VaultCredential]]":
+        """Generic Connect-method credential resolution (Winbox/WebFig/SSH),
+        same Device > Group > Client > Global precedence. Never guesses
+        across an unrelated credential type — WebFig additionally accepts a
+        generic_username_password credential, but ONLY when its `purpose`
+        explicitly mentions "webfig" (an operator's deliberate choice, not an
+        automatic assumption that any generic credential is safe to use for
+        a specific protocol)."""
+        credential_types = METHOD_CREDENTIAL_TYPES.get(method_id)
+        if not credential_types:
+            return "none", []
+        candidates = (
+            self.db.query(VaultCredential)
+            .filter(
+                VaultCredential.status == VaultCredentialStatus.ACTIVE.value,
+                VaultCredential.credential_type.in_(credential_types),
+            )
+            .order_by(VaultCredential.name)
+            .all()
+        )
+        if method_id == "webfig":
+            generic_candidates = (
+                self.db.query(VaultCredential)
+                .filter(
+                    VaultCredential.status == VaultCredentialStatus.ACTIVE.value,
+                    VaultCredential.credential_type == "generic_username_password",
+                )
+                .order_by(VaultCredential.name)
+                .all()
+            )
+            candidates += [c for c in generic_candidates if c.purpose and "webfig" in c.purpose.lower()]
+        return self._tier_candidates(device, candidates)
+
     def record_credential_use(
         self, credential: VaultCredential, operator_username: Optional[str], device_id: Optional[int]
     ) -> None:
@@ -526,6 +584,51 @@ class VaultService:
         self._record_usage(credential.id, "use", operator_username, device_id=device_id)
 
     # -- presentation (list/detail enrichment) --------------------------------
+
+    def resolve_display_context(self, credential: VaultCredential) -> Dict[str, Optional[object]]:
+        """Read-only, non-persisted context for the Vault UI: a Device-scoped
+        credential's own client/group are never stored on the row (scope
+        integrity forbids it, see _validate_scope) — they're derived here by
+        joining through the device/group at *display* time only. Nothing
+        this method returns is ever written back to vault_credentials."""
+        device_hostname: Optional[str] = None
+        context_client_id: Optional[int] = None
+        context_client_name: Optional[str] = None
+        context_group_id: Optional[int] = None
+        context_group_name: Optional[str] = None
+
+        if credential.scope_type == VaultScopeType.DEVICE.value and credential.device_id is not None:
+            device = self.db.query(Device).filter(Device.id == credential.device_id).first()
+            if device is not None:
+                device_hostname = device.display_name or device.hostname
+                if device.client_id is not None:
+                    client = self.db.query(Client).filter(Client.id == device.client_id).first()
+                    context_client_id = device.client_id
+                    context_client_name = client.name if client else None
+                if device.group_id is not None:
+                    group = self.db.query(DeviceGroup).filter(DeviceGroup.id == device.group_id).first()
+                    context_group_id = device.group_id
+                    context_group_name = group.name if group else None
+        elif credential.scope_type == VaultScopeType.GROUP.value and credential.group_id is not None:
+            group = self.db.query(DeviceGroup).filter(DeviceGroup.id == credential.group_id).first()
+            if group is not None:
+                context_group_id = group.id
+                context_group_name = group.name
+                client = self.db.query(Client).filter(Client.id == group.client_id).first()
+                context_client_id = group.client_id
+                context_client_name = client.name if client else None
+        elif credential.scope_type == VaultScopeType.CLIENT.value and credential.client_id is not None:
+            client = self.db.query(Client).filter(Client.id == credential.client_id).first()
+            context_client_id = credential.client_id
+            context_client_name = client.name if client else None
+
+        return {
+            "device_hostname": device_hostname,
+            "context_client_id": context_client_id,
+            "context_client_name": context_client_name,
+            "context_group_id": context_group_id,
+            "context_group_name": context_group_name,
+        }
 
     def enrich(self, credential: VaultCredential) -> dict:
         """Computed, non-persisted display fields layered onto the ORM row —
@@ -575,6 +678,7 @@ class VaultService:
             used_by.append("Embedded SSH")
 
         metadata = json.loads(credential.metadata_json) if credential.metadata_json else {}
+        display_context = self.resolve_display_context(credential)
 
         return {
             "lifecycle_status": lifecycle_status,
@@ -585,4 +689,5 @@ class VaultService:
             "future_consumers": future_consumers,
             "used_by": used_by,
             "metadata": metadata,
+            **display_context,
         }

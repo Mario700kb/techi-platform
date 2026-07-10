@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Copy, KeyRound, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, KeyRound, Link2, LogOut, Monitor, Moon, Sun, X } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
+import { type ConnectPreference, listConnectPreferences, resetConnectPreference } from "../api/connect";
 import pkg from "../../package.json";
 
 /**
@@ -57,6 +58,25 @@ export default function Settings() {
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [defaultScreen, setDefaultScreen] = useState<DefaultScreen>(getPreferredDefaultScreen);
   const [copied, setCopied] = useState(false);
+  const [connectPreferences, setConnectPreferences] = useState<ConnectPreference[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    listConnectPreferences()
+      .then((prefs) => { if (active) setConnectPreferences(prefs); })
+      .catch(() => { /* Settings should still render without this section */ });
+    return () => { active = false; };
+  }, []);
+
+  const handleResetConnectPreference = async (pref: ConnectPreference) => {
+    try {
+      await resetConnectPreference(pref.platform, pref.device_id ?? undefined);
+      setConnectPreferences((current) =>
+        current.filter((p) => !(p.platform === pref.platform && p.device_id === pref.device_id)));
+    } catch {
+      // Best-effort — the list will just re-fetch correctly next visit.
+    }
+  };
 
   const themeOptions = [
     { id: "dark" as const, label: "Dark", icon: Moon },
@@ -183,6 +203,45 @@ export default function Settings() {
           })}
         </div>
       </Section>
+
+      {connectPreferences.length > 0 && (
+        <Section title="Connect Defaults">
+          <p className="mb-[10px] text-[12px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>
+            "Always use this method" choices from the Connect menu — per platform,
+            or per device when an override is set. These are yours alone, not shared
+            with other operators.
+          </p>
+          <div className="flex flex-col gap-2">
+            {connectPreferences.map((pref) => (
+              <div
+                key={`${pref.platform}-${pref.device_id ?? "platform"}`}
+                className="flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+                style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }}
+              >
+                <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--th-text-primary)" }}>
+                  <Link2 className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                  <span className="font-bold capitalize">{pref.platform}</span>
+                  {pref.device_id && (
+                    <span className="text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+                      device #{pref.device_id}
+                    </span>
+                  )}
+                  <span style={{ color: "var(--th-text-muted)" }}>→</span>
+                  <span className="font-semibold">{pref.method_id}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleResetConnectPreference(pref)}
+                  title="Reset to the platform default"
+                  className="flex-none rounded p-1 hover:bg-[var(--th-bg-card-hover)]"
+                >
+                  <X className="h-3.5 w-3.5" style={{ color: "var(--th-text-faint)" }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section title="Diagnostics">
         <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[12.5px]">

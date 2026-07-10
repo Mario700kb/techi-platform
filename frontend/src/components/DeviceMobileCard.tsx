@@ -34,6 +34,9 @@ export interface DeviceMobileCardProps {
   onSelect: () => void;
   onToggleFavorite?: () => void;
   onConnect: () => void;
+  // Non-Windows devices open the Drawer's Connect menu instead of RustDesk —
+  // the tooltip must say so, not the Windows-specific default.
+  connectTitle?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -194,6 +197,7 @@ export function DeviceMobileCard({
   onSelect,
   onToggleFavorite,
   onConnect,
+  connectTitle,
 }: DeviceMobileCardProps) {
   const ls = getLastSeenDisplay(device.last_seen);
   const osShort = getOsShort(device.os_name);
@@ -328,7 +332,7 @@ export function DeviceMobileCard({
               cursor: canConnect ? "pointer" : "not-allowed",
               minWidth: 92,
             }}
-            title={canConnect ? "Open TECHI Remote Support" : "Remote ID not resolved yet"}
+            title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote ID not resolved yet")}
           >
             <ExternalLink className="h-3.5 w-3.5 flex-none" />
             Connect
