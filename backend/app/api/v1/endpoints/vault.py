@@ -26,7 +26,7 @@ from app.schemas.vault import (
     VaultUsageOut,
 )
 from app.services.audit_service import audit_log
-from app.services.vault_service import VaultScopeError, VaultService
+from app.services.vault_service import VaultReferencedError, VaultScopeError, VaultService
 
 logger = logging.getLogger(__name__)
 
@@ -110,17 +110,27 @@ def update_credential(
 @router.delete("/{credential_id}", status_code=204, dependencies=[Depends(_require_vault_enabled)])
 def delete_credential(
     credential_id: int,
+    force: bool = False,
     db: Session = Depends(get_db),
     operator: Operator = Depends(_require_admin),
 ):
     service = VaultService(db)
     credential = _get_or_404(service, credential_id)
     name = credential.name
-    service.delete(credential, operator.username)
+    try:
+        service.delete(credential, operator.username, force=force)
+    except VaultReferencedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Credential \"{name}\" is still referenced by: {', '.join(exc.references)}. "
+                "Delete again with confirmation to override."
+            ),
+        )
     audit_log(
         db,
         operator=operator,
-        action="vault_credential_deleted",
+        action="vault_credential_deleted_forced" if force else "vault_credential_deleted",
         entity_type="vault_credential",
         entity_id=credential_id,
         details={"name": name},

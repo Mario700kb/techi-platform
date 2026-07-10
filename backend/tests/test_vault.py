@@ -19,10 +19,13 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
+from app.models.client import Client
+from app.models.device import Device
+from app.models.device_group import DeviceGroup
 from app.models.operator import Operator, OperatorRole
 from app.models.vault_credential import VaultCredential, VaultCredentialUsage
 from app.schemas.vault import VaultCredentialCreate, VaultCredentialUpdate
-from app.services.vault_service import VaultScopeError, VaultService
+from app.services.vault_service import VaultReferencedError, VaultScopeError, VaultService
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +44,14 @@ def _session():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[VaultCredential.__table__, VaultCredentialUsage.__table__, AuditLog.__table__],
+        tables=[
+            VaultCredential.__table__,
+            VaultCredentialUsage.__table__,
+            AuditLog.__table__,
+            Client.__table__,
+            DeviceGroup.__table__,
+            Device.__table__,
+        ],
     )
     return sessionmaker(bind=engine)()
 
@@ -124,6 +134,11 @@ class TestVaultService:
 
 
 def _client(role: str, flag_on: bool, monkeypatch) -> TestClient:
+    client, _ = _client_and_db(role, flag_on, monkeypatch)
+    return client
+
+
+def _client_and_db(role: str, flag_on: bool, monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", flag_on)
     monkeypatch.setattr(settings, "FEATURE_VAULT", flag_on)
     db = _session()
@@ -132,7 +147,7 @@ def _client(role: str, flag_on: bool, monkeypatch) -> TestClient:
     operator = SimpleNamespace(id=1, username="tester", role=role)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_operator] = lambda: operator
-    return TestClient(app)
+    return TestClient(app), db
 
 
 class TestVaultEndpoints:
@@ -171,3 +186,93 @@ class TestVaultEndpoints:
             json={"name": "x", "credential_type": "password", "secret": "s", "scope_type": "client"},
         )
         assert response.status_code == 422
+
+    def test_delete_succeeds_removes_from_list_and_audits(self, monkeypatch):
+        client = _client(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        created = client.post(
+            "/api/v1/vault",
+            json={"name": "unused cred", "credential_type": "password", "secret": "s3cr3t"},
+        )
+        credential_id = created.json()["id"]
+
+        response = client.delete(f"/api/v1/vault/{credential_id}")
+        assert response.status_code == 204
+
+        listed = client.get("/api/v1/vault").json()
+        assert listed == []
+
+    def test_delete_denied_for_non_admin(self, monkeypatch):
+        client = _client(OperatorRole.OPERATOR.value, flag_on=True, monkeypatch=monkeypatch)
+        response = client.delete("/api/v1/vault/1")
+        assert response.status_code == 403
+
+    def test_delete_referenced_credential_returns_409(self, monkeypatch):
+        client, db = _client_and_db(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        live_client = Client(name="Acme Corp", slug="acme-corp")
+        db.add(live_client)
+        db.commit()
+        db.refresh(live_client)
+
+        created = client.post(
+            "/api/v1/vault",
+            json={
+                "name": "client-scoped cred",
+                "credential_type": "password",
+                "secret": "s3cr3t",
+                "scope_type": "client",
+                "client_id": live_client.id,
+            },
+        )
+        credential_id = created.json()["id"]
+
+        blocked = client.delete(f"/api/v1/vault/{credential_id}")
+        assert blocked.status_code == 409
+        assert "Acme Corp" in blocked.json()["detail"]
+
+        # still present — the blocked attempt must not have deleted it
+        assert len(client.get("/api/v1/vault").json()) == 1
+
+        forced = client.delete(f"/api/v1/vault/{credential_id}?force=true")
+        assert forced.status_code == 204
+        assert client.get("/api/v1/vault").json() == []
+
+    def test_delete_orphaned_scope_does_not_block(self, monkeypatch):
+        # A credential scoped to a device_id that no longer exists must not be
+        # protected — the reference is already gone, nothing to warn about.
+        client = _client(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        created = client.post(
+            "/api/v1/vault",
+            json={
+                "name": "orphaned device cred",
+                "credential_type": "password",
+                "secret": "s3cr3t",
+                "scope_type": "device",
+                "device_id": 999999,
+            },
+        )
+        credential_id = created.json()["id"]
+        response = client.delete(f"/api/v1/vault/{credential_id}")
+        assert response.status_code == 204
+
+
+class TestVaultServiceReferences:
+    def test_blocking_references_lists_live_device(self):
+        db = _session()
+        device = Device(hostname="WIN-ABC123", display_name="WIN-ABC123")
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+
+        service = VaultService(db)
+        credential = service.create(
+            _create_payload(scope_type="device", device_id=device.id), created_by="mario"
+        )
+        references = service.blocking_references(credential)
+        assert references == [f"Device #{device.id} (WIN-ABC123)"]
+
+        with pytest.raises(VaultReferencedError):
+            service.delete(credential, "mario")
+
+        # force=True bypasses the guard
+        service.delete(credential, "mario", force=True)
+        assert service.get(credential.id) is None

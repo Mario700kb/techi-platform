@@ -10,6 +10,7 @@ import {
   listVaultCredentials,
   revealVaultCredential,
 } from "../api/vault";
+import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -53,6 +54,7 @@ export default function CredentialVault() {
   const [saving, setSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<VaultCredential | null>(null);
+  const [blockedDelete, setBlockedDelete] = useState<{ target: VaultCredential; message: string } | null>(null);
   const [revealed, setRevealed] = useState<{ name: string; secret: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -109,9 +111,26 @@ export default function CredentialVault() {
 
   async function handleDelete() {
     if (!deleteTarget) return;
+    const target = deleteTarget;
     try {
-      await deleteVaultCredential(deleteTarget.id);
+      await deleteVaultCredential(target.id);
       setDeleteTarget(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setDeleteTarget(null);
+        setBlockedDelete({ target, message: e.message });
+        return;
+      }
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
+  async function handleForceDelete() {
+    if (!blockedDelete) return;
+    try {
+      await deleteVaultCredential(blockedDelete.target.id, true);
+      setBlockedDelete(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
@@ -286,6 +305,19 @@ export default function CredentialVault() {
         >
           <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
             Permanently delete <strong>{deleteTarget.name}</strong>? This cannot be undone.
+          </p>
+        </ConfirmationModal>
+      )}
+
+      {blockedDelete && (
+        <ConfirmationModal
+          title="Credential still in use"
+          confirmLabel="Delete anyway"
+          onConfirm={() => void handleForceDelete()}
+          onClose={() => setBlockedDelete(null)}
+        >
+          <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
+            {blockedDelete.message}
           </p>
         </ConfirmationModal>
       )}

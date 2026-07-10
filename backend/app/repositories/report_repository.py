@@ -124,3 +124,7 @@ class ReportRunRepository:
         for row in rows:
             self.db.delete(row)
         self.db.commit()
+
+    def delete(self, row: ReportRun) -> None:
+        self.db.delete(row)
+        self.db.commit()

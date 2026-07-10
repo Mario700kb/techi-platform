@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.core.vault_cipher import decrypt_secret, encrypt_secret
+from app.models.client import Client
+from app.models.device import Device
+from app.models.device_group import DeviceGroup
 from app.models.vault_credential import (
     VaultCredential,
     VaultCredentialUsage,
@@ -37,6 +40,16 @@ _SCOPE_TARGET_FIELD = {
 
 class VaultScopeError(ValueError):
     pass
+
+
+class VaultReferencedError(ValueError):
+    """Raised when a credential is scoped to a target that still exists —
+    deleting it would silently remove access the operator may not realize is
+    still in use. Carries the human-readable references for the 409 body."""
+
+    def __init__(self, references: List[str]):
+        self.references = references
+        super().__init__("credential is still referenced")
 
 
 class VaultService:
@@ -139,7 +152,36 @@ class VaultService:
         self._record_usage(credential.id, "rotate" if rotated else "update", operator_username)
         return credential
 
-    def delete(self, credential: VaultCredential, operator_username: Optional[str]) -> None:
+    def blocking_references(self, credential: VaultCredential) -> List[str]:
+        """Human-readable references that still point at this credential's
+        scope target. An orphaned scope (target already deleted) never blocks
+        cleanup — only a target that's still alive does."""
+        references: List[str] = []
+        if credential.scope_type == VaultScopeType.CLIENT.value and credential.client_id is not None:
+            client = self.db.query(Client).filter(Client.id == credential.client_id).first()
+            if client is not None:
+                references.append(f"Client #{client.id} ({client.name})")
+        elif credential.scope_type == VaultScopeType.GROUP.value and credential.group_id is not None:
+            group = self.db.query(DeviceGroup).filter(DeviceGroup.id == credential.group_id).first()
+            if group is not None:
+                references.append(f"Group #{group.id} ({group.name})")
+        elif credential.scope_type == VaultScopeType.DEVICE.value and credential.device_id is not None:
+            device = self.db.query(Device).filter(Device.id == credential.device_id).first()
+            if device is not None:
+                label = device.display_name or device.hostname or f"device #{device.id}"
+                references.append(f"Device #{device.id} ({label})")
+        return references
+
+    def delete(
+        self,
+        credential: VaultCredential,
+        operator_username: Optional[str],
+        force: bool = False,
+    ) -> None:
+        if not force:
+            references = self.blocking_references(credential)
+            if references:
+                raise VaultReferencedError(references)
         credential_id = credential.id
         self.db.delete(credential)
         self.db.commit()

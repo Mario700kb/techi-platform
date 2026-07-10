@@ -143,6 +143,27 @@ def download_report(
     return FileResponse(path, media_type=media_type, filename=run.filename)
 
 
+@router.delete("/runs/{run_id}", status_code=204, dependencies=[Depends(_require_reporting_enabled)])
+def delete_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    repo = ReportRunRepository(db)
+    run = repo.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    _ensure_client_scope(run.client_id, scope)
+    details = {"client_id": run.client_id, "format": run.report_format, "schedule_id": run.schedule_id}
+    ReportService(db).delete_run(run)
+    audit_log(
+        db, operator=operator, action=AuditAction.REPORT_RUN_DELETED,
+        entity_type="report_run", entity_id=run_id, details=details,
+    )
+    return Response(status_code=204)
+
+
 @router.get("/schedules", response_model=list[ReportScheduleOut], dependencies=[Depends(_require_reporting_enabled)])
 def list_schedules(db: Session = Depends(get_db), _: Operator = Depends(_require_admin)):
     return [_schedule_out(schedule, client_name) for schedule, client_name in ReportScheduleRepository(db).list()]

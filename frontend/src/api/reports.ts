@@ -84,6 +84,14 @@ export function deleteReportSchedule(id: number) {
   });
 }
 
+export function deleteReportRun(id: number) {
+  return fetch(`${API_BASE_URL}/api/v1/reports/runs/${id}`, {
+    method: "DELETE", headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
+  }).then((response) => {
+    if (!response.ok) throw new ApiError("Unable to delete report", response.status);
+  });
+}
+
 export async function downloadReport(run: ReportRun): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/reports/runs/${run.id}/download`, {
     headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},

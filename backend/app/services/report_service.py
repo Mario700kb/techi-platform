@@ -311,3 +311,27 @@ class ReportService:
                     logger.exception("Unable to remove expired report file run=%s", row.id)
         self.runs.delete_many(rows)
         return len(rows)
+
+    def delete_run(self, run: ReportRun) -> bool:
+        """Delete one report run's DB record and, if present, its stored
+        artifact. Deleting a generated run never touches its parent
+        `ReportSchedule` (a schedule outlives any one of its generated runs).
+        Returns True if the on-disk file was actually removed, False if it
+        was already missing (not an error — just reported so the caller can
+        surface it, matching cleanup_expired's tolerant/logged pattern)."""
+        file_removed = False
+        if run.storage_path:
+            try:
+                path = Path(run.storage_path).resolve()
+                root = Path(settings.REPORT_STORAGE_DIR).resolve()
+                if path.parent == root:
+                    file_removed = path.is_file()
+                    path.unlink(missing_ok=True)
+                else:
+                    logger.warning(
+                        "Report run %s storage_path escapes REPORT_STORAGE_DIR — skipping unlink", run.id
+                    )
+            except OSError:
+                logger.exception("Unable to remove report file for run=%s", run.id)
+        self.runs.delete(run)
+        return file_removed

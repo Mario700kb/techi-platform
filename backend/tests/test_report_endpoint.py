@@ -1,8 +1,9 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -41,6 +42,18 @@ def _client(monkeypatch, tmp_path, *, flag=True, role="admin", scope=None, grant
     if grant_view:
         app.dependency_overrides[reports_endpoint._require_view] = lambda: None
     return TestClient(app), db, c1, c2
+
+
+def _client_reusing_db(db, *, role="admin", scope=None, grant_view=True) -> TestClient:
+    app = FastAPI()
+    app.include_router(reports_endpoint.router)
+    operator = SimpleNamespace(id=1, username="mario", role=role)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_operator] = lambda: operator
+    app.dependency_overrides[get_operator_scope] = lambda: scope
+    if grant_view:
+        app.dependency_overrides[reports_endpoint._require_view] = lambda: None
+    return TestClient(app)
 
 
 def test_flag_off_is_dark(monkeypatch, tmp_path):
@@ -108,3 +121,69 @@ def test_operator_cannot_manage_schedules(monkeypatch, tmp_path):
     assert client.post("/schedules", json={
         "name": "x", "client_id": c1.id, "cadence": "daily", "hour_utc": 1,
     }).status_code == 403
+
+
+def test_delete_run_removes_file_and_row_but_not_its_schedule(monkeypatch, tmp_path):
+    client, db, c1, _ = _client(monkeypatch, tmp_path)
+    schedule = client.post("/schedules", json={
+        "name": "Monthly proof", "client_id": c1.id, "report_format": "pdf", "cadence": "monthly",
+        "period_days": 30, "hour_utc": 6, "day_of_month": 1,
+    }).json()
+    generated = client.post("/generate", json={"client_id": c1.id, "report_format": "pdf", "period_days": 30}).json()
+    run_id = generated["id"]
+
+    storage_path = db.execute(
+        text("SELECT storage_path FROM report_runs WHERE id = :id"), {"id": run_id}
+    ).scalar()
+    assert Path(storage_path).is_file()
+
+    response = client.delete(f"/runs/{run_id}")
+    assert response.status_code == 204
+    assert not Path(storage_path).exists()
+    assert client.get("/runs").json()["total"] == 0
+
+    # deleting the run must never touch its parent schedule
+    assert client.get("/schedules").json()[0]["id"] == schedule["id"]
+    actions = {row.action for row in db.query(AuditLog).all()}
+    assert "report_run_deleted" in actions
+
+
+def test_delete_run_tolerates_already_missing_file(monkeypatch, tmp_path):
+    client, db, c1, _ = _client(monkeypatch, tmp_path)
+    generated = client.post("/generate", json={"client_id": c1.id, "report_format": "csv", "period_days": 30}).json()
+    run_id = generated["id"]
+    storage_path = db.execute(
+        text("SELECT storage_path FROM report_runs WHERE id = :id"), {"id": run_id}
+    ).scalar()
+    Path(storage_path).unlink()  # simulate the file already being gone
+
+    response = client.delete(f"/runs/{run_id}")
+    assert response.status_code == 204
+    assert client.get("/runs").json()["total"] == 0
+
+
+def test_delete_run_requires_admin(monkeypatch, tmp_path):
+    client, db, c1, _ = _client(monkeypatch, tmp_path)
+    generated = client.post("/generate", json={"client_id": c1.id, "report_format": "pdf", "period_days": 30}).json()
+    operator_client = _client_reusing_db(
+        db, role=OperatorRole.OPERATOR.value, scope=AllowedScope(client_ids=frozenset({1})),
+    )
+    assert operator_client.delete(f"/runs/{generated['id']}").status_code == 403
+    # still present — denied attempt must not have deleted it
+    assert client.get("/runs").json()["total"] == 1
+
+
+def test_delete_run_respects_client_scope(monkeypatch, tmp_path):
+    admin_client, db, c1, c2 = _client(monkeypatch, tmp_path)
+    generated = admin_client.post("/generate", json={"client_id": c2.id, "report_format": "pdf", "period_days": 30}).json()
+    # admin role (passes the _require_admin gate) but scoped to client one only —
+    # exercises _ensure_client_scope in isolation from the role check.
+    scoped_client = _client_reusing_db(db, scope=AllowedScope(client_ids=frozenset({1})))
+    # can't even see client two's report, so no leak — same not-found contract as generate/download
+    assert scoped_client.delete(f"/runs/{generated['id']}").status_code == 404
+    assert admin_client.get("/runs").json()["total"] == 1
+
+
+def test_delete_run_missing_returns_404(monkeypatch, tmp_path):
+    client, _, _, _ = _client(monkeypatch, tmp_path)
+    assert client.delete("/runs/999999").status_code == 404

@@ -64,8 +64,9 @@ export async function createVaultCredential(
   });
 }
 
-export async function deleteVaultCredential(id: number): Promise<void> {
-  await fetchJson<void>(`/api/v1/vault/${id}`, { method: "DELETE" });
+export async function deleteVaultCredential(id: number, force = false): Promise<void> {
+  const query = force ? "?force=true" : "";
+  await fetchJson<void>(`/api/v1/vault/${id}${query}`, { method: "DELETE" });
 }
 
 export async function revealVaultCredential(

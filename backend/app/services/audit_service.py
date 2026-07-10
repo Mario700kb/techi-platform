@@ -65,6 +65,7 @@ class AuditAction:
     REPORT_SCHEDULE_CREATED = "report_schedule_created"
     REPORT_SCHEDULE_UPDATED = "report_schedule_updated"
     REPORT_SCHEDULE_DELETED = "report_schedule_deleted"
+    REPORT_RUN_DELETED = "report_run_deleted"
 
 
 def audit_log(

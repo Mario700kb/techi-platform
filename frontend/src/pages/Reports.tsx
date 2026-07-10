@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, Download, FileBarChart, FileSpreadsheet, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import {
-  createReportSchedule, deleteReportSchedule, downloadReport, generateReport,
+  createReportSchedule, deleteReportRun, deleteReportSchedule, downloadReport, generateReport,
   getReportClients, getReportRuns, getReportSchedules, ReportCadence, ReportClient,
   ReportFormat, ReportRun, ReportSchedule, updateReportSchedule,
 } from "../api/reports";
@@ -43,6 +43,7 @@ export default function Reports() {
   const [hourUtc, setHourUtc] = useState(6);
   const [scheduleDay, setScheduleDay] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<ReportSchedule | null>(null);
+  const [deleteRunTarget, setDeleteRunTarget] = useState<ReportRun | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -110,6 +111,17 @@ export default function Reports() {
     finally { setBusy(false); }
   }
 
+  async function confirmDeleteRun() {
+    if (!deleteRunTarget) return;
+    setBusy(true);
+    try {
+      await deleteReportRun(deleteRunTarget.id);
+      setRuns((current) => current.filter((item) => item.id !== deleteRunTarget.id));
+      setDeleteRunTarget(null);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to delete report"); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 sm:p-5 md:pb-5">
       <header className="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -149,10 +161,12 @@ export default function Reports() {
 
       <section className="premium-card overflow-hidden">
         <div className="border-b p-4" style={{ borderColor: "var(--th-border-subtle)" }}><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Report history</h2></div>
-        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-techi-orange" /></div> : runs.length === 0 ? <p className="py-12 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>Generate the first client report to begin history.</p> : <div className="divide-y" style={{ borderColor: "var(--th-border-subtle)" }}>{runs.map((run) => <div key={run.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{run.client_name}</p><Badge variant={run.status === "completed" ? "primary" : run.status === "failed" ? "secondary" : "neutral"}>{run.status}</Badge><Badge variant="ghost">{run.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>{formatDate(run.created_at)} · {run.generated_by} · {formatBytes(run.size_bytes)}</p>{run.error_message && <p className="mt-1 text-xs text-red-300">{run.error_message}</p>}</div>{run.status === "completed" && <Button size="sm" variant="secondary" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}><Download className="h-4 w-4" />Download</Button>}</div>)}</div>}
+        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-techi-orange" /></div> : runs.length === 0 ? <p className="py-12 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>Generate the first client report to begin history.</p> : <div className="divide-y" style={{ borderColor: "var(--th-border-subtle)" }}>{runs.map((run) => <div key={run.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{run.client_name}</p><Badge variant={run.status === "completed" ? "primary" : run.status === "failed" ? "secondary" : "neutral"}>{run.status}</Badge><Badge variant="ghost">{run.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>{formatDate(run.created_at)} · {run.generated_by} · {formatBytes(run.size_bytes)}</p>{run.error_message && <p className="mt-1 text-xs text-red-300">{run.error_message}</p>}</div><div className="flex gap-2">{run.status === "completed" && <Button size="sm" variant="secondary" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}><Download className="h-4 w-4" />Download</Button>}{isAdmin && <Button size="sm" variant="ghost" onClick={() => setDeleteRunTarget(run)} aria-label={`Delete report ${run.client_name}`}><Trash2 className="h-4 w-4" /></Button>}</div></div>)}</div>}
       </section>
 
       {deleteTarget && <ConfirmationModal title="Delete report schedule" confirmLabel="Delete schedule" loading={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>This removes <strong>{deleteTarget.name}</strong>. Generated report history remains available.</p></ConfirmationModal>}
+
+      {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong>{deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
     </div>
   );
 }
