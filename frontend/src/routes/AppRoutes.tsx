@@ -1,7 +1,4 @@
 import { Route, Routes } from "react-router-dom";
-import { Navigate, useLocation } from "react-router-dom";
-import { ReactNode } from "react";
-import { useAuth } from "../auth/AuthContext";
 import Dashboard from "../pages/Dashboard";
 import Devices from "../pages/Devices";
 import Clients from "../pages/Clients";
@@ -23,31 +20,7 @@ import DeviceDetailsMobile from "../pages/DeviceDetailsMobile";
 import CredentialVault from "../pages/CredentialVault";
 import NotificationSettings from "../pages/NotificationSettings";
 import Reports from "../pages/Reports";
-import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
-
-function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-  if (loading) return <div className="p-4 text-sm font-medium text-slate-400">Loading session...</div>;
-  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
-  return <>{children}</>;
-}
-
-function RequirePermission({ perm, children }: { perm: string; children: ReactNode }) {
-  const { hasPermission, loading } = useAuth();
-  const location = useLocation();
-  if (loading) return <div className="p-4 text-sm font-medium text-slate-400">Loading session...</div>;
-  if (!hasPermission(perm)) return <Navigate to="/" replace state={{ from: location }} />;
-  return <>{children}</>;
-}
-
-// Platform Expansion route guard: while flags load, treat as off; a route
-// gated by an OFF flag redirects home so nothing new is reachable.
-function RequireFeature({ flag, children }: { flag: "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS" | "FEATURE_REPORTING"; children: ReactNode }) {
-  const features = usePlatformFeatures();
-  if (!features[flag]) return <Navigate to="/" replace />;
-  return <>{children}</>;
-}
+import { RequireAuth, RequireFeature, RequirePermission } from "./guards";
 
 export default function AppRoutes() {
   return (
