@@ -45,6 +45,11 @@ export interface DrawerMeta {
   capability_tabs: string[];
   connect_methods: DrawerConnectMethod[];
   actions: DrawerAction[];
+  // Version Service — null for Windows (its classic Drawer has its own
+  // separate, untouched badge). Populated for every connector platform.
+  reported_version?: string | null;
+  latest_version?: string | null;
+  version_status?: "current" | "outdated" | "ahead" | null;
 }
 
 export async function getDrawerMeta(deviceId: number): Promise<DrawerMeta> {

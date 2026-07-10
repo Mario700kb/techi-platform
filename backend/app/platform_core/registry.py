@@ -80,7 +80,9 @@ MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik connector (Rout
 :local hddTotal [/system resource get total-hdd-space]
 :local diskPct 0
 :do { :local hu ($hddTotal / 100); :if ($hu > 0) do={ :set diskPct (($hddTotal - $hddFree) / $hu) } } on-error={}
-:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"os_caption\\":\\"" . $caption . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"cpu\\":\\"" . [/system resource get cpu] . "\\",\\"ram\\":\\"" . [/system resource get total-memory] . "\\",\\"storage\\":\\"free=" . $hddFree . "; total=" . $hddTotal . "\\",\\"disk_percent\\":" . $diskPct . ",\\"capabilities\\":[\\"connect\\"],\\"software\\":[{\\"name\\":\\"RouterOS\\",\\"version\\":\\"" . [/system resource get version] . "\\"},{\\"name\\":\\"RouterBOOT\\",\\"version\\":\\"" . $fw . "\\"}]}")
+:local curUser ""
+:do { :local sessions [/user active find]; :if ([:len $sessions] > 0) do={ :set curUser [/user active get [:pick $sessions 0] name] } } on-error={}
+:local hb ("{\\"agent_id\\":\\"mikrotik-" . $serial . "\\",\\"platform\\":\\"{{PLATFORM}}\\",\\"hostname\\":\\"" . [/system identity get name] . "\\",\\"current_user\\":\\"" . $curUser . "\\",\\"architecture\\":\\"" . [/system resource get architecture-name] . "\\",\\"os_name\\":\\"RouterOS\\",\\"os_version\\":\\"" . [/system resource get version] . "\\",\\"os_caption\\":\\"" . $caption . "\\",\\"agent_version\\":\\"{{VERSION}}\\",\\"cpu\\":\\"" . [/system resource get cpu] . "\\",\\"ram\\":\\"" . [/system resource get total-memory] . "\\",\\"storage\\":\\"free=" . $hddFree . "; total=" . $hddTotal . "\\",\\"disk_percent\\":" . $diskPct . ",\\"capabilities\\":[\\"connect\\"],\\"software\\":[{\\"name\\":\\"RouterOS\\",\\"version\\":\\"" . [/system resource get version] . "\\"},{\\"name\\":\\"RouterBOOT\\",\\"version\\":\\"" . $fw . "\\"}]}")
 /tool fetch mode=https url="{{API_ENDPOINT}}/api/v1/agent/heartbeat" http-method=post http-header-field="Content-Type:application/json" http-data=$hb {{FETCH_RESULT}}
 }
 /system scheduler add name="TECHI-Heartbeat" interval={{HEARTBEAT_INTERVAL}}s on-event="TECHI-Heartbeat"
@@ -124,6 +126,14 @@ class PlatformDescriptor:
     deployment_templates_by_version: Mapping[str, str] = field(default_factory=dict)
     supported_architectures: Tuple[str, ...] = ()  # empty = not arch-validated
     supported_routeros_versions: Tuple[str, ...] = ()
+    # Latest connector/agent version for THIS platform, consumed by
+    # version_service.py to render the version badge (Drawer + Device List).
+    # Agent platforms (Windows/Linux) leave this empty — their "latest" comes
+    # from the active AgentPackage instead. Connector platforms declare a
+    # plain version string here; bump it when the deployment template changes
+    # and every consumer (script generation, badges) updates from this one
+    # source — no separate copies to keep in sync.
+    latest_connector_version: Optional[str] = None
 
 
 PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
@@ -194,6 +204,7 @@ PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
             },
             supported_architectures=("chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile"),
             supported_routeros_versions=("6", "7"),
+            latest_connector_version="1.0.0",
         ),
         PlatformDescriptor(
             id="synology",

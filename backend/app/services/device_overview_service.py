@@ -140,6 +140,7 @@ class DeviceOverviewService:
             agents_outdated=agents_outdated,
             active_agent_version=active_agent_version,
             active_agent_sha256=active_agent_sha256,
+            active_connector_versions=_active_connector_versions(),
             loaded_at=utcnow(),
         )
 
@@ -147,6 +148,17 @@ class DeviceOverviewService:
 def _active_agent_package():
     service = AgentPackageService()
     return service.latest_active("windows-amd64", file_type="agent_binary") or service.latest_active("windows-amd64")
+
+
+def _active_connector_versions() -> dict:
+    """{platform_id: latest_connector_version} for every connector platform
+    that declares one (Platform Registry) — cheap, no query, no cache impact."""
+    from app.platform_core.registry import PLATFORM_REGISTRY
+    return {
+        descriptor.id: descriptor.latest_connector_version
+        for descriptor in PLATFORM_REGISTRY.values()
+        if descriptor.latest_connector_version
+    }
 
 
 def _active_agent_sha256(package) -> Optional[str]:

@@ -377,6 +377,63 @@ an editable Client/Group assignment section reusing the exact
 pattern the classic Windows Drawer uses — zero edits to `DeviceDrawer.tsx`
 (Windows stays byte-identical).
 
+**UX/platform-consistency pass (2026-07-10, deployed):** the Generic Device
+Drawer is now the standard drawer for every non-Windows platform (Linux,
+MikroTik, and every future connector) — a single enterprise layout, not a
+prototype. `DeviceDrawer.tsx` (Windows) has zero edits across this pass.
+- **Drawer Overview** restructured to exactly 5 sections (Connect, Identity,
+  Status, Resources, Assignment — no Capabilities chip list, no long
+  lists/oversized cards): Connect as a compact top bar; Identity + Status
+  side-by-side (Device ID, hostname, platform, OS, kernel, architecture,
+  board, last seen, health, local/public IP, current user); Resources full-
+  width (CPU/Memory/Storage bars via the existing `ResourceBar`); Assignment
+  (Client/Group/Source + editable selects).
+- **Version Service** (`backend/app/services/version_service.py`, new):
+  `compare_versions(reported, latest) -> current|outdated|ahead|unknown` and
+  `get_active_version(platform)` — Windows/Linux delegate to the existing
+  active-`AgentPackage` logic (untouched, byte-identical); connector
+  platforms compare against `PlatformDescriptor.latest_connector_version`
+  (new registry field; MikroTik's `MIKROTIK_CONNECTOR_VERSION` moved here as
+  the single source, so bumping the RouterOS template's version updates
+  script generation + every badge together — no more copies to drift). New
+  shared `VersionBadge.tsx` (green=current, orange=outdated, blue=ahead —
+  "ahead" is net-new, unreachable for Windows in normal operation) renders
+  in both the Drawer (`/devices/{id}/drawer` now returns `reported_version`/
+  `latest_version`/`version_status`, null for Windows) and the Device List
+  (`DeviceFleetOverview.active_connector_versions`; Windows rows resolve to
+  the exact prior `activePackageVersion`/`isAgentOutdated` call — zero visual
+  change). Root cause of "MikroTik always orange 1.0.0": the list badge
+  compared EVERY device, including MikroTik, against the Windows fleet's
+  active package version.
+- **Assignment "Group empty" fixed** — reused the Unified Classification
+  Engine, no MikroTik-specific code: `DeviceAssignmentService.
+  resolve_device_assignment` now falls back to the category's display label
+  (`classification.category_display_label`: "Network"/"Storage"/
+  "Hypervisors") when a device has `client_id` but no real `DeviceGroup` row
+  — true for every non-agent/connector platform by design (a standard
+  agent group would mis-classify them; confirmed the Device Tree's
+  Client▸Network▸MikroTik nesting already worked correctly via the existing
+  virtual/computed `count_by_client_category_platform` — no real group row
+  needed there, same mechanism as Client▸Servers▸Windows).
+- **Connect launchers are now platform-aware**: new `ConnectMethod.
+  requires_client_os` (Winbox → `"windows"`, everything else `None`) —
+  `ConnectMenu.tsx` detects the OPERATOR's OS (`navigator.platform`, same
+  pattern as the existing iOS check in `rustdeskLaunch.ts`) and hides any
+  method that can't work there (Winbox hidden on macOS/Linux; WebFig + SSH
+  always offered). Backend never filters by operator OS — it only declares
+  the requirement; the browser decides visibility.
+- **current_user added to MikroTik**, Inventory only (not Heartbeat, per
+  RouterOS load discipline): active `/user active` session name, one query,
+  packed into the existing generic `current_user` field.
+- **Embedded SSH terminal investigated, NOT built**: the existing
+  `TerminalRelay`/`TerminalSession` architecture requires a persistent
+  process dialing out to the relay WS and holding a live PTY — MikroTik has
+  no such process (HTTP heartbeats only). Architecture recommendation
+  (backend-as-SSH-client "connector relay" mode, reusing the same session
+  model + Credential Vault for the stored SSH credential) recorded in
+  IMPLEMENTATION-ROADMAP.md; Connect ▸ SSH today opens the operator's own OS
+  SSH client instead (no reachability requirement).
+
 # RDP TECHI MOBILE UI 2.0
 
 | | |

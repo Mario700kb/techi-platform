@@ -90,9 +90,14 @@ echo "TECHI agent installed. Check status: systemctl status techi-agent"
     return PlainTextResponse(content=script, media_type="text/x-shellscript")
 
 
-# MikroTik connector protocol version (deployment + registration only; no
-# on-device agent). Bumped when the RouterOS enrollment template changes.
-MIKROTIK_CONNECTOR_VERSION = "1.0.0"
+# MikroTik connector protocol version — single source is the Platform
+# Registry (`PLATFORM_REGISTRY["mikrotik"].latest_connector_version`), so
+# script generation and the version badge (Drawer + Device List, see
+# version_service.py) can never drift out of sync. Bump it there when the
+# RouterOS enrollment template changes; this alias exists only for readability.
+from app.platform_core.registry import PLATFORM_REGISTRY
+
+MIKROTIK_CONNECTOR_VERSION = PLATFORM_REGISTRY["mikrotik"].latest_connector_version
 
 
 @router.get("/mikrotik", response_class=PlainTextResponse)
@@ -111,7 +116,7 @@ def mikrotik_installer(
     try:
         script = render_deployment_script(
             "mikrotik", token=token, api_endpoint=_public_base(),
-            version=MIKROTIK_CONNECTOR_VERSION,
+            version=PLATFORM_REGISTRY["mikrotik"].latest_connector_version,
             routeros_version=routeros_version,
             heartbeat_interval_seconds=_agent_cfg.get_heartbeat_interval("mikrotik"),
             inventory_interval_seconds=_agent_cfg.get_inventory_interval("mikrotik"),

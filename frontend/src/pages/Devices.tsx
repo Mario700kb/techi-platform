@@ -950,6 +950,7 @@ export default function Devices() {
             mobileLoadingMore={mobileLoadingMore}
             activePackageVersion={fleetOverview?.active_agent_version}
             activePackageSha256={fleetOverview?.active_agent_sha256}
+            activeConnectorVersions={fleetOverview?.active_connector_versions}
             agentsOutdated={fleetOverview?.agents_outdated ?? 0}
           />
         </div>

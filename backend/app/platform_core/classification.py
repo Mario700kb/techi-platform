@@ -45,6 +45,26 @@ CATEGORY_UNASSIGNED = "unassigned"
 
 PLATFORM_WINDOWS = "windows"
 
+# Display label for a category — used wherever a device has no real
+# DeviceGroup row (every non-agent/connector platform: Network/Storage/
+# Hypervisors are virtual tree folders, never persisted groups) but still
+# needs a human-readable "Group" shown in the Drawer/List, symmetric to how
+# agent platforms show "Servers"/"Client PC". Single source so a future
+# connector platform needs no new display logic.
+CATEGORY_DISPLAY_LABELS = {
+    CATEGORY_SERVERS: "Servers",
+    CATEGORY_CLIENTPC: "Client PC",
+    CATEGORY_NETWORK: "Network",
+    CATEGORY_STORAGE: "Storage",
+    CATEGORY_HYPERVISORS: "Hypervisors",
+    CATEGORY_PRINTERS: "Printers",
+    CATEGORY_IOT: "IoT",
+}
+
+
+def category_display_label(category: str) -> Optional[str]:
+    return CATEGORY_DISPLAY_LABELS.get(category)
+
 # --------------------------------------------------------------------------- #
 # Shared constants — defined ONCE, consumed by both renderers.
 # --------------------------------------------------------------------------- #

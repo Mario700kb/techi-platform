@@ -46,15 +46,25 @@ class TestMetadata:
         priorities = [m.priority for m in methods]
         assert priorities == sorted(priorities)
 
+    def test_winbox_declares_windows_only_client_os(self):
+        # Winbox.exe has no macOS/Linux build — the frontend hides it there
+        # rather than showing a launcher that can't work. The backend never
+        # filters by operator OS (it doesn't know the browser's OS); it only
+        # declares the requirement.
+        methods = {m.id: m for m in methods_for("mikrotik", {"connect": ""})}
+        assert methods["winbox"].requires_client_os == "windows"
+        assert methods["webfig"].requires_client_os is None
+        assert methods["ssh"].requires_client_os is None
+
 
 def _client(monkeypatch, flag_on: bool, platform="mikrotik", capabilities=None,
-            local_ip=None, public_ip=None, role="owner"):
+            local_ip=None, public_ip=None, role="owner", agent_version=None):
     monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", flag_on)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     db.add(Device(id=3, hostname="rb", platform=platform, capabilities=capabilities,
-                  local_ip=local_ip, public_ip=public_ip,
+                  local_ip=local_ip, public_ip=public_ip, agent_version=agent_version,
                   device_type=DeviceType.UNASSIGNED, status=DeviceStatus.OFFLINE))
     db.commit()
     app = FastAPI()
@@ -166,3 +176,28 @@ class TestDrawerMeta:
         assert not ({"sync_rustdesk", "deploy_remote_support"} & action_ids)
         # SSH/terminal Connect methods present, registry-driven.
         assert "ssh" in {m["id"] for m in b["connect_methods"]}
+
+
+class TestDrawerVersionBadge:
+    """Version Service — reused for every non-Windows platform, not reimplemented."""
+
+    def test_windows_has_no_version_status(self, monkeypatch):
+        # Windows uses the classic Drawer's own separate badge mechanism.
+        client = _client(monkeypatch, flag_on=True, platform="windows", agent_version="2.1.6")
+        b = client.get("/devices/3/drawer").json()
+        assert b["version_status"] is None
+        assert b["latest_version"] is None
+
+    def test_mikrotik_current_when_matching_registry_version(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, platform="mikrotik",
+                          capabilities={"connect": ""}, agent_version="1.0.0")
+        b = client.get("/devices/3/drawer").json()
+        assert b["reported_version"] == "1.0.0"
+        assert b["latest_version"] == "1.0.0"
+        assert b["version_status"] == "current"
+
+    def test_mikrotik_outdated_when_older_than_registry_version(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, platform="mikrotik",
+                          capabilities={"connect": ""}, agent_version="0.9.0")
+        b = client.get("/devices/3/drawer").json()
+        assert b["version_status"] == "outdated"

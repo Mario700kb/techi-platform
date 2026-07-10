@@ -254,6 +254,10 @@ class DeviceFleetOverview(BaseModel):
     agents_outdated: int = 0
     active_agent_version: Optional[str] = None
     active_agent_sha256: Optional[str] = None
+    # Latest connector version per non-agent platform (e.g. {"mikrotik": "1.0.0"}),
+    # from the Platform Registry — lets the Device List badge (version_service.py)
+    # compare a connector device against ITS platform's latest, not Windows'.
+    active_connector_versions: Dict[str, str] = {}
     loaded_at: datetime
 
 

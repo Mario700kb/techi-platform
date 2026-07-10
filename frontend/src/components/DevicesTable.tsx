@@ -17,6 +17,8 @@ import ConfirmationModal from "./ConfirmationModal";
 import { parseUTC } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
 import PlatformIcon from "./PlatformIcon";
+import VersionBadge from "./VersionBadge";
+import { compareVersions } from "../utils/version";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 
 export interface ActiveActionEntry {
@@ -64,6 +66,7 @@ interface DevicesTableProps {
   mobileLoadingMore?: boolean;
   activePackageVersion?: string | null;
   activePackageSha256?: string | null;
+  activeConnectorVersions?: Record<string, string>;
   agentsOutdated?: number;
 }
 
@@ -110,6 +113,17 @@ function agentVersionTitle(device: Device, activeVersion?: string | null, active
     ? `${device.agent_version ?? "unknown"} | ${device.agent_sha256.slice(0, 8)}`
     : (device.agent_version ?? "unknown");
   return `Installed: ${current} | Active: ${active}`;
+}
+
+// Version Service (Device List side): Windows rows resolve to the SAME
+// activePackageVersion/Sha256 as before — isAgentOutdated/agentVersionTitle
+// above are untouched, so Windows badges are byte-identical. Non-Windows
+// rows (MikroTik, future connectors) resolve against their OWN platform's
+// latest_connector_version instead — never the Windows fleet's version.
+function resolveActiveVersion(device: Device, activePackageVersion?: string | null, activeConnectorVersions?: Record<string, string>) {
+  const platform = (device.platform || "windows").toLowerCase();
+  if (platform === "windows") return activePackageVersion;
+  return activeConnectorVersions?.[platform] ?? null;
 }
 
 // ─── Visual constants ────────────────────────────────────────────────────────
@@ -479,6 +493,7 @@ const DevicesTable = memo(function DevicesTable({
   mobileLoadingMore = false,
   activePackageVersion,
   activePackageSha256,
+  activeConnectorVersions,
   agentsOutdated = 0,
 }: DevicesTableProps) {
   const navigate = useNavigate();
@@ -1570,26 +1585,28 @@ const DevicesTable = memo(function DevicesTable({
 
                       {/* ── Agent version ── */}
                       <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        {device.agent_version ? (
-                          <span
-                            className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
-                            style={
-                              !isAgentOutdated(device, activePackageVersion, activePackageSha256)
-                                ? { color: "#22c55e", background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.35)" }
-                                : { color: "#f97316", background: "rgba(249,115,22,0.2)", border: "1px solid rgba(249,115,22,0.35)" }
-                            }
-                            title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
-                          >
-                            {device.agent_version}
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
-                            style={{ color: "var(--th-text-muted)", background: "rgba(148,163,184,0.12)", border: "1px solid rgba(148,163,184,0.22)" }}
-                          >
-                            —
-                          </span>
-                        )}
+                        {(() => {
+                          const platform = (device.platform || "windows").toLowerCase();
+                          if (platform === "windows") {
+                            // Byte-identical to the prior inline JSX: same 2-state
+                            // boolean, same colors, no "ahead" state.
+                            return (
+                              <VersionBadge
+                                version={device.agent_version}
+                                status={isAgentOutdated(device, activePackageVersion, activePackageSha256) ? "outdated" : "current"}
+                                title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
+                              />
+                            );
+                          }
+                          const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions);
+                          return (
+                            <VersionBadge
+                              version={device.agent_version}
+                              status={compareVersions(device.agent_version, active)}
+                              title={active ? `Latest: ${active}` : undefined}
+                            />
+                          );
+                        })()}
                       </td>
 
                       {/* ── Last Seen ── */}

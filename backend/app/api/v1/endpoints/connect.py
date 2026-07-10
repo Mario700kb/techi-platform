@@ -31,6 +31,7 @@ from app.platform_core.connect import methods_for
 from app.platform_core.flags import feature_enabled
 from app.platform_core.registry import resolve_platform
 from app.repositories.device_repository import DeviceRepository
+from app.services import version_service
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import REMOTE_SUPPORT_CONNECT
 
@@ -44,6 +45,10 @@ class ConnectMethodOut(BaseModel):
     capability: Optional[str] = None
     priority: int
     scheme: Optional[str] = None
+    # Operator client OS this method's desktop app requires (e.g. "windows"
+    # for Winbox), or None if it works on any OS. The frontend hides methods
+    # that don't match the operator's detected OS.
+    requires_client_os: Optional[str] = None
 
 
 class ConnectMethodsResponse(BaseModel):
@@ -73,6 +78,7 @@ def device_connect_methods(
             ConnectMethodOut(
                 id=m.id, label=m.label, surface=m.surface,
                 capability=m.capability, priority=m.priority, scheme=m.scheme,
+                requires_client_os=m.requires_client_os,
             )
             for m in methods
         ],
@@ -156,6 +162,13 @@ class DrawerMetaResponse(BaseModel):
     capability_tabs: List[str]    # dynamic tabs (services/docker/logs/…)
     connect_methods: List[ConnectMethodOut]
     actions: List[DrawerActionOut]
+    # Version Service (reused, not reimplemented per platform): the device's
+    # reported connector/agent version, the platform's latest, and the
+    # current/outdated/ahead status the badge renders from. None for Windows
+    # (its classic Drawer has its own separate, untouched badge mechanism).
+    reported_version: Optional[str] = None
+    latest_version: Optional[str] = None
+    version_status: Optional[str] = None
 
 
 @router.get("/devices/{device_id}/drawer", response_model=DrawerMetaResponse)
@@ -176,6 +189,10 @@ def device_drawer_meta(
     eff = effective_capabilities(device.platform, device.capabilities)
     methods = methods_for(platform_id, device.capabilities)
     actions = actions_for(device.platform, device.capabilities)
+
+    latest_version = version_service.get_active_version(platform_id) if platform_id != "windows" else None
+    version_status = version_service.compare_versions(device.agent_version, latest_version) if latest_version else None
+
     return DrawerMetaResponse(
         platform=platform_id,
         capabilities=sorted(eff),
@@ -184,7 +201,8 @@ def device_drawer_meta(
         capability_tabs=capability_tabs(eff),
         connect_methods=[
             ConnectMethodOut(id=m.id, label=m.label, surface=m.surface,
-                             capability=m.capability, priority=m.priority, scheme=m.scheme)
+                             capability=m.capability, priority=m.priority, scheme=m.scheme,
+                             requires_client_os=m.requires_client_os)
             for m in methods
         ],
         actions=[
@@ -193,4 +211,7 @@ def device_drawer_meta(
                             confirm=a.confirm, target=a.target)
             for a in actions
         ],
+        reported_version=device.agent_version,
+        latest_version=latest_version,
+        version_status=version_status,
     )

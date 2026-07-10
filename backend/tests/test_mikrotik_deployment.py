@@ -111,6 +111,21 @@ def test_connector_script_stays_small_and_flat():
     assert '\\"disk_percent\\":' in script
 
 
+def test_current_user_collected_in_inventory_only_not_heartbeat():
+    """current_user (active RouterOS admin session) is a single extra query —
+    collected on the slower Inventory cadence only, to avoid extra load on
+    the frequent Heartbeat."""
+    script = render_deployment_script(
+        "mikrotik", token="T", api_endpoint="https://api-rdp.techi.com.al", version="1.0.0",
+    )
+    heartbeat_script = script.split('TECHI-Inventory" policy=')[0]
+    inventory_script = script.split('TECHI-Inventory" policy=')[1]
+    assert "/user active find" not in heartbeat_script
+    assert '\\"current_user\\":' not in heartbeat_script
+    assert "/user active find" in inventory_script
+    assert '\\"current_user\\":' in inventory_script
+
+
 def test_routeros6_script_uses_routeros6_fetch_syntax():
     script = render_deployment_script(
         "mikrotik", token="TKN-6", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
@@ -235,6 +250,15 @@ def test_mikrotik_token_enrollment_stays_ungrouped_and_network():
     assert out.group_id is None
     # The engine categorizes it as Network by platform.
     assert clf.classify_category(out) == clf.CATEGORY_NETWORK
+
+    # Drawer/List "Group" must not read blank just because there's no real
+    # DeviceGroup row — it falls back to the category's display label via
+    # the SAME classification engine, exactly like Servers/Client PC do for
+    # agent platforms. No MikroTik-specific code: this works for any future
+    # non-agent platform (Storage/Hypervisors) the same way.
+    resolved = DeviceAssignmentService(s).apply_resolution(out)
+    assert resolved.resolved_client_id == client.id
+    assert resolved.resolved_group == "Network"
 
 
 def test_mikrotik_capabilities_drive_generic_drawer_surface():

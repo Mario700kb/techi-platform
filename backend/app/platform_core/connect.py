@@ -38,6 +38,12 @@ class ConnectMethod:
     priority: int           # lower = listed first / preferred default
     scheme: Optional[str] = None    # desktop launcher protocol, e.g. "winbox://", "ssh://"
     web_path: Optional[str] = None  # browser launcher path appended to http://<host>, e.g. "/webfig/"
+    # OPERATOR's client OS this method's desktop app is available on, or None
+    # if it works regardless (browser methods, cross-platform CLI tools like
+    # ssh). Winbox.exe is Windows-only, so its winbox:// link is a dead click
+    # on macOS/Linux — the frontend hides methods that don't match the
+    # operator's detected OS instead of showing a launcher that can't work.
+    requires_client_os: Optional[str] = None
 
 
 # Keyed by platform id. Ordered by priority within each platform.
@@ -51,7 +57,7 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
         ConnectMethod("remote_support", "TECHI Remote Support", SURFACE_DESKTOP, "remote_support", 30),
     ),
     "mikrotik": (
-        ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://"),
+        ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://", requires_client_os="windows"),
         ConnectMethod("webfig", "WebFig", SURFACE_BROWSER, None, 20, web_path="/webfig/"),
         ConnectMethod("ssh", "SSH", SURFACE_DESKTOP, "connect", 30, scheme="ssh://"),
     ),

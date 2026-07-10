@@ -27,6 +27,109 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Platform-wide UX pass — Generic Drawer standard, Version Service, OS-aware Connect, assignment display fix
+
+### Problemi
+
+MikroTik backend (enrollment/heartbeat/inventory) tashmë punonte saktë; kjo
+punë ishte një kalim UX/konsistencë-platformash mbi Generic Drawer-in që çdo
+platformë jo-Windows do ta ndajë (Linux, MikroTik, e çdo connector i
+ardhshëm). Nëntë probleme konkrete: (1) Drawer-i dukej si prototip; (2) badge
+i version-it të MikroTik gjithmonë "1.0.0" portokalli — krahasohej kundër
+version-it aktiv të flotës Windows; (3) Connect ofronte Winbox edhe në
+macOS/Linux ku s'punon; (4) SSH hapej jashtë platformës, jo brenda Drawer-it;
+(5) current_user mungonte për MikroTik; (6)-(8) "Client i caktuar, Group
+bosh" — dukej si defekt caktimi/tree; (9) version-i i connector-it s'kishte
+burim të vetëm kur skripti rigjenerohej.
+
+### Analiza
+
+Eksplorim kodi (jo supozime): `device_overview_service.py::_active_agent_package()`
+është hardcoded te "windows-amd64" dhe krahasohet kundër ÇDO pajisje —
+kjo ishte shkaku i vërtetë i badge-it gjithmonë portokalli për MikroTik.
+`DeviceAssignmentService.resolve_device_assignment()` kthen `resolved_group=
+None` kur `client_id` është vendosur por `group_id` jo — e VËRTETË për çdo
+platformë jo-agjent me dizajn (koment ekzistues: "a standard agent group
+would mis-classify them"). Tree-u (`count_by_client_category_platform`)
+tashmë e rendëron saktë Client▸Network▸MikroTik në mënyrë VIRTUALE (pa rresht
+real grupi) — identike me Client▸Servers▸Windows — pra Tree-u NUK ishte i
+prishur, vetëm fusha `resolved_group` e Drawer-it/Listës. Nuk ekziston "Version
+Service" 3-gjendjesh (jeshile/portokalli/blu) i vërtetë as për Windows —
+logjika reale ishte 2-gjendjesh (barazi string + SHA tiebreak); u ndërtua si
+i ri, i përgjithësuar për çdo platformë. Terminal-i ekzistues (`TerminalRelay`)
+kërkon proces të vazhdueshëm që lidhet vetë te WS-ja dhe mban PTY të gjallë —
+MikroTik s'ka proces të tillë (vetëm heartbeat periodik HTTP).
+
+### Zgjidhja
+
+1. **Drawer standard**: Overview u kufizua në saktësisht 5 seksione (Connect,
+   Identity, Status, Resources, Assignment — hoqi listën e chip-eve
+   Capabilities). Zero ndryshime te `DeviceDrawer.tsx` (Windows).
+2. **Version Service** (`backend/app/services/version_service.py`, e re):
+   `compare_versions()` + `get_active_version()` — Windows/Linux ripërdorin
+   AgentPackage EKZISTUES (të paprekur); platformat connector krahasohen
+   kundër `PlatformDescriptor.latest_connector_version` (fushë e re në
+   Platform Registry; `MIKROTIK_CONNECTOR_VERSION` u zhvendos aty si burim i
+   vetëm). `VersionBadge.tsx` e re (jeshile/portokalli/blu) përdoret në
+   Drawer (`/devices/{id}/drawer` → `reported_version`/`latest_version`/
+   `version_status`, `null` për Windows) DHE në Device List
+   (`DeviceFleetOverview.active_connector_versions`; rreshtat Windows
+   zgjidhen te i njëjti `activePackageVersion`/`isAgentOutdated` — 0 ndryshim
+   vizual, provuar).
+3. **Assignment "Group bosh" u rregullua** duke ripërdorur Unified
+   Classification Engine: `classification.category_display_label()`
+   (funksion i ri, "Network"/"Storage"/"Hypervisors") plotëson
+   `resolved_group` kur s'ka rresht real grupi — asnjë logjikë specifike
+   MikroTik, punon për çdo platformë jo-agjent.
+4. **Connect OS-aware**: fushë e re `ConnectMethod.requires_client_os`
+   (Winbox → "windows"); `ConnectMenu.tsx` zbulon OS-in e OPERATORIT
+   (`navigator.platform`, i njëjti pattern si zbulimi ekzistues i iOS-it) dhe
+   fsheh metodat që s'punojnë atje. Backend-i s'filtron kurrë vetë — vetëm
+   deklaron kërkesën.
+5. **current_user për MikroTik**: vetëm në Inventory (jo Heartbeat) — një
+   query shtesë (`/user active find`), jo ngarkesë shtesë në ciklin e shpeshtë.
+6. **SSH e integruar (embedded) u hetua, NUK u implementua**: arkitektura e
+   rekomanduar (backend si klient SSH, "connector relay" mode e
+   `TerminalRelay`, duke ripërdorur Credential Vault për kredencialin) u
+   dokumentua në IMPLEMENTATION-ROADMAP.md; sot SSH hap klientin e VETË
+   operatorit (`ssh://<ip>`), pa kërkesë reachability nga backend-i.
+
+### Ndryshimet
+
+- `backend/app/services/version_service.py` (i ri)
+- `backend/app/platform_core/classification.py` (`category_display_label`)
+- `backend/app/platform_core/registry.py` (`latest_connector_version`)
+- `backend/app/platform_core/connect.py` (`requires_client_os`)
+- `backend/app/services/device_assignment_service.py`
+- `backend/app/services/device_overview_service.py`
+- `backend/app/schemas/device.py`, `backend/app/api/v1/endpoints/connect.py`,
+  `backend/app/api/v1/endpoints/install.py`
+- `frontend/src/components/VersionBadge.tsx` (i ri),
+  `frontend/src/utils/version.ts` (i ri),
+  `frontend/src/utils/operatorOs.ts` (i ri)
+- `frontend/src/components/GenericDeviceDrawer.tsx`,
+  `frontend/src/components/DevicesTable.tsx`,
+  `frontend/src/components/ConnectMenu.tsx`
+- Teste: `test_version_service.py` (i ri), `test_mikrotik_deployment.py`,
+  `test_connect_framework.py`, `test_platform_core.py` (allowlist)
+- 4 dokumentet.
+
+### Rezultati
+
+Preflight PASSED: contract 13/13, backend **534 passed + 4 baseline** (flags
+OFF/ON), tsc + frontend build, agent builds. `DeviceDrawer.tsx` (Windows) 0
+ndryshime. Deploy + validim live: shih poshtë.
+
+### Mësimet
+
+- "Version Service" 3-gjendjesh nuk ekzistonte më parë — u ndërtua si i ri,
+  i përgjithësuar, jo si "gjetje" e diçkaje ekzistuese; e rëndësishme të
+  raportohet ndershmërisht kur pritshmëria e pronarit s'përputhet me kodin.
+  Windows mban VETËM 2 gjendjet e vjetra (asnjë "blu" i ri për Windows).
+  Tree-u ishte tashmë korrekt (mekanizëm virtual) — jo çdo "problem" i
+  raportuar është defekt kodi; disa janë hendeqe DUKJEje mbi arkitekturë
+  tashmë korrekte.
+
 ## [2026-07-10] FIX/FEATURE: MikroTik Enterprise Completion — enrollment root cause, Connect launchers, resource cards, Drawer parity
 
 ### Problemi

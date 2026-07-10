@@ -248,10 +248,17 @@ class DeviceAssignmentService:
         category = clf.classify_category(device)
 
         if device.client_id or device.group_id:
+            # A real DeviceGroup only exists for agent platforms (Servers/
+            # Client PC). Non-agent/connector platforms (Network/Storage/
+            # Hypervisors) are deliberately never given one — a standard
+            # agent group would mis-classify them — so their "Group" falls
+            # back to the category's display label via the SAME engine that
+            # already places them in the Tree, not a MikroTik-specific rule.
+            resolved_group = device.group.name if device.group else clf.category_display_label(category)
             return AssignmentResolution(
                 resolved_client_id=device.client_id,
                 resolved_client_name=device.client.name if device.client else None,
-                resolved_group=device.group.name if device.group else None,
+                resolved_group=resolved_group,
                 resolved_assignment_source=source,
                 resolved_device_category=category,
             )

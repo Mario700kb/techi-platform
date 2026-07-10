@@ -16,6 +16,7 @@ import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
 import ResourceBar from "./ResourceBar";
+import VersionBadge from "./VersionBadge";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
@@ -258,12 +259,12 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
   );
 }
 
-// Enterprise operational overview — identity (incl. Device ID, same style as
-// the classic Windows Drawer), freshness/health, addresses, resource
-// utilization (reusing ResourceBar — current usage only, no monitoring
-// graphs), and Client/Group assignment (reusing the exact assignDeviceClient/
-// assignDeviceGroup flow every other platform uses). Deeper detail either has
-// its own capability tab or belongs to Connect (Winbox/WebFig/SSH).
+// Enterprise operational overview — the standard for every non-Windows
+// platform drawer (Linux, MikroTik, Synology, QNAP, VMware, Proxmox, …).
+// Exactly 5 sections, nothing more: Identity, Status, Resources, Assignment,
+// Connect. Deeper detail either has its own capability tab or belongs to
+// Connect (Winbox/WebFig/SSH) — this stays a compact operational summary,
+// not a config dump.
 function Overview({
   device, meta, healthScore, healthState, snapshot, clients, groups, canOperate, onDeviceUpdated,
 }: {
@@ -274,49 +275,61 @@ function Overview({
 }) {
   const board = captionValue(device.os_caption, "Board");
   const availableGroups = groups.filter((g) => g.client_id === device.client_id);
+  const versionStatus = meta.version_status ?? (meta.reported_version ? "current" : "unknown");
+  const versionTitle = meta.latest_version ? `Latest: ${meta.latest_version}` : undefined;
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
+    <div className="space-y-2.5">
+      <Section title="Connect">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Connect</span>
+          <span className="text-[11px]" style={{ color: "var(--th-text-secondary)" }}>{meta.connect_methods.length} method{meta.connect_methods.length === 1 ? "" : "s"} available</span>
           <ConnectMenu deviceId={device.id} />
         </div>
+      </Section>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        <Section title="Identity">
+          <Row label="Device ID" value={String(device.id)} />
+          <Row label="Hostname" value={device.hostname} />
+          <Row label="Platform" value={meta.platform} />
+          <Row label="OS" value={device.os_name} />
+          <Row label="OS version" value={device.os_version} />
+          <Row label="Kernel" value={device.kernel_version} />
+          <Row label="Architecture" value={device.architecture} />
+          <Row label="Board" value={board} />
+        </Section>
+        <Section title="Status">
+          <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
+          <Row label="Health" value={healthScore != null ? `${healthScore} (${healthState})` : undefined} />
+          <Row label="Local IP" value={device.local_ip} />
+          <Row label="Public IP" value={device.public_ip} />
+          <Row label="Current user" value={device.current_user ?? undefined} />
+          <div className="flex items-center justify-between gap-3 py-0.5 text-[11px]">
+            <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>Connector</span>
+            <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
+          </div>
+        </Section>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Section title="Identity">
-        <Row label="Device ID" value={String(device.id)} />
-        <Row label="Hostname" value={device.hostname} />
-        <Row label="Platform" value={meta.platform} />
-        <Row label="OS" value={device.os_name} />
-        <Row label="OS version" value={device.os_version} />
-        <Row label="Kernel" value={device.kernel_version} />
-        <Row label="Architecture" value={device.architecture} />
-        <Row label="Board" value={board} />
-      </Section>
-      <Section title="Status">
-        <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
-        <Row label="Health" value={healthScore != null ? `${healthScore} (${healthState})` : undefined} />
-        <Row label="Local IP" value={device.local_ip} />
-        <Row label="Public IP" value={device.public_ip} />
-        <Row label="Connector" value={device.agent_version ?? undefined} />
-      </Section>
+
       <Section title="Resources">
-        <div className="space-y-2 py-1">
+        <div className="grid grid-cols-3 gap-3 py-1">
           <ResourceBar label="CPU" percent={snapshot?.cpu_percent ?? null} />
           <ResourceBar label="Memory" percent={snapshot?.ram_percent ?? null} />
           <ResourceBar label="Storage" percent={snapshot?.disk_percent ?? null} />
         </div>
       </Section>
+
       <Section title="Assignment">
-        <Row label="Client" value={device.resolved_client_name ?? undefined} />
-        <Row label="Group" value={device.resolved_group ?? undefined} />
-        <div className="flex items-center justify-between gap-3 py-0.5 text-[11px]">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          <Row label="Client" value={device.resolved_client_name ?? undefined} />
+          <Row label="Group" value={device.resolved_group ?? undefined} />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3 py-0.5 text-[11px]">
           <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>Source</span>
           <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
         </div>
         {canOperate && (
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <label className="block">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
               <select
@@ -353,14 +366,6 @@ function Overview({
           </div>
         )}
       </Section>
-      <Section title="Capabilities">
-        <div className="flex flex-wrap gap-1">
-          {meta.capabilities.map((c) => (
-            <span key={c} className="rounded border px-1.5 py-0.5 text-[10px] font-medium" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{c}</span>
-          ))}
-        </div>
-      </Section>
-      </div>
     </div>
   );
 }

@@ -497,6 +497,43 @@ pending_actions — lower the interval for terminal-enabled devices or add a
 faster signal before real use); relay is per-worker in-memory (audit R5 — move
 out-of-process if enabled at fleet scale).
 
+### Embedded SSH for connector platforms (MikroTik) — architecture recommendation, NOT implemented (2026-07-10)
+
+Investigated whether MikroTik's Connect ▸ SSH could open inside the Drawer
+(embedded xterm) instead of the operator's own OS. **Finding: the existing
+terminal architecture cannot be reused as-is.** `TerminalRelay` +
+`TerminalSession` assume a persistent process that DIALS OUT to the relay WS
+and holds a live PTY (`agent/terminal_linux.go`: `pty.Start` + a continuous
+gorilla/websocket read/write loop). MikroTik is a Connector, not an agent —
+it only speaks periodic HTTP heartbeats (`/tool fetch`, no persistent
+process, no WebSocket client) and cannot dial the relay.
+
+**Recommended approach when this is prioritized: a "connector relay" mode of
+the SAME `TerminalRelay`.** Today one leg of the relay is the operator's
+browser WS, the other is the agent's WS. For a connector platform, replace
+the second leg with the **backend itself acting as an SSH client** —
+`asyncssh` (or similar) opening `ssh://<device.local_ip or public_ip>:22`
+using a credential resolved from the **Credential Vault** (already built,
+`FEATURE_VAULT`, scoped per-device/client — the natural source for RouterOS
+SSH credentials, not a new secret store), then piping bytes between that SSH
+session and the SAME operator WS route, ticket model, and `DeviceTerminal.tsx`
+frontend used today — zero changes to the operator-facing session/audit
+model, only a new relay-side connector. This reuses Connect Framework (the
+same `ssh` `ConnectMethod` already declared) to trigger it, and Credential
+Vault for the secret — no new registries, no MikroTik-specific terminal code
+(any future SSH-capable connector platform gets this for free).
+
+**Known limitation to disclose before building:** this requires the backend
+server to have network reachability to the device's IP (works for LAN-
+adjacent or VPN'd routers; fails for a NAT'd router with no forwarded SSH
+port and no VPN — a real constraint the Linux PTY-relay model doesn't have,
+since there the AGENT dials out, so NAT is never a problem for Linux/Windows
+devices). This limitation should be surfaced to the operator as "SSH keys/
+credentials not configured or device unreachable" rather than a silent
+failure. **Not built now** — Connect ▸ SSH today opens the operator's own OS
+SSH client via `ssh://<ip>` (Section "Connect launchers" above), which has no
+such reachability requirement (the OPERATOR's machine dials the router).
+
 ## Phase 6 — Enterprise IAM  (MOVED LAST — 2026-07-07)
 
 **Re-prioritized after all platform work** (owner, 2026-07-07): IAM is

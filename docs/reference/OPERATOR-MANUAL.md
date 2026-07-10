@@ -86,6 +86,13 @@ User, Domain, IP, OS, Agent version, Last Seen, Actions.
   (🪟 Windows, 🐧 Linux, etc.). With the flag off, no icon — the row is unchanged.
 - The **OS cell** shows the OS; for Linux it shows distribution + version, with
   kernel + architecture underneath.
+- **Agent version badge** (Version Service, 2026-07-10): green = matches the
+  active version for that device's platform, orange = older, blue = newer
+  than the platform's declared latest (rare). Windows compares against the
+  active Agent Binary package (unchanged mechanism); MikroTik and future
+  connector platforms compare against their OWN platform's latest version
+  (Platform Registry), not the Windows fleet's — MikroTik no longer shows a
+  permanent false "outdated" orange.
 - Sort by Hostname / Client / Last Seen / Health. Select rows with checkboxes for
   bulk actions.
 - Row actions: open the device (Drawer), Connect (Remote Support), and a "⋯" menu.
@@ -146,6 +153,20 @@ information in a mobile layout.
 > Notes and Timeline. It shows **no Remote Support** unless the device reports the
 > `remote_support` capability. Windows devices continue to open the classic Drawer,
 > unchanged. (Desktop; the mobile Device Details page still uses the classic layout.)
+
+**Generic Drawer Overview (2026-07-10) — the enterprise standard for every
+non-Windows platform.** Exactly 5 compact sections, no long lists:
+- **Connect** — the Connect dropdown (§16), as a compact top bar.
+- **Identity** — Device ID, hostname, platform, OS/version, kernel,
+  architecture, board (when reported).
+- **Status** — last seen, health score, local/public IP, current user (when
+  reported), and the **Connector** version badge (Version Service, above).
+- **Resources** — CPU / Memory / Storage utilization bars (current usage
+  only — no monitoring graphs), the same `ResourceBar` component Windows
+  uses in its own Overview.
+- **Assignment** — Client, Group, Assignment Source, and (with permission)
+  editable Assign Client / Assign Group — the exact same controls and API
+  calls as the classic Windows Drawer's Client Assignment section.
 
 ---
 
@@ -387,11 +408,16 @@ successful enrollment, inheriting the token's Client/Group automatically
 produces a "TECHI enrollment failed" log entry, check the token (not expired/
 revoked) and outbound HTTPS, then re-paste the script.
 
-**Not in this build:** RouterOS API and actual Winbox/WebFig/SSH launcher
-execution. Detailed RouterOS API management (firewall edits, interface changes,
+**Current user (2026-07-10):** Inventory now also reports the active RouterOS
+admin session (if any) — a single extra query, collected on the Inventory
+cadence only, not on every heartbeat, to keep the connector's load minimal.
+An idle router with no logged-in session is normal, not a health problem.
+
+**Not in this build:** RouterOS API (firewall edits, interface changes,
 wireless/VPN/backups/scripting) is a later phase that adds adapter action
-execution + capability renderers, with no Drawer/Tree/UI redesign. With the flag
-off there are no MikroTik surfaces.
+execution + capability renderers, with no Drawer/Tree/UI redesign. With the
+flag off there are no MikroTik surfaces. Winbox/WebFig/SSH launchers
+themselves are live — see §16-19.
 
 ---
 
@@ -425,6 +451,10 @@ Rules that matter operationally:
   a new tab; browser methods with no `web_path` fall back to
   `http://<device-ip>/`. `remote_support`/`web_terminal` keep their own
   dedicated flows and are not launched from this generic mechanism.
+- **Platform-aware (2026-07-10):** a method only appears if it can actually
+  work on YOUR machine. Winbox is a Windows-only desktop app — the Connect
+  menu hides it automatically when you're on macOS or Linux and offers
+  WebFig + SSH instead. This is detected from your browser, not the device.
 
 ---
 
@@ -434,7 +464,14 @@ These are **connection methods** exposed by the MikroTik Connect menu (§16), no
 separate features. **Launchers are live (2026-07-10)**: Winbox and SSH open
 `winbox://<device-ip>` / `ssh://<device-ip>`; WebFig opens
 `http://<device-ip>/webfig/` in a new tab. SSH additionally appears for any
-platform reporting `terminal`.
+platform reporting `terminal`. Winbox is hidden automatically on macOS/Linux
+operators (§16).
+
+SSH here opens **your own** operating system's SSH client/app — it is not yet
+embedded inside the Drawer like the Linux Web Terminal (§14). Embedding SSH
+directly in the Drawer needs the backend itself to act as the SSH client
+(architecture recommendation recorded, not built — see
+IMPLEMENTATION-ROADMAP.md).
 
 ---
 

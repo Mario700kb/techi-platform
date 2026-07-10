@@ -3,14 +3,18 @@ import { ChevronDown, Monitor, Globe } from "lucide-react";
 
 import { fetchJson } from "../api/client";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
+import { detectOperatorOS } from "../utils/operatorOs";
 
 // Connect Framework UI (Platform Expansion Phase 7). The dropdown is built
 // ENTIRELY from GET /devices/{id}/connect-methods — no hardcoded per-platform
-// menus. Selecting a method calls the generic launcher
-// (`/connect-methods/{id}/launch`) which returns a scheme:// or http(s):// URL;
-// desktop methods navigate via a protocol link, browser methods open a new tab.
-// `remote_support`/`web_terminal` keep their own existing dedicated flows
-// (Remote Support tab / Terminal tab) and are not launched from here.
+// menus. Methods whose desktop app doesn't exist on the OPERATOR's own OS
+// (`requires_client_os`, e.g. Winbox.exe is Windows-only) are filtered out
+// client-side — never shown as a dead click. Selecting a method calls the
+// generic launcher (`/connect-methods/{id}/launch`) which returns a
+// scheme:// or http(s):// URL; desktop methods navigate via a protocol link,
+// browser methods open a new tab. `remote_support`/`web_terminal` keep their
+// own existing dedicated flows (Remote Support tab / Terminal tab) and are
+// not launched from here.
 
 interface ConnectMethod {
   id: string;
@@ -19,6 +23,7 @@ interface ConnectMethod {
   capability: string | null;
   priority: number;
   scheme: string | null;
+  requires_client_os: string | null;
 }
 
 interface Props {
@@ -39,7 +44,14 @@ export default function ConnectMenu({ deviceId }: Props) {
     fetchJson<{ platform: string; methods: ConnectMethod[] }>(
       `/api/v1/devices/${deviceId}/connect-methods`,
     )
-      .then((r) => { if (active) setMethods(r.methods); })
+      .then((r) => {
+        if (!active) return;
+        // Don't show a launcher that can't work on this operator's machine
+        // (e.g. Winbox.exe has no macOS/Linux build).
+        const operatorOS = detectOperatorOS();
+        const usable = r.methods.filter((m) => !m.requires_client_os || m.requires_client_os === operatorOS);
+        setMethods(usable);
+      })
       .catch(() => { if (active) setMethods([]); });
     return () => { active = false; };
   }, [deviceId]);

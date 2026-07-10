@@ -241,6 +241,7 @@ export interface DeviceFleetOverview {
   agents_outdated: number;
   active_agent_version: string | null;
   active_agent_sha256: string | null;
+  active_connector_versions?: Record<string, string>;
   loaded_at: string;
 }
 
