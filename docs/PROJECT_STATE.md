@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-09 |
-| **Production Verified** | 2026-07-08 (Device Catalog 500 regression FIXED — `/devices/` no longer 500s; get_devices verified against real DB: 723 devices; health 200, 0 real errors) |
-| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `2dae09a`) |
+| **Last Updated** | 2026-07-10 |
+| **Production Verified** | 2026-07-10 (Reports/Vault sidebar-redirect race fixed `e6d10f2`; Vault delete reference-guard + Report History delete fixed/added `218203d`; both deployed, smoke passed, new endpoints confirmed live 401-not-500) |
+| **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `218203d`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
-| **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `e0df46a` (verified in prod by md5) |
+| **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
 | **Agent Version** | **2.1.6** — production baseline (owner-declared 2026-07-09, replaces 2.1.5); NETLOGON/GPO rollout in progress (~700 devices, mixed during rollout) |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
@@ -22,6 +22,12 @@
    scheduled per-client PDF/CSV fleet-health and alert-activity reports,
    persistent run history/downloads, client-scope RBAC, audit, scheduler,
    and 365-day artifact retention. `FEATURE_REPORTING` is the rollback switch.
+   2026-07-10: added `DELETE /reports/runs/{id}` (Report History delete —
+   removes the DB row + stored file, never the parent schedule). Deferred to
+   a dedicated follow-up (explicitly scoped out of this session, not
+   forgotten): Generate Now section/filter/threshold options, report
+   branding/logo config, and a rewritten PDF template — each is roadmap-sized
+   on its own, see CHANGELOG-SOLUTIONS 2026-07-10.
 2. **Vault Integration** — next production feature; wire the existing encrypted
    Vault into a real connection path using Connect/Terminal.
 3. ✅ Documentation Baseline — completed (2026-07-05, this standard)

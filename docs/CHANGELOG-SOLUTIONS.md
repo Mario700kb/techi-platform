@@ -27,6 +27,166 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] BUGFIX: Vault credential delete had no reference guard + added Report History delete
+
+### Problemi
+
+Two asks in one session: (1) a reported production bug — Credential Vault
+delete fails with "Failed to fetch"; (2) Report History had no delete action
+at all (only schedules could be deleted, not individual generated
+runs/artifacts).
+
+### Analiza
+
+For (1): traced the full path end-to-end — frontend `DELETE /api/v1/vault/${id}`
+matches the backend route exactly, RBAC (`_require_admin`) is correct, and a
+live curl against the production proxy confirmed both the DELETE method and
+its OPTIONS preflight succeed with correct CORS headers
+(`access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT`).
+No code-level or infra-level cause for a literal "Failed to fetch" (a
+browser-level network-layer error, not an application error string) was
+found. No live reproduction (Network tab/console) was available to pin down
+further. What the investigation DID surface as a real, independent gap:
+`VaultService.delete()` deleted a credential unconditionally, even when its
+scope (`client_id`/`group_id`/`device_id`) still pointed at a live
+client/group/device — no 409, no warning, silent data loss risk.
+
+### Shkaku
+
+(1) Unconfirmed — could not reproduce a code/infra cause; likely
+environment-specific (stale bundle, transient network) rather than an
+application defect. (2) Missing feature, not a regression — Report History
+never had a per-run delete endpoint.
+
+### Zgjidhja
+
+**Vault**: `VaultService.blocking_references(credential)` checks whether the
+credential's scope target still exists and returns human-readable references
+(e.g. `"Device #42 (WIN-ABC123)"`); `delete()` raises a new
+`VaultReferencedError` when references exist, which the endpoint maps to a
+409 with the reference list in `detail`. `?force=true` bypasses the guard
+(operator has now seen and dismissed the warning) and is audited separately
+as `vault_credential_deleted_forced`. An orphaned scope (the target was
+already deleted) never blocks cleanup — only a still-alive target does.
+Frontend shows a second `ConfirmationModal` on a 409 response instead of a
+raw error string, offering "Delete anyway."
+
+**Reports**: added `DELETE /api/v1/reports/runs/{run_id}` (Admin/Owner,
+client-scope enforced same as generate/download). `ReportService.delete_run()`
+removes the stored PDF/CSV file (tolerating an already-missing file — logged,
+not fatal, same pattern as the existing 365-day `cleanup_expired()` retention
+sweep) then deletes the `report_runs` row. Never touches the parent
+`ReportSchedule` — `ReportRun.schedule_id` is already `ForeignKey(...,
+ondelete="SET NULL")`, so a schedule's lifecycle is structurally independent
+of any one of its generated runs. Audited as `report_run_deleted`. Frontend
+gets a per-row delete action in Report History with its own confirmation
+dialog, gated to admins (matching the backend RBAC gate).
+
+Explicitly deferred to a follow-up session (not attempted here, to avoid
+rushing production PDF/storage work): Generate Now section/filter/threshold
+options, a report branding/logo configuration subsystem, and a PDF template
+rewrite. Each is roadmap-sized on its own.
+
+### Ndryshimet
+
+`backend/app/services/vault_service.py` (`VaultReferencedError`,
+`blocking_references`, `delete(..., force=)`),
+`backend/app/api/v1/endpoints/vault.py` (409 mapping, `force` query param),
+`backend/app/services/report_service.py` (`delete_run`),
+`backend/app/repositories/report_repository.py` (`ReportRunRepository.delete`),
+`backend/app/api/v1/endpoints/reports.py` (`DELETE /runs/{run_id}`),
+`backend/app/services/audit_service.py` (`REPORT_RUN_DELETED`),
+`frontend/src/pages/CredentialVault.tsx` + `api/vault.ts`,
+`frontend/src/pages/Reports.tsx` + `api/reports.ts`. 10 new backend tests
+(16 vault total, 12 report-endpoint total).
+
+### Rezultati
+
+Preflight PASSED: contract 15/15, backend 645 passed + 4 known baseline
+(unchanged) in both flag modes, frontend tsc/build clean, vitest 19 passed.
+Deployed (`218203d`) — rebuilt/restarted only `backend`+`frontend` containers
+under the correct compose project (`-p techi-platform`; `postgres` untouched,
+stayed healthy throughout). Production smoke 8/8. Both new endpoints
+confirmed live via unauthenticated curl: `DELETE /vault/999999` → 401,
+`DELETE /reports/runs/999999` → 401 (never 500).
+
+### Mësimet
+
+- A missing "is this still referenced" check is a silent-data-loss bug even
+  when nothing currently exercises the referenced path in production —
+  Credential Vault isn't wired into Connect/Terminal yet, but the guard is
+  cheap and correct to add now rather than after the first real incident.
+- "Failed to fetch" in a bug report is a strong signal to check the network
+  layer (CORS preflight, proxy, DNS) before the application code — a live
+  curl against production settled that question in under a minute versus
+  guessing from source alone.
+- When a work request bundles a small, real bug fix with several
+  roadmap-sized feature asks, scope them explicitly rather than silently
+  cutting corners on the large ones to hit "one commit."
+
+## [2026-07-10] BUGFIX: Reports/Vault sidebar links redirected to Dashboard — feature-flag loading race
+
+### Problemi
+
+Reports and Credential Vault were visible in the sidebar in production (both
+`FEATURE_REPORTING`/`FEATURE_VAULT` confirmed `true` in both `.env` and the
+live container), but clicking either link bounced straight back to
+Dashboard with no network request to the Reports/Vault endpoints — a
+client-side redirect before the destination page ever mounted.
+
+### Analiza
+
+`usePlatformFeatures()` (`frontend/src/hooks/usePlatformFeatures.ts`) started
+a brand-new fetch defaulting to all-flags-off on every mount, with no shared
+loading signal. The Sidebar's instance resolved fine on initial load, but
+`RequireFeature` (the route guard) mounts fresh only when the operator
+navigates to `/reports` or `/vault` — at that point it started its own
+fetch from the all-off default and, since it treated "not yet loaded" the
+same as "flag is off," redirected to `/` before that fetch ever settled.
+
+### Shkaku
+
+Per-mount feature-flag fetch with no shared cache and no loading/off
+distinction in the route guard.
+
+### Zgjidhja
+
+`usePlatformFeatures` is now one shared module-level store (mirrors the
+existing `sessionStore.ts` `useSyncExternalStore` pattern) so every consumer
+shares one fetch and one resolved snapshot; added `usePlatformFeaturesLoading()`
+so `RequireFeature` renders a loading state instead of redirecting while
+unresolved. Extracted the route guards into `frontend/src/routes/guards.tsx`
+so they're testable without pulling in the full page tree (importing the
+full `AppRoutes.tsx` in a test — which transitively imports `@xterm/xterm`
+via `RemoteSupport.tsx` — caused a real jsdom/vitest OOM in the test harness,
+unrelated to the app bug itself).
+
+### Ndryshimet
+
+`frontend/src/hooks/usePlatformFeatures.ts`, `frontend/src/routes/guards.tsx`
+(new), `frontend/src/routes/AppRoutes.tsx`. Added `frontend/vitest.config.ts`
++ `frontend/src/test/setup.ts` — first frontend test infra in this repo — and
+19 regression tests across 3 files covering flag ON/OFF/loading and
+permission-denied for both Reports and Vault.
+
+### Rezultati
+
+Preflight PASSED: backend 635 passed + 4 known baseline (unchanged), frontend
+tsc/build clean, 19/19 new vitest tests passed. Deployed (`e6d10f2`) —
+rebuilt/restarted only the `frontend` container. Production smoke 8/8.
+
+### Mësimet
+
+- A feature flag's "loading" state must be a first-class value distinct from
+  both `true` and `false` in any consumer that gates navigation — collapsing
+  it into `false` turns a slow network round-trip into a visible bug.
+- When `docker compose` is run without an explicit `-p <project>`, it derives
+  the project name from the current directory's basename — on this server
+  that's `root` (from `/root`), not the actual running project name
+  `techi-platform`. Running it bare creates a parallel duplicate stack
+  instead of touching the live one. Always pass `-p techi-platform`
+  explicitly on this server.
+
 ## [2026-07-10] FEATURE: Reporting Engine v1 — scheduled per-client PDF/CSV proof of value
 
 ### Problemi
