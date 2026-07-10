@@ -23,8 +23,11 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db.session import SessionLocal
+from app.models.device import Device
 from app.platform_core.flags import feature_enabled
 from app.services.audit_service import AuditAction, system_audit_log
+from app.services.notification_events import NotificationEvent
+from app.services.notification_service import NotificationService
 from app.services.terminal_relay import terminal_relay
 from app.services.terminal_service import TerminalService
 
@@ -36,6 +39,39 @@ router = APIRouter()
 async def _reject(ws: WebSocket, code: int) -> None:
     await ws.accept()
     await ws.close(code=code)
+
+
+def _device_context(db, device_id: int):
+    device = db.query(Device).filter(Device.id == device_id).first()
+    hostname = device.hostname if device else f"device-{device_id}"
+    client_id = getattr(device, "client_id", None) if device else None
+    return hostname, client_id
+
+
+def _notify_session_started(db, session) -> None:
+    hostname, client_id = _device_context(db, session.device_id)
+    NotificationService(db).dispatch(
+        event_type=NotificationEvent.TERMINAL_SESSION_STARTED,
+        title=f"Terminal session started on {hostname}",
+        message=f"{session.operator_username or 'An operator'} opened a terminal session on {hostname}.",
+        severity="info",
+        device_id=session.device_id,
+        client_id=client_id,
+        payload={"session_id": session.id},
+    )
+
+
+def _notify_session_ended(db, session, reason: str) -> None:
+    hostname, client_id = _device_context(db, session.device_id)
+    NotificationService(db).dispatch(
+        event_type=NotificationEvent.TERMINAL_SESSION_ENDED,
+        title=f"Terminal session ended on {hostname}",
+        message=f"Session on {hostname} ended ({reason}), duration {session.duration_seconds}s.",
+        severity="info",
+        device_id=session.device_id,
+        client_id=client_id,
+        payload={"session_id": session.id, "reason": reason},
+    )
 
 
 def _audit_session_end(db, session, reason: str) -> None:
@@ -52,6 +88,7 @@ def _audit_session_end(db, session, reason: str) -> None:
             "duration_seconds": session.duration_seconds,
         },
     )
+    _notify_session_ended(db, session, reason)
 
 
 @router.websocket("/ws/terminal/{session_id}")
@@ -72,6 +109,7 @@ async def operator_terminal_ws(websocket: WebSocket, session_id: str, ticket: st
         pair = await terminal_relay.attach_operator(session_id, websocket)
         if pair.agent is not None:
             svc.mark_active(session)
+            _notify_session_started(db, session)
         try:
             await terminal_relay.pump(session_id, websocket, is_operator=True)
         except WebSocketDisconnect:
@@ -106,6 +144,7 @@ async def agent_terminal_ws(websocket: WebSocket, session_id: str, ticket: str =
         pair = await terminal_relay.attach_agent(session_id, websocket)
         if pair.operator is not None:
             svc.mark_active(session)
+            _notify_session_started(db, session)
         try:
             await terminal_relay.pump(session_id, websocket, is_operator=False)
         except WebSocketDisconnect:

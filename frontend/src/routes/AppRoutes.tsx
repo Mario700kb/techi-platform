@@ -21,6 +21,7 @@ import More from "../pages/More";
 import Settings from "../pages/Settings";
 import DeviceDetailsMobile from "../pages/DeviceDetailsMobile";
 import CredentialVault from "../pages/CredentialVault";
+import NotificationSettings from "../pages/NotificationSettings";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -41,7 +42,7 @@ function RequirePermission({ perm, children }: { perm: string; children: ReactNo
 
 // Platform Expansion route guard: while flags load, treat as off; a route
 // gated by an OFF flag redirects home so nothing new is reachable.
-function RequireFeature({ flag, children }: { flag: "FEATURE_VAULT"; children: ReactNode }) {
+function RequireFeature({ flag, children }: { flag: "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS"; children: ReactNode }) {
   const features = usePlatformFeatures();
   if (!features[flag]) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -66,6 +67,7 @@ export default function AppRoutes() {
       <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
       <Route path="/agent-config" element={<RequireAuth><RequirePermission perm="system_settings"><AgentConfigPage /></RequirePermission></RequireAuth>} />
       <Route path="/vault" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_VAULT"><CredentialVault /></RequireFeature></RequirePermission></RequireAuth>} />
+      <Route path="/notifications" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_NOTIFICATIONS"><NotificationSettings /></RequireFeature></RequirePermission></RequireAuth>} />
       <Route path="/alerts" element={<RequireAuth><AlertsMobile /></RequireAuth>} />
       <Route path="/more" element={<RequireAuth><More /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />

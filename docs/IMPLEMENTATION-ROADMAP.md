@@ -49,8 +49,8 @@ on any unexpected response.
 **Coverage of public services** (grows with each new service — never skip a new one):
 DeviceService ✅, DeviceOverviewService ✅, VaultService ✅, EnrollmentTokenService ✅,
 TerminalService ✅, ConnectService (platform_core.connect) ✅, AgentPackageService ✅,
-RemoteActionService ✅. Future MikroTikService / StorageService adapters MUST add a
-contract test when built.
+RemoteActionService ✅, NotificationService ✅ (2026-07-10). Future MikroTikService /
+StorageService adapters MUST add a contract test when built.
 
 ## Production Validation Checklist
 
@@ -312,6 +312,7 @@ roadmap. Until then: no new features.
 | 8 | Storage Platforms (Synology, QNAP) | NOT STARTED | — | — | — |
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
 | 6 | Enterprise IAM (permission matrix, sessions) | NOT STARTED (**moved last** — security-model change, needs separate approval) | — | — | — |
+| — | Notification Engine (Email/Webhook, event-driven) | **PRODUCTION READY, DEPLOYED DARK** (2026-07-10) | completion commit | ✅ deployed 2026-07-10 (`FEATURE_NOTIFICATIONS` left `false`) | Not part of the original 8-flag Platform Expansion program — new 9th flag, same conventions. Channel registry (Email/Webhook now; Slack/Teams/Telegram/Discord/PagerDuty = new class + registry line later), 3 tables, wired into Alert Engine/Remote Actions/Terminal/Enrollment/Maintenance, retry worker, `/notifications` UI. Suite 620✅+4 (flag off & on, +54 new tests). **Remaining: owner sets `FEATURE_NOTIFICATIONS=true` + configures a channel/rule in the UI — config/UI-only, zero code work left** |
 
 Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED · BLOCKED
 
@@ -596,6 +597,56 @@ Flags: `FEATURE_STORAGE`. Demand-driven; one platform at a time.
 
 Adapter pattern; hosts/VMs inventory; Hyper-V via the existing Windows agent
 on the host. Flags: `FEATURE_HYPERVISOR`. Demand-driven.
+
+---
+
+## Notification Engine — Email/Webhook, event-driven
+
+**PRODUCTION READY 2026-07-10 (deployed dark, `FEATURE_NOTIFICATIONS=false`).**
+Not part of the original Platform Expansion 8-flag program (Phases 0–9
+above) — a separate, general-purpose subsystem identified as a Critical
+production blocker by the 2026-07-10 Production Readiness audit. Follows
+the exact same flag conventions (env-driven, default OFF, `dispatch()`
+checks `feature_enabled("FEATURE_NOTIFICATIONS")` once and returns
+immediately when off).
+
+- **Architecture**: `NotificationSender` interface + `CHANNEL_SENDERS`
+  registry (`app/services/notification_channels.py`) — Email (SMTP,
+  STARTTLS, HTML+plain-text) and generic Webhook (POST JSON, custom
+  headers, shared-secret header) today; Slack/Teams/Telegram/Discord/
+  PagerDuty are a new sender class + one registry entry away, no change to
+  `NotificationService.dispatch()`.
+- **Data**: `notification_channels` / `notification_rules` /
+  `notification_deliveries` (3 new tables — see CHANGELOG-SOLUTIONS
+  2026-07-10 for the exact DDL). Channel secrets encrypted with the same
+  AES-256-GCM cipher/master key as the Credential Vault
+  (`app/core/vault_cipher.py`), not a new key.
+- **Rules**: global or per-client scope, severity filter, cooldown,
+  hourly rate limit. **Retry**: fixed backoff (1/5/15/30 min, 5 attempts)
+  via `NotificationWorker` — identical start/stop/sweep pattern to
+  `terminal_watchdog`, only started when the flag is on.
+- **Event sources wired** (one small addition per service, nothing
+  redesigned): Alert Engine (`device_offline`/`device_online`/
+  `critical_alert`), Remote Actions (`remote_action_completed/failed`,
+  `agent_update_completed/failed` for self_update specifically), Terminal
+  (`terminal_session_started/ended`), Enrollment (`enrollment_failed`),
+  Maintenance (`maintenance_finished`).
+- **UI**: `/notifications` (Channels/Rules/Delivery History), `system_settings`
+  + `FEATURE_NOTIFICATIONS` gated, same page pattern as Credential Vault.
+- **Testing**: 620 backend tests passing (+54 net new: service dispatch
+  logic, channel senders mocked, API CRUD/RBAC/audit, retry worker, and a
+  dedicated wiring-regression suite proving each of the 5 event sources
+  calls `dispatch()` with the correct `event_type`).
+
+**Remaining (Manual Approval, config/UI-only): owner sets
+`FEATURE_NOTIFICATIONS=true` in prod `.env`, restarts backend, then
+configures at least one channel + rule in the new UI.** No further code
+work — this is the same "code complete, flip a flag" shape as the
+Embedded Connect completion above.
+
+Full history: CHANGELOG-SOLUTIONS.md 2026-07-10, "FEATURE: Notification
+Engine — email/webhook, event-driven, reused across Alert Engine/Remote
+Actions/Terminal/Enrollment/Maintenance".
 
 ---
 

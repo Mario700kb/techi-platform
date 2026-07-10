@@ -158,6 +158,8 @@ class TestWiringBoundary:
             "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)
             "app/services/version_service.py",  # Version Service reads Platform Registry's latest_connector_version
             "app/main.py",  # gates terminal_watchdog startup by FEATURE_TERMINAL (Phase 5 completion)
+            "app/api/v1/endpoints/notifications.py",  # notification flag gate (Notification Engine)
+            "app/services/notification_service.py",  # dispatch() checked against FEATURE_NOTIFICATIONS
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

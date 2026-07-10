@@ -52,6 +52,13 @@ class AuditAction:
     TERMINAL_SESSION_DENIED = "terminal_session_denied"
     TERMINAL_SESSION_CLOSED = "terminal_session_closed"
     TERMINAL_SESSION_EXPIRED = "terminal_session_expired"
+    NOTIFICATION_CHANNEL_CREATED = "notification_channel_created"
+    NOTIFICATION_CHANNEL_UPDATED = "notification_channel_updated"
+    NOTIFICATION_CHANNEL_DELETED = "notification_channel_deleted"
+    NOTIFICATION_CHANNEL_TESTED = "notification_channel_tested"
+    NOTIFICATION_RULE_CREATED = "notification_rule_created"
+    NOTIFICATION_RULE_UPDATED = "notification_rule_updated"
+    NOTIFICATION_RULE_DELETED = "notification_rule_deleted"
 
 
 def audit_log(

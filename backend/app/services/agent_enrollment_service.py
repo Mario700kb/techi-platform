@@ -18,6 +18,8 @@ from app.services.enrollment_token_service import EnrollmentTokenService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.services.trusted_domain_service import TrustedDomainService
 from app.services.audit_service import AuditAction, system_audit_log
+from app.services.notification_events import NotificationEvent
+from app.services.notification_service import NotificationService
 from app.platform_core.registry import validate_architecture
 
 logger = logging.getLogger(__name__)
@@ -343,6 +345,25 @@ class AgentEnrollmentService:
             self.enrollment_audit.record(**values)
         except Exception:
             logger.exception("Enrollment audit failed outside best-effort service boundary")
+        if values.get("result") == "failed":
+            self._notify_enrollment_failed(**values)
+
+    def _notify_enrollment_failed(self, **values) -> None:
+        try:
+            payload = values.get("payload")
+            token = values.get("token")
+            hostname = getattr(payload, "hostname", None) or "unknown device"
+            reason = values.get("reason") or "enrollment_failed"
+            NotificationService(self.db).dispatch(
+                event_type=NotificationEvent.ENROLLMENT_FAILED,
+                title=f"Enrollment failed: {hostname}",
+                message=f"Enrollment attempt for {hostname} failed ({reason}).",
+                severity="warning",
+                client_id=getattr(token, "client_id", None),
+                payload={"reason": reason, "hostname": hostname},
+            )
+        except Exception:
+            logger.exception("Enrollment-failed notification dispatch failed")
 
     @staticmethod
     def _normalize(value: Optional[str]) -> Optional[str]:

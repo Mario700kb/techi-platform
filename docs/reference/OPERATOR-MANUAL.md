@@ -9,8 +9,8 @@
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
 Enrollment, Remote Support, Command Center, Packages, Alerts, Teams) is always
-available. Linux, the Connect menu, the Web Terminal, the Credential Vault, and
-MikroTik appear only when their flags are enabled.
+available. Linux, the Connect menu, the Web Terminal, the Credential Vault,
+Notifications, and MikroTik appear only when their flags are enabled.
 
 ---
 
@@ -515,6 +515,39 @@ An enterprise secret store, separate from the Remote Support password system.
 
 ---
 
+## 20a. Notifications 🚩 `FEATURE_NOTIFICATIONS`
+
+Sends platform events to Email and/or a generic Webhook — not enabled by
+default. Production-ready as of 2026-07-10; not yet enabled in production.
+
+- **Location**: sidebar ▸ Notifications (Admin+, `system_settings`
+  permission — same gate as Credential Vault).
+- **Channels**: Email (SMTP host/port/TLS/from/to, optional auth) and
+  Webhook (URL + custom headers + an optional shared secret sent as
+  `X-TECHI-Signature`). Each channel has a **Test** button that sends a
+  real message immediately and records the result in Delivery History —
+  use it right after creating or editing a channel.
+- **Rules**: bind an event type to one channel. Scope is **Global** (fires
+  for every client) or **Client** (fires only for that client's devices).
+  Optional **minimum severity** (Info+/Warning+/Critical only), **cooldown**
+  (suppress repeats of the same rule for N seconds), and a **rate limit**
+  (max sends per hour). A rule can be toggled on/off without deleting it.
+  **An event with no matching rule notifies nobody** — creating a channel
+  alone does nothing until at least one rule points to it.
+- **Events covered**: Device Offline, Device Online, Critical Alert (any
+  alert opened at Critical severity — CPU/RAM/disk/etc., not just offline),
+  Agent Update Completed/Failed, Remote Action Completed/Failed,
+  Enrollment Failed, Maintenance Finished, Terminal Session Started/Ended.
+- **Delivery History**: every attempt (manual test or rule-triggered),
+  with status (Sent / Pending / Retrying / Failed), attempt count, and the
+  last error if any. A failed send retries automatically on a fixed
+  backoff (1, 5, 15, then 30 minutes) before being marked Failed for good.
+- With the flag off, the Notifications page/route/endpoints do not exist
+  (404) and no events are ever dispatched — identical to Vault/Terminal's
+  darkness contract.
+
+---
+
 ## 21. Platform Icons 🚩 `FEATURE_LINUX`+
 
 A single `PlatformIcon` component renders the per-platform icon (Windows 🪟,
@@ -670,6 +703,10 @@ in Agent Config; every device adopts it on its next heartbeat.
   + a rollout scope, neither enabled by default. Reconnect always opens a new
   shell session (no mid-session state resume). Session recording is prepared
   but not implemented.
+- **Notifications**: production-ready (2026-07-10); requires `FEATURE_NOTIFICATIONS`,
+  not enabled by default, and at least one channel + rule configured before
+  anything actually sends. Email and generic Webhook only — Slack/Teams/
+  Telegram/Discord/PagerDuty are supported by the architecture but not built yet.
 - **Linux**: certified **Experimental** — validate on a canary before broad use.
   Tier-1 distros: Ubuntu LTS, Debian, RHEL family.
 - **IAM**: the granular permission matrix / sessions manager is a future phase;

@@ -8,8 +8,22 @@ from sqlalchemy.orm import Session
 from app.models.device import Device
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import DeviceUpdate
+from app.services.notification_events import NotificationEvent
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
+
+
+def _notify_maintenance_finished(db: Session, device: Device) -> None:
+    hostname = device.hostname or f"device-{device.id}"
+    NotificationService(db).dispatch(
+        event_type=NotificationEvent.MAINTENANCE_FINISHED,
+        title=f"Maintenance finished on {hostname}",
+        message=f"Maintenance mode ended for {hostname}.",
+        severity="info",
+        device_id=device.id,
+        client_id=getattr(device, "client_id", None),
+    )
 
 
 def is_maintenance_active(device) -> bool:
@@ -32,7 +46,7 @@ class DeviceMaintenanceService:
             return device
         if device.maintenance_ends_at and device.maintenance_ends_at < utcnow():
             logger.info("[maintenance] expired for device #%d, clearing", device.id)
-            return self.repo.update(
+            updated = self.repo.update(
                 device,
                 DeviceUpdate(
                     is_in_maintenance=False,
@@ -42,6 +56,8 @@ class DeviceMaintenanceService:
                     maintenance_started_by=None,
                 ),
             )
+            _notify_maintenance_finished(self.repo.db, updated)
+            return updated
         return device
 
     def enter_maintenance(
@@ -72,7 +88,7 @@ class DeviceMaintenanceService:
 
     def clear_maintenance(self, device: Device) -> Device:
         logger.info("[maintenance] device #%d cleared", device.id)
-        return self.repo.update(
+        updated = self.repo.update(
             device,
             DeviceUpdate(
                 is_in_maintenance=False,
@@ -82,3 +98,5 @@ class DeviceMaintenanceService:
                 maintenance_started_by=None,
             ),
         )
+        _notify_maintenance_finished(self.repo.db, updated)
+        return updated

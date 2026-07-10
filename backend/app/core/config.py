@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     FEATURE_MIKROTIK: bool = False
     FEATURE_STORAGE: bool = False
     FEATURE_HYPERVISOR: bool = False
+    FEATURE_NOTIFICATIONS: bool = False
+
+    # SMTP secrets and webhook shared secrets on notification channels are
+    # encrypted with the same AES-256-GCM cipher/master key as the
+    # Credential Vault (app/core/vault_cipher.py) — no separate key material.
 
     # Generic rollout scoping (see the "rollout" module under the platform
     # expansion package) — narrows a fleet-wide FEATURE_* flag to a subset of

@@ -1,4 +1,4 @@
-import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal, ShieldCheck } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal, ShieldCheck, Bell } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -10,7 +10,7 @@ type NavItem = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   permission: string | null; // null = always visible for authenticated users
-  feature?: "FEATURE_VAULT"; // Platform Expansion flag; item hidden unless ON
+  feature?: "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS"; // Platform Expansion flag; item hidden unless ON
 };
 
 const navItems: NavItem[] = [
@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
   { label: "Audit Log",  to: "/audit",                icon: ClipboardList,      permission: "audit_log" },
   { label: "Agent Config", to: "/agent-config",       icon: SlidersHorizontal,  permission: "system_settings" },
   { label: "Credential Vault", to: "/vault",          icon: ShieldCheck,   permission: "system_settings", feature: "FEATURE_VAULT" },
+  { label: "Notifications", to: "/notifications",     icon: Bell,          permission: "system_settings", feature: "FEATURE_NOTIFICATIONS" },
 ];
 
 interface SidebarProps {

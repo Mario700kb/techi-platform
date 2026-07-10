@@ -26,6 +26,7 @@ from app.platform_core.flags import feature_enabled
 from app.websocket.publisher import realtime_publisher
 from app.websocket.routes import router as websocket_router
 from app.workers.device_reconciliation_worker import device_reconciliation_worker
+from app.workers.notification_worker import notification_worker
 from app.workers.terminal_watchdog import terminal_watchdog
 
 logger = logging.getLogger("techi.startup")
@@ -116,6 +117,8 @@ async def lifespan(app: FastAPI):
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
         terminal_watchdog.start()
+    if feature_enabled("FEATURE_NOTIFICATIONS"):
+        notification_worker.start()
 
     yield
 
@@ -125,6 +128,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     await terminal_watchdog.stop()
+    await notification_worker.stop()
     await device_reconciliation_worker.stop()
     await realtime_publisher.stop()
 

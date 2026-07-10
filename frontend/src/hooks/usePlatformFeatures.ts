@@ -10,6 +10,7 @@ const ALL_OFF: PlatformFeatures = {
   FEATURE_MIKROTIK: false,
   FEATURE_STORAGE: false,
   FEATURE_HYPERVISOR: false,
+  FEATURE_NOTIFICATIONS: false,
 };
 
 /**

@@ -27,6 +27,223 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Notification Engine — email/webhook, event-driven, reused across Alert Engine/Remote Actions/Terminal/Enrollment/Maintenance
+
+### Problemi
+
+TECHI had no outbound notification channel — every 2026-07-10 readiness
+audit flagged this as a Critical production blocker: a 24/7 managed
+platform that can't page anyone when a client's server goes down. Mission:
+build a single, reusable Notification Engine (not a one-off "email on
+alert" hack) that every existing event source can plug into, supporting
+Email + generic Webhook now and Slack/Teams/Telegram/Discord/PagerDuty
+later without touching dispatch logic.
+
+### Zgjidhja
+
+**Generic, registry-shaped architecture** — same pattern this codebase
+already uses for Platform/Capability/Action/Connect: a small
+`NotificationSender` interface (`app/services/notification_channels.py`)
+with one class per channel type (`EmailSender`, `WebhookSender`) in a
+`CHANNEL_SENDERS` dict; adding Slack later is one new class + one registry
+entry, `NotificationService.dispatch()` never changes.
+
+**Data model** (3 new tables, `app/models/notification.py`):
+- `notification_channels` — name, type, enabled, non-secret `config_json`
+  (justified JSON: shape genuinely varies by channel type — SMTP host/port/
+  tls/from/to vs webhook url/headers), plus a separately-encrypted secret
+  (SMTP password / webhook shared secret) using the **same AES-256-GCM
+  cipher and master key as the Credential Vault**
+  (`app/core/vault_cipher.py`, reused directly — no new key material, no
+  new crypto).
+- `notification_rules` — binds `(event_type, scope)` to one channel, with
+  `min_severity`, `cooldown_seconds`, `rate_limit_per_hour`. Global or
+  per-client scope (reuses `Device.client_id`, no new column elsewhere).
+- `notification_deliveries` — every send attempt: also the retry queue
+  (RETRYING rows + `next_retry_at`) and the delivery-history the UI reads.
+  No blob beyond the two genuinely-variable-shape JSON fields above.
+
+**Dispatch is best-effort, same contract as `audit_log`**: wrapped in
+`try/except`, never raises, so a notification failure can never break the
+event source that triggered it. `dispatch()` checks `FEATURE_NOTIFICATIONS`
+first and returns immediately when off — zero behavior/query change with
+the flag off, same darkness contract as every other Platform Expansion flag.
+
+**Retry**: fixed backoff (1/5/15/30 min, 5 attempts total) via a new
+`NotificationWorker` (`app/workers/notification_worker.py`) — identical
+start/stop/sweep pattern to `terminal_watchdog`/
+`device_reconciliation_worker`; sweeps every 60s; only started when
+`FEATURE_NOTIFICATIONS` is on (`main.py` lifespan), so flag-off adds no
+periodic queries.
+
+**Wired into 5 existing event sources, one small call each — no service
+redesigned**:
+- **Alert Engine** (`alert_engine.py`): `_open_alert` fires `device_offline`
+  (for that specific alert kind) and, independently, `critical_alert` for
+  any alert opened at CRITICAL severity (covers HIGH_CPU/HIGH_RAM/LOW_DISK
+  reaching critical without a rule per alert kind). `resolve_device_offline`
+  fires `device_online`.
+- **Remote Actions** (`remote_action_service.py`): a new
+  `_notify_action_result()` helper called from the 3 existing
+  completion/failure paths (`complete()`, `verify_self_update_for_device()`,
+  `fail()`) — distinguishes `agent_update_completed`/`agent_update_failed`
+  (self_update action type) from generic `remote_action_completed`/
+  `remote_action_failed`.
+- **Terminal** (`terminal_routes.py`): `terminal_session_started` fires when
+  `mark_active()` fires (both sides attached — already-existing call site);
+  `terminal_session_ended` folded into the existing `_audit_session_end()`
+  helper so every disconnect path (operator_closed/agent_gone/watchdog
+  idle-timeout/max-duration) is covered automatically.
+- **Enrollment** (`agent_enrollment_service.py`): hooked once, inside the
+  existing `_record_audit()` helper, gated on `result == "failed"` — covers
+  all 5 existing failure call sites (bad token, expired token, unsupported
+  architecture, processing errors) without touching any of them individually.
+- **Maintenance** (`device_maintenance_service.py`): `maintenance_finished`
+  fires from both `clear_maintenance()` (manual) and `expire_if_needed()`'s
+  auto-clear branch (scheduled expiry).
+
+**UI** (`frontend/src/pages/NotificationSettings.tsx`, new): Channels
+(add/edit/test/delete, admin+), Rules (event/scope/channel/severity/
+cooldown/rate-limit, enable toggle), Delivery History (paginated, status
+color-coded) — one page, three stacked sections, reusing `premium-card`/
+`Badge`/`Button`/`ConfirmationModal` exactly as `CredentialVault.tsx` does.
+Sidebar + route gated by `FEATURE_NOTIFICATIONS` + `system_settings`
+permission, same `RequireFeature` pattern as the Vault link.
+
+**Audit**: every channel/rule create/update/delete/test is audited
+(`NOTIFICATION_CHANNEL_*`/`NOTIFICATION_RULE_*` constants added to the
+existing `AuditAction` class) — nothing new invented, same
+`audit_log()`/`AuditLog` table every other mutation uses.
+
+### Ndryshimet
+
+Schema (Postgres, applied by hand before deploy per the manual-SQL
+discipline — Alembic doesn't run in prod):
+
+```sql
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    channel_type VARCHAR(24) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    config_json TEXT NOT NULL,
+    secret_ciphertext TEXT,
+    secret_dek_wrapped TEXT,
+    created_by VARCHAR(128),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_notification_channels_channel_type ON notification_channels (channel_type);
+
+CREATE TABLE IF NOT EXISTS notification_rules (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    scope_type VARCHAR(16) NOT NULL DEFAULT 'global',
+    client_id INTEGER REFERENCES clients(id),
+    channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    min_severity VARCHAR(16),
+    cooldown_seconds INTEGER NOT NULL DEFAULT 0,
+    rate_limit_per_hour INTEGER,
+    created_by VARCHAR(128),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_notification_rules_event_type ON notification_rules (event_type);
+CREATE INDEX IF NOT EXISTS ix_notification_rules_scope_type ON notification_rules (scope_type);
+CREATE INDEX IF NOT EXISTS ix_notification_rules_client_id ON notification_rules (client_id);
+CREATE INDEX IF NOT EXISTS ix_notification_rules_channel_id ON notification_rules (channel_id);
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+    id SERIAL PRIMARY KEY,
+    rule_id INTEGER REFERENCES notification_rules(id) ON DELETE SET NULL,
+    channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+    event_type VARCHAR(64) NOT NULL,
+    device_id INTEGER,
+    client_id INTEGER,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    payload_json TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error VARCHAR(1024),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    sent_at TIMESTAMP,
+    next_retry_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_rule_id ON notification_deliveries (rule_id);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_channel_id ON notification_deliveries (channel_id);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_event_type ON notification_deliveries (event_type);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_device_id ON notification_deliveries (device_id);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_client_id ON notification_deliveries (client_id);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_status ON notification_deliveries (status);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_created_at ON notification_deliveries (created_at);
+CREATE INDEX IF NOT EXISTS ix_notification_deliveries_next_retry_at ON notification_deliveries (next_retry_at);
+```
+
+Inverse (rollback): `DROP TABLE IF EXISTS notification_deliveries,
+notification_rules, notification_channels CASCADE;` (drop children before
+parents, or rely on CASCADE as written).
+
+Backend: `app/models/notification.py`, `app/schemas/notification.py`,
+`app/repositories/notification_repository.py`,
+`app/services/notification_channels.py`, `app/services/notification_service.py`,
+`app/services/notification_events.py`, `app/workers/notification_worker.py`,
+`app/api/v1/endpoints/notifications.py`; `app/core/config.py` (+
+`FEATURE_NOTIFICATIONS`), `app/platform_core/flags.py` (dependency entry,
+no deps), `app/services/audit_service.py` (+7 `NOTIFICATION_*` actions),
+`app/main.py` (worker start/stop, flag-gated), `app/api/v1/api.py`
+(router registration), `requirements.txt` (+`httpx==0.28.1`, now a direct
+dependency, was already transitive via `TestClient`).
+
+Wiring (small additions, no service redesigned): `alert_engine.py`,
+`remote_action_service.py`, `websocket/terminal_routes.py`,
+`agent_enrollment_service.py`, `device_maintenance_service.py`.
+
+Frontend: `frontend/src/pages/NotificationSettings.tsx` (new),
+`frontend/src/api/notifications.ts` (new), `frontend/src/api/platform.ts` +
+`hooks/usePlatformFeatures.ts` (+`FEATURE_NOTIFICATIONS`),
+`routes/AppRoutes.tsx` + `components/Sidebar.tsx` (route + nav entry,
+flag-gated).
+
+Tests (new): `test_notification_service.py` (15 — dispatch flag-gate,
+severity filter, cooldown, rate limit, retry scheduling, secret
+encryption round-trip), `test_notification_channels.py` (10 — Email/
+Webhook senders, mocked SMTP/HTTP), `test_notification_endpoint.py` (11 —
+API CRUD, RBAC, audit-on-mutation, flag-off 404), `test_notification_worker.py`
+(4 — retry sweep), `test_notification_wiring.py` (13 — proves each of the
+5 event sources actually calls `dispatch()` with the right `event_type`,
+by patching `NotificationService.dispatch` at the class level so one spy
+intercepts every call site). `test_service_repository_contracts.py` +
+`test_platform_core.py` extended per the existing coverage/wiring-boundary
+rules (every new public service/flag-gated module must be added there).
+
+### Rezultati
+
+Preflight PASSED: contract 14/14, backend suite 620 passed + 4 known
+baseline (flags off & on — +54 net new tests), tsc/build clean, agent
+builds. Deployed with `FEATURE_NOTIFICATIONS=false` — code live, fully
+inert (matches the darkness contract every other flag-gated feature uses).
+
+### Mësimet
+
+- Building the channel abstraction as a tiny interface + a plain dict
+  registry (rather than, say, a class hierarchy with inheritance) made the
+  "reusable for Slack/Teams/Telegram/Discord/PagerDuty later" requirement
+  nearly free — the registry pattern this codebase already uses everywhere
+  else (Platform/Capability/Action/Connect) turned out to be exactly the
+  right shape for channels too.
+- Hooking `_record_audit()`/`_audit_session_end()` (existing shared
+  helpers) instead of each individual call site is what made 5-failure-path
+  enrollment and 2-close-path terminal wiring take one line each instead of
+  five/two — worth always checking for an existing shared choke point
+  before wiring a cross-cutting concern into a service.
+- `asyncio.Lock()`/`asyncio.Event()` must be constructed while a loop is
+  running under Python 3.9 once any other test in the suite has called
+  `asyncio.run()` — the same gotcha hit during the Terminal completion work
+  recurred here for `NotificationWorker`; the fix is identical (construct
+  the object inside the `asyncio.run()`'d coroutine, not before it).
+
 ## [2026-07-10] DECISION: Feature flags default-ON once complete + validated — supersedes the "default OFF" rule for new work
 
 ### Problemi

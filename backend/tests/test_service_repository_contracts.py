@@ -111,3 +111,15 @@ class TestEndToEndContracts:
     def test_remote_action_service(self):
         from app.services.remote_action_service import RemoteActionService
         assert RemoteActionService(_db()).get_recent(device_id=1) == []
+
+    def test_notification_service(self):
+        from app.repositories.notification_repository import (
+            NotificationChannelRepository,
+            NotificationDeliveryRepository,
+            NotificationRuleRepository,
+        )
+        db = _db()
+        assert NotificationChannelRepository(db).list() == []
+        assert NotificationRuleRepository(db).list() == []
+        items, total = NotificationDeliveryRepository(db).list_history()
+        assert items == [] and total == 0

@@ -11,6 +11,7 @@ from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
 from app.models.enrollment_token import EnrollmentToken
 from app.models.enrollment_audit import EnrollmentAudit
+from app.models.notification import NotificationChannel, NotificationDelivery, NotificationRule
 from app.models.operator import Operator
 from app.models.remote_action import RemoteAction
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
@@ -32,6 +33,9 @@ __all__ = [
     "DeviceTelemetry",
     "EnrollmentToken",
     "EnrollmentAudit",
+    "NotificationChannel",
+    "NotificationDelivery",
+    "NotificationRule",
     "Operator",
     "RemoteAction",
     "TerminalSession",

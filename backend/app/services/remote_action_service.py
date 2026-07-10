@@ -15,12 +15,37 @@ from app.schemas.remote_action import (
     PendingActionDelivery,
     RemoteActionCreate,
 )
+from app.services.notification_events import NotificationEvent
+from app.services.notification_service import NotificationService
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_TYPES = {a.value for a in ActionType}
+
+
+def _notify_action_result(db: Session, action: RemoteAction, *, failed: bool, message: str) -> None:
+    device = db.query(Device).filter(Device.id == action.device_id).first()
+    hostname = device.hostname if device else f"device-{action.device_id}"
+    is_self_update = action.action_type == ActionType.SELF_UPDATE.value
+    if failed:
+        event_type = NotificationEvent.AGENT_UPDATE_FAILED if is_self_update else NotificationEvent.REMOTE_ACTION_FAILED
+        severity = "warning"
+        verb = "failed"
+    else:
+        event_type = NotificationEvent.AGENT_UPDATE_COMPLETED if is_self_update else NotificationEvent.REMOTE_ACTION_COMPLETED
+        severity = "info"
+        verb = "completed"
+    NotificationService(db).dispatch(
+        event_type=event_type,
+        title=f"{action.action_type} {verb} on {hostname}",
+        message=message,
+        severity=severity,
+        device_id=action.device_id,
+        client_id=getattr(device, "client_id", None),
+        payload={"action_id": action.id, "action_type": action.action_type},
+    )
 
 
 def _action_event_payload(action: RemoteAction) -> dict:
@@ -249,6 +274,7 @@ class RemoteActionService:
         logger.info("[action] completed #%d result=%r", action_id, result_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         _record_audit(self.repo.db, action, f"Action completed: {action.action_type}")
+        _notify_action_result(self.repo.db, action, failed=False, message=result_message or f"Action completed: {action.action_type}")
         return action
 
     def verify_self_update_for_device(self, device_id: int) -> None:
@@ -275,6 +301,10 @@ class RemoteActionService:
             logger.info("[action] self_update #%d verified by heartbeat", action.id)
             _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
             _record_audit(self.repo.db, action, "Action completed: self_update verified by heartbeat")
+            _notify_action_result(
+                self.repo.db, action, failed=False,
+                message=f"Self-update verified by heartbeat sha256={target_sha[:12]}",
+            )
 
     def _self_update_verified(self, action: RemoteAction) -> bool:
         payload = action.payload_dict
@@ -307,6 +337,7 @@ class RemoteActionService:
             self.repo.db, action,
             f"Action failed: {action.action_type} — {error_message or 'no detail'}",
         )
+        _notify_action_result(self.repo.db, action, failed=True, message=error_message or "no detail")
         return action
 
     # ------------------------------------------------------------------ #

@@ -10,6 +10,7 @@ export interface PlatformFeatures {
   FEATURE_MIKROTIK: boolean;
   FEATURE_STORAGE: boolean;
   FEATURE_HYPERVISOR: boolean;
+  FEATURE_NOTIFICATIONS: boolean;
 }
 
 export async function getPlatformFeatures(): Promise<PlatformFeatures> {

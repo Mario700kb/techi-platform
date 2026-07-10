@@ -17,6 +17,8 @@ from app.services.alert_rules import (
     RAM_WARN,
     RECONNECT_THRESHOLD,
 )
+from app.services.notification_events import NotificationEvent
+from app.services.notification_service import NotificationService
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
 
@@ -81,7 +83,30 @@ class AlertEngine:
             build_event(RealtimeEventType.ALERT_CREATED, data=_alert_payload(alert), reason="alert_created"),
             dedupe_key=f"alert_created:{alert.id}",
         )
+        self._notify_opened(alert, device)
         return alert
+
+    def _notify_opened(self, alert: DeviceAlert, device=None) -> None:
+        client_id = getattr(device, "client_id", None)
+        if alert.kind == AlertKind.DEVICE_OFFLINE:
+            NotificationService(self.repo.db).dispatch(
+                event_type=NotificationEvent.DEVICE_OFFLINE,
+                title=alert.message,
+                message=alert.detail or alert.message,
+                severity=alert.severity.value,
+                device_id=alert.device_id,
+                client_id=client_id,
+            )
+        if alert.severity == AlertSeverity.CRITICAL:
+            NotificationService(self.repo.db).dispatch(
+                event_type=NotificationEvent.CRITICAL_ALERT,
+                title=alert.message,
+                message=alert.detail or alert.message,
+                severity=alert.severity.value,
+                device_id=alert.device_id,
+                client_id=client_id,
+                payload={"kind": alert.kind.value},
+            )
 
     def _resolve(self, device_id: int, kind: AlertKind, reason: str = "resolved") -> Optional[DeviceAlert]:
         open_alert = self.repo.get_open_by_device_and_kind(device_id, kind)
@@ -112,7 +137,17 @@ class AlertEngine:
         )
 
     def resolve_device_offline(self, device) -> None:
-        self._resolve(device.id, AlertKind.DEVICE_OFFLINE, reason="device_came_online")
+        resolved = self._resolve(device.id, AlertKind.DEVICE_OFFLINE, reason="device_came_online")
+        if resolved is not None:
+            hostname = device.hostname or device.rustdesk_id or f"device-{device.id}"
+            NotificationService(self.repo.db).dispatch(
+                event_type=NotificationEvent.DEVICE_ONLINE,
+                title=f"{hostname} is back online",
+                message=f"{hostname} came back online.",
+                severity=AlertSeverity.INFO.value,
+                device_id=device.id,
+                client_id=getattr(device, "client_id", None),
+            )
 
     def evaluate_telemetry(
         self,

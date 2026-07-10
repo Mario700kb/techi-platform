@@ -541,6 +541,41 @@ Remaining manual step: owner sets `FEATURE_TERMINAL=true` +
 `FEATURE_TERMINAL_SCOPE`/allowlist in prod `.env` and restarts backend —
 still Manual Approval, now a config-only change with zero further code work.
 
+**Notification Engine (2026-07-10, deployed dark; `FEATURE_NOTIFICATIONS`
+stays `false`).** New 9th flag, same conventions as the other 8 (env-driven,
+default OFF, flag-off = zero behavior change, checked once at the top of
+`dispatch()`). Email + generic Webhook channels (a small `NotificationSender`
+interface + `CHANNEL_SENDERS` registry — Slack/Teams/Telegram/Discord/
+PagerDuty are a new class + one registry line away, no change to dispatch
+logic). 3 new tables (`notification_channels`/`notification_rules`/
+`notification_deliveries`) — channel secrets (SMTP password / webhook
+shared secret) encrypted with the same AES-256-GCM cipher/master key as the
+Credential Vault (`vault_cipher.py`, reused directly). Wired into 5 existing
+event sources with one small addition each — nothing redesigned: **Alert
+Engine** (`device_offline`/`device_online`/`critical_alert`, the last firing
+for any CRITICAL-severity alert regardless of kind), **Remote Actions**
+(`remote_action_completed/failed`, or `agent_update_completed/failed` for
+`self_update` specifically), **Terminal** (`terminal_session_started/ended`,
+folded into the existing `mark_active()`/`_audit_session_end()` call sites
+so the watchdog's idle/max-duration closes are covered automatically),
+**Enrollment** (`enrollment_failed`, hooked once inside the existing
+`_record_audit()` helper — covers all 5 existing failure call sites),
+**Maintenance** (`maintenance_finished`, both manual clear and scheduled
+auto-expiry). Rules support global or per-client scope, severity filtering,
+cooldown, and an hourly rate limit; failed sends retry on a fixed backoff
+(1/5/15/30 min) via a new `NotificationWorker` (identical start/stop/sweep
+pattern to `terminal_watchdog`, only started when the flag is on). New
+`/notifications` page (Channels/Rules/Delivery History), `system_settings`
++ flag gated, reusing the exact Credential Vault page pattern
+(`premium-card`/`Badge`/`Button`/`ConfirmationModal`). Every channel/rule
+mutation is audited. Preflight PASSED: contract 14/14, suite 620+4 baseline
+(flags off & on, +54 new tests: service dispatch logic, channel senders,
+API CRUD/RBAC/audit, retry worker, and a wiring-regression suite proving
+each of the 5 event sources actually calls `dispatch()`). **Remaining
+manual step: owner sets `FEATURE_NOTIFICATIONS=true` in prod `.env`,
+configures at least one channel + rule in the UI, and restarts backend** —
+Manual Approval, config/UI-only, zero further code work.
+
 # RDP TECHI MOBILE UI 2.0
 
 | | |
