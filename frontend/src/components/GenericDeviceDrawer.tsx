@@ -1,5 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity, Building2, Cpu, Fingerprint, HardDrive, Link2, Loader2,
+  MemoryStick, Wrench, X,
+} from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
 import { assignDeviceClient, assignDeviceGroup, Device } from "../api/devices";
@@ -15,7 +19,8 @@ import { timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
-import ResourceBar from "./ResourceBar";
+import HealthBadge from "./HealthBadge";
+import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
@@ -25,8 +30,8 @@ const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 // (Platform + Capability + Action + Connect registries) — no per-platform code.
 // Windows devices (no reported capabilities) never reach here; the render site
 // selects the classic DeviceDrawer for them, so Windows stays byte-identical.
-// Overview reuses the SAME building blocks as the classic Drawer (ResourceBar,
-// assignDeviceClient/Group, the same telemetry hook) for enterprise parity.
+// This IS the enterprise standard drawer for Linux/MikroTik/Synology/QNAP/
+// VMware/Proxmox/… — one polished layout, not a per-platform prototype.
 interface Props {
   device: Device;
   isOpen: boolean;
@@ -126,17 +131,28 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
         className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "translate-x-full"}`}
         style={{ borderLeft: "1px solid var(--th-border-drawer)", background: "var(--th-bg-drawer)" }}
       >
-        {/* Header */}
-        <div className="flex flex-none items-start justify-between px-5 pb-3 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+        {/* Header — device identity + health at a glance, before anything else */}
+        <div className="flex flex-none items-start gap-3 px-5 pb-4 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg" style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
+            <PlatformIcon platform={meta?.platform ?? device.platform} size={20} />
+          </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 flex-none rounded-full ${isOnline ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-slate-600"}`} />
-              <h2 className="truncate text-sm font-bold" style={{ color: "var(--th-text-primary)" }}>{device.display_name || device.hostname}</h2>
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
+              <h2 className="truncate text-[15px] font-bold leading-tight" style={{ color: "var(--th-text-primary)" }}>{device.display_name || device.hostname}</h2>
+              <span className="flex-none rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
             </div>
-            <p className="mt-0.5 truncate text-xs" style={{ color: "var(--th-text-muted)" }}>{device.hostname}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>
+              <span className="flex items-center gap-1.5 font-semibold" style={{ color: isOnline ? "#34d399" : "var(--th-text-muted)" }}>
+                <span className={`h-1.5 w-1.5 flex-none rounded-full ${isOnline ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.6)]" : "bg-slate-600"}`} />
+                {isOnline ? "Online" : "Offline"}
+              </span>
+              <span style={{ opacity: 0.35 }}>•</span>
+              <HealthBadge state={healthState} score={healthScore} showLabel size="xs" />
+              <span style={{ opacity: 0.35 }}>•</span>
+              <span className="truncate font-mono">{device.hostname}</span>
+            </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="ml-2 rounded p-1 hover:bg-white/10"><X className="h-4 w-4" style={{ color: "var(--th-text-secondary)" }} /></button>
+          <button onClick={onClose} aria-label="Close" className="ml-1 flex-none rounded p-1 hover:bg-white/10"><X className="h-4 w-4" style={{ color: "var(--th-text-secondary)" }} /></button>
         </div>
 
         {/* Tab bar */}
@@ -145,7 +161,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${tab === t.id ? "bg-techi-orange/15 text-techi-orange" : "hover:bg-white/5"}`}
+              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${tab === t.id ? "bg-techi-orange/15 text-techi-orange" : "hover:bg-white/5"}`}
               style={tab === t.id ? undefined : { color: "var(--th-text-secondary)" }}
             >
               {t.label}
@@ -163,8 +179,6 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                 <Overview
                   device={device}
                   meta={meta}
-                  healthScore={healthScore}
-                  healthState={healthState}
                   snapshot={snapshot}
                   clients={clients ?? []}
                   groups={groups ?? []}
@@ -217,20 +231,51 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   );
 }
 
-function Row({ label, value }: { label: string; value?: string | null }) {
+function Row({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
   if (!value) return null;
   return (
-    <div className="flex justify-between gap-3 py-0.5 text-[11px]">
-      <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>{label}</span>
-      <span className="max-w-[60%] truncate text-right font-medium" style={{ color: "var(--th-text-primary)" }}>{value}</span>
+    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12.5px]">
+      <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>{label}</span>
+      <span className={`max-w-[62%] truncate text-right font-semibold ${mono ? "font-mono text-[11.5px]" : ""}`} style={{ color: "var(--th-text-primary)" }}>{value}</span>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// Per-section accent — a quiet visual cue (icon chip only, never a filled
+// background) so the 5 Overview sections read as distinct at a glance
+// without turning the interface colorful. Connect uses the brand accent
+// (the primary action, not a "5th color").
+type Accent = "identity" | "status" | "resources" | "assignment" | "connect" | "neutral";
+const ACCENTS: Record<Accent, { icon: string; bg: string; border: string }> = {
+  identity:   { icon: "#60A5FA", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.28)" },
+  status:     { icon: "#34D399", bg: "rgba(52,211,153,0.12)",  border: "rgba(52,211,153,0.28)" },
+  resources:  { icon: "#A78BFA", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.28)" },
+  assignment: { icon: "#FB923C", bg: "rgba(251,146,60,0.12)",  border: "rgba(251,146,60,0.28)" },
+  connect:    { icon: "var(--th-accent-bright)", bg: "var(--th-accent-dim-bg)", border: "var(--th-accent-border)" },
+  neutral:    { icon: "var(--th-text-muted)", bg: "var(--th-bg-card)", border: "var(--th-border-card)" },
+};
+
+function SectionIcon({ icon: Icon, accent }: { icon: LucideIcon; accent: Accent }) {
+  const theme = ACCENTS[accent];
   return (
-    <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{title}</p>
+    <span className="flex h-5 w-5 flex-none items-center justify-center rounded" style={{ background: theme.bg, border: `1px solid ${theme.border}` }}>
+      <Icon className="h-3 w-3" style={{ color: theme.icon }} />
+    </span>
+  );
+}
+
+function Section({ title, icon, accent = "neutral", action, children }: {
+  title: string; icon?: LucideIcon; accent?: Accent; action?: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border px-3.5 py-3" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {icon && <SectionIcon icon={icon} accent={accent} />}
+          <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-secondary)" }}>{title}</p>
+        </div>
+        {action}
+      </div>
       {children}
     </div>
   );
@@ -253,22 +298,48 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
     normalized === "auto_os" || normalized === "system_auto" ? "auto" :
     "unassigned";
   return (
-    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
+    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
       {label}
     </span>
   );
 }
 
+// Richer resource meter than the shared ResourceBar (which Windows also
+// uses) — icon + bold percentage + colored fill. Kept local to the Generic
+// Drawer so Windows' own Overview is never touched by this polish pass.
+function ResourceMeter({ icon: Icon, label, percent }: { icon: LucideIcon; label: string; percent: number | null }) {
+  const has = percent != null;
+  const clamped = has ? Math.min(100, Math.max(0, percent as number)) : 0;
+  const fill = !has ? "var(--th-border-card)" : clamped >= 90 ? "#f87171" : clamped >= 75 ? "#fbbf24" : ACCENTS.resources.icon;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>
+          <Icon className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
+          {label}
+        </span>
+        <span className="text-[13px] font-bold tabular-nums" style={{ color: has ? "var(--th-text-primary)" : "var(--th-text-faint)" }}>
+          {has ? `${clamped.toFixed(0)}%` : "—"}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--th-bg-card)" }}>
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${clamped}%`, background: fill }} />
+      </div>
+    </div>
+  );
+}
+
 // Enterprise operational overview — the standard for every non-Windows
 // platform drawer (Linux, MikroTik, Synology, QNAP, VMware, Proxmox, …).
-// Exactly 5 sections, nothing more: Identity, Status, Resources, Assignment,
-// Connect. Deeper detail either has its own capability tab or belongs to
-// Connect (Winbox/WebFig/SSH) — this stays a compact operational summary,
-// not a config dump.
+// Ordered by what an operator needs to know first: is it healthy (header,
+// above) → how do I reach it (Connect) → what is it (Identity/Status) →
+// how loaded is it (Resources) → who owns it (Assignment). Exactly 5
+// sections, nothing more — deeper detail either has its own capability tab
+// or belongs to Connect (Winbox/WebFig/SSH), never a config dump here.
 function Overview({
-  device, meta, healthScore, healthState, snapshot, clients, groups, canOperate, onDeviceUpdated,
+  device, meta, snapshot, clients, groups, canOperate, onDeviceUpdated,
 }: {
-  device: Device; meta: DrawerMeta; healthScore: number | null; healthState: string;
+  device: Device; meta: DrawerMeta;
   snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
   clients: Client[]; groups: DeviceGroup[]; canOperate: boolean;
   onDeviceUpdated?: (device: Device) => void;
@@ -280,56 +351,65 @@ function Overview({
 
   return (
     <div className="space-y-2.5">
-      <Section title="Connect">
+      {/* Connect — the primary entry point for managing this device */}
+      <div className="rounded-lg border px-4 py-3" style={{ borderColor: "var(--th-accent-border)", background: "var(--th-accent-glow)" }}>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px]" style={{ color: "var(--th-text-secondary)" }}>{meta.connect_methods.length} method{meta.connect_methods.length === 1 ? "" : "s"} available</span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg" style={{ background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)" }}>
+              <Link2 className="h-4 w-4" style={{ color: "var(--th-accent-bright)" }} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>Connect</p>
+              <p className="truncate text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+                {meta.connect_methods.length} method{meta.connect_methods.length === 1 ? "" : "s"} available
+              </p>
+            </div>
+          </div>
           <ConnectMenu deviceId={device.id} />
         </div>
-      </Section>
+      </div>
 
       <div className="grid grid-cols-2 gap-2.5">
-        <Section title="Identity">
-          <Row label="Device ID" value={String(device.id)} />
+        <Section title="Identity" icon={Fingerprint} accent="identity">
+          <Row label="Device ID" value={String(device.id)} mono />
           <Row label="Hostname" value={device.hostname} />
-          <Row label="Platform" value={meta.platform} />
           <Row label="OS" value={device.os_name} />
           <Row label="OS version" value={device.os_version} />
           <Row label="Kernel" value={device.kernel_version} />
           <Row label="Architecture" value={device.architecture} />
           <Row label="Board" value={board} />
         </Section>
-        <Section title="Status">
+        <Section title="Status" icon={Activity} accent="status">
           <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
-          <Row label="Health" value={healthScore != null ? `${healthScore} (${healthState})` : undefined} />
-          <Row label="Local IP" value={device.local_ip} />
-          <Row label="Public IP" value={device.public_ip} />
+          <Row label="Local IP" value={device.local_ip} mono />
+          <Row label="Public IP" value={device.public_ip} mono />
           <Row label="Current user" value={device.current_user ?? undefined} />
-          <div className="flex items-center justify-between gap-3 py-0.5 text-[11px]">
-            <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>Connector</span>
+          <div className="flex items-center justify-between gap-3 py-[3px] text-[12.5px]">
+            <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Connector</span>
             <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
           </div>
         </Section>
       </div>
 
-      <Section title="Resources">
-        <div className="grid grid-cols-3 gap-3 py-1">
-          <ResourceBar label="CPU" percent={snapshot?.cpu_percent ?? null} />
-          <ResourceBar label="Memory" percent={snapshot?.ram_percent ?? null} />
-          <ResourceBar label="Storage" percent={snapshot?.disk_percent ?? null} />
+      <Section title="Resources" icon={Cpu} accent="resources">
+        <div className="grid grid-cols-3 gap-4 py-1">
+          <ResourceMeter icon={Cpu} label="CPU" percent={snapshot?.cpu_percent ?? null} />
+          <ResourceMeter icon={MemoryStick} label="Memory" percent={snapshot?.ram_percent ?? null} />
+          <ResourceMeter icon={HardDrive} label="Storage" percent={snapshot?.disk_percent ?? null} />
         </div>
       </Section>
 
-      <Section title="Assignment">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+      <Section title="Assignment" icon={Building2} accent="assignment">
+        <div className="grid grid-cols-2 gap-x-3">
           <Row label="Client" value={device.resolved_client_name ?? undefined} />
           <Row label="Group" value={device.resolved_group ?? undefined} />
         </div>
-        <div className="mt-1 flex items-center justify-between gap-3 py-0.5 text-[11px]">
-          <span className="font-semibold" style={{ color: "var(--th-text-muted)" }}>Source</span>
+        <div className="mt-0.5 flex items-center justify-between gap-3 py-[3px] text-[12.5px]">
+          <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Source</span>
           <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
         </div>
         {canOperate && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-2.5 grid grid-cols-2 gap-2 border-t pt-2.5" style={{ borderColor: "var(--th-border-card)" }}>
             <label className="block">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
               <select
@@ -339,7 +419,7 @@ function Overview({
                   const updated = await assignDeviceClient(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1 text-xs font-medium outline-none"
+                className="w-full rounded-md border px-2 py-1.5 text-[12.5px] font-medium outline-none"
                 style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
               >
                 <option value="none">No client</option>
@@ -356,7 +436,7 @@ function Overview({
                   const updated = await assignDeviceGroup(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1 text-xs font-medium outline-none disabled:opacity-50"
+                className="w-full rounded-md border px-2 py-1.5 text-[12.5px] font-medium outline-none disabled:opacity-50"
                 style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
               >
                 <option value="none">No group</option>
@@ -395,11 +475,11 @@ function SimpleTable({ title, head, rows, empty }: { title: string; head: string
   return (
     <Section title={title}>
       {rows.length === 0 ? (
-        <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>{empty}</p>
+        <p className="py-1 text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>{empty}</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--th-border-card)" }}>
-          <table className="min-w-full text-xs">
-            <thead><tr>{head.map((h) => <th key={h} className="px-3 py-1.5 text-left font-semibold" style={{ color: "var(--th-text-muted)" }}>{h}</th>)}</tr></thead>
+          <table className="min-w-full text-[12.5px]">
+            <thead><tr>{head.map((h) => <th key={h} className="px-3 py-1.5 text-left text-[10.5px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.slice(0, 200).map((r, i) => (
                 <tr key={i} style={{ borderTop: "1px solid var(--th-border-card)" }}>{r.map((c, j) => <td key={j} className="px-3 py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>{c}</td>)}</tr>
@@ -414,15 +494,15 @@ function SimpleTable({ title, head, rows, empty }: { title: string; head: string
 
 function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMeta; busy: string | null; canOperate: boolean; onAction: (a: DrawerAction) => void }) {
   return (
-    <Section title="Actions">
-      {!canOperate && <p className="mb-2 text-xs" style={{ color: "var(--th-text-muted)" }}>You have read-only access.</p>}
+    <Section title="Actions" icon={Wrench}>
+      {!canOperate && <p className="mb-2 text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>You have read-only access.</p>}
       <div className="flex flex-wrap gap-2">
         {meta.actions.map((a) => (
           <button
             key={a.id}
             disabled={!canOperate || busy === a.id}
             onClick={() => onAction(a)}
-            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${a.confirm === "confirm" ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "hover:bg-white/5"}`}
+            className={`rounded-md border px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50 ${a.confirm === "confirm" ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "hover:bg-white/5"}`}
             style={a.confirm === "confirm" ? undefined : { borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}
           >
             {busy === a.id ? "…" : a.label}
@@ -439,15 +519,15 @@ function NotesPanel({ notes, noteText, setNoteText, onAdd, canOperate }: { notes
       {canOperate && (
         <div className="mb-4">
           <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} placeholder="Add a note…" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <div className="mt-2 flex justify-end"><button onClick={onAdd} disabled={!noteText.trim()} className="rounded-md border px-3 py-1.5 text-xs font-semibold disabled:opacity-50" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>Add note</button></div>
+          <div className="mt-2 flex justify-end"><button onClick={onAdd} disabled={!noteText.trim()} className="rounded-md border px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-50" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>Add note</button></div>
         </div>
       )}
       <div className="space-y-2">
         {notes.length === 0 ? (
-          <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>No notes yet.</p>
+          <p className="text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>No notes yet.</p>
         ) : notes.map((n) => (
           <div key={n.id} className="rounded-lg border p-3" style={{ borderColor: "var(--th-border-card)" }}>
-            <p className="text-sm" style={{ color: "var(--th-text-primary)" }}>{n.note}</p>
+            <p className="text-[13px]" style={{ color: "var(--th-text-primary)" }}>{n.note}</p>
             <p className="mt-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>{n.created_by ?? "system"} · {timeAgo(n.created_at)}</p>
           </div>
         ))}

@@ -434,6 +434,49 @@ prototype. `DeviceDrawer.tsx` (Windows) has zero edits across this pass.
   IMPLEMENTATION-ROADMAP.md; Connect ▸ SSH today opens the operator's own OS
   SSH client instead (no reachability requirement).
 
+**Visual polish pass (2026-07-10, deployed):** the Generic Device Drawer
+became the final enterprise-grade standard interface for every non-Windows
+platform (reference points: NinjaOne, Datto RMM, Domotz, Linear, GitHub
+Enterprise) — frontend-only, zero backend changes, zero edits to
+`DeviceDrawer.tsx` (Windows). Verified in a real browser (local backend +
+Vite dev server + Playwright, seeded MikroTik + Linux devices) in both dark
+and light theme before shipping.
+- **Header**: platform icon chip (reused `PlatformIcon`), larger hostname,
+  Online/Offline dot + `HealthBadge` (reused, same component Windows uses)
+  + hostname inline — device identity and health are visible before opening
+  a tab, per the requested information hierarchy (what/healthy/connect/
+  resources/assignment).
+- **Overview reordered**: Connect is now a prominent top card (icon chip +
+  method count + a real primary-styled CTA button, brand-accent tinted) —
+  "the primary entry point for device management," not a plain dropdown.
+  Identity + Status paired side-by-side below it; Resources full-width;
+  Assignment last (lowest priority per the hierarchy). Removed two
+  redundant rows (Platform, Health) that duplicated the header.
+- **Typography**: row values 11px→12.5px and medium→semibold; section
+  titles gained a 20×20 accent icon chip; Device ID and IP rows use
+  monospace. Still compact — no added scroll.
+- **Color system**: quiet per-section accent (icon chip only, never a
+  filled background) — Identity=blue, Status=green, Resources=purple,
+  Assignment=orange, Connect=brand accent ("neutral" primary, not a 5th
+  hue) — via new `ACCENTS` map in `GenericDeviceDrawer.tsx`. No gradients,
+  no colorful chrome.
+- **Resources**: new local `ResourceMeter` (icon + bold % + colored fill,
+  amber ≥75%, red ≥90%) — visually resembles the requested reference
+  design. Deliberately NOT added to the shared `ResourceBar.tsx` (Windows
+  also uses that component) — kept local to the Generic Drawer so Windows'
+  own Overview is untouched by this pass.
+- **Connect menu** (`ConnectMenu.tsx`): trigger restyled as a real primary
+  button (brand-accent fill, `Link2` icon); dropdown items switched from
+  hardcoded Tailwind `slate-*` colors (which ignored the light theme) to
+  theme tokens — a real pre-existing bug fixed, not just a restyle.
+- **Live-verified via Playwright** (seeded local devices, not just tsc):
+  MikroTik Overview renders Group "Network" (assignment fix confirmed
+  visually); Connect dropdown on a Linux-container browser correctly hides
+  Winbox and offers only WebFig/SSH (OS-awareness confirmed live, not just
+  in tests); Resource meters show purple/amber/red correctly at 63/78/91%;
+  light theme renders every card/badge/icon correctly with no hardcoded
+  dark-only colors; Management tab actions and tab overflow scroll checked.
+
 # RDP TECHI MOBILE UI 2.0
 
 | | |

@@ -27,6 +27,83 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] POLISH: Generic Device Drawer visual pass — enterprise-grade standard interface
+
+### Problemi
+
+Pipeline-i i Generic Drawer-it ishte tashmë funksional (assignment, Version
+Service, Connect OS-aware, të gjitha nga sesioni i mëparshëm i sotëm), por
+vizualisht dukej si prototip: tipografi e vogël/e lehtë, hierarki e dobët,
+Connect jo mjaftueshëm i theksuar, karta pa lidhje vizuale, pa ngjyra
+intencionale. Kërkesa: bëje Generic Drawer STANDARDIN final enterprise për
+çdo platformë jo-Windows, referencë NinjaOne/Datto RMM/Domotz/Linear/GitHub
+Enterprise — pa prekur Windows.
+
+### Analiza
+
+Rishikim kritik i `GenericDeviceDrawer.tsx`/`ConnectMenu.tsx` + krahasim me
+`DeviceDrawer.tsx` (Windows, referencë e paprekshme). U gjet edhe një defekt
+real gjatë rishikimit: `ConnectMenu.tsx` përdorte ngjyra Tailwind hardcoded
+(`text-slate-200/400/500`) që injoronin plotësisht temën e çelët — rregulluar
+si pjesë e po kësaj pune.
+
+### Zgjidhja
+
+- **Header**: chip ikonë platforme (ripërdor `PlatformIcon`), hostname më i
+  madh, `HealthBadge` (ripërdorur nga Windows) i dukshëm menjëherë — "çfarë
+  është, a është e shëndetshme" bëhet e qartë para se operatori të hapë
+  ndonjë tab.
+- **Rendi i Overview** ndryshoi: Connect në krye si kartë kryesore (chip
+  ikonë + buton primar i mbushur me ngjyrën e markës) — "pika kryesore e
+  hyrjes"; Identity+Status krah për krah; Resources; Assignment (sipas
+  hierarkisë së kërkuar). U hoqën 2 rreshta të përsëritur (Platform, Health
+  — tashmë në header).
+- **Tipografi**: rreshtat 11px→12.5px + font-weight më i fortë; titujt e
+  seksioneve morën chip ikonë 20×20; Device ID/IP në monospace.
+- **Ngjyra intencionale, jo interface shumëngjyrësh**: Identity=blu,
+  Status=jeshile, Resources=vjollcë, Assignment=portokalli, Connect=ngjyra e
+  markës — VETËM si chip ikone, kurrë background i mbushur; harta `ACCENTS`
+  e re, pa gradiente.
+- **Resources**: `ResourceMeter` i ri LOKAL (ikonë + % e theksuar + mbushje
+  me ngjyër, amber ≥75%, kuq ≥90%) — QËLLIMISHT jo i shtuar te `ResourceBar`
+  i përbashkët (Windows e përdor po atë) — Windows mbetet i paprekur.
+- **ConnectMenu**: buton primar i vërtetë (mbushje me ngjyrën e markës,
+  ikonë `Link2`); ngjyrat hardcoded `slate-*` u zëvendësuan me token-et e
+  temës — defekt real i rregulluar.
+- **Verifikuar VIZUALISHT, jo vetëm me tsc**: u ngrit backend lokal (SQLite)
+  + frontend dev server + Playwright (Chromium headless), u mbolli një
+  operator + pajisje MikroTik dhe Linux reale, u bë login dhe u hap Drawer-i
+  live. Konfirmuar: (1) MikroTik Overview tregon "Group: Network" (jo bosh —
+  fix-i i sesionit të mëparshëm funksionon vizualisht); (2) menyja Connect
+  në browser Linux fsheh automatikisht Winbox dhe ofron vetëm WebFig/SSH
+  (OS-awareness i konfirmuar LIVE, jo vetëm në teste); (3) metrat e
+  burimeve ngjyrosen saktë (vjollcë/amber/kuq) në 63/78/91%; (4) tema e
+  çelët rendëron çdo kartë/badge/ikonë saktë, pa asnjë ngjyrë hardcoded të
+  errët; (5) tab-i Management dhe scroll-i i tab-bar-it kontrolluar.
+
+### Ndryshimet
+
+- `frontend/src/components/GenericDeviceDrawer.tsx` (rishkrim vizual i plotë)
+- `frontend/src/components/ConnectMenu.tsx` (buton primar + fix teme)
+- 4 dokumentet.
+- **Zero ndryshime backend. Zero ndryshime te `DeviceDrawer.tsx` (Windows).**
+
+### Rezultati
+
+Preflight PASSED: contract 13/13, backend 534 passed + 4 baseline (të
+paprekura, sepse s'ka ndryshime backend), tsc + frontend build, agent
+builds. Verifikim vizual i drejtpërdrejtë (jo vetëm typecheck) në Chromium
+lokal me të dhëna reale, para deploy.
+
+### Mësimet
+
+- Për ndryshime thjesht vizuale, tsc/build i pastër NUK mjafton — screenshot
+  i vërtetë në browser (dritë+errët, ≥2 platforma) zbuloi defekte reale
+  (ConnectMenu injoronte temën e çelët) që asnjë typecheck s'do t'i kapte.
+- Ndarja e komponentëve LOKALË (ResourceMeter) nga ata të PËRBASHKËT
+  (ResourceBar) është mënyra e sigurt për të modernizuar një drawer pa
+  rrezikuar tjetrin — edhe kur të dy dukshëm bëjnë "të njëjtën gjë".
+
 ## [2026-07-10] FEATURE: Platform-wide UX pass — Generic Drawer standard, Version Service, OS-aware Connect, assignment display fix
 
 ### Problemi

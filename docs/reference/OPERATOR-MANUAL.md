@@ -154,16 +154,19 @@ information in a mobile layout.
 > `remote_support` capability. Windows devices continue to open the classic Drawer,
 > unchanged. (Desktop; the mobile Device Details page still uses the classic layout.)
 
-**Generic Drawer Overview (2026-07-10) — the enterprise standard for every
-non-Windows platform.** Exactly 5 compact sections, no long lists:
-- **Connect** — the Connect dropdown (§16), as a compact top bar.
-- **Identity** — Device ID, hostname, platform, OS/version, kernel,
-  architecture, board (when reported).
-- **Status** — last seen, health score, local/public IP, current user (when
-  reported), and the **Connector** version badge (Version Service, above).
-- **Resources** — CPU / Memory / Storage utilization bars (current usage
-  only — no monitoring graphs), the same `ResourceBar` component Windows
-  uses in its own Overview.
+**Generic Drawer Overview — the enterprise standard for every non-Windows
+platform.** Visually polished 2026-07-10 (larger type, per-section color
+accents, a primary Connect button, richer resource meters) — same 5 compact
+sections, no long lists, in priority order:
+- **Connect** — the primary way to reach the device (§16), a highlighted
+  card with a filled Connect button, not a plain dropdown.
+- **Identity** — Device ID, hostname, OS/version, kernel, architecture,
+  board (when reported). Platform is already shown in the Drawer header.
+- **Status** — last seen, local/public IP, current user (when reported), and
+  the **Connector** version badge (Version Service, above). Health is shown
+  in the Drawer header (score + state), not repeated here.
+- **Resources** — CPU / Memory / Storage utilization meters (current usage
+  only — no monitoring graphs); turns amber ≥75%, red ≥90%.
 - **Assignment** — Client, Group, Assignment Source, and (with permission)
   editable Assign Client / Assign Group — the exact same controls and API
   calls as the classic Windows Drawer's Client Assignment section.
@@ -391,9 +394,9 @@ interfaces, packages, routes, firewall rules, DHCP leases or DNS; for those,
 use Connect. MikroTik uses the compact Generic Drawer with **no capability
 tabs**: Overview / Management / Notes / Timeline. The Overview shows Device
 ID, identity, RouterOS version, board, architecture, Last Seen, Health,
-local/public IP, connector version, **CPU/Memory/Storage utilization bars**
-(current usage only — same `ResourceBar` component Windows/Linux use) and an
-**editable Client/Group assignment** (same assign flow as every platform);
+local/public IP, connector version, **CPU/Memory/Storage utilization meters**
+(current usage only — turns amber ≥75%, red ≥90%) and an **editable
+Client/Group assignment** (same assign flow as every platform);
 Remote Support and Web Terminal are absent; actions are Refresh Inventory,
 Restart Connector, and Re-enroll. The Timeline records Device Registered,
 Heartbeat Received (only on first heartbeat or offline→online recovery — not

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Monitor, Globe } from "lucide-react";
+import { ChevronDown, Link2, Monitor, Globe } from "lucide-react";
 
 import { fetchJson } from "../api/client";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
@@ -97,15 +97,17 @@ export default function ConnectMenu({ deviceId }: Props) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={methods === null}
-        className="inline-flex items-center gap-1.5 rounded-md border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent-bright)" }}
       >
+        <Link2 className="h-3.5 w-3.5" />
         Connect
-        <ChevronDown className="h-3.5 w-3.5" />
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && methods && (
         <div
-          className="absolute right-0 z-50 mt-1 min-w-[200px] overflow-hidden rounded-lg shadow-2xl"
+          className="absolute right-0 z-50 mt-1.5 min-w-[220px] overflow-hidden rounded-lg shadow-2xl"
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
         >
           {methods.map((m) => (
@@ -114,18 +116,21 @@ export default function ConnectMenu({ deviceId }: Props) {
               type="button"
               disabled={launching === m.id}
               onClick={() => void launch(m)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-200 transition hover:bg-white/[0.05] disabled:opacity-50"
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] font-medium transition hover:bg-[var(--th-bg-card-hover)] disabled:opacity-50"
+              style={{ color: "var(--th-text-primary)" }}
             >
-              {m.surface === "browser" ? <Globe className="h-3.5 w-3.5 text-slate-400" /> : <Monitor className="h-3.5 w-3.5 text-slate-400" />}
+              {m.surface === "browser"
+                ? <Globe className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                : <Monitor className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />}
               <span className="flex-1">{launching === m.id ? "Opening…" : m.label}</span>
-              <span className="text-[9px] uppercase tracking-wide text-slate-500">{m.surface}</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-faint)" }}>{m.surface}</span>
             </button>
           ))}
         </div>
       )}
 
       {note && (
-        <div className="absolute right-0 z-40 mt-1 min-w-[220px] rounded-md px-3 py-2 text-[11px]"
+        <div className="absolute right-0 z-40 mt-1.5 min-w-[220px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug"
           style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-secondary)" }}
           onClick={() => setNote(null)}>
           {note}
