@@ -27,6 +27,87 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Reporting Engine v1 — scheduled per-client PDF/CSV proof of value
+
+### Problemi
+
+Production Readiness audit identified Reporting as a Critical commercial
+blocker: TECHI had no client-facing deliverable, export, schedule, or report
+history even though Fleet Dashboard and Alerts already held the required data.
+
+### Analiza
+
+The smallest production-complete scope required no new telemetry or reporting
+architecture. `DeviceOverviewService` already owns the Dashboard fleet-health
+calculation; `DeviceRepository` owns scoped device reads;
+`AlertRepository` owns alert data; team `AllowedScope`, `view_devices`, Audit,
+feature flags, worker lifecycle, and the TECHI component/theme system already
+provide every integration seam. A full-client report can leak data if a
+group-only operator is allowed to create it, so scope must be checked at the
+Client level rather than merely finding one visible device in that client.
+
+### Zgjidhja
+
+- Added `FEATURE_REPORTING` as a rollback/darkness switch and a new `/reports`
+  UI/route/sidebar entry.
+- On-demand PDF/CSV generation by Client and validated period (1–366 days).
+  Both formats reuse current Overview/device/alert data; no duplicate business
+  calculations. PDF is dependency-free PDF 1.4 with selectable text and
+  pagination; CSV is UTF-8 with summary, device, and alert sections.
+- Added database-backed run history/download and daily/weekly/monthly UTC
+  schedules. `ReportWorker` checks due work every 60 seconds, records failures,
+  advances the cadence before generation (prevents a failure retry-loop), and
+  prunes artifacts/runs after 365 days.
+- Generated files live in `data/reports` on the existing persistent
+  `backend_data` volume; paths are resolved/contained before download or delete
+  to prevent traversal.
+- RBAC: read/generate/download require `view_devices`; restricted operators
+  require full-client scope (group/device-only access is rejected); schedule
+  management is Admin/Owner only. Generation, failure, download, and all
+  schedule mutations are audited.
+- Frontend reuses Button, Badge, ConfirmationModal, premium cards, and theme
+  tokens; layout is responsive and supports light/dark themes.
+
+### Ndryshimet
+
+New backend modules: `models/report.py`, `schemas/report.py`,
+`repositories/report_repository.py`, `services/report_service.py`,
+`workers/report_worker.py`, `api/v1/endpoints/reports.py`; existing Alert
+Repository gained one client-period query. New frontend modules:
+`api/reports.ts`, `pages/Reports.tsx`; existing feature flag, route, and sidebar
+wiring extended. New migration `c7d8e9f0a1b2` extends the existing
+`b2c3d4e5f8a9` head (the pre-existing second Alembic head remains untouched).
+
+Production SQL is schema-first: create `report_schedules` (client/format/
+cadence/period/hour/day/enabled/next+last run/creator/timestamps) and
+`report_runs` (schedule/client snapshot/format/period/status/file metadata/
+error/generator/timestamps) plus indexes on client, status, enabled,
+next-run, and created-at. Rollback behavior: set `FEATURE_REPORTING=false` and
+restart backend. Destructive SQL rollback (only with owner approval):
+`DROP TABLE IF EXISTS report_runs; DROP TABLE IF EXISTS report_schedules;`.
+
+### Rezultati
+
+Focused Reporting/contract/flag tests: 43 passed. Full preflight PASSED:
+contract **15/15**; backend **635 passed + 4 documented baseline failures** in
+both feature-off and feature-on modes; frontend `tsc --noEmit` and production
+build clean; Windows/Linux agent builds and Go tests clean. Generated CSV
+content was asserted and a generated PDF was identified as valid PDF 1.4.
+Local smoke passed 8/8, including `/api/v1/reports/runs` (401 without a token,
+never 500). While running it, the known macOS Bash 3.2 empty-array failure in
+`smoke.sh` was fixed by avoiding an empty `hdr` array under `set -u`; Linux
+behavior is unchanged and the smoke gate now works on both operator platforms.
+
+### Mësimet
+
+- Reporting did not need a data warehouse for v1: composing authoritative
+  Overview + repository reads preserved one source of truth and closed the
+  commercial gap without a new collection path.
+- Scope checks must match the granularity of the deliverable. Device visibility
+  is not proof that an operator may export a complete Client fleet.
+- A scheduler must advance before executing fallible work; otherwise a broken
+  export retries every sweep and can become its own incident.
+
 ## [2026-07-10] FEATURE: Notification Engine — email/webhook, event-driven, reused across Alert Engine/Remote Actions/Terminal/Enrollment/Maintenance
 
 ### Problemi

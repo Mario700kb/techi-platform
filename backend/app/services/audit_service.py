@@ -59,6 +59,12 @@ class AuditAction:
     NOTIFICATION_RULE_CREATED = "notification_rule_created"
     NOTIFICATION_RULE_UPDATED = "notification_rule_updated"
     NOTIFICATION_RULE_DELETED = "notification_rule_deleted"
+    REPORT_GENERATED = "report_generated"
+    REPORT_GENERATION_FAILED = "report_generation_failed"
+    REPORT_DOWNLOADED = "report_downloaded"
+    REPORT_SCHEDULE_CREATED = "report_schedule_created"
+    REPORT_SCHEDULE_UPDATED = "report_schedule_updated"
+    REPORT_SCHEDULE_DELETED = "report_schedule_deleted"
 
 
 def audit_log(

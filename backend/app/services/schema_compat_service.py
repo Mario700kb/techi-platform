@@ -195,6 +195,47 @@ DEV_TABLES = {
             updated_at DATETIME NOT NULL
         )
     """,
+    "report_schedules": """
+        CREATE TABLE IF NOT EXISTS report_schedules (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(160) NOT NULL,
+            client_id INTEGER NOT NULL,
+            report_format VARCHAR(8) NOT NULL,
+            cadence VARCHAR(16) NOT NULL,
+            period_days INTEGER NOT NULL DEFAULT 30,
+            hour_utc INTEGER NOT NULL DEFAULT 6,
+            day_of_week INTEGER,
+            day_of_month INTEGER,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            next_run_at DATETIME NOT NULL,
+            last_run_at DATETIME,
+            created_by VARCHAR(128) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
+        )
+    """,
+    "report_runs": """
+        CREATE TABLE IF NOT EXISTS report_runs (
+            id INTEGER PRIMARY KEY,
+            schedule_id INTEGER,
+            client_id INTEGER NOT NULL,
+            client_name VARCHAR(160) NOT NULL,
+            report_format VARCHAR(8) NOT NULL,
+            period_start DATETIME NOT NULL,
+            period_end DATETIME NOT NULL,
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            filename VARCHAR(255),
+            storage_path TEXT,
+            size_bytes INTEGER,
+            error_message VARCHAR(1024),
+            generated_by VARCHAR(128) NOT NULL,
+            created_at DATETIME NOT NULL,
+            completed_at DATETIME,
+            FOREIGN KEY(schedule_id) REFERENCES report_schedules(id) ON DELETE SET NULL,
+            FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
+        )
+    """,
 }
 
 DEV_INDEXES = [
@@ -215,6 +256,13 @@ DEV_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_domain ON trusted_domains (domain)",
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_is_active ON trusted_domains (is_active)",
     "CREATE INDEX IF NOT EXISTS ix_trusted_domains_client_id ON trusted_domains (client_id)",
+    "CREATE INDEX IF NOT EXISTS ix_report_schedules_client_id ON report_schedules (client_id)",
+    "CREATE INDEX IF NOT EXISTS ix_report_schedules_enabled ON report_schedules (enabled)",
+    "CREATE INDEX IF NOT EXISTS ix_report_schedules_next_run_at ON report_schedules (next_run_at)",
+    "CREATE INDEX IF NOT EXISTS ix_report_runs_schedule_id ON report_runs (schedule_id)",
+    "CREATE INDEX IF NOT EXISTS ix_report_runs_client_id ON report_runs (client_id)",
+    "CREATE INDEX IF NOT EXISTS ix_report_runs_status ON report_runs (status)",
+    "CREATE INDEX IF NOT EXISTS ix_report_runs_created_at ON report_runs (created_at)",
 ]
 
 

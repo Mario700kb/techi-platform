@@ -63,7 +63,7 @@ run_pytest "backend suite (flags off)" "$KNOWN_BACKEND_FAILURES" /tmp/preflight_
 
 # 3. Full backend suite (flags ON) — must match the same baseline.
 step "Backend test suite (flags ON)"
-FEATURE_PLATFORM_CORE=true FEATURE_LINUX=true FEATURE_VAULT=true FEATURE_TERMINAL=true FEATURE_MIKROTIK=true \
+FEATURE_PLATFORM_CORE=true FEATURE_LINUX=true FEATURE_VAULT=true FEATURE_TERMINAL=true FEATURE_MIKROTIK=true FEATURE_NOTIFICATIONS=true FEATURE_REPORTING=true \
   run_pytest "backend suite (flags on)" "$KNOWN_BACKEND_FAILURES" /tmp/preflight_backend_on.log tests
 
 # 4. Frontend TypeScript.

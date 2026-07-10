@@ -160,6 +160,8 @@ class TestWiringBoundary:
             "app/main.py",  # gates terminal_watchdog startup by FEATURE_TERMINAL (Phase 5 completion)
             "app/api/v1/endpoints/notifications.py",  # notification flag gate (Notification Engine)
             "app/services/notification_service.py",  # dispatch() checked against FEATURE_NOTIFICATIONS
+            "app/api/v1/endpoints/reports.py",  # reporting flag gate
+            "app/main.py",  # also gates ReportWorker startup
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

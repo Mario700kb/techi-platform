@@ -18,21 +18,27 @@
 
 ## CURRENT PRIORITIES
 
-1. ✅ Documentation Baseline — completed (2026-07-05, this standard)
-2. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
+1. ✅ **Reporting Engine v1** — production-ready (2026-07-10): on-demand +
+   scheduled per-client PDF/CSV fleet-health and alert-activity reports,
+   persistent run history/downloads, client-scope RBAC, audit, scheduler,
+   and 365-day artifact retention. `FEATURE_REPORTING` is the rollback switch.
+2. **Vault Integration** — next production feature; wire the existing encrypted
+   Vault into a real connection path using Connect/Terminal.
+3. ✅ Documentation Baseline — completed (2026-07-05, this standard)
+4. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)
-2b. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
+5. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
    (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
    section below). Dark code only, flags OFF, zero behavior change.
-3. Complete the Agent **2.1.6** rollout (~700 devices via NETLOGON/GPO;
+6. Complete the Agent **2.1.6** rollout (~700 devices via NETLOGON/GPO;
    artifact replacement only, monitor to 100% — then 2.1.6 is the official
    baseline and 2.1.7+ distribute primarily via self_update)
-4. ✅ Agent 2.1.6 released to stable (2026-07-09, `1b0ddf3` — lifecycle
+7. ✅ Agent 2.1.6 released to stable (2026-07-09, `1b0ddf3` — lifecycle
    engine shared Windows+Linux, log rotation, cache pruning; SHA-alignment
    via single CI run)
-5. Standardize the deployment working directory (decision pending — see
+8. Standardize the deployment working directory (decision pending — see
    Known Issues #1)
-6. Recreate the postgres container's log-cap benefit was already applied
+9. Recreate the postgres container's log-cap benefit was already applied
    as a side effect of the 2026-07-06 deploy (see below) — no longer
    pending.
 
@@ -191,6 +197,8 @@ lifespan), fires daily at **03:00 UTC**: cleanup of heartbeats, telemetry,
 activity events (7 days each) + `VACUUM ANALYZE`. No cron/systemd timer does DB
 cleanup. The 03:00 host cron is the backup script (separate). The in-process
 reconciliation worker (30 s) and the realtime publisher also start with the app.
+The flag-gated `ReportWorker` checks due report schedules every 60 s and
+prunes generated artifacts after 365 days; it is inert when Reporting is off.
 
 # API
 
@@ -201,7 +209,8 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
   alerts, audit, enrollment-tokens, enrollment-bootstrap, trusted-domains,
   agent-commands (bulk/progress/history), agent-config (+heartbeat-script),
   agent-packages, packages, remote-support (incl. per-device password +
-  connect-url), deployments (mock data only), actions, bootstrap, health.
+  connect-url), deployments (mock data only), actions, bootstrap, reports
+  (per-client PDF/CSV generation, schedules, history/download), health.
 - WebSocket: `/ws/devices` (scoped events per operator role/scope);
   `/ws/deployments` exists but unused.
 
@@ -266,26 +275,23 @@ reconciliation worker (30 s) and the realtime publisher also start with the app.
 1. **Split-brain deploy dirs**: `/root` (live) vs `/opt/techi/techi-platform`
    (stale) — highest operational risk; standardization decision pending.
 2. Backup config tar reads the stale checkout (currently harmless — identical).
-3. `49fce27` unpushed → in prod: 5 tables grow unbounded (device_alerts ~224k,
-   audit_logs, remote_actions incl. PowerShell output, enrollment_audit ~87k,
-   device_status_history ~172k), postgres log unbounded, techi.log hourly churn.
-4. Agents ≤ 2.1.5 (shrinking during rollout): `agent.log` unrotated on
+3. Agents ≤ 2.1.5 (shrinking during rollout): `agent.log` unrotated on
    endpoints; stale MSI/exe caches accumulate per version — **fixed in
    2.1.6**, clears as the fleet upgrades.
-5. Alembic two-head fork.
-6. ~365 MB duplicate/never-used indexes in prod DB (approval needed to drop).
-7. `change_heartbeat_interval` per-device is overridden by global policy in the
+4. Alembic two-head fork.
+5. ~365 MB duplicate/never-used indexes in prod DB (approval needed to drop).
+6. `change_heartbeat_interval` per-device is overridden by global policy in the
    same cycle.
-8. Enrollment token plaintext in NETLOGON (ACL pending).
-9. Orphan 2 GB postgres volume + 1.1 GB stray dump on server (approval pending).
-10. Stale docstring in `agent_config.py` (claims interval needs GPO scripts;
+7. Enrollment token plaintext in NETLOGON (ACL pending).
+8. Orphan 2 GB postgres volume + 1.1 GB stray dump on server (approval pending).
+9. Stale docstring in `agent_config.py` (claims interval needs GPO scripts;
     response-driven propagation is the real mechanism).
-11. 25 GB disk structurally tight (~14 GB steady baseline).
-12. 4 pre-existing test failures in
+10. 25 GB disk structurally tight (~14 GB steady baseline).
+11. 4 pre-existing test failures in
     `backend/tests/test_enrollment_audit_diagnostics.py` (missing
     `trusted_domains` table in test setup) — not caused by recent work.
-13. Deployments page serves mock data (`/deployments/recent` is hardcoded).
-14. **Agents ≤ 2.1.5 (shrinking during rollout): a transient startup failure
+12. Deployments page serves mock data (`/deployments/recent` is hardcoded).
+13. **Agents ≤ 2.1.5 (shrinking during rollout): a transient startup failure
     silently kills the agent forever behind a RUNNING service** (root-caused
     2026-07-09: one failed read of `agent.config.json` at first service
     start — e.g. AV/EDR `Access is denied` on a freshly formatted domain
@@ -575,6 +581,22 @@ each of the 5 event sources actually calls `dispatch()`). **Remaining
 manual step: owner sets `FEATURE_NOTIFICATIONS=true` in prod `.env`,
 configures at least one channel + rule in the UI, and restarts backend** —
 Manual Approval, config/UI-only, zero further code work.
+
+**Reporting Engine v1 (2026-07-10, production-ready).** New
+`FEATURE_REPORTING` rollback flag. Reuses the existing Device Overview service,
+Device/Alert repositories, client/team scope, audit service, worker lifecycle,
+and TECHI UI components. Operators with `view_devices` plus full-client scope
+can generate and download a complete client report; group/device-only scope is
+deliberately insufficient because a client report contains the full client
+fleet. Admin/Owner can create daily/weekly/monthly UTC schedules. PDF and CSV
+contain current fleet health/device inventory plus alert activity for a
+validated 1–366 day period. Generated artifacts live under the persistent
+`backend_data` volume (`data/reports`), have database-backed run history, and
+are retained 365 days. Every generation, failure, download, and schedule
+mutation is audited; failed scheduled runs are visible and advance normally
+instead of retry-looping. Two additive tables: `report_schedules` and
+`report_runs`. Preflight: contract 15/15, backend 635 passed + 4 known baseline
+in both flag modes, frontend TypeScript/build clean, agent builds clean.
 
 # RDP TECHI MOBILE UI 2.0
 

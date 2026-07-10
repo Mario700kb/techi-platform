@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     FEATURE_STORAGE: bool = False
     FEATURE_HYPERVISOR: bool = False
     FEATURE_NOTIFICATIONS: bool = False
+    FEATURE_REPORTING: bool = False
+
+    # Generated client reports live in backend_data (persistent Docker volume).
+    REPORT_STORAGE_DIR: str = "data/reports"
+    REPORT_RETENTION_DAYS: int = 365
 
     # SMTP secrets and webhook shared secrets on notification channels are
     # encrypted with the same AES-256-GCM cipher/master key as the

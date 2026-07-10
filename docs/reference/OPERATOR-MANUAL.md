@@ -23,7 +23,7 @@ toggle is in the top bar (remembered per browser).
 
 Left sidebar navigation (items appear based on your permissions): **Dashboard,
 Devices, Clients, Deployment, Enrollment, Packages, Inventory, Operators, Teams,
-Audit Log, Agent Config**. On mobile (<768px) navigation is a bottom bar with
+Audit Log, Reports, Agent Config**. On mobile (<768px) navigation is a bottom bar with
 Dashboard / Devices / Alerts / More.
 
 ---
@@ -548,6 +548,37 @@ default. Production-ready as of 2026-07-10; not yet enabled in production.
 
 ---
 
+## 20b. Client Reports 🚩 `FEATURE_REPORTING`
+
+**Reports** turns existing Dashboard and Alerts data into a client-facing
+deliverable. It does not collect a second copy of fleet data.
+
+- **Location:** sidebar ▸ Reports. Requires `view_devices`.
+- **Generate now:** select a Client, PDF or CSV, and a reporting period (7,
+  30, 90, or 365 days). The report is generated immediately, added to Report
+  History, and downloaded.
+- **Contents:** client and reporting-period metadata; current Total/Online/
+  Stale/Offline counts; average/critical/warning health; pending OS updates
+  and outdated-agent totals; device inventory; and alert activity created
+  during the selected period.
+- **PDF:** paginated, selectable text, suitable for delivery to the client.
+  **CSV:** UTF-8 spreadsheet export containing the summary, devices, and alert
+  rows.
+- **Schedules (Admin/Owner):** create daily, weekly, or monthly UTC schedules.
+  Scheduled results appear in the same Report History and remain downloadable.
+  A failed run is shown with its error; the schedule advances normally rather
+  than retrying every minute.
+- **Scope safety:** a report contains the client's complete fleet. A restricted
+  operator can generate/download it only when their team grants full access to
+  that Client. Group-only or device-only scope is intentionally insufficient.
+- **Audit/retention:** generation, failure, download, and schedule changes are
+  audited. Generated files are retained for 365 days in persistent backend
+  storage, then pruned with their run metadata.
+- With `FEATURE_REPORTING` off, the navigation, route, worker, and endpoints
+  are absent/inert; the flag remains the production rollback switch.
+
+---
+
 ## 21. Platform Icons 🚩 `FEATURE_LINUX`+
 
 A single `PlatformIcon` component renders the per-platform icon (Windows 🪟,
@@ -707,6 +738,11 @@ in Agent Config; every device adopts it on its next heartbeat.
   not enabled by default, and at least one channel + rule configured before
   anything actually sends. Email and generic Webhook only — Slack/Teams/
   Telegram/Discord/PagerDuty are supported by the architecture but not built yet.
+- **Reporting v1**: fleet health and alert activity only. It intentionally does
+  not claim SLA/uptime monitoring, billing, license/warranty, or inventory-change
+  history because those data sources do not exist yet. Schedules generate into
+  TECHI Report History; automatic email attachment delivery is a later additive
+  integration with the Notification Engine.
 - **Linux**: certified **Experimental** — validate on a canary before broad use.
   Tier-1 distros: Ubuntu LTS, Debian, RHEL family.
 - **IAM**: the granular permission matrix / sessions manager is a future phase;

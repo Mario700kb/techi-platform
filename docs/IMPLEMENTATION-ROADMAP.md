@@ -50,7 +50,8 @@ on any unexpected response.
 DeviceService ✅, DeviceOverviewService ✅, VaultService ✅, EnrollmentTokenService ✅,
 TerminalService ✅, ConnectService (platform_core.connect) ✅, AgentPackageService ✅,
 RemoteActionService ✅, NotificationService ✅ (2026-07-10). Future MikroTikService /
-StorageService adapters MUST add a contract test when built.
+StorageService adapters MUST add a contract test when built. Reporting repositories
+and end-to-end generation path ✅ (2026-07-10).
 
 ## Production Validation Checklist
 
@@ -313,6 +314,7 @@ roadmap. Until then: no new features.
 | 9 | Hypervisor Platforms (VMware, Hyper-V, Proxmox) | NOT STARTED | — | — | — |
 | 6 | Enterprise IAM (permission matrix, sessions) | NOT STARTED (**moved last** — security-model change, needs separate approval) | — | — | — |
 | — | Notification Engine (Email/Webhook, event-driven) | **PRODUCTION READY, DEPLOYED DARK** (2026-07-10) | completion commit | ✅ deployed 2026-07-10 (`FEATURE_NOTIFICATIONS` left `false`) | Not part of the original 8-flag Platform Expansion program — new 9th flag, same conventions. Channel registry (Email/Webhook now; Slack/Teams/Telegram/Discord/PagerDuty = new class + registry line later), 3 tables, wired into Alert Engine/Remote Actions/Terminal/Enrollment/Maintenance, retry worker, `/notifications` UI. Suite 620✅+4 (flag off & on, +54 new tests). **Remaining: owner sets `FEATURE_NOTIFICATIONS=true` + configures a channel/rule in the UI — config/UI-only, zero code work left** |
+| — | Reporting Engine v1 | **PRODUCTION READY** (2026-07-10) | this release | schema-first deploy in this release; `FEATURE_REPORTING` rollback flag | Per-client on-demand + scheduled PDF/CSV, Device Overview + Alert data reuse, complete-client scope enforcement, audit, run history/download, 365-day artifact retention, responsive dark/light UI. Contract 15/15; suite 635✅+4 flags off/on; tsc/build/agent clean. |
 
 Status values: NOT STARTED · IN PROGRESS · TESTING · DEPLOYED · COMPLETED · BLOCKED
 
@@ -650,12 +652,46 @@ Actions/Terminal/Enrollment/Maintenance".
 
 ---
 
+## Reporting Engine v1 — per-client PDF/CSV proof of value
+
+**PRODUCTION READY 2026-07-10.** This closes the Reporting blocker from the
+2026-07-10 Production Readiness audit without new collection or architecture.
+
+- **Reuse:** `DeviceOverviewService` supplies the same fleet-health numbers as
+  Dashboard; `DeviceRepository` supplies client devices; `AlertRepository`
+  supplies period alert activity; existing `AllowedScope`, `view_devices`,
+  audit service, worker lifecycle, feature flags, and TECHI UI components are
+  reused directly.
+- **Exports:** PDF (dependency-free, valid PDF 1.4, selectable text,
+  pagination) and UTF-8 CSV. Both contain client/period metadata, current
+  online/stale/offline + health/update totals, device inventory, and alert
+  activity for a validated 1–366 day period.
+- **Security:** every route is authenticated and feature-gated. Generation,
+  history, and download require `view_devices`; restricted operators must have
+  full-client scope. Group/device-only scope cannot elevate into a full-client
+  deliverable. Schedule management is Admin/Owner only. Generation/failure,
+  download, and every schedule mutation are audited.
+- **Scheduling/lifecycle:** daily/weekly/monthly UTC schedules; worker sweep
+  every 60 s; failures become visible failed runs and advance to the next
+  cadence (no minute retry loop). Files persist in `backend_data/data/reports`,
+  run metadata in `report_runs`, schedules in `report_schedules`, retention
+  365 days.
+- **UI:** `/reports`, sidebar/route flag-gated, responsive across mobile and
+  desktop, all colors use existing theme tokens, existing Button/Badge/
+  ConfirmationModal reused.
+- **Validation:** 15 contract tests; 635 backend passed + the 4 documented
+  baseline failures in both flag modes; TypeScript + production build clean;
+  Windows/Linux agent builds clean; PDF identified as PDF 1.4.
+
+---
+
 ## NEXT ACTIONS
 
 **Current priorities**
-1. Owner decision: approve push + deploy of Phase 0 (`d19f5d9` + `f1975ed`; zero SQL needed).
-2. After deploy: production validation checklist + Appendix B prod rows → owner declares Phase 0 CLOSED here.
-3. Then: owner approval to start Phase 1.
+1. Reporting Engine v1 schema-first production deploy + runtime validation.
+2. Vault Integration — connect the existing Vault to the existing Connect/
+   Terminal path; no new secret store or connection framework.
+3. MFA, then Session Management, following the production-readiness order.
 
 **Current blockers**
 - Phase 0 closure: waiting on owner-approved deploy.

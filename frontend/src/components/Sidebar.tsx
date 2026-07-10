@@ -1,4 +1,4 @@
-import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal, ShieldCheck, Bell } from "lucide-react";
+import { Home, Cpu, Folder, KeyRound, LogOut, Building2, Users, UsersRound, ClipboardList, Package, MonitorCog, SlidersHorizontal, ShieldCheck, Bell, FileBarChart } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -10,7 +10,7 @@ type NavItem = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   permission: string | null; // null = always visible for authenticated users
-  feature?: "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS"; // Platform Expansion flag; item hidden unless ON
+  feature?: "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS" | "FEATURE_REPORTING"; // feature flag; item hidden unless ON
 };
 
 const navItems: NavItem[] = [
@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { label: "Enrollment", to: "/enrollment-bootstrap", icon: KeyRound,      permission: "deployment" },
   { label: "Packages",   to: "/agent-packages",       icon: Package,       permission: "deployment" },
   { label: "Inventory",  to: "/inventory",            icon: Cpu,           permission: "view_inventory" },
+  { label: "Reports",    to: "/reports",              icon: FileBarChart,  permission: "view_devices", feature: "FEATURE_REPORTING" },
   { label: "Operators",  to: "/operators",            icon: Users,         permission: "manage_operators" },
   { label: "Teams",      to: "/teams",                icon: UsersRound,    permission: "manage_teams" },
   { label: "Audit Log",  to: "/audit",                icon: ClipboardList,      permission: "audit_log" },

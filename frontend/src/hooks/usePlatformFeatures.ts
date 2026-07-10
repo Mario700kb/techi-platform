@@ -11,6 +11,7 @@ const ALL_OFF: PlatformFeatures = {
   FEATURE_STORAGE: false,
   FEATURE_HYPERVISOR: false,
   FEATURE_NOTIFICATIONS: false,
+  FEATURE_REPORTING: false,
 };
 
 /**

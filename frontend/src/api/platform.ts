@@ -11,6 +11,7 @@ export interface PlatformFeatures {
   FEATURE_STORAGE: boolean;
   FEATURE_HYPERVISOR: boolean;
   FEATURE_NOTIFICATIONS: boolean;
+  FEATURE_REPORTING: boolean;
 }
 
 export async function getPlatformFeatures(): Promise<PlatformFeatures> {

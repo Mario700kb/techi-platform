@@ -18,9 +18,11 @@ FAILED=0
 code() {
   # $1 method, $2 path, [extra curl args...]
   local method="$1"; local path="$2"; shift 2
-  local hdr=()
-  [ -n "$TOKEN" ] && hdr=(-H "Authorization: Bearer $TOKEN")
-  curl -s -o /dev/null -w "%{http_code}" -X "$method" "${hdr[@]}" "$BASE$path" "$@"
+  if [ -n "$TOKEN" ]; then
+    curl -s -o /dev/null -w "%{http_code}" -X "$method" -H "Authorization: Bearer $TOKEN" "$BASE$path" "$@"
+  else
+    curl -s -o /dev/null -w "%{http_code}" -X "$method" "$BASE$path" "$@"
+  fi
 }
 
 check() {
@@ -48,6 +50,18 @@ check "/api/v1/auth/me"              "$(code GET /api/v1/auth/me)"              
 check "/api/v1/devices/overview"     "$(code GET /api/v1/devices/overview)"      200 401
 check "/api/v1/enrollment-tokens"    "$(code GET /api/v1/enrollment-tokens)"     200 401
 check "/api/v1/agent-packages"       "$(code GET /api/v1/agent-packages)"        200 401
+
+# Reporting is feature-gated. OFF → 404 is valid; ON → normal auth contract.
+reports_code="$(code GET /api/v1/reports/runs)"
+if [ "$reports_code" = "500" ]; then
+  echo "  ❌ /api/v1/reports/runs → 500 (server error)"; FAILED=1
+elif [ -n "$TOKEN" ] && { [ "$reports_code" = "200" ] || [ "$reports_code" = "404" ]; }; then
+  echo "  ✅ /api/v1/reports/runs → $reports_code"
+elif [ -z "$TOKEN" ] && { [ "$reports_code" = "401" ] || [ "$reports_code" = "404" ]; }; then
+  echo "  ✅ /api/v1/reports/runs → $reports_code"
+else
+  echo "  ❌ /api/v1/reports/runs → $reports_code (unexpected)"; FAILED=1
+fi
 
 echo ""
 if [ "$FAILED" -eq 0 ]; then

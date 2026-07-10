@@ -123,3 +123,10 @@ class TestEndToEndContracts:
         assert NotificationRuleRepository(db).list() == []
         items, total = NotificationDeliveryRepository(db).list_history()
         assert items == [] and total == 0
+
+    def test_report_service(self):
+        from app.repositories.report_repository import ReportRunRepository, ReportScheduleRepository
+        db = _db()
+        assert ReportScheduleRepository(db).list() == []
+        items, total = ReportRunRepository(db).list_history()
+        assert items == [] and total == 0

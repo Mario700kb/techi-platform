@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.models.alert import AlertKind, AlertSeverity, AlertState, DeviceAlert
+from app.models.device import Device
 
 
 class AlertRepository:
@@ -131,3 +132,34 @@ class AlertRepository:
         for device_id, severity, count in rows:
             counts.setdefault(device_id, {})[severity.value] = count
         return counts
+
+    def get_client_activity(self, client_id: int, start: datetime, end: datetime, limit: int = 5000) -> List[DeviceAlert]:
+        """Alert rows for Reporting v1, scoped through the owning device."""
+        return (
+            self.db.query(DeviceAlert)
+            .join(Device, Device.id == DeviceAlert.device_id)
+            .filter(
+                Device.client_id == client_id,
+                DeviceAlert.created_at >= start,
+                DeviceAlert.created_at <= end,
+            )
+            .order_by(DeviceAlert.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def count_client_activity(self, client_id: int, start: datetime, end: datetime) -> Dict[str, int]:
+        rows = (
+            self.db.query(DeviceAlert.severity, func.count(DeviceAlert.id))
+            .join(Device, Device.id == DeviceAlert.device_id)
+            .filter(
+                Device.client_id == client_id,
+                DeviceAlert.created_at >= start,
+                DeviceAlert.created_at <= end,
+            )
+            .group_by(DeviceAlert.severity)
+            .all()
+        )
+        result = {_value.value if hasattr(_value, "value") else str(_value): count for _value, count in rows}
+        result["total"] = sum(result.values())
+        return result
