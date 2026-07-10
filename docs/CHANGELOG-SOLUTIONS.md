@@ -27,6 +27,127 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Enterprise Credential Vault upgrade — types/purpose/scope/assignments/RBAC/test-connection
+
+### Problemi
+
+The 2026-07-07 Vault shipped a functional but minimal secret store: 6 fixed
+credential types with one flat form, a single Global/Client/Group/Device
+scope with no way to see *where else* a credential was meant to be used, no
+purpose/lifecycle metadata, only Admin-or-nothing RBAC, and no way to verify a
+stored credential actually works. The owner requested an enterprise-grade
+upgrade covering current consumers (SSH, Windows, Winbox, WebFig, API tokens,
+SMTP, Webhook, SNMP) and future ones, explicitly as an owner-approved
+exception to the LIVE VALIDATION "no new features" gate (this release
+includes schema/RBAC/architecture changes normally requiring that gate).
+
+### Zgjidhja
+
+Upgraded the same storage/crypto layer in place — no rewrite, no second
+secret store, no crypto migration:
+
+- **Credential-type registry** (`app/platform_core/vault_credential_types.py`,
+  new, same pattern as `platform_core/actions.py`): 11 new types + the 4
+  original types kept as `legacy=True`. Each type declares its non-secret
+  metadata fields (port, TLS mode, auth/privacy protocol, ...), its secret
+  fields, whether it needs a username, and its honest "future consumers"
+  list. One frontend form renders itself from `GET /vault/types` — no
+  per-type hardcoded forms anywhere.
+- **Multi-field secrets, same cipher**: a type with more than one secret
+  field (SSH private key + passphrase, SNMPv3 auth+privacy secrets) is
+  JSON-encoded, then that JSON string is encrypted through the *unchanged*
+  `vault_cipher.encrypt_secret`. Reveal tries `json.loads` first and falls
+  back to treating a non-JSON plaintext as a legacy single secret under key
+  `"secret"` — every credential created before this release keeps revealing
+  correctly with zero re-encryption.
+- **Schema** (migration `d8e9f0a1b2c3`, additive, applied schema-first):
+  `vault_credentials` gains nullable `purpose`, `status`, `expires_at`,
+  `rotation_due_at`, `last_tested_at`, `last_test_status`, `metadata_json`;
+  new table `vault_credential_assignments` (credential→client/device,
+  `ON DELETE CASCADE` from the credential side) for explicit "also used by"
+  links beyond a credential's primary scope. `schema_compat_service.py`'s
+  SQLite dev-schema mechanism got matching column/table definitions so local
+  dev never drifts from production's real shape.
+- **Scope-resolution service** (`VaultService.resolve_for_context`): Device →
+  Group (legacy) → Client → Global precedence, ACTIVE-only, optional Purpose
+  filter. Built and tested as the one place a future SSH/SNMP/Connect
+  integration should ask "which credential applies here" — **not called by
+  anything yet**, per the explicit scope boundary ("do not start SSH relay,
+  SNMP, RDP, or RouterOS API in this task").
+- **Delete-reference guard extended**: `blocking_references()` (added in the
+  same-day delete-safety fix above) now also checks
+  `vault_credential_assignments`, not just the primary scope target, before
+  allowing a 409-free delete.
+- **RBAC**: 7 new permissions (`vault_view/create/edit/reveal/delete/test/
+  assign`), assignable per-Team via the existing Team Permissions UI. Wired
+  as `_vault_gate(min_role, perm_key)` in `vault.py` — passes on role alone
+  (today's Admin+ behavior, unchanged) OR on the team permission being
+  granted. Purely additive: never narrows what Admin/Owner already have,
+  only lets a team optionally hand a narrower Vault permission to a
+  non-admin operator.
+- **Test Connection, real not simulated**: SMTP credentials get an actual
+  `smtplib` connect + STARTTLS + login (no email sent, just proves the
+  credential authenticates); Webhook credentials get a real HTTP POST via the
+  Notification Engine's own `send_via_channel("webhook", ...)` sender (code
+  reuse, not a new HTTP client). Every other type returns `"unsupported"`
+  with the exact honest message the owner specified — there is no SSH/SNMP/
+  RouterOS client anywhere in this codebase to test against.
+- **Frontend**: `CredentialVault.tsx` rebuilt in place — summary cards (total/
+  by scope/by category/attention-needed), a filter bar (type/scope/client/
+  status/search) plus view tabs (All/SSH/Windows/Network/API/Notifications/
+  SNMP/Unused/Attention) computed client-side over the same list call, a
+  metadata-driven create/edit form, an assignments panel, status toggle, and
+  a test-connection button — reusing the existing `Badge`/`Button`/
+  `ConfirmationModal`/theme tokens, no new design system or component
+  library.
+
+### Ndryshimet
+
+Backend: `app/models/vault_credential.py` (new columns + `VaultCredentialAssignment`
++ `VaultCredentialStatus`), `app/platform_core/vault_credential_types.py` (new),
+`app/services/vault_service.py` (metadata validation, assignments, scope
+resolution, test-connection, JSON secret envelope), `app/schemas/vault.py`
+(rewritten), `app/api/v1/endpoints/vault.py` (rewritten — types/assignments/
+status/test endpoints, `_vault_gate`), `app/services/permission_service.py`
+(7 new permission constants), `app/services/schema_compat_service.py` (SQLite
+dev schema), `alembic/versions/d8e9f0a1b2c3_enterprise_vault.py` (new).
+Frontend: `frontend/src/api/vault.ts` (rewritten), `frontend/src/pages/
+CredentialVault.tsx` (rewritten), `frontend/src/pages/TeamDetail.tsx` (7 new
+permission defs). Tests: `backend/tests/test_vault.py` (46 tests, up from 17 —
+type registry, scope resolution, assignments, RBAC additive-OR, lifecycle/
+expiry, no-plaintext-in-list/audit), `backend/tests/test_platform_core.py`
+(wiring-boundary allowlist +1), `frontend/src/pages/__tests__/
+CredentialVault.test.tsx` (new, 6 tests — loading/error/filter/permission
+states).
+
+### Rezultati
+
+Backend suite: 675 passed + 4 known baseline (unchanged) in both flag modes.
+Frontend: tsc/build clean, vitest 25/25 (19 pre-existing + 6 new). Full
+`preflight.sh` PASSED. Schema applied before deploy (see deploy log for exact
+`ALTER TABLE`/`CREATE TABLE`/`CREATE INDEX` statements run against
+production Postgres). All 1 pre-existing production credential ("test",
+global scope) preserved and verified still present/revealable after the
+schema change and code deploy.
+
+### Mësimet
+
+- A real FK-enforced Postgres constraint that SQLite silently ignores by
+  default is a recurring blind spot in this codebase (this is the second time
+  this session it caused a bug the local test suite couldn't see) — the
+  `PRAGMA foreign_keys=ON` fix added to `test_vault.py` earlier the same day
+  should become the default for every new SQLite-backed test session, not
+  just Vault's.
+- SQLAlchemy declarative models reserve `.metadata` (the `MetaData` registry)
+  on every instance — naming a Pydantic `from_attributes` field `metadata` to
+  mirror a `metadata_json` column silently validates against the WRONG
+  object. Renamed to `credential_metadata`; worth grepping for elsewhere
+  before it's copied into a future schema.
+- Reusing an existing sender (`notification_channels.send_via_channel`) for
+  Vault's webhook test avoided writing a second HTTP client with its own bugs
+  — the "reuse existing code" instruction paid off concretely here, not just
+  as a compliance checkbox.
+
 ## [2026-07-10] BUGFIX: Vault credential delete had no reference guard + added Report History delete
 
 ### Problemi

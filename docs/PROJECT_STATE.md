@@ -28,8 +28,21 @@
    forgotten): Generate Now section/filter/threshold options, report
    branding/logo config, and a rewritten PDF template — each is roadmap-sized
    on its own, see CHANGELOG-SOLUTIONS 2026-07-10.
-2. **Vault Integration** — next production feature; wire the existing encrypted
-   Vault into a real connection path using Connect/Terminal.
+2. ✅ **Enterprise Credential Vault upgrade** — production-ready (2026-07-10,
+   owner-approved exception to the LIVE VALIDATION "no new features" gate):
+   11-type metadata-driven credential registry (SSH/Windows/Winbox/WebFig/API
+   token/SMTP/Webhook/SNMP v2c+v3/generic — legacy types still work, zero
+   migration), Purpose field, Global/Client/Group/Device scope + a tested-but-
+   unwired `resolve_for_context()` scope-resolution service (Device > Group >
+   Client > Global), explicit credential↔client/device assignments (extends
+   the delete-reference 409 guard), 7 granular `vault_*` permissions (additive
+   over the Admin+ floor), real Test Connection for SMTP/Webhook (honest
+   "unsupported" for every other type — no SSH/SNMP/RouterOS client exists
+   yet), lifecycle status badges (Active/Disabled/Expiring soon/Expired/
+   Validation failed). **Vault Integration** (wiring a credential into a real
+   SSH/SNMP/Connect connection path) remains the next production feature —
+   the scope-resolution service exists for it to call, but nothing calls it
+   yet.
 3. ✅ Documentation Baseline — completed (2026-07-05, this standard)
 4. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)

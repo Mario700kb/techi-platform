@@ -504,13 +504,72 @@ IMPLEMENTATION-ROADMAP.md).
 ## 20. Credential Vault 🚩 `FEATURE_VAULT`
 
 An enterprise secret store, separate from the Remote Support password system.
+Upgraded 2026-07-10 from a flat password list into a full enterprise secret
+manager — same encryption, same storage layer, no rewrite.
 
-- **Location**: Settings ▸ Security ▸ Credential Vault (Admin+).
-- **Types**: password, SSH key, API token, SNMP, Winbox, certificate.
-- **Scope**: Global / Client / Group / Device (most specific wins).
-- Secrets are encrypted (AES-256-GCM envelope); the UI never shows a stored
-  secret except an explicit **Reveal** (requires a reason; every reveal is
-  audited). Rotation and connection testing are supported.
+- **Location**: sidebar ▸ Credential Vault (Admin+, `system_settings` gate for
+  the page; the API additionally supports 7 granular permissions below).
+- **Credential types** (one metadata-driven form, not per-type pages): SSH
+  (username/password or private key + optional passphrase), Windows
+  administrator, Winbox, WebFig, API token, SMTP, Webhook, SNMP v2c, SNMP v3,
+  generic username/password. Legacy types from the original 2026-07-07 release
+  (password, SSH key, SNMP, certificate) still work — every pre-existing
+  credential keeps resolving with **no migration required**. Each type
+  declares its own required/optional fields, which secret fields it needs, and
+  which future integration it's meant for — the create/edit form renders
+  itself from this registry (`GET /api/v1/vault/types`), it does not hardcode
+  a form per type.
+- **Purpose** is a separate, free-text field from Type — e.g. Type =
+  "SSH (username/password)", Purpose = "Embedded Terminal". Purpose is
+  filterable and shown in the list; it does not affect encryption or scope.
+- **Scope**: Global / Client / Group (legacy) / Device. Global is
+  platform-wide (permission-gated); Client/Device are restricted to that
+  target. A `resolve_for_context()` scope-resolution service exists
+  (Device → Group → Client → Global precedence, only ACTIVE credentials,
+  optionally filtered by Purpose) for future SSH/SNMP/Connect consumers to
+  call — **nothing calls it automatically today**; it is not wired into any
+  live connection path yet.
+- **Assignments**: beyond a credential's primary scope, it can be explicitly
+  linked ("assigned") to one or more additional clients/devices from its
+  detail panel — this documents where a credential's blast radius reaches and
+  is included in the delete-reference guard below. Assigning/unassigning is
+  audited and requires the `vault_assign` permission (or Admin+).
+- **Lifecycle/status**: Active / Disabled (toggle, audited) plus computed
+  display badges — Expiring soon / Expired (from an optional `expires_at`) and
+  Validation failed (from the last Test Connection result). Optional
+  `rotation_due_at`/`last_rotated_at`/`last_tested_at` fields are stored but
+  **no automatic rotation or expiry action runs anywhere** — these are
+  informational badges/filters only.
+- Secrets are encrypted (AES-256-GCM envelope, same cipher/master key as
+  2026-07-07 — untouched); the UI never shows a stored secret except an
+  explicit **Reveal** (requires a reason ≥5 characters; every reveal is
+  audited, one credential at a time, never cached, never logged in plaintext).
+  A credential with multiple secret fields (e.g. SSH private key + passphrase)
+  reveals all of them together, each individually labeled.
+- **Test Connection**: real, not simulated — SMTP credentials get a real
+  SMTP connect (+ STARTTLS + auth if a password is set, no email actually
+  sent); Webhook credentials get a real HTTP POST to the stored URL (reusing
+  the Notification Engine's own webhook sender). Every other type honestly
+  reports "Connection testing will become available when this credential type
+  is connected to a supported integration" — there is no SSH/SNMP/RouterOS
+  client in this codebase to test against yet.
+- **Deletion**: an unused credential deletes immediately with confirmation. A
+  credential still referenced — its own scope target still exists, or it has
+  an explicit assignment — returns **409** and lists exactly what blocks it;
+  the operator can force-delete after seeing that list (audited as
+  `vault_credential_deleted_forced`, distinct from a normal delete). There is
+  no silent orphaning.
+- **Current integrations** (honest, not aspirational): nothing in the
+  codebase automatically consumes a Vault credential yet — Notifications
+  (SMTP/Webhook channels) has its **own separate** encrypted secret storage,
+  it does not read from the Vault. Every credential's "future consumers" are
+  shown from the type registry (e.g. "SSH Relay", "Embedded Terminal",
+  "Winbox Connect") as a roadmap hint, not a claim that it works today.
+- **RBAC**: `vault_view`/`vault_create`/`vault_edit`/`vault_reveal`/
+  `vault_delete`/`vault_test`/`vault_assign` — assignable per-Team permission,
+  purely additive on top of the existing Admin+ floor (a team can grant one of
+  these to a non-admin operator; it never restricts what Admin/Owner already
+  have).
 - With the flag off, the Vault page/route/endpoints do not exist (404).
 
 ---

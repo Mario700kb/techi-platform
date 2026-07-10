@@ -18,7 +18,7 @@ from app.models.remote_action import RemoteAction
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
 from app.models.terminal_session import TerminalSession
-from app.models.vault_credential import VaultCredential, VaultCredentialUsage
+from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 
 __all__ = [
     "AgentCommandBatch",
@@ -44,5 +44,6 @@ __all__ = [
     "TerminalSession",
     "TrustedDomain",
     "VaultCredential",
+    "VaultCredentialAssignment",
     "VaultCredentialUsage",
 ]

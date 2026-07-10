@@ -28,12 +28,25 @@ MANAGE_OPERATORS = "manage_operators"
 AUDIT_LOG = "audit_log"
 SYSTEM_SETTINGS = "system_settings"
 
+# Enterprise Vault (2026-07-10) — granular, additive on top of the existing
+# role gates (admin+ already has full Vault access via require_min_role; a
+# team can ADDITIONALLY grant one of these to a non-admin operator, it never
+# restricts what admin/owner already have). See api/v1/endpoints/vault.py.
+VAULT_VIEW = "vault_view"
+VAULT_CREATE = "vault_create"
+VAULT_EDIT = "vault_edit"
+VAULT_REVEAL = "vault_reveal"
+VAULT_DELETE = "vault_delete"
+VAULT_TEST = "vault_test"
+VAULT_ASSIGN = "vault_assign"
+
 ALL_PERMISSIONS: FrozenSet[str] = frozenset({
     VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE,
     RESTART_DEVICE, RESTART_AGENT, REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE,
     DIAGNOSTICS, VIEW_NOTES, EDIT_NOTES, VIEW_INVENTORY, VIEW_PATCH,
     DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS, MANAGE_OPERATORS, AUDIT_LOG,
     SYSTEM_SETTINGS,
+    VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN,
 })
 
 ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
@@ -43,6 +56,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         RESTART_DEVICE, RESTART_AGENT, REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE,
         DIAGNOSTICS, VIEW_NOTES, EDIT_NOTES, VIEW_INVENTORY, VIEW_PATCH,
         DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS, MANAGE_OPERATORS, AUDIT_LOG,
+        VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN,
     }),
     "operator": frozenset({
         VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE,

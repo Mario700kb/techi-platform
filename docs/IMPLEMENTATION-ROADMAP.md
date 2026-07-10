@@ -469,6 +469,57 @@ features`, minimal `CredentialVault.tsx` + flag-gated route/sidebar, usage
 audit, 22 tests. `secret_cipher.py`/RS-password untouched (verified separate).
 Turning FEATURE_VAULT on is itself a Manual-Approval action (owner).
 
+**Enterprise Vault upgrade — COMPLETED 2026-07-10 (owner-approved exception to
+the LIVE VALIDATION "no new features" gate — architecture/schema/RBAC changes
+explicitly authorized for this release).** Upgrades the same storage/crypto
+layer into a full enterprise secret manager — no rewrite, no new secret store,
+no crypto change:
+- **Credential-type registry** (`app/platform_core/vault_credential_types.py`,
+  new — same registry pattern as `platform_core/actions.py`/`flags.py`): 11
+  types (SSH password/private-key, Windows admin, Winbox, WebFig, API token,
+  SMTP, Webhook, SNMP v2c/v3, generic username/password) plus the 4 original
+  types kept as `legacy=True` entries — one metadata-driven frontend form
+  (`GET /vault/types`), not per-type hardcoded forms. A type with several
+  secret fields (SSH key + passphrase, SNMPv3 auth+privacy secrets) is
+  JSON-encoded, then encrypted as ONE ciphertext blob through the *same*
+  `vault_cipher.encrypt_secret`/`decrypt_secret` — reveal falls back to
+  treating non-JSON ciphertext as a legacy single secret, so **every
+  pre-2026-07-10 credential keeps revealing correctly with zero
+  re-encryption**.
+- **Schema** (additive, migration `d8e9f0a1b2c3`, applied schema-first):
+  `vault_credentials` gains nullable `purpose`/`status`/`expires_at`/
+  `rotation_due_at`/`last_tested_at`/`last_test_status`/`metadata_json`
+  (non-secret type fields only, e.g. port/TLS mode — validated against the
+  registry, never a secret value); new table `vault_credential_assignments`
+  (credential → client/device, `ON DELETE CASCADE` from the credential side)
+  for explicit "also used by" links beyond the primary scope.
+- **Scope-resolution service** (`VaultService.resolve_for_context`): Device →
+  Group (legacy) → Client → Global precedence, ACTIVE-only, optional Purpose
+  filter — built and tested as the single future source of truth for
+  SSH/SNMP/Connect integrations; **not wired into any live connection path in
+  this release**, per explicit scope boundary.
+- **Delete-reference guard extended**: `blocking_references()` now also
+  checks `vault_credential_assignments`, not just the primary scope target —
+  same 409 + force-override contract as the 2026-07-10 delete-safety fix.
+- **RBAC**: 7 new granular permissions (`vault_view/create/edit/reveal/
+  delete/test/assign`) addable per-Team, implemented as a pure OR on top of
+  the existing Admin+ role floor (`_vault_gate` in `vault.py`) — never
+  restricts what Admin/Owner already have, only extends who else can act.
+- **Test Connection**: real for SMTP (live `smtplib` connect+STARTTLS+auth,
+  no email sent) and Webhook (reuses the Notification Engine's own
+  `send_via_channel("webhook", ...)`); every other type returns `"unsupported"`
+  honestly rather than faking success — no SSH/SNMP/RouterOS client exists in
+  this codebase yet.
+- **Frontend**: `CredentialVault.tsx` rebuilt in place (same file, same route)
+  into summary cards + filterable/view-tabbed table + metadata-driven create/
+  edit form + assignments panel + status toggle + test-connection button —
+  reuses existing `Badge`/`Button`/`ConfirmationModal`/theme tokens, no new
+  design system.
+- **Tests**: 46 backend (`test_vault.py`) + 6 frontend (`CredentialVault.test.tsx`)
+  covering type-registry validation, scope precedence, RBAC additive-OR,
+  assignment-blocks-delete, expiry/lifecycle badges, plaintext-never-in-list/
+  audit, and the metadata-driven UI's loading/error/filter/permission states.
+
 ## Vault Operational Safety  (hardening — COMPLETED 2026-07-07)
 
 Not a platform feature — operational DR hardening; no behavior change, no flag

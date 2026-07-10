@@ -1,30 +1,47 @@
-"""Enterprise Credential Vault service (Phase 4, audit §19).
+"""Enterprise Credential Vault service (Phase 4, audit §19; extended
+2026-07-10 into a full enterprise secret manager).
 
 Rules enforced here:
   - secrets are stored only as AES-256-GCM envelope ciphertext (vault_cipher);
   - plaintext exists in memory only during use/reveal, never in logs/responses
     except the explicit, audited /reveal path;
   - every access writes an append-only vault_credential_usage row;
-  - scope integrity: scope_type dictates exactly which target id must be set.
+  - scope integrity: scope_type dictates exactly which target id must be set;
+  - non-secret type-specific fields (port, TLS mode, ...) are validated
+    against the credential-type registry and stored as metadata_json — never
+    a secret value.
 
 The Remote Support password system (secret_cipher) is untouched by design.
+Nothing in this file wires a credential into a live connection path yet
+(SSH/SNMP/RouterOS/Winbox) — resolve_for_context() exists so a future
+integration has one source of truth to call, not to be called automatically
+today.
 """
 
-import hashlib
+import json
 import logging
-from typing import List, Optional
+from datetime import timedelta
+from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.time import utcnow
+from app.core.time import ensure_utc, utcnow
 from app.core.vault_cipher import decrypt_secret, encrypt_secret
 from app.models.client import Client
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
 from app.models.vault_credential import (
     VaultCredential,
+    VaultCredentialAssignment,
+    VaultCredentialStatus,
     VaultCredentialUsage,
     VaultScopeType,
+)
+from app.platform_core.vault_credential_types import (
+    VaultCredentialTypeError,
+    get_type,
+    validate_metadata,
+    validate_secret_fields,
 )
 from app.schemas.vault import VaultCredentialCreate, VaultCredentialUpdate
 
@@ -37,15 +54,20 @@ _SCOPE_TARGET_FIELD = {
     VaultScopeType.DEVICE.value: "device_id",
 }
 
+# Window used only to derive the "expiring_soon" display badge — no
+# automatic expiry/rotation action is performed anywhere in this release.
+_EXPIRING_SOON_WINDOW = timedelta(days=14)
+
 
 class VaultScopeError(ValueError):
     pass
 
 
 class VaultReferencedError(ValueError):
-    """Raised when a credential is scoped to a target that still exists —
-    deleting it would silently remove access the operator may not realize is
-    still in use. Carries the human-readable references for the 409 body."""
+    """Raised when a credential is scoped to a target that still exists, or
+    has an explicit assignment, deleting it would silently remove access the
+    operator may not realize is still in use. Carries the human-readable
+    references for the 409 body."""
 
     def __init__(self, references: List[str]):
         self.references = references
@@ -75,6 +97,8 @@ class VaultService:
 
     @staticmethod
     def secret_hint(credential: VaultCredential) -> str:
+        import hashlib
+
         digest = hashlib.sha256(
             f"{credential.id}:{credential.name}:{credential.rotated_at}".encode()
         ).hexdigest()
@@ -99,23 +123,62 @@ class VaultService:
         )
         self.db.commit()
 
+    @staticmethod
+    def _encode_secret_payload(secret_fields: Dict[str, str]) -> str:
+        return json.dumps(secret_fields, separators=(",", ":"), sort_keys=True)
+
+    @staticmethod
+    def _decode_secret_payload(plaintext: str) -> Dict[str, str]:
+        """New rows always store a JSON object of secret fields. Rows created
+        before 2026-07-10 store the raw secret string directly (no JSON) —
+        fall back to wrapping it under the legacy 'secret' key so every
+        existing credential keeps revealing correctly with no re-encryption."""
+        try:
+            decoded = json.loads(plaintext)
+            if isinstance(decoded, dict):
+                return {str(k): str(v) for k, v in decoded.items()}
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return {"secret": plaintext}
+
+    @staticmethod
+    def _resolve_secret_fields(
+        credential_type: str, secret: Optional[str], secret_fields: Optional[Dict[str, str]]
+    ) -> Dict[str, str]:
+        if secret_fields:
+            return validate_secret_fields(credential_type, secret_fields)
+        if secret is not None:
+            descriptor = get_type(credential_type)
+            if descriptor is None:
+                raise VaultCredentialTypeError(f"Unknown credential type '{credential_type}'")
+            if len(descriptor.secret_fields) == 1:
+                return validate_secret_fields(credential_type, {descriptor.secret_fields[0].key: secret})
+        return validate_secret_fields(credential_type, {})
+
     # -- CRUD --------------------------------------------------------------
 
     def create(self, data: VaultCredentialCreate, created_by: Optional[str]) -> VaultCredential:
         self._validate_scope(data.scope_type.value, data.client_id, data.group_id, data.device_id)
-        ciphertext, wrapped = encrypt_secret(data.secret)
+        credential_type = data.credential_type.value
+        secret_fields = self._resolve_secret_fields(credential_type, data.secret, data.secret_fields)
+        metadata = validate_metadata(credential_type, data.metadata or {})
+        ciphertext, wrapped = encrypt_secret(self._encode_secret_payload(secret_fields))
         credential = VaultCredential(
             name=data.name,
-            credential_type=data.credential_type.value,
+            credential_type=credential_type,
             scope_type=data.scope_type.value,
             client_id=data.client_id,
             group_id=data.group_id,
             device_id=data.device_id,
+            purpose=data.purpose,
             username=data.username,
             ciphertext=ciphertext,
             dek_wrapped=wrapped,
             notes=data.notes,
             created_by=created_by,
+            expires_at=data.expires_at,
+            rotation_due_at=data.rotation_due_at,
+            metadata_json=json.dumps(metadata) if metadata else None,
         )
         self.db.add(credential)
         self.db.commit()
@@ -141,10 +204,24 @@ class VaultService:
             credential.name = data.name
         if data.username is not None:
             credential.username = data.username
+        if data.purpose is not None:
+            credential.purpose = data.purpose
         if data.notes is not None:
             credential.notes = data.notes
-        if data.secret is not None:
-            credential.ciphertext, credential.dek_wrapped = encrypt_secret(data.secret)
+        if data.expires_at is not None:
+            credential.expires_at = data.expires_at
+        if data.rotation_due_at is not None:
+            credential.rotation_due_at = data.rotation_due_at
+        if data.status is not None:
+            if data.status not in (VaultCredentialStatus.ACTIVE.value, VaultCredentialStatus.DISABLED.value):
+                raise VaultScopeError(f"invalid status '{data.status}'")
+            credential.status = data.status
+        if data.metadata is not None:
+            metadata = validate_metadata(credential.credential_type, data.metadata)
+            credential.metadata_json = json.dumps(metadata) if metadata else None
+        if data.secret is not None or data.secret_fields:
+            secret_fields = self._resolve_secret_fields(credential.credential_type, data.secret, data.secret_fields)
+            credential.ciphertext, credential.dek_wrapped = encrypt_secret(self._encode_secret_payload(secret_fields))
             credential.rotated_at = utcnow()
             rotated = True
         self.db.commit()
@@ -152,9 +229,25 @@ class VaultService:
         self._record_usage(credential.id, "rotate" if rotated else "update", operator_username)
         return credential
 
+    def set_status(
+        self, credential: VaultCredential, status: str, operator_username: Optional[str]
+    ) -> VaultCredential:
+        if status not in (VaultCredentialStatus.ACTIVE.value, VaultCredentialStatus.DISABLED.value):
+            raise VaultScopeError(f"invalid status '{status}'")
+        credential.status = status
+        self.db.commit()
+        self.db.refresh(credential)
+        self._record_usage(
+            credential.id,
+            "enable" if status == VaultCredentialStatus.ACTIVE.value else "disable",
+            operator_username,
+        )
+        return credential
+
     def blocking_references(self, credential: VaultCredential) -> List[str]:
-        """Human-readable references that still point at this credential's
-        scope target. An orphaned scope (target already deleted) never blocks
+        """Human-readable references that still point at this credential —
+        its primary scope target (if still alive) plus any explicit
+        assignment. An orphaned scope (target already deleted) never blocks
         cleanup — only a target that's still alive does."""
         references: List[str] = []
         if credential.scope_type == VaultScopeType.CLIENT.value and credential.client_id is not None:
@@ -170,6 +263,17 @@ class VaultService:
             if device is not None:
                 label = device.display_name or device.hostname or f"device #{device.id}"
                 references.append(f"Device #{device.id} ({label})")
+
+        for assignment in self.list_assignments(credential.id):
+            if assignment.client_id is not None:
+                client = self.db.query(Client).filter(Client.id == assignment.client_id).first()
+                if client is not None:
+                    references.append(f"Client #{client.id} ({client.name}) [assigned]")
+            if assignment.device_id is not None:
+                device = self.db.query(Device).filter(Device.id == assignment.device_id).first()
+                if device is not None:
+                    label = device.display_name or device.hostname or f"device #{device.id}"
+                    references.append(f"Device #{device.id} ({label}) [assigned]")
         return references
 
     def delete(
@@ -193,6 +297,7 @@ class VaultService:
         self.db.query(VaultCredentialUsage).filter(
             VaultCredentialUsage.credential_id == credential_id
         ).delete(synchronize_session=False)
+        # vault_credential_assignments cascades at the DB level (ondelete=CASCADE).
         self.db.delete(credential)
         self.db.commit()
 
@@ -200,7 +305,7 @@ class VaultService:
 
     def reveal(
         self, credential: VaultCredential, operator_username: Optional[str], reason: str
-    ) -> str:
+    ) -> Dict[str, str]:
         plaintext = decrypt_secret(credential.ciphertext, credential.dek_wrapped)
         credential.last_used_at = utcnow()
         self.db.commit()
@@ -212,7 +317,7 @@ class VaultService:
             operator_username,
             reason,
         )
-        return plaintext
+        return self._decode_secret_payload(plaintext)
 
     def usage(self, credential_id: int, limit: int = 100) -> List[VaultCredentialUsage]:
         return (
@@ -222,3 +327,178 @@ class VaultService:
             .limit(limit)
             .all()
         )
+
+    # -- test connection -------------------------------------------------------
+
+    def test_connection(self, credential: VaultCredential) -> "tuple[str, str]":
+        """Returns (status, message), status one of success|failed|unsupported.
+        Only SMTP and Webhook credentials have a real, existing client to test
+        against (the Notification Engine's own senders/smtplib) — every other
+        type honestly reports "unsupported" rather than faking a result (no
+        SSH/SNMP/RouterOS client exists in this codebase yet)."""
+        metadata = json.loads(credential.metadata_json) if credential.metadata_json else {}
+        secret_fields = self._decode_secret_payload(decrypt_secret(credential.ciphertext, credential.dek_wrapped))
+
+        if credential.credential_type == "smtp":
+            return self._test_smtp(metadata, credential.username, secret_fields.get("password"))
+        if credential.credential_type == "webhook_secret":
+            return self._test_webhook(metadata, secret_fields.get("secret"))
+        return (
+            "unsupported",
+            "Connection testing will become available when this credential type is connected to a supported integration.",
+        )
+
+    @staticmethod
+    def _test_smtp(metadata: Dict[str, str], username: Optional[str], password: Optional[str]) -> "tuple[str, str]":
+        import smtplib
+        import socket
+
+        host = metadata.get("host")
+        if not host:
+            return "failed", "SMTP credential is missing a host"
+        try:
+            port = int(metadata.get("port") or 587)
+        except ValueError:
+            return "failed", "SMTP port is not a valid number"
+        tls_mode = metadata.get("tls_mode", "starttls")
+        try:
+            with smtplib.SMTP(host, port, timeout=10) as smtp:
+                if tls_mode == "starttls":
+                    smtp.starttls()
+                if username and password:
+                    smtp.login(username, password)
+            return "success", f"Connected to {host}:{port}" + (" and authenticated" if username and password else "")
+        except (smtplib.SMTPException, socket.error, OSError) as exc:
+            return "failed", str(exc)
+
+    @staticmethod
+    def _test_webhook(metadata: Dict[str, str], secret: Optional[str]) -> "tuple[str, str]":
+        from app.services.notification_channels import send_via_channel
+
+        url = metadata.get("url")
+        if not url:
+            return "failed", "Webhook credential is missing a url"
+        headers = {"X-TECHI-Vault-Test": "1"}
+        ok, error = send_via_channel(
+            "webhook",
+            config={"url": url, "headers": headers},
+            secret=secret,
+            title="TECHI Vault connection test",
+            message="This is a test ping from the TECHI Credential Vault.",
+            event_type="vault_test",
+        )
+        return ("success", f"Webhook at {url} responded successfully") if ok else ("failed", error or "Webhook test failed")
+
+    # -- assignments ---------------------------------------------------------
+
+    def list_assignments(self, credential_id: int) -> List[VaultCredentialAssignment]:
+        return (
+            self.db.query(VaultCredentialAssignment)
+            .filter(VaultCredentialAssignment.credential_id == credential_id)
+            .order_by(VaultCredentialAssignment.created_at.desc())
+            .all()
+        )
+
+    def add_assignment(
+        self, credential_id: int, client_id: Optional[int], device_id: Optional[int], created_by: Optional[str]
+    ) -> VaultCredentialAssignment:
+        if not client_id and not device_id:
+            raise VaultScopeError("assignment requires client_id or device_id")
+        assignment = VaultCredentialAssignment(
+            credential_id=credential_id, client_id=client_id, device_id=device_id, created_by=created_by,
+        )
+        self.db.add(assignment)
+        self.db.commit()
+        self.db.refresh(assignment)
+        self._record_usage(credential_id, "assign", created_by)
+        return assignment
+
+    def remove_assignment(self, assignment: VaultCredentialAssignment, operator_username: Optional[str]) -> None:
+        credential_id = assignment.credential_id
+        self.db.delete(assignment)
+        self.db.commit()
+        self._record_usage(credential_id, "unassign", operator_username)
+
+    # -- scope resolution (for future consumers — not called automatically) -
+
+    def resolve_for_context(
+        self,
+        *,
+        purpose: Optional[str] = None,
+        device_id: Optional[int] = None,
+        group_id: Optional[int] = None,
+        client_id: Optional[int] = None,
+    ) -> Optional[VaultCredential]:
+        """Single source of truth for future SSH/SNMP/Connect consumers:
+        resolves the single most-specific ACTIVE credential for a context,
+        precedence Device > Group > Client > Global. Not wired into any live
+        connection path yet — this method exists so that when one is built,
+        it has one place to ask "which credential applies here," rather than
+        each integration re-inventing scope precedence.
+        """
+        query = self.db.query(VaultCredential).filter(
+            VaultCredential.status == VaultCredentialStatus.ACTIVE.value
+        )
+        if purpose is not None:
+            query = query.filter(VaultCredential.purpose == purpose)
+        candidates = query.all()
+        by_scope: Dict[str, VaultCredential] = {}
+        for cred in candidates:
+            if cred.scope_type == VaultScopeType.DEVICE.value and device_id is not None and cred.device_id == device_id:
+                by_scope.setdefault("device", cred)
+            elif cred.scope_type == VaultScopeType.GROUP.value and group_id is not None and cred.group_id == group_id:
+                by_scope.setdefault("group", cred)
+            elif cred.scope_type == VaultScopeType.CLIENT.value and client_id is not None and cred.client_id == client_id:
+                by_scope.setdefault("client", cred)
+            elif cred.scope_type == VaultScopeType.GLOBAL.value:
+                by_scope.setdefault("global", cred)
+        for tier in ("device", "group", "client", "global"):
+            if tier in by_scope:
+                return by_scope[tier]
+        return None
+
+    # -- presentation (list/detail enrichment) --------------------------------
+
+    def enrich(self, credential: VaultCredential) -> dict:
+        """Computed, non-persisted display fields layered onto the ORM row —
+        see VaultCredentialOut for the shape this feeds."""
+        now = utcnow()
+        references = self.blocking_references(credential)
+        assignments = self.list_assignments(credential.id)
+        reference_count = len(references)
+
+        expires_at = ensure_utc(credential.expires_at)
+        if credential.status == VaultCredentialStatus.DISABLED.value:
+            lifecycle_status = "disabled"
+        elif expires_at is not None and expires_at <= now:
+            lifecycle_status = "expired"
+        elif expires_at is not None and expires_at <= now + _EXPIRING_SOON_WINDOW:
+            lifecycle_status = "expiring_soon"
+        elif credential.last_test_status == "failed":
+            lifecycle_status = "validation_failed"
+        else:
+            lifecycle_status = "active"
+
+        descriptor = get_type(credential.credential_type)
+        future_consumers = list(descriptor.future_consumers) if descriptor else []
+        # Honest reporting (section 14): nothing currently consumes Vault
+        # credentials automatically. Assignment/scope only describes *where*
+        # a credential is meant to apply, not that a live integration reads it.
+        if credential.device_id is not None or any(a.device_id for a in assignments):
+            consumer_status = "assigned_to_device"
+        elif credential.client_id is not None or credential.group_id is not None or any(a.client_id for a in assignments):
+            consumer_status = "assigned_to_client"
+        else:
+            consumer_status = "stored_only"
+
+        metadata = json.loads(credential.metadata_json) if credential.metadata_json else {}
+
+        return {
+            "lifecycle_status": lifecycle_status,
+            "is_referenced": reference_count > 0,
+            "reference_count": reference_count,
+            "references": references,
+            "consumer_status": consumer_status,
+            "future_consumers": future_consumers,
+            "metadata": metadata,
+        }

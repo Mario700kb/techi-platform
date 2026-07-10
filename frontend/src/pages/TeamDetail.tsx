@@ -48,9 +48,16 @@ export const TEAM_PERMISSION_DEFS: { key: string; label: string; description: st
   { key: "manage_operators",         label: "Manage Operators",      description: "Create and manage operator accounts", category: "Admin" },
   { key: "audit_log",                label: "View Audit Log",        description: "Read the system audit log", category: "Admin" },
   { key: "system_settings",          label: "System Settings",       description: "Access system-level settings", category: "Admin" },
+  { key: "vault_view",               label: "View Vault",            description: "See Credential Vault entries (list only, never secrets)", category: "Vault" },
+  { key: "vault_create",             label: "Create Vault Credentials", description: "Add new credentials to the Vault", category: "Vault" },
+  { key: "vault_edit",               label: "Edit Vault Credentials",   description: "Update credential metadata and rotate secrets", category: "Vault" },
+  { key: "vault_reveal",             label: "Reveal Vault Secrets",     description: "View a credential's plaintext secret (audited)", category: "Vault" },
+  { key: "vault_delete",             label: "Delete Vault Credentials", description: "Remove credentials from the Vault", category: "Vault" },
+  { key: "vault_test",               label: "Test Vault Credentials",   description: "Run a connection test where supported", category: "Vault" },
+  { key: "vault_assign",             label: "Assign Vault Credentials", description: "Link credentials to clients/devices", category: "Vault" },
 ];
 
-const PERM_CATEGORIES = ["Visibility", "Remote Support", "Device Actions", "Content", "Admin"];
+const PERM_CATEGORIES = ["Visibility", "Remote Support", "Device Actions", "Content", "Admin", "Vault"];
 
 // ── Role permission matrix (mirrors backend permission_service.py) ────────── //
 
@@ -61,6 +68,7 @@ const ROLE_PERMS: Record<string, Set<string>> = {
     "restart_device", "restart_agent", "reinstall_remote_support", "maintenance_mode",
     "view_notes", "edit_notes", "view_inventory", "view_patch",
     "deployment", "manage_clients", "manage_groups", "manage_operators", "audit_log",
+    "vault_view", "vault_create", "vault_edit", "vault_reveal", "vault_delete", "vault_test", "vault_assign",
   ]),
   operator: new Set([
     "view_devices", "remote_support_connect", "restart_device", "restart_agent",

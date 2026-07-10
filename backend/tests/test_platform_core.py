@@ -162,6 +162,7 @@ class TestWiringBoundary:
             "app/services/notification_service.py",  # dispatch() checked against FEATURE_NOTIFICATIONS
             "app/api/v1/endpoints/reports.py",  # reporting flag gate
             "app/main.py",  # also gates ReportWorker startup
+            "app/services/vault_service.py",  # credential-type field registry (Enterprise Vault)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

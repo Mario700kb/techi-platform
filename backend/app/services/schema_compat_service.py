@@ -88,6 +88,16 @@ TRUSTED_DOMAIN_COLUMNS = {
     "client_id": "INTEGER",
 }
 
+VAULT_CREDENTIAL_COLUMNS = {
+    "purpose": "VARCHAR(64)",
+    "status": "VARCHAR(16) NOT NULL DEFAULT 'active'",
+    "expires_at": "DATETIME",
+    "rotation_due_at": "DATETIME",
+    "last_tested_at": "DATETIME",
+    "last_test_status": "VARCHAR(16)",
+    "metadata_json": "TEXT",
+}
+
 DEV_TABLES = {
     "terminal_sessions": """
         CREATE TABLE IF NOT EXISTS terminal_sessions (
@@ -124,7 +134,14 @@ DEV_TABLES = {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             rotated_at DATETIME,
-            last_used_at DATETIME
+            last_used_at DATETIME,
+            purpose VARCHAR(64),
+            status VARCHAR(16) NOT NULL DEFAULT 'active',
+            expires_at DATETIME,
+            rotation_due_at DATETIME,
+            last_tested_at DATETIME,
+            last_test_status VARCHAR(16),
+            metadata_json TEXT
         )
     """,
     "vault_credential_usage": """
@@ -135,6 +152,16 @@ DEV_TABLES = {
             device_id INTEGER,
             action VARCHAR(24) NOT NULL,
             reason VARCHAR(300),
+            created_at DATETIME NOT NULL
+        )
+    """,
+    "vault_credential_assignments": """
+        CREATE TABLE IF NOT EXISTS vault_credential_assignments (
+            id INTEGER PRIMARY KEY,
+            credential_id INTEGER NOT NULL,
+            client_id INTEGER,
+            device_id INTEGER,
+            created_by VARCHAR(128),
             created_at DATETIME NOT NULL
         )
     """,
@@ -263,6 +290,11 @@ DEV_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_report_runs_client_id ON report_runs (client_id)",
     "CREATE INDEX IF NOT EXISTS ix_report_runs_status ON report_runs (status)",
     "CREATE INDEX IF NOT EXISTS ix_report_runs_created_at ON report_runs (created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_credentials_purpose ON vault_credentials (purpose)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_credentials_status ON vault_credentials (status)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_credential_assignments_credential_id ON vault_credential_assignments (credential_id)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_credential_assignments_client_id ON vault_credential_assignments (client_id)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_credential_assignments_device_id ON vault_credential_assignments (device_id)",
 ]
 
 
@@ -279,6 +311,7 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "remote_actions": REMOTE_ACTION_COLUMNS,
         "enrollment_tokens": ENROLLMENT_TOKEN_COLUMNS,
         "trusted_domains": TRUSTED_DOMAIN_COLUMNS,
+        "vault_credentials": VAULT_CREDENTIAL_COLUMNS,
     }.items():
         if not inspector.has_table(table_name):
             continue
