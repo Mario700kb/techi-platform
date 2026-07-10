@@ -8,7 +8,7 @@ contract (404 on every route when FEATURE_VAULT is off).
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from types import SimpleNamespace
 
@@ -42,6 +42,16 @@ def _session():
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    # SQLite ignores foreign keys unless told otherwise — production Postgres
+    # enforces them. Without this pragma, a test suite would happily pass a
+    # delete that violates a real FK in prod (exactly what happened here: see
+    # CHANGELOG-SOLUTIONS 2026-07-10, vault_credential_usage_credential_id_fkey).
+    @event.listens_for(engine, "connect")
+    def _enable_fk(dbapi_connection, _):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(
         bind=engine,
         tables=[
@@ -100,15 +110,20 @@ class TestVaultService:
 
     def test_scope_integrity(self):
         db = _session()
+        device = Device(hostname="SCOPE-TEST")
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+
         service = VaultService(db)
         with pytest.raises(VaultScopeError):
             service.create(_create_payload(scope_type="client"), created_by="m")  # missing client_id
         with pytest.raises(VaultScopeError):
             service.create(
-                _create_payload(scope_type="global", device_id=5), created_by="m"
+                _create_payload(scope_type="global", device_id=device.id), created_by="m"
             )  # global must not set targets
-        ok = service.create(_create_payload(scope_type="device", device_id=7), created_by="m")
-        assert ok.device_id == 7
+        ok = service.create(_create_payload(scope_type="device", device_id=device.id), created_by="m")
+        assert ok.device_id == device.id
 
     def test_reveal_returns_plaintext_and_audits_reason(self):
         db = _session()
@@ -201,6 +216,30 @@ class TestVaultEndpoints:
         listed = client.get("/api/v1/vault").json()
         assert listed == []
 
+    def test_delete_with_multiple_usage_rows_reproduces_production_bug(self, monkeypatch):
+        # Production incident (2026-07-10): every credential has at least one
+        # vault_credential_usage row from creation, and that FK
+        # (vault_credential_usage_credential_id_fkey, NO ACTION in Postgres)
+        # made every delete fail with a 500 IntegrityError, surfaced to the
+        # browser as "Failed to fetch". Reveal/rotate add more usage rows —
+        # this locks that a credential with several still deletes cleanly.
+        client, db = _client_and_db(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        created = client.post(
+            "/api/v1/vault",
+            json={"name": "well used cred", "credential_type": "password", "secret": "s3cr3t"},
+        ).json()
+        credential_id = created["id"]
+        client.post(f"/api/v1/vault/{credential_id}/reveal", json={"reason": "routine check"})
+        client.patch(f"/api/v1/vault/{credential_id}", json={"secret": "new-secret"})
+        assert len(client.get(f"/api/v1/vault/{credential_id}/usage").json()) >= 3
+
+        response = client.delete(f"/api/v1/vault/{credential_id}")
+        assert response.status_code == 204
+        assert client.get("/api/v1/vault").json() == []
+        assert db.query(VaultCredentialUsage).filter(
+            VaultCredentialUsage.credential_id == credential_id
+        ).count() == 0
+
     def test_delete_denied_for_non_admin(self, monkeypatch):
         client = _client(OperatorRole.OPERATOR.value, flag_on=True, monkeypatch=monkeypatch)
         response = client.delete("/api/v1/vault/1")
@@ -237,9 +276,18 @@ class TestVaultEndpoints:
         assert client.get("/api/v1/vault").json() == []
 
     def test_delete_orphaned_scope_does_not_block(self, monkeypatch):
-        # A credential scoped to a device_id that no longer exists must not be
-        # protected — the reference is already gone, nothing to warn about.
-        client = _client(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        # vault_credentials.device_id has a real, enforced FK in production
+        # (confirmed live: vault_credentials_device_id_fkey, NO ACTION), so a
+        # credential can never be CREATED pointing at a nonexistent device —
+        # this can only arise if the device row is removed by some path that
+        # bypasses the ORM relationship (direct SQL). Simulate that via a raw
+        # DELETE (same technique production data repair would use) rather
+        # than asserting an impossible API-level create.
+        client, db = _client_and_db(OperatorRole.ADMIN.value, flag_on=True, monkeypatch=monkeypatch)
+        device = Device(hostname="temp-device")
+        db.add(device)
+        db.commit()
+        db.refresh(device)
         created = client.post(
             "/api/v1/vault",
             json={
@@ -247,10 +295,16 @@ class TestVaultEndpoints:
                 "credential_type": "password",
                 "secret": "s3cr3t",
                 "scope_type": "device",
-                "device_id": 999999,
+                "device_id": device.id,
             },
         )
         credential_id = created.json()["id"]
+
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+        db.query(Device).filter(Device.id == device.id).delete()
+        db.commit()
+        db.execute(text("PRAGMA foreign_keys=ON"))
+
         response = client.delete(f"/api/v1/vault/{credential_id}")
         assert response.status_code == 204
 

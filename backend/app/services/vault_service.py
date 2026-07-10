@@ -183,9 +183,18 @@ class VaultService:
             if references:
                 raise VaultReferencedError(references)
         credential_id = credential.id
+        # vault_credential_usage.credential_id is a real, non-cascading FK in
+        # production Postgres — every credential has at least one usage row
+        # (the "create" entry), so deleting the credential first always hit a
+        # ForeignKeyViolation (500, surfaced to the browser as "Failed to
+        # fetch"). The append-only usage log has no ongoing value once the
+        # credential itself is gone; the permanent deletion record lives in
+        # AuditLog (written by the caller), which has no such FK.
+        self.db.query(VaultCredentialUsage).filter(
+            VaultCredentialUsage.credential_id == credential_id
+        ).delete(synchronize_session=False)
         self.db.delete(credential)
         self.db.commit()
-        self._record_usage(credential_id, "delete", operator_username)
 
     # -- secret access -----------------------------------------------------
 
