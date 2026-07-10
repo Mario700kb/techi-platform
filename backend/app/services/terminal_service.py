@@ -62,6 +62,45 @@ class TerminalService:
         self.db.refresh(session)
         return session, operator_ticket, agent_ticket
 
+    def create_ssh_session(
+        self,
+        device_id: int,
+        operator_id: Optional[int],
+        operator_username: Optional[str],
+        *,
+        ssh_username: str,
+        vault_credential_id: Optional[int],
+        credential_source: str,
+    ) -> Tuple[TerminalSession, str]:
+        """Embedded SSH Connect: same session/ticket model as create_session,
+        but there is no separate agent leg to dial in — the backend itself
+        attaches as the agent leg (see app/services/ssh_connector.py) — so
+        only the operator ticket is meaningful; the agent ticket is still
+        generated (and hashed at rest, never returned) purely so this row
+        satisfies the same NOT NULL column as every other session, keeping
+        one shared schema for both modes."""
+        operator_ticket = secrets.token_urlsafe(32)
+        agent_ticket = secrets.token_urlsafe(32)
+        session = TerminalSession(
+            id=uuid.uuid4().hex,
+            device_id=device_id,
+            operator_id=operator_id,
+            operator_username=operator_username,
+            engine="ssh",
+            mode="ssh",
+            ssh_username=ssh_username,
+            vault_credential_id=vault_credential_id,
+            credential_source=credential_source,
+            status=TerminalSessionStatus.PENDING.value,
+            operator_ticket_hash=_hash_ticket(operator_ticket),
+            agent_ticket_hash=_hash_ticket(agent_ticket),
+            expires_at=utcnow() + timedelta(seconds=TICKET_TTL_SECONDS),
+        )
+        self.db.add(session)
+        self.db.commit()
+        self.db.refresh(session)
+        return session, operator_ticket
+
     def get(self, session_id: str) -> Optional[TerminalSession]:
         return self.db.query(TerminalSession).filter(TerminalSession.id == session_id).first()
 
@@ -100,7 +139,15 @@ class TerminalService:
             self.db.commit()
 
     def close(self, session: TerminalSession, reason: str) -> None:
-        if session.status in (TerminalSessionStatus.CLOSED.value, TerminalSessionStatus.EXPIRED.value):
+        # FAILED is also terminal (Embedded SSH Connect: a dial error already
+        # recorded a specific reason — credential_missing/host_unreachable/
+        # authentication_failed/etc. — a later generic "operator_closed" from
+        # the WS route's own cleanup must not clobber that diagnosis).
+        if session.status in (
+            TerminalSessionStatus.CLOSED.value,
+            TerminalSessionStatus.EXPIRED.value,
+            TerminalSessionStatus.FAILED.value,
+        ):
             return
         session.status = (
             TerminalSessionStatus.EXPIRED.value if reason == "expired" else TerminalSessionStatus.CLOSED.value

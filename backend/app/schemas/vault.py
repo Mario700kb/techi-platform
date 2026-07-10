@@ -76,6 +76,11 @@ class VaultCredentialOut(BaseModel):
     references: List[str] = Field(default_factory=list)
     consumer_status: str = "no_active_consumer"
     future_consumers: List[str] = Field(default_factory=list)
+    # Real, live usage — populated once a real connection (Embedded SSH
+    # Connect today) has actually authenticated with this credential, as
+    # opposed to future_consumers (a static registry hint). See
+    # VaultService.record_credential_use()/enrich().
+    used_by: List[str] = Field(default_factory=list)
 
 
 class VaultRevealRequest(BaseModel):

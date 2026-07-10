@@ -11,24 +11,39 @@ app.platform_core.rollout, generic across future features). Operator-scoped
 secret.
 """
 
+import json
 import logging
-from typing import Optional
+from datetime import datetime
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, require_min_role
+from app.core.auth import (
+    ROLE_ORDER,
+    get_current_operator,
+    get_operator_permissions,
+    require_min_role,
+    require_role_or_permission,
+)
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.client import Client
 from app.models.operator import Operator, OperatorRole
+from app.platform_core.connect import methods_for
 from app.platform_core.flags import feature_enabled
+from app.platform_core.registry import resolve_platform
 from app.platform_core.rollout import is_device_in_rollout
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.remote_action import ActionType, RemoteActionCreate
 from app.services.audit_service import AuditAction, audit_log
 from app.services.remote_action_service import RemoteActionService
+from app.services.ssh_connector import dial_and_run, ssh_connector_runner
+from app.services.terminal_relay import terminal_relay
 from app.services.terminal_service import TerminalService, TICKET_TTL_SECONDS
+from app.services.permission_service import TERMINAL_OPEN, TERMINAL_VIEW, VAULT_USE
+from app.services.vault_service import VaultService
 
 logger = logging.getLogger(__name__)
 
@@ -140,4 +155,315 @@ def create_terminal_session(
         operator_ws_path=f"{ws_base}/ws/terminal/{session.id}?ticket={operator_ticket}",
         operator_ticket=operator_ticket,
         expires_in_seconds=TICKET_TTL_SECONDS,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Embedded SSH Connect — reuses everything above (TerminalSession, ticket
+# model, /ws/terminal/{id} route, TerminalRelay, TerminalWatchdog, audit call
+# sites). The only new transport is app.services.ssh_connector, which attaches
+# the backend's own SSH connection as the "agent" leg instead of an agent
+# dialing in over a websocket. See docs/reference/OPERATOR-MANUAL.md and
+# IMPLEMENTATION-ROADMAP.md ("Embedded SSH for connector platforms") for the
+# architecture this implements.
+# ─────────────────────────────────────────────────────────────────────────
+
+_require_ssh_open = require_role_or_permission(OperatorRole.ADMIN.value, TERMINAL_OPEN)
+_require_ssh_view = require_role_or_permission(OperatorRole.OPERATOR.value, TERMINAL_VIEW)
+
+
+class SSHCredentialCandidateOut(BaseModel):
+    id: int
+    name: str
+    username: Optional[str] = None
+    credential_type: str
+
+
+class SSHCredentialsResponse(BaseModel):
+    tier: str  # device|group|client|global|none
+    candidates: List[SSHCredentialCandidateOut]
+
+
+class SSHSessionCreate(BaseModel):
+    credential_id: Optional[int] = None
+    # Ad hoc, operator-entered credentials — only used when the operator
+    # explicitly chooses "Temporary Session" in the UI. Never persisted to
+    # the Vault, never logged; used once to dial and then discarded.
+    temporary_username: Optional[str] = None
+    temporary_password: Optional[str] = None
+
+
+class SSHSessionResponse(BaseModel):
+    session_id: str
+    operator_ws_path: str
+    operator_ticket: str
+    expires_in_seconds: int
+    ssh_username: str
+    credential_source: str  # device|group|client|global|temporary
+
+
+class SSHSessionDetailResponse(BaseModel):
+    """Feeds the Drawer's SSH session info panel: device, client, operator,
+    username, authentication source, start, duration, idle timer, status."""
+
+    session_id: str
+    device_id: int
+    device_hostname: Optional[str] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    operator_username: Optional[str] = None
+    ssh_username: Optional[str] = None
+    credential_source: Optional[str] = None
+    status: str
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    duration_seconds: int
+    idle_seconds: Optional[float] = None
+    disconnect_reason: Optional[str] = None
+
+
+def _ssh_method_available(device) -> bool:
+    """Reuses the Connect Framework registry (never a hardcoded platform
+    check) to decide whether a device exposes an 'ssh' connect method."""
+    descriptor = resolve_platform(device.platform)
+    platform_id = descriptor.id if descriptor is not None else "windows"
+    return any(m.id == "ssh" for m in methods_for(platform_id, device.capabilities))
+
+
+@router.get("/devices/{device_id}/ssh/credentials", response_model=SSHCredentialsResponse)
+def ssh_credential_candidates(
+    device_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_ssh_open),
+):
+    """Step 1 of Embedded SSH Connect: resolve Credential Vault candidates
+    for this device, precedence Device > Group > Client > Global
+    (VaultService.resolve_ssh_candidates). The frontend uses this to decide
+    whether to auto-connect (exactly one candidate), show a selector (more
+    than one), or show "no SSH credential available" (none) — it never falls
+    back to asking for a password unless the operator explicitly picks
+    Temporary Session."""
+    if not feature_enabled("FEATURE_TERMINAL"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    device = DeviceRepository(db).get(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    tier, candidates = VaultService(db).resolve_ssh_candidates(device)
+    return SSHCredentialsResponse(
+        tier=tier,
+        candidates=[
+            SSHCredentialCandidateOut(id=c.id, name=c.name, username=c.username, credential_type=c.credential_type)
+            for c in candidates
+        ],
+    )
+
+
+@router.post("/devices/{device_id}/ssh/sessions", response_model=SSHSessionResponse)
+def create_ssh_session(
+    device_id: int,
+    payload: SSHSessionCreate,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_ssh_open),
+):
+    """Step 2: resolve/validate the credential, create the session (same
+    TerminalSession table, `mode="ssh"`), and schedule the backend's own SSH
+    dial as the agent leg of the SAME relay pair the operator's browser
+    already connects to via the existing /ws/terminal/{id} route."""
+    if not feature_enabled("FEATURE_TERMINAL"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    device = DeviceRepository(db).get(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not _ssh_method_available(device):
+        raise HTTPException(status_code=400, detail="Device does not expose an SSH connect method")
+    if not is_device_in_rollout("FEATURE_TERMINAL", device):
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.TERMINAL_SESSION_DENIED,
+            entity_type="device",
+            entity_id=device_id,
+            details={"reason": "outside_rollout_scope", "mode": "ssh"},
+        )
+        raise HTTPException(status_code=403, detail="Terminal is not yet enabled for this device (rollout scope)")
+
+    host = device.local_ip or device.public_ip
+    if not host:
+        raise HTTPException(status_code=409, detail="Device has no known IP address yet")
+
+    vault = VaultService(db)
+    port = 22
+    private_key: Optional[str] = None
+    passphrase: Optional[str] = None
+    vault_credential_id: Optional[int] = None
+
+    if payload.temporary_username and payload.temporary_password:
+        ssh_username = payload.temporary_username
+        password: Optional[str] = payload.temporary_password
+        credential_source = "temporary"
+    else:
+        tier, candidates = vault.resolve_ssh_candidates(device)
+        if payload.credential_id is not None:
+            credential = next((c for c in candidates if c.id == payload.credential_id), None)
+            if credential is None:
+                raise HTTPException(status_code=404, detail="Credential not available for this device")
+        elif len(candidates) == 1:
+            credential = candidates[0]
+        elif len(candidates) == 0:
+            audit_log(
+                db,
+                operator=operator,
+                action=AuditAction.SSH_CREDENTIAL_MISSING,
+                entity_type="device",
+                entity_id=device_id,
+                details={"reason": "no_ssh_credential"},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No SSH credential is available for this device. Add one in the Credential Vault "
+                    "(Device, Group, Client, or Global scope), or start a Temporary Session."
+                ),
+            )
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{len(candidates)} SSH credentials are available for this device — "
+                    f"choose one via GET /devices/{device_id}/ssh/credentials"
+                ),
+            )
+
+        # Consuming a stored Vault credential requires vault_use, additive on
+        # top of admin+ (same shape as vault.py's _vault_gate) — a Temporary
+        # Session never touches the Vault so it doesn't need this check.
+        if ROLE_ORDER.get(operator.role, -1) < ROLE_ORDER.get(OperatorRole.ADMIN.value, 99):
+            perms = get_operator_permissions(operator, db)
+            if perms is None or VAULT_USE not in perms:
+                raise HTTPException(status_code=403, detail=f"Permission denied: {VAULT_USE}")
+
+        secret_fields = vault.get_secret_fields_for_use(credential)
+        password = secret_fields.get("password")
+        private_key = secret_fields.get("private_key")
+        # Legacy ssh_key credentials store the private key under "secret"
+        # (VaultService._decode_secret_payload's legacy fallback).
+        if private_key is None and credential.credential_type == "ssh_key":
+            private_key = secret_fields.get("secret")
+        passphrase = secret_fields.get("passphrase")
+        if not password and not private_key:
+            raise HTTPException(status_code=409, detail="Credential has no usable secret")
+
+        ssh_username = credential.username or ""
+        if not ssh_username:
+            raise HTTPException(status_code=409, detail="Credential has no username configured")
+
+        metadata = json.loads(credential.metadata_json) if credential.metadata_json else {}
+        try:
+            port = int(metadata.get("port") or 22)
+        except (TypeError, ValueError):
+            port = 22
+
+        vault_credential_id = credential.id
+        credential_source = tier
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.SSH_CREDENTIAL_RESOLVED,
+            entity_type="vault_credential",
+            entity_id=credential.id,
+            details={"device_id": device_id, "credential_source": tier},
+        )
+
+    svc = TerminalService(db)
+    session, operator_ticket = svc.create_ssh_session(
+        device_id=device_id,
+        operator_id=operator.id,
+        operator_username=operator.username,
+        ssh_username=ssh_username,
+        vault_credential_id=vault_credential_id,
+        credential_source=credential_source,
+    )
+
+    ws_base = _ws_base()
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.SSH_SESSION_STARTED,
+        entity_type="terminal_session",
+        entity_id=None,
+        details={
+            "session_id": session.id,
+            "device_id": device_id,
+            "ssh_username": ssh_username,
+            "credential_source": credential_source,
+        },
+    )
+
+    ssh_connector_runner.schedule_threadsafe(
+        dial_and_run(
+            session.id,
+            device_id,
+            operator.username,
+            host=host,
+            port=port,
+            username=ssh_username,
+            password=password,
+            private_key=private_key,
+            passphrase=passphrase,
+            vault_credential_id=vault_credential_id,
+        )
+    )
+
+    return SSHSessionResponse(
+        session_id=session.id,
+        operator_ws_path=f"{ws_base}/ws/terminal/{session.id}?ticket={operator_ticket}",
+        operator_ticket=operator_ticket,
+        expires_in_seconds=TICKET_TTL_SECONDS,
+        ssh_username=ssh_username,
+        credential_source=credential_source,
+    )
+
+
+@router.get("/devices/{device_id}/ssh/sessions/{session_id}", response_model=SSHSessionDetailResponse)
+def get_ssh_session(
+    device_id: int,
+    session_id: str,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(_require_ssh_view),
+):
+    """Feeds the Drawer's live session info panel and lets the frontend
+    surface a precise failure reason (credential missing / host unreachable /
+    authentication failed / timeout / host key mismatch / connection refused
+    / network error) instead of a generic 'connection closed' message."""
+    if not feature_enabled("FEATURE_TERMINAL"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    svc = TerminalService(db)
+    session = svc.get(session_id)
+    if session is None or session.device_id != device_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    device = DeviceRepository(db).get(device_id)
+    client = db.query(Client).filter(Client.id == device.client_id).first() if device and device.client_id else None
+
+    return SSHSessionDetailResponse(
+        session_id=session.id,
+        device_id=session.device_id,
+        device_hostname=device.hostname if device else None,
+        client_id=device.client_id if device else None,
+        client_name=client.name if client else None,
+        operator_username=session.operator_username,
+        ssh_username=session.ssh_username,
+        credential_source=session.credential_source,
+        status=session.status,
+        created_at=session.created_at,
+        started_at=session.started_at,
+        ended_at=session.ended_at,
+        duration_seconds=session.duration_seconds,
+        idle_seconds=terminal_relay.idle_seconds(session.id),
+        disconnect_reason=session.disconnect_reason,
     )

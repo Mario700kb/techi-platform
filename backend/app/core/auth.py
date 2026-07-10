@@ -148,6 +148,31 @@ def require_team_permission(perm_key: str):
     return dependency
 
 
+def require_role_or_permission(min_role: str, perm_key: str):
+    """FastAPI dependency factory — passes if the operator's role already
+    meets `min_role` OR their effective team permissions include `perm_key`.
+    Purely additive (never narrows what `min_role` already grants). Same
+    dependency shape as vault.py's `_vault_gate` (kept local there,
+    unmodified, to avoid touching a shipped/production endpoint module);
+    this shared version lets other features (Embedded SSH Connect's
+    terminal_*/vault_use permissions) reuse the pattern without copy-pasting
+    it into every endpoint module.
+    """
+
+    def dependency(
+        operator: Operator = Depends(get_current_operator),
+        db: Session = Depends(get_db),
+    ) -> Operator:
+        if ROLE_ORDER.get(operator.role, -1) >= ROLE_ORDER.get(min_role, 99):
+            return operator
+        perms = get_operator_permissions(operator, db)
+        if perms is not None and perm_key in perms:
+            return operator
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied: {perm_key}")
+
+    return dependency
+
+
 def get_operator_scope(
     operator: Operator = Depends(get_current_operator),
     db: Session = Depends(get_db),

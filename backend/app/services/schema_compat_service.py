@@ -98,6 +98,14 @@ VAULT_CREDENTIAL_COLUMNS = {
     "metadata_json": "TEXT",
 }
 
+# Embedded SSH Connect (additive, on top of the Phase 5 terminal_sessions table)
+TERMINAL_SESSION_COLUMNS = {
+    "mode": "VARCHAR(16) NOT NULL DEFAULT 'agent'",
+    "vault_credential_id": "INTEGER",
+    "ssh_username": "VARCHAR(160)",
+    "credential_source": "VARCHAR(16)",
+}
+
 DEV_TABLES = {
     "terminal_sessions": """
         CREATE TABLE IF NOT EXISTS terminal_sessions (
@@ -114,7 +122,11 @@ DEV_TABLES = {
             started_at DATETIME,
             ended_at DATETIME,
             disconnect_reason VARCHAR(64),
-            recording_path VARCHAR(512)
+            recording_path VARCHAR(512),
+            mode VARCHAR(16) NOT NULL DEFAULT 'agent',
+            vault_credential_id INTEGER,
+            ssh_username VARCHAR(160),
+            credential_source VARCHAR(16)
         )
     """,
     "vault_credentials": """
@@ -312,6 +324,7 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "enrollment_tokens": ENROLLMENT_TOKEN_COLUMNS,
         "trusted_domains": TRUSTED_DOMAIN_COLUMNS,
         "vault_credentials": VAULT_CREDENTIAL_COLUMNS,
+        "terminal_sessions": TERMINAL_SESSION_COLUMNS,
     }.items():
         if not inspector.has_table(table_name):
             continue

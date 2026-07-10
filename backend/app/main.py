@@ -22,6 +22,7 @@ from app.schemas.agent import AgentEnrollmentRequest
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
 from app.services.auth_service import ensure_bootstrap_owner
 from app.services.enrollment_token_service import EnrollmentTokenService
+from app.services.ssh_connector import ssh_connector_runner
 from app.platform_core.flags import feature_enabled
 from app.websocket.publisher import realtime_publisher
 from app.websocket.routes import router as websocket_router
@@ -118,6 +119,7 @@ async def lifespan(app: FastAPI):
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
         terminal_watchdog.start()
+        ssh_connector_runner.start()
     if feature_enabled("FEATURE_NOTIFICATIONS"):
         notification_worker.start()
     if feature_enabled("FEATURE_REPORTING"):
@@ -131,6 +133,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     await terminal_watchdog.stop()
+    ssh_connector_runner.stop()
     await notification_worker.stop()
     await report_worker.stop()
     await device_reconciliation_worker.stop()

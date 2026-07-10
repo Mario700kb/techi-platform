@@ -74,6 +74,11 @@ export interface VaultCredential {
   references: string[];
   consumer_status: VaultConsumerStatus;
   future_consumers: string[];
+  // Real, live usage — populated once a real connection (Embedded SSH
+  // Connect) has actually authenticated with this credential, as opposed to
+  // future_consumers (a static "meant for" hint). Optional so existing test
+  // fixtures/mocks predating this field don't need updating.
+  used_by?: string[];
 }
 
 export interface VaultCredentialCreate {

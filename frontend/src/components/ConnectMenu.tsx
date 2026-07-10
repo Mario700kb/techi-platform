@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ChevronDown, Link2, Monitor, Globe } from "lucide-react";
 
 import { fetchJson } from "../api/client";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
+
+const EmbeddedSSHModal = lazy(() => import("./EmbeddedSSHModal"));
 
 // Connect Framework UI (Platform Expansion Phase 7). The dropdown is built
 // ENTIRELY from GET /devices/{id}/connect-methods — no hardcoded per-platform
@@ -15,6 +17,11 @@ import { detectOperatorOS } from "../utils/operatorOs";
 // browser methods open a new tab. `remote_support`/`web_terminal` keep their
 // own existing dedicated flows (Remote Support tab / Terminal tab) and are
 // not launched from here.
+//
+// Embedded SSH Connect (additive): the "ssh" method's default action is now
+// opening EmbeddedSSHModal (backend-as-SSH-client reusing the Web Terminal
+// stack) instead of the generic scheme://<ip> launcher — the external OS SSH
+// client remains available as a secondary link inside that modal.
 
 interface ConnectMethod {
   id: string;
@@ -37,7 +44,19 @@ export default function ConnectMenu({ deviceId }: Props) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
+  const [sshModalOpen, setSshModalOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  const launchExternalSsh = async () => {
+    try {
+      const res = await fetchJson<{ url: string; surface: "desktop" | "browser" }>(
+        `/api/v1/devices/${deviceId}/connect-methods/ssh/launch`,
+      );
+      clickProtocolUrl(res.url);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not launch the external SSH client");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -72,6 +91,13 @@ export default function ConnectMenu({ deviceId }: Props) {
     setOpen(false);
     if (DEDICATED_METHOD_IDS.has(m.id)) {
       setNote(`${m.label} has its own Connect flow (see the ${m.id === "remote_support" ? "Remote Support" : "Terminal"} tab).`);
+      return;
+    }
+    // Embedded SSH Connect: default action for "ssh" is now the embedded
+    // terminal, not the generic scheme://<ip> launcher. The external OS SSH
+    // client remains one click away inside the modal.
+    if (m.id === "ssh") {
+      setSshModalOpen(true);
       return;
     }
     setLaunching(m.id);
@@ -135,6 +161,16 @@ export default function ConnectMenu({ deviceId }: Props) {
           onClick={() => setNote(null)}>
           {note}
         </div>
+      )}
+
+      {sshModalOpen && (
+        <Suspense fallback={null}>
+          <EmbeddedSSHModal
+            deviceId={deviceId}
+            onClose={() => setSshModalOpen(false)}
+            onOpenExternal={() => void launchExternalSsh()}
+          />
+        </Suspense>
       )}
     </div>
   );

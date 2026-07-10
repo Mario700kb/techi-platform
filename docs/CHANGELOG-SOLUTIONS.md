@@ -27,6 +27,231 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-10] FEATURE: Embedded SSH Connect — Device Drawer ▸ Connect ▸ SSH ▸ Embedded TECHI Terminal
+
+### Problemi
+
+Two prior investigations left this gap open on record: (1) the 2026-07-10
+Enterprise Vault upgrade built `VaultService.resolve_for_context()` but
+explicitly did not wire it into any live connection path; (2) a dedicated
+investigation into embedding SSH for MikroTik concluded the existing
+`TerminalRelay`/`TerminalSession` architecture (built for a device's own
+agent to dial out over a websocket and hold a live PTY) could not be reused
+as-is for a Connector platform with no persistent process, and recorded a
+"connector relay" architecture recommendation without building it. Meanwhile
+Connect ▸ SSH opened the operator's own OS SSH client, requiring the
+operator to already have credentials memorized or stored locally, with no
+audit trail of what was actually used. The mission: complete Embedded SSH
+and integrate it end-to-end — Device Drawer ▸ Connect ▸ SSH ▸ Embedded TECHI
+Terminal, credentials resolved from the Vault (Device > Group > Client >
+Global), reusing the existing Terminal/Connect/Vault/RBAC/Audit
+infrastructure with no new subsystem.
+
+### Analiza
+
+Re-read the recorded "connector relay" recommendation: replace the agent leg
+of `TerminalRelay`'s pair with the **backend itself acting as an SSH
+client**, piping bytes between an outbound SSH connection and the SAME
+operator WebSocket route (`/ws/terminal/{id}`), ticket model, and
+`DeviceTerminal.tsx` frontend already shipped for the Linux Web Terminal.
+`TerminalRelay.pump()`/`close()` operate on whatever object is stored in the
+pair's `agent` slot via plain Python duck typing (`receive()`/`send_bytes()`/
+`send_text()`/`close()`, matching FastAPI's `WebSocket` shape) — nothing in
+the relay actually requires a real WebSocket. That meant a small adapter
+wrapping an `asyncssh` PTY process could attach to `terminal_relay` exactly
+like the Linux agent's websocket leg, with **zero changes** to
+`TerminalRelay`, `TerminalWatchdog`, or the operator-facing WS handler.
+
+For scheduling the SSH dial from a synchronous FastAPI endpoint (SQLAlchemy
+sync session, no `async def`), the exact same pattern `RealtimeEventPublisher`
+already uses was reused: capture the running event loop at app startup
+(`asyncio.get_running_loop()`), then `asyncio.run_coroutine_threadsafe()`
+from the sync request-handling thread.
+
+For credential resolution, `resolve_for_context()`'s tiered
+`by_scope.setdefault(...)` logic picks one arbitrary credential per tier
+without exposing whether that tier had one match or several — insufficient
+for "auto-connect on one match, show a selector on multiple." A sibling
+method was needed that returns every candidate at the first non-empty tier.
+
+### Zgjidhja
+
+Backend (all additive, no existing endpoint's behavior changed):
+
+- **`app/services/ssh_connector.py`** (new): `SSHConnectAdapter` (duck-types
+  the WebSocket interface `TerminalRelay.pump()` uses, backed by an
+  `asyncssh` PTY process instead of a real socket); `SSHConnectError` with a
+  `reason` mapped from `asyncssh`/`asyncio`/`OSError` exceptions into exactly
+  the categories the mission specified (`credential_missing`,
+  `host_unreachable`, `authentication_failed`, `timeout`,
+  `host_key_mismatch`, `connection_refused`, `network_error`); `dial_and_run()`
+  — the top-level coroutine that dials, attaches, records Vault usage on
+  success, blocks on the reverse-direction pump for the connection's
+  lifetime, then cleans up (marks the DB session, writes the audit entry,
+  force-closes the relay pair — same shape as `terminal_watchdog.run_once()`);
+  `SSHConnectorRunner` (same capture-the-loop pattern as
+  `RealtimeEventPublisher`), started/stopped in `main.py`'s lifespan
+  alongside `terminal_watchdog`, gated by the same `FEATURE_TERMINAL` check.
+- **`app/services/vault_service.py`**: `resolve_ssh_candidates(device)` —
+  reuses `resolve_for_context`'s exact Device > Group > Client > Global
+  precedence, restricted to SSH-capable types (`ssh_password`,
+  `ssh_private_key`, legacy `ssh_key`), returning `(tier, [candidates])` for
+  the first non-empty tier; `get_secret_fields_for_use()` (decrypts for a
+  live connection — distinct from `reveal()`, which is for showing plaintext
+  to a human, requires `vault_reveal` + a reason, and writes a `"reveal"`
+  usage row); `record_credential_use()` (sets `last_used_at`, writes a
+  `"use"` usage row); `enrich()` gained `used_by` — non-empty exactly when a
+  `"use"` row exists, i.e. the credential has actually authenticated a
+  connection (distinct from the static `future_consumers` registry hint).
+- **`app/models/terminal_session.py`**: 4 additive nullable columns — `mode`
+  (`agent`|`ssh`), `vault_credential_id`, `ssh_username`, `credential_source`
+  (`device`|`group`|`client`|`global`|`temporary`). The previously-declared-
+  but-never-used `TerminalSessionStatus.FAILED` is now set on a dial
+  failure, with `TerminalService.close()` extended to also treat `FAILED` as
+  terminal (a later generic `operator_closed` close call — from the
+  operator's own WS handler racing the failure — must never clobber a
+  specific failure reason with a generic one).
+- **`app/api/v1/endpoints/terminal.py`**: `GET /devices/{id}/ssh/credentials`
+  (candidate list), `POST /devices/{id}/ssh/sessions` (resolves/validates a
+  credential — explicit `credential_id`, auto-pick on exactly one candidate,
+  409 with a clear message on zero or on 2+ without a choice, or an explicit
+  Temporary Session's ad hoc username/password, never persisted — creates
+  the session, audits, schedules the dial), `GET
+  /devices/{id}/ssh/sessions/{id}` (session detail: device, client, operator,
+  username, authentication source, start, duration, idle timer (new
+  `TerminalRelay.idle_seconds()`), status, and — on failure — the precise
+  reason, feeding the frontend session-info panel and error display).
+- **RBAC**: `terminal_open`/`terminal_view`/`terminal_manage`/`vault_use` —
+  4 new permissions, additive over the existing admin+ floor, same shape as
+  the 7 `vault_*` permissions from the Enterprise Vault upgrade. A new shared
+  `require_role_or_permission()` in `app/core/auth.py` generalizes vault.py's
+  own `_vault_gate` dependency-factory pattern (vault.py itself is
+  untouched) so terminal.py doesn't duplicate it. Consuming a *stored* Vault
+  credential additionally requires `vault_use`; a Temporary Session does not
+  (it never touches the Vault).
+- **Audit**: 6 new `AuditAction` values — `ssh_session_started`/
+  `ssh_session_ended`, `ssh_credential_resolved`/`ssh_credential_missing`,
+  `ssh_connection_failed`/`ssh_authentication_failed`.
+  `terminal_routes.py`'s existing `_audit_session_end()` now branches on the
+  session's `mode` column to pick `SSH_SESSION_ENDED` vs
+  `TERMINAL_SESSION_CLOSED` — the one call site both modes' operator-WS
+  disconnect path already shares.
+- **Connect Framework reuse, no per-platform code**: which devices offer
+  Embedded SSH Connect is decided entirely by whether their platform declares
+  an `ssh` `ConnectMethod` in `app/platform_core/connect.py` (already true
+  for Linux, MikroTik) — nothing new added there, and no `platform ==
+  "linux"`/`"mikrotik"` checks anywhere in the new code.
+- **`requirements.txt`**: `asyncssh==2.14.2` (new dependency — the SSH
+  client; no other library in the codebase implements the SSH protocol).
+
+Frontend:
+
+- **`api/terminal.ts`**: `getSshCredentialCandidates()`,
+  `createSshTerminalSession()`, `getSshSessionDetail()`,
+  `SSH_FAILURE_MESSAGES` (reason → human-readable text map).
+- **`components/EmbeddedSSHModal.tsx`** (new): the actual "Connect ▸ SSH ▸
+  Embedded TECHI Terminal" flow — resolves candidates, then auto-connects
+  (one candidate) / shows a selector (multiple) / shows a clear "no
+  credential available" message with an explicit **Temporary Session** form
+  (never a silent fallback) — renders the session info panel
+  (`SSHSessionInfo.tsx`, new: device/client/operator/username/auth
+  source/start/duration/idle timer/status, polling the session-detail
+  endpoint) plus `DeviceTerminal` in a new `mode="ssh"` and keeps "Open in
+  your own SSH client instead" as a secondary link (reuses the existing
+  generic `/connect-methods/ssh/launch` endpoint unchanged).
+- **`components/DeviceTerminal.tsx`**: gained an optional `mode`/
+  `sshOptions`/`onSessionId` prop set — when `mode="ssh"` it calls
+  `createSshTerminalSession()` instead of `createTerminalSession()`; every
+  other line (xterm rendering, resize, bounded auto-reconnect) is unchanged
+  and shared by both modes. On an abnormal close it now also best-effort
+  fetches the SSH session detail to replace the generic "connection closed"
+  message with the precise reason.
+- **`components/ConnectMenu.tsx`**: selecting the `ssh` method now opens
+  `EmbeddedSSHModal` instead of calling the generic launcher — `remote_
+  support`/`web_terminal`'s existing dedicated-flow handling is untouched.
+- **`pages/CredentialVault.tsx`**: renders "Used by: Embedded SSH" under a
+  credential's name when `used_by` is non-empty (Last Used already existed
+  and now reflects real SSH usage too via the backend change above).
+
+### Ndryshimet
+
+New: `backend/app/services/ssh_connector.py`,
+`backend/tests/test_ssh_connector.py`,
+`backend/tests/test_ssh_terminal_endpoint.py`,
+`backend/tests/test_ssh_permission_gates.py`,
+`backend/tests/test_vault_ssh_resolution.py`,
+`frontend/src/components/EmbeddedSSHModal.tsx`,
+`frontend/src/components/SSHSessionInfo.tsx`, +2 new frontend test files.
+Modified: `terminal_session.py` (model), `terminal_service.py`,
+`terminal_relay.py` (`idle_seconds()`), `terminal.py` (endpoints),
+`terminal_routes.py` (audit branch), `vault_service.py`, `schemas/vault.py`,
+`vault.py` (endpoint, `used_by` wiring), `permission_service.py`,
+`audit_service.py`, `core/auth.py` (`require_role_or_permission`), `main.py`
+(runner start/stop), `schema_compat_service.py` (sqlite dev columns/table),
+`requirements.txt`, `api/terminal.ts`, `api/vault.ts`, `ConnectMenu.tsx`,
+`DeviceTerminal.tsx`, `CredentialVault.tsx` (+its test file).
+
+**Schema (additive, apply schema-first before deploy, same rule as every
+other phase)**:
+```sql
+ALTER TABLE terminal_sessions ADD COLUMN IF NOT EXISTS mode VARCHAR(16) NOT NULL DEFAULT 'agent';
+ALTER TABLE terminal_sessions ADD COLUMN IF NOT EXISTS vault_credential_id INTEGER;
+ALTER TABLE terminal_sessions ADD COLUMN IF NOT EXISTS ssh_username VARCHAR(160);
+ALTER TABLE terminal_sessions ADD COLUMN IF NOT EXISTS credential_source VARCHAR(16);
+```
+Inverse (rollback, only if ever needed — nullable/defaulted, safe to leave in place):
+```sql
+ALTER TABLE terminal_sessions DROP COLUMN IF EXISTS credential_source;
+ALTER TABLE terminal_sessions DROP COLUMN IF EXISTS ssh_username;
+ALTER TABLE terminal_sessions DROP COLUMN IF EXISTS vault_credential_id;
+ALTER TABLE terminal_sessions DROP COLUMN IF EXISTS mode;
+```
+
+No new `FEATURE_*` flag — reuses `FEATURE_TERMINAL` (still `false` in prod)
+and its existing `FEATURE_TERMINAL_SCOPE` rollout mechanism unchanged, so
+Embedded SSH Connect goes live at the same time as the Linux Web Terminal
+when the owner eventually flips that flag.
+
+### Rezultati
+
+73 new tests (49 backend across 4 new files, 24 frontend across 4
+new/updated files) — credential-resolution precedence/multiple/missing/
+disabled/wrong-scope, session lifecycle (create/failure/success/already-
+closed), connector error-mapping for every `SSHConnectError` reason, RBAC
+(admin/owner bypass, additive `terminal_open`/`terminal_view`/`vault_use`,
+the OPERATOR-floor view-gate precedent from `vault.py`'s own `_require_view`),
+Vault usage tracking, and the frontend credential-resolution branching /
+session info panel / Vault "Used by" display / ConnectMenu wiring. Preflight
+PASSED: contract 15/15, backend suite 729 passed + the 4 known baseline
+failures (flags OFF and ON), full frontend vitest suite 41/41, `tsc --noEmit`
+clean, production build clean, agent builds clean. `smoke.sh` 8/8 against a
+local server; manually verified the 3 new endpoints return 401 (never 500)
+unauthenticated. Deployed dark under the existing `FEATURE_TERMINAL=false` —
+zero behavior change while the flag stays off, same darkness invariant as
+every other flag-gated feature in this codebase.
+
+### Mësimet
+
+- `TerminalRelay`'s duck-typed pairing (no type check on what's stored in a
+  pair's `operator`/`agent` slot, just `receive()`/`send_bytes()`/
+  `send_text()`/`close()`) turned out to be exactly general enough to accept
+  a non-websocket leg with zero modification — worth remembering the next
+  time a "requires a persistent process" architecture note gets revisited:
+  check whether the *consuming* code actually requires that persistent
+  process's specific transport, or just its interface.
+- Two independent code paths can race to close the same session (the
+  operator's own WS handler vs. `ssh_connector.dial_and_run`'s cleanup, or
+  vs. the watchdog) — this already existed for the Linux PTY case (the
+  watchdog forcing a close while the operator's WS is mid-`pump()` triggers
+  that handler's own close+audit too) and is tolerated, not fixed, by
+  design: `TerminalService.close()`'s idempotent guard makes the DB state
+  correct regardless of ordering, and a duplicate audit entry from a race is
+  accepted noise, not a correctness bug.
+- Host-key verification (`known_hosts=None`) was deliberately deferred, not
+  silently skipped — the `SSHConnectError` mapping already handles
+  `HostKeyNotVerifiable` so turning verification on later needs no other
+  code change, only a place to store trusted per-device host keys.
+
 ## [2026-07-10] FEATURE: Enterprise Credential Vault upgrade — types/purpose/scope/assignments/RBAC/test-connection
 
 ### Problemi

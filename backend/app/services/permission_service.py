@@ -39,6 +39,18 @@ VAULT_REVEAL = "vault_reveal"
 VAULT_DELETE = "vault_delete"
 VAULT_TEST = "vault_test"
 VAULT_ASSIGN = "vault_assign"
+# Distinct from view/create/edit/reveal/delete/test/assign above: permission to
+# have a Vault credential's secret RESOLVED AND USED by a live connection
+# (Embedded SSH Connect today; SNMP/RouterOS/etc. reuse it later) — separate
+# from being able to see or manage the credential record itself.
+VAULT_USE = "vault_use"
+
+# Embedded SSH Connect / Web Terminal (additive, same pattern as VAULT_* above):
+# separated so a team can grant "open a terminal/SSH session" without also
+# granting session management or an audit-only view, and vice versa.
+TERMINAL_OPEN = "terminal_open"
+TERMINAL_VIEW = "terminal_view"
+TERMINAL_MANAGE = "terminal_manage"
 
 ALL_PERMISSIONS: FrozenSet[str] = frozenset({
     VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE,
@@ -46,7 +58,8 @@ ALL_PERMISSIONS: FrozenSet[str] = frozenset({
     DIAGNOSTICS, VIEW_NOTES, EDIT_NOTES, VIEW_INVENTORY, VIEW_PATCH,
     DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS, MANAGE_OPERATORS, AUDIT_LOG,
     SYSTEM_SETTINGS,
-    VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN,
+    VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN, VAULT_USE,
+    TERMINAL_OPEN, TERMINAL_VIEW, TERMINAL_MANAGE,
 })
 
 ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
@@ -56,7 +69,8 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         RESTART_DEVICE, RESTART_AGENT, REINSTALL_REMOTE_SUPPORT, MAINTENANCE_MODE,
         DIAGNOSTICS, VIEW_NOTES, EDIT_NOTES, VIEW_INVENTORY, VIEW_PATCH,
         DEPLOYMENT, MANAGE_CLIENTS, MANAGE_GROUPS, MANAGE_OPERATORS, AUDIT_LOG,
-        VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN,
+        VAULT_VIEW, VAULT_CREATE, VAULT_EDIT, VAULT_REVEAL, VAULT_DELETE, VAULT_TEST, VAULT_ASSIGN, VAULT_USE,
+        TERMINAL_OPEN, TERMINAL_VIEW, TERMINAL_MANAGE,
     }),
     "operator": frozenset({
         VIEW_DEVICES, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE,

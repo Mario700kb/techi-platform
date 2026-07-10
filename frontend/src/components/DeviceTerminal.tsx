@@ -3,18 +3,29 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-import { createTerminalSession } from "../api/terminal";
+import {
+  createSshTerminalSession,
+  createTerminalSession,
+  getSshSessionDetail,
+  SSH_FAILURE_MESSAGES,
+  type SSHSessionCreateOptions,
+} from "../api/terminal";
 import { getAuthToken } from "../api/client";
 
 // Lazy-loaded (see DeviceDrawer) so xterm.js never ships on the main path — the
 // flag-off bundle behavior is unchanged. Platform-independent: it drives the
 // operator side of the relay; the agent side is provided by whatever platform
-// adapter implements the terminal capability (Linux today).
+// adapter implements the terminal capability (Linux today) OR, in "ssh" mode
+// (Embedded SSH Connect), by the backend itself acting as the SSH client —
+// same websocket route, same xterm rendering, same reconnect/resize logic.
 
 type Phase = "connecting" | "open" | "closed" | "error" | "reconnecting";
 
 interface Props {
   deviceId: number;
+  mode?: "agent" | "ssh";
+  sshOptions?: SSHSessionCreateOptions;
+  onSessionId?: (sessionId: string) => void;
 }
 
 // WS close codes the backend never retries on its own — the session/ticket
@@ -24,7 +35,7 @@ const NON_RETRYABLE_CODES = new Set([4001, 4003]);
 const MAX_AUTO_RECONNECTS = 2;
 const AUTO_RECONNECT_DELAY_MS = [1500, 3000];
 
-export default function DeviceTerminal({ deviceId }: Props) {
+export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, onSessionId }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>("connecting");
   const [message, setMessage] = useState<string>("Requesting terminal session…");
@@ -39,13 +50,19 @@ export default function DeviceTerminal({ deviceId }: Props) {
     let fit: FitAddon | null = null;
     let onResize: (() => void) | null = null;
     let autoReconnects = 0;
+    let sessionId: string | null = null;
 
     const connect = async () => {
       setPhase(attempt === 0 ? "connecting" : "reconnecting");
       setMessage(attempt === 0 ? "Requesting terminal session…" : "Reconnecting…");
       try {
-        const session = await createTerminalSession(deviceId, "bash");
+        const session =
+          mode === "ssh"
+            ? await createSshTerminalSession(deviceId, sshOptions)
+            : await createTerminalSession(deviceId, "bash");
         if (disposed || !containerRef.current) return;
+        sessionId = session.session_id;
+        onSessionId?.(session.session_id);
 
         if (!term) {
           term = new Terminal({
@@ -114,6 +131,20 @@ export default function DeviceTerminal({ deviceId }: Props) {
                 ? "Terminal session expired."
                 : "Terminal session closed.",
           );
+          // Embedded SSH Connect: replace the generic message above with the
+          // precise reason (credential missing / host unreachable /
+          // authentication failed / etc.) when the backend recorded one —
+          // best-effort, never blocks the UI if it fails.
+          if (mode === "ssh" && sessionId) {
+            const sid = sessionId;
+            getSshSessionDetail(deviceId, sid)
+              .then((detail) => {
+                if (disposed || !detail.disconnect_reason) return;
+                const friendly = SSH_FAILURE_MESSAGES[detail.disconnect_reason];
+                if (friendly) setMessage(friendly);
+              })
+              .catch(() => { /* best-effort only */ });
+          }
         };
         ws.onerror = () => {
           if (disposed) return;

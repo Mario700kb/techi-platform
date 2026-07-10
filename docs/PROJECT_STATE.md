@@ -39,10 +39,40 @@
    over the Admin+ floor), real Test Connection for SMTP/Webhook (honest
    "unsupported" for every other type — no SSH/SNMP/RouterOS client exists
    yet), lifecycle status badges (Active/Disabled/Expiring soon/Expired/
-   Validation failed). **Vault Integration** (wiring a credential into a real
-   SSH/SNMP/Connect connection path) remains the next production feature —
-   the scope-resolution service exists for it to call, but nothing calls it
-   yet.
+   Validation failed). **Vault Integration is now DONE for SSH** (see item 2a
+   below) — `resolve_for_context()` itself stays unwired for non-SSH
+   integrations (SNMP/RouterOS), which remain future work.
+2a. ✅ **Embedded SSH Connect** — code complete (2026-07-10), reusing the
+   Web Terminal stack (Phase 5) and the Vault scope-resolution precedence
+   completely unchanged: Device Drawer ▸ Connect ▸ SSH now opens an
+   **Embedded TECHI Terminal** by default (external OS SSH client stays a
+   secondary link) for any device whose Connect Framework entry declares an
+   `ssh` method (Linux, MikroTik, and future Storage/Hypervisor platforms —
+   no per-platform code). Architecture: the backend itself dials the SSH
+   connection (`asyncssh`, new dependency) and attaches as the "agent" leg of
+   the same `TerminalRelay` pair the operator's browser already connects to
+   via the existing `/ws/terminal/{id}` route — zero changes to the relay,
+   the watchdog, or the operator-side WS handler. New `VaultService.
+   resolve_ssh_candidates()` reuses the exact Device > Group > Client > Global
+   precedence `resolve_for_context()` established, but returns every
+   candidate at the first non-empty tier (auto-connect on exactly one,
+   selector on multiple, clear "no credential available" + explicit
+   Temporary Session option on none — never a silent password prompt).
+   `TerminalSession` gained 4 additive columns (`mode`, `vault_credential_id`,
+   `ssh_username`, `credential_source`); 4 new granular permissions
+   (`terminal_open`/`terminal_view`/`terminal_manage`/`vault_use`, additive
+   over the existing admin+ floor, same shape as the 7 `vault_*` permissions);
+   6 new audit actions (SSH session started/ended, credential resolved/
+   missing, connection/authentication failed). Vault UI now shows "Used by:
+   Embedded SSH" + Last Used once a credential actually authenticates a
+   connection. Gated by the same `FEATURE_TERMINAL` flag (still OFF in prod)
+   + its existing rollout-scope mechanism — no new flag. 73 new tests
+   (backend + frontend), preflight PASSED (contract 15/15, suite 729+4 known
+   baseline in both flag modes, tsc/build/agent clean), smoke 8/8 locally.
+   **Known limitation**: SSH host-key verification is not enforced yet
+   (`known_hosts=None` — no shared per-device trusted-key store exists);
+   requires the backend to have network reachability to the device (no NAT
+   traversal, same constraint already documented for MikroTik SSH).
 3. ✅ Documentation Baseline — completed (2026-07-05, this standard)
 4. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)
@@ -450,14 +480,16 @@ prototype. `DeviceDrawer.tsx` (Windows) has zero edits across this pass.
 - **current_user added to MikroTik**, Inventory only (not Heartbeat, per
   RouterOS load discipline): active `/user active` session name, one query,
   packed into the existing generic `current_user` field.
-- **Embedded SSH terminal investigated, NOT built**: the existing
-  `TerminalRelay`/`TerminalSession` architecture requires a persistent
-  process dialing out to the relay WS and holding a live PTY — MikroTik has
-  no such process (HTTP heartbeats only). Architecture recommendation
-  (backend-as-SSH-client "connector relay" mode, reusing the same session
-  model + Credential Vault for the stored SSH credential) recorded in
-  IMPLEMENTATION-ROADMAP.md; Connect ▸ SSH today opens the operator's own OS
-  SSH client instead (no reachability requirement).
+- **Embedded SSH terminal — BUILT 2026-07-10** (see "Embedded SSH Connect"
+  entry below and PROJECT_STATE item 2a): the recorded "connector relay"
+  recommendation (backend-as-SSH-client, reusing `TerminalRelay`/
+  `TerminalSession` + Credential Vault) shipped for real. Connect ▸ SSH now
+  opens the Embedded TECHI Terminal by default for any device whose Connect
+  Framework entry declares an `ssh` method (Linux, MikroTik, future Storage/
+  Hypervisor platforms); the operator's own OS SSH client remains a secondary
+  link. Known limitation carried over: the backend must have network
+  reachability to the device (no NAT traversal) — same constraint this entry
+  originally identified.
 
 **Visual polish pass (2026-07-10, deployed):** the Generic Device Drawer
 became the final enterprise-grade standard interface for every non-Windows
@@ -565,6 +597,75 @@ behavior byte-identical, matching Phase 5's original darkness invariant).
 Remaining manual step: owner sets `FEATURE_TERMINAL=true` +
 `FEATURE_TERMINAL_SCOPE`/allowlist in prod `.env` and restarts backend —
 still Manual Approval, now a config-only change with zero further code work.
+
+**Embedded SSH Connect (2026-07-10, code complete, deployed dark under the
+same `FEATURE_TERMINAL` flag — no new flag).** Completes the "connector
+relay" architecture this document previously only recommended (see the
+now-updated MikroTik entry above): Device Drawer ▸ Connect ▸ SSH opens an
+**Embedded TECHI Terminal** by default — the external OS SSH client stays a
+secondary link — for any device whose Connect Framework entry declares an
+`ssh` method, generically (Linux, MikroTik, future Storage/Hypervisor
+platforms; no per-platform code).
+
+- **Transport, fully reused, zero changes**: `app/services/ssh_connector.py`
+  (new) has the backend itself dial the SSH connection (`asyncssh`, new
+  pinned dependency) and attach as the "agent" leg of the SAME `TerminalRelay`
+  pair the operator's browser connects to via the existing
+  `/ws/terminal/{id}` route — `TerminalRelay.pump()`/`close()`,
+  `TerminalWatchdog`'s idle/max-duration sweep, and the operator-side WS
+  handler in `terminal_routes.py` needed no changes at all (a small
+  `SSHConnectAdapter` duck-types the WebSocket interface `pump()` uses).
+  `terminal_routes.py`'s session-end audit now picks `SSH_SESSION_ENDED` vs
+  `TERMINAL_SESSION_CLOSED` based on the session's `mode` column.
+- **Credential resolution**: `VaultService.resolve_ssh_candidates()` (new)
+  reuses the exact Device > Group > Client > Global precedence
+  `resolve_for_context()` established, but returns every ACTIVE SSH-type
+  credential (`ssh_password`/`ssh_private_key`/legacy `ssh_key`) at the first
+  non-empty tier — `GET /devices/{id}/ssh/credentials` lets the frontend
+  auto-connect on exactly one candidate, show a selector on multiple, or show
+  a clear "no SSH credential available" message + an explicit **Temporary
+  Session** option on none (ad hoc username/password, used once, never
+  persisted to the Vault, audited distinctly from a resolved credential).
+- **Schema (additive)**: `terminal_sessions` gains 4 nullable columns —
+  `mode` (`agent`|`ssh`), `vault_credential_id`, `ssh_username`,
+  `credential_source` (`device`|`group`|`client`|`global`|`temporary`).
+  `TerminalSessionStatus.FAILED` (previously an unused enum value) is now
+  used for a dial failure, with `TerminalService.close()` guarded so a later
+  generic close can never clobber a specific failure reason.
+- **RBAC**: 4 new granular permissions — `terminal_open`/`terminal_view`/
+  `terminal_manage`/`vault_use` — additive over the existing admin+ floor,
+  same shape as the 7 `vault_*` permissions (a new shared
+  `require_role_or_permission()` in `app/core/auth.py` generalizes vault.py's
+  own `_vault_gate` pattern without touching that shipped file). Using a
+  *stored* Vault credential additionally requires `vault_use`; a Temporary
+  Session never touches the Vault so it doesn't need it.
+- **Audit**: 6 new actions — `ssh_session_started`/`ssh_session_ended`,
+  `ssh_credential_resolved`/`ssh_credential_missing`,
+  `ssh_connection_failed`/`ssh_authentication_failed`.
+- **Errors handled distinctly** (`SSHConnectError.reason`, mapped from
+  `asyncssh` exceptions): `credential_missing`, `host_unreachable`,
+  `authentication_failed`, `timeout`, `host_key_mismatch`,
+  `connection_refused`, `network_error` — surfaced to the operator via the
+  session-detail endpoint rather than a generic "connection closed".
+- **Session info panel**: device, client, operator, username, authentication
+  source, start, duration, idle timer (new `TerminalRelay.idle_seconds()`),
+  status — `GET /devices/{id}/ssh/sessions/{id}`.
+- **Vault UI**: "Used by: Embedded SSH" (new, derived from a real `use`
+  usage row — distinct from the static `future_consumers` hint) + Last Used
+  now reflect real SSH usage (`VaultService.record_credential_use()`).
+- **Known limitation**: SSH host-key verification is not enforced
+  (`known_hosts=None` — no shared per-device trusted-key store exists yet);
+  the error-mapping path for a mismatch is implemented so enabling
+  verification later needs no further change. Reachability constraint
+  unchanged from the original recommendation (backend must reach the
+  device's IP; no NAT traversal — same as the Linux/MikroTik SSH note).
+- **Testing**: 73 new tests (49 backend across 4 new files — credential
+  resolution/multiple/missing, session lifecycle, connector error-mapping,
+  RBAC; 24 frontend across 4 new/updated files). Preflight PASSED: contract
+  15/15, backend suite 729 passed + 4 known baseline (flags off & on), full
+  frontend vitest suite 41/41, tsc/build/agent clean, smoke 8/8 (local).
+  **Deployed dark — `FEATURE_TERMINAL` unchanged (still off in prod)**, same
+  darkness invariant as the rest of this section.
 
 **Notification Engine (2026-07-10, deployed dark; `FEATURE_NOTIFICATIONS`
 stays `false`).** New 9th flag, same conventions as the other 8 (env-driven,

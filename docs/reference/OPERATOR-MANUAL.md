@@ -321,11 +321,15 @@ Two things share the name "Connect":
 2. 🚩 **Connect Framework menu** (`FEATURE_PLATFORM_CORE`): in the Drawer Overview,
    a **Connect** dropdown built dynamically from the device's platform +
    capabilities. It lists the available methods per platform (see §16).
-   **Launchers are live (2026-07-10):** selecting a desktop method (Winbox,
-   SSH) navigates to its `scheme://<device-ip>` protocol link; selecting a
-   browser method (WebFig) opens `http://<device-ip>/webfig/` in a new tab.
-   The connect action is permission-gated (`remote_support_connect`) and
-   audited, the same as the Windows Remote Support connect flow.
+   **Launchers are live (2026-07-10):** selecting Winbox navigates to its
+   `scheme://<device-ip>` protocol link; selecting a browser method (WebFig)
+   opens `http://<device-ip>/webfig/` in a new tab. **Selecting SSH now opens
+   the Embedded SSH Connect terminal (§14a)** instead of a protocol link —
+   your own OS SSH client remains available as a secondary option inside
+   that panel. The connect action is permission-gated
+   (`remote_support_connect`, plus `terminal_open`/`vault_use` for Embedded
+   SSH Connect specifically) and audited, the same as the Windows Remote
+   Support connect flow.
 
 The operator always uses one Connect entry point; the platform decides which
 methods exist.
@@ -381,6 +385,50 @@ devices that report the `terminal` capability. Production-ready as of
   not appear and the terminal endpoints return 404 / close. The prior "edge
   WebSocket route" caveat no longer applies — production's proxy already
   supports it, verified 2026-07-10.
+
+---
+
+## 14a. Embedded SSH Connect 🚩 `FEATURE_TERMINAL` (same flag as §14)
+
+**Connect ▸ SSH now opens an Embedded TECHI Terminal by default** — an
+in-browser terminal, same look as the Web Terminal above, but for **any**
+device whose Connect menu offers an `ssh` method (Linux, MikroTik, and future
+Storage/Hypervisor platforms — not just devices with the `terminal`
+capability). Code complete as of 2026-07-10; not yet enabled in production
+(same `FEATURE_TERMINAL` flag as §14, still off).
+
+- **How it connects**: unlike the Linux Web Terminal (the device's own agent
+  dials out), here the **backend itself** opens the SSH connection to the
+  device using a credential resolved from the **Credential Vault** — no agent
+  or persistent process is required on the device side. This is what makes
+  it work for MikroTik and other non-agent connector platforms.
+- **Credential resolution** (never guesses, never silently prompts):
+  - Exactly one matching Vault credential (Device → Group → Client → Global,
+    same precedence used everywhere else in the Vault) → connects
+    automatically.
+  - More than one → you choose from a list.
+  - None → a clear "No SSH credential is available for this device" message,
+    with two options: add one in the Credential Vault, or click
+    **Temporary Session** to enter a one-time username/password (used once
+    for this connection only, never saved to the Vault).
+- **Session info panel** above the terminal shows: device, client, operator,
+  username, authentication source (Device/Group/Client/Global/Temporary
+  Session), start time, duration, idle timer, and status.
+- **Errors** are shown in plain language, not a generic "connection closed":
+  no credential available, device unreachable, authentication failed,
+  connection timed out, host key could not be verified, connection refused,
+  or a network error.
+- **Secondary option**: "Open in your own SSH client instead" stays one click
+  away inside the same panel — same `ssh://<device-ip>` launcher as before.
+- **Audit**: every session start/end, credential resolution/miss, and
+  connection/authentication failure is written to the Audit Log.
+- **Vault**: a credential that has actually connected shows **"Used by:
+  Embedded SSH"** and updates **Last Used** in the Credential Vault list —
+  distinct from the static "future consumer" hint shown for credentials that
+  have never been used yet.
+- **Known limitation**: the backend must be able to reach the device's IP
+  directly (no NAT traversal) — the same constraint documented for MikroTik
+  SSH below. Host key verification is not enforced in this release.
 
 ---
 
@@ -493,11 +541,10 @@ separate features. **Launchers are live (2026-07-10)**: Winbox and SSH open
 platform reporting `terminal`. Winbox is hidden automatically on macOS/Linux
 operators (§16).
 
-SSH here opens **your own** operating system's SSH client/app — it is not yet
-embedded inside the Drawer like the Linux Web Terminal (§14). Embedding SSH
-directly in the Drawer needs the backend itself to act as the SSH client
-(architecture recommendation recorded, not built — see
-IMPLEMENTATION-ROADMAP.md).
+**SSH's default action is now the Embedded SSH Connect terminal (§14a)** — a
+click on SSH in the Connect menu opens the in-browser terminal, not your own
+operating system's SSH client. Your own OS SSH client (`ssh://<device-ip>`)
+remains one click away as a secondary option inside that panel.
 
 ---
 
@@ -559,12 +606,15 @@ manager — same encryption, same storage layer, no rewrite.
   the operator can force-delete after seeing that list (audited as
   `vault_credential_deleted_forced`, distinct from a normal delete). There is
   no silent orphaning.
-- **Current integrations** (honest, not aspirational): nothing in the
-  codebase automatically consumes a Vault credential yet — Notifications
-  (SMTP/Webhook channels) has its **own separate** encrypted secret storage,
-  it does not read from the Vault. Every credential's "future consumers" are
-  shown from the type registry (e.g. "SSH Relay", "Embedded Terminal",
-  "Winbox Connect") as a roadmap hint, not a claim that it works today.
+- **Current integrations** (honest, not aspirational): **Embedded SSH
+  Connect (§14a) is now a real, live consumer** of `ssh_password`/
+  `ssh_private_key`/legacy `ssh_key` credentials — a credential used to
+  authenticate a connection shows **"Used by: Embedded SSH"** and updates
+  **Last Used**. Every other credential type still shows only its static
+  "future consumers" hint from the type registry (e.g. "Winbox Connect",
+  "SNMP Monitoring") — a roadmap hint, not a claim that it works today.
+  Notifications (SMTP/Webhook channels) has its **own separate** encrypted
+  secret storage; it does not read from the Vault.
 - **RBAC**: `vault_view`/`vault_create`/`vault_edit`/`vault_reveal`/
   `vault_delete`/`vault_test`/`vault_assign` — assignable per-Team permission,
   purely additive on top of the existing Admin+ floor (a team can grant one of
@@ -781,18 +831,23 @@ in Agent Config; every device adopts it on its next heartbeat.
 
 ## 30. Known Limitations (this build)
 
-- **Connect launchers**: Winbox/SSH/WebFig open now (2026-07-10). DSM/QTS/
+- **Connect launchers**: Winbox/WebFig open now (2026-07-10); SSH's default
+  action is the Embedded SSH Connect terminal (2026-07-10, §14a), with the
+  raw `ssh://<device-ip>` launcher demoted to a secondary option. DSM/QTS/
   vSphere/Web UI (Synology/QNAP/VMware/Proxmox) fall back to a generic
   `http://<device-ip>/` link since those platforms have no live devices yet —
   refine per platform when they onboard. Windows Remote Support (RustDesk)
   works today via its own dedicated flow.
 - **MikroTik**: Connector v1 heartbeat/inventory/capability reporting +
   resource utilization; **no RouterOS API** yet (firewall/interface/DHCP
-  edits stay in Winbox/WebFig/SSH).
-- **Web Terminal**: production-ready (2026-07-10); requires `FEATURE_TERMINAL`
-  + a rollout scope, neither enabled by default. Reconnect always opens a new
-  shell session (no mid-session state resume). Session recording is prepared
-  but not implemented.
+  edits stay in Winbox/WebFig/Embedded SSH Connect).
+- **Web Terminal / Embedded SSH Connect**: both production-ready (2026-07-10);
+  both require `FEATURE_TERMINAL` + a rollout scope, neither enabled by
+  default. Reconnect always opens a new shell/SSH session (no mid-session
+  state resume). Session recording is prepared but not implemented. Embedded
+  SSH Connect additionally requires the backend to have direct network
+  reachability to the device (no NAT traversal) and does not verify SSH host
+  keys yet.
 - **Notifications**: production-ready (2026-07-10); requires `FEATURE_NOTIFICATIONS`,
   not enabled by default, and at least one channel + rule configured before
   anything actually sends. Email and generic Webhook only — Slack/Teams/

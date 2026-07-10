@@ -62,6 +62,30 @@ describe("CredentialVault enterprise UI", () => {
     await waitFor(() => expect(screen.getByText("srv ssh")).toBeInTheDocument());
   });
 
+  it("shows 'Used by: Embedded SSH' once a credential has actually authenticated a connection", async () => {
+    mockAuth();
+    vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([
+      credential({ name: "srv ssh", used_by: ["Embedded SSH"] }),
+    ]);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("srv ssh")).toBeInTheDocument());
+    expect(screen.getByText(/Used by: Embedded SSH/i)).toBeInTheDocument();
+  });
+
+  it("does not show a 'Used by' line for a credential that has never been used", async () => {
+    mockAuth();
+    vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("srv ssh")).toBeInTheDocument());
+    expect(screen.queryByText(/Used by:/i)).not.toBeInTheDocument();
+  });
+
   it("shows an error state when the list fails to load", async () => {
     mockAuth();
     vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);

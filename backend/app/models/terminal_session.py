@@ -24,7 +24,10 @@ class TerminalSession(Base):
 
     Security: two one-time tickets (hashed at rest) — one for the operator WS,
     one for the agent WS — with a short TTL. Nothing here is a stored secret;
-    device SSH credentials (future SSH-mode) come from the Enterprise Vault.
+    device SSH credentials (Embedded SSH Connect, `mode="ssh"`) are resolved
+    from the Enterprise Vault at connect time and never persisted here — only
+    which credential was used (`vault_credential_id`) and its scope tier
+    (`credential_source`).
     """
 
     __tablename__ = "terminal_sessions"
@@ -35,7 +38,17 @@ class TerminalSession(Base):
     operator_username = Column(String(128), nullable=True)
 
     status = Column(String(16), nullable=False, default=TerminalSessionStatus.PENDING.value, index=True)
-    engine = Column(String(24), nullable=False, default="bash")  # bash|sh|ssh (future)
+    engine = Column(String(24), nullable=False, default="bash")  # bash|sh|ssh
+
+    # Embedded SSH Connect (additive): "agent" is the original Phase 5 Linux
+    # PTY relay (device agent dials out); "ssh" is the backend itself acting
+    # as the SSH client ("connector relay" mode recorded in
+    # IMPLEMENTATION-ROADMAP.md) — same session/relay/watchdog/audit stack,
+    # just a different second leg. See app/services/ssh_connector.py.
+    mode = Column(String(16), nullable=False, default="agent")  # agent|ssh
+    vault_credential_id = Column(Integer, ForeignKey("vault_credentials.id"), nullable=True)
+    ssh_username = Column(String(160), nullable=True)
+    credential_source = Column(String(16), nullable=True)  # device|group|client|global|temporary
 
     operator_ticket_hash = Column(String(64), nullable=False)
     agent_ticket_hash = Column(String(64), nullable=False)

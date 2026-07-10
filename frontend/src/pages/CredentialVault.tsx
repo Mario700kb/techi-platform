@@ -567,6 +567,11 @@ export default function CredentialVault() {
                         <p className="mt-0.5 text-[11px] font-normal text-slate-500" title={consumerLabel(c.consumer_status)}>
                           {consumerLabel(c.consumer_status)}
                         </p>
+                        {c.used_by && c.used_by.length > 0 && (
+                          <p className="mt-0.5 text-[11px] font-normal text-emerald-400/80" title="Actually authenticated a live connection">
+                            Used by: {c.used_by.join(", ")}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3"><Badge variant="ghost">{typeById[c.credential_type]?.label ?? c.credential_type}</Badge></td>
                       <td className="px-4 py-3 text-slate-300">{c.purpose || "—"}</td>

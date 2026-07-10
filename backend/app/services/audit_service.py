@@ -52,6 +52,15 @@ class AuditAction:
     TERMINAL_SESSION_DENIED = "terminal_session_denied"
     TERMINAL_SESSION_CLOSED = "terminal_session_closed"
     TERMINAL_SESSION_EXPIRED = "terminal_session_expired"
+    # Embedded SSH Connect — same session/relay/watchdog stack as the Web
+    # Terminal above, distinct audit trail because the credential-resolution
+    # step and the "no agent involved" transport are specific to this flow.
+    SSH_SESSION_STARTED = "ssh_session_started"
+    SSH_SESSION_ENDED = "ssh_session_ended"
+    SSH_CREDENTIAL_RESOLVED = "ssh_credential_resolved"
+    SSH_CREDENTIAL_MISSING = "ssh_credential_missing"
+    SSH_CONNECTION_FAILED = "ssh_connection_failed"
+    SSH_AUTHENTICATION_FAILED = "ssh_authentication_failed"
     NOTIFICATION_CHANNEL_CREATED = "notification_channel_created"
     NOTIFICATION_CHANNEL_UPDATED = "notification_channel_updated"
     NOTIFICATION_CHANNEL_DELETED = "notification_channel_deleted"

@@ -75,9 +75,17 @@ def _notify_session_ended(db, session, reason: str) -> None:
 
 
 def _audit_session_end(db, session, reason: str) -> None:
+    # Embedded SSH Connect sessions (mode="ssh") get their own audit action —
+    # same call site, same details shape, just a distinct trail from the
+    # Linux-agent PTY sessions this route was originally built for.
+    action = (
+        AuditAction.SSH_SESSION_ENDED
+        if getattr(session, "mode", "agent") == "ssh"
+        else AuditAction.TERMINAL_SESSION_CLOSED
+    )
     system_audit_log(
         db,
-        action=AuditAction.TERMINAL_SESSION_CLOSED,
+        action=action,
         entity_type="terminal_session",
         entity_id=None,
         details={

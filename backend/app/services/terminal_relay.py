@@ -95,6 +95,15 @@ class TerminalRelay:
                 except Exception:
                     pass
 
+    def idle_seconds(self, session_id: str) -> Optional[float]:
+        """Read-only: seconds since the last byte flowed either direction on
+        this session's live pair, or None if the pair isn't attached/known.
+        Feeds the Embedded SSH Connect session info panel's idle timer."""
+        pair = self._pairs.get(session_id)
+        if pair is None or pair.closed:
+            return None
+        return time.monotonic() - pair.last_activity_monotonic
+
     def idle_and_expired_sessions(self, idle_timeout_seconds: float, max_session_seconds: float) -> Dict[str, str]:
         """Read-only snapshot: session_id -> reason ("idle_timeout" |
         "max_duration") for live pairs a watchdog should force-close.

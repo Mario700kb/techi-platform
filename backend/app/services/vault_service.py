@@ -12,10 +12,12 @@ Rules enforced here:
     a secret value.
 
 The Remote Support password system (secret_cipher) is untouched by design.
-Nothing in this file wires a credential into a live connection path yet
-(SSH/SNMP/RouterOS/Winbox) — resolve_for_context() exists so a future
-integration has one source of truth to call, not to be called automatically
-today.
+resolve_for_context() was built for a future integration to call; Embedded
+SSH Connect (app/services/ssh_connector.py) is the first live consumer —
+see resolve_ssh_candidates() below, which reuses the exact same Device >
+Group > Client > Global precedence but returns every credential at the
+first non-empty tier (not just one arbitrary pick) so a caller can offer a
+selector when more than one applies at that tier.
 """
 
 import json
@@ -46,6 +48,11 @@ from app.platform_core.vault_credential_types import (
 from app.schemas.vault import VaultCredentialCreate, VaultCredentialUpdate
 
 logger = logging.getLogger(__name__)
+
+# Credential types with a real SSH secret (password or key) — the set
+# resolve_ssh_candidates() considers. Includes the legacy ssh_key type so a
+# pre-2026-07-10 credential works with Embedded SSH Connect with zero migration.
+SSH_CREDENTIAL_TYPES = ("ssh_password", "ssh_private_key", "ssh_key")
 
 _SCOPE_TARGET_FIELD = {
     VaultScopeType.GLOBAL.value: None,
@@ -319,6 +326,16 @@ class VaultService:
         )
         return self._decode_secret_payload(plaintext)
 
+    def get_secret_fields_for_use(self, credential: VaultCredential) -> Dict[str, str]:
+        """Decrypts a credential's secret fields for direct use by a live
+        connection (Embedded SSH Connect) — distinct from reveal() (which is
+        for showing plaintext to a human, requires vault_reveal + a reason,
+        and writes a 'reveal' usage row). Does not write a usage row itself;
+        the caller records a 'use' row via record_credential_use() only once
+        the connection actually succeeds."""
+        plaintext = decrypt_secret(credential.ciphertext, credential.dek_wrapped)
+        return self._decode_secret_payload(plaintext)
+
     def usage(self, credential_id: int, limit: int = 100) -> List[VaultCredentialUsage]:
         return (
             self.db.query(VaultCredentialUsage)
@@ -457,6 +474,57 @@ class VaultService:
                 return by_scope[tier]
         return None
 
+    def resolve_ssh_candidates(self, device: Device) -> "tuple[str, List[VaultCredential]]":
+        """Embedded SSH Connect credential resolution: Device > Group > Client
+        > Global, same precedence as resolve_for_context, but returns EVERY
+        ACTIVE SSH-type credential at the first non-empty tier (never mixes
+        tiers) so the caller can auto-connect when there's exactly one, or
+        offer a selector when there's more than one. Never guesses across
+        tiers and never falls back to asking for a password — that is an
+        explicit operator choice ("Temporary Session") handled elsewhere."""
+        candidates = (
+            self.db.query(VaultCredential)
+            .filter(
+                VaultCredential.status == VaultCredentialStatus.ACTIVE.value,
+                VaultCredential.credential_type.in_(SSH_CREDENTIAL_TYPES),
+            )
+            .order_by(VaultCredential.name)
+            .all()
+        )
+        tiers: Dict[str, List[VaultCredential]] = {"device": [], "group": [], "client": [], "global": []}
+        for cred in candidates:
+            if cred.scope_type == VaultScopeType.DEVICE.value and cred.device_id == device.id:
+                tiers["device"].append(cred)
+            elif (
+                cred.scope_type == VaultScopeType.GROUP.value
+                and device.group_id is not None
+                and cred.group_id == device.group_id
+            ):
+                tiers["group"].append(cred)
+            elif (
+                cred.scope_type == VaultScopeType.CLIENT.value
+                and device.client_id is not None
+                and cred.client_id == device.client_id
+            ):
+                tiers["client"].append(cred)
+            elif cred.scope_type == VaultScopeType.GLOBAL.value:
+                tiers["global"].append(cred)
+        for tier in ("device", "group", "client", "global"):
+            if tiers[tier]:
+                return tier, tiers[tier]
+        return "none", []
+
+    def record_credential_use(
+        self, credential: VaultCredential, operator_username: Optional[str], device_id: Optional[int]
+    ) -> None:
+        """Called after a credential is actually used to establish a live
+        connection (not merely resolved) — updates last_used_at and appends a
+        'use' usage row, which is what VaultService.enrich() reads to render
+        'Used By: Embedded SSH' + 'Last Used' in the Vault UI."""
+        credential.last_used_at = utcnow()
+        self.db.commit()
+        self._record_usage(credential.id, "use", operator_username, device_id=device_id)
+
     # -- presentation (list/detail enrichment) --------------------------------
 
     def enrich(self, credential: VaultCredential) -> dict:
@@ -481,15 +549,30 @@ class VaultService:
 
         descriptor = get_type(credential.credential_type)
         future_consumers = list(descriptor.future_consumers) if descriptor else []
-        # Honest reporting (section 14): nothing currently consumes Vault
-        # credentials automatically. Assignment/scope only describes *where*
-        # a credential is meant to apply, not that a live integration reads it.
+        # Assignment/scope only describes *where* a credential is meant to
+        # apply, not that a live integration actually reads it — see used_by
+        # below for real usage.
         if credential.device_id is not None or any(a.device_id for a in assignments):
             consumer_status = "assigned_to_device"
         elif credential.client_id is not None or credential.group_id is not None or any(a.client_id for a in assignments):
             consumer_status = "assigned_to_client"
         else:
             consumer_status = "stored_only"
+
+        # Real, live usage (as opposed to future_consumers, which is a static
+        # registry hint): a "use" row is only ever written by
+        # record_credential_use(), and Embedded SSH Connect is the only
+        # caller of that method today — presence of any such row means this
+        # credential has actually authenticated a live connection.
+        used_by: List[str] = []
+        has_ssh_use = (
+            self.db.query(VaultCredentialUsage)
+            .filter(VaultCredentialUsage.credential_id == credential.id, VaultCredentialUsage.action == "use")
+            .first()
+            is not None
+        )
+        if has_ssh_use:
+            used_by.append("Embedded SSH")
 
         metadata = json.loads(credential.metadata_json) if credential.metadata_json else {}
 
@@ -500,5 +583,6 @@ class VaultService:
             "references": references,
             "consumer_status": consumer_status,
             "future_consumers": future_consumers,
+            "used_by": used_by,
             "metadata": metadata,
         }

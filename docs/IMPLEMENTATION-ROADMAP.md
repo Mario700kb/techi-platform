@@ -586,7 +586,51 @@ terminal-enabled devices or add a faster signal before real use); relay is
 per-worker in-memory (audit R5 — move out-of-process if enabled at fleet
 scale).
 
-### Embedded SSH for connector platforms (MikroTik) — architecture recommendation, NOT implemented (2026-07-10)
+### Embedded SSH Connect — BUILT (2026-07-10)
+
+**Status: code complete, deployed dark under the existing `FEATURE_TERMINAL`
+flag (no new flag).** The "connector relay" approach recommended below was
+implemented exactly as designed, generically for every platform whose Connect
+Framework entry declares an `ssh` method (Linux, MikroTik, future Storage/
+Hypervisor) — not MikroTik-specific. Device Drawer ▸ Connect ▸ SSH now opens
+an **Embedded TECHI Terminal** by default (external OS SSH client stays a
+secondary link). Delivered:
+
+- `app/services/ssh_connector.py` (new): `asyncssh` (pinned dependency) dials
+  `ssh://<device.local_ip or public_ip>:<port>` and attaches as the agent leg
+  of the SAME `TerminalRelay` pair via a duck-typed `SSHConnectAdapter` — zero
+  changes to `TerminalRelay`, `TerminalWatchdog`, or the operator-side
+  `/ws/terminal/{id}` handler (only its session-end audit action now branches
+  on the session's `mode` column).
+- `VaultService.resolve_ssh_candidates()` (new): reuses `resolve_for_context`'s
+  exact Device > Group > Client > Global precedence, returning every
+  candidate at the first non-empty tier (`GET /devices/{id}/ssh/credentials`)
+  so the frontend can auto-connect / show a selector / show "no credential
+  available" + an explicit Temporary Session option — never a silent
+  password prompt.
+- `terminal_sessions` gained 4 additive nullable columns (`mode`,
+  `vault_credential_id`, `ssh_username`, `credential_source`); the previously
+  unused `TerminalSessionStatus.FAILED` now carries a specific
+  `SSHConnectError.reason` (`credential_missing`/`host_unreachable`/
+  `authentication_failed`/`timeout`/`host_key_mismatch`/`connection_refused`/
+  `network_error`).
+- 4 new RBAC permissions (`terminal_open`/`terminal_view`/`terminal_manage`/
+  `vault_use`, additive over admin+, same shape as the 7 `vault_*`
+  permissions) via a new shared `require_role_or_permission()` in
+  `app/core/auth.py` (generalizes vault.py's own `_vault_gate`, which is left
+  untouched). 6 new audit actions.
+- Vault UI: "Used by: Embedded SSH" + Last Used now reflect a credential's
+  real usage (`VaultService.record_credential_use()`), not just its static
+  scope/assignment.
+- 73 new tests (49 backend, 24 frontend). Preflight PASSED: contract 15/15,
+  backend suite 729+4 known baseline (flags off & on), full frontend vitest
+  suite 41/41, tsc/build/agent clean, smoke 8/8 (local).
+- **Known limitation carried over unchanged**: host-key verification is not
+  enforced (`known_hosts=None`); the backend must have network reachability
+  to the device (no NAT traversal) — the same constraint identified below
+  before this was built.
+
+Original investigation and design (preserved for context):
 
 Investigated whether MikroTik's Connect ▸ SSH could open inside the Drawer
 (embedded xterm) instead of the operator's own OS. **Finding: the existing
@@ -619,9 +663,11 @@ port and no VPN — a real constraint the Linux PTY-relay model doesn't have,
 since there the AGENT dials out, so NAT is never a problem for Linux/Windows
 devices). This limitation should be surfaced to the operator as "SSH keys/
 credentials not configured or device unreachable" rather than a silent
-failure. **Not built now** — Connect ▸ SSH today opens the operator's own OS
-SSH client via `ssh://<ip>` (Section "Connect launchers" above), which has no
-such reachability requirement (the OPERATOR's machine dials the router).
+failure. **Built 2026-07-10** (see the entry above) — Connect ▸ SSH now opens
+the Embedded TECHI Terminal by default; the operator's own OS SSH client via
+`ssh://<ip>` (Section "Connect launchers" above, no reachability requirement
+since the OPERATOR's machine dials the router) remains available as a
+secondary option inside the same modal.
 
 ## Phase 6 — Enterprise IAM  (MOVED LAST — 2026-07-07)
 
@@ -740,17 +786,21 @@ Actions/Terminal/Enrollment/Maintenance".
 
 **Current priorities**
 1. Reporting Engine v1 schema-first production deploy + runtime validation.
-2. Vault Integration — connect the existing Vault to the existing Connect/
-   Terminal path; no new secret store or connection framework.
+2. ✅ Vault Integration — **DONE for SSH** (Embedded SSH Connect, 2026-07-10):
+   `resolve_ssh_candidates()` now wires the Vault into the Connect/Terminal
+   path for real. `resolve_for_context()` itself remains unwired for
+   non-SSH integrations (SNMP/RouterOS) — future work if prioritized.
 3. MFA, then Session Management, following the production-readiness order.
 
 **Current blockers**
 - Phase 0 closure: waiting on owner-approved deploy.
 - Phase 2: Windows Agent 2.1.5 rollout not yet officially completed.
-- Phase 5: code deployed 2026-07-10, production ready. Only remaining step
-  is owner approval to set `FEATURE_TERMINAL=true` + `FEATURE_TERMINAL_SCOPE`
-  + allowlist in prod `.env` (config-only; NPM route approval no longer
-  needed — resolved 2026-07-10).
+- Phase 5: code deployed 2026-07-10, production ready (Embedded SSH Connect
+  added 2026-07-10, same flag). Only remaining step is owner approval to set
+  `FEATURE_TERMINAL=true` + `FEATURE_TERMINAL_SCOPE` + allowlist in prod
+  `.env` (config-only; NPM route approval no longer needed — resolved
+  2026-07-10). Once enabled, Embedded SSH Connect goes live at the same time
+  as the Linux Web Terminal — one flag, one rollout scope, both transports.
 
 **Known risks** (full analysis: audit §7/§13)
 - R1 Windows regression — mitigated by dark code + darkness test + golden tests in Phase 1.
