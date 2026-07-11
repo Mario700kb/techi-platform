@@ -41,6 +41,9 @@ interface Props {
   latestEvent?: DeviceRealtimeEvent | null;
   canOperate?: boolean;
   onDeviceUpdated?: (device: Device) => void;
+  // Deep-link tab (e.g. the Device Catalog's Connect ▸ Embedded Terminal
+  // opens the drawer directly on the Terminal tab).
+  initialTab?: string;
 }
 
 const CAP_TAB_LABELS: Record<string, string> = {
@@ -48,7 +51,7 @@ const CAP_TAB_LABELS: Record<string, string> = {
   docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
 };
 
-export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated }: Props) {
+export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated, initialTab }: Props) {
   const features = usePlatformFeatures();
   const [meta, setMeta] = useState<DrawerMeta | null>(null);
   const [tab, setTab] = useState<string>("overview");
@@ -67,10 +70,10 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
 
   useEffect(() => {
     if (!isOpen) return;
-    setTab("overview");
+    setTab(initialTab ?? "overview");
     getDrawerMeta(device.id).then(setMeta).catch(() => setMeta(null));
     getDeviceInventory(device.id).then(setInventory).catch(() => setInventory(null));
-  }, [isOpen, device.id]);
+  }, [isOpen, device.id, initialTab]);
 
   useEffect(() => {
     if (isOpen && tab === "notes") getDeviceNotes(device.id).then(setNotes).catch(() => setNotes([]));
@@ -184,12 +187,18 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                   groups={groups ?? []}
                   canOperate={canOperate !== false}
                   onDeviceUpdated={onDeviceUpdated}
+                  onOpenTerminal={meta.terminal && features.FEATURE_TERMINAL ? () => setTab("terminal") : undefined}
+                  onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
                 />
               )}
               {tab === "remote_support" && (
                 <div className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
                   <p className="mb-3">Connect using this platform's native methods:</p>
-                  <ConnectMenu deviceId={device.id} />
+                  <ConnectMenu
+                    deviceId={device.id}
+                    hostname={device.hostname}
+                    onOpenTerminal={meta.terminal && features.FEATURE_TERMINAL ? () => setTab("terminal") : undefined}
+                  />
                 </div>
               )}
               {tab === "terminal" && (
@@ -338,11 +347,14 @@ function ResourceMeter({ icon: Icon, label, percent }: { icon: LucideIcon; label
 // or belongs to Connect (Winbox/WebFig/SSH), never a config dump here.
 function Overview({
   device, meta, snapshot, clients, groups, canOperate, onDeviceUpdated,
+  onOpenTerminal, onRemoteSupport,
 }: {
   device: Device; meta: DrawerMeta;
   snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
   clients: Client[]; groups: DeviceGroup[]; canOperate: boolean;
   onDeviceUpdated?: (device: Device) => void;
+  onOpenTerminal?: () => void;
+  onRemoteSupport?: () => void;
 }) {
   const board = captionValue(device.os_caption, "Board");
   const availableGroups = groups.filter((g) => g.client_id === device.client_id);
@@ -365,7 +377,12 @@ function Overview({
               </p>
             </div>
           </div>
-          <ConnectMenu deviceId={device.id} />
+          <ConnectMenu
+            deviceId={device.id}
+            hostname={device.hostname}
+            onOpenTerminal={onOpenTerminal}
+            onRemoteSupport={onRemoteSupport}
+          />
         </div>
       </div>
 

@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import ConnectMenu from "../ConnectMenu";
+import ConnectMenu, { groupConnectMethods } from "../ConnectMenu";
+import type { ConnectMethod } from "../../api/connect";
 import * as client from "../../api/client";
 
 vi.mock("../EmbeddedSSHModal", () => ({
@@ -14,16 +15,18 @@ vi.mock("../EmbeddedSSHModal", () => ({
 }));
 
 const SSH_METHOD = {
-  id: "ssh", label: "SSH", surface: "desktop", capability: "terminal", priority: 20,
+  id: "ssh", label: "Embedded SSH", surface: "desktop", capability: "terminal", priority: 20,
   scheme: "ssh://", requires_client_os: null, status: "ready", status_reason: null, credential_source: "global",
+  transport: "Backend relay · Vault", category: "available", embedded: true,
 };
 const WEB_TERMINAL_METHOD = {
-  id: "web_terminal", label: "Web Terminal", surface: "browser", capability: "terminal", priority: 10,
+  id: "web_terminal", label: "Embedded Terminal", surface: "browser", capability: "terminal", priority: 10,
   scheme: null, requires_client_os: null, status: "ready", status_reason: null, credential_source: null,
+  transport: "Agent tunnel", category: "available", embedded: true,
 };
 
-function renderMenu(deviceId = 7) {
-  return render(<MemoryRouter><ConnectMenu deviceId={deviceId} /></MemoryRouter>);
+function renderMenu(deviceId = 7, extraProps: Record<string, unknown> = {}) {
+  return render(<MemoryRouter><ConnectMenu deviceId={deviceId} {...extraProps} /></MemoryRouter>);
 }
 
 describe("ConnectMenu — Embedded SSH Connect wiring", () => {
@@ -40,8 +43,8 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 
     await waitFor(() => expect(screen.getByText("Connect")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Connect"));
-    await waitFor(() => expect(screen.getByText("SSH")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("SSH"));
+    await waitFor(() => expect(screen.getByText("Embedded SSH")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Embedded SSH"));
 
     await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
     // The generic launcher endpoint must never be called for "ssh" — only
@@ -49,20 +52,21 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
     expect(client.fetchJson).toHaveBeenCalledTimes(1);
   });
 
-  it("still shows the dedicated-flow note for web_terminal, not the SSH modal", async () => {
+  it("web_terminal calls onOpenTerminal (opens the Terminal tab) instead of a dead toast", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
       platform: "linux", methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
       preferred_method_id: "ssh", configured_preference_id: null,
     });
-    renderMenu();
+    const onOpenTerminal = vi.fn();
+    renderMenu(7, { onOpenTerminal });
 
-    await waitFor(() => expect(screen.getByText("Connect")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Connect"));
-    await waitFor(() => expect(screen.getByText("Web Terminal")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Web Terminal"));
+    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByText("Embedded Terminal"));
 
-    await waitFor(() => expect(screen.getByText(/has its own Connect flow/i)).toBeInTheDocument());
+    await waitFor(() => expect(onOpenTerminal).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId("embedded-ssh-modal")).not.toBeInTheDocument();
+    // No launch endpoint call either — only the initial list fetch.
+    expect(client.fetchJson).toHaveBeenCalledTimes(1);
   });
 
   it("closing the modal removes it", async () => {
@@ -73,8 +77,8 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 
     await waitFor(() => expect(screen.getByText("Connect")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Connect"));
-    await waitFor(() => expect(screen.getByText("SSH")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("SSH"));
+    await waitFor(() => expect(screen.getByText("Embedded SSH")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Embedded SSH"));
     await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("close-modal"));
@@ -82,20 +86,22 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
   });
 });
 
+const WINBOX_CREDENTIAL_REQUIRED = {
+  id: "winbox", label: "Winbox", surface: "desktop", capability: null, priority: 10,
+  scheme: "winbox://", requires_client_os: null, status: "credential_required",
+  status_reason: "No compatible credential configured", credential_source: null,
+  transport: "Desktop app", category: "desktop_app", embedded: false,
+};
+const WEBFIG_READY = {
+  id: "webfig", label: "WebFig", surface: "browser", capability: null, priority: 30,
+  scheme: null, requires_client_os: null, status: "ready", status_reason: null, credential_source: "device",
+  transport: "Browser", category: "web", embedded: false,
+};
+
 describe("ConnectMenu — credential-aware status (Section D/E)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  const WINBOX_CREDENTIAL_REQUIRED = {
-    id: "winbox", label: "Winbox", surface: "desktop", capability: null, priority: 10,
-    scheme: "winbox://", requires_client_os: null, status: "credential_required",
-    status_reason: "No compatible credential configured", credential_source: null,
-  };
-  const WEBFIG_READY = {
-    id: "webfig", label: "WebFig", surface: "browser", capability: null, priority: 20,
-    scheme: null, requires_client_os: null, status: "ready", status_reason: null, credential_source: "device",
-  };
 
   it("shows every method even when a credential is required — never hides it", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
@@ -107,7 +113,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
     expect(await screen.findByText("Winbox")).toBeInTheDocument();
     expect(screen.getByText("WebFig")).toBeInTheDocument();
-    expect(screen.getByText(/No compatible credential configured/)).toBeInTheDocument();
+    expect(screen.getByText(/Credential required/)).toBeInTheDocument();
   });
 
   it("shows the resolved credential source for a Ready method", async () => {
@@ -117,7 +123,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
     });
     renderMenu();
     fireEvent.click(await screen.findByText("Connect"));
-    expect(await screen.findByText("Device credential")).toBeInTheDocument();
+    expect(await screen.findByText(/Device credential · Ready/)).toBeInTheDocument();
   });
 
   it("clicking a credential_required method navigates to the Vault prefilled with device/scope/type", async () => {
@@ -137,13 +143,14 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
     expect(client.fetchJson).toHaveBeenCalledTimes(1);
   });
 
-  it("marks the preferred method with a Default badge", async () => {
+  it("marks the preferred method with a Default badge (arrow opens the menu directly)", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
       platform: "mikrotik", methods: [WEBFIG_READY],
       preferred_method_id: "webfig", configured_preference_id: "webfig",
     });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    await screen.findByText("Connect");
+    fireEvent.click(screen.getByLabelText("Connect options"));
     expect(await screen.findByText("Default")).toBeInTheDocument();
   });
 
@@ -172,8 +179,8 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
   it("unavailable_os methods are shown disabled with a reason, not hidden", async () => {
     const winboxOnMac = {
-      id: "winbox", label: "Winbox", surface: "desktop", capability: null, priority: 10,
-      scheme: "winbox://", requires_client_os: "windows", status: "ready", status_reason: null, credential_source: "global",
+      ...WINBOX_CREDENTIAL_REQUIRED,
+      requires_client_os: "windows", status: "ready", status_reason: null, credential_source: "global",
     };
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
       platform: "mikrotik", methods: [winboxOnMac, WEBFIG_READY],
@@ -189,5 +196,136 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
     expect(await screen.findByText("Winbox")).toBeInTheDocument();
     const winboxButton = screen.getByText("Winbox").closest("button");
     expect(winboxButton).toBeDisabled();
+    expect(screen.getByText(/Windows only · Unavailable on macOS/)).toBeInTheDocument();
+  });
+});
+
+describe("ConnectMenu — approved V3 mockup behavior", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("main click launches the operator's SAVED Ready default immediately (no menu)", async () => {
+    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+      platform: "linux", methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
+      preferred_method_id: "ssh", configured_preference_id: "ssh",
+    });
+    renderMenu();
+
+    fireEvent.click(await screen.findByText("Connect"));
+    // SSH is the saved default and Ready → the Embedded SSH modal opens
+    // directly, without the menu ever appearing.
+    await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
+    expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
+  });
+
+  it("main click with NO saved preference opens the categorized menu once", async () => {
+    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+      platform: "mikrotik", methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
+      preferred_method_id: "ssh", configured_preference_id: null,
+    });
+    renderMenu(7, { hostname: "rb-core-01" });
+
+    fireEvent.click(await screen.findByText("Connect"));
+    expect(await screen.findByText("Connect to rb-core-01")).toBeInTheDocument();
+    // Category sections from the approved mockup.
+    expect(screen.getByText("Recommended")).toBeInTheDocument();
+    expect(screen.getByText("Web")).toBeInTheDocument();
+    expect(screen.getByText("Desktop Applications")).toBeInTheDocument();
+    expect(screen.queryByTestId("embedded-ssh-modal")).not.toBeInTheDocument();
+  });
+
+  it("'Always use this option' saves the launched method as the platform default", async () => {
+    vi.spyOn(client, "fetchJson")
+      .mockResolvedValueOnce({
+        platform: "mikrotik", methods: [WEBFIG_READY, SSH_METHOD],
+        preferred_method_id: "webfig", configured_preference_id: null,
+      })
+      .mockResolvedValue({ platform: "mikrotik", device_id: null, method_id: "ssh" });
+    renderMenu();
+
+    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByText("Always use this option"));
+    fireEvent.click(screen.getByText("Embedded SSH"));
+
+    await waitFor(() => {
+      const putCall = (client.fetchJson as any).mock.calls.find(
+        (c: any[]) => c[0] === "/api/v1/connect-preferences" && c[1]?.method === "PUT",
+      );
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(putCall[1].body)).toMatchObject({ platform: "mikrotik", method_id: "ssh" });
+    });
+  });
+
+  it("feature-gated embedded methods land in the Unavailable section, disabled with the backend's reason", async () => {
+    const gatedSsh = {
+      ...SSH_METHOD, status: "unavailable",
+      status_reason: "Embedded terminal is not enabled for this device yet", credential_source: null,
+    };
+    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+      platform: "mikrotik", methods: [gatedSsh, WEBFIG_READY],
+      preferred_method_id: "webfig", configured_preference_id: null,
+    });
+    renderMenu();
+    fireEvent.click(await screen.findByText("Connect"));
+
+    expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+    const sshButton = screen.getByText("Embedded SSH").closest("button");
+    expect(sshButton).toBeDisabled();
+    expect(screen.getByText(/not enabled for this device/)).toBeInTheDocument();
+  });
+});
+
+describe("groupConnectMethods — approved mockup menu structure", () => {
+  const method = (overrides: Partial<ConnectMethod>): ConnectMethod => ({
+    id: "x", label: "X", surface: "desktop", capability: null, priority: 10,
+    scheme: null, requires_client_os: null, status: "ready", status_reason: null,
+    credential_source: null, transport: "", category: "available", embedded: false,
+    ...overrides,
+  });
+
+  it("extracts the Ready preferred method into Recommended and orders sections", () => {
+    const groups = groupConnectMethods(
+      [
+        method({ id: "winbox", category: "desktop_app", priority: 10, requires_client_os: "windows" }),
+        method({ id: "ssh", category: "available", priority: 20 }),
+        method({ id: "webfig", category: "web", priority: 30 }),
+      ],
+      "ssh",
+      "macos",
+    );
+    expect(groups.map((g) => g.label)).toEqual(["Recommended", "Web", "Desktop Applications"]);
+    expect(groups[0].methods[0].id).toBe("ssh");
+  });
+
+  it("keeps an OS-mismatched desktop app in Desktop Applications (visible, not hidden)", () => {
+    const groups = groupConnectMethods(
+      [method({ id: "winbox", category: "desktop_app", requires_client_os: "windows" })],
+      null,
+      "macos",
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("Desktop Applications");
+  });
+
+  it("feature-gated (backend unavailable) methods sink to Unavailable", () => {
+    const groups = groupConnectMethods(
+      [
+        method({ id: "ssh", category: "available", status: "unavailable", status_reason: "not enabled" }),
+        method({ id: "webfig", category: "web" }),
+      ],
+      null,
+      "macos",
+    );
+    expect(groups.map((g) => g.label)).toEqual(["Web", "Unavailable"]);
+  });
+
+  it("a preferred method that is NOT Ready is not Recommended", () => {
+    const groups = groupConnectMethods(
+      [method({ id: "winbox", category: "desktop_app", status: "credential_required" })],
+      "winbox",
+      "windows",
+    );
+    expect(groups.map((g) => g.label)).toEqual(["Desktop Applications"]);
   });
 });

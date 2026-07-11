@@ -27,6 +27,161 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] FIX/FEATURE: Connect aligned to the approved V3 mockup — split button, categorized menu, Winbox restored, honest embedded gating
+
+### Problemi
+
+Owner reported the production Connect experience does not match the approved
+V3 Connect mockup (docs/reference/PLATFORM-EXPANSION-AUDIT.md "mockups v3",
+artifact `ab02c7de-d2d7-4adf-a37d-4965965e1395`, screen 6): (1) Winbox not
+visible at all for MikroTik; (2) the Device Catalog Connect button opened the
+Device Drawer instead of launching the default method / showing the method
+menu; (3) the Connect menu was a flat list, not the categorized menu of the
+mockup; (4) the platform-specific methods promised by the Platform Registry
+were not exposed as promised; (5) overall visual/functional divergence from
+the approved mockup (no split button, no "Always use this option", no
+transport labels).
+
+### Analiza
+
+- **Why Winbox "disappeared"**: two independent layers hid it. (a) The
+  2026-07-10 UX pass made `ConnectMenu.tsx` REMOVE any method whose
+  `requires_client_os` didn't match the operator's OS — on the owner's macOS,
+  Winbox was deleted from the array entirely (the 2026-07-11 release
+  `9b99a07` changed this to disabled-with-reason, but only inside the Drawer
+  menu). (b) The Device Catalog Connect button for non-Windows rows never
+  showed methods at all — it deliberately opened the Drawer (the 2026-07-11
+  compromise to avoid an N+1 per-row status fetch), so from the Catalog the
+  operator never saw Winbox exist. The backend registry itself always had
+  Winbox (`platform_core/connect.py`, capability=None → always returned by
+  `/connect-methods`).
+- **Embedded methods were "fake" outside the rollout scope**: Connect ▸ SSH
+  opened the Embedded SSH modal even for devices where `FEATURE_TERMINAL`'s
+  rollout scope (device-729-only in prod) makes session creation 403 — the
+  method looked Ready and failed on click. Same for the Web Terminal entry,
+  which only showed a "has its own Connect flow" toast.
+- **No OS-aware defaults**: `_resolve_preferred_method` ignored the operator's
+  OS, so on macOS the registry default for MikroTik was Winbox — a method
+  that can never work there.
+
+### Zgjidhja
+
+**Backend** (`platform_core/connect.py`, `platform_core/registry.py`,
+`api/v1/endpoints/connect.py`):
+- `ConnectMethod` gained `transport` (short label: "Agent tunnel", "Backend
+  relay · Vault", "Browser", "Desktop app"), `category`
+  (`available`/`web`/`desktop_app` — the mockup's menu sections), and
+  `embedded` (runs on the Terminal stack). Labels aligned to the mockup:
+  Linux `web_terminal` → **Embedded Terminal**, `ssh` → **Embedded SSH**
+  (external OS SSH client stays the secondary link inside the modal).
+- **MikroTik priorities re-encoded the approved defaults**: Winbox(10) →
+  Embedded SSH(20) → WebFig(30) (was Winbox/WebFig/SSH), and the
+  `PlatformDescriptor.connect_methods` promise updated to match — a Windows
+  operator defaults to Winbox; a macOS/Linux operator defaults to Embedded
+  SSH when Ready, WebFig as fallback.
+- `GET /devices/{id}/connect-methods?client_os=` — new optional param; a
+  method whose `requires_client_os` doesn't match returns
+  `status="unavailable"` + reason server-side (frontend keeps its own check
+  as backup), and can never be picked as the effective default.
+- **Honest embedded gating**: an `embedded` method now returns
+  `status="unavailable"` ("Embedded terminal is not enabled for this device
+  yet") when `FEATURE_TERMINAL` is off or the device is outside its rollout
+  scope — exactly the gates `POST /terminal/sessions` enforces (403) —
+  instead of a method that fails on click.
+- New `GET /connect-status?device_ids=…&client_os=…` (≤200 ids): batched
+  per-row Connect-button state for the Catalog (ready /
+  credential_required / unavailable + reason + effective default), so row
+  buttons are credential-aware without N+1.
+
+**Frontend** (`ConnectMenu.tsx` rebuilt; `DevicesTable.tsx`, `Devices.tsx`,
+`GenericDeviceDrawer.tsx`, `DeviceDrawer.tsx`, `CredentialVault.tsx`,
+`api/connect.ts`):
+- **Split Connect button everywhere the Connect Framework renders**: main
+  segment launches the operator's SAVED default method immediately when
+  Ready; with no saved preference it opens the menu once (mockup behavior);
+  the ▾ arrow always opens the menu directly. **Neither opens the Drawer.**
+- **Categorized menu** ("Connect to <hostname>" header): Recommended (the
+  effective default) · Available (embedded) · Web · Desktop Applications ·
+  Unavailable (feature-gated). Every row: icon · name · transport/source ·
+  status ("Device credential · Ready", "Browser · Credential required",
+  "Windows only · Unavailable on macOS"). OS-mismatched desktop apps stay
+  VISIBLE in Desktop Applications, disabled with the reason.
+- **"Always use this option"** checkbox in the menu footer (saves the
+  launched method as the per-operator platform default) alongside the
+  existing per-method pin; Settings ▸ Connect Defaults unchanged for
+  view/reset.
+- **Device Catalog**: non-Windows rows render the split button (row variant,
+  lazy fetch on first interaction; button state from the batched
+  /connect-status feed). Windows rows byte-identical — main click still opens
+  TECHI Remote Support directly (single method; the mockup itself annotates
+  Windows "Opens directly — single option"). Flag-off renders the exact old
+  button.
+- **Embedded Terminal is no longer a dead toast**: in the Drawer it switches
+  to the Terminal tab; from a Catalog row it deep-links the drawer open on
+  the Terminal tab (`GenericDeviceDrawer` gained `initialTab`).
+- **Live refresh**: a `techi:connect-refresh` window event fires on Vault
+  credential create/edit/delete/status-toggle and on default pin/reset;
+  every mounted Connect surface (menus + Catalog row states) refetches
+  immediately — no manual refresh.
+- **Winbox launcher honesty**: after a `winbox://` launch the UI notes "If
+  Winbox didn't open, the desktop launcher isn't installed — install Winbox 4
+  (it registers winbox://)". The browser cannot detect protocol-handler
+  presence; see Remaining limitations.
+
+### Ndryshimet
+
+Modified: `backend/app/platform_core/connect.py`,
+`backend/app/platform_core/registry.py`,
+`backend/app/api/v1/endpoints/connect.py`,
+`frontend/src/api/connect.ts`, `frontend/src/components/ConnectMenu.tsx`,
+`frontend/src/components/DevicesTable.tsx`,
+`frontend/src/components/GenericDeviceDrawer.tsx`,
+`frontend/src/components/DeviceDrawer.tsx` (hostname prop only),
+`frontend/src/pages/Devices.tsx`, `frontend/src/pages/CredentialVault.tsx`,
+plus test updates (`tests/test_connect_method_status_and_preferences.py`,
+`tests/test_mikrotik_deployment.py`,
+`src/components/__tests__/ConnectMenu.test.tsx`). No schema change. No new
+flag — same `FEATURE_PLATFORM_CORE`/`FEATURE_TERMINAL` gates.
+
+### Rezultati
+
+22 new backend tests (mockup fidelity: winbox visible-but-unavailable on
+macOS, ready on Windows with credential, embedded gating both axes, OS-aware
+defaults, no credential material in launch URLs, batch endpoint states) + new
+frontend tests (grouping, split-button launch/menu behavior, always-use
+persistence, feature-gated Unavailable section) — see the test files for the
+full list. Preflight + smoke results recorded in the deploy note below.
+
+### Mësimet
+
+- A method's existence, its credential readiness, its feature-gate
+  availability, and its OS compatibility are FOUR separate axes; every prior
+  regression here came from collapsing one into another (hiding for OS,
+  faking readiness across a feature gate).
+- When a feature is rollout-scoped (FEATURE_TERMINAL → device 729), every UI
+  surface that triggers it must reflect the same scope, or the UI "lies" for
+  the rest of the fleet.
+
+### Remaining limitations
+
+- **Winbox desktop launcher dependency**: TECHI has no desktop launcher/agent
+  on the operator's machine; the `winbox://` URI relies on Winbox 4's own
+  protocol registration, and a browser cannot detect whether a handler
+  exists. If Winbox 4 isn't installed, the click is a no-op and the UI shows
+  the "launcher not installed" note after the attempt. Real auto-login (Vault
+  credential injected into the Winbox session) additionally requires a
+  desktop launcher component — not built; credentials are intentionally
+  never placed in the URL.
+- **Embedded SSH/Terminal visibility in prod follows FEATURE_TERMINAL's
+  rollout scope** (currently device 729 only): on every other device they now
+  honestly show "Unavailable — not enabled for this device" and MikroTik on
+  macOS defaults to WebFig. Seeing Embedded SSH Ready fleet-wide is a
+  config-only owner decision (`FEATURE_TERMINAL_SCOPE=fleet` or a wider
+  allowlist) — Manual Approval per PROJECT_STATE.
+- Browser click-through validation still requires the owner (same constraint
+  as the previous two deploys: no browser tool + rotated owner bootstrap
+  password).
+
 ## [2026-07-11] FIX: Vault scope assignment (production 400) + Connect credential resolution/status/preferences
 
 ### Problemi

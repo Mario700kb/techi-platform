@@ -1215,7 +1215,7 @@ export default function DeviceDrawer({
               {platformFeatures.FEATURE_PLATFORM_CORE && (
                 <div className="col-span-2 flex items-center justify-between">
                   <p className="premium-kicker">Connect</p>
-                  <ConnectMenu deviceId={device.id} />
+                  <ConnectMenu deviceId={device.id} hostname={device.hostname} />
                 </div>
               )}
               {/* Capabilities — capability-driven, real data reported by the

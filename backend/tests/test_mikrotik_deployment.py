@@ -41,7 +41,7 @@ def test_mikrotik_registry_declares_deployment_metadata():
     assert set(d.deployment_templates_by_version) == {"6", "7"}
     assert d.supported_architectures == ("chr", "x86", "arm", "arm64", "mipsbe", "mmips", "ppc", "tile")
     assert d.supported_routeros_versions == ("6", "7")
-    assert d.connect_methods == ("winbox", "webfig", "ssh")
+    assert d.connect_methods == ("winbox", "ssh", "webfig")
     # Connector philosophy: MikroTik reports ONLY `connect` — no agent-style
     # capability surface; advanced work happens through Winbox/WebFig/SSH.
     assert d.allowed_capabilities == frozenset({"connect"})
@@ -271,7 +271,8 @@ def test_mikrotik_capabilities_drive_generic_drawer_surface():
     assert reported == {"connect": ""}
     # No capability tabs: the Drawer is Overview / Management / Notes / Timeline.
     assert capability_tabs(reported) == []
-    assert [m.id for m in methods_for("mikrotik", reported)] == ["winbox", "webfig", "ssh"]
+    # Approved V3 Connect order: Winbox, Embedded SSH, WebFig.
+    assert [m.id for m in methods_for("mikrotik", reported)] == ["winbox", "ssh", "webfig"]
     assert [a.id for a in actions_for("mikrotik", reported)] == [
         "refresh_inventory", "restart_connector", "reenroll",
     ]

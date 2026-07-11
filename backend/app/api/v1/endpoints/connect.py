@@ -31,6 +31,7 @@ from app.platform_core.capabilities import capability_tabs
 from app.platform_core.connect import ConnectMethod, methods_for
 from app.platform_core.flags import feature_enabled
 from app.platform_core.registry import resolve_platform
+from app.platform_core.rollout import is_device_in_rollout
 from app.repositories.device_repository import DeviceRepository
 from app.services import version_service
 from app.services.audit_service import AuditAction, audit_log
@@ -55,17 +56,24 @@ class ConnectMethodOut(BaseModel):
     priority: int
     scheme: Optional[str] = None
     # Operator client OS this method's desktop app requires (e.g. "windows"
-    # for Winbox), or None if it works on any OS. The frontend hides methods
-    # that don't match the operator's detected OS.
+    # for Winbox), or None if it works on any OS. A method that doesn't match
+    # the operator's OS is shown DISABLED with a reason, never hidden
+    # (approved V3 Connect mockup).
     requires_client_os: Optional[str] = None
     # Section E: separates "does this method exist for the platform" (it's in
     # this list at all) from "can the operator actually use it right now".
-    status: str = "ready"  # ready | credential_required
+    status: str = "ready"  # ready | credential_required | unavailable
     status_reason: Optional[str] = None
     # Which Vault scope tier resolved the credential that makes this method
     # Ready (device|group|client|global) — None when no credential is
     # involved (native methods) or when status != ready.
     credential_source: Optional[str] = None
+    # Approved V3 Connect mockup: short transport/source label + static menu
+    # section kind (available|web|desktop_app) + whether the method runs
+    # inside TECHI on the Terminal stack.
+    transport: str = ""
+    category: str = "available"
+    embedded: bool = False
 
 
 class ConnectMethodsResponse(BaseModel):
@@ -81,11 +89,28 @@ class ConnectMethodsResponse(BaseModel):
     configured_preference_id: Optional[str] = None
 
 
-def _method_status(db: Session, device: Device, method: ConnectMethod) -> Tuple[str, Optional[str], Optional[str]]:
-    """Returns (status, reason, credential_source). Section D/F: a method
-    that needs a Vault credential (ssh/winbox/webfig) is "credential_required"
-    until resolve_credentials_for_method finds at least one ACTIVE, type-
-    matched candidate — never silently treated as usable."""
+def _method_status(
+    db: Session, device: Device, method: ConnectMethod, client_os: Optional[str] = None,
+) -> Tuple[str, Optional[str], Optional[str]]:
+    """Returns (status, reason, credential_source), in precedence order:
+
+    1. "unavailable" — the method's desktop app doesn't exist on the
+       OPERATOR's OS (`client_os` query param vs `requires_client_os`), or an
+       embedded method's Terminal stack isn't enabled for this device
+       (FEATURE_TERMINAL flag + rollout scope — the exact same gates
+       POST /terminal/sessions enforces, reflected honestly instead of a
+       method that fails on click).
+    2. "credential_required" — Section D/F: a method that needs a Vault
+       credential (ssh/winbox/webfig) until resolve_credentials_for_method
+       finds at least one ACTIVE, type-matched candidate.
+    3. "ready".
+    """
+    if method.requires_client_os and client_os and method.requires_client_os != client_os:
+        return "unavailable", f"{method.requires_client_os.capitalize()} only — unavailable on this operating system", None
+    if method.embedded and (
+        not feature_enabled("FEATURE_TERMINAL") or not is_device_in_rollout("FEATURE_TERMINAL", device)
+    ):
+        return "unavailable", "Embedded terminal is not enabled for this device yet", None
     if method.id in _DEDICATED_METHOD_IDS or method.id not in METHOD_CREDENTIAL_TYPES:
         return "ready", None, None
     tier, candidates = VaultService(db).resolve_credentials_for_method(device, method.id)
@@ -101,21 +126,37 @@ def _resolve_preferred_method(
 ) -> Optional[str]:
     """Tiers 3-4 of the Section G hierarchy, applied on top of whatever tiers
     1-2 (device override / platform default) resolved into
-    `configured_preference`."""
+    `configured_preference`. An "unavailable" method (wrong operator OS /
+    Terminal stack not enabled) can never be the effective default."""
     ready_ids = [m.id for m, (status, _, _) in zip(methods, statuses) if status == "ready"]
     if configured_preference and configured_preference in ready_ids:
         return configured_preference
     # Configured preference (if any) isn't Ready right now, or none was set —
     # fall back to the registry's own priority order (methods_for() already
-    # sorts by ConnectMethod.priority), else the first genuinely Ready method.
+    # sorts by ConnectMethod.priority), else the first genuinely Ready method,
+    # else the first method that at least could work once a credential exists.
     if methods and methods[0].id in ready_ids:
         return methods[0].id
-    return ready_ids[0] if ready_ids else (methods[0].id if methods else None)
+    if ready_ids:
+        return ready_ids[0]
+    usable = [m.id for m, (status, _, _) in zip(methods, statuses) if status != "unavailable"]
+    return usable[0] if usable else None
+
+
+def _method_out(m: ConnectMethod, status: str, reason: Optional[str], credential_source: Optional[str]) -> ConnectMethodOut:
+    return ConnectMethodOut(
+        id=m.id, label=m.label, surface=m.surface,
+        capability=m.capability, priority=m.priority, scheme=m.scheme,
+        requires_client_os=m.requires_client_os,
+        status=status, status_reason=reason, credential_source=credential_source,
+        transport=m.transport, category=m.category, embedded=m.embedded,
+    )
 
 
 @router.get("/devices/{device_id}/connect-methods", response_model=ConnectMethodsResponse)
 def device_connect_methods(
     device_id: int,
+    client_os: Optional[str] = None,
     db: Session = Depends(get_db),
     operator: Operator = Depends(get_current_operator),
 ):
@@ -129,7 +170,7 @@ def device_connect_methods(
     descriptor = resolve_platform(device.platform)
     platform_id = descriptor.id if descriptor is not None else "windows"
     methods = methods_for(platform_id, device.capabilities)
-    statuses = [_method_status(db, device, m) for m in methods]
+    statuses = [_method_status(db, device, m, client_os) for m in methods]
 
     configured_preference = ConnectPreferenceService(db).get_preferred_method_id(
         operator.id, platform_id, device_id,
@@ -139,17 +180,86 @@ def device_connect_methods(
     return ConnectMethodsResponse(
         platform=platform_id,
         methods=[
-            ConnectMethodOut(
-                id=m.id, label=m.label, surface=m.surface,
-                capability=m.capability, priority=m.priority, scheme=m.scheme,
-                requires_client_os=m.requires_client_os,
-                status=status, status_reason=reason, credential_source=credential_source,
-            )
+            _method_out(m, status, reason, credential_source)
             for m, (status, reason, credential_source) in zip(methods, statuses)
         ],
         preferred_method_id=preferred_method_id,
         configured_preference_id=configured_preference,
     )
+
+
+class ConnectStatusOut(BaseModel):
+    """One Device Catalog row's Connect button state — Ready / Credential
+    required / Unavailable — with the reason for the tooltip and the effective
+    default method for the main-click launch. Aggregated across the device's
+    methods: any Ready method ⇒ ready; else any credential_required ⇒
+    credential_required; else unavailable. Never contains a secret."""
+    device_id: int
+    platform: str
+    state: str  # ready | credential_required | unavailable
+    reason: Optional[str] = None
+    preferred_method_id: Optional[str] = None
+    preferred_method_label: Optional[str] = None
+    method_count: int = 0
+
+
+_CONNECT_STATUS_MAX_IDS = 200
+
+
+@router.get("/connect-status", response_model=List[ConnectStatusOut])
+def devices_connect_status(
+    device_ids: str,
+    client_os: Optional[str] = None,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+):
+    """Batch Connect-button state for the Device Catalog's visible rows (the
+    per-row alternative would be an N+1 of /connect-methods calls). Windows
+    rows keep their separate RustDesk check and never call this."""
+    if not feature_enabled("FEATURE_PLATFORM_CORE"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    ids: List[int] = []
+    for part in device_ids.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    if len(ids) > _CONNECT_STATUS_MAX_IDS:
+        raise HTTPException(status_code=400, detail=f"At most {_CONNECT_STATUS_MAX_IDS} device_ids per request")
+
+    repo = DeviceRepository(db)
+    pref_service = ConnectPreferenceService(db)
+    out: List[ConnectStatusOut] = []
+    for device_id in ids:
+        device = repo.get(device_id)
+        if device is None:
+            continue
+        descriptor = resolve_platform(device.platform)
+        platform_id = descriptor.id if descriptor is not None else "windows"
+        methods = list(methods_for(platform_id, device.capabilities))
+        statuses = [_method_status(db, device, m, client_os) for m in methods]
+        configured = pref_service.get_preferred_method_id(operator.id, platform_id, device_id)
+        preferred_id = _resolve_preferred_method(methods, statuses, configured)
+        by_id = {m.id: m for m in methods}
+        status_values = [s for s, _, _ in statuses]
+        if "ready" in status_values:
+            state, reason = "ready", None
+        elif "credential_required" in status_values:
+            state, reason = "credential_required", "No compatible credential configured"
+        elif statuses:
+            state, reason = "unavailable", statuses[0][1] or "No Connect method available on this operating system"
+        else:
+            state, reason = "unavailable", "No Connect method available for this device yet"
+        out.append(ConnectStatusOut(
+            device_id=device_id,
+            platform=platform_id,
+            state=state,
+            reason=reason,
+            preferred_method_id=preferred_id,
+            preferred_method_label=by_id[preferred_id].label if preferred_id and preferred_id in by_id else None,
+            method_count=len(methods),
+        ))
+    return out
 
 
 class ConnectPreferenceIn(BaseModel):
@@ -317,7 +427,8 @@ def device_drawer_meta(
         connect_methods=[
             ConnectMethodOut(id=m.id, label=m.label, surface=m.surface,
                              capability=m.capability, priority=m.priority, scheme=m.scheme,
-                             requires_client_os=m.requires_client_os)
+                             requires_client_os=m.requires_client_os,
+                             transport=m.transport, category=m.category, embedded=m.embedded)
             for m in methods
         ],
         actions=[

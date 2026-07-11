@@ -190,7 +190,10 @@ PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
             display_name="MikroTik",
             mode=MODE_PROXY_ADAPTER,
             feature_flag="FEATURE_MIKROTIK",
-            connect_methods=("winbox", "webfig", "ssh"),
+            # Approved V3 Connect order: Winbox first (Windows operators'
+            # default), Embedded SSH before WebFig (macOS/Linux operators
+            # default to SSH when Ready, WebFig as fallback).
+            connect_methods=("winbox", "ssh", "webfig"),
             # Connector philosophy: MikroTik reports ONLY what the dashboard
             # needs. `connect` gates the metadata-only Connect surface; no
             # agent-style capability tabs — advanced work happens in

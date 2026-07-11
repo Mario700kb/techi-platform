@@ -168,6 +168,7 @@ export default function Devices() {
 
   const [drawerDeviceId, setDrawerDeviceId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<string | undefined>(undefined);
   const drawerCloseTimerRef = useRef<number | undefined>();
   const treeCounts = useMemo<TreeCounts>(() => {
     if (!fleetOverview) return computeTreeCounts([]);
@@ -208,6 +209,17 @@ export default function Devices() {
 
   const openDrawer = useCallback((device: Device) => {
     window.clearTimeout(drawerCloseTimerRef.current);
+    setDrawerInitialTab(undefined);
+    setDrawerDeviceId(device.id);
+    setDrawerOpen(true);
+  }, []);
+
+  // Connect ▸ Embedded Terminal from a Device Catalog row: the terminal
+  // lives in the drawer's Terminal tab, so deep-link straight to it (the
+  // Connect button itself never opens the drawer).
+  const openDeviceTerminal = useCallback((device: Device) => {
+    window.clearTimeout(drawerCloseTimerRef.current);
+    setDrawerInitialTab("terminal");
     setDrawerDeviceId(device.id);
     setDrawerOpen(true);
   }, []);
@@ -952,6 +964,7 @@ export default function Devices() {
             activePackageSha256={fleetOverview?.active_agent_sha256}
             activeConnectorVersions={fleetOverview?.active_connector_versions}
             agentsOutdated={fleetOverview?.agents_outdated ?? 0}
+            onOpenDeviceTerminal={openDeviceTerminal}
           />
         </div>
       </div>
@@ -971,6 +984,7 @@ export default function Devices() {
             groups={groups}
             canOperate={can("operator")}
             onDeviceUpdated={handleDeviceUpdated}
+            initialTab={drawerInitialTab}
           />
         ) : (
           <DeviceDrawer

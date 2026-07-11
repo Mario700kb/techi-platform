@@ -15,6 +15,7 @@ import {
 } from "../api/vault";
 import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
 import { getDevice, getDevices } from "../api/devices";
+import { emitConnectRefresh } from "../api/connect";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button } from "../components/ui";
@@ -379,6 +380,10 @@ export default function CredentialVault() {
         const created = await createVaultCredential(payload);
         setItems((current) => [...current, created]);
       }
+      // Connect readiness may have changed (a Winbox/WebFig/SSH method can
+      // now resolve this credential) — refresh every mounted Connect
+      // surface immediately, no manual page refresh.
+      emitConnectRefresh();
       resetForm();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save credential");
@@ -402,6 +407,8 @@ export default function CredentialVault() {
     try {
       const updated = await setVaultCredentialStatus(cred.id, cred.status === "active" ? "disabled" : "active");
       setItems((current) => current.map((i) => (i.id === updated.id ? updated : i)));
+      emitConnectRefresh(); // resolution is ACTIVE-only, so status flips change readiness
+
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update status");
     }
@@ -423,6 +430,7 @@ export default function CredentialVault() {
       await deleteVaultCredential(target.id);
       setItems((current) => current.filter((i) => i.id !== target.id));
       setDeleteTarget(null);
+      emitConnectRefresh();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         setDeleteTarget(null);
@@ -439,6 +447,7 @@ export default function CredentialVault() {
       await deleteVaultCredential(blockedDelete.target.id, true);
       setItems((current) => current.filter((i) => i.id !== blockedDelete.target.id));
       setBlockedDelete(null);
+      emitConnectRefresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
     }

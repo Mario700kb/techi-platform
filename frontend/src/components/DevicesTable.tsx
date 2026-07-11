@@ -20,6 +20,9 @@ import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
 import { compareVersions } from "../utils/version";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import ConnectMenu from "./ConnectMenu";
+import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
+import { detectOperatorOS } from "../utils/operatorOs";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -68,6 +71,9 @@ interface DevicesTableProps {
   activePackageSha256?: string | null;
   activeConnectorVersions?: Record<string, string>;
   agentsOutdated?: number;
+  // Connect ▸ Embedded Terminal from a Catalog row opens the device's
+  // drawer directly on its Terminal tab (the terminal lives there).
+  onOpenDeviceTerminal?: (device: Device) => void;
 }
 
 export type QuickFilter =
@@ -519,6 +525,7 @@ const DevicesTable = memo(function DevicesTable({
   activePackageSha256,
   activeConnectorVersions,
   agentsOutdated = 0,
+  onOpenDeviceTerminal,
 }: DevicesTableProps) {
   const navigate = useNavigate();
   // Platform Expansion: show the platform icon only when Linux is enabled, so
@@ -661,6 +668,44 @@ const DevicesTable = memo(function DevicesTable({
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, sortKey, sortDir]);
+
+  // Approved V3 Connect mockup — the Catalog Connect button carries a real
+  // per-row state (Ready / Credential required / Unavailable) for every
+  // non-Windows row, fetched in ONE batched /connect-status call for the
+  // visible rows (never per-row N+1). Refreshed on CONNECT_REFRESH_EVENT so
+  // adding a credential / changing a default updates the buttons immediately.
+  const [connectStatusMap, setConnectStatusMap] = useState<Record<number, ConnectRowStatus>>({});
+  const nonWindowsIdsKey = useMemo(
+    () => displayDevices
+      .filter((d) => d.platform && d.platform.toLowerCase() !== "windows")
+      .map((d) => d.id)
+      .join(","),
+    [displayDevices],
+  );
+  useEffect(() => {
+    if (!platformFeatures.FEATURE_PLATFORM_CORE || !nonWindowsIdsKey) {
+      setConnectStatusMap({});
+      return;
+    }
+    let active = true;
+    const ids = nonWindowsIdsKey.split(",").map(Number);
+    const fetchStatuses = () => {
+      getConnectStatuses(ids, detectOperatorOS())
+        .then((rows) => {
+          if (!active) return;
+          const map: Record<number, ConnectRowStatus> = {};
+          rows.forEach((r) => { map[r.device_id] = r; });
+          setConnectStatusMap(map);
+        })
+        .catch(() => { /* row buttons fall back to the structural check */ });
+    };
+    fetchStatuses();
+    window.addEventListener(CONNECT_REFRESH_EVENT, fetchStatuses);
+    return () => {
+      active = false;
+      window.removeEventListener(CONNECT_REFRESH_EVENT, fetchStatuses);
+    };
+  }, [nonWindowsIdsKey, platformFeatures.FEATURE_PLATFORM_CORE]);
 
   // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Devices/"chips aktive"): every
   // applied filter — quick filter, client, and client subgroup — surfaces as
@@ -1672,59 +1717,78 @@ const DevicesTable = memo(function DevicesTable({
                               <Star className={`h-3 w-3 ${favorites.has(device.id) ? "fill-current" : ""}`} />
                             </button>
                           )}
-                          {/* Connect button — styled like RS page. Windows keeps its
-                              existing dedicated RustDesk flow, byte-identical. Non-Windows
-                              platforms open the Drawer's Connect menu instead — it has the
-                              real, credential-aware, per-method status this row can't cheaply
-                              compute for every visible device. */}
-                          <button
-                            type="button"
-                            disabled={!canConnect}
-                            onClick={
-                              isWindowsDevice
-                                ? async () => {
-                                    try {
-                                      const res = await getConnectUrl(device.id);
-                                      launchConnect(
-                                        res.connect_url,
-                                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                        () => showBulkToast("Opening with RustDesk instead", true)
-                                      );
-                                    } catch (err) {
-                                      showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                          {/* Connect (approved V3 Connect mockup). Windows keeps its
+                              existing dedicated RustDesk flow, byte-identical — main
+                              click opens directly, single option, exactly as before
+                              (and as annotated in the mockup: "Opens directly —
+                              single option"). Non-Windows rows render the split
+                              Connect button: main click launches the operator's saved
+                              default Ready method (or opens the categorized method
+                              menu once when no default is saved); the ▾ arrow always
+                              opens the menu. NEVER the Drawer. Button state comes
+                              from the batched /connect-status feed. Flag-off keeps
+                              the old open-the-device behavior (no Connect Framework
+                              endpoints exist then). */}
+                          {isWindowsDevice || !platformFeatures.FEATURE_PLATFORM_CORE ? (
+                            <button
+                              type="button"
+                              disabled={!canConnect}
+                              onClick={
+                                isWindowsDevice
+                                  ? async () => {
+                                      try {
+                                        const res = await getConnectUrl(device.id);
+                                        launchConnect(
+                                          res.connect_url,
+                                          buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                                          () => showBulkToast("Opening with RustDesk instead", true)
+                                        );
+                                      } catch (err) {
+                                        showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                                      }
                                     }
-                                  }
-                                : () => onDeviceSelect?.(device)
-                            }
-                            title={
-                              isWindowsDevice
-                                ? device.rustdesk_conflict_detected
-                                  ? "Remote Support ID conflict"
+                                  : () => onDeviceSelect?.(device)
+                              }
+                              title={
+                                isWindowsDevice
+                                  ? device.rustdesk_conflict_detected
+                                    ? "Remote Support ID conflict"
+                                    : canConnect
+                                    ? "Open TECHI Remote Support"
+                                    : "Remote ID not resolved yet"
                                   : canConnect
-                                  ? "Open TECHI Remote Support"
-                                  : "Remote ID not resolved yet"
-                                : canConnect
-                                ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                                : "No Connect method available for this device yet"
-                            }
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
-                            style={{
-                              background: canConnect
-                                ? "rgba(249,115,22,0.15)"
-                                : "rgba(255,255,255,0.03)",
-                              border: `1px solid ${
-                                canConnect
-                                  ? "rgba(249,115,22,0.3)"
-                                  : "var(--th-border-subtle)"
-                              }`,
-                              color: canConnect ? "#f97316" : "var(--th-text-muted)",
-                              cursor: canConnect ? "pointer" : "not-allowed",
-                              opacity: canConnect ? 1 : 0.45,
-                            }}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            Connect
-                          </button>
+                                  ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                                  : "No Connect method available for this device yet"
+                              }
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
+                              style={{
+                                background: canConnect
+                                  ? "rgba(249,115,22,0.15)"
+                                  : "rgba(255,255,255,0.03)",
+                                border: `1px solid ${
+                                  canConnect
+                                    ? "rgba(249,115,22,0.3)"
+                                    : "var(--th-border-subtle)"
+                                }`,
+                                color: canConnect ? "#f97316" : "var(--th-text-muted)",
+                                cursor: canConnect ? "pointer" : "not-allowed",
+                                opacity: canConnect ? 1 : 0.45,
+                              }}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Connect
+                            </button>
+                          ) : (
+                            <ConnectMenu
+                              variant="row"
+                              lazyLoad
+                              deviceId={device.id}
+                              hostname={device.hostname}
+                              initialState={connectStatusMap[device.id]?.state ?? (canConnect ? null : "unavailable")}
+                              initialStateReason={connectStatusMap[device.id]?.reason ?? (canConnect ? null : "No Connect method available for this device yet")}
+                              onOpenTerminal={onOpenDeviceTerminal ? () => onOpenDeviceTerminal(device) : undefined}
+                            />
+                          )}
 
                           {canOperate && (
                             <button

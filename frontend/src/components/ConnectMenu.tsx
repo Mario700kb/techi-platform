@@ -1,48 +1,63 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, CircleAlert, Link2, Monitor, Globe, Pin, PinOff, Plus } from "lucide-react";
+import { ChevronDown, CircleAlert, Link2, Monitor, Globe, Pin, PinOff, Plus, Terminal } from "lucide-react";
 
 import { fetchJson } from "../api/client";
 import {
-  type ConnectMethod, getConnectMethods, resetConnectPreference, setConnectPreference,
+  CONNECT_REFRESH_EVENT,
+  type ConnectMethod, emitConnectRefresh, getConnectMethods, resetConnectPreference, setConnectPreference,
 } from "../api/connect";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
 
 const EmbeddedSSHModal = lazy(() => import("./EmbeddedSSHModal"));
 
-// Connect Framework UI (Platform Expansion Phase 7; credential-aware status +
-// per-operator defaults added in the Credential Assignment + Connect
-// Resolution release). The dropdown is built ENTIRELY from
-// GET /devices/{id}/connect-methods — no hardcoded per-platform menus.
+// Connect Framework UI, aligned with the approved V3 Connect mockup:
 //
-// Every method the platform declares is always shown (Section E: "Do not
-// hide a method merely because credentials are missing") with one of three
-// states, computed by merging the backend's credential-aware status with the
-// operator-OS check (backend doesn't know the browser's OS):
-//   - ready               — usable now (credential_source shown when a Vault
-//                           credential resolved it: Device/Group/Client/Global)
-//   - credential_required — exists for this platform, but no compatible Vault
-//                           credential resolves yet; clicking offers "Add
-//                           credential", prefilled with device/method/scope
-//   - unavailable_os      — the method's desktop app doesn't exist on the
-//                           OPERATOR's OS (e.g. Winbox.exe is Windows-only)
-//
-// Selecting a Ready method calls the generic launcher
-// (`/connect-methods/{id}/launch`, scheme:// or http(s)://) except "ssh",
-// whose default action is the Embedded SSH Connect terminal (the external OS
-// SSH client stays a secondary link inside that modal). `remote_support`/
-// `web_terminal` keep their own existing dedicated flows (Remote Support tab
-// / Terminal tab) and are not launched from here.
-//
-// "Always use this method" (Section G) pins a per-operator+platform default
-// (PUT /connect-preferences); the pinned method is highlighted, and defaults
-// can be viewed/reset from Settings ▸ Connect Defaults.
+// - SPLIT BUTTON: the main "Connect" segment launches the operator's SAVED
+//   default method immediately when it's Ready; with no saved preference it
+//   opens the menu once so the operator chooses (and can tick "Always use
+//   this option"). The ▾ arrow segment always opens the method menu directly.
+//   Neither segment ever opens the Device Drawer.
+// - CATEGORIZED MENU, built ENTIRELY from GET /devices/{id}/connect-methods:
+//   Recommended (the effective default) · Available (embedded methods) ·
+//   Web · Desktop Applications · Unavailable. Every method the platform
+//   declares is ALWAYS shown; a method that can't run right now is disabled
+//   with its reason (Winbox on macOS/Linux: "Windows only · Unavailable on
+//   …"; embedded methods outside the FEATURE_TERMINAL rollout: the backend's
+//   honest reason) — never hidden.
+// - Each row: icon · method name · transport/source label · status ·
+//   credential source (Vault scope tier) · unavailable reason.
+// - "Always use this option" (menu footer) saves the launched method as the
+//   per-operator platform default; the per-row pin does the same per method.
+//   Defaults are viewed/reset from Settings ▸ Connect Defaults.
+// - Launch targets: "ssh" → Embedded SSH terminal (external OS SSH client
+//   stays a secondary link inside that modal); "web_terminal" → the Embedded
+//   Terminal (onOpenTerminal callback — Drawer Terminal tab);
+//   "remote_support" → onRemoteSupport callback (the existing RustDesk
+//   flow / Remote Support tab); everything else → the generic audited
+//   launcher (`/connect-methods/{id}/launch`).
+// - Listens for CONNECT_REFRESH_EVENT so credential/preference changes are
+//   reflected immediately, with no manual refresh.
 
-type DisplayStatus = "ready" | "credential_required" | "unavailable_os";
+type DisplayStatus = "ready" | "credential_required" | "unavailable_os" | "unavailable";
 
 interface Props {
   deviceId: number;
+  // Menu header: "Connect to <hostname>" (approved mockup).
+  hostname?: string;
+  // "drawer" (default): full-size trigger used inside the Device Drawer.
+  // "row": compact trigger for a Device Catalog row; the menu is positioned
+  // fixed (the table's scroll container would clip an absolute dropdown).
+  variant?: "drawer" | "row";
+  // Row variant: don't fetch on mount (a 100-row table would N+1); fetch on
+  // first interaction instead. The row's button state comes from the batch
+  // /connect-status feed via initialState until then.
+  lazyLoad?: boolean;
+  initialState?: "ready" | "credential_required" | "unavailable" | null;
+  initialStateReason?: string | null;
+  onOpenTerminal?: () => void;
+  onRemoteSupport?: () => void;
 }
 
 const DEDICATED_METHOD_IDS = new Set(["remote_support", "web_terminal"]);
@@ -50,13 +65,54 @@ const METHOD_CREDENTIAL_TYPE: Record<string, string> = { ssh: "ssh_password", wi
 const CREDENTIAL_SOURCE_LABEL: Record<string, string> = {
   device: "Device credential", group: "Group credential", client: "Client credential", global: "Global credential",
 };
+const OS_LABEL: Record<string, string> = { windows: "Windows", macos: "macOS", linux: "Linux" };
 
-function displayStatus(m: ConnectMethod, operatorOS: string | null): DisplayStatus {
+export function displayStatus(m: ConnectMethod, operatorOS: string | null): DisplayStatus {
   if (m.requires_client_os && m.requires_client_os !== operatorOS) return "unavailable_os";
   return m.status;
 }
 
-export default function ConnectMenu({ deviceId }: Props) {
+export interface ConnectMethodGroup {
+  label: string;
+  methods: ConnectMethod[];
+}
+
+// Approved mockup menu structure. Static kind comes from the registry
+// (category); Recommended and Unavailable are derived per-device/operator:
+// the effective default (when usable) leads, feature-gated methods sink to
+// Unavailable, and an OS-mismatched desktop app STAYS under Desktop
+// Applications — visible, disabled, with its reason.
+export function groupConnectMethods(
+  methods: ConnectMethod[],
+  preferredMethodId: string | null,
+  operatorOS: string | null,
+): ConnectMethodGroup[] {
+  const groups: Record<string, ConnectMethod[]> = {
+    Recommended: [], Available: [], Web: [], "Desktop Applications": [], Unavailable: [],
+  };
+  for (const m of methods) {
+    const status = displayStatus(m, operatorOS);
+    if (m.id === preferredMethodId && status === "ready") {
+      groups.Recommended.push(m);
+    } else if (status === "unavailable") {
+      groups.Unavailable.push(m);
+    } else if (m.category === "web") {
+      groups.Web.push(m);
+    } else if (m.category === "desktop_app") {
+      groups["Desktop Applications"].push(m);
+    } else {
+      groups.Available.push(m);
+    }
+  }
+  return Object.entries(groups)
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, methods: items.sort((a, b) => a.priority - b.priority) }));
+}
+
+export default function ConnectMenu({
+  deviceId, hostname, variant = "drawer", lazyLoad = false,
+  initialState = null, initialStateReason = null, onOpenTerminal, onRemoteSupport,
+}: Props) {
   const navigate = useNavigate();
   const [platform, setPlatform] = useState<string | null>(null);
   const [methods, setMethods] = useState<ConnectMethod[] | null>(null);
@@ -65,33 +121,55 @@ export default function ConnectMenu({ deviceId }: Props) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
+  const [alwaysUse, setAlwaysUse] = useState(false);
   const [sshModalOpen, setSshModalOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const operatorOS = detectOperatorOS();
 
-  const reload = () => {
-    getConnectMethods(deviceId)
+  interface LoadedData {
+    methods: ConnectMethod[];
+    configured: string | null;
+  }
+  const loadPromise = useRef<Promise<LoadedData | null> | null>(null);
+
+  // Returns the fetched data directly (not via state) — a lazy row's first
+  // main-click must decide "launch default vs open menu" from THIS response,
+  // not from state that React hasn't committed yet.
+  const load = (): Promise<LoadedData | null> => {
+    const p = getConnectMethods(deviceId, operatorOS)
       .then((r) => {
-        setPlatform(r.platform);
-        setMethods(r.methods);
-        setPreferredMethodId(r.preferred_method_id);
-        setConfiguredPreferenceId(r.configured_preference_id);
+        const list = Array.isArray(r?.methods) ? r.methods : [];
+        setPlatform(r?.platform ?? null);
+        setMethods(list);
+        setPreferredMethodId(r?.preferred_method_id ?? null);
+        setConfiguredPreferenceId(r?.configured_preference_id ?? null);
+        return { methods: list, configured: r?.configured_preference_id ?? null };
       })
-      .catch(() => setMethods([]));
+      .catch(() => {
+        setMethods([]);
+        return null;
+      });
+    loadPromise.current = p;
+    return p;
   };
 
   useEffect(() => {
-    let active = true;
-    getConnectMethods(deviceId)
-      .then((r) => {
-        if (!active) return;
-        setPlatform(r.platform);
-        setMethods(r.methods);
-        setPreferredMethodId(r.preferred_method_id);
-        setConfiguredPreferenceId(r.configured_preference_id);
-      })
-      .catch(() => { if (active) setMethods([]); });
-    return () => { active = false; };
+    loadPromise.current = null;
+    setMethods(null);
+    if (!lazyLoad) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId]);
+
+  // Credential added / default pinned / reset anywhere in the app → refresh
+  // immediately (approved behavior: no manual refresh needed). Only reload
+  // if this instance has fetched at least once — an untouched lazy row stays
+  // lazy.
+  useEffect(() => {
+    const onRefresh = () => { if (loadPromise.current) void load(); };
+    window.addEventListener(CONNECT_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(CONNECT_REFRESH_EVENT, onRefresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
   useEffect(() => {
@@ -104,9 +182,22 @@ export default function ConnectMenu({ deviceId }: Props) {
 
   // No methods available at all (e.g. device reports no relevant
   // capability) → nothing to connect with; render nothing rather than an
-  // empty menu. A method that merely needs a credential still counts as
-  // "available" — it's shown with a Credential required state, not hidden.
-  if (methods !== null && methods.length === 0) return null;
+  // empty menu (drawer variant only — a lazy row hasn't fetched yet).
+  if (!lazyLoad && methods !== null && methods.length === 0) return null;
+
+  const ensureLoaded = async (): Promise<LoadedData | null> => {
+    if (methods !== null) return { methods, configured: configuredPreferenceId };
+    if (loadPromise.current) return loadPromise.current;
+    return load();
+  };
+
+  const openMenu = () => {
+    if (variant === "row" && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
+    }
+    setOpen(true);
+  };
 
   const launchExternalSsh = async () => {
     try {
@@ -130,19 +221,37 @@ export default function ConnectMenu({ deviceId }: Props) {
     navigate(`/vault?${params.toString()}`);
   };
 
+  const persistAlwaysUse = async (m: ConnectMethod) => {
+    if (!alwaysUse || !platform) return;
+    try {
+      await setConnectPreference(platform, m.id);
+      setAlwaysUse(false);
+      emitConnectRefresh();
+    } catch {
+      setNote("Could not save the default Connect method");
+    }
+  };
+
   const launch = async (m: ConnectMethod) => {
     const status = displayStatus(m, operatorOS);
-    if (status === "unavailable_os") return;
+    if (status === "unavailable_os" || status === "unavailable") return;
     if (status === "credential_required") {
       goAddCredential(m);
       return;
     }
+    void persistAlwaysUse(m);
     setOpen(false);
-    if (DEDICATED_METHOD_IDS.has(m.id)) {
-      setNote(`${m.label} has its own Connect flow (see the ${m.id === "remote_support" ? "Remote Support" : "Terminal"} tab).`);
+    if (m.id === "web_terminal") {
+      if (onOpenTerminal) onOpenTerminal();
+      else setNote("Embedded Terminal opens from the device's Terminal tab.");
       return;
     }
-    // Embedded SSH Connect: default action for "ssh" is now the embedded
+    if (m.id === "remote_support") {
+      if (onRemoteSupport) onRemoteSupport();
+      else setNote("TECHI Remote Support has its own Connect flow (see the Remote Support tab).");
+      return;
+    }
+    // Embedded SSH Connect: default action for "ssh" is the embedded
     // terminal, not the generic scheme://<ip> launcher. The external OS SSH
     // client remains one click away inside the modal.
     if (m.id === "ssh") {
@@ -156,6 +265,12 @@ export default function ConnectMenu({ deviceId }: Props) {
       );
       if (res.surface === "desktop") {
         clickProtocolUrl(res.url);
+        if (m.id === "winbox") {
+          // The browser cannot detect whether a winbox:// protocol handler
+          // exists — be honest about the dependency instead of pretending
+          // the launch always worked.
+          setNote("If Winbox didn't open, the desktop launcher isn't installed — install Winbox 4 (it registers winbox://).");
+        }
       } else {
         window.open(res.url, "_blank", "noopener,noreferrer");
       }
@@ -164,6 +279,25 @@ export default function ConnectMenu({ deviceId }: Props) {
     } finally {
       setLaunching(null);
     }
+  };
+
+  // Main segment (approved behavior): saved default that's Ready → launch it
+  // immediately; anything else → open the menu once so the operator chooses.
+  const onMainClick = async () => {
+    if (open) { setOpen(false); return; }
+    const loaded = await ensureLoaded();
+    const configured = loaded?.methods.find((m) => m.id === loaded.configured);
+    if (configured && displayStatus(configured, operatorOS) === "ready") {
+      void launch(configured);
+      return;
+    }
+    openMenu();
+  };
+
+  const onArrowClick = async () => {
+    if (open) { setOpen(false); return; }
+    await ensureLoaded();
+    openMenu();
   };
 
   const togglePreferred = async (e: React.MouseEvent, m: ConnectMethod) => {
@@ -175,59 +309,92 @@ export default function ConnectMenu({ deviceId }: Props) {
       } else {
         await setConnectPreference(platform, m.id);
       }
-      reload();
+      emitConnectRefresh();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not update the default Connect method");
     }
   };
 
-  const reasonFor = (m: ConnectMethod, status: DisplayStatus): string | null => {
-    if (status === "unavailable_os") return `Unavailable on ${operatorOS ?? "this operating system"}`;
-    if (status === "credential_required") return m.status_reason ?? "No compatible credential configured";
-    if (m.credential_source) return CREDENTIAL_SOURCE_LABEL[m.credential_source] ?? null;
-    return null;
+  // Second line of each row: transport/source · status · reason.
+  const subLabel = (m: ConnectMethod, status: DisplayStatus): string | null => {
+    if (status === "unavailable_os") {
+      const requiredOs = OS_LABEL[m.requires_client_os ?? ""] ?? m.requires_client_os;
+      const currentOs = OS_LABEL[operatorOS ?? ""] ?? "this operating system";
+      return `${requiredOs} only · Unavailable on ${currentOs}`;
+    }
+    if (status === "unavailable") return m.status_reason ?? "Unavailable";
+    if (status === "credential_required") {
+      return `${m.transport || "Method"} · Credential required · Add credential`;
+    }
+    const source = m.credential_source ? CREDENTIAL_SOURCE_LABEL[m.credential_source] : m.transport;
+    return source ? `${source} · Ready` : "Ready";
   };
 
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        disabled={methods === null}
-        className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent-bright)" }}
-      >
-        <Link2 className="h-3.5 w-3.5" />
-        Connect
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+  const rowState = initialState;
+  const isRow = variant === "row";
+  const mainStyle = isRow
+    ? {
+        background: rowState === "ready" || rowState === null ? "rgba(249,115,22,0.15)"
+          : rowState === "credential_required" ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.03)",
+        border: `1px solid ${rowState === "ready" || rowState === null ? "rgba(249,115,22,0.3)"
+          : rowState === "credential_required" ? "rgba(251,191,36,0.3)" : "var(--th-border-subtle)"}`,
+        color: rowState === "ready" || rowState === null ? "var(--th-accent-bright)"
+          : rowState === "credential_required" ? "#fbbf24" : "var(--th-text-muted)",
+      }
+    : { background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent-bright)" };
 
-      {open && methods && (
-        <div
-          className="absolute right-0 z-50 mt-1.5 min-w-[260px] overflow-hidden rounded-lg shadow-2xl"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-        >
-          {methods.map((m) => {
+  const mainTitle = rowState === "credential_required"
+    ? (initialStateReason ?? "Credential required — open the menu to add one")
+    : rowState === "unavailable"
+      ? (initialStateReason ?? "No Connect method available for this device yet")
+      : undefined;
+
+  const menuBody = methods && (
+    <div
+      className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-50 min-w-[280px] overflow-hidden rounded-lg shadow-2xl`}
+      style={{
+        background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)",
+        ...(isRow && menuPos ? { top: menuPos.top, right: menuPos.right } : {}),
+      }}
+    >
+      {hostname && (
+        <div className="px-3 pb-1 pt-2.5 font-mono text-[9.5px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+          Connect to {hostname}
+        </div>
+      )}
+      {methods.length === 0 && (
+        <div className="px-3 py-2.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+          No Connect method available for this device yet.
+        </div>
+      )}
+      {groupConnectMethods(methods, preferredMethodId, operatorOS).map((group) => (
+        <div key={group.label}>
+          <div className="px-3 pb-0.5 pt-2 font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+            {group.label}
+          </div>
+          {group.methods.map((m) => {
             const status = displayStatus(m, operatorOS);
-            const reason = reasonFor(m, status);
+            const reason = subLabel(m, status);
             const isPreferred = preferredMethodId === m.id;
             const isConfigured = configuredPreferenceId === m.id;
-            const disabled = launching === m.id || status === "unavailable_os";
+            const disabled = launching === m.id || status === "unavailable_os" || status === "unavailable";
             return (
               <button
                 key={m.id}
                 type="button"
                 disabled={disabled}
                 onClick={() => void launch(m)}
-                title={status === "unavailable_os" ? reason ?? undefined : undefined}
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] font-medium transition hover:bg-[var(--th-bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                title={status === "unavailable_os" || status === "unavailable" ? reason ?? undefined : undefined}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium transition hover:bg-[var(--th-bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ color: "var(--th-text-primary)" }}
               >
                 {status === "credential_required"
                   ? <CircleAlert className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning, #f59e0b)" }} />
-                  : m.surface === "browser"
-                    ? <Globe className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
-                    : <Monitor className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />}
+                  : m.embedded
+                    ? <Terminal className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                    : m.surface === "browser"
+                      ? <Globe className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                      : <Monitor className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />}
                 <span className="flex flex-1 flex-col items-start">
                   <span className="flex items-center gap-1.5">
                     {launching === m.id ? "Opening…" : m.label}
@@ -242,7 +409,7 @@ export default function ConnectMenu({ deviceId }: Props) {
                       className="text-[10.5px] font-normal"
                       style={{ color: status === "credential_required" ? "var(--th-status-warning, #f59e0b)" : "var(--th-text-faint)" }}
                     >
-                      {status === "credential_required" ? `${reason} · Add credential` : reason}
+                      {reason}
                     </span>
                   )}
                 </span>
@@ -264,11 +431,65 @@ export default function ConnectMenu({ deviceId }: Props) {
             );
           })}
         </div>
+      ))}
+      {methods.length > 0 && (
+        <label
+          className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[11px]"
+          style={{ borderTop: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={alwaysUse}
+            onChange={(e) => setAlwaysUse(e.target.checked)}
+            className="h-3 w-3 accent-orange-500"
+          />
+          Always use this option
+        </label>
       )}
+    </div>
+  );
+
+  return (
+    <div className={`relative ${isRow ? "inline-flex" : ""}`} ref={ref}>
+      <div className="inline-flex items-stretch">
+        <button
+          type="button"
+          onClick={() => void onMainClick()}
+          title={mainTitle}
+          className={
+            isRow
+              ? "inline-flex items-center gap-1 rounded-l-md px-2 py-1 text-[11px] font-semibold transition-all"
+              : "inline-flex items-center gap-1.5 rounded-l-lg px-3.5 py-2 text-[13px] font-semibold transition hover:brightness-110"
+          }
+          style={{ ...mainStyle, borderRight: "none" }}
+        >
+          <Link2 className={isRow ? "h-3 w-3" : "h-3.5 w-3.5"} />
+          Connect
+        </button>
+        <button
+          type="button"
+          aria-label="Connect options"
+          onClick={() => void onArrowClick()}
+          className={
+            isRow
+              ? "inline-flex items-center rounded-r-md px-1 py-1 transition-all"
+              : "inline-flex items-center rounded-r-lg px-1.5 py-2 transition hover:brightness-110"
+          }
+          style={mainStyle}
+        >
+          <ChevronDown className={`${isRow ? "h-3 w-3" : "h-3.5 w-3.5"} transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {open && menuBody}
 
       {note && (
-        <div className="absolute right-0 z-40 mt-1.5 min-w-[220px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug"
-          style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-secondary)" }}
+        <div className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-40 min-w-[220px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug`}
+          style={{
+            background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-secondary)",
+            ...(isRow && menuPos ? { top: menuPos.top, right: menuPos.right } : {}),
+          }}
           onClick={() => setNote(null)}>
           {note}
         </div>

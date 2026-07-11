@@ -33,8 +33,19 @@ def _isolated_master_key(tmp_path, monkeypatch):
     vault_cipher.reset_master_key_cache_for_tests()
 
 
-def _client(monkeypatch, platform="mikrotik", capabilities=None, operator_id=1):
+def _client(monkeypatch, platform="mikrotik", capabilities=None, operator_id=1,
+            terminal_enabled=True):
     monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", True)
+    # Embedded methods (Embedded SSH / Embedded Terminal) are honestly gated
+    # by FEATURE_TERMINAL + its rollout scope (same gates the terminal
+    # endpoints enforce); enable fleet-wide here — including FEATURE_TERMINAL's
+    # flag dependencies (LINUX/VAULT, see flags.FEATURE_DEPENDENCIES) — so
+    # credential-status tests exercise the credential axis, not the
+    # feature-gate axis.
+    monkeypatch.setattr(settings, "FEATURE_LINUX", terminal_enabled)
+    monkeypatch.setattr(settings, "FEATURE_VAULT", terminal_enabled)
+    monkeypatch.setattr(settings, "FEATURE_TERMINAL", terminal_enabled)
+    monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", "fleet" if terminal_enabled else "none")
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 
     @event.listens_for(engine, "connect")
@@ -213,3 +224,146 @@ class TestConnectPreferences:
         assert r.status_code == 200
         platforms = {p["platform"] for p in r.json()}
         assert platforms == {"mikrotik", "linux"}
+
+
+class TestMockupFidelity:
+    """Approved V3 Connect mockup — categorized menu metadata, operator-OS
+    awareness, honest embedded gating, and OS-specific platform defaults."""
+
+    def test_mikrotik_exposes_winbox_ssh_webfig_with_menu_metadata(self, monkeypatch):
+        client, _ = _client(monkeypatch)
+        methods = {m["id"]: m for m in client.get("/devices/3/connect-methods").json()["methods"]}
+        assert set(methods) == {"winbox", "ssh", "webfig"}
+        assert methods["winbox"]["category"] == "desktop_app"
+        assert methods["winbox"]["transport"] == "Desktop app"
+        assert methods["winbox"]["requires_client_os"] == "windows"
+        assert methods["ssh"]["label"] == "Embedded SSH"
+        assert methods["ssh"]["category"] == "available"
+        assert methods["ssh"]["embedded"] is True
+        assert methods["webfig"]["category"] == "web"
+        assert methods["webfig"]["transport"] == "Browser"
+
+    def test_winbox_visible_but_unavailable_on_macos_operator(self, monkeypatch):
+        # Never silently hidden: the method row stays in the list with an
+        # explicit unavailable status + reason.
+        client, _ = _client(monkeypatch)
+        methods = {m["id"]: m for m in client.get("/devices/3/connect-methods?client_os=macos").json()["methods"]}
+        assert methods["winbox"]["status"] == "unavailable"
+        assert "unavailable on this operating system" in methods["winbox"]["status_reason"].lower()
+
+    def test_winbox_ready_on_windows_operator_with_credential(self, monkeypatch):
+        client, db = _client(monkeypatch)
+        _add_credential(db, credential_type="winbox", scope_type="global")
+        methods = {m["id"]: m for m in client.get("/devices/3/connect-methods?client_os=windows").json()["methods"]}
+        assert methods["winbox"]["status"] == "ready"
+        assert methods["winbox"]["credential_source"] == "global"
+
+    def test_embedded_methods_unavailable_when_terminal_flag_off(self, monkeypatch):
+        client, db = _client(monkeypatch, terminal_enabled=False)
+        _add_credential(db, name="ssh-cred", credential_type="ssh_key", scope_type="global", secret="key")
+        methods = {m["id"]: m for m in client.get("/devices/3/connect-methods").json()["methods"]}
+        # Credential exists, but the Terminal stack the embedded session needs
+        # is off — the method must say so instead of failing on click.
+        assert methods["ssh"]["status"] == "unavailable"
+        assert "not enabled" in methods["ssh"]["status_reason"].lower()
+
+    def test_embedded_methods_unavailable_outside_rollout_scope(self, monkeypatch):
+        client, db = _client(monkeypatch)
+        monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", "device")
+        monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_DEVICE_IDS", "999")
+        _add_credential(db, name="ssh-cred", credential_type="ssh_key", scope_type="global", secret="key")
+        methods = {m["id"]: m for m in client.get("/devices/3/connect-methods").json()["methods"]}
+        assert methods["ssh"]["status"] == "unavailable"
+
+    def test_mikrotik_macos_defaults_to_embedded_ssh_then_webfig(self, monkeypatch):
+        # macOS operator: Winbox can never be the default; Embedded SSH wins
+        # when Ready, WebFig when it isn't.
+        client, db = _client(monkeypatch)
+        ssh_cred = _add_credential(db, name="ssh-cred", credential_type="ssh_key", scope_type="global", secret="key")
+        _add_credential(db, name="webfig-cred", credential_type="webfig", scope_type="global")
+        assert client.get("/devices/3/connect-methods?client_os=macos").json()["preferred_method_id"] == "ssh"
+
+        VaultService(db).delete(ssh_cred, "tester", force=True)  # remove the SSH credential
+        body = client.get("/devices/3/connect-methods?client_os=macos").json()
+        assert body["preferred_method_id"] == "webfig"
+
+    def test_mikrotik_windows_defaults_to_winbox(self, monkeypatch):
+        client, db = _client(monkeypatch)
+        _add_credential(db, credential_type="winbox", scope_type="global")
+        _add_credential(db, name="ssh-cred", credential_type="ssh_key", scope_type="global", secret="key")
+        assert client.get("/devices/3/connect-methods?client_os=windows").json()["preferred_method_id"] == "winbox"
+
+    def test_windows_remote_support_unchanged_and_default(self, monkeypatch):
+        client, _ = _client(monkeypatch, platform="windows", capabilities=None, terminal_enabled=False)
+        body = client.get("/devices/3/connect-methods?client_os=macos").json()
+        methods = {m["id"]: m for m in body["methods"]}
+        assert set(methods) == {"remote_support"}
+        assert methods["remote_support"]["status"] == "ready"
+        assert body["preferred_method_id"] == "remote_support"
+
+    def test_linux_embedded_terminal_is_default(self, monkeypatch):
+        client, _ = _client(monkeypatch, platform="linux", capabilities={"terminal": ""})
+        body = client.get("/devices/3/connect-methods").json()
+        methods = {m["id"]: m for m in body["methods"]}
+        assert methods["web_terminal"]["label"] == "Embedded Terminal"
+        assert methods["web_terminal"]["status"] == "ready"
+        assert body["preferred_method_id"] == "web_terminal"
+
+    def test_launch_url_never_contains_credential_material(self, monkeypatch):
+        client, db = _client(monkeypatch)
+        device = db.query(Device).filter(Device.id == 3).one()
+        device.local_ip = "192.168.88.1"
+        db.commit()
+        _add_credential(db, credential_type="winbox", scope_type="global",
+                        username="techi-admin", secret="super-secret-pass")
+        r = client.get("/devices/3/connect-methods/winbox/launch")
+        assert r.status_code == 200
+        url = r.json()["url"]
+        assert url == "winbox://192.168.88.1"
+        assert "techi-admin" not in url and "super-secret-pass" not in url
+
+
+class TestConnectStatusBatch:
+    """GET /connect-status — the Device Catalog's per-row button state."""
+
+    def _add_device(self, db, device_id, platform, capabilities=None):
+        db.add(Device(
+            id=device_id, hostname=f"d{device_id}", platform=platform,
+            capabilities=capabilities, device_type=DeviceType.UNASSIGNED,
+            status=DeviceStatus.OFFLINE,
+        ))
+        db.commit()
+
+    def test_states_across_devices(self, monkeypatch):
+        client, db = _client(monkeypatch)  # device 3 = mikrotik {"connect": ""}
+        self._add_device(db, 4, "linux", {"terminal": ""})
+        self._add_device(db, 5, "linux", {})  # no capability → no methods
+        _add_credential(db, credential_type="winbox", scope_type="global")
+
+        r = client.get("/connect-status?device_ids=3,4,5&client_os=windows")
+        assert r.status_code == 200
+        rows = {row["device_id"]: row for row in r.json()}
+        assert rows[3]["state"] == "ready"          # winbox credential resolves
+        assert rows[3]["preferred_method_id"] == "winbox"
+        assert rows[4]["state"] == "ready"          # Embedded Terminal (fleet rollout)
+        assert rows[4]["preferred_method_id"] == "web_terminal"
+        assert rows[5]["state"] == "unavailable"
+        assert rows[5]["method_count"] == 0
+
+    def test_credential_required_state(self, monkeypatch):
+        client, _ = _client(monkeypatch, terminal_enabled=False)
+        r = client.get("/connect-status?device_ids=3&client_os=macos")
+        row = r.json()[0]
+        # Winbox (macOS) + Embedded SSH (terminal off) unavailable; WebFig
+        # needs a credential → the aggregate row state is credential_required.
+        assert row["state"] == "credential_required"
+
+    def test_404_when_flag_off(self, monkeypatch):
+        client, _ = _client(monkeypatch)
+        monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", False)
+        assert client.get("/connect-status?device_ids=3").status_code == 404
+
+    def test_caps_id_count(self, monkeypatch):
+        client, _ = _client(monkeypatch)
+        too_many = ",".join(str(i) for i in range(201))
+        assert client.get(f"/connect-status?device_ids={too_many}").status_code == 400

@@ -103,6 +103,39 @@
    menu instead. 58 new tests (38 backend, 20 frontend); preflight PASSED
    (contract 15/15, backend suite 767+4 known baseline both flag modes,
    full frontend vitest 61/61, tsc/build/agent clean).
+2c. ✅ **Connect aligned to the approved V3 mockup** (2026-07-11): split
+   Connect button (main click launches the operator's SAVED default when
+   Ready; no saved preference → menu opens once; ▾ arrow always opens the
+   menu; **never the Drawer**) in the Device Catalog and both Drawers;
+   categorized menu ("Connect to <hostname>": Recommended / Available / Web /
+   Desktop Applications / Unavailable) with per-row transport/source label +
+   status + credential source + unavailable reason; "Always use this option"
+   footer checkbox (saves the per-operator platform default) alongside the
+   per-method pin. **Winbox restored end-to-end for MikroTik**: always
+   visible on every operator OS — Ready on Windows (launches `winbox://<ip>`,
+   no credential in the URL, audited), disabled with "Windows only ·
+   Unavailable on macOS/Linux" elsewhere; no desktop launcher component
+   exists, so after a launch attempt the UI honestly notes "launcher not
+   installed" if nothing opens (browser cannot detect protocol handlers).
+   MikroTik method order re-encoded to the approved defaults:
+   Winbox(10) > Embedded SSH(20) > WebFig(30); `/connect-methods` gained
+   `client_os` so OS-impossible methods are excluded from default resolution
+   server-side. Linux labels aligned: **Embedded Terminal** (agent tunnel,
+   default) + **Embedded SSH** (backend relay + Vault; external SSH stays
+   the secondary link in the modal). **Embedded methods are honestly gated**:
+   outside FEATURE_TERMINAL's rollout scope they report
+   `unavailable — not enabled for this device` (same gate the terminal
+   endpoints enforce) instead of failing on click — so in prod (scope =
+   device 729) MikroTik-on-macOS defaults to WebFig until the owner widens
+   the scope (config-only Manual Approval). New batched
+   `GET /connect-status` gives Catalog rows real Ready/Credential
+   required/Unavailable button states without N+1; a `techi:connect-refresh`
+   event refreshes every Connect surface immediately after credential
+   create/edit/delete/disable or default pin/reset. Windows Catalog rows
+   byte-identical (RustDesk main click unchanged, single method — mockup's
+   own "Opens directly — single option"). No schema change, no new flag.
+   Preflight PASSED (contract 15/15, suite 781+4 known baseline both flag
+   modes, tsc/build/agent clean).
 3. ✅ Documentation Baseline — completed (2026-07-05, this standard)
 4. ✅ Mobile UI 2.0 (7 phases) + storage optimization batch — deployed to
    production 2026-07-06 (see RDP TECHI MOBILE UI 2.0 section below)
