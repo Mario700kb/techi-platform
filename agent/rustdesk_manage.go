@@ -355,7 +355,7 @@ func stopRustDeskTray() {
 // (SYSTEM) process if the task is missing or schtasks fails -- that won't
 // render interactively (Session 0), but still gets *a* process running.
 func startRustDeskTray() error {
-	if _, err := runWithTimeout(15*time.Second, "schtasks", "/run", "/tn", rustdeskTrayTaskName); err == nil {
+	if _, err := runWithTimeout(15*time.Second, schtasksPath(), "/run", "/tn", rustdeskTrayTaskName); err == nil {
 		return nil
 	}
 	_, err := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath, "--tray")
@@ -376,7 +376,7 @@ func ensureRustDeskTrayRunning() (bool, error) {
 		return false, nil
 	}
 	log.Printf("[rustdesk_manage] tray not running — triggering scheduled task")
-	if _, err := runWithTimeout(10*time.Second, "schtasks", "/run", "/tn", rustdeskTrayTaskName); err != nil {
+	if _, err := runWithTimeout(10*time.Second, schtasksPath(), "/run", "/tn", rustdeskTrayTaskName); err != nil {
 		return false, fmt.Errorf("schtasks /run: %w", err)
 	}
 	log.Printf("[rustdesk_manage] scheduled task triggered")
@@ -388,7 +388,7 @@ func ensureRustDeskTrayRunning() (bool, error) {
 // didn't (e.g. an older install predating the service). Mirrors RustDesk's
 // own get_create_service(): binPath is the exe with "--service" appended.
 func ensureRustDeskService() (bool, error) {
-	out, err := runWithTimeout(10*time.Second, "sc", "query", rustdeskServiceName)
+	out, err := runWithTimeout(10*time.Second, scPath(), "query", rustdeskServiceName)
 	if err == nil {
 		lower := strings.ToLower(string(out))
 		if strings.Contains(lower, "running") {
@@ -397,7 +397,7 @@ func ensureRustDeskService() (bool, error) {
 		}
 		if strings.Contains(lower, strings.ToLower(rustdeskServiceName)) {
 			log.Printf("[rustdesk_manage] service exists but not running — starting")
-			if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+			if _, err2 := runWithTimeout(30*time.Second, scPath(), "start", rustdeskServiceName); err2 != nil {
 				return false, fmt.Errorf("sc start: %w", err2)
 			}
 			log.Printf("[rustdesk_manage] service started")
@@ -408,11 +408,11 @@ func ensureRustDeskService() (bool, error) {
 
 	binPath := fmt.Sprintf(`%s --service`, rustdeskDefaultInstallPath)
 	log.Printf("[rustdesk_manage] creating service")
-	if _, err2 := runWithTimeout(15*time.Second, "sc", "create", rustdeskServiceName,
+	if _, err2 := runWithTimeout(15*time.Second, scPath(), "create", rustdeskServiceName,
 		"binPath=", binPath, "start=", "auto", "DisplayName=", "TECHI Remote Support"); err2 != nil {
 		return false, fmt.Errorf("sc create: %w", err2)
 	}
-	if _, err2 := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err2 != nil {
+	if _, err2 := runWithTimeout(30*time.Second, scPath(), "start", rustdeskServiceName); err2 != nil {
 		return false, fmt.Errorf("sc start after create: %w", err2)
 	}
 	log.Printf("[rustdesk_manage] service created and started")
@@ -428,7 +428,7 @@ func ensureRustDeskService() (bool, error) {
 // call (up to HeartbeatSeconds later). 15s/15s/60s restart delays make SCM
 // itself bring it back almost immediately, well before that.
 func setRustDeskServiceRecovery() {
-	if _, err := runWithTimeout(10*time.Second, "sc", "failure", rustdeskServiceName,
+	if _, err := runWithTimeout(10*time.Second, scPath(), "failure", rustdeskServiceName,
 		"reset=", "86400", "actions=", "restart/15000/restart/15000/restart/60000"); err != nil {
 		log.Printf("[rustdesk_manage] sc failure (recovery policy) failed: %v", err)
 	}
@@ -438,11 +438,11 @@ func setRustDeskServiceRecovery() {
 // restart sequence for the actual connection daemon, mirroring stopRustDeskTray
 // / startRustDeskTray for the cosmetic tray companion.
 func stopRustDeskServiceFn() {
-	_, _ = runWithTimeout(15*time.Second, "sc", "stop", rustdeskServiceName)
+	_, _ = runWithTimeout(15*time.Second, scPath(), "stop", rustdeskServiceName)
 }
 
 func startRustDeskServiceFn() error {
-	if _, err := runWithTimeout(30*time.Second, "sc", "start", rustdeskServiceName); err != nil {
+	if _, err := runWithTimeout(30*time.Second, scPath(), "start", rustdeskServiceName); err != nil {
 		// Service might not exist yet on an older install -- fall back to
 		// ensureRustDeskService, which creates it if needed.
 		if _, err2 := ensureRustDeskService(); err2 != nil {

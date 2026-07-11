@@ -47,6 +47,7 @@ func runWindowsService(configPath string, enrollmentToken string) (bool, error) 
 }
 
 func (s *techiService) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
+	markWindowsServiceRuntime()
 	status <- svc.Status{State: svc.StartPending}
 
 	ctx, cancel := context.WithCancel(context.Background())

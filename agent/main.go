@@ -13,25 +13,8 @@ import (
 func main() {
 	// Script-free maintenance subcommands (run detached via Task Scheduler /
 	// MSI custom actions). Dispatched before any service/flag handling.
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "swap-binary":
-			os.Exit(runBinarySwapCommand(os.Args[2:]))
-		case "watchdog-check":
-			os.Exit(runWatchdogCheckCommand())
-		case "bootstrap-config":
-			os.Exit(runBootstrapConfigCommand(os.Args[2:]))
-		case "rs-tray-task":
-			os.Exit(runRSTrayTaskCommand())
-		case "installer-marker":
-			os.Exit(runInstallerMarkerCommand(os.Args[2:]))
-		case "installer-ensure-service":
-			os.Exit(runInstallerEnsureServiceCommand())
-		case "installer-start-service":
-			os.Exit(runInstallerStartServiceCommand())
-		case "installer-health-check":
-			os.Exit(runInstallerHealthCheckCommand())
-		}
+	if handled, code := dispatchUtilityCommand(os.Args); handled {
+		os.Exit(code)
 	}
 
 	command := ""
@@ -74,6 +57,69 @@ func main() {
 
 	if err := runAgent(ctx, *configPath, *enrollmentToken, *once); err != nil {
 		log.Fatalf("agent failed: %v", err)
+	}
+}
+
+func dispatchUtilityCommand(argv []string) (bool, int) {
+	idx, command := findUtilityCommand(argv)
+	if idx < 0 {
+		return false, 0
+	}
+	args := argv[idx+1:]
+	switch command {
+	case "swap-binary":
+		return true, runBinarySwapCommand(args)
+	case "watchdog-check":
+		return true, runWatchdogCheckCommand()
+	case "bootstrap-config":
+		return true, runBootstrapConfigCommand(args)
+	case "rs-tray-task":
+		return true, runRSTrayTaskCommand()
+	case "installer-marker":
+		return true, runInstallerMarkerCommand(args)
+	case "installer-ensure-service":
+		return true, runInstallerEnsureServiceCommand()
+	case "installer-start-service":
+		return true, runInstallerStartServiceCommand()
+	case "installer-health-check":
+		return true, runInstallerHealthCheckCommand()
+	default:
+		return false, 0
+	}
+}
+
+func findUtilityCommand(argv []string) (int, string) {
+	for i := 1; i < len(argv); i++ {
+		token := normalizeCommandToken(argv[i])
+		if isUtilityCommand(token) {
+			return i, token
+		}
+	}
+	return -1, ""
+}
+
+func normalizeCommandToken(token string) string {
+	token = strings.Trim(strings.TrimSpace(token), `"'`)
+	token = strings.ToLower(strings.ReplaceAll(token, `\`, `/`))
+	if slash := strings.LastIndex(token, "/"); slash >= 0 {
+		token = token[slash+1:]
+	}
+	return token
+}
+
+func isUtilityCommand(command string) bool {
+	switch command {
+	case "swap-binary",
+		"watchdog-check",
+		"bootstrap-config",
+		"rs-tray-task",
+		"installer-marker",
+		"installer-ensure-service",
+		"installer-start-service",
+		"installer-health-check":
+		return true
+	default:
+		return false
 	}
 }
 

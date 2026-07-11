@@ -27,6 +27,76 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] HOTFIX: Agent 2.1.8 installer helper subcommands could enter normal runtime
+
+### Problemi
+
+Real Windows evidence tregoi `TechiAgent` service RUNNING me PID-in e vet SCM,
+por një helper i ngecur `"C:\ProgramData\TechiAgent\techi-agent.exe"
+installer-marker create` mbeti live dhe shkroi `agent.state.json` si
+`state=operational` me PID-in e helper-it. `installer.active` nuk ekzistonte.
+Heartbeat dhe Remote Support punonin nga service-i real, por lifecycle health
+lexonte PID-in e gabuar nga helper-i.
+
+### Analiza
+
+Utility/helper subcommands duhet të jenë procese të shkurtra: bëjnë vetëm punën
+e kërkuar dhe dalin. Dispatch-i i mëparshëm kontrollonte vetëm `os.Args[1]`.
+Në formën reale Windows/MSI mund të shfaqet një token path-i i EXE-së përpara
+subcommand-it, prandaj `installer-marker create` nuk njihej si utility command
+dhe procesi binte në initialization normal të Agent-it.
+
+### Shkaku
+
+Root cause ishte dispatch shumë i ngushtë i CLI-së: helper token-i kërkohej
+vetëm në pozicionin e parë pas argv[0]. Kur helper invocation përmbante path-in
+e EXE-së si token shtesë, procesi hynte në `runWindowsService`/runtime normal
+para se të bëhej marker operation, lifecycle state initialization dhe loop-i i
+Agent-it mund të shkruanin `operational` me PID-in e helper-it.
+
+### Zgjidhja
+
+Agent-i tani skanon dhe normalizon reserved utility subcommands përpara çdo
+runtime initialization: para lifecycle state, config load, watchdog, heartbeat,
+Remote Support reconciliation, telemetry/inventory dhe state-file writes.
+`installer-marker create/remove`, `installer-start-service`,
+`installer-ensure-service`, `installer-health-check`, `rs-tray-task`,
+`bootstrap-config`, `swap-binary` dhe `watchdog-check` dispatch-ohen si utility
+commands edhe kur invocation përmban duplicate/quoted EXE path. Në Windows,
+`state=operational` lejohet të shkruhet vetëm nga runtime-i real i service-it
+SCM; çdo proces tjetër refuzohet nga lifecycle policy. Health-check vazhdon të
+kërkojë `TechiAgent` RUNNING, fresh `operational`, dhe PID-in e state file të
+barabartë me PID-in aktual të SCM service.
+
+Gjithashtu u hoq varësia nga PATH për mjetet Windows të Remote Support:
+`rustdesk_manage` dhe discovery përdorin `%SystemRoot%\System32\sc.exe` dhe
+`%SystemRoot%\System32\schtasks.exe`, jo `sc`/`schtasks` relative.
+
+### Ndryshimet
+
+- `agent/main.go`, `agent/main_test.go` — early robust utility dispatch +
+  regression tests për duplicate EXE path dhe helper command list.
+- `agent/lifecycle.go`, `agent/lifecycle_policy_windows.go`,
+  `agent/lifecycle_policy_other.go`, `agent/service_windows.go` — Windows
+  service-runtime gate për `state=operational`.
+- `agent/rustdesk_manage.go`, `agent/rustdesk.go`, `agent/swap_windows.go`,
+  `agent/swap_other.go` — absolute System32 `sc.exe`/`schtasks.exe`.
+- `backend/tests/test_windows_installer_reliability.py` — static regression
+  tests për early dispatch, lifecycle guard dhe absolute Windows command paths.
+
+### Rezultati
+
+Fix kandidat lokal: focused Go tests kaluan, Windows cross-compile test binary
+u ndërtua, installer/bootstrap regression tests kaluan. Nuk u bë deploy, nuk u
+aktivizua paketë, nuk u prek NETLOGON dhe nuk nisi fleet rollout.
+
+### Mësimet
+
+Installer helper commands duhet të trajtohen si API kontratë sigurie, jo thjesht
+si convenience CLI. Reserved helper tokens duhet të njihen përpara çdo side
+effect-i runtime, dhe lifecycle `operational` në Windows duhet të jetë pronë e
+service runtime-it real, jo e çdo procesi që ekzekuton të njëjtin EXE.
+
 ## [2026-07-11] FOLLOW-UP: 2.1.8 standalone canary proved combined-MSI Agent/Remote Support start ordering risk
 
 ### Problemi

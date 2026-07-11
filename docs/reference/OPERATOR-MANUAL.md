@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but a standalone combined-MSI 2.1.8 canary still failed and the candidate is back in validation; Windows packages remain pinned to 2.1.6 until canaries pass. |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but standalone combined-MSI 2.1.8 canaries exposed start-ordering and helper-lifecycle defects; Windows packages remain pinned to 2.1.6 until the fixed 2.1.8 canary passes. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -238,10 +238,15 @@ entry + an icon; the dialog needs no rewrite.
 The **combined MSI** installs the Windows service `TechiAgent` (LocalSystem) and
 TECHI Remote Support. In the 2.1.8 candidate, the MSI finishes Remote Support
 file/config/tray mutations first, then starts `TechiAgent`, then requires a fresh
-`operational` lifecycle state before the install is considered healthy. The
-agent then sends heartbeats, applies its config, self-updates from the UI, and
-self-heals Remote Support. **Do not reinstall the MSI manually** unless
-instructed — "the MSI installs once, everything else from the UI."
+`operational` lifecycle state from the current SCM service PID before the
+install is considered healthy. Installer helper subcommands (`installer-marker
+create/remove`, `installer-start-service`, `installer-ensure-service`,
+`installer-health-check`, `rs-tray-task`, etc.) are utility-only: they must exit
+promptly and must never start the Agent runtime, send heartbeat, reconcile Remote
+Support, install watchdog state, or write `state=operational`. The agent then
+sends heartbeats, applies its config, self-updates from the UI, and self-heals
+Remote Support. **Do not reinstall the MSI manually** unless instructed — "the
+MSI installs once, everything else from the UI."
 
 ### 9a. Agent Startup Lifecycle (agent ≥ 2.1.8)
 
@@ -265,6 +270,12 @@ with `state=operational` is healthy. MSI success, equal version, or a RUNNING
 service alone are insufficient. Config detail is classified without secrets as
 `config_missing`, `config_access_denied`, `config_invalid`,
 `config_migration_failed`, or `config_ready`.
+
+On Windows, `state=operational` is owned only by the real SCM service runtime.
+If a helper process is visible in Task Manager or WMI with a command line like
+`techi-agent.exe installer-marker create`, that process is a bug and must not be
+trusted as lifecycle authority. The health check must compare the state-file
+PID with the current `TechiAgent` SCM PID.
 
 Windows runtime config is canonical at
 `C:\ProgramData\TechiAgent\agent.config.json`. The old

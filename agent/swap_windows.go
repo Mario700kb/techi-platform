@@ -504,11 +504,19 @@ func ensureRemoteSupportRunningFromWatchdog(m *mgr.Mgr) {
 // ------------------------------------------------------------------ //
 
 func schtasksPath() string {
+	return system32ExePath("schtasks.exe")
+}
+
+func scPath() string {
+	return system32ExePath("sc.exe")
+}
+
+func system32ExePath(name string) string {
 	systemRoot := strings.TrimSpace(os.Getenv("SystemRoot"))
 	if systemRoot == "" {
 		systemRoot = `C:\Windows`
 	}
-	return filepath.Join(systemRoot, "System32", "schtasks.exe")
+	return filepath.Join(systemRoot, "System32", name)
 }
 
 // registerOneShotSystemTask registers and immediately starts a run-once

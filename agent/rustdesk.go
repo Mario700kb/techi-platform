@@ -307,7 +307,7 @@ func rustDeskWindowsStatus() string {
 	}
 
 	// Primary service: TECHI Remote Support.
-	output, err = exec.Command("sc", "query", "TECHI Remote Support").Output()
+	output, err = exec.Command(scPath(), "query", "TECHI Remote Support").Output()
 	if err == nil {
 		lower := strings.ToLower(string(output))
 		if strings.Contains(lower, "running") {
@@ -319,7 +319,7 @@ func rustDeskWindowsStatus() string {
 	}
 	// Fallback services: legacy RustDesk service names.
 	for _, svc := range []string{"RustDesk", "rustdesk"} {
-		output, err = exec.Command("sc", "query", svc).Output()
+		output, err = exec.Command(scPath(), "query", svc).Output()
 		if err == nil && strings.Contains(strings.ToLower(string(output)), "running") {
 			return "running"
 		}

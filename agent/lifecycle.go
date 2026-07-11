@@ -126,6 +126,10 @@ var currentLifecycleState lifecycleState
 // refreshes the state file (timestamp included) even when the state is
 // unchanged — the watchdog uses the file's age to detect a wedged loop.
 func setLifecycleState(state lifecycleState, detail string) {
+	if state == stateOperational && !canWriteOperationalLifecycle() {
+		log.Printf("lifecycle: refusing operational state outside service runtime")
+		return
+	}
 	if state != currentLifecycleState {
 		from := string(currentLifecycleState)
 		if from == "" {

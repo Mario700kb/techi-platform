@@ -75,6 +75,39 @@ def test_installer_health_requires_current_service_pid_not_only_live_pid():
     assert "windowsPIDIsLive(status.PID)" in bootstrap_source
 
 
+def test_helper_subcommands_are_dispatched_before_runtime_initialization():
+    main_source = (ROOT / "agent/main.go").read_text(encoding="utf-8")
+    dispatch_pos = main_source.index("dispatchUtilityCommand(os.Args)")
+    service_pos = main_source.index("runWindowsService(")
+    agent_pos = main_source.index("runAgent(")
+    assert dispatch_pos < service_pos < agent_pos
+    assert "findUtilityCommand" in main_source
+    assert "normalizeCommandToken" in main_source
+
+
+def test_operational_lifecycle_is_service_runtime_only_on_windows():
+    lifecycle_source = (ROOT / "agent/lifecycle.go").read_text(encoding="utf-8")
+    service_source = (ROOT / "agent/service_windows.go").read_text(encoding="utf-8")
+    policy_source = (ROOT / "agent/lifecycle_policy_windows.go").read_text(encoding="utf-8")
+    assert "state == stateOperational && !canWriteOperationalLifecycle()" in lifecycle_source
+    assert "markWindowsServiceRuntime()" in service_source
+    assert "windowsServiceRuntime" in policy_source
+
+
+def test_rustdesk_manage_uses_absolute_system32_tools():
+    rustdesk_source = (ROOT / "agent/rustdesk_manage.go").read_text(encoding="utf-8")
+    rustdesk_discovery_source = (ROOT / "agent/rustdesk.go").read_text(encoding="utf-8")
+    swap_source = (ROOT / "agent/swap_windows.go").read_text(encoding="utf-8")
+    assert '"sc"' not in rustdesk_source
+    assert '"schtasks"' not in rustdesk_source
+    assert 'exec.Command("sc"' not in rustdesk_discovery_source
+    assert "scPath()" in rustdesk_source
+    assert "scPath()" in rustdesk_discovery_source
+    assert "schtasksPath()" in rustdesk_source
+    assert 'system32ExePath("sc.exe")' in swap_source
+    assert 'system32ExePath("schtasks.exe")' in swap_source
+
+
 def test_tray_task_is_auxiliary_and_nonfatal():
     start = WXS.index('<CustomAction Id="CreateRustDeskTrayTask"')
     block = WXS[start:WXS.index('/>', start) + 2]

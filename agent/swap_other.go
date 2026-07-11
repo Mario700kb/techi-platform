@@ -13,3 +13,7 @@ func runWatchdogCheckCommand() int {
 	fmt.Println("watchdog-check is only supported on Windows")
 	return 1
 }
+
+func scPath() string {
+	return "sc"
+}
