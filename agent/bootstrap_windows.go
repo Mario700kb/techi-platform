@@ -24,7 +24,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
+
+	"golang.org/x/sys/windows"
 )
 
 // runBootstrapConfigCommand mirrors the old WriteAgentConfig custom action:
@@ -90,6 +93,38 @@ func runBootstrapConfigCommand(args []string) int {
 	lockdownConfigACL(windowsConfigPath)
 	writeDeployLog("[bootstrap-config]", "config created path="+windowsConfigPath)
 	return 0
+}
+
+// runInstallerHealthCheckCommand is the MSI transaction's authoritative
+// success gate. A RUNNING service alone is not Agent operational health.
+func runInstallerHealthCheckCommand() int {
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		status, err := readLifecycleStatus()
+		if err == nil && status.State == stateOperational && time.Since(status.UpdatedAt) < 5*time.Minute && windowsPIDIsLive(status.PID) {
+			writeDeployLog("[installer-health]", "operational")
+			return 0
+		}
+		if err == nil && status.State == stateFaulted {
+			writeDeployLog("[installer-health]", "failed state=faulted")
+			return 1
+		}
+		time.Sleep(2 * time.Second)
+	}
+	writeDeployLog("[installer-health]", "failed reason=operational_timeout")
+	return 1
+}
+
+func windowsPIDIsLive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	windows.CloseHandle(h)
+	return true
 }
 
 // runRSTrayTaskCommand mirrors the old CreateRustDeskTrayTask custom action:

@@ -27,6 +27,44 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] URGENT: Agent 2.1.8 installer/rollback hotfix supersedes broken 2.1.7
+
+### Problemi
+
+Combined MSI 2.1.7 dështoi në një PC standalone: `rs-tray-task` dha 1721,
+`StartServices` dha 1920/1053 dhe msiexec 1603. Rollback la product registration
+2.1.5, binary zyrtar 2.1.6 dhe service STOPPED. MSI verbose log ekspozoi secret.
+
+### Shkaku
+
+EXE zyrtar 2.1.6/2.1.7 kishte UAC manifest `requireAdministrator`, megjithëse i
+njëjti binary niset nga SCM dhe nga deferred MSI `CreateProcess`; kjo kërkesë
+nuk mund të plotësohet në atë kontekst. `RemoveExistingProducts` ishte në 1501,
+menjëherë pas `InstallInitialize`, kështu produkti i vjetër hiqej përpara se
+service/tray/health të provonte suksesin. Rollback rivendosi registration 2.1.5
+por ruajti pre-transaction file 2.1.6 që kishte qenë jashtë pronësisë koherente
+të produktit 2.1.5. Recursive `icacls`, ancient-product cleanup dhe Remote
+Support service deletion ishin mutacione të jashtme pa rollback. Secrets ishin
+Property/CustomActionData të dukshme dhe MSI kishte password fleet-wide default.
+
+### Zgjidhja
+
+2.1.8 është teknikisht i detyrueshëm: pajisjet që kanë konsumuar 2.1.7 nuk do të
+detektonin një SHA tjetër me të njëjtin semantic version. EXE përdor `asInvoker`;
+MajorUpgrade kalon në transactional `afterInstallExecute`; MSI ka fatal bounded
+`installer-health-check` për fresh/current-PID `operational` pas heqjes së
+produktit të vjetër. Vetëm pas këtij gate ekzekutohen config/tray të Remote
+Support si auxiliary nonfatal. Ancient cleanup dhe recursive MSI `icacls` u
+hoqën nga sequence; Remote Support stop ka rollback restart. Secret properties
+dhe custom-action targets fshihen, ndërsa password-i fleet-wide u hoq nga MSI.
+Bootstrap detekton registry/binary mixed state dhe same-version unhealthy e
+dërgon në explicit repair, jo `uptodate`.
+
+### Rezultati
+
+Tre paketat Windows 2.1.7 u çaktivizuan menjëherë; 2.1.6 u rikthye aktive pa
+fshirë artefakte. 2.1.8 mbetet i paaktivizuar deri në CI dhe canary real Windows.
+
 ## [2026-07-11] Windows Agent 2.1.7 production lifecycle/install reliability release
 
 ### Problemi

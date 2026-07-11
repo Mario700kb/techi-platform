@@ -13,3 +13,8 @@ func runRSTrayTaskCommand() int {
 	fmt.Println("rs-tray-task is only supported on Windows")
 	return 1
 }
+
+func runInstallerHealthCheckCommand() int {
+	fmt.Println("installer-health-check is only supported on Windows")
+	return 1
+}

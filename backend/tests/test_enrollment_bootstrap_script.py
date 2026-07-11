@@ -825,7 +825,9 @@ class TestGPOScheduledDeployScript:
         section = self.script[already_pos:]
         assert "call :ensure_service_running" in section
         assert "call :validate_success" in section
-        assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in section
+        assert 'if not "%DEPLOY_VALID%"=="1" (' in section
+        assert "equal_version_unhealthy forcing_repair=1" in section
+        assert "goto :do_install" in section
         assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER%' in section
 
     def test_deploy_cmd_repairs_unenrolled_equal_version_config_before_uptodate(self):
@@ -881,7 +883,7 @@ class TestGPOScheduledDeployScript:
         assert "set DEPLOY_VALID=0" in self.script
         assert "call :read_registry" in self.script
         assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
-        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" set DEPLOY_VALID=1' in self.script
+        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%BINARY_VERSION%"=="%ACTIVE_VERSION%.0" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" set DEPLOY_VALID=1' in self.script
         assert "call :read_lifecycle" in self.script
         assert "if %LIFECYCLE_WAIT% GEQ 12 goto :lifecycle_done" in self.script
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script

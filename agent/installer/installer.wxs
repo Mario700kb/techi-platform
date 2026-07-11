@@ -25,7 +25,7 @@
 
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of TECHI Agent is already installed."
-                  Schedule="afterInstallInitialize"/>
+                  Schedule="afterInstallExecute"/>
     <MediaTemplate EmbedCab="yes"/>
 
     <Property Id="ARPCOMMENTS" Value="TECHI Platform endpoint management"/>
@@ -35,8 +35,10 @@
     <Binary Id="BannerBmp" SourceFile="banner.bmp"/>
     <WixVariable Id="WixUIBannerBmp" Value="banner.bmp"/>
     <WixVariable Id="WixUIDialogBmp" Value="banner.bmp"/>
-    <Property Id="ENROLLMENT_TOKEN" Secure="yes"/>
+    <Property Id="ENROLLMENT_TOKEN" Secure="yes" Hidden="yes"/>
     <Property Id="API_URL" Value="https://api-rdp.techi.com.al" Secure="yes"/>
+    <Property Id="MsiHiddenProperties"
+              Value="ENROLLMENT_TOKEN;REMOTE_PASSWORD;REMOTE_KEY;WriteAgentConfig;WriteTechiConfigs;ApplyTechiRemoteSupportConfigFinal"/>
     <!-- UI_REENROLL: vendoset vetëm kur Install klikohet te EnrollmentTokenDlg (instalim manual).
          Lejon WriteAgentConfig të mbishkruajë config-un ekzistues me token-in e ri, edhe nëse
          file-i tashmë ekziston nga teste/instalime të mëparshme. Rruga /quiet (GPO/self_update)
@@ -55,8 +57,10 @@
     <!-- Konfigurim i TECHI Remote Support (RustDesk) — identik me v1.0.4 -->
     <Property Id="REMOTE_SERVER"   Value="139.162.158.208"/>
     <Property Id="REMOTE_RELAY"    Value="139.162.158.208"/>
-    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes"/>
-    <Property Id="REMOTE_PASSWORD" Value="Durres.12" Secure="yes"/>
+    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes" Hidden="yes"/>
+    <!-- No fleet-wide password is embedded in the MSI. The backend-issued,
+         per-device password is applied after the first heartbeat. -->
+    <Property Id="REMOTE_PASSWORD" Secure="yes" Hidden="yes"/>
     <Property Id="LEGACY_TECHI_ENDPOINT_104_A" Value="{134568B7-BCB0-4341-933B-C24DA78DEF6E}"/>
     <Property Id="LEGACY_TECHI_ENDPOINT_104_B" Value="{110919C6-BCB0-4341-933B-C24DA78DEF6E}"/>
     <Property Id="LEGACY_TECHI_ENDPOINT_104_C" Value="{3154867B-CB0B-3414-39B3-2CD47AD8FEE6}"/>
@@ -298,27 +302,15 @@
                   ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; bootstrap-config -api-url &quot;[API_URL]&quot; -enrollment-token &quot;[ENROLLMENT_TOKEN]&quot; -reenroll &quot;[UI_REENROLL]&quot; -rustdesk-server &quot;[REMOTE_SERVER]&quot; -rustdesk-relay &quot;[REMOTE_RELAY]&quot; -rustdesk-key &quot;[REMOTE_KEY]&quot; -rustdesk-password &quot;[REMOTE_PASSWORD]&quot;"
                   Execute="deferred"
                   Impersonate="no"
+                  HideTarget="yes"
                   Return="ignore"/>
 
-    <!-- LockdownTechiDataDir: agent.config.json ka enrollment_token, rustdesk_key, rustdesk_default_password
-         në plaintext. ProgramData trashëgon ACL që lë "Users" me Read, kështu që çdo llogari lokale e PC-së
-         mund ta lexonte; icacls heq trashëgimine dhe lë vetëm SYSTEM + Administrators (sipas SID, jo emrit,
-         që funksionon në çdo locale Windows). /T/(OI)(CI) e zbatojnë te skedarët ekzistues dhe te ata të rinj. -->
-    <CustomAction Id="LockdownTechiDataDir"
-                  Directory="TECHIDATADIR"
-                  ExeCommand="icacls.exe &quot;[TECHIDATADIR].&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
+    <CustomAction Id="ValidateAgentOperational"
+                  Directory="SystemFolder"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="ignore"/>
-
-    <!-- Canonical runtime tree: tightly scoped ACL repair for LocalSystem +
-         Administrators. Never touches ProgramData or unrelated products. -->
-    <CustomAction Id="LockdownCanonicalAgentDir"
-                  Directory="INSTALLFOLDER"
-                  ExeCommand="icacls.exe &quot;[INSTALLFOLDER].&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="ignore"/>
+                  Return="check"/>
 
     <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
          të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
@@ -419,8 +411,15 @@
          "sc create" me binPath te vjeter/gabuar te mbijetoje nje upgrade qe ndryshon shtegun. -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="cmd.exe /d /c taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe &amp; sc delete &quot;TECHI Remote Support&quot;"
+                  ExeCommand="cmd.exe /d /c sc stop &quot;TECHI Remote Support&quot; &amp; taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe"
                   Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <CustomAction Id="RollbackRestartTechiRS"
+                  Directory="SystemFolder"
+                  ExeCommand="cmd.exe /d /c sc start &quot;TECHI Remote Support&quot; &amp; schtasks /Run /TN &quot;TECHI Remote Support Tray&quot;"
+                  Execute="rollback"
                   Impersonate="no"
                   Return="ignore"/>
 
@@ -460,23 +459,27 @@
     <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key) për RS -->
     <CustomAction Id="WriteTechiConfigs.SetParam"
                   Property="WriteTechiConfigs"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"
+                  HideTarget="yes"/>
     <CustomAction Id="WriteTechiConfigs"
                   BinaryRef="EpCustomActDll"
                   DllEntry="WriteTechiConfigs"
                   Execute="deferred"
                   Impersonate="no"
+                  HideTarget="yes"
                   Return="ignore"/>
 
     <!-- ApplyTechiRemoteSupportConfigFinal: aplikon konfigurimet finale të RS -->
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
                   Property="ApplyTechiRemoteSupportConfigFinal"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"
+                  HideTarget="yes"/>
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
                   BinaryRef="EpCustomActDll"
                   DllEntry="ApplyTechiRemoteSupportConfigFinal"
                   Execute="deferred"
                   Impersonate="no"
+                  HideTarget="yes"
                   Return="ignore"/>
 
     <!-- ===== SEKUENCA EKZEKUTIMI ===== -->
@@ -485,36 +488,35 @@
            (NOT Installed) = instalim i parë; (Installed AND REINSTALL) = msiexec REINSTALL=ALL.
            Skip-ohet gjatë upgrade të vërtetë (WIX_UPGRADE_DETECTED/UPGRADINGPRODUCTCODE). -->
       <Custom Action="AbortNoToken" Before="InstallInitialize" Condition="NOT ENROLLMENT_TOKEN AND NOT WIX_UPGRADE_DETECTED AND NOT UPGRADINGPRODUCTCODE AND (NOT Installed OR (Installed AND REINSTALL))"/>
-      <Custom Action="BackupAgentConfigBeforeLegacyRemove" After="CostFinalize" Condition="NOT REMOVE"/>
-      <Custom Action="RemoveLegacyEndpoint104A" After="BackupAgentConfigBeforeLegacyRemove" Condition="NOT REMOVE"/>
-      <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
-      <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
-      <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
+      <!-- Ancient 1.0.4 cleanup actions remain defined for forensic history,
+           but are deliberately unscheduled in the supported 2.1.5+ upgrade
+           path: they mutate external installer state before InstallInitialize
+           and cannot participate in transaction rollback. -->
       <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
            file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
            RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
+      <Custom Action="RollbackRestartTechiRS" Before="KillTechiRSBeforeInstall" Condition="NOT REMOVE"/>
       <Custom Action="KillTechiRSBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
       <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
            WriteAgentConfig: PS script-i brenda kontrollon vetë nëse config ekziston (idempotent).
            SetServiceRecovery: duhet gjithmonë pas upgrade — v1.0.4 nuk e kishte vendosur.
            WriteTechiConfigs/Apply: rifresko RS TOML config pas çdo upgrade. -->
       <Custom Action="WriteAgentConfig"   After="InstallServices"    Condition="NOT REMOVE"/>
-      <Custom Action="RestoreAgentConfigFromLegacyBackup" After="WriteAgentConfig" Condition="NOT REMOVE"/>
-      <Custom Action="LockdownTechiDataDir" After="RestoreAgentConfigFromLegacyBackup" Condition="NOT REMOVE"/>
-      <Custom Action="LockdownCanonicalAgentDir" After="LockdownTechiDataDir" Condition="NOT REMOVE"/>
-      <!-- EnsureServiceCreated: rrjet sigurie PARA SetServiceRecovery — nëse InstallServices
-           nuk e krijoi service-in (race-condition SCM me DeleteServices të produktit të vjetër),
-           e rikrijon këtu, kështu që SetServiceRecovery i aplikohet gjithsesi më pas. -->
-      <Custom Action="EnsureServiceCreated" After="StartServices"    Condition="NOT REMOVE"/>
-      <Custom Action="SetServiceRecovery" After="EnsureServiceCreated" Condition="NOT REMOVE"/>
-      <!-- WriteTechiConfigs: shkruan TOML config për RS pas instalimit të skedarëve -->
-      <Custom Action="WriteTechiConfigs.SetParam"               After="WriteAgentConfig"                   Condition="NOT REMOVE"/>
+      <Custom Action="SetServiceRecovery" After="WriteAgentConfig" Condition="NOT REMOVE"/>
+      <!-- MajorUpgrade removes the old product transactionally after
+           InstallExecute. Re-assert service state, then require real Agent
+           operational health before any auxiliary Remote Support work. -->
+      <Custom Action="EnsureServiceCreated" After="RemoveExistingProducts" Condition="NOT REMOVE"/>
+      <Custom Action="ValidateAgentOperational" After="EnsureServiceCreated" Condition="NOT REMOVE"/>
+      <Custom Action="WriteTechiConfigs.SetParam"               After="ValidateAgentOperational"           Condition="NOT REMOVE"/>
       <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs"               Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal"       After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
       <!-- CreateRustDeskTrayTask: pasi RS eshte instaluar dhe konfiguruar, regjistro
            Scheduled Task-in "At Logon" qe e nis ne sesionin e perdoruesit. -->
       <Custom Action="CreateRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <!-- Config-file ACL hardening is performed narrowly by native config
+           writes. No recursive icacls mutation participates in the MSI. -->
       <!-- Uninstall -->
       <Custom Action="KillTechiRS"                Before="RemoveFiles"     Condition="REMOVE~=&quot;ALL&quot;"/>
       <Custom Action="RemoveRustDeskTrayArtifacts" After="KillTechiRS"      Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>

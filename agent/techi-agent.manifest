@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    version="2.1.7.0"
+    version="2.1.8.0"
     processorArchitecture="amd64"
     name="TECHI.Platform.EndpointAgent"
     type="win32"/>
-  <description>TECHI Platform Endpoint Agent 2.1.7</description>
+  <description>TECHI Platform Endpoint Agent 2.1.8</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+        <!-- SCM and MSI deferred custom actions already supply the authorized
+             token; CreateProcess cannot satisfy a new UAC elevation request. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
       </requestedPrivileges>
     </security>
   </trustInfo>
@@ -31,8 +33,6 @@
     </windowsSettings>
   </application>
 </assembly>
-
-
 
 
 

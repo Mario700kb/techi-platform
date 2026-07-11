@@ -9,7 +9,7 @@
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
-| **Agent Version** | **2.1.7 reliability release in validation**; production remains 2.1.6 until publication and canary gates pass. Normal rollout: 2.1.6 → 2.1.7. |
+| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. Version bump is required so any device that consumed broken 2.1.7 can detect a newer package. |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
@@ -142,8 +142,8 @@
 5. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
    (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
    section below). Dark code only, flags OFF, zero behavior change.
-6. Complete Agent **2.1.7** reliability validation and canary rollout, then
-   allow the existing self-update/GPO mechanism to converge 2.1.6 → 2.1.7.
+6. Complete Agent **2.1.8** installer/rollback canaries, then activate it via
+   the existing package mechanism. Do not republish a different 2.1.7 SHA.
 7. ✅ Agent 2.1.6 released to stable (2026-07-09, `1b0ddf3` — lifecycle
    engine shared Windows+Linux, log rotation, cache pruning; SHA-alignment
    via single CI run)
