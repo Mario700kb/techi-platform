@@ -15,6 +15,18 @@ func TestFindUtilityCommandHandlesDuplicateExePathBeforeHelper(t *testing.T) {
 	}
 }
 
+func TestFindUtilityCommandSkipsEmptyArgumentBeforeHelper(t *testing.T) {
+	for _, argv := range [][]string{
+		{`C:\ProgramData\TechiAgent\techi-agent.exe`, "", "installer-marker", "create"},
+		{`C:\ProgramData\TechiAgent\techi-agent.exe`, "", "installer-marker", "remove"},
+	} {
+		idx, command := findUtilityCommand(argv)
+		if idx != 2 || command != "installer-marker" {
+			t.Fatalf("findUtilityCommand(%q) = (%d, %q), want (2, installer-marker)", argv, idx, command)
+		}
+	}
+}
+
 func TestFindUtilityCommandNormalizesQuotesCaseAndPath(t *testing.T) {
 	argv := []string{
 		"techi-agent.exe",

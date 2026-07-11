@@ -9,7 +9,7 @@
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
-| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. Real standalone/domain canaries found and fixed three 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, and MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6. Current candidate finalizes MSI registration before bootstrap starts/validates the Agent and adds NETLOGON installer-busy/1618 guard. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
+| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. **2.1.6 remains the production-safe fallback**: its core service startup, heartbeat, telemetry, Remote Support, self-update, watchdog, and most GPO deployment behavior are production-proven; the remaining work is edge-case installer/deployment hardening. Real standalone/domain canaries found and fixed 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6, and stale-binary marker sequencing before `InstallFiles`. Current candidate finalizes MSI registration before bootstrap starts/validates the Agent, uses MSI-native installer marker file operations before `InstallFiles`, validates lifecycle PID against the current SCM service PID, adds NETLOGON installer-busy/1618 guard, and CI-checks MSI-embedded EXE lineage against the standalone EXE. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
@@ -143,7 +143,8 @@
    (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
    section below). Dark code only, flags OFF, zero behavior change.
 6. Complete Agent **2.1.8** installer/rollback canaries with the helper
-   lifecycle fix and MSI-registration-finalizes-before-Agent-start fix, then
+   lifecycle fix, MSI-registration-finalizes-before-Agent-start fix, marker
+   sequencing fix, NETLOGON guard, and artifact-lineage validation, then
    activate it via the existing package mechanism. Do not republish a different
    2.1.7 SHA; do not roll out 2.1.8 until the real Windows canary proves
    registry DisplayVersion/ProductCode upgraded, service PID == lifecycle PID,

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WXS = (ROOT / "agent/installer/installer.wxs").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "agent/techi-agent.manifest").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "backend/app/services/enrollment_bootstrap_service.py").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github/workflows/build-agent-msi.yml").read_text(encoding="utf-8")
 
 
 def test_service_binary_is_as_invoker_not_uac_elevating():
@@ -23,19 +24,20 @@ def test_major_upgrade_removal_is_transactional_late_schedule():
 
 
 def test_operational_health_helper_exists_but_is_not_inside_msi_transaction():
-    assert 'Id="ValidateAgentOperational"' in WXS
-    assert 'ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check' in WXS
+    assert 'Id="ValidateAgentOperational"' not in WXS
+    assert 'installer-health-check' not in WXS
     assert '<Custom Action="ValidateAgentOperational"' not in WXS
     assert '<Custom Action="StartTechiAgentService"' not in WXS
 
 
 def test_combined_msi_does_not_use_standard_startservices_for_agent():
-    start = WXS.index('<ServiceControl Id="StartTechiAgent"')
+    assert '<ServiceControl Id="StartTechiAgent"' not in WXS
+    start = WXS.index('<ServiceControl Id="StopRemoveTechiAgent"')
     block = WXS[start:WXS.index('/>', start) + 2]
     assert 'Start="install"' not in block
     assert 'Stop="both"' in block
-    assert 'Id="StartTechiAgentService"' in WXS
-    assert 'installer-start-service' in WXS
+    assert 'Id="StartTechiAgentService"' not in WXS
+    assert 'installer-start-service' not in WXS
 
 
 def test_remote_support_mutations_complete_before_msi_finalize_without_agent_start():
@@ -55,13 +57,16 @@ def test_remote_support_mutations_complete_before_msi_finalize_without_agent_sta
 def test_installer_marker_defers_runtime_rustdesk_reconciliation():
     agent_source = (ROOT / "agent/rustdesk_manage.go").read_text(encoding="utf-8")
     bootstrap_source = (ROOT / "agent/bootstrap_windows.go").read_text(encoding="utf-8")
-    assert 'installer-marker create' in WXS
-    assert 'installer-marker remove' in WXS
+    assert 'installer-marker create' not in WXS
+    assert 'installer-marker remove' not in WXS
+    assert '[INSTALLFOLDER]techi-agent.exe&quot; installer-marker' not in WXS
     assert 'RollbackClearInstallerActive' in WXS
     for action in ("SetInstallerActive", "ClearInstallerActive"):
         start = WXS.index(f'<CustomAction Id="{action}"')
         block = WXS[start:WXS.index('/>', start) + 2]
         assert 'Return="check"' in block
+        assert 'cmd.exe /d /c' in block
+        assert 'installer.active' in block
     assert 'installerTransactionActive()' in agent_source
     assert 'installer.active' in bootstrap_source
 
@@ -107,6 +112,19 @@ def test_rustdesk_manage_uses_absolute_system32_tools():
     assert 'system32ExePath("schtasks.exe")' in swap_source
 
 
+def test_ci_validates_standalone_and_msi_embedded_agent_lineage():
+    assert "Validate MSI embedded agent lineage" in WORKFLOW
+    assert "msiexec.exe" in WORKFLOW
+    assert "'/a'" in WORKFLOW
+    assert "CommApp\\TechiAgent\\techi-agent.exe" in WORKFLOW
+    assert "standaloneHash" in WORKFLOW
+    assert "embeddedHash" in WORKFLOW
+    assert "differs from MSI embedded agent hash" in WORKFLOW
+    assert "embedded_equals_standalone" in WORKFLOW
+    assert "identity.json" in WORKFLOW
+    assert '$buildCommit = "${{ github.sha }}"' in WORKFLOW
+
+
 def test_tray_task_is_auxiliary_and_nonfatal():
     start = WXS.index('<CustomAction Id="CreateRustDeskTrayTask"')
     block = WXS[start:WXS.index('/>', start) + 2]
@@ -124,7 +142,10 @@ def test_msi_has_no_embedded_fleet_password_and_hides_secret_targets():
 
 
 def test_bootstraps_require_fresh_live_operational_state():
-    assert BOOTSTRAP.count("$state.state -eq 'operational' -and $live -and $fresh") >= 2
+    assert BOOTSTRAP.count("$state.state -eq 'operational' -and $live -and $fresh -and $pidMatches") >= 2
+    assert "LIFECYCLE_PID_MATCH" in BOOTSTRAP
+    assert "pid_mismatch" in BOOTSTRAP
+    assert "SERVICE_PID_AFTER" in BOOTSTRAP
     assert "equal_version_unhealthy forcing_repair=1" in BOOTSTRAP
     assert "set VERSION_STATE=mixed" in BOOTSTRAP
     assert "set VERSION_STATE=binary_only" in BOOTSTRAP

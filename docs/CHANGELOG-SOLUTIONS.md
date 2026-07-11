@@ -27,6 +27,63 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] HOTFIX: Agent 2.1.8 canary packaging lineage and installer marker sequencing
+
+### Problemi
+
+Real Windows canary tregoi një gjendje të përzier: Agent binary `2.1.8`
+punonte për service/heartbeat/Remote Support, por MSI registry mbetej `2.1.6`,
+një transaction `msiexec` mbeti aktiv, nuk u krijua `msi-install-2.1.8.log`,
+deploy command line nuk kishte `/L*v`, dhe u pa helper process
+`installer-marker create`. BuildCommit në PC ishte `ff884cd`, jo lineage i fundit
+i fix-eve.
+
+### Analiza
+
+Kjo nuk e bën 2.1.6 "të prishur": 2.1.6 mbetet fallback-i production-safe i
+provuar për startup, heartbeat, telemetry, Remote Support, self-update, watchdog
+dhe shumicën e GPO deployment. Problemi ishte te candidate/deployment path i
+2.1.8: artifact-e të vjetra ose NETLOGON stale mund të shpjegojnë mungesën e
+log/lock, por source-i në `30e86f3` ende kishte një defekt konkret: MSI
+schedule-onte `SetInstallerActive` para `InstallFiles` duke thirrur
+`[INSTALLFOLDER]techi-agent.exe installer-marker create`, që në upgrade mund të
+jetë binari i vjetër i instaluar.
+
+### Shkaku
+
+Marker custom actions përdornin Agent EXE para se MSI të kishte vendosur
+binaret e rinj. Nëse binari ekzistues kishte helper dispatch të vjetër, helper-i
+mund të hynte në runtime normal, të shkruante lifecycle `operational` me PID të
+gabuar dhe të bllokonte transaksionin. CI gjithashtu nuk provonte byte-for-byte
+që EXE standalone dhe EXE e futur në MSI janë identike pas ekstraktimit real të
+MSI-së.
+
+### Zgjidhja
+
+Marker-i i installer-it tani bëhet me file operation të thjeshtë nga `cmd.exe`
+(`installer.active` create/remove), jo me `techi-agent.exe`. MSI nuk mban më
+custom action definitions të pa-schedule-uara për start/health brenda table-ve
+të installer-it. `techi-deploy.cmd` kërkon që lifecycle PID të përputhet me PID-in
+aktual të SCM service. GitHub Actions tani bën administrative MSI extract
+(`msiexec /a`), krahason SHA/size të EXE standalone me
+`CommApp\TechiAgent\techi-agent.exe`, dhe prodhon identity JSON me source commit,
+MSI metadata dhe hash-et.
+
+### Ndryshimet
+
+- `agent/installer/installer.wxs`
+- `agent/main_test.go`
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_windows_installer_reliability.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `.github/workflows/build-agent-msi.yml`
+
+### Rezultati
+
+Ky është fix i canary/deployment path për 2.1.8. Nuk u bë backend deploy, nuk u
+aktivizua paketë, nuk u prek NETLOGON dhe nuk nisi rollout. 2.1.6 mbetet
+rollback/fallback i aprovuar derisa 2.1.8 të kalojë real Windows canary.
+
 ## [2026-07-11] HOTFIX: Agent 2.1.8 MSI registration drift and NETLOGON installer concurrency
 
 ### Problemi

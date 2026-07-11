@@ -193,7 +193,7 @@
                         Start="auto"
                         ErrorControl="ignore"
                         Account="LocalSystem"/>
-        <ServiceControl Id="StartTechiAgent"
+        <ServiceControl Id="StopRemoveTechiAgent"
                         Name="TechiAgent"
                         Stop="both"
                         Remove="uninstall"
@@ -210,7 +210,7 @@
                        Type="string"
                        Value="[TECHIDATADIR]"
                        KeyPath="yes"/>
-        <!-- BuildCommit: git short SHA i ketij build-i (nga CI -d BuildCommit=...), jo ProductVersion
+        <!-- BuildCommit: git SHA i plote i ketij build-i (nga CI -d BuildCommit=...), jo ProductVersion
              (ai mbetet 2.1.0). Lejon te verifikohet ne PC pikerisht cili kod eshte instaluar, pa pyetur
              "cilin build prove"; reg query HKLM\SOFTWARE\TECHI\Agent /v BuildCommit -->
         <RegistryValue Root="HKLM"
@@ -302,30 +302,28 @@
                   HideTarget="yes"
                   Return="ignore"/>
 
-    <CustomAction Id="ValidateAgentOperational"
-                  Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="check"/>
-
+    <!-- Installer marker: intentionally NOT implemented through techi-agent.exe.
+         This runs before InstallFiles, so [INSTALLFOLDER]techi-agent.exe may still
+         be the stale already-installed binary. Keep marker mutations as plain
+         file operations so helper subcommands can never enter Agent runtime or
+         block the MSI transaction. -->
     <CustomAction Id="SetInstallerActive"
                   Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker create"
+                  ExeCommand="cmd.exe /d /c if not exist &quot;C:\ProgramData\TechiAgent&quot; md &quot;C:\ProgramData\TechiAgent&quot; &amp; type nul &gt; &quot;C:\ProgramData\TechiAgent\installer.active&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>
 
     <CustomAction Id="ClearInstallerActive"
                   Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker remove"
+                  ExeCommand="cmd.exe /d /c if exist &quot;C:\ProgramData\TechiAgent\installer.active&quot; del /f /q &quot;C:\ProgramData\TechiAgent\installer.active&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>
 
     <CustomAction Id="RollbackClearInstallerActive"
                   Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker remove"
+                  ExeCommand="cmd.exe /d /c if exist &quot;C:\ProgramData\TechiAgent\installer.active&quot; del /f /q &quot;C:\ProgramData\TechiAgent\installer.active&quot;"
                   Execute="rollback"
                   Impersonate="no"
                   Return="ignore"/>
@@ -338,13 +336,6 @@
     <CustomAction Id="EnsureServiceCreated"
                   Directory="SystemFolder"
                   ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-ensure-service"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="check"/>
-
-    <CustomAction Id="StartTechiAgentService"
-                  Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-start-service"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>

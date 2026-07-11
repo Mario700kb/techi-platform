@@ -120,7 +120,7 @@ jobs:
 
       # ------------------------------------------------------------------ #
       # 8. Build MSI me WiX v7                                              #
-      #    BuildCommit (git short SHA) shkon ne HKLM\SOFTWARE\TECHI\Agent,   #
+      #    BuildCommit (git full SHA) shkon ne HKLM\SOFTWARE\TECHI\Agent,    #
       #    jo ne ProductVersion -- lejon te verifikohet ne PC saktesisht     #
       #    cili commit eshte instaluar pa pyetur "cilin build prove".       #
       # ------------------------------------------------------------------ #
@@ -128,7 +128,7 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $buildCommit = "${{ github.sha }}".Substring(0, 7)
+          $buildCommit = "${{ github.sha }}"
           wix build installer.wxs `
             -arch x64 `
             -ext WixToolset.UI.wixext `
@@ -141,7 +141,7 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $buildCommit = "${{ github.sha }}".Substring(0, 7)
+          $buildCommit = "${{ github.sha }}"
           wix build agent-update.wxs `
             -arch x64 `
             -d SourceDir=. `
@@ -160,6 +160,19 @@ jobs:
             -d Version=1.4.6.0 `
             -o TECHI-Remote-Support-1.4.6.msi
 
+      # Standalone techi-agent.exe — the SAME binary embedded in the combined
+      # MSI (built once at step 7). Upload it as the Agent Binary package so a
+      # device installed via MSI and a device that ran self_update report the
+      # identical SHA256 and both show green in "Needs Agent Update".
+      - name: Package standalone agent binary
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          Copy-Item techi-agent.exe "techi-agent-$v.exe" -Force
+          (Get-FileHash "techi-agent-$v.exe" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content "techi-agent-$v.exe.sha256"
+
       # ------------------------------------------------------------------ #
       # 9. SHA256 checksum                                                   #
       # ------------------------------------------------------------------ #
@@ -175,10 +188,81 @@ jobs:
           $bridgeHash = (Get-FileHash $bridge -Algorithm SHA256).Hash.ToLower()
           "$bridgeHash  $bridge" | Out-File "$bridge.sha256" -Encoding utf8NoBOM
           Write-Host "Bridge SHA256: $bridgeHash"
+          $agent = "techi-agent-${{ steps.version.outputs.version }}.exe"
+          $agentHash = (Get-FileHash $agent -Algorithm SHA256).Hash.ToLower()
+          "$agentHash  $agent" | Out-File "$agent.sha256" -Encoding utf8NoBOM
+          Write-Host "Agent EXE SHA256: $agentHash"
           $remoteSupport = "TECHI-Remote-Support-1.4.6.msi"
           $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
           "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
           Write-Host "Remote Support SHA256: $remoteSupportHash"
+
+      - name: Validate MSI embedded agent lineage
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $msi = "TECHI-Endpoint-Deployment-$v.msi"
+          $standalone = "techi-agent-$v.exe"
+          $extract = Join-Path $env:RUNNER_TEMP "techi-endpoint-msi-extract"
+          Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $extract | Out-Null
+
+          $admin = Start-Process msiexec.exe -ArgumentList @('/a', (Resolve-Path $msi), '/qn', "TARGETDIR=$extract") -Wait -PassThru
+          if ($admin.ExitCode -ne 0) {
+            throw "Administrative MSI extraction failed with exit code $($admin.ExitCode)"
+          }
+
+          $expectedEmbedded = Join-Path $extract "CommApp\TechiAgent\techi-agent.exe"
+          if (-not (Test-Path -LiteralPath $expectedEmbedded)) {
+            $matches = @(Get-ChildItem -LiteralPath $extract -Recurse -Filter techi-agent.exe -ErrorAction SilentlyContinue)
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one embedded techi-agent.exe after MSI extraction, found $($matches.Count)"
+            }
+            $expectedEmbedded = $matches[0].FullName
+          }
+
+          $standaloneHash = (Get-FileHash $standalone -Algorithm SHA256).Hash.ToLower()
+          $embeddedHash = (Get-FileHash $expectedEmbedded -Algorithm SHA256).Hash.ToLower()
+          $standaloneItem = Get-Item -LiteralPath $standalone
+          $embeddedItem = Get-Item -LiteralPath $expectedEmbedded
+          if ($standaloneHash -ne $embeddedHash) {
+            throw "Standalone agent hash $standaloneHash differs from MSI embedded agent hash $embeddedHash"
+          }
+          if ($standaloneItem.Length -ne $embeddedItem.Length) {
+            throw "Standalone agent size $($standaloneItem.Length) differs from MSI embedded size $($embeddedItem.Length)"
+          }
+
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
+          function Read-MsiValue([string]$sql) {
+            $view = $db.OpenView($sql)
+            $view.Execute()
+            $record = $view.Fetch()
+            if ($null -eq $record) { return $null }
+            return $record.StringData(1)
+          }
+          $summary = $db.SummaryInformation(0)
+          $identity = [ordered]@{
+            source_commit = "${{ github.sha }}"
+            agent_version = $v
+            standalone_agent_path = $standalone
+            standalone_agent_size = $standaloneItem.Length
+            standalone_agent_sha256 = $standaloneHash
+            standalone_agent_file_version = $standaloneItem.VersionInfo.FileVersion
+            embedded_agent_path = $expectedEmbedded
+            embedded_agent_size = $embeddedItem.Length
+            embedded_agent_sha256 = $embeddedHash
+            embedded_agent_file_version = $embeddedItem.VersionInfo.FileVersion
+            embedded_equals_standalone = $true
+            msi_product_version = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductVersion'"
+            msi_product_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductCode'"
+            msi_upgrade_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
+            msi_package_code = $summary.Property(9)
+            msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
+          }
+          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Endpoint-Deployment-$v.identity.json" -Encoding utf8NoBOM
+          Write-Host "MSI embedded agent matches standalone: $embeddedHash"
 
       # ------------------------------------------------------------------ #
       # 10. Upload artifact (30 ditë)                                        #
@@ -190,6 +274,7 @@ jobs:
           path: |
             agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
             agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi.sha256
+            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.identity.json
           retention-days: 30
           if-no-files-found: error
 
@@ -212,19 +297,6 @@ jobs:
             agent/installer/TECHI-Remote-Support-1.4.6.msi.sha256
           retention-days: 30
           if-no-files-found: error
-
-      # Standalone techi-agent.exe — the SAME binary embedded in the combined
-      # MSI (built once at step 7). Upload it as the Agent Binary package so a
-      # device installed via MSI and a device that ran self_update report the
-      # identical SHA256 and both show green in "Needs Agent Update".
-      - name: Package standalone agent binary
-        shell: pwsh
-        working-directory: agent/installer
-        run: |
-          $v = "${{ steps.version.outputs.version }}"
-          Copy-Item techi-agent.exe "techi-agent-$v.exe" -Force
-          (Get-FileHash "techi-agent-$v.exe" -Algorithm SHA256).Hash.ToLower() |
-            Set-Content "techi-agent-$v.exe.sha256"
 
       - name: Upload standalone agent binary artifact
         uses: actions/upload-artifact@v4.6.2

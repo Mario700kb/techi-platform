@@ -841,9 +841,12 @@ class TestGPOScheduledDeployScript:
         assert "registry_version_after_install=%REG_VERSION%" in self.script
         assert "installed_product_code_after_install=%REG_PRODUCT_CODE%" in self.script
         assert "service_state_after_install=%SERVICE_STATUS_AFTER%" in self.script
+        assert "service_pid_after_install=%SERVICE_PID_AFTER%" in self.script
         assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
         assert "lifecycle_state=%LIFECYCLE_STATE%" in self.script
         assert "lifecycle_detail=%LIFECYCLE_DETAIL%" in self.script
+        assert "lifecycle_pid=%LIFECYCLE_PID%" in self.script
+        assert "lifecycle_pid_match=%LIFECYCLE_PID_MATCH%" in self.script
         assert 'result=0 version=%ACTIVE_VERSION%' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION%' in self.script
 
@@ -914,13 +917,16 @@ class TestGPOScheduledDeployScript:
         assert 'net start TechiAgent 2>nul' in self.script
 
     def test_deploy_cmd_success_requires_registry_version_and_running_service(self):
-        """SUCCESS nuk bazohet vetem te exit code; kerkon registry equal + service RUNNING."""
+        """SUCCESS nuk bazohet vetem te exit code; kerkon registry equal + SCM PID lifecycle."""
         assert ":validate_success" in self.script
         assert "set DEPLOY_VALID=0" in self.script
         assert "call :read_registry" in self.script
         assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
-        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%BINARY_VERSION%"=="%ACTIVE_VERSION%.0" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" set DEPLOY_VALID=1' in self.script
+        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%BINARY_VERSION%"=="%ACTIVE_VERSION%.0" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" if "%LIFECYCLE_PID_MATCH%"=="1" set DEPLOY_VALID=1' in self.script
         assert "call :read_lifecycle" in self.script
+        assert "Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\"" in self.script
+        assert "pid_mismatch" in self.script
+        assert "set LIFECYCLE_PID_MATCH=0" in self.script
         assert "if %LIFECYCLE_WAIT% GEQ 12 goto :lifecycle_done" in self.script
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script
 
