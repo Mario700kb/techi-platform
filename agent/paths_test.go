@@ -64,7 +64,7 @@ func TestMigrateConfigIfNeeded_NeverTouchesEnrolledDevice(t *testing.T) {
 	}
 }
 
-func TestMigrateConfigIfNeeded_RefreshesTokenForStuckUnenrolledDevice(t *testing.T) {
+func TestMigrateConfigIfNeeded_ValidCanonicalNeverOverwrittenByLegacy(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "agent.config.json")
 	legacyPath := filepath.Join(dir, "legacy.config.json")
@@ -81,11 +81,29 @@ func TestMigrateConfigIfNeeded_RefreshesTokenForStuckUnenrolledDevice(t *testing
 	}
 
 	got := readConfigField(t, configPath)
-	if got["enrollment_token"] != "tok-fresh" {
-		t.Fatalf("expected refreshed token, got %v", got["enrollment_token"])
+	if got["enrollment_token"] != "" {
+		t.Fatalf("canonical config was overwritten from legacy: %v", got["enrollment_token"])
 	}
 	if got["api_url"] != "https://api.example.com" {
 		t.Fatalf("expected other fields preserved, got %v", got["api_url"])
+	}
+}
+
+func TestMigrateConfigIfNeeded_InvalidLegacyIsNotCopied(t *testing.T) {
+	dir := t.TempDir()
+	canonical := filepath.Join(dir, "canonical", "agent.config.json")
+	legacy := filepath.Join(dir, "legacy", "agent.config.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte(`{not-json`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateConfigIfNeeded(canonical, legacy, ""); err == nil {
+		t.Fatal("expected invalid legacy error")
+	}
+	if _, err := os.Stat(canonical); !os.IsNotExist(err) {
+		t.Fatalf("invalid legacy became canonical: %v", err)
 	}
 }
 

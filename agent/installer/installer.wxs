@@ -311,6 +311,15 @@
                   Impersonate="no"
                   Return="ignore"/>
 
+    <!-- Canonical runtime tree: tightly scoped ACL repair for LocalSystem +
+         Administrators. Never touches ProgramData or unrelated products. -->
+    <CustomAction Id="LockdownCanonicalAgentDir"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="icacls.exe &quot;[INSTALLFOLDER].&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
     <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
          të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
          njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
@@ -492,6 +501,7 @@
       <Custom Action="WriteAgentConfig"   After="InstallServices"    Condition="NOT REMOVE"/>
       <Custom Action="RestoreAgentConfigFromLegacyBackup" After="WriteAgentConfig" Condition="NOT REMOVE"/>
       <Custom Action="LockdownTechiDataDir" After="RestoreAgentConfigFromLegacyBackup" Condition="NOT REMOVE"/>
+      <Custom Action="LockdownCanonicalAgentDir" After="LockdownTechiDataDir" Condition="NOT REMOVE"/>
       <!-- EnsureServiceCreated: rrjet sigurie PARA SetServiceRecovery — nëse InstallServices
            nuk e krijoi service-in (race-condition SCM me DeleteServices të produktit të vjetër),
            e rikrijon këtu, kështu që SetServiceRecovery i aplikohet gjithsesi më pas. -->

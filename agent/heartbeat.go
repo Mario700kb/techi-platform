@@ -21,26 +21,26 @@ var agentSHA256Cache struct {
 }
 
 type HeartbeatPayload struct {
-	AgentID               string         `json:"agent_id,omitempty"`
-	DeviceID              int            `json:"device_id,omitempty"`
-	RustDeskID            string         `json:"rustdesk_id,omitempty"`
-	RustDeskEncID         string         `json:"rustdesk_enc_id,omitempty"`
-	Hostname              string         `json:"hostname"`
-	CurrentUser           string         `json:"current_user"`
-	UserSource            string         `json:"user_source,omitempty"`
-	UserSessionState      string         `json:"user_session_state,omitempty"`
-	Domain                string         `json:"domain"`
-	PublicIP              string         `json:"public_ip"`
-	LocalIP               string         `json:"local_ip"`
-	OSName                string         `json:"os_name"`
-	OSVersion             string         `json:"os_version"`
-	OSCaption             string         `json:"os_caption,omitempty"`
-	OSBuild               string         `json:"os_build,omitempty"`
-	WindowsProductType    int            `json:"windows_product_type"`
-	Platform              string         `json:"platform"`
-	CPU                   string         `json:"cpu"`
-	RAM                   string         `json:"ram"`
-	Storage               string         `json:"storage"`
+	AgentID            string `json:"agent_id,omitempty"`
+	DeviceID           int    `json:"device_id,omitempty"`
+	RustDeskID         string `json:"rustdesk_id,omitempty"`
+	RustDeskEncID      string `json:"rustdesk_enc_id,omitempty"`
+	Hostname           string `json:"hostname"`
+	CurrentUser        string `json:"current_user"`
+	UserSource         string `json:"user_source,omitempty"`
+	UserSessionState   string `json:"user_session_state,omitempty"`
+	Domain             string `json:"domain"`
+	PublicIP           string `json:"public_ip"`
+	LocalIP            string `json:"local_ip"`
+	OSName             string `json:"os_name"`
+	OSVersion          string `json:"os_version"`
+	OSCaption          string `json:"os_caption,omitempty"`
+	OSBuild            string `json:"os_build,omitempty"`
+	WindowsProductType int    `json:"windows_product_type"`
+	Platform           string `json:"platform"`
+	CPU                string `json:"cpu"`
+	RAM                string `json:"ram"`
+	Storage            string `json:"storage"`
 	// Platform Expansion additive fields — omitempty; empty on Windows.
 	FQDN                  string         `json:"fqdn,omitempty"`
 	KernelVersion         string         `json:"kernel_version,omitempty"`
@@ -53,6 +53,7 @@ type HeartbeatPayload struct {
 	RustDeskStatus        string         `json:"rustdesk_status"`
 	RustDeskVersion       string         `json:"rustdesk_version"`
 	RustDeskInstallPath   string         `json:"rustdesk_install_path"`
+	RustDeskSyncStatus    string         `json:"rustdesk_sync_status,omitempty"`
 	RustDeskLastRepairAt  string         `json:"rustdesk_last_repair_at,omitempty"`
 	RustDeskRepairCount   int            `json:"rustdesk_repair_count,omitempty"`
 	CPUPercent            float64        `json:"cpu_percent"`
@@ -105,6 +106,7 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		RustDeskStatus:        rustdesk.Status,
 		RustDeskVersion:       rustdesk.Version,
 		RustDeskInstallPath:   rustdesk.InstallPath,
+		RustDeskSyncStatus:    rustdesk.SyncStatus,
 		RustDeskLastRepairAt:  cfg.RustDeskLastRepairAt,
 		RustDeskRepairCount:   cfg.RustDeskRepairCount,
 		Processes:             procs,

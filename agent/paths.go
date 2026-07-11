@@ -42,7 +42,10 @@ func migrateLegacyConfigIfNeeded(configPath string) error {
 
 func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath string) error {
 	if _, err := os.Stat(configPath); err == nil {
-		return refreshEnrollmentTokenIfNeeded(configPath, legacyConfigPath)
+		// Canonical is authoritative once present. Validate it, but never merge
+		// or overwrite it from the legacy bootstrap source.
+		_, err = loadConfig(configPath)
+		return err
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -63,26 +66,28 @@ func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath s
 		}
 	}
 
-	src, err := os.Open(legacyConfigPath)
+	// A malformed bootstrap file must never become the canonical runtime
+	// config. loadConfig also proves the source is readable.
+	if _, err := loadConfig(legacyConfigPath); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(legacyConfigPath)
 	if err != nil {
 		return err
 	}
-	defer src.Close()
-
-	dst, err := os.OpenFile(configPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
+	tmp := configPath + ".migrate.tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(dst, src)
-	closeErr := dst.Close()
-	if copyErr != nil {
-		_ = os.Remove(configPath)
-		return copyErr
+	if _, err := loadConfig(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
-	if closeErr != nil {
-		_ = os.Remove(configPath)
-		return closeErr
+	if err := os.Rename(tmp, configPath); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
+	lockdownConfigACL(configPath)
 	log.Printf("migrated legacy agent config from %s to %s", legacyConfigPath, configPath)
 	return nil
 }

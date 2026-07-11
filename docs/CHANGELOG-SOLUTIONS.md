@@ -27,6 +27,38 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] Windows Agent 2.1.7 production lifecycle/install reliability release
+
+### Problemi
+
+Një instalim real 2.1.6 raportoi MSI exit 0, version equal dhe service RUNNING,
+por Agent-i mbeti në `loading_config` nga Access Denied te legacy config. Pa
+heartbeat, TECHI Remote Support nuk u sinkronizua. Pa `wmic.exe` u raportuan
+zero services dhe HKCU e LocalSystem prodhoi gabim mashtrues software inventory.
+
+### Shkaku
+
+GPO barazonte version+RUNNING me shëndet operacional; bootstrap shkruante ende
+legacy config, migrimi nuk validonte burimin dhe state-file nuk shkruhej
+atomikisht. Service inventory varej nga WMIC dhe software inventory pyeste
+HKCU të identitetit LocalSystem.
+
+### Zgjidhja
+
+2.1.7 (`ProductVersion 2.1.7.0`) përdor canonical config në
+`C:\ProgramData\TechiAgent`, migron legacy vetëm kur canonical mungon dhe pas
+validimit, klasifikon config pa sekrete dhe kufizon ACL te canonical TECHI tree
+(SYSTEM+Administrators). GPO përdor bounded lifecycle polling dhe pranon vetëm
+state të freskët/current-PID `operational`. Remote Support raporton status të
+verifikuar sync. Services përdor Windows SCM API; software inventory është
+machine-wide nga dy HKLM uninstall views, pa LocalSystem HKCU. Rollout mbetet
+rruga normale 2.1.6 → 2.1.7 me SHA/heartbeat confirmation/rollback ekzistues.
+
+### Rezultati
+
+Kodi është në validim. Publikimi, canary dhe fleet rollout nuk quhen të
+përfunduara pa artefaktet dhe prova nga pajisje reale.
+
 ## [2026-07-11] FIX/FEATURE: Connect aligned to the approved V3 mockup — split button, categorized menu, Winbox restored, honest embedded gating
 
 ### Problemi

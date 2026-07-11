@@ -91,11 +91,13 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	ensureRustDesk(cfg, configPath)
 
 	rustdesk := discoverRustDesk(cfg)
+	rustdesk.SyncStatus = verifyRustDeskSync(cfg, rustdesk)
 	log.Printf(
-		"TECHI Remote Support discovery: id=%s install_status=%s status=%s version=%s path=%s",
+		"TECHI Remote Support discovery: id=%s install_status=%s status=%s sync_status=%s version=%s path=%s",
 		rustdesk.ID,
 		rustdesk.InstallStatus,
 		rustdesk.Status,
+		rustdesk.SyncStatus,
 		rustdesk.Version,
 		rustdesk.InstallPath,
 	)

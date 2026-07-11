@@ -28,9 +28,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -41,8 +44,39 @@ const (
 	stateEnrolling      lifecycleState = "enrolling"
 	stateFirstHeartbeat lifecycleState = "first_heartbeat"
 	stateOperational    lifecycleState = "operational"
+	stateDegraded       lifecycleState = "degraded"
 	stateFaulted        lifecycleState = "faulted"
 )
+
+type configStatus string
+
+const (
+	configMissing         configStatus = "config_missing"
+	configAccessDenied    configStatus = "config_access_denied"
+	configInvalid         configStatus = "config_invalid"
+	configMigrationFailed configStatus = "config_migration_failed"
+	configReady           configStatus = "config_ready"
+)
+
+func classifyConfigError(err error, migration bool) configStatus {
+	if err == nil {
+		return configReady
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		return configAccessDenied
+	}
+	if errors.Is(err, fs.ErrNotExist) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+		return configMissing
+	}
+	if migration {
+		return configMigrationFailed
+	}
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return configInvalid
+	}
+	return configInvalid
+}
 
 // Retry pacing for configuration loading. Vars (not consts) so tests can
 // shrink them; production values start gentle and cap well below the
@@ -111,7 +145,16 @@ func setLifecycleState(state lifecycleState, detail string) {
 		return
 	}
 	// Best effort: the state file is diagnostics, never a dependency.
-	_ = os.WriteFile(lifecycleStateFile, data, 0600)
+	if err := os.MkdirAll(filepath.Dir(lifecycleStateFile), 0700); err != nil {
+		return
+	}
+	tmp := lifecycleStateFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return
+	}
+	if err := replaceStateFile(tmp, lifecycleStateFile); err != nil {
+		_ = os.Remove(tmp)
+	}
 }
 
 // readLifecycleStatus is used by watchdog-check (a separate process) to see
@@ -136,18 +179,26 @@ func loadConfigWithRetry(ctx context.Context, configPath string, once bool) (*Co
 	setLifecycleState(stateLoadingConfig, "")
 	delay := configRetryInitialDelay
 	for attempt := 1; ; attempt++ {
+		_, statErr := os.Stat(configPath)
+		migration := errors.Is(statErr, fs.ErrNotExist)
 		err := migrateLegacyConfigIfNeeded(configPath)
 		if err == nil {
+			migration = false
 			var cfg *Config
 			if cfg, err = loadConfig(configPath); err == nil {
+				setLifecycleState(stateLoadingConfig, string(configReady))
 				return cfg, nil
 			}
 		}
 		if once {
 			return nil, err
 		}
-		setLifecycleState(stateLoadingConfig, err.Error())
-		log.Printf("lifecycle: config load attempt %d failed: %v — retrying in %s", attempt, err, delay)
+		category := classifyConfigError(err, migration)
+		if category == configAccessDenied {
+			repairCanonicalAgentACL(configPath)
+		}
+		setLifecycleState(stateLoadingConfig, string(category))
+		log.Printf("lifecycle: config load attempt %d failed category=%s — retrying in %s", attempt, category, delay)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

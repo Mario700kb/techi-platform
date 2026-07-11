@@ -140,6 +140,30 @@ func isRustDeskInstalled() bool {
 	return err == nil
 }
 
+func verifyRustDeskSync(cfg *Config, info RustDeskInfo) string {
+	if info.InstallStatus != "installed" {
+		return "not_installed"
+	}
+	if !cfg.RustDeskManageEnabled {
+		return "discovered"
+	}
+	found := false
+	for _, dir := range rustDeskConfigDirs() {
+		data, err := os.ReadFile(filepath.Join(dir, "TECHI Remote Support.toml"))
+		if err != nil {
+			continue
+		}
+		found = true
+		if !rustDeskConfigNeedsRepair(string(data), cfg) {
+			return "synced"
+		}
+	}
+	if !found {
+		return "sync_pending"
+	}
+	return "sync_failed"
+}
+
 func installRustDeskMSI(cfg *Config) error {
 	log.Printf("[rustdesk_manage] downloading MSI from %s", cfg.RustDeskMSIUrl)
 
@@ -477,7 +501,6 @@ func applyRemoteSupportPassword(password string) {
 	}
 	log.Printf("[rustdesk_manage] applied per-device password from server")
 }
-
 
 func recordRustDeskRepair(cfg *Config, configPath string) {
 	cfg.RustDeskRepairCount++

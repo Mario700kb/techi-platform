@@ -68,6 +68,7 @@ type RustDeskInfo struct {
 	Status        string `json:"rustdesk_status"`
 	Version       string `json:"rustdesk_version"`
 	InstallPath   string `json:"rustdesk_install_path"`
+	SyncStatus    string `json:"rustdesk_sync_status,omitempty"`
 }
 
 func discoverRustDesk(cfg *Config) RustDeskInfo {

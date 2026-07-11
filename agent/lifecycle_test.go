@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -120,6 +121,21 @@ func TestLoadConfigWithRetryStopsOnCancel(t *testing.T) {
 	_, err := loadConfigWithRetry(ctx, missing, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestConfigErrorClassification(t *testing.T) {
+	if got := classifyConfigError(os.ErrPermission, false); got != configAccessDenied {
+		t.Fatalf("permission=%s", got)
+	}
+	if got := classifyConfigError(os.ErrNotExist, false); got != configMissing {
+		t.Fatalf("missing=%s", got)
+	}
+	if got := classifyConfigError(&json.SyntaxError{}, false); got != configInvalid {
+		t.Fatalf("invalid=%s", got)
+	}
+	if got := classifyConfigError(errors.New("copy failed"), true); got != configMigrationFailed {
+		t.Fatalf("migration=%s", got)
 	}
 }
 

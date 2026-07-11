@@ -806,8 +806,10 @@ class TestGPOScheduledDeployScript:
         assert "installed_product_code_after_install=%REG_PRODUCT_CODE%" in self.script
         assert "service_state_after_install=%SERVICE_STATUS_AFTER%" in self.script
         assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
-        assert 'result=0 version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% msi_exit_code=%MSI_EXIT% >> "%LOG%"' in self.script
-        assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% >> "%LOG%"' in self.script
+        assert "lifecycle_state=%LIFECYCLE_STATE%" in self.script
+        assert "lifecycle_detail=%LIFECYCLE_DETAIL%" in self.script
+        assert 'result=0 version=%ACTIVE_VERSION%' in self.script
+        assert 'result=uptodate version=%ACTIVE_VERSION%' in self.script
 
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
@@ -879,7 +881,9 @@ class TestGPOScheduledDeployScript:
         assert "set DEPLOY_VALID=0" in self.script
         assert "call :read_registry" in self.script
         assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
-        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" set DEPLOY_VALID=1' in self.script
+        assert 'if /i "%VERSION_STATE%"=="equal" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" set DEPLOY_VALID=1' in self.script
+        assert "call :read_lifecycle" in self.script
+        assert "if %LIFECYCLE_WAIT% GEQ 12 goto :lifecycle_done" in self.script
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script
 
     def test_deploy_cmd_manual_replace_lan_creates_service_if_missing(self):

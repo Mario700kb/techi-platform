@@ -11,5 +11,12 @@ func ensureRustDesk(cfg *Config, _ string) {
 	}
 }
 
+func verifyRustDeskSync(_ *Config, info RustDeskInfo) string {
+	if info.InstallStatus != "installed" {
+		return "not_installed"
+	}
+	return "discovered"
+}
+
 // applyRemoteSupportPassword is a no-op on non-Windows platforms.
 func applyRemoteSupportPassword(_ string) {}

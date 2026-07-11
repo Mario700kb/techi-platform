@@ -28,7 +28,7 @@ import (
 )
 
 // runBootstrapConfigCommand mirrors the old WriteAgentConfig custom action:
-// create C:\ProgramData\TECHI\logs and agent.config.json, but only when the
+// create C:\ProgramData\TechiAgent\logs and agent.config.json, but only when the
 // config does not exist yet — or when -reenroll 1 (manual install with a new
 // token) explicitly asks to overwrite. Field set matches the old PS body.
 func runBootstrapConfigCommand(args []string) int {
@@ -44,14 +44,14 @@ func runBootstrapConfigCommand(args []string) int {
 		return 1
 	}
 
-	dataDir := filepath.Dir(windowsLegacyConfigPath)
+	dataDir := filepath.Dir(windowsConfigPath)
 	if err := os.MkdirAll(filepath.Join(dataDir, "logs"), 0755); err != nil {
 		writeDeployLog("[bootstrap-config]", "mkdir failed: "+err.Error())
 		return 1
 	}
 
-	if _, err := os.Stat(windowsLegacyConfigPath); err == nil && strings.TrimSpace(*reenroll) != "1" {
-		writeDeployLog("[bootstrap-config]", "config preserved path="+windowsLegacyConfigPath)
+	if _, err := os.Stat(windowsConfigPath); err == nil && strings.TrimSpace(*reenroll) != "1" {
+		writeDeployLog("[bootstrap-config]", "config preserved path="+windowsConfigPath)
 		return 0
 	}
 
@@ -83,11 +83,12 @@ func runBootstrapConfigCommand(args []string) int {
 	if err != nil {
 		return 1
 	}
-	if err := os.WriteFile(windowsLegacyConfigPath, data, 0600); err != nil {
+	if err := os.WriteFile(windowsConfigPath, data, 0600); err != nil {
 		writeDeployLog("[bootstrap-config]", "config write failed: "+err.Error())
 		return 1
 	}
-	writeDeployLog("[bootstrap-config]", "config created path="+windowsLegacyConfigPath)
+	lockdownConfigACL(windowsConfigPath)
+	writeDeployLog("[bootstrap-config]", "config created path="+windowsConfigPath)
 	return 0
 }
 

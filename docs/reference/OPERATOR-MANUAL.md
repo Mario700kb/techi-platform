@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat` (Platform Expansion Phases 0–7 deployed). **Agent baseline: 2.1.6** (released 2026-07-09; GPO rollout in progress — mixed fleet until 100%). |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.7 reliability release** uses the normal 2.1.6 → 2.1.7 rollout after publication/canary validation. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -241,7 +241,7 @@ self-updates from the UI, and self-heals Remote Support. **Do not reinstall the
 MSI manually** unless instructed — "the MSI installs once, everything else from
 the UI."
 
-### 9a. Agent Startup Lifecycle (agent ≥ 2.1.6)
+### 9a. Agent Startup Lifecycle (agent ≥ 2.1.7)
 
 The agent runs an explicit startup state machine; "service RUNNING" alone no
 longer says whether the agent is healthy:
@@ -258,6 +258,16 @@ longer says whether the agent is healthy:
 The current state is mirrored to `agent.state.json` **next to the config
 file** — Windows: `C:\ProgramData\TechiAgent\agent.state.json`, Linux:
 `/etc/techi-agent/agent.state.json` (`state`, `detail`, `updated_at`, `pid`).
+For Windows deployment health, only a fresh state from the current live PID
+with `state=operational` is healthy. MSI success, equal version, or a RUNNING
+service alone are insufficient. Config detail is classified without secrets as
+`config_missing`, `config_access_denied`, `config_invalid`,
+`config_migration_failed`, or `config_ready`.
+
+Windows runtime config is canonical at
+`C:\ProgramData\TechiAgent\agent.config.json`. The old
+`C:\ProgramData\TECHI\agent.config.json` is read only as a validated, one-time
+migration/bootstrap source when canonical config is absent.
 The **TECHI Agent Watchdog** task (Windows) reads it every 5 minutes and
 distinguishes *Service Running* / *Agent Initializing* / *Agent Operational* /
 *Agent Faulted*: it restarts the service when the state is Faulted, or stuck
