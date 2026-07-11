@@ -37,8 +37,6 @@
     <WixVariable Id="WixUIDialogBmp" Value="banner.bmp"/>
     <Property Id="ENROLLMENT_TOKEN" Secure="yes" Hidden="yes"/>
     <Property Id="API_URL" Value="https://api-rdp.techi.com.al" Secure="yes"/>
-    <Property Id="MsiHiddenProperties"
-              Value="ENROLLMENT_TOKEN;REMOTE_PASSWORD;REMOTE_KEY;WriteAgentConfig;WriteTechiConfigs;ApplyTechiRemoteSupportConfigFinal"/>
     <!-- UI_REENROLL: vendoset vetëm kur Install klikohet te EnrollmentTokenDlg (instalim manual).
          Lejon WriteAgentConfig të mbishkruajë config-un ekzistues me token-in e ri, edhe nëse
          file-i tashmë ekziston nga teste/instalime të mëparshme. Rruga /quiet (GPO/self_update)

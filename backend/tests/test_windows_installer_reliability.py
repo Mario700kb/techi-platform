@@ -40,8 +40,9 @@ def test_msi_has_no_embedded_fleet_password_and_hides_secret_targets():
     for prop in ("ENROLLMENT_TOKEN", "REMOTE_PASSWORD", "REMOTE_KEY"):
         assert f'<Property Id="{prop}"' in WXS
     assert WXS.count('HideTarget="yes"') >= 5
-    assert 'MsiHiddenProperties' in WXS
-    assert 'ENROLLMENT_TOKEN;REMOTE_PASSWORD;REMOTE_KEY;WriteAgentConfig' in WXS
+    # WiX emits MsiHiddenProperties from Hidden="yes" properties and rejects
+    # direct authoring of that reserved MSI property (WIX0070).
+    assert '<Property Id="MsiHiddenProperties"' not in WXS
 
 
 def test_bootstraps_require_fresh_live_operational_state():
