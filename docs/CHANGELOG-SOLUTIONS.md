@@ -149,8 +149,30 @@ flag — same `FEATURE_PLATFORM_CORE`/`FEATURE_TERMINAL` gates.
 macOS, ready on Windows with credential, embedded gating both axes, OS-aware
 defaults, no credential material in launch URLs, batch endpoint states) + new
 frontend tests (grouping, split-button launch/menu behavior, always-use
-persistence, feature-gated Unavailable section) — see the test files for the
-full list. Preflight + smoke results recorded in the deploy note below.
+persistence, feature-gated Unavailable section).
+
+**Commit `92a521c`, deployed to production 2026-07-11.** Preflight PASSED
+(contract 15/15, backend suite 781 passed + 4 known baseline in BOTH flag
+modes, full frontend vitest 69/69, tsc clean, production build clean, agent
+builds clean). Deploy: `git pull` on `/root` → backend+frontend rebuild with
+`-p techi-platform` → all containers healthy; **no schema step** (no DB
+change). Post-deploy: smoke 8/8 against `https://api-rdp.techi.com.al`;
+`GET /connect-status?device_ids=1` and
+`GET /devices/1/connect-methods?client_os=macos` both 401 (auth-gated, live,
+not 404/500); zero real errors in backend logs; heartbeats flowing normally.
+
+**Owner browser validation checklist** (AI cannot click through — same
+constraint as the previous two deploys): (1) MikroTik on macOS — Winbox
+visible under Desktop Applications, disabled "Windows only · Unavailable on
+macOS"; Embedded SSH shows "not enabled for this device" unless the device
+is in the FEATURE_TERMINAL scope (only #729 today); WebFig Ready/Credential
+required per Vault. (2) MikroTik on a Windows operator PC — Winbox Ready
+(with a winbox credential) and main-click launches `winbox://<ip>` or shows
+the launcher-not-installed note. (3) Device Catalog — Connect no longer
+opens the Drawer; arrow opens the categorized menu; main click follows the
+saved default. (4) Add a credential from the menu's "Add credential" link —
+row state and menu update without a refresh. (5) Windows rows — Remote
+Support click identical to before.
 
 ### Mësimet
 
