@@ -25,26 +25,35 @@ function formatDate(iso: string): string {
   return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type TabId = "msi" | "agent_binary" | "agent_update_msi";
+type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";
 
-const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string }[] = [
+const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string; fixedPlatform?: AgentPackagePlatform }[] = [
   {
     id: "msi",
-    label: "MSI Packages",
+    label: "Agent MSI",
     fileType: "msi",
-    hint: "Për GPO, instalim të ri dhe PC të reja. Përmban TECHI Remote Support + techi-agent.",
+    hint: "TECHI Agent-only MSI për first install dhe explicit repair. Nuk përmban TECHI Remote Support; normal Agent upgrades bëhen nga UI/self-update.",
   },
   {
     id: "agent_binary",
     label: "Agent Binary",
     fileType: "agent_binary",
     hint: "Vetëm techi-agent.exe. Përdoret nga komanda \"Përditëso Agjentin\" — nuk prek TECHI Remote Support.",
+    fixedPlatform: "windows-amd64",
   },
   {
     id: "agent_update_msi",
     label: "Update MSI (Bridge)",
     fileType: "agent_update_msi",
     hint: "Bridge MSI vetëm me agjentin (TECHI-Agent-Update-*.msi). Përdoret nga \"Përditëso Agjentin\" për agjentët legacy (< 2.1.1) — nuk prek TECHI Remote Support dhe nuk përdoret për GPO/bootstrap.",
+    fixedPlatform: "windows-amd64",
+  },
+  {
+    id: "remote_support_msi",
+    label: "Remote Support MSI",
+    fileType: "remote_support_msi",
+    hint: "TECHI Remote Support MSI i versionuar/deploy-uar veç nga Agent. Përdoret nga NETLOGON/GPO vetëm kur Remote Support mungon, kërkon repair, ose ka upgrade versioni.",
+    fixedPlatform: "windows-amd64",
   },
 ];
 
@@ -103,7 +112,7 @@ export default function AgentPackages() {
     try {
       setUploading(true);
       setError(null);
-      await uploadAgentPackage({ version: version.trim(), platform, file, file_type: currentTab.fileType });
+      await uploadAgentPackage({ version: version.trim(), platform: currentTab.fixedPlatform ?? platform, file, file_type: currentTab.fileType });
       setVersion("");
       setFile(null);
       await load();
@@ -227,7 +236,13 @@ export default function AgentPackages() {
           <div className="mb-3 flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-techi-orange" />
             <h2 className="text-sm font-semibold text-white">
-              {tab === "msi" ? "Upload MSI package" : tab === "agent_update_msi" ? "Upload Agent Update Bridge MSI" : "Upload Agent Binary (techi-agent.exe)"}
+              {tab === "msi"
+                ? "Upload Agent MSI"
+                : tab === "agent_update_msi"
+                  ? "Upload Agent Update Bridge MSI"
+                  : tab === "remote_support_msi"
+                    ? "Upload Remote Support MSI"
+                    : "Upload Agent Binary (techi-agent.exe)"}
             </h2>
           </div>
           <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
@@ -237,7 +252,11 @@ export default function AgentPackages() {
               placeholder="Version (e.g. 2.1.1)"
               className={INPUT_CLS}
             />
-            {tab === "msi" ? (
+            {currentTab.fixedPlatform ? (
+              <div className={`${INPUT_CLS} flex items-center text-slate-400`}>
+                {currentTab.fixedPlatform}
+              </div>
+            ) : (
               <select
                 value={platform}
                 onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
@@ -250,10 +269,6 @@ export default function AgentPackages() {
                   <option key={item} value={item}>{item}</option>
                 ))}
               </select>
-            ) : (
-              <div className={`${INPUT_CLS} flex items-center text-slate-400`}>
-                windows-amd64
-              </div>
             )}
             <input
               type="file"
@@ -311,7 +326,15 @@ export default function AgentPackages() {
               {visiblePackages.length === 0 && (
                 <tr>
                   <td colSpan={tab === "msi" ? 8 : 7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                    {loading ? "Loading..." : `No ${tab === "msi" ? "MSI packages" : tab === "agent_update_msi" ? "bridge MSI packages" : "agent binaries"} uploaded yet.`}
+                    {loading
+                      ? "Loading..."
+                      : `No ${tab === "msi"
+                        ? "Agent MSI packages"
+                        : tab === "agent_update_msi"
+                          ? "bridge MSI packages"
+                          : tab === "remote_support_msi"
+                            ? "Remote Support MSI packages"
+                            : "agent binaries"} uploaded yet.`}
                   </td>
                 </tr>
               )}
