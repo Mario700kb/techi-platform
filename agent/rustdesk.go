@@ -186,7 +186,7 @@ func localRustDeskIDFromCLI(installPath string) string {
 // when a spawned CLI probe (--get-id, --version) doesn't exit on its own --
 // cmd.Process.Kill() alone only terminates the single PID we spawned.
 func killProcessTree(pid int) {
-	_, _ = runWithTimeout(5*time.Second, "taskkill", "/F", "/T", "/PID", strconv.Itoa(pid))
+	_, _ = runWithTimeout(5*time.Second, windowsSystemExe("taskkill.exe"), "/F", "/T", "/PID", strconv.Itoa(pid))
 }
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
@@ -296,12 +296,12 @@ func rustDeskVersion(path string) string {
 
 func rustDeskWindowsStatus() string {
 	// Primary process: branded TECHI exe.
-	output, err := exec.Command("tasklist", "/FI", "IMAGENAME eq TECHI Remote Support.exe").Output()
+	output, err := exec.Command(windowsSystemExe("tasklist.exe"), "/FI", "IMAGENAME eq TECHI Remote Support.exe").Output()
 	if err == nil && strings.Contains(string(output), "TECHI Remote Support.exe") {
 		return "running"
 	}
 	// Fallback process: legacy upstream binary name.
-	output, err = exec.Command("tasklist", "/FI", "IMAGENAME eq rustdesk.exe").Output()
+	output, err = exec.Command(windowsSystemExe("tasklist.exe"), "/FI", "IMAGENAME eq rustdesk.exe").Output()
 	if err == nil && strings.Contains(strings.ToLower(string(output)), "rustdesk.exe") {
 		return "running"
 	}
@@ -325,6 +325,17 @@ func rustDeskWindowsStatus() string {
 		}
 	}
 	return "not_running"
+}
+
+func windowsSystemExe(name string) string {
+	if runtime.GOOS != "windows" {
+		return name
+	}
+	systemRoot := strings.TrimSpace(os.Getenv("SystemRoot"))
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+	return filepath.Join(systemRoot, "System32", name)
 }
 
 func readRustDeskFromKnownFiles() (id, encID string) {

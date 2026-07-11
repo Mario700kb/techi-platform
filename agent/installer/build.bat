@@ -20,7 +20,7 @@ if "%VERSION%"=="" (
     exit /b 1
 )
 set VERSION4=%VERSION%.0
-set OUTPUT=TECHI-Endpoint-Deployment-%VERSION%.msi
+set OUTPUT=TECHI-Agent-%VERSION%.msi
 for /f %%c in ('git -C "%~dp0.." rev-parse --short HEAD 2^>nul') do set BUILD_COMMIT=%%c
 if "%BUILD_COMMIT%"=="" set BUILD_COMMIT=local
 

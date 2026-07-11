@@ -16,7 +16,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 VERSION4="${VERSION}.0"
-OUTPUT="TECHI-Endpoint-Deployment-${VERSION}.msi"
+OUTPUT="TECHI-Agent-${VERSION}.msi"
 BUILD_COMMIT="$(git -C "$AGENT_DIR" rev-parse --short HEAD 2>/dev/null || echo local)"
 if ! git -C "$AGENT_DIR" diff --quiet 2>/dev/null || ! git -C "$AGENT_DIR" diff --cached --quiet 2>/dev/null; then
   BUILD_COMMIT="${BUILD_COMMIT}-dirty"

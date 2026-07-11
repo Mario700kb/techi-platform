@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but standalone/domain combined-MSI 2.1.8 canaries exposed start-ordering, helper-lifecycle, MSI registration-drift, marker-sequencing, and artifact-lineage defects; Windows packages remain pinned to the production-proven 2.1.6 fallback until the fixed 2.1.8 canary passes. |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 split-deployment hotfix** supersedes broken 2.1.7, but standalone/domain 2.1.8 canaries exposed Agent/Remote Support coupling, helper-lifecycle, MSI registration-drift, marker-sequencing, and artifact-lineage defects; Windows packages remain pinned to the production-proven 2.1.6 fallback until the fixed 2.1.8 canary passes. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -193,9 +193,10 @@ Windows devices enroll via **Enrollment / Deployment**:
 - The **Enrollment** page ("Enrollment Bootstrap") creates enrollment **tokens**
   (name, target Client/Group, max uses, expiry) and generates the deployment
   command/script.
-- Windows deployment runs through **AD GPO / NETLOGON**: the generated MSI +
-  `techi-deploy` bootstrap installs the combined MSI (agent + TECHI Remote
-  Support), which enrolls with the token.
+- Windows deployment runs through **AD GPO / NETLOGON**: the generated
+  `techi-deploy` bootstrap installs only the product that needs action:
+  TECHI Agent MSI for first install/explicit repair, and TECHI Remote Support
+  MSI through its own independent lifecycle/version file.
 - Tokens are shown once (copy immediately). Enrollment is audited.
 - After enrollment the device appears under its Client automatically.
 - **Default Group is optional.** A token carries a Client and an *optional* Default
@@ -226,35 +227,40 @@ Expansion flag is enabled (Windows is always shown):
 | **Hyper-V** | Planned | `FEATURE_HYPERVISOR` | placeholder |
 | **Proxmox** | Planned | `FEATURE_HYPERVISOR` | placeholder |
 
-The **Windows** block is byte-identical to the original dialog and its scripts are
-never modified. Placeholders reserve the UI only — no commands, no backend. Adding
-a future platform is metadata-only: register the platform + its deployment metadata
-entry + an icon; the dialog needs no rewrite.
+The **Windows** block remains the production deployment path; its scripts evolve
+only for installer safety/repair work. Placeholders reserve the UI only — no
+commands, no backend. Adding a future platform is metadata-only: register the
+platform + its deployment metadata entry + an icon; the dialog needs no rewrite.
 
 ---
 
 ## 9. Agent Installation (Windows)
 
-The **combined MSI** installs the Windows service `TechiAgent` (LocalSystem) and
-TECHI Remote Support. In the 2.1.8 candidate, the MSI finishes Remote Support
-file/config/tray mutations and finalizes Windows Installer product registration
-first. Installer marker state is created/removed by simple MSI file operations,
-not by launching `techi-agent.exe` before `InstallFiles`, so a stale installed
-Agent binary cannot become a long-running installer helper. The
-bootstrap/NETLOGON script starts `TechiAgent` only after `msiexec` returns, then
+The **TECHI Agent MSI** installs only the Windows service `TechiAgent`
+(LocalSystem) and Agent files/registry metadata. TECHI Remote Support is a
+separate MSI with its own ProductCode/UpgradeCode, version file, lock, verbose
+log, and package type. In the 2.1.8 canary path, the bootstrap/NETLOGON script
+writes/preserves `agent.config.json`, runs Agent MSI only for first install or
+explicit repair, and starts `TechiAgent` only after `msiexec` returns. It then
 requires a fresh `operational` lifecycle state from the current SCM service PID
-before deployment is considered healthy. Installer helper subcommands
-(`installer-marker create/remove`, `installer-start-service`,
-`installer-ensure-service`, `installer-health-check`, `rs-tray-task`, etc.) are
-utility-only: they must exit promptly and must never start the Agent runtime,
-send heartbeat, reconcile Remote Support, install watchdog state, or write
-`state=operational`. The agent then sends heartbeats, applies its config,
-self-updates from the UI, and self-heals Remote Support. **Do not reinstall the
-MSI manually** unless instructed — "the MSI installs once, everything else from
-the UI."
+before Agent deployment is considered healthy. A healthy running Agent whose EXE
+was upgraded by UI/self-update is **not** reinstalled merely because MSI ARP
+registration is older.
 
-For domain/NETLOGON installs, the MSI verbose log path is:
-`C:\ProgramData\TechiAgent\logs\msi-install-<active-version>.log`.
+Installer helper subcommands (`installer-marker create/remove`,
+`installer-start-service`, `installer-ensure-service`,
+`installer-health-check`, `rs-tray-task`, etc.) are utility-only: they must exit
+promptly and must never start the Agent runtime, send heartbeat, reconcile
+Remote Support, install watchdog state, or write `state=operational`. The Agent
+then sends heartbeats, applies its config, and self-updates from the UI.
+Remote Support install/update/repair is handled by the Remote Support MSI path,
+not by reinstalling the Agent MSI. **Do not reinstall the Agent MSI manually**
+unless instructed — "the Agent MSI installs once, normal Agent upgrades come
+from the UI/self-update path."
+
+For domain/NETLOGON installs, verbose logs are product-specific:
+`C:\ProgramData\TechiAgent\logs\msi-agent-<agent-version>.log` and
+`C:\ProgramData\TechiAgent\logs\msi-remote-support-<remote-version>.log`.
 If another TECHI MSI transaction is active, bootstrap reports
 `installer-busy-retryable` (including MSI exit `1618`) and does not launch a
 second uncontrolled install.
@@ -332,12 +338,15 @@ then appears automatically under Client ▸ Servers/Client PC ▸ Linux.
 
 **Packages** page manages agent packages (requires Deployment permission).
 
-- Windows: three package types — **MSI** (combined, for GPO/new PCs),
-  **Agent Binary** (`techi-agent.exe` for self-update), **Update MSI (bridge)**
-  (agent-only for legacy agents). Upload, set active, download, delete.
+- Windows: four package types — **Agent MSI** (first install / explicit repair),
+  **Agent Binary** (`techi-agent.exe` for UI/self-update), **Update MSI
+  (bridge)** (agent-only for legacy agents), and **Remote Support MSI**
+  (independently versioned/deployed RustDesk package). Upload, set active,
+  download, delete.
 - **SHA-alignment rule**: the "active" agent binary's SHA is what "Needs Agent
-  Update" compares against. Always upload the exe extracted from the active MSI
-  (Go builds are not reproducible). Do not rebuild MSIs without need.
+  Update" compares against. CI must prove the standalone Agent EXE is
+  byte-for-byte identical to the Agent EXE embedded in the Agent MSI. Do not
+  rebuild MSIs without need.
 - 🚩 **Linux tab** (`FEATURE_LINUX`): a Windows | Linux toggle; the Linux panel
   uploads/activates Linux agent binaries per architecture (`linux-amd64`,
   `linux-arm64`, `linux-armhf`). With the flag off, only the Windows packages UI
@@ -372,14 +381,15 @@ methods exist.
 
 ## 13. Remote Support (Windows)
 
-TECHI Remote Support is a branded RustDesk client, installed by the combined MSI
-and self-healed by the agent every heartbeat:
+TECHI Remote Support is a branded RustDesk client, installed/updated by the
+independent Remote Support MSI lifecycle and configured/observed by the Agent:
 - Click **Connect** on a Windows device → opens Remote Support to that device.
 - Per-device Remote Support **password** is server-generated, encrypted at rest,
   delivered to the agent each heartbeat (agents ≥ 2.1.5 apply it). Set/reset via
   Command Center or device actions (admin/owner).
-- The agent repairs install/config/service/password automatically; you rarely
-  need to intervene.
+- Remote Support package upgrades, for example `1.4.6` → `1.4.7`, are
+  independent from Agent upgrades. NETLOGON/GPO should run the Remote Support
+  MSI only when Remote Support requires install/update/repair.
 
 ---
 

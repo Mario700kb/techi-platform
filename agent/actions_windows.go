@@ -428,7 +428,7 @@ func getInstalledVersionByGUID(guid string) string {
 // runMSIInstall runs msiexec /i /qn /norestart and treats exit code 3010
 // (reboot required) as success rather than failure.
 func runMSIInstall(msiPath string) (rebootRequired bool, err error) {
-	cmd := exec.Command("msiexec", "/i", msiPath, "/qn", "/norestart")
+	cmd := exec.Command(system32ExePath("msiexec.exe"), "/i", msiPath, "/qn", "/norestart")
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

@@ -27,6 +27,78 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] HOTFIX: Agent 2.1.8 split deployment architecture and Remote Support independence
+
+### Problemi
+
+2.1.8 canary path still carried too much lifecycle coupling: the Agent MSI and
+TECHI Remote Support were packaged together, NETLOGON treated old Agent MSI ARP
+registration as an upgrade trigger even when the running Agent EXE was healthy,
+and several Windows helper/process invocations still depended on PATH/current
+directory lookup.
+
+### Analiza
+
+Real canary evidence showed the Agent service/heartbeat and Remote Support could
+work while Windows Installer registration remained stale or a helper/custom
+action path became unsafe. That meant the fix could not be "another hotfix MSI"
+with the same combined lifecycle: deployment needed product boundaries. Agent
+health has to come from SCM + lifecycle PID, Agent upgrades should normally come
+from the UI/self-update channel, and Remote Support version changes need their
+own package/version/log/lock.
+
+### Shkaku
+
+The combined MSI made one Windows Installer transaction responsible for both
+Agent and Remote Support state. That let Remote Support changes, Agent service
+start/validation, and MSI product registration interfere with each other. In
+addition, relative `sc`/`schtasks`/`msiexec`/`taskkill`/`tasklist` execution can
+fail on Windows with Go's "executable found relative to current directory"
+safety check or run the wrong binary if the process environment is hostile.
+
+### Zgjidhja
+
+Agent MSI is now Agent-only and contains no Remote Support payload/actions and
+no long-running Agent helper custom actions. Remote Support has its own MSI
+package type and download endpoint. The generated NETLOGON `techi-deploy.cmd`
+now decides per product: install/repair Agent only when Agent is missing or
+unhealthy, skip Agent MSI when a healthy self-updated Agent has newer EXE state
+than ARP, and install/update Remote Support through its independent MSI/version
+path. It also uses separate locks/logs and classifies MSI `1618` as retryable.
+Windows executable launches now use `%SystemRoot%\System32` paths.
+
+### Ndryshimet
+
+- `agent/installer/installer.wxs`
+- `agent/installer/remote-support.wxs`
+- `agent/installer/remote-support-helper.ps1`
+- `agent/actions_windows.go`
+- `agent/rustdesk.go`
+- `agent/rustdesk_manage.go`
+- `backend/app/api/v1/endpoints/agent_packages.py`
+- `backend/app/schemas/agent_package.py`
+- `backend/app/services/agent_package_service.py`
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `backend/tests/test_windows_installer_reliability.py`
+- `.github/workflows/build-agent-msi.yml`
+- `docs/PROJECT_STATE.md`
+- `docs/reference/OPERATOR-MANUAL.md`
+
+### Rezultati
+
+Focused regression tests and Windows cross-compile passed locally. CI builds
+separate Agent MSI and Remote Support MSI artifacts and validates byte-for-byte
+Agent EXE lineage by extracting the Agent MSI payload. No backend deploy, package
+activation, NETLOGON update, or rollout was performed by this change.
+
+### Mësimet
+
+Windows deployment needs product-level lifecycles. A healthy Agent runtime is
+not the same as MSI ARP freshness, and Remote Support versioning must not force
+Agent MSI reinstall. Installer custom actions should avoid launching long-lived
+application binaries; post-MSI orchestration is safer and easier to diagnose.
+
 ## [2026-07-11] HOTFIX: Agent 2.1.8 canary packaging lineage and installer marker sequencing
 
 ### Problemi

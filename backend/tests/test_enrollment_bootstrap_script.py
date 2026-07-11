@@ -322,7 +322,8 @@ class TestRustDeskForceMigrationScript:
         # orphan from before the Scheduled-Task model -- delete it, don't
         # restart it back into the broken Session 0 state.
         assert "Removing orphaned TECHI Remote Support service registration" in self.script
-        assert "Start-Process -FilePath 'sc.exe' -ArgumentList @('delete', $ServiceName)" in self.script
+        assert "$ScPath = Join-Path $env:SystemRoot 'System32\\sc.exe'" in self.script
+        assert "Start-Process -FilePath $ScPath -ArgumentList @('delete', $ServiceName)" in self.script
 
     def test_sets_unattended_password_by_writing_identity_toml(self):
         # --password (CLI/IPC) silently no-ops when no daemon is running --
@@ -709,7 +710,7 @@ class TestGPOScheduledDeployScript:
         # Gjej CMD content (brenda here-string)
         cmd_start = self.script.index("@echo off")
         # Shiko CMD content para PS1 step 4b
-        step4b_start = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        step4b_start = self.script.index("Hapi 4b: Shkarkimi i Agent/Remote Support MSI")
         cmd_section = self.script[cmd_start:step4b_start]
 
         assert "curl.exe" not in cmd_section
@@ -727,8 +728,9 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_installs_from_netlogon_lan_path(self):
         """CMD instalom MSI nga \\DOMAIN\\NETLOGON\\ (LAN), jo nga URL interneti."""
-        assert "set NETLOGON_MSI=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ACTIVE_VERSION%.msi" in self.script
-        assert 'msiexec /i "%NETLOGON_MSI%"' in self.script
+        assert "set NETLOGON_AGENT_MSI=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ACTIVE_VERSION%.msi" in self.script
+        assert '"%MSIEXEC%" /i "%NETLOGON_AGENT_MSI%"' in self.script
+        assert "set NETLOGON_REMOTE_MSI=\\\\%DOMAIN%\\NETLOGON\\TECHI-Remote-Support-%REMOTE_SUPPORT_VERSION%.msi" in self.script
         # Versioni fallback i baked-in i gjenerimit
         assert "if not defined ACTIVE_VERSION set ACTIVE_VERSION=2.1.0" in self.script
 
@@ -766,9 +768,9 @@ class TestGPOScheduledDeployScript:
         do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[do_install_pos:already_pos]
-        assert 'msiexec /i "%NETLOGON_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
-        assert "installing_product_version=%ACTIVE_VERSION%" in section
-        assert 'msiexec /i "%NETLOGON_MSI%" TOKEN=%TOKEN%' not in self.script
+        assert '"%MSIEXEC%" /i "%NETLOGON_AGENT_MSI%" ENROLLMENT_TOKEN=%TOKEN% API_URL=%BACKEND_URL% /quiet /norestart' in section
+        assert "installing_agent_version=%ACTIVE_VERSION%" in section
+        assert 'msiexec /i "%NETLOGON_AGENT_MSI%" TOKEN=%TOKEN%' not in self.script
         assert "REINSTALL=ALL" not in self.script
         assert "REINSTALLMODE=vomus" not in self.script
 
@@ -776,29 +778,39 @@ class TestGPOScheduledDeployScript:
         """NETLOGON installs must always leave an MSI verbose log with the last action."""
         assert "set LOG_DIR=%INSTALL_DIR%\\logs" in self.script
         assert "if not exist \"%LOG_DIR%\" md \"%LOG_DIR%\" 2>nul" in self.script
-        assert "set MSI_LOG=%LOG_DIR%\\msi-install-%ACTIVE_VERSION%.log" in self.script
-        assert "/l*v \"%MSI_LOG%\"" in self.script
-        assert "msi_log=%MSI_LOG%" in self.script
+        assert "set AGENT_MSI_LOG=%LOG_DIR%\\msi-agent-%ACTIVE_VERSION%.log" in self.script
+        assert "set REMOTE_MSI_LOG=%LOG_DIR%\\msi-remote-support-%REMOTE_SUPPORT_VERSION%.log" in self.script
+        assert "/L*v \"%AGENT_MSI_LOG%\"" in self.script
+        assert "/L*v \"%REMOTE_MSI_LOG%\"" in self.script
+        assert "msi_log=%AGENT_MSI_LOG%" in self.script
+        assert "msi_log=%REMOTE_MSI_LOG%" in self.script
 
     def test_deploy_cmd_prevents_parallel_techi_msi_transactions(self):
         """A second scheduled run must not launch msiexec while a TECHI MSI is active."""
         do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
-        msiexec_pos = self.script.index('msiexec /i "%NETLOGON_MSI%"')
-        acquire_pos = self.script.index("call :acquire_install_lock", do_install_pos)
+        msiexec_pos = self.script.index('"%MSIEXEC%" /i "%NETLOGON_AGENT_MSI%"')
+        acquire_pos = self.script.index("call :acquire_agent_install_lock", do_install_pos)
         assert acquire_pos < msiexec_pos
-        assert ":detect_active_techi_msi" in self.script
+        assert ":detect_active_agent_msi" in self.script
+        assert ":detect_active_remote_msi" in self.script
         assert "Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\"" in self.script
         assert "TECHI-Agent-" in self.script
-        assert "result=installer-busy-retryable reason=active-techi-msiexec" in self.script
-        assert "set INSTALL_LOCK=%INSTALL_DIR%\\install.lock" in self.script
-        assert "call :release_install_lock" in self.script
+        assert "TECHI-Remote-Support-" in self.script
+        assert "result=installer_busy_retryable product=agent reason=active-techi-msiexec" in self.script
+        assert "result=installer_busy_retryable product=remote_support reason=active-techi-msiexec" in self.script
+        assert "set AGENT_INSTALL_LOCK=%LOCK_DIR%\\agent-install.lock" in self.script
+        assert "set REMOTE_INSTALL_LOCK=%LOCK_DIR%\\remote-support-install.lock" in self.script
+        assert "call :release_agent_install_lock" in self.script
+        assert "call :release_remote_install_lock" in self.script
 
     def test_deploy_cmd_classifies_1618_as_retryable_installer_busy(self):
         """MSI 1618 is installer-busy/retryable, not a generic failed install."""
-        assert 'if "%MSI_EXIT%"=="1618" (' in self.script
-        assert "result=installer-busy-retryable active_version=%ACTIVE_VERSION% msi_exit_code=1618" in self.script
-        busy_pos = self.script.index('if "%MSI_EXIT%"=="1618" (')
-        generic_fail_pos = self.script.index('if not "%MSI_EXIT%"=="0" if not "%MSI_EXIT%"=="3010" goto :install_failed')
+        assert 'if "%AGENT_MSI_EXIT%"=="1618" (' in self.script
+        assert 'if "%REMOTE_MSI_EXIT%"=="1618" (' in self.script
+        assert "result=installer_busy_retryable product=agent active_version=%ACTIVE_VERSION% msi_exit_code=1618" in self.script
+        assert "result=installer_busy_retryable product=remote_support active_version=%REMOTE_SUPPORT_VERSION% msi_exit_code=1618" in self.script
+        busy_pos = self.script.index('if "%AGENT_MSI_EXIT%"=="1618" (')
+        generic_fail_pos = self.script.index('if not "%AGENT_MSI_EXIT%"=="0" if not "%AGENT_MSI_EXIT%"=="3010" goto :install_failed')
         assert busy_pos < generic_fail_pos
 
     def test_deploy_cmd_classifies_unknown_partial_install_states(self):
@@ -834,8 +846,10 @@ class TestGPOScheduledDeployScript:
         assert "installed_registry_version=%REG_VERSION%" in self.script
         assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
         assert "active_version=%ACTIVE_VERSION% source=%VERSION_SOURCE%" in self.script
-        assert "msi_path=%NETLOGON_MSI%" in self.script
-        assert "msi_exit_code=%MSI_EXIT%" in self.script
+        assert "agent_msi_path=%NETLOGON_AGENT_MSI%" in self.script
+        assert "remote_msi_path=%NETLOGON_REMOTE_MSI%" in self.script
+        assert "agent_msi_exit_code=%AGENT_MSI_EXIT%" in self.script
+        assert "remote_msi_exit_code=%REMOTE_MSI_EXIT%" in self.script
         assert "service_before=%SERVICE_STATUS_BEFORE%" in self.script
         assert 'if "%SERVICE_STATUS_BEFORE%"=="4" set SERVICE_STATUS_BEFORE=RUNNING' in self.script
         assert "registry_version_after_install=%REG_VERSION%" in self.script
@@ -859,7 +873,7 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_already_uptodate_starts_service_if_stopped(self):
         """:already_uptodate kontrollon nëse shërbimi ecën, nëse jo e starton."""
-        assert 'sc query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
+        assert '"%SC%" query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[already_pos:]
         assert "call :ensure_service_running" in section
@@ -911,9 +925,9 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
         """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""
         assert ":ensure_service_running" in self.script
-        assert 'sc query TechiAgent >nul 2>&1' in self.script
+        assert '"%SC%" query TechiAgent >nul 2>&1' in self.script
         assert 'if exist "%AGENT_EXE%" (' in self.script
-        assert 'sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
+        assert '"%SC%" create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
         assert 'net start TechiAgent 2>nul' in self.script
 
     def test_deploy_cmd_success_requires_registry_version_and_running_service(self):
@@ -932,15 +946,16 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_manual_replace_lan_creates_service_if_missing(self):
         """Legacy test name: deploy krijon service me sc.exe nëse nuk ekziston."""
-        assert 'sc query TechiAgent >nul 2>&1' in self.script
-        assert 'sc.exe create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
-        assert 'sc.exe description TechiAgent "TECHI Solutions endpoint monitoring and management service"' in self.script
-        assert 'sc.exe failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000' in self.script
+        assert '"%SC%" query TechiAgent >nul 2>&1' in self.script
+        assert '"%SC%" create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
+        assert '"%SC%" description TechiAgent "TECHI Solutions endpoint monitoring and management service"' in self.script
+        assert '"%SC%" failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000' in self.script
 
     def test_deploy_cmd_install_failed_logs_1603_and_exits_1(self):
         """:install_failed regjistron detaje dhe del me exit /b 1."""
         assert "result=failed active_version=%ACTIVE_VERSION%" in self.script
-        assert "msi_exit_code=%MSI_EXIT%" in self.script
+        assert "agent_msi_exit_code=%AGENT_MSI_EXIT%" in self.script
+        assert "remote_msi_exit_code=%REMOTE_MSI_EXIT%" in self.script
         assert "exit /b 1" in self.script
 
     def test_deploy_cmd_done_label_before_already_uptodate(self):
@@ -952,18 +967,22 @@ class TestGPOScheduledDeployScript:
     # ── PS1-level Step 4b: MSI download te NETLOGON ───────────────────────────
 
     def test_ps1_has_backend_url_and_msi_download_url_variables(self):
-        """PS1 ka $BackendUrl dhe $MsiDownloadUrl para hapi 1."""
+        """PS1 ka $BackendUrl dhe download URL të ndara para hapi 1."""
         backend_var = self.script.index("$BackendUrl    = 'https://api-rdp.techi.com.al'")
-        msi_var = self.script.index("$MsiDownloadUrl = 'https://api-rdp.techi.com.al/api/v1/agent-packages/platform/windows-amd64/download'")
+        msi_var = self.script.index("$AgentMsiDownloadUrl = 'https://api-rdp.techi.com.al/api/v1/agent-packages/platform/windows-amd64/download'")
+        rs_var = self.script.index("$RemoteSupportMsiDownloadUrl = 'https://api-rdp.techi.com.al/api/v1/agent-packages/remote-support-msi/download'")
         hapi1 = self.script.index("Hapi 1: Importimi i moduleve")
         assert backend_var < hapi1
         assert msi_var < hapi1
+        assert rs_var < hapi1
 
     def test_ps1_step4b_downloads_msi_to_netlogon(self):
-        """PS1 Hapi 4b shkarkon MSI tek NETLOGON."""
-        assert "Hapi 4b: Shkarkimi i MSI ne NETLOGON" in self.script
-        assert "$MsiNetlogonPath = Join-Path $NetlogonPath" in self.script
-        assert "(New-Object Net.WebClient).DownloadFile($MsiDownloadUrl, $TmpMsi)" in self.script
+        """PS1 Hapi 4b shkarkon Agent dhe Remote Support MSI tek NETLOGON."""
+        assert "Hapi 4b: Shkarkimi i Agent/Remote Support MSI ne NETLOGON" in self.script
+        assert "$AgentMsiNetlogonPath  = Join-Path $NetlogonPath" in self.script
+        assert "$RemoteMsiNetlogonPath = Join-Path $NetlogonPath" in self.script
+        assert "Refresh-NetlogonArtifact -Url $AgentMsiDownloadUrl" in self.script
+        assert "Refresh-NetlogonArtifact -Url $RemoteSupportMsiDownloadUrl" in self.script
 
     def test_ps1_step4b_has_retry_loop(self):
         """PS1 Hapi 4b ka retry loop me 3 tentativa."""
@@ -974,20 +993,22 @@ class TestGPOScheduledDeployScript:
 
     def test_ps1_step4b_uses_tls12_for_msi_download(self):
         """PS1 Hapi 4b aktivizon TLS 1.2 para download."""
-        step4b = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        step4b = self.script.index("Hapi 4b: Shkarkimi i Agent/Remote Support MSI")
         section = self.script[step4b:]
         assert "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12" in section
 
     def test_ps1_step4b_writes_version_file(self):
         """PS1 Hapi 4b shkruan techi-version.txt pas download."""
-        assert "$VersionFilePath = Join-Path $NetlogonPath" in self.script
+        assert "$VersionFilePath       = Join-Path $NetlogonPath" in self.script
+        assert "$RemoteVersionFilePath = Join-Path $NetlogonPath" in self.script
         assert "Out-File $VersionFilePath -Encoding ASCII -NoNewline" in self.script
+        assert "Out-File $RemoteVersionFilePath -Encoding ASCII -NoNewline" in self.script
 
     def test_ps1_step4b_compares_hash_not_just_version_string(self):
         """PS1 Hapi 4b krahason SHA256, jo vetem version string -- nje fix qe ne te
         kundert do te linte NETLOGON me build te vjeter sa here qe nxjerrim nje
         ndryshim pa rritur ProductVersion (incident real: metropolgroup.local)."""
-        assert "$ExistingHash = (Get-FileHash $MsiNetlogonPath -Algorithm SHA256).Hash.ToLower()" in self.script
+        assert "$ExistingHash = (Get-FileHash $Destination -Algorithm SHA256).Hash.ToLower()" in self.script
         assert "$DownloadedHash = (Get-FileHash $TmpMsi -Algorithm SHA256).Hash.ToLower()" in self.script
         assert "if ($DownloadedHash -ne $ExistingHash) {" in self.script
         assert "ne NETLOGON eshte tashme i azhornuar (hash identik) -- skip copy" in self.script
@@ -995,14 +1016,14 @@ class TestGPOScheduledDeployScript:
 
     def test_ps1_step4b_cleans_old_msi_versions(self):
         """PS1 Hapi 4b fshin versione të vjetra MSI para download."""
-        assert "Get-ChildItem $NetlogonPath -Filter 'TECHI-Agent-*.msi'" in self.script
-        assert "Remove-Item -Force -ErrorAction SilentlyContinue" in self.script
+        assert "Refresh-NetlogonArtifact" in self.script
+        assert "Copy-Item $TmpMsi $Destination -Force" in self.script
 
     def test_ps1_step4b_displays_sha256(self):
         """PS1 Hapi 4b shfaq SHA256 hash të MSI-t të shkarkuar dhe verifikon kopjen."""
-        assert "Get-FileHash $MsiNetlogonPath -Algorithm SHA256" in self.script
-        assert 'Write-Host "   MSI shkarkuar, SHA256: $DownloadedHash"' in self.script
-        assert "$CopiedHash = (Get-FileHash $MsiNetlogonPath -Algorithm SHA256).Hash.ToLower()" in self.script
+        assert "Get-FileHash $Destination -Algorithm SHA256" in self.script
+        assert 'Write-Host "   $Label shkarkuar, SHA256: $DownloadedHash"' in self.script
+        assert "$CopiedHash = (Get-FileHash $Destination -Algorithm SHA256).Hash.ToLower()" in self.script
 
     # ── PS1-level: Test-Path verifikime post-write ────────────────────────────
 
@@ -1011,7 +1032,7 @@ class TestGPOScheduledDeployScript:
         write_pos = self.script.index(
             "[System.IO.File]::WriteAllText($DeployScriptPath, $DeployContent"
         )
-        step4b_pos = self.script.index("Hapi 4b: Shkarkimi i MSI")
+        step4b_pos = self.script.index("Hapi 4b: Shkarkimi i Agent/Remote Support MSI")
         section = self.script[write_pos:step4b_pos]
         assert "Test-Path $DeployScriptPath" in section
         assert "GABIM KRITIK" in section
@@ -1019,11 +1040,11 @@ class TestGPOScheduledDeployScript:
     def test_ps1_has_test_path_after_msi_download(self):
         """PS1 verifikon se MSI u shkarkua dhe se kopja ne NETLOGON ka te njejtin hash."""
         assert "-not $downloaded -or -not (Test-Path $TmpMsi)" in self.script
-        assert "GABIM KRITIK: hash i NETLOGON" in self.script
+        assert "GABIM KRITIK: hash i NETLOGON per $Label" in self.script
 
     def test_ps1_has_test_path_after_version_file_write(self):
         """PS1 verifikon me Test-Path se techi-version.txt u shkrua."""
-        assert "GABIM KRITIK: techi-version.txt nuk u shkrua" in self.script
+        assert "GABIM KRITIK: version marker files nuk u shkruan ne NETLOGON" in self.script
 
     def test_ps1_has_test_path_after_task_xml_write(self):
         """PS1 verifikon me Test-Path se ScheduledTasks.xml u shkrua."""
@@ -1181,17 +1202,17 @@ class TestPyToPsLiteral:
         assert self.svc._py_to_ps_literal("it's") == "'it''s'"
 
 
-class TestWindowsPackageInfoSelectsCombinedMsi:
-    """Regression: with both the combined bootstrap MSI (file_type=msi) and a
+class TestWindowsPackageInfoSelectsAgentMsi:
+    """Regression: with both the Agent bootstrap MSI (file_type=msi) and a
     bridge MSI (agent_update_msi) active for windows-amd64, the bootstrap
-    installer must embed the SHA of the combined MSI — the one
+    installer must embed the SHA of the Agent MSI — the one
     /platform/windows-amd64/download actually serves. Otherwise the physical
     install fails with 'SHA256 mismatch' (2026-07-03)."""
 
-    def _patch_pkg_service(self, monkeypatch, *, combined_sha, bridge_sha):
+    def _patch_pkg_service(self, monkeypatch, *, agent_msi_sha, bridge_sha):
         from app.services import enrollment_bootstrap_service as mod
 
-        combined = SimpleNamespace(version="2.1.3", sha256=combined_sha, filename="TECHI-Endpoint-Deployment-2.1.3.msi")
+        agent_msi = SimpleNamespace(version="2.1.3", sha256=agent_msi_sha, filename="TECHI-Agent-2.1.3.msi")
         bridge = SimpleNamespace(version="2.1.3", sha256=bridge_sha, filename="TECHI-Agent-Update-2.1.3.msi")
 
         class FakePkgService:
@@ -1200,7 +1221,7 @@ class TestWindowsPackageInfoSelectsCombinedMsi:
                 # No filter would return the bridge (uploaded last); the code
                 # under test must always pass file_type="msi" here.
                 if file_type == "msi":
-                    return combined
+                    return agent_msi
                 if file_type == "agent_update_msi":
                     return bridge
                 return bridge
@@ -1210,15 +1231,15 @@ class TestWindowsPackageInfoSelectsCombinedMsi:
 
         monkeypatch.setattr(mod, "AgentPackageService", FakePkgService)
 
-    def test_windows_package_info_uses_combined_msi_sha(self, monkeypatch):
-        self._patch_pkg_service(monkeypatch, combined_sha="c" * 64, bridge_sha="b" * 64)
+    def test_windows_package_info_uses_agent_msi_sha(self, monkeypatch):
+        self._patch_pkg_service(monkeypatch, agent_msi_sha="c" * 64, bridge_sha="b" * 64)
         svc = EnrollmentBootstrapService(db=None)
         url, sha256, filename = svc._windows_package_info("https://api-rdp.techi.com.al")
         assert sha256 == "c" * 64
-        assert filename == "TECHI-Endpoint-Deployment-2.1.3.msi"
+        assert filename == "TECHI-Agent-2.1.3.msi"
         assert url.endswith("/platform/windows-amd64/download")
 
-    def test_active_windows_version_uses_combined_msi(self, monkeypatch):
-        self._patch_pkg_service(monkeypatch, combined_sha="c" * 64, bridge_sha="b" * 64)
+    def test_active_windows_version_uses_agent_msi(self, monkeypatch):
+        self._patch_pkg_service(monkeypatch, agent_msi_sha="c" * 64, bridge_sha="b" * 64)
         svc = EnrollmentBootstrapService(db=None)
         assert svc._active_windows_version() == "2.1.3"

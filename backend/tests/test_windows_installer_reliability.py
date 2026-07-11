@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WXS = (ROOT / "agent/installer/installer.wxs").read_text(encoding="utf-8")
+REMOTE_WXS = (ROOT / "agent/installer/remote-support.wxs").read_text(encoding="utf-8")
+REMOTE_HELPER = (ROOT / "agent/installer/remote-support-helper.ps1").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "agent/techi-agent.manifest").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "backend/app/services/enrollment_bootstrap_service.py").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/build-agent-msi.yml").read_text(encoding="utf-8")
@@ -30,7 +32,7 @@ def test_operational_health_helper_exists_but_is_not_inside_msi_transaction():
     assert '<Custom Action="StartTechiAgentService"' not in WXS
 
 
-def test_combined_msi_does_not_use_standard_startservices_for_agent():
+def test_agent_msi_does_not_use_standard_startservices_for_agent():
     assert '<ServiceControl Id="StartTechiAgent"' not in WXS
     start = WXS.index('<ServiceControl Id="StopRemoveTechiAgent"')
     block = WXS[start:WXS.index('/>', start) + 2]
@@ -40,33 +42,45 @@ def test_combined_msi_does_not_use_standard_startservices_for_agent():
     assert 'installer-start-service' not in WXS
 
 
-def test_remote_support_mutations_complete_before_msi_finalize_without_agent_start():
-    order = [
-        '<Custom Action="EnsureServiceCreated"',
-        '<Custom Action="WriteTechiConfigs"',
-        '<Custom Action="ApplyTechiRemoteSupportConfigFinal"',
-        '<Custom Action="CreateRustDeskTrayTask"',
-        '<Custom Action="ClearInstallerActive"',
+def test_agent_msi_contains_no_remote_support_payload_or_actions():
+    forbidden = [
+        "TECHI Remote Support.exe",
+        "RemoteSupportComponents",
+        "StopTechiRemoteSupport",
+        "KillTechiRSBeforeInstall",
+        "RollbackRestartTechiRS",
+        "CreateRustDeskTrayTask",
+        "WriteTechiConfigs",
+        "ApplyTechiRemoteSupportConfigFinal",
+        "RemoteSupportDesktopShortcut",
+        "techiremotesupport",
+        "REMOTE_SERVER",
+        "REMOTE_RELAY",
+        "REMOTE_KEY",
     ]
-    positions = [WXS.index(token) for token in order]
-    assert positions == sorted(positions)
-    assert '<Custom Action="StartTechiAgentService"' not in WXS
-    assert '<Custom Action="ValidateAgentOperational"' not in WXS
+    for token in forbidden:
+        assert token not in WXS
 
 
-def test_installer_marker_defers_runtime_rustdesk_reconciliation():
+def test_agent_msi_contains_no_agent_helper_custom_actions():
     agent_source = (ROOT / "agent/rustdesk_manage.go").read_text(encoding="utf-8")
     bootstrap_source = (ROOT / "agent/bootstrap_windows.go").read_text(encoding="utf-8")
-    assert 'installer-marker create' not in WXS
-    assert 'installer-marker remove' not in WXS
-    assert '[INSTALLFOLDER]techi-agent.exe&quot; installer-marker' not in WXS
-    assert 'RollbackClearInstallerActive' in WXS
-    for action in ("SetInstallerActive", "ClearInstallerActive"):
-        start = WXS.index(f'<CustomAction Id="{action}"')
-        block = WXS[start:WXS.index('/>', start) + 2]
-        assert 'Return="check"' in block
-        assert 'cmd.exe /d /c' in block
-        assert 'installer.active' in block
+    forbidden = [
+        "SetInstallerActive",
+        "ClearInstallerActive",
+        "RollbackClearInstallerActive",
+        "EnsureServiceCreated",
+        "installer-ensure-service",
+        "StartTechiAgentService",
+        "installer-start-service",
+        "ValidateAgentOperational",
+        "installer-health-check",
+        "installer-marker",
+        "bootstrap-config",
+        "[INSTALLFOLDER]techi-agent.exe&quot;",
+    ]
+    for token in forbidden:
+        assert token not in WXS
     assert 'installerTransactionActive()' in agent_source
     assert 'installer.active' in bootstrap_source
 
@@ -125,17 +139,11 @@ def test_ci_validates_standalone_and_msi_embedded_agent_lineage():
     assert '$buildCommit = "${{ github.sha }}"' in WORKFLOW
 
 
-def test_tray_task_is_auxiliary_and_nonfatal():
-    start = WXS.index('<CustomAction Id="CreateRustDeskTrayTask"')
-    block = WXS[start:WXS.index('/>', start) + 2]
-    assert 'Return="ignore"' in block
-
-
-def test_msi_has_no_embedded_fleet_password_and_hides_secret_targets():
+def test_agent_msi_has_no_embedded_remote_support_or_fleet_password():
     assert 'Value="Durres.12"' not in WXS
-    for prop in ("ENROLLMENT_TOKEN", "REMOTE_PASSWORD", "REMOTE_KEY"):
-        assert f'<Property Id="{prop}"' in WXS
-    assert WXS.count('HideTarget="yes"') >= 5
+    assert '<Property Id="ENROLLMENT_TOKEN"' in WXS
+    assert "REMOTE_PASSWORD" not in WXS
+    assert "REMOTE_KEY" not in WXS
     # WiX emits MsiHiddenProperties from Hidden="yes" properties and rejects
     # direct authoring of that reserved MSI property (WIX0070).
     assert '<Property Id="MsiHiddenProperties"' not in WXS
@@ -152,6 +160,54 @@ def test_bootstraps_require_fresh_live_operational_state():
     assert "set VERSION_STATE=registry_only" in BOOTSTRAP
     assert "set VERSION_STATE=service_only" in BOOTSTRAP
     assert "installed_binary_version=%BINARY_VERSION%" in BOOTSTRAP
+
+
+def test_remote_support_msi_contains_no_agent_payload_or_actions():
+    forbidden = [
+        "techi-agent.exe",
+        "TechiAgent",
+        "agent.config.json",
+        "agent.state.json",
+        "ENROLLMENT_TOKEN",
+        "bootstrap-config",
+        "installer-health-check",
+    ]
+    for token in forbidden:
+        assert token not in REMOTE_WXS
+    assert "TECHI Remote Support" in REMOTE_WXS
+    assert "REMOTE_KEY" in REMOTE_WXS
+    assert "BuildCommit" in REMOTE_WXS
+
+
+def test_remote_support_msi_and_helper_use_absolute_windows_tools():
+    assert "&quot;[SystemFolder]WindowsPowerShell\\v1.0\\powershell.exe&quot;" in REMOTE_WXS
+    assert "Start-Process -FilePath 'sc.exe'" not in REMOTE_WXS
+    assert "Start-Process -FilePath 'taskkill.exe'" not in REMOTE_WXS
+    assert "system32 = Join-Path $env:SystemRoot 'System32'" in REMOTE_HELPER
+    assert "$scExe = Join-Path $system32 'sc.exe'" in REMOTE_HELPER
+    assert "$schtasksExe = Join-Path $system32 'schtasks.exe'" in REMOTE_HELPER
+    assert "$taskkillExe = Join-Path $system32 'taskkill.exe'" in REMOTE_HELPER
+
+
+def test_deploy_orchestrator_splits_agent_and_remote_support_lifecycles():
+    required = [
+        "AGENT_INSTALL_LOCK=%LOCK_DIR%\\\\agent-install.lock",
+        "REMOTE_INSTALL_LOCK=%LOCK_DIR%\\\\remote-support-install.lock",
+        "msi-agent-%ACTIVE_VERSION%.log",
+        "msi-remote-support-%REMOTE_SUPPORT_VERSION%.log",
+        "TECHI-Agent-%ACTIVE_VERSION%.msi",
+        "TECHI-Remote-Support-%REMOTE_SUPPORT_VERSION%.msi",
+        "remote_healthy",
+        "remote_missing",
+        "remote_outdated",
+        "remote_service_missing",
+        "remote_needs_repair",
+        "managed_by_self_update",
+        "installer_busy_retryable product=agent",
+        "installer_busy_retryable product=remote_support",
+    ]
+    for token in required:
+        assert token in BOOTSTRAP
 
 
 def test_known_production_msi_identity_map_is_locked():

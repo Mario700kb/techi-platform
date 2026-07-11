@@ -9,6 +9,9 @@
 <?ifndef Version?>
 <?define Version="1.4.6.0"?>
 <?endif?>
+<?ifndef BuildCommit?>
+<?define BuildCommit="dev"?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="TECHI Remote Support"
            Version="$(var.Version)"
@@ -16,11 +19,14 @@
            UpgradeCode="60D9FA89-6F6C-5C7C-A74E-027363D83921"
            Scope="perMachine">
 
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of TECHI Remote Support is already installed."
+                  Schedule="afterInstallExecute"/>
     <MediaTemplate EmbedCab="yes"/>
     <Property Id="ARPCOMMENTS" Value="TECHI Remote Support remote access client"/>
     <Property Id="REMOTE_SERVER"   Value="139.162.158.208"/>
     <Property Id="REMOTE_RELAY"    Value="139.162.158.208"/>
-    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes"/>
+    <Property Id="REMOTE_KEY"      Value="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=" Secure="yes" Hidden="yes"/>
     <Property Id="API_URL"         Value="https://api-rdp.techi.com.al" Secure="yes"/>
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -67,6 +73,11 @@
                      Type="integer"
                      Value="1"
                      KeyPath="yes"/>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\TECHI\RemoteSupport"
+                     Name="BuildCommit"
+                     Type="string"
+                     Value="$(var.BuildCommit)"/>
     </Component>
 
     <Component Id="RemoteSupportHelper" Guid="3DE842C5-0D44-4ED8-8C11-5DBCA265462A"
@@ -101,28 +112,28 @@
 
     <CustomAction Id="ConfigureRemoteSupportRuntime"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REMOTESUPPORTFOLDER]remote-support-helper.ps1&quot; -ExePath &quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot;"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REMOTESUPPORTFOLDER]remote-support-helper.ps1&quot; -ExePath &quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeInstall"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeRemove"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
     <CustomAction Id="RemoveRemoteSupportRuntime"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; Start-Process -FilePath 'sc.exe' -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

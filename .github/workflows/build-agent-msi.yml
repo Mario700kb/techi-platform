@@ -135,7 +135,7 @@ jobs:
             -d SourceDir=. `
             -d Version=${{ steps.version.outputs.version4 }} `
             -d BuildCommit=$buildCommit `
-            -o TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
+            -o TECHI-Agent-${{ steps.version.outputs.version }}.msi
 
       - name: Build Agent Update Bridge MSI
         shell: pwsh
@@ -154,14 +154,16 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
+          $buildCommit = "${{ github.sha }}"
           wix build remote-support.wxs `
             -arch x64 `
             -d SourceDir=. `
             -d Version=1.4.6.0 `
+            -d BuildCommit=$buildCommit `
             -o TECHI-Remote-Support-1.4.6.msi
 
-      # Standalone techi-agent.exe — the SAME binary embedded in the combined
-      # MSI (built once at step 7). Upload it as the Agent Binary package so a
+      # Standalone techi-agent.exe — the SAME binary embedded in the Agent MSI
+      # (built once at step 7). Upload it as the Agent Binary package so a
       # device installed via MSI and a device that ran self_update report the
       # identical SHA256 and both show green in "Needs Agent Update".
       - name: Package standalone agent binary
@@ -180,7 +182,7 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $msi = "TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi"
+          $msi = "TECHI-Agent-${{ steps.version.outputs.version }}.msi"
           $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
           "$hash  $msi" | Out-File "$msi.sha256" -Encoding utf8NoBOM
           Write-Host "SHA256: $hash"
@@ -202,13 +204,14 @@ jobs:
         working-directory: agent/installer
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          $msi = "TECHI-Endpoint-Deployment-$v.msi"
+          $msi = "TECHI-Agent-$v.msi"
           $standalone = "techi-agent-$v.exe"
-          $extract = Join-Path $env:RUNNER_TEMP "techi-endpoint-msi-extract"
+          $extract = Join-Path $env:RUNNER_TEMP "techi-agent-msi-extract"
           Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $extract | Out-Null
 
-          $admin = Start-Process msiexec.exe -ArgumentList @('/a', (Resolve-Path $msi), '/qn', "TARGETDIR=$extract") -Wait -PassThru
+          $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+          $admin = Start-Process -FilePath $msiexec -ArgumentList @('/a', (Resolve-Path $msi), '/qn', "TARGETDIR=$extract") -Wait -PassThru
           if ($admin.ExitCode -ne 0) {
             throw "Administrative MSI extraction failed with exit code $($admin.ExitCode)"
           }
@@ -261,8 +264,40 @@ jobs:
             msi_package_code = $summary.Property(9)
             msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
           }
-          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Endpoint-Deployment-$v.identity.json" -Encoding utf8NoBOM
+          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Agent-$v.identity.json" -Encoding utf8NoBOM
           Write-Host "MSI embedded agent matches standalone: $embeddedHash"
+
+      - name: Generate Remote Support MSI identity
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          $msi = "TECHI-Remote-Support-1.4.6.msi"
+          $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
+          function Read-MsiValue([string]$sql) {
+            $view = $db.OpenView($sql)
+            $view.Execute()
+            $record = $view.Fetch()
+            if ($null -eq $record) { return $null }
+            return $record.StringData(1)
+          }
+          $summary = $db.SummaryInformation(0)
+          $rsExe = Get-ChildItem -Path "TECHI-Remote-Support" -Recurse -Filter "TECHI Remote Support.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $identity = [ordered]@{
+            product = "TECHI Remote Support"
+            source_commit = "${{ github.sha }}"
+            version = "1.4.6"
+            msi_sha256 = $hash
+            executable_sha256 = $(if ($rsExe) { (Get-FileHash $rsExe.FullName -Algorithm SHA256).Hash.ToLower() } else { $null })
+            executable_size = $(if ($rsExe) { $rsExe.Length } else { $null })
+            msi_product_version = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductVersion'"
+            msi_product_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductCode'"
+            msi_upgrade_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
+            msi_package_code = $summary.Property(9)
+            msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
+          }
+          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-1.4.6.identity.json" -Encoding utf8NoBOM
 
       # ------------------------------------------------------------------ #
       # 10. Upload artifact (30 ditë)                                        #
@@ -270,11 +305,11 @@ jobs:
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}
+          name: TECHI-Agent-${{ steps.version.outputs.version }}
           path: |
-            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi
-            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi.sha256
-            agent/installer/TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.identity.json
+            agent/installer/TECHI-Agent-${{ steps.version.outputs.version }}.msi
+            agent/installer/TECHI-Agent-${{ steps.version.outputs.version }}.msi.sha256
+            agent/installer/TECHI-Agent-${{ steps.version.outputs.version }}.identity.json
           retention-days: 30
           if-no-files-found: error
 
@@ -295,6 +330,7 @@ jobs:
           path: |
             agent/installer/TECHI-Remote-Support-1.4.6.msi
             agent/installer/TECHI-Remote-Support-1.4.6.msi.sha256
+            agent/installer/TECHI-Remote-Support-1.4.6.identity.json
           retention-days: 30
           if-no-files-found: error
 

@@ -147,7 +147,7 @@ def download_active_agent_update_msi():
     """Public endpoint: returns the currently active agent_update_msi (Agent
     Update Bridge) package for windows-amd64.  Used by self_update payloads
     for legacy msiexec-based agents — no token required.  Kept separate from
-    /platform/{platform}/download, which serves the combined bootstrap MSI."""
+    /platform/{platform}/download, which serves the Agent bootstrap MSI."""
     service = AgentPackageService()
     package = service.latest_active("windows-amd64", file_type="agent_update_msi")
     if package is None:
@@ -157,6 +157,30 @@ def download_active_agent_update_msi():
         raise HTTPException(status_code=404, detail="Package file not found")
     logger.info(
         "Agent update MSI download package_id=%s version=%s", package.id, package.version
+    )
+    return FileResponse(
+        path,
+        filename=package.filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/remote-support-msi/download")
+def download_active_remote_support_msi():
+    """Public endpoint: returns the active TECHI Remote Support MSI for
+    windows-amd64. This is intentionally separate from Agent MSI/self-update
+    endpoints so Remote Support can be installed, repaired, or upgraded without
+    mutating the Agent."""
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="remote_support_msi")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active remote support MSI package for windows-amd64")
+    path = service.package_path(package)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Package file not found")
+    logger.info(
+        "Remote Support MSI download package_id=%s version=%s", package.id, package.version
     )
     return FileResponse(
         path,
@@ -193,7 +217,7 @@ def download_latest_active_agent_package(platform: str):
         # operator upload is never silently invisible.
         package = service.latest_active(platform, file_type="agent_binary") or service.latest_active(platform)
     else:
-        # Windows path — UNCHANGED: the active combined bootstrap MSI.
+        # Windows path: the active Agent bootstrap/repair MSI.
         package = service.latest_active(platform, file_type="msi")
     if package is None:
         logger.info("Public agent package download returned no active package for platform=%s", platform)

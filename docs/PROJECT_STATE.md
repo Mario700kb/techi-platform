@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-11 |
+| **Last Updated** | 2026-07-12 |
 | **Production Verified** | 2026-07-11 (Connect V3-mockup alignment deployed `92a521c`: no schema step needed, backend+frontend rebuilt, all containers healthy, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, ~1262 heartbeat log lines/2min, new `GET /connect-status` + `client_os` param confirmed live 401-not-500. **NOT dark** — the Catalog Connect split button + categorized menu changed live for every operator (no flag). Live browser click-through still owner's step — same constraint as the previous two deploys (no browser tool; bootstrap credentials don't match the live `owner` account); see the 2026-07-11 Connect-mockup CHANGELOG entry's validation checklist) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
-| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. **2.1.6 remains the production-safe fallback**: its core service startup, heartbeat, telemetry, Remote Support, self-update, watchdog, and most GPO deployment behavior are production-proven; the remaining work is edge-case installer/deployment hardening. Real standalone/domain canaries found and fixed 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6, and stale-binary marker sequencing before `InstallFiles`. Current candidate finalizes MSI registration before bootstrap starts/validates the Agent, uses MSI-native installer marker file operations before `InstallFiles`, validates lifecycle PID against the current SCM service PID, adds NETLOGON installer-busy/1618 guard, and CI-checks MSI-embedded EXE lineage against the standalone EXE. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
-| **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
+| **Agent Version** | **2.1.8 split-deployment canary candidate in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. **2.1.6 remains the production-safe fallback**: its core service startup, heartbeat, telemetry, Remote Support, self-update, watchdog, and most GPO deployment behavior are production-proven; the remaining work is edge-case installer/deployment hardening. Real standalone/domain canaries found and fixed 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6, stale-binary marker sequencing before `InstallFiles`, and stale/mismatched NETLOGON artifacts. Current candidate separates TECHI Agent MSI from TECHI Remote Support MSI, keeps normal Agent upgrades on UI/self-update, runs Agent MSI only for first install/explicit repair, validates lifecycle PID against the current SCM service PID, adds per-product NETLOGON locks/logs/1618 guard, uses absolute `%SystemRoot%\System32` command paths, and CI-checks MSI-embedded EXE lineage against the standalone EXE. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
+| **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; now packaged as an independent Remote Support MSI candidate, exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
 | **Production Server** | Linode VPS `139.162.158.208` (ssh alias `techi-server`), 25 GB disk, live deploy dir **`/root`** |
@@ -142,13 +142,15 @@
 5. **Platform Expansion — Phase 0 (Platform Core Foundation)** in progress
    (architecture approved & DESIGN LOCKED 2026-07-07 — see PLATFORM EXPANSION
    section below). Dark code only, flags OFF, zero behavior change.
-6. Complete Agent **2.1.8** installer/rollback canaries with the helper
-   lifecycle fix, MSI-registration-finalizes-before-Agent-start fix, marker
-   sequencing fix, NETLOGON guard, and artifact-lineage validation, then
+6. Complete Agent **2.1.8** split-deployment canaries with the helper lifecycle
+   fix, Agent-vs-Remote-Support MSI separation, per-product NETLOGON locks/logs,
+   absolute System32 command paths, and artifact-lineage validation, then
    activate it via the existing package mechanism. Do not republish a different
-   2.1.7 SHA; do not roll out 2.1.8 until the real Windows canary proves
-   registry DisplayVersion/ProductCode upgraded, service PID == lifecycle PID,
-   and no parallel TECHI msiexec/1618 hammering occurs.
+   2.1.7 SHA; do not roll out 2.1.8 until the real Windows canary proves Agent
+   service PID == lifecycle PID, healthy self-update does not trigger Agent MSI
+   reinstall merely because ARP registration is older, Remote Support can
+   install/update independently, and no parallel TECHI msiexec/1618 hammering
+   occurs.
 7. ✅ Agent 2.1.6 released to stable (2026-07-09, `1b0ddf3` — lifecycle
    engine shared Windows+Linux, log rotation, cache pruning; SHA-alignment
    via single CI run)
@@ -185,11 +187,11 @@ branded RustDesk ("TECHI Remote Support") against a self-hosted RustDesk server.
 | **Backend** | FastAPI (Python 3.12 in the container), SQLAlchemy sync ORM, Alembic, single uvicorn worker. Layers: `api/v1/endpoints` (routers) → `services` (orchestration) → `repositories` (queries) → `models`. WebSocket realtime channel `/ws/devices` via an async publisher queue (750 ms dedupe, maxsize 1000). |
 | **Frontend** | React + Vite + TypeScript + Tailwind. Custom dark "premium" design system (`techi-orange #FF553F`, `.premium-*` classes); **no external component libraries**. One WS connection per page, polling fallback 15 s. |
 | **Agent** | Go, Windows service `TechiAgent` (LocalSystem, SCM recovery 1m/1m/5m). Heartbeat loop + remote-action dispatcher + script-free self-update (binary swap via one-shot SYSTEM Scheduled Task) + independent watchdog Scheduled Task (5-min cadence). Files split by build tags `_windows.go` / `_other.go`. Cross-compiles from macOS (`GOOS=windows GOARCH=amd64`). |
-| **TECHI Remote Support** | Branded RustDesk client (Flutter build, `librustdesk.dll`), installed by the combined MSI, runs as Windows service + tray. Self-healing (install/config/service/password) driven by the agent every heartbeat cycle. |
+| **TECHI Remote Support** | Branded RustDesk client (Flutter build, `librustdesk.dll`), packaged as an independently versioned/deployed MSI, runs as Windows service + tray. Agent observes/configures it, but Agent MSI no longer carries or upgrades Remote Support payloads. |
 | **RustDesk server** | Self-hosted `rustdesk-server` containers `techi-hbbs`/`techi-hbbr` on the same VPS (`/opt/techi/rustdesk-server`). Identity keys: `data/id_ed25519*` — critical, see Disaster Recovery. |
 | **Database** | PostgreSQL 15-alpine in production (Docker volume `techi-platform_postgres_data`); SQLite for local dev with `schema_compat_service.ensure_sqlite_dev_schema` (SQLite-only column guard). |
 | **Docker** | Single `docker-compose.yml`: postgres, backend (mem_limit 800m), frontend. RustDesk server and nginx-proxy-manager are separate compose projects on the same host. |
-| **Deployment** | Single Linode VPS. git pull + `docker compose build && up -d`. Edge: nginx-proxy-manager terminates TLS for `rdp.techi.com.al` (frontend) and `api-rdp.techi.com.al` (backend). Agents deploy via AD GPO/NETLOGON bootstrap; updates via UI self_update. |
+| **Deployment** | Single Linode VPS. git pull + `docker compose build && up -d`. Edge: nginx-proxy-manager terminates TLS for `rdp.techi.com.al` (frontend) and `api-rdp.techi.com.al` (backend). Agents deploy via AD GPO/NETLOGON bootstrap for first install/explicit repair and update via UI self_update; TECHI Remote Support deploys/updates through its own MSI path. |
 
 **Device identity resolution** (heartbeat/enroll): agent_id cache → agent_id →
 device_id → rustdesk_id → fingerprint scorer (hostname/IPs/hw/domain/OS
@@ -255,9 +257,10 @@ if active device with different RustDesk ID).
   service; ≥2.1.5 also starts the TECHI Remote Support service if stopped.
 - **SHA-alignment rule (critical):** "Needs Agent Update" compares each
   device's `agent_sha256` with the active `agent_binary` package SHA. Go builds
-  are NOT reproducible — always extract the exe from the ACTIVE combined MSI
-  (`msiexec /a <msi> /qn TARGETDIR=…`) and upload THAT as agent_binary. Never
-  rebuild MSIs without need.
+  are NOT reproducible — CI must prove the standalone Agent EXE is byte-for-byte
+  identical to the `techi-agent.exe` embedded in the active Agent MSI
+  (`msiexec /a <msi> /qn TARGETDIR=…`). Upload/activate only matched artifacts.
+  Never rebuild MSIs without need.
 - CI: `.github/workflows/build-agent-msi.yml` (windows-latest, WiX v4) builds
   the MSI on pushes touching `agent/`; artifacts in the Actions tab.
 
@@ -377,8 +380,9 @@ prunes generated artifacts after 365 days; it is inert when Reporting is off.
   UI). From 2.1.7 on, self_update is the PRIMARY distribution channel;
   NETLOGON/GPO remains bootstrap + recovery. Source constant is
   `0.0.0-dev`; real version set at build. Official Windows artifacts
-  (combined MSI + bridge MSI + standalone exe, SHA-aligned) come from ONE
-  CI run of `build-agent-msi.yml`; Linux binaries built with
+  (Agent MSI + Remote Support MSI + bridge MSI + standalone exe,
+  SHA-aligned where applicable) come from ONE CI run of
+  `build-agent-msi.yml`; Linux binaries built with
   `-X main.AgentVersion=2.1.6 -trimpath` (amd64/arm64/armhf).
 - **Backend/frontend prod: content of `e0df46a`** (verified by container md5).
 - Exact 2.1.6 artifact SHAs come from the single CI run of
