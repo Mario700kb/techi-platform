@@ -772,6 +772,35 @@ class TestGPOScheduledDeployScript:
         assert "REINSTALL=ALL" not in self.script
         assert "REINSTALLMODE=vomus" not in self.script
 
+    def test_deploy_cmd_writes_verbose_msi_log_for_forensics(self):
+        """NETLOGON installs must always leave an MSI verbose log with the last action."""
+        assert "set LOG_DIR=%INSTALL_DIR%\\logs" in self.script
+        assert "if not exist \"%LOG_DIR%\" md \"%LOG_DIR%\" 2>nul" in self.script
+        assert "set MSI_LOG=%LOG_DIR%\\msi-install-%ACTIVE_VERSION%.log" in self.script
+        assert "/l*v \"%MSI_LOG%\"" in self.script
+        assert "msi_log=%MSI_LOG%" in self.script
+
+    def test_deploy_cmd_prevents_parallel_techi_msi_transactions(self):
+        """A second scheduled run must not launch msiexec while a TECHI MSI is active."""
+        do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
+        msiexec_pos = self.script.index('msiexec /i "%NETLOGON_MSI%"')
+        acquire_pos = self.script.index("call :acquire_install_lock", do_install_pos)
+        assert acquire_pos < msiexec_pos
+        assert ":detect_active_techi_msi" in self.script
+        assert "Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\"" in self.script
+        assert "TECHI-Agent-" in self.script
+        assert "result=installer-busy-retryable reason=active-techi-msiexec" in self.script
+        assert "set INSTALL_LOCK=%INSTALL_DIR%\\install.lock" in self.script
+        assert "call :release_install_lock" in self.script
+
+    def test_deploy_cmd_classifies_1618_as_retryable_installer_busy(self):
+        """MSI 1618 is installer-busy/retryable, not a generic failed install."""
+        assert 'if "%MSI_EXIT%"=="1618" (' in self.script
+        assert "result=installer-busy-retryable active_version=%ACTIVE_VERSION% msi_exit_code=1618" in self.script
+        busy_pos = self.script.index('if "%MSI_EXIT%"=="1618" (')
+        generic_fail_pos = self.script.index('if not "%MSI_EXIT%"=="0" if not "%MSI_EXIT%"=="3010" goto :install_failed')
+        assert busy_pos < generic_fail_pos
+
     def test_deploy_cmd_classifies_unknown_partial_install_states(self):
         """Blank/unreadable UI version is not treated as healthy/latest."""
         assert "set VERSION_STATE=binary_only" in self.script

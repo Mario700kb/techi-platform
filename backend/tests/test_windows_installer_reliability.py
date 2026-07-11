@@ -22,12 +22,11 @@ def test_major_upgrade_removal_is_transactional_late_schedule():
     assert 'Schedule="afterInstallInitialize"' not in WXS
 
 
-def test_operational_health_is_a_fatal_msi_gate_before_auxiliary_work():
+def test_operational_health_helper_exists_but_is_not_inside_msi_transaction():
     assert 'Id="ValidateAgentOperational"' in WXS
     assert 'ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check' in WXS
-    assert '<Custom Action="ValidateAgentOperational" After="StartTechiAgentService"' in WXS
-    assert WXS.index('<Custom Action="CreateRustDeskTrayTask"') < WXS.index('<Custom Action="StartTechiAgentService"')
-    assert WXS.index('<Custom Action="StartTechiAgentService"') < WXS.index('<Custom Action="ValidateAgentOperational"')
+    assert '<Custom Action="ValidateAgentOperational"' not in WXS
+    assert '<Custom Action="StartTechiAgentService"' not in WXS
 
 
 def test_combined_msi_does_not_use_standard_startservices_for_agent():
@@ -39,18 +38,18 @@ def test_combined_msi_does_not_use_standard_startservices_for_agent():
     assert 'installer-start-service' in WXS
 
 
-def test_remote_support_mutations_complete_before_agent_start():
+def test_remote_support_mutations_complete_before_msi_finalize_without_agent_start():
     order = [
         '<Custom Action="EnsureServiceCreated"',
         '<Custom Action="WriteTechiConfigs"',
         '<Custom Action="ApplyTechiRemoteSupportConfigFinal"',
         '<Custom Action="CreateRustDeskTrayTask"',
         '<Custom Action="ClearInstallerActive"',
-        '<Custom Action="StartTechiAgentService"',
-        '<Custom Action="ValidateAgentOperational"',
     ]
     positions = [WXS.index(token) for token in order]
     assert positions == sorted(positions)
+    assert '<Custom Action="StartTechiAgentService"' not in WXS
+    assert '<Custom Action="ValidateAgentOperational"' not in WXS
 
 
 def test_installer_marker_defers_runtime_rustdesk_reconciliation():

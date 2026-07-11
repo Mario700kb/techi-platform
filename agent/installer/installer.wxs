@@ -333,7 +333,8 @@
     <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
          të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
          njëjtës transaksion MSI). Verifikon/rikrijon TechiAgent pas RemoveExistingProducts,
-         por nuk e nis; start-i ndodh vetëm pasi Remote Support të ketë mbaruar mutacionet. -->
+         por nuk e nis; start-i dhe health gate-i ndodhin vetëm pasi msiexec të ketë dalë
+         dhe Windows Installer registration të jetë finalizuar (techi-deploy/bootstrap). -->
     <CustomAction Id="EnsureServiceCreated"
                   Directory="SystemFolder"
                   ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-ensure-service"
@@ -531,9 +532,11 @@
       <Custom Action="SetServiceRecovery" After="WriteAgentConfig" Condition="NOT REMOVE"/>
       <!-- MajorUpgrade removes the old product transactionally after
            InstallExecute. Re-assert service registration after old-product
-           removal, finish Remote Support mutations, then start the Agent.
-           This prevents the Agent's first heartbeat/rustdesk_manage from
-           racing the same MSI transaction that is replacing RS files/config. -->
+           removal, finish Remote Support mutations, then finalize the MSI.
+           The Agent is deliberately NOT started inside the MSI transaction:
+           bootstrap/techi-deploy starts and validates it only after msiexec
+           returns, so product registration cannot be held behind Agent
+           runtime/health activity. -->
       <Custom Action="EnsureServiceCreated" After="RemoveExistingProducts" Condition="NOT REMOVE"/>
       <Custom Action="WriteTechiConfigs.SetParam"               After="EnsureServiceCreated"           Condition="NOT REMOVE"/>
       <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
@@ -543,8 +546,6 @@
            Scheduled Task-in "At Logon" qe e nis ne sesionin e perdoruesit. -->
       <Custom Action="CreateRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
       <Custom Action="ClearInstallerActive" After="CreateRustDeskTrayTask" Condition="NOT REMOVE"/>
-      <Custom Action="StartTechiAgentService" After="ClearInstallerActive" Condition="NOT REMOVE"/>
-      <Custom Action="ValidateAgentOperational" After="StartTechiAgentService" Condition="NOT REMOVE"/>
       <!-- Config-file ACL hardening is performed narrowly by native config
            writes. No recursive icacls mutation participates in the MSI. -->
       <!-- Uninstall -->

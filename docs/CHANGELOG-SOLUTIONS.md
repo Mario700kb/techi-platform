@@ -27,6 +27,100 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] HOTFIX: Agent 2.1.8 MSI registration drift and NETLOGON installer concurrency
+
+### Problemi
+
+Real Windows canary kishte Agent EXE `2.1.8.0`, `TechiAgent` service RUNNING,
+`agent.state.json` fresh `operational` me PID-in e service-it dhe Remote Support
+healthy, por Windows Installer registration mbeti `DisplayVersion=2.1.6.0`,
+`ProductCode={D5B2B5A1-C7E8-4B67-B11F-DC1FAB4AB688}`. NETLOGON bootstrap
+raportonte `active_version=2.1.8`, `installed_registry_version=2.1.6.0`,
+`version_state=older`, ndërsa retry i mëvonshëm mori MSI exit code `1618`.
+
+### Analiza
+
+Badge-i portokalli i Agent-it nuk ishte frontend bug: Windows row badge përdor
+`device.agent_version` kundër active package version/SHA; kur registry/package
+state mbetet prapa active candidate, UI e klasifikon si `outdated` dhe
+`VersionBadge` e render-on portokalli. Remote Support u përjashtua nga
+investigimi sepse canary tregoi service/tray/server/heartbeat healthy.
+
+Në rrugën NETLOGON, `techi-deploy.cmd` niste `msiexec /i` pa `/l*v`, prandaj
+canary nuk kishte një MSI verbose log path të detyrueshëm për të provuar rreshtin
+e fundit të ekzekutuar. Nga gjendja e sistemit megjithatë mekanizmi ishte i
+qartë: Windows Installer registration mbetet 2.1.6 vetëm nëse transaksioni 2.1.8
+nuk finalizohet ose rollback-on. Meqë EXE 2.1.8 mund të arrinte në disk nga
+self-update/manual replacement ndërkohë që product registration mbeti 2.1.6,
+source of truth për deployment mbeti registry, jo file version.
+
+### Shkaku
+
+Ka dy shkaqe të provuara:
+
+1. Kandidati MSI ende e niste `TechiAgent` dhe ekzekutonte
+   `installer-health-check` përpara `InstallFinalize`. Kjo e lidhte suksesin e
+   Windows Installer product registration me runtime lifecycle/heartbeat të
+   Agent-it. Çdo stall i runtime/custom action para finalizimit e linte produktin
+   e ri pa registration, edhe nëse binary 2.1.8 ekzistonte dhe më vonë punonte.
+2. NETLOGON bootstrap nuk kishte guard procesi/lock kundër një TECHI `msiexec`
+   aktiv. Scheduled executions mund të niste retry ndërsa transaksioni i parë
+   ishte ende aktiv; exit `1618` trajtohej si install failure gjenerik, jo si
+   `installer-busy-retryable`.
+
+Në canary-n ekzistues, "last MSI action before stall" nuk mund të lexohet nga
+verbose log sepse NETLOGON nuk e krijonte atë log. Gjendja `installer.active`
+e hequr dhe service/runtime healthy provon se transaksioni kishte kaluar të
+paktën Remote Support mutations/ClearInstallerActive/start path në kandidatët
+e mëparshëm; registration 2.1.6 provon se nuk kishte arritur commit të ri
+Windows Installer.
+
+### Zgjidhja
+
+MSI tani kryen vetëm file/service/config/tray registration dhe finalizon.
+`StartTechiAgentService` dhe `ValidateAgentOperational` mbeten helper commands
+të disponueshme, por nuk schedule-ohen më brenda `InstallExecuteSequence`.
+Bootstrap/NETLOGON e nis service-in dhe validon lifecycle vetëm pasi `msiexec`
+të ketë dalë, pra pasi Windows Installer registration të jetë komituar ose
+dështimi të jetë i qartë.
+
+`techi-deploy.cmd` tani:
+
+- krijon gjithmonë verbose MSI log:
+  `C:\ProgramData\TechiAgent\logs\msi-install-<version>.log`;
+- përdor lock atomik `C:\ProgramData\TechiAgent\install.lock`;
+- detekton `msiexec.exe` aktiv me command line TECHI para se të nisë një tjetër
+  install;
+- klasifikon exit `1618` si `installer-busy-retryable` dhe del pa hammer loop;
+- pastron lock-un në success/failure të kontrolluar.
+
+### Ndryshimet
+
+- `agent/installer/installer.wxs` — Agent start/health gate u hoqën nga MSI
+  transaction sequence.
+- `backend/app/services/enrollment_bootstrap_service.py` — NETLOGON MSI verbose
+  log, install lock, active TECHI msiexec detection, 1618 retryable
+  classification.
+- `backend/tests/test_windows_installer_reliability.py` dhe
+  `backend/tests/test_enrollment_bootstrap_script.py` — regression contracts për
+  MSI-finalize-first dhe bootstrap concurrency.
+- `docs/PROJECT_STATE.md`, `docs/reference/OPERATOR-MANUAL.md` — statusi dhe
+  procedura operative u përditësuan.
+
+### Rezultati
+
+Focused regression tests kaluan lokalisht. Ky është kandidat i ri 2.1.8 për
+canary; nuk u bë deploy, nuk u aktivizua paketë, nuk u prek NETLOGON dhe nuk u
+nis rollout.
+
+### Mësimet
+
+Windows Installer registration duhet të komitohet para se Agent runtime të bëhet
+health authority. FileVersion i EXE-së nuk është provë upgrade-i MSI; deployment
+source of truth për GPO/NETLOGON mbetet Uninstall registry. Çdo GPO bootstrap që
+mund të ekzekutohet periodikisht duhet të ketë installer-busy guard dhe log MSI
+të detyrueshëm, ndryshe forensika bëhet hamendësim i panevojshëm.
+
 ## [2026-07-11] HOTFIX: Agent 2.1.8 installer helper subcommands could enter normal runtime
 
 ### Problemi

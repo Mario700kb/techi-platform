@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but standalone combined-MSI 2.1.8 canaries exposed start-ordering and helper-lifecycle defects; Windows packages remain pinned to 2.1.6 until the fixed 2.1.8 canary passes. |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but standalone/domain combined-MSI 2.1.8 canaries exposed start-ordering, helper-lifecycle, and MSI registration-drift defects; Windows packages remain pinned to 2.1.6 until the fixed 2.1.8 canary passes. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -237,9 +237,11 @@ entry + an icon; the dialog needs no rewrite.
 
 The **combined MSI** installs the Windows service `TechiAgent` (LocalSystem) and
 TECHI Remote Support. In the 2.1.8 candidate, the MSI finishes Remote Support
-file/config/tray mutations first, then starts `TechiAgent`, then requires a fresh
-`operational` lifecycle state from the current SCM service PID before the
-install is considered healthy. Installer helper subcommands (`installer-marker
+file/config/tray mutations and finalizes Windows Installer product registration
+first. The bootstrap/NETLOGON script starts `TechiAgent` only after `msiexec`
+returns, then requires a fresh `operational` lifecycle state from the current
+SCM service PID before deployment is considered healthy. Installer helper
+subcommands (`installer-marker
 create/remove`, `installer-start-service`, `installer-ensure-service`,
 `installer-health-check`, `rs-tray-task`, etc.) are utility-only: they must exit
 promptly and must never start the Agent runtime, send heartbeat, reconcile Remote
@@ -247,6 +249,12 @@ Support, install watchdog state, or write `state=operational`. The agent then
 sends heartbeats, applies its config, self-updates from the UI, and self-heals
 Remote Support. **Do not reinstall the MSI manually** unless instructed — "the
 MSI installs once, everything else from the UI."
+
+For domain/NETLOGON installs, the MSI verbose log path is:
+`C:\ProgramData\TechiAgent\logs\msi-install-<active-version>.log`.
+If another TECHI MSI transaction is active, bootstrap reports
+`installer-busy-retryable` (including MSI exit `1618`) and does not launch a
+second uncontrolled install.
 
 ### 9a. Agent Startup Lifecycle (agent ≥ 2.1.8)
 
