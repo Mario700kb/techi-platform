@@ -9,7 +9,7 @@
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
-| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. Version bump is required so any device that consumed broken 2.1.7 can detect a newer package. |
+| **Agent Version** | **2.1.8 installer hotfix in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. A real standalone 2.1.8 combined-MSI canary still failed at service start, so 2.1.8 is not approved for fleet rollout; current candidate defers Agent service start until after Remote Support MSI mutations and operational health gate. |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
@@ -983,7 +983,7 @@ current state.
    from v1.0 onward must keep working.
 2. **`pending_actions[]` format** — backward compatible since v1.
 3. **Enrollment endpoints** (`POST /api/v1/agent/enroll`, legacy `/api/enroll`).
-4. **MSI UpgradeCode `A1B2C3D4-E5F6-7890-ABCD-EF1234567890`** — never.
+4. **MSI UpgradeCode `E6AD0A88-5F26-5665-9B1F-70B8C5EE8363`** — never.
 5. **Windows service name `TechiAgent`**; agent config path
    `C:\ProgramData\TechiAgent\agent.config.json` (+ legacy
    `C:\ProgramData\TECHI\agent.config.json` migration path).

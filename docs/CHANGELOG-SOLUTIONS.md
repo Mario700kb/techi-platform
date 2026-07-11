@@ -27,6 +27,64 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-11] FOLLOW-UP: 2.1.8 standalone canary proved combined-MSI Agent/Remote Support start ordering risk
+
+### Problemi
+
+Canary real standalone me combined MSI 2.1.8 shkarkoi paketën, verifikoi SHA256,
+kopjoi `techi-agent.exe` 2.1.8 dhe konfiguroi service-in `TechiAgent`, por
+`StartServices` priti rreth 30 s dhe ktheu 1920; `msiexec` doli 1603 dhe
+rollback rivendosi binary-n zyrtar 2.1.6. Pas rollback-ut, i njëjti service dhe
+i njëjti binary 2.1.6 nisën me sukses nga SCM, arritën `operational` dhe
+dërguan heartbeat. Kjo rrëzon përfundimin e mëparshëm se manifest-i
+`requireAdministrator` vetëm ishte shkaku i provuar i 1920.
+
+### Analiza
+
+Kodi aktual i Windows service lidhet me SCM dhe raporton `SERVICE_RUNNING`
+përpara loop-it të agentit: `runWindowsService` thërret `svc.Run`, `Execute`
+nis `runAgent` në goroutine dhe pastaj raporton `Running`. Prandaj
+`rustdesk_manage` nuk shpjegon drejtpërdrejt një `StartServices` timeout nëse
+ky kod po ekzekutohet saktë. Por combined MSI niste Agent-in me `ServiceControl
+Start="install"` brenda të njëjtit transaksion ku po ndalonte/zëvendësonte
+TECHI Remote Support, po shkruante TOML config, po rikrijonte tray task dhe po
+vendoste rollback actions. Në heartbeat-in e parë, Agent-i bën
+`rustdesk_manage` përpara discovery/heartbeat dhe mund të krijojë/nisë service-in
+`TECHI Remote Support`, të shkruajë config dhe të prekë tray task. Kjo krijonte
+garë reale mes MSI-së dhe runtime-it të Agent-it për të njëjtat file/service.
+
+### Shkaku
+
+Shkaku i drejtpërdrejtë i `StartServices 1920` në canary nuk mund të quhet ende
+i provuar pa logun e brendshëm të procesit 2.1.8 në momentin e dështimit. Shkaku
+i provuar në kod/installer ishte kontrata e gabuar e sequencing-ut: combined MSI
+lejonte Agent-in të niste para se mutacionet e Remote Support të përfundonin,
+ndërkohë që vetë Agent-i mund të bënte Remote Support reconciliation në
+heartbeat-in e parë. `requireAdministrator` mbetet kontratë e keqe dhe u hoq, por
+nuk është më root cause i vetëm/provuar.
+
+### Zgjidhja
+
+MSI nuk përdor më `ServiceControl Start="install"` për të nisur Agent-in gjatë
+`StartServices`. Pas `RemoveExistingProducts`, MSI verifikon/rikrijon vetëm
+registration-in e service-it, mbaron `WriteTechiConfigs`,
+`ApplyTechiRemoteSupportConfigFinal` dhe `CreateRustDeskTrayTask`, heq marker-in
+e installer-it, pastaj nis `TechiAgent` me subcommand natif
+`installer-start-service` dhe vetëm më pas kërkon `installer-health-check`
+fatal për `operational`. Gjatë transaksionit krijohet `installer.active`;
+`rustdesk_manage` e respekton dhe e shtyn reconciliation-in nëse watchdog ose
+diçka tjetër e ndez Agent-in aksidentalisht përpara se MSI të mbarojë.
+Rollback e pastron marker-in. Health gate-i pranon vetëm state file me PID-in
+aktual të service-it `TechiAgent`, jo thjesht një PID live nga një proces i
+vjetër.
+
+### Rezultati
+
+Ky është fix kandidat për canary tjetër Windows, jo rollout. Nuk u aktivizua
+paketë e re dhe nuk u bë fleet rollout. Validimi lokal: XML clean, Go tests
+kaluan, Windows test compilation kaloi, dhe regression tests installer/bootstrap
+kaluan.
+
 ## [2026-07-11] URGENT: Agent 2.1.8 installer/rollback hotfix supersedes broken 2.1.7
 
 ### Problemi
@@ -37,15 +95,16 @@ Combined MSI 2.1.7 dështoi në një PC standalone: `rs-tray-task` dha 1721,
 
 ### Shkaku
 
-EXE zyrtar 2.1.6/2.1.7 kishte UAC manifest `requireAdministrator`, megjithëse i
-njëjti binary niset nga SCM dhe nga deferred MSI `CreateProcess`; kjo kërkesë
-nuk mund të plotësohet në atë kontekst. `RemoveExistingProducts` ishte në 1501,
-menjëherë pas `InstallInitialize`, kështu produkti i vjetër hiqej përpara se
-service/tray/health të provonte suksesin. Rollback rivendosi registration 2.1.5
-por ruajti pre-transaction file 2.1.6 që kishte qenë jashtë pronësisë koherente
-të produktit 2.1.5. Recursive `icacls`, ancient-product cleanup dhe Remote
-Support service deletion ishin mutacione të jashtme pa rollback. Secrets ishin
-Property/CustomActionData të dukshme dhe MSI kishte password fleet-wide default.
+Analiza fillestare identifikoi një kontratë të gabuar: EXE zyrtar 2.1.6/2.1.7
+kishte UAC manifest `requireAdministrator`, megjithëse deferred MSI custom
+actions dhe SCM nuk duhet të varen nga elevation prompt. Provat e mëvonshme nga
+canary 2.1.8 treguan se ky nuk ishte root cause i vetëm/provuar i `StartServices
+1920`: i njëjti 2.1.6 SHA mund të niset nga SCM dhe të arrijë `operational`.
+Defektet e provuara të 2.1.7 mbeten: `RemoveExistingProducts` ishte në 1501,
+menjëherë pas `InstallInitialize`; rollback mund të linte gjendje të përzier;
+recursive `icacls`, ancient-product cleanup dhe Remote Support service deletion
+ishin mutacione të jashtme pa rollback. Secrets ishin Property/CustomActionData
+të dukshme dhe MSI kishte password fleet-wide default.
 
 ### Zgjidhja
 
@@ -53,12 +112,13 @@ Property/CustomActionData të dukshme dhe MSI kishte password fleet-wide default
 detektonin një SHA tjetër me të njëjtin semantic version. EXE përdor `asInvoker`;
 MajorUpgrade kalon në transactional `afterInstallExecute`; MSI ka fatal bounded
 `installer-health-check` për fresh/current-PID `operational` pas heqjes së
-produktit të vjetër. Vetëm pas këtij gate ekzekutohen config/tray të Remote
-Support si auxiliary nonfatal. Ancient cleanup dhe recursive MSI `icacls` u
-hoqën nga sequence; Remote Support stop ka rollback restart. Secret properties
-dhe custom-action targets fshihen, ndërsa password-i fleet-wide u hoq nga MSI.
-Bootstrap detekton registry/binary mixed state dhe same-version unhealthy e
-dërgon në explicit repair, jo `uptodate`.
+produktit të vjetër. Follow-up-i i canary-t e zhvendosi health gate-in pas
+mutacioneve të Remote Support dhe pas një start-i të kontrolluar të Agent-it,
+sepse runtime `rustdesk_manage` nuk duhet të garojë me MSI-në. Ancient cleanup
+dhe recursive MSI `icacls` u hoqën nga sequence; Remote Support stop ka rollback
+restart. Secret properties dhe custom-action targets fshihen, ndërsa password-i
+fleet-wide u hoq nga MSI. Bootstrap detekton registry/binary/service partial
+states dhe same-version unhealthy e dërgon në explicit repair, jo `uptodate`.
 
 ### Rezultati
 

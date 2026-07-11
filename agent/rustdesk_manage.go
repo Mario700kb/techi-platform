@@ -55,6 +55,10 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		log.Printf("[rustdesk_manage] disabled — skipping")
 		return
 	}
+	if installerTransactionActive() {
+		log.Printf("[rustdesk_manage] installer transaction active — deferring Remote Support reconciliation")
+		return
+	}
 
 	installed := isRustDeskInstalled()
 	repaired := false
@@ -129,6 +133,17 @@ func ensureRustDesk(cfg *Config, configPath string) {
 	if repaired {
 		recordRustDeskRepair(cfg, configPath)
 	}
+}
+
+func installerTransactionActive() bool {
+	info, err := os.Stat(installerActiveMarkerPath)
+	if err != nil {
+		return false
+	}
+	// A stale marker must not disable reconciliation forever after an
+	// interrupted install/rollback. MSI rollback removes the marker; this is a
+	// second safety net for power loss or a killed msiexec.
+	return time.Since(info.ModTime()) < 30*time.Minute
 }
 
 func isRustDeskInstalled() bool {

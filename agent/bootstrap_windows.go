@@ -28,7 +28,11 @@ import (
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
+
+const installerActiveMarkerPath = `C:\ProgramData\TechiAgent\installer.active`
 
 // runBootstrapConfigCommand mirrors the old WriteAgentConfig custom action:
 // create C:\ProgramData\TechiAgent\logs and agent.config.json, but only when the
@@ -101,7 +105,8 @@ func runInstallerHealthCheckCommand() int {
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
 		status, err := readLifecycleStatus()
-		if err == nil && status.State == stateOperational && time.Since(status.UpdatedAt) < 5*time.Minute && windowsPIDIsLive(status.PID) {
+		servicePID, serviceOK := currentTechiAgentServicePID()
+		if err == nil && status.State == stateOperational && time.Since(status.UpdatedAt) < 5*time.Minute && serviceOK && status.PID == servicePID && windowsPIDIsLive(status.PID) {
 			writeDeployLog("[installer-health]", "operational")
 			return 0
 		}
@@ -113,6 +118,55 @@ func runInstallerHealthCheckCommand() int {
 	}
 	writeDeployLog("[installer-health]", "failed reason=operational_timeout")
 	return 1
+}
+
+func currentTechiAgentServicePID() (int, bool) {
+	m, err := mgr.Connect()
+	if err != nil {
+		return 0, false
+	}
+	defer m.Disconnect()
+	service, err := m.OpenService(serviceName)
+	if err != nil {
+		return 0, false
+	}
+	defer service.Close()
+	status, err := service.Query()
+	if err != nil || status.State != svc.Running || status.ProcessId == 0 {
+		return 0, false
+	}
+	return int(status.ProcessId), true
+}
+
+func runInstallerMarkerCommand(args []string) int {
+	if len(args) != 1 {
+		writeDeployLog("[installer-marker]", "usage: installer-marker create|remove")
+		return 1
+	}
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "create":
+		if err := os.MkdirAll(filepath.Dir(installerActiveMarkerPath), 0755); err != nil {
+			writeDeployLog("[installer-marker]", "create mkdir failed: "+err.Error())
+			return 1
+		}
+		data := []byte(time.Now().UTC().Format(time.RFC3339Nano))
+		if err := os.WriteFile(installerActiveMarkerPath, data, 0600); err != nil {
+			writeDeployLog("[installer-marker]", "create failed: "+err.Error())
+			return 1
+		}
+		writeDeployLog("[installer-marker]", "created")
+		return 0
+	case "remove":
+		if err := os.Remove(installerActiveMarkerPath); err != nil && !os.IsNotExist(err) {
+			writeDeployLog("[installer-marker]", "remove failed: "+err.Error())
+			return 1
+		}
+		writeDeployLog("[installer-marker]", "removed")
+		return 0
+	default:
+		writeDeployLog("[installer-marker]", "unknown action="+args[0])
+		return 1
+	}
 }
 
 func windowsPIDIsLive(pid int) bool {

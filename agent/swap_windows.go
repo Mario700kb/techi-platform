@@ -358,6 +358,66 @@ func runWatchdogCheckCommand() int {
 	return agentRC
 }
 
+// runInstallerEnsureServiceCommand is used by the combined MSI after late
+// RemoveExistingProducts. It repairs the TechiAgent service registration but
+// deliberately does not start it; the MSI starts the Agent only after Remote
+// Support files/config/tray have finished mutating.
+func runInstallerEnsureServiceCommand() int {
+	targetExe := agentTargetExePath()
+	m, err := mgr.Connect()
+	if err != nil {
+		writeDeployLog("[installer-service]", "scm connect error: "+err.Error())
+		return 1
+	}
+	defer m.Disconnect()
+
+	service, err := m.OpenService(serviceName)
+	if err != nil {
+		if _, serr := os.Stat(targetExe); serr != nil {
+			writeDeployLog("[installer-service]", "service missing and exe missing")
+			return 1
+		}
+		service, err = m.CreateService(serviceName, targetExe, mgr.Config{
+			DisplayName: agentServiceDisplayName,
+			StartType:   mgr.StartAutomatic,
+		})
+		if err != nil {
+			writeDeployLog("[installer-service]", "service create failed: "+err.Error())
+			return 1
+		}
+		writeDeployLog("[installer-service]", "service recreated")
+	} else {
+		writeDeployLog("[installer-service]", "service present")
+	}
+	defer service.Close()
+
+	recoveryActions := []mgr.RecoveryAction{
+		{Type: mgr.ServiceRestart, Delay: 1 * time.Minute},
+		{Type: mgr.ServiceRestart, Delay: 1 * time.Minute},
+		{Type: mgr.ServiceRestart, Delay: 5 * time.Minute},
+	}
+	if err := service.SetRecoveryActions(recoveryActions, 86400); err != nil {
+		writeDeployLog("[installer-service]", "warning: recovery actions not applied: "+err.Error())
+	}
+	return 0
+}
+
+func runInstallerStartServiceCommand() int {
+	targetExe := agentTargetExePath()
+	m, err := mgr.Connect()
+	if err != nil {
+		writeDeployLog("[installer-service]", "scm connect error: "+err.Error())
+		return 1
+	}
+	defer m.Disconnect()
+	if err := ensureAgentServiceRunning(m, targetExe); err != nil {
+		writeDeployLog("[installer-service]", "service start failed: "+err.Error())
+		return 1
+	}
+	writeDeployLog("[installer-service]", "service running")
+	return 0
+}
+
 // lifecycleStaleAfter marks an initializing agent as wedged: while starting
 // up, the agent refreshes agent.state.json on every config retry (backoff
 // caps at 5 minutes) and every heartbeat attempt, so a startup-state file

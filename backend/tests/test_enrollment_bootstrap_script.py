@@ -772,6 +772,13 @@ class TestGPOScheduledDeployScript:
         assert "REINSTALL=ALL" not in self.script
         assert "REINSTALLMODE=vomus" not in self.script
 
+    def test_deploy_cmd_classifies_unknown_partial_install_states(self):
+        """Blank/unreadable UI version is not treated as healthy/latest."""
+        assert "set VERSION_STATE=binary_only" in self.script
+        assert "set VERSION_STATE=registry_only" in self.script
+        assert "set VERSION_STATE=service_only" in self.script
+        assert 'if /i "%VERSION_STATE%"=="equal" goto :already_uptodate' in self.script
+
     def test_deploy_cmd_does_not_uninstall_explicitly_before_install(self):
         """Upgrade-i NUK ben msiexec /x manual para /i -- nje uninstall i ndare nuk
         vendos UPGRADINGPRODUCTCODE dhe shkakton humbje te device_id (installer.wxs

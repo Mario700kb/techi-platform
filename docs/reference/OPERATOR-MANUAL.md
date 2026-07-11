@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7; Windows packages remain pinned to 2.1.6 until 2.1.8 canaries pass. |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 installer hotfix** supersedes broken 2.1.7, but a standalone combined-MSI 2.1.8 canary still failed and the candidate is back in validation; Windows packages remain pinned to 2.1.6 until canaries pass. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -236,10 +236,12 @@ entry + an icon; the dialog needs no rewrite.
 ## 9. Agent Installation (Windows)
 
 The **combined MSI** installs the Windows service `TechiAgent` (LocalSystem) and
-TECHI Remote Support. The agent then: sends heartbeats, applies its config,
-self-updates from the UI, and self-heals Remote Support. **Do not reinstall the
-MSI manually** unless instructed — "the MSI installs once, everything else from
-the UI."
+TECHI Remote Support. In the 2.1.8 candidate, the MSI finishes Remote Support
+file/config/tray mutations first, then starts `TechiAgent`, then requires a fresh
+`operational` lifecycle state before the install is considered healthy. The
+agent then sends heartbeats, applies its config, self-updates from the UI, and
+self-heals Remote Support. **Do not reinstall the MSI manually** unless
+instructed — "the MSI installs once, everything else from the UI."
 
 ### 9a. Agent Startup Lifecycle (agent ≥ 2.1.8)
 

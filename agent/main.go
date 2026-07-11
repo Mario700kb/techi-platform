@@ -23,6 +23,12 @@ func main() {
 			os.Exit(runBootstrapConfigCommand(os.Args[2:]))
 		case "rs-tray-task":
 			os.Exit(runRSTrayTaskCommand())
+		case "installer-marker":
+			os.Exit(runInstallerMarkerCommand(os.Args[2:]))
+		case "installer-ensure-service":
+			os.Exit(runInstallerEnsureServiceCommand())
+		case "installer-start-service":
+			os.Exit(runInstallerStartServiceCommand())
 		case "installer-health-check":
 			os.Exit(runInstallerHealthCheckCommand())
 		}

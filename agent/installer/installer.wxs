@@ -195,7 +195,6 @@
                         Account="LocalSystem"/>
         <ServiceControl Id="StartTechiAgent"
                         Name="TechiAgent"
-                        Start="install"
                         Stop="both"
                         Remove="uninstall"
                         Wait="yes"/>
@@ -310,17 +309,44 @@
                   Impersonate="no"
                   Return="check"/>
 
-    <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
-         të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
-         njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
-         ekziston, e rikrijon, i vendos recovery actions dhe e nis — logjika është
-         `techi-agent.exe watchdog-check` (kod natif Go, shih swap_windows.go), pa PowerShell. -->
-    <CustomAction Id="EnsureServiceCreated"
+    <CustomAction Id="SetInstallerActive"
                   Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; watchdog-check"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker create"
                   Execute="deferred"
                   Impersonate="no"
+                  Return="check"/>
+
+    <CustomAction Id="ClearInstallerActive"
+                  Directory="SystemFolder"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker remove"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
+
+    <CustomAction Id="RollbackClearInstallerActive"
+                  Directory="SystemFolder"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-marker remove"
+                  Execute="rollback"
+                  Impersonate="no"
                   Return="ignore"/>
+
+    <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
+         të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
+         njëjtës transaksion MSI). Verifikon/rikrijon TechiAgent pas RemoveExistingProducts,
+         por nuk e nis; start-i ndodh vetëm pasi Remote Support të ketë mbaruar mutacionet. -->
+    <CustomAction Id="EnsureServiceCreated"
+                  Directory="SystemFolder"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-ensure-service"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
+
+    <CustomAction Id="StartTechiAgentService"
+                  Directory="SystemFolder"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-start-service"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
 
     <!-- SetServiceRecovery: restart automatik pas dështimit (sc.exe direkt, pa PS wrapper) -->
     <CustomAction Id="SetServiceRecovery"
@@ -493,6 +519,8 @@
       <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
            file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
            RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
+      <Custom Action="RollbackClearInstallerActive" Before="SetInstallerActive" Condition="NOT REMOVE"/>
+      <Custom Action="SetInstallerActive" Before="KillTechiRSBeforeInstall" Condition="NOT REMOVE"/>
       <Custom Action="RollbackRestartTechiRS" Before="KillTechiRSBeforeInstall" Condition="NOT REMOVE"/>
       <Custom Action="KillTechiRSBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
       <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
@@ -502,17 +530,21 @@
       <Custom Action="WriteAgentConfig"   After="InstallServices"    Condition="NOT REMOVE"/>
       <Custom Action="SetServiceRecovery" After="WriteAgentConfig" Condition="NOT REMOVE"/>
       <!-- MajorUpgrade removes the old product transactionally after
-           InstallExecute. Re-assert service state, then require real Agent
-           operational health before any auxiliary Remote Support work. -->
+           InstallExecute. Re-assert service registration after old-product
+           removal, finish Remote Support mutations, then start the Agent.
+           This prevents the Agent's first heartbeat/rustdesk_manage from
+           racing the same MSI transaction that is replacing RS files/config. -->
       <Custom Action="EnsureServiceCreated" After="RemoveExistingProducts" Condition="NOT REMOVE"/>
-      <Custom Action="ValidateAgentOperational" After="EnsureServiceCreated" Condition="NOT REMOVE"/>
-      <Custom Action="WriteTechiConfigs.SetParam"               After="ValidateAgentOperational"           Condition="NOT REMOVE"/>
+      <Custom Action="WriteTechiConfigs.SetParam"               After="EnsureServiceCreated"           Condition="NOT REMOVE"/>
       <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs"               Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal"       After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
       <!-- CreateRustDeskTrayTask: pasi RS eshte instaluar dhe konfiguruar, regjistro
            Scheduled Task-in "At Logon" qe e nis ne sesionin e perdoruesit. -->
       <Custom Action="CreateRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <Custom Action="ClearInstallerActive" After="CreateRustDeskTrayTask" Condition="NOT REMOVE"/>
+      <Custom Action="StartTechiAgentService" After="ClearInstallerActive" Condition="NOT REMOVE"/>
+      <Custom Action="ValidateAgentOperational" After="StartTechiAgentService" Condition="NOT REMOVE"/>
       <!-- Config-file ACL hardening is performed narrowly by native config
            writes. No recursive icacls mutation participates in the MSI. -->
       <!-- Uninstall -->

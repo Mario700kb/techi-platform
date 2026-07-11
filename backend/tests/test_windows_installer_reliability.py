@@ -24,9 +24,55 @@ def test_major_upgrade_removal_is_transactional_late_schedule():
 
 def test_operational_health_is_a_fatal_msi_gate_before_auxiliary_work():
     assert 'Id="ValidateAgentOperational"' in WXS
-    assert 'ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check"' in WXS
-    assert '<Custom Action="ValidateAgentOperational" After="EnsureServiceCreated"' in WXS
-    assert WXS.index('<Custom Action="ValidateAgentOperational"') < WXS.index('<Custom Action="CreateRustDeskTrayTask"')
+    assert 'ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; installer-health-check' in WXS
+    assert '<Custom Action="ValidateAgentOperational" After="StartTechiAgentService"' in WXS
+    assert WXS.index('<Custom Action="CreateRustDeskTrayTask"') < WXS.index('<Custom Action="StartTechiAgentService"')
+    assert WXS.index('<Custom Action="StartTechiAgentService"') < WXS.index('<Custom Action="ValidateAgentOperational"')
+
+
+def test_combined_msi_does_not_use_standard_startservices_for_agent():
+    start = WXS.index('<ServiceControl Id="StartTechiAgent"')
+    block = WXS[start:WXS.index('/>', start) + 2]
+    assert 'Start="install"' not in block
+    assert 'Stop="both"' in block
+    assert 'Id="StartTechiAgentService"' in WXS
+    assert 'installer-start-service' in WXS
+
+
+def test_remote_support_mutations_complete_before_agent_start():
+    order = [
+        '<Custom Action="EnsureServiceCreated"',
+        '<Custom Action="WriteTechiConfigs"',
+        '<Custom Action="ApplyTechiRemoteSupportConfigFinal"',
+        '<Custom Action="CreateRustDeskTrayTask"',
+        '<Custom Action="ClearInstallerActive"',
+        '<Custom Action="StartTechiAgentService"',
+        '<Custom Action="ValidateAgentOperational"',
+    ]
+    positions = [WXS.index(token) for token in order]
+    assert positions == sorted(positions)
+
+
+def test_installer_marker_defers_runtime_rustdesk_reconciliation():
+    agent_source = (ROOT / "agent/rustdesk_manage.go").read_text(encoding="utf-8")
+    bootstrap_source = (ROOT / "agent/bootstrap_windows.go").read_text(encoding="utf-8")
+    assert 'installer-marker create' in WXS
+    assert 'installer-marker remove' in WXS
+    assert 'RollbackClearInstallerActive' in WXS
+    for action in ("SetInstallerActive", "ClearInstallerActive"):
+        start = WXS.index(f'<CustomAction Id="{action}"')
+        block = WXS[start:WXS.index('/>', start) + 2]
+        assert 'Return="check"' in block
+    assert 'installerTransactionActive()' in agent_source
+    assert 'installer.active' in bootstrap_source
+
+
+def test_installer_health_requires_current_service_pid_not_only_live_pid():
+    bootstrap_source = (ROOT / "agent/bootstrap_windows.go").read_text(encoding="utf-8")
+    assert "currentTechiAgentServicePID()" in bootstrap_source
+    assert "status.PID == servicePID" in bootstrap_source
+    assert "status.State == stateOperational" in bootstrap_source
+    assert "windowsPIDIsLive(status.PID)" in bootstrap_source
 
 
 def test_tray_task_is_auxiliary_and_nonfatal():
@@ -49,6 +95,9 @@ def test_bootstraps_require_fresh_live_operational_state():
     assert BOOTSTRAP.count("$state.state -eq 'operational' -and $live -and $fresh") >= 2
     assert "equal_version_unhealthy forcing_repair=1" in BOOTSTRAP
     assert "set VERSION_STATE=mixed" in BOOTSTRAP
+    assert "set VERSION_STATE=binary_only" in BOOTSTRAP
+    assert "set VERSION_STATE=registry_only" in BOOTSTRAP
+    assert "set VERSION_STATE=service_only" in BOOTSTRAP
     assert "installed_binary_version=%BINARY_VERSION%" in BOOTSTRAP
 
 
