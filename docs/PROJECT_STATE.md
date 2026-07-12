@@ -336,6 +336,21 @@ if active device with different RustDesk ID).
   `package_identity_mismatch` / `installer_busy_retryable`. Damaged/missing
   agents still take the Agent MSI repair/install path; Remote Support MSI
   lifecycle unchanged. See OPERATOR-MANUAL §9b + CHANGELOG 2026-07-12.
+- **⚠️ Deploy-lineage status (2026-07-12): the NETLOGON rollout source
+  (`bf0bb40`) is NOT live yet.** Production backend runs `aac9ebf` (one commit
+  behind) — the backend container deploys from **`/opt/techi/techi-platform`**
+  (git `aac9ebf`, `bf0bb40` never fetched there), NOT from `/root` (git
+  `862b1bf`); frontend/postgres deploy from `/root`. So a GPO regenerated now
+  still produces the pre-rollout script with no `techi-rollout-*.txt` /
+  standalone EXE. **Fix = redeploy the backend from `/opt/techi/techi-platform`
+  at `bf0bb40`** (see CHANGELOG 2026-07-12 forensic entry): `cd
+  /opt/techi/techi-platform && git fetch origin && git merge --ff-only
+  origin/stable/phase-2-heartbeat && docker compose -p techi-platform build
+  backend && docker compose -p techi-platform up -d backend`. Verify the
+  container source greps `AGENT_ROLLOUT_MODE`/`:evaluate_rollout` before
+  regenerating GPO. Rollout mode stays `disabled` (default) — no rollout until
+  the operator sets it. GPO REGENERATION = NO / CANARY = NO / FLEET = NO until
+  redeployed. (Underlying: split-brain deploy dirs, Known Issue #1.)
 - Watchdog Scheduled Task (`watchdog-check`, 5 min): restarts TechiAgent
   service; ≥2.1.5 also starts the TECHI Remote Support service if stopped.
 - **SHA-alignment rule (critical):** "Needs Agent Update" compares each

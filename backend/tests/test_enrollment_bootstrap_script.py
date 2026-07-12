@@ -1944,6 +1944,38 @@ class TestNetlogonNativeRollout:
         assert "msiexec" not in section.lower()
         assert "%MSIEXEC%" not in section
 
+    def test_disabled_mode_keeps_architecture_and_control_contract(self):
+        """ARCHITECTURE INVARIANT: AGENT_ROLLOUT_MODE is a RUNTIME/operator
+        control, not a build-time generator switch. With mode=disabled AND an
+        active agent_binary, the generated script must STILL contain the full
+        rollout state machine AND publish the rollout control contract
+        (standalone EXE + sha256 sidecar + rollout files); the disabled decision
+        is enforced at RUNTIME (returns rollout_disabled), never by omitting the
+        architecture. (Regression for the 2026-07-12 stale-backend forensic:
+        a script missing these markers means the backend is pre-bf0bb40, not
+        that disabled mode stripped them.)"""
+        s = _RolloutStub(target="2.1.8", sha="a" * 64, mode="disabled")._gpo_scheduled_task_setup(
+            "https://api-rdp.techi.com.al", "deploy-token-1234"
+        )
+        # (a) full CMD state machine present regardless of mode
+        for marker in (":evaluate_rollout", ":compare_versions", ":netlogon_self_update",
+                       ":wait_for_rollout_target", "call :evaluate_rollout",
+                       "netlogon-self-update -source", "NETLOGON_ROLLOUT_MODE",
+                       "FINAL_RESULT=rollout_disabled", "FINAL_RESULT=netlogon_self_update_completed"):
+            assert marker in s, f"disabled mode dropped architecture marker: {marker}"
+        # (b) control contract still published (EXE + sha256 sidecar + rollout files)
+        assert "-Label 'TECHI Agent standalone EXE'" in s
+        assert "($StandaloneExePath + '.sha256')" in s
+        assert "$RolloutTarget | Out-File $RolloutVersionFilePath" in s
+        assert "$RolloutMode   | Out-File $RolloutModeFilePath" in s
+        # (c) mode literal is 'disabled' and the CMD default matches -> runtime
+        # decision returns rollout_disabled (proven separately under wine).
+        assert "$RolloutMode          = 'disabled'" in s
+        assert "if not defined ROLLOUT_MODE set ROLLOUT_MODE=disabled" in s
+        # The disabled decision is a runtime branch, not a missing state machine.
+        eval_section = _label_section(s, ":evaluate_rollout")
+        assert 'if /i "%ROLLOUT_MODE%"=="disabled" set ROLLOUT_DECISION=disabled' in eval_section
+
     def test_identity_gate_precedes_service_mutation(self):
         s = self._script()
         section = _label_section(s, ":netlogon_self_update")

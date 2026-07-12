@@ -27,6 +27,78 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] FORENSIC: bf0bb40 rollout absent in agroblend.local — prod backend stale, NOT a source bug
+
+### Problemi
+After bf0bb40 (NETLOGON native rollout) was pushed, the operator regenerated the
+GPO for `agroblend.local` at 18:39. The live `\\AGROBLEND.LOCAL\NETLOGON\techi-deploy.cmd`
+(41599 bytes) contained **none** of the rollout markers (`AGENT_ROLLOUT_MODE`,
+`ROLLOUT_MODE`, `netlogon_self_update`, `evaluate_rollout`, `compare_versions`,
+`package_identity_mismatch`), and NETLOGON was missing `techi-rollout-version.txt`,
+`techi-rollout-mode.txt`, `TECHI-Agent-2.1.8.exe`, `TECHI-Agent-2.1.8.exe.sha256`.
+
+### Analiza (source→runtime lineage audit)
+- **Source at HEAD is correct.** `git rev-parse HEAD` = `bf0bb40`; `bf0bb40` is an
+  ancestor of HEAD. `enrollment_bootstrap_service.py` contains all markers; the
+  generator emits a **~72 KB** script. Proven that mode=disabled AND even a
+  missing agent_binary STILL emit the full CMD state machine (3 scenarios) — the
+  rollout mode is a runtime control, not a build switch.
+- **Single generator path:** `GET /bootstrap/gpo-deploy.ps1` (bootstrap.py) →
+  `EnrollmentBootstrapService._gpo_scheduled_task_setup`. No separate ZIP/cache.
+- **Production runtime is STALE.** On `techi-server`: the backend container
+  (`techi-platform-backend-1`, image built **2026-07-12 13:36:27Z**) has
+  `com.docker.compose.project.working_dir=/opt/techi/techi-platform` and its
+  on-disk source greps **0** for `AGENT_ROLLOUT_MODE` / `:evaluate_rollout` /
+  `netlogon-self-update`; no `ROLLOUT` env. `/opt/techi/techi-platform` git HEAD
+  = **`aac9ebf`** (the commit *before* bf0bb40 — `bf0bb40` object was never even
+  fetched there; last fetch saw origin tip = aac9ebf). `/root` HEAD = `862b1bf`
+  (further behind). Timeline (UTC): backend built 13:36 (aac9ebf committed
+  13:36:00, container 13:36:27) → **bf0bb40 committed/pushed 16:30** → operator
+  regenerated GPO 18:39 against the aac9ebf backend → old 41599-byte script.
+- **Split-brain deploy dirs (Known Issue #1) materialized worse than documented:**
+  the **backend** container is bound to `/opt/techi/techi-platform/docker-compose.yml`,
+  while **frontend + postgres** are bound to `/root/docker-compose.yml` (compose
+  files are byte-identical, same project `techi-platform`). So the backend is
+  deployed from `/opt` (aac9ebf), not the assumed-canonical `/root`.
+- **Rollout target IS available:** prod manifest has `agent_binary v2.1.8
+  active=True` (sha `b3e34edba1a9…`) + `msi v2.1.8 active=True` + `remote_support_msi
+  v1.4.6 active=True`. So once the backend is at bf0bb40, the DC script will
+  publish the standalone EXE + sha256 + rollout files (mode defaults `disabled`).
+
+### Shkaku
+**The backend was never redeployed after bf0bb40.** The dir that actually feeds
+the backend container (`/opt/techi/techi-platform`) is one commit behind bf0bb40
+and had not even fetched it. The 18:39 GPO regeneration therefore ran the
+pre-rollout `_gpo_scheduled_task_setup`. This is a deploy-lineage/topology issue,
+not a source or architecture defect.
+
+### Zgjidhja
+No source fix required (verified). Added one hardening regression test
+(`test_disabled_mode_keeps_architecture_and_control_contract`) locking the
+invariant the audit turned on: mode=disabled + active agent_binary must STILL
+emit the full state machine AND publish the control contract; the disabled
+decision is a runtime branch (`rollout_disabled`), never an omission. Documented
+the exact backend-redeploy path and post-redeploy verification. **No production
+change, no package activation, no GPO regeneration, no NETLOGON edit, no rollout.**
+
+### Ndryshimet
+- `backend/tests/test_enrollment_bootstrap_script.py` (+1 regression test).
+- Docs: this entry, PROJECT_STATE (deploy-lineage/canary status note).
+
+### Rezultati
+Rollout tests 15/15; full backend suite green both flag modes; Go tests +
+windows/linux builds clean; preflight PASSED. **SOURCE READY / PRODUCTION BACKEND
+STALE / GPO REGENERATION = NO (until backend redeployed to bf0bb40) / CANARY = NO
+/ FLEET ROLLOUT ENABLED = NO.**
+
+### Mësimet
+"Reported complete" ≠ "live". A source-to-NETLOGON audit must always verify the
+**running container's** source + build time, not just `git log`. The split-brain
+deploy dirs (backend from `/opt`, frontend/postgres from `/root`) are the real
+latent hazard: a `git pull` in `/root` would NOT update the backend. Redeploy
+must target the dir whose compose file owns the container — here
+`/opt/techi/techi-platform` — until the dirs are unified (Known Issue #1).
+
 ## [2026-07-12] FEATURE: NETLOGON-driven native Agent rollout (healthy older agents)
 
 ### Problemi
