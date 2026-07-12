@@ -18,7 +18,7 @@
 
 ## WINDOWS AGENT CANARY STATUS
 
-**Current status: CANARY FAILED — SOURCE FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
+**Current status: CANARY FAILED — BATCH EXPANSION FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
 
 Real ADPASCUCCI 2.1.8 split-deploy canary evidence showed the generated
 NETLOGON/GPO flow still had source defects after package activation: Remote
@@ -46,6 +46,22 @@ fix rewrites both Agent and Remote Support service readers as `-EncodedCommand`
 payloads that assign `$result` before `Set-Content`, and removes the same
 invalid if/else pipeline shape from MSI busy detection. Canary status remains
 failed until ADPASCUCCI is regenerated/rerun with the redeployed backend output.
+
+2026-07-12 second follow-up: real Windows then confirmed a non-terminating CMD
+batch defect in `:classify_remote_support`. The generated block assigned
+`RS_VERSION_OUT` and referenced `%RS_VERSION_OUT%` inside the same
+parenthesized `if exist "%RS_EXE%" (...)` block; CMD expanded the variable before
+the block ran, so the cleanup `del` saw an empty target and prompted from
+`C:\Windows\system32`. The source fix moves Remote Support version reading into
+a separate `-EncodedCommand` subroutine, adds guarded `del /f /q` cleanup via
+`:delete_temp_file`, clears temp output variables after use, normalizes Remote
+Support versions to MAJOR.MINOR.PATCH (`1.4.6+64` / `1.4.6.64` / `1.4.6` all
+compare as `1.4.6`), and adds a real CMD/Wine regression proving the classifier
+exits without prompt, detects `RUNNING` + PID, returns `remote_healthy`, leaves
+no temp files, and never invokes MSI. Backend redeploy is required because the
+generator changed; MSI bytes are unchanged. Do not update NETLOGON, reactivate
+the task, or start rollout until the redeployed backend-generated script is
+manually copied/validated for the single ADPASCUCCI canary.
 
 2.1.6 remains the production-safe fallback. Do not describe 2.1.6 as broadly
 broken; its core startup, heartbeat, telemetry, Remote Support, self-update,

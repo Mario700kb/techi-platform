@@ -12,7 +12,11 @@ must hold for PowerShell 5.1 to parse the scripts correctly.
 """
 import base64
 import json
+import os
 import re
+import shutil
+import subprocess
+import textwrap
 from types import SimpleNamespace
 from typing import Optional
 
@@ -29,6 +33,7 @@ from app.schemas.enrollment_bootstrap import (
 from app.services.enrollment_bootstrap_service import (
     _READ_AGENT_SERVICE_ENCODED_COMMAND,
     _READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND,
+    _READ_REMOTE_SUPPORT_VERSION_ENCODED_COMMAND,
     _READ_REGISTRY_ENCODED_COMMAND,
     EnrollmentBootstrapService,
 )
@@ -83,6 +88,29 @@ def _encoded_command_for_label(script: str, label: str) -> str:
     match = re.search(r"-EncodedCommand\s+([A-Za-z0-9+/=]+)", rest)
     assert match, f"missing encoded command after {label}"
     return match.group(1)
+
+
+def _label_section(script: str, label: str) -> str:
+    label_match = re.search(rf"^{re.escape(label)}\b", script, re.MULTILINE)
+    assert label_match, f"missing label {label}"
+    start = label_match.start()
+    next_label = re.search(r"^:[A-Za-z0-9_][A-Za-z0-9_-]*\b", script[start + 1 :], re.MULTILINE)
+    end = start + 1 + next_label.start() if next_label else len(script)
+    return script[start:end]
+
+
+def _cmd_runner():
+    cmd = shutil.which("cmd.exe")
+    if cmd:
+        return [cmd], None
+    wine = shutil.which("wine")
+    if not wine:
+        return None, "cmd.exe/wine not available"
+    return [wine, "cmd.exe"], None
+
+
+def _wine_path(path) -> str:
+    return "Z:" + str(path).replace("/", "\\")
 
 
 def _make_req(**overrides) -> EnrollmentBootstrapRequest:
@@ -1021,6 +1049,193 @@ class TestGPOScheduledDeployScript:
         assert "if($busy){'1'}else{'0'}|Set-Content" not in self.script
         assert re.search(r"\}\s*\|\s*Set-Content", self.script) is None
         assert "$result='0'; if($busy){$result='1'}; $result|Set-Content" in self.script
+
+    def test_remote_support_version_reader_is_separate_encoded_subroutine(self):
+        """Regression: RS_VERSION_OUT must not be set/read/deleted in same IF block."""
+        classify = _label_section(self.script, ":classify_remote_support")
+        read_version = _label_section(self.script, ":read_remote_support_version")
+        encoded = _encoded_command_for_label(self.script, ":read_remote_support_version")
+
+        assert encoded == _READ_REMOTE_SUPPORT_VERSION_ENCODED_COMMAND
+        assert 'call :read_remote_support_version' in classify
+        assert "set RS_VERSION_OUT=" not in classify
+        assert "del \"%RS_VERSION_OUT%\"" not in classify
+        assert "%RS_VERSION_OUT%" not in classify
+
+        assert "set RS_VERSION_OUT=%TEMP%\\techi-rs-version.out" in read_version
+        assert "call :delete_temp_file \"%RS_VERSION_OUT%\" \"techi-rs-version.out\"" in read_version
+        assert 'for /f "usebackq tokens=*" %%v in ("%RS_VERSION_OUT%") do set "REMOTE_VERSION_FOUND=%%v"' in read_version
+
+        payload = _decode_powershell(encoded)
+        assert "$result | Set-Content -LiteralPath $env:RS_VERSION_OUT -Encoding ASCII" in payload
+        assert not re.search(r"\}\s*\|\s*Set-Content", payload)
+
+    def test_remote_support_version_normalization_contract(self):
+        """Remote Support build suffix is metadata; deployment compares major.minor.patch."""
+        normalize = _label_section(self.script, ":normalize_remote_support_version")
+        classify = _label_section(self.script, ":classify_remote_support")
+
+        assert "1.4.6+64 -> 1.4.6" in self.script
+        assert "1.4.6.64 -> 1.4.6" in self.script
+        assert "for /f \"tokens=1-3 delims=.+\"" in normalize
+        assert "set REMOTE_VERSION_NORMALIZED=%REMOTE_VERSION_CANONICAL%" in classify
+        assert "set REMOTE_TARGET_VERSION_NORMALIZED=%REMOTE_VERSION_CANONICAL%" in classify
+        assert 'if defined REMOTE_VERSION_NORMALIZED if defined REMOTE_TARGET_VERSION_NORMALIZED if not "%REMOTE_VERSION_NORMALIZED%"=="%REMOTE_TARGET_VERSION_NORMALIZED%"' in classify
+        assert '"%REMOTE_VERSION_FOUND%"=="%REMOTE_SUPPORT_VERSION%.0"' not in self.script
+
+    def test_deploy_cmd_temp_deletes_are_validated_and_non_interactive(self):
+        """All generated temporary-file deletes must go through leaf-validated /f /q delete."""
+        assert ":delete_temp_file" in self.script
+        assert 'del /f /q "%DELETE_TARGET%" 2>nul' in self.script
+        assert 'if /i not "%DELETE_ACTUAL_LEAF%"=="%DELETE_EXPECTED_LEAF%" exit /b 0' in self.script
+        assert 'if /i not "%DELETE_TARGET%"=="%TEMP%\\%DELETE_EXPECTED_LEAF%" exit /b 0' in self.script
+        assert 'del "%' not in self.script
+
+        expected_temp_files = [
+            "techi-msi-busy.out",
+            "techi-rs-msi-busy.out",
+            "techi-rs-version.out",
+            "techi-read-registry.out",
+            "techi-read-binary.out",
+            "techi-read-agent-service.out",
+            "techi-read-remote-service.out",
+            "techi-read-state.out",
+        ]
+        for filename in expected_temp_files:
+            assert f'"{filename}"' in self.script
+            assert f'call :delete_temp_file "%' in self.script
+
+    def test_deploy_cmd_no_known_same_block_output_variable_expansion(self):
+        """Static guard for the class of bug where set VAR and %VAR% appear in one block."""
+        classify = _label_section(self.script, ":classify_remote_support")
+        assert re.search(r"if exist \"%RS_EXE%\" \(\n(?:.*\n)*?%RS_VERSION_OUT%", classify) is None
+
+        risky_output_vars = [
+            "RS_VERSION_OUT",
+            "BUSY_OUT",
+            "REG_OUT",
+            "BINARY_OUT",
+            "SERVICE_OUT",
+            "REMOTE_SERVICE_OUT",
+            "STATE_OUT",
+        ]
+        for var in risky_output_vars:
+            assert f'del "%{var}%"' not in self.script
+
+    def test_classify_remote_support_subroutine_executes_under_cmd(self, tmp_path):
+        """Run the generated classify subroutine with cmd.exe/wine: no prompt, no MSI."""
+        runner, reason = _cmd_runner()
+        if runner is None:
+            pytest.skip(reason)
+
+        wineprefix = tmp_path / "wineprefix"
+        env = os.environ.copy()
+        powershell_cmd = _wine_path(tmp_path / "fake-powershell.bat")
+        if runner[0].endswith("wine"):
+            env["WINEPREFIX"] = str(wineprefix)
+            (wineprefix / "drive_c" / "windows" / "temp").mkdir(parents=True, exist_ok=True)
+            rs_exe_host = wineprefix / "drive_c" / "Program Files" / "TECHI Remote Support" / "TECHI Remote Support.exe"
+            rs_exe_host.parent.mkdir(parents=True, exist_ok=True)
+            rs_exe_host.write_bytes(b"fake-rs")
+            powershell_cmd = r"C:\fake-powershell.bat"
+            smoke = subprocess.run(
+                [*runner, "/d", "/c", "ver"],
+                text=True,
+                capture_output=True,
+                timeout=60,
+                env=env,
+            )
+            if smoke.returncode != 0:
+                pytest.skip(f"wine cmd.exe unavailable: {(smoke.stdout + smoke.stderr).strip()}")
+
+        fake_ps = (
+            wineprefix / "drive_c" / "fake-powershell.bat"
+            if runner[0].endswith("wine")
+            else tmp_path / "fake-powershell.bat"
+        )
+        fake_ps.write_text(
+            textwrap.dedent(
+                r"""
+                @echo off
+                if defined RS_VERSION_OUT (
+                  > "%RS_VERSION_OUT%" echo 1.4.6+64
+                )
+                if defined REMOTE_SERVICE_OUT (
+                  > "%REMOTE_SERVICE_OUT%" echo REMOTE_SERVICE_STATUS=RUNNING
+                  >> "%REMOTE_SERVICE_OUT%" echo REMOTE_SERVICE_PID=4321
+                )
+                exit /b 0
+                """
+            ).strip()
+            + "\r\n",
+            encoding="utf-8",
+        )
+
+        classify = _label_section(self.script, ":classify_remote_support")
+        read_version = _label_section(self.script, ":read_remote_support_version")
+        normalize = _label_section(self.script, ":normalize_remote_support_version")
+        delete_temp = _label_section(self.script, ":delete_temp_file")
+        read_remote_service = _label_section(self.script, ":read_remote_support_service")
+
+        harness = tmp_path / "classify-rs.cmd"
+        harness.write_text(
+            textwrap.dedent(
+                rf"""
+                @echo off
+                set "TEMP=C:\windows\temp"
+                set "LOG=NUL"
+                set "RS_EXE=C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe"
+                set "POWERSHELL={powershell_cmd}"
+                set "REMOTE_SUPPORT_AVAILABLE=1"
+                set "REMOTE_SUPPORT_VERSION=1.4.6"
+                set "REMOTE_INSTALL_FAILED=0"
+                echo BEFORE_CLASSIFY
+                call :classify_remote_support
+                echo AFTER_CLASSIFY
+                echo REMOTE_STATE=%REMOTE_STATE%
+                echo REMOTE_VERSION_FOUND=%REMOTE_VERSION_FOUND%
+                echo REMOTE_VERSION_NORMALIZED=%REMOTE_VERSION_NORMALIZED%
+                echo REMOTE_TARGET_VERSION_NORMALIZED=%REMOTE_TARGET_VERSION_NORMALIZED%
+                echo REMOTE_SERVICE_STATUS=%REMOTE_SERVICE_STATUS%
+                echo REMOTE_SERVICE_PID=%REMOTE_SERVICE_PID%
+                if exist "%TEMP%\techi-rs-version.out" echo TEMP_LEFT_BEHIND=1
+                if exist "%TEMP%\techi-read-remote-service.out" echo SERVICE_TEMP_LEFT_BEHIND=1
+                exit /b 0
+
+                {classify}
+                {read_version}
+                {normalize}
+                {delete_temp}
+                {read_remote_service}
+                """
+            ).strip()
+            + "\r\n",
+            encoding="utf-8",
+        )
+
+        cmd_path = str(harness) if runner[0].endswith("cmd.exe") else _wine_path(harness)
+        result = subprocess.run(
+            [*runner, "/d", "/c", cmd_path],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            env=env,
+        )
+
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        assert "BEFORE_CLASSIFY" in output
+        assert "AFTER_CLASSIFY" in output
+        assert "Are you sure (Y/N)?" not in output
+        assert "REMOTE_STATE=remote_healthy" in output
+        assert "REMOTE_VERSION_FOUND=1.4.6+64" in output
+        assert "REMOTE_VERSION_NORMALIZED=1.4.6" in output
+        assert "REMOTE_TARGET_VERSION_NORMALIZED=1.4.6" in output
+        assert "REMOTE_SERVICE_STATUS=RUNNING" in output
+        assert "REMOTE_SERVICE_PID=4321" in output
+        assert "TEMP_LEFT_BEHIND=1" not in output
+        assert "SERVICE_TEMP_LEFT_BEHIND=1" not in output
+        assert "msiexec" not in output.lower()
 
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script

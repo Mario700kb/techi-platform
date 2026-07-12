@@ -27,6 +27,64 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] HOTFIX: prevent unsafe batch variable expansion in Remote Support classifier
+
+### Problemi
+
+Real Windows canary confirmed that generated `techi-deploy.cmd` could hang in
+`:classify_remote_support`. The block assigned `RS_VERSION_OUT` and referenced
+`%RS_VERSION_OUT%` inside the same parenthesized `if exist "%RS_EXE%" (...)`
+block. CMD expands `%VAR%` for the whole block before execution, so
+`RS_VERSION_OUT` was empty at parse time and `del "%RS_VERSION_OUT%"` became an
+unsafe current-directory delete prompt (`C:\Windows\system32\*, Are you sure
+(Y/N)?`). The scheduled deployment task then waited forever.
+
+### Analiza
+
+This was a CMD expansion bug, not another PowerShell parser bug. The same audit
+also found generated temp-file deletes using interactive `del "%VAR%"` without a
+central path/leaf guard. The Remote Support version read still used a complex
+inline PowerShell `-Command`.
+
+### Shkaku
+
+The Remote Support classifier mixed output-file setup, PowerShell execution,
+file parsing, and cleanup inside a single parenthesized CMD block. Normal CMD
+percent expansion made the cleanup command observe a stale/empty value.
+
+### Zgjidhja
+
+Remote Support version reading is now a separate subroutine using
+`powershell.exe -EncodedCommand`. The classifier only calls the subroutine and
+never references `RS_VERSION_OUT`. Temporary output deletion now goes through
+one `:delete_temp_file` helper that requires a non-empty target, an expected
+leaf name, and an exact `%TEMP%\leaf` match before running `del /f /q`. PowerShell
+invocations are emitted as `call "%POWERSHELL%" ...` so test stubs and future
+overrides return safely to the parent batch. Remote Support ProductVersion
+comparison now normalizes build suffixes to MAJOR.MINOR.PATCH
+(`1.4.6+64`, `1.4.6.64`, and `1.4.6` all compare as `1.4.6`).
+
+### Ndryshimet
+
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `docs/CHANGELOG-SOLUTIONS.md`
+- `docs/PROJECT_STATE.md`
+
+### Rezultati
+
+Added static regression tests for unsafe same-block output variable expansion
+and temp deletes, plus a real CMD/Wine execution regression for the generated
+`:classify_remote_support` path. The real CMD regression verifies no prompt/no
+hang, Remote Support service `RUNNING` + PID detection, version normalization,
+`remote_healthy`, no temp files left behind, and no MSI invocation.
+
+### Mësimet
+
+Generated batch must not set and percent-expand the same output variable inside
+one parenthesized block. Prefer small subroutines and explicit cleanup guards
+over clever inline batch/PowerShell hybrids.
+
 ## [2026-07-12] HOTFIX: valid PowerShell service detection in generated deploy script
 
 ### Problemi
