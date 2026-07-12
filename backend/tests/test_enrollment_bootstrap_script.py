@@ -32,6 +32,7 @@ from app.schemas.enrollment_bootstrap import (
 )
 from app.services.enrollment_bootstrap_service import (
     _READ_AGENT_SERVICE_ENCODED_COMMAND,
+    _READ_LIFECYCLE_ENCODED_COMMAND,
     _READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND,
     _READ_REMOTE_SUPPORT_VERSION_ENCODED_COMMAND,
     _READ_REGISTRY_ENCODED_COMMAND,
@@ -959,6 +960,7 @@ class TestGPOScheduledDeployScript:
         assert "lifecycle_detail=%LIFECYCLE_DETAIL%" in self.script
         assert "lifecycle_pid=%LIFECYCLE_PID%" in self.script
         assert "lifecycle_pid_match=%LIFECYCLE_PID_MATCH%" in self.script
+        assert "lifecycle_reader_error=%LIFECYCLE_READER_ERROR%" in self.script
         assert 'result=0 version=%ACTIVE_VERSION%' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION%' in self.script
         assert "result=done final_result=%FINAL_RESULT%" in self.script
@@ -1049,6 +1051,44 @@ class TestGPOScheduledDeployScript:
         assert "if($busy){'1'}else{'0'}|Set-Content" not in self.script
         assert re.search(r"\}\s*\|\s*Set-Content", self.script) is None
         assert "$result='0'; if($busy){$result='1'}; $result|Set-Content" in self.script
+
+    def test_deploy_cmd_lifecycle_reader_uses_encoded_diagnostic_payload(self):
+        """Regression: lifecycle reader must not be a fragile inline -Command blob."""
+        read_lifecycle = _label_section(self.script, ":read_lifecycle")
+        encoded = _encoded_command_for_label(self.script, ":read_lifecycle")
+        payload = _decode_powershell(encoded)
+
+        assert encoded == _READ_LIFECYCLE_ENCODED_COMMAND
+        assert "-EncodedCommand" in read_lifecycle
+        assert " -Command " not in read_lifecycle
+        assert "catch{}" not in read_lifecycle
+        assert "LIFECYCLE_READER_ERROR" in read_lifecycle
+
+        for key in (
+            "LIFECYCLE_STATE",
+            "LIFECYCLE_DETAIL",
+            "LIFECYCLE_PID",
+            "SERVICE_PID_AFTER",
+            "LIFECYCLE_PID_MATCH",
+            "LIFECYCLE_READER_ERROR",
+        ):
+            assert f"'{key}='" in payload
+
+        assert "function W($s,$d,$p,$sp,$m,$e)" in payload
+        assert "$result = @(" in payload
+        assert "$result | Set-Content -LiteralPath $env:STATE_OUT -Encoding ASCII" in payload
+        assert "Get-Content -LiteralPath $env:TECHI_STATE_FILE" in payload
+        assert "ConvertFrom-Json -ErrorAction Stop" in payload
+        assert "Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\"" in payload
+        assert "Get-Process -Id $p" in payload
+        assert "$m = ($sp -gt 0 -and $p -eq $sp)" in payload
+        assert "stale_timestamp" in payload
+        assert "stale_process" in payload
+        assert "pid_mismatch" in payload
+        assert "reader_error" in payload
+        assert "function E($r)" in payload
+        assert "[regex]::Replace($v, '[^A-Za-z0-9_.-]', '_')" in payload
+        assert not re.search(r"\}\s*\|\s*Set-Content", payload)
 
     def test_remote_support_version_reader_is_separate_encoded_subroutine(self):
         """Regression: RS_VERSION_OUT must not be set/read/deleted in same IF block."""
@@ -1237,6 +1277,159 @@ class TestGPOScheduledDeployScript:
         assert "SERVICE_TEMP_LEFT_BEHIND=1" not in output
         assert "msiexec" not in output.lower()
 
+    def test_read_lifecycle_subroutine_executes_under_cmd(self, tmp_path):
+        """Run complete :read_lifecycle under cmd.exe/wine for healthy/error cases."""
+        runner, reason = _cmd_runner()
+        if runner is None:
+            pytest.skip(reason)
+
+        wineprefix = tmp_path / "wineprefix"
+        env = os.environ.copy()
+        powershell_cmd = _wine_path(tmp_path / "fake-powershell.bat")
+        install_dir = _wine_path(tmp_path / "TechiAgent")
+        if runner[0].endswith("wine"):
+            env["WINEPREFIX"] = str(wineprefix)
+            (wineprefix / "drive_c" / "windows" / "temp").mkdir(parents=True, exist_ok=True)
+            powershell_cmd = r"C:\fake-powershell.bat"
+            install_dir = r"C:\windows\temp\TechiAgent"
+            smoke = subprocess.run(
+                [*runner, "/d", "/c", "ver"],
+                text=True,
+                capture_output=True,
+                timeout=60,
+                env=env,
+            )
+            if smoke.returncode != 0:
+                pytest.skip(f"wine cmd.exe unavailable: {(smoke.stdout + smoke.stderr).strip()}")
+
+        fake_ps = (
+            wineprefix / "drive_c" / "fake-powershell.bat"
+            if runner[0].endswith("wine")
+            else tmp_path / "fake-powershell.bat"
+        )
+        fake_ps.write_text(
+            textwrap.dedent(
+                r"""
+                @echo off
+                if "%LIFECYCLE_TEST_CASE%"=="healthy" (
+                  if not exist "%TECHI_STATE_FILE%" exit /b 3
+                  > "%STATE_OUT%" echo LIFECYCLE_STATE=operational
+                  >> "%STATE_OUT%" echo LIFECYCLE_DETAIL=none
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID=6940
+                  >> "%STATE_OUT%" echo SERVICE_PID_AFTER=6940
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID_MATCH=1
+                  >> "%STATE_OUT%" echo LIFECYCLE_READER_ERROR=
+                  exit /b 0
+                )
+                if "%LIFECYCLE_TEST_CASE%"=="stale" (
+                  > "%STATE_OUT%" echo LIFECYCLE_STATE=stale
+                  >> "%STATE_OUT%" echo LIFECYCLE_DETAIL=stale_timestamp
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID=6940
+                  >> "%STATE_OUT%" echo SERVICE_PID_AFTER=6940
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID_MATCH=1
+                  >> "%STATE_OUT%" echo LIFECYCLE_READER_ERROR=
+                  exit /b 0
+                )
+                if "%LIFECYCLE_TEST_CASE%"=="pid_mismatch" (
+                  > "%STATE_OUT%" echo LIFECYCLE_STATE=stale
+                  >> "%STATE_OUT%" echo LIFECYCLE_DETAIL=pid_mismatch
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID=45796
+                  >> "%STATE_OUT%" echo SERVICE_PID_AFTER=6940
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID_MATCH=0
+                  >> "%STATE_OUT%" echo LIFECYCLE_READER_ERROR=
+                  exit /b 0
+                )
+                if "%LIFECYCLE_TEST_CASE%"=="malformed" (
+                  > "%STATE_OUT%" echo LIFECYCLE_STATE=missing
+                  >> "%STATE_OUT%" echo LIFECYCLE_DETAIL=reader_error
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID=
+                  >> "%STATE_OUT%" echo SERVICE_PID_AFTER=0
+                  >> "%STATE_OUT%" echo LIFECYCLE_PID_MATCH=0
+                  >> "%STATE_OUT%" echo LIFECYCLE_READER_ERROR=InvalidData
+                  exit /b 0
+                )
+                exit /b 2
+                """
+            ).strip()
+            + "\r\n",
+            encoding="utf-8",
+        )
+
+        read_lifecycle = _label_section(self.script, ":read_lifecycle")
+        delete_temp = _label_section(self.script, ":delete_temp_file")
+
+        harness = tmp_path / "read-lifecycle.cmd"
+        harness.write_text(
+            textwrap.dedent(
+                rf"""
+                @echo off
+                set "TEMP=C:\windows\temp"
+                set "INSTALL_DIR={install_dir}"
+                set "POWERSHELL={powershell_cmd}"
+                if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+                > "%INSTALL_DIR%\agent.state.json" echo {{"state":"operational","updated_at":"2026-07-12T13:17:37.8054558Z","pid":6940}}
+                call :run_case healthy
+                call :run_case stale
+                call :run_case pid_mismatch
+                > "%INSTALL_DIR%\agent.state.json" echo not-json
+                call :run_case malformed
+                exit /b 0
+
+                :run_case
+                set "LIFECYCLE_TEST_CASE=%~1"
+                set LIFECYCLE_STATE=missing
+                set LIFECYCLE_DETAIL=config_missing
+                set LIFECYCLE_PID=
+                set SERVICE_PID_AFTER=
+                set LIFECYCLE_PID_MATCH=0
+                set LIFECYCLE_READER_ERROR=
+                call :read_lifecycle
+                echo CASE=%LIFECYCLE_TEST_CASE%
+                echo LIFECYCLE_STATE=%LIFECYCLE_STATE%
+                echo LIFECYCLE_DETAIL=%LIFECYCLE_DETAIL%
+                echo LIFECYCLE_PID=%LIFECYCLE_PID%
+                echo SERVICE_PID_AFTER=%SERVICE_PID_AFTER%
+                echo LIFECYCLE_PID_MATCH=%LIFECYCLE_PID_MATCH%
+                echo LIFECYCLE_READER_ERROR=%LIFECYCLE_READER_ERROR%
+                if exist "%TEMP%\techi-read-state.out" echo STATE_TEMP_LEFT_BEHIND=1
+                exit /b 0
+
+                {read_lifecycle}
+                {delete_temp}
+                """
+            ).strip()
+            + "\r\n",
+            encoding="utf-8",
+        )
+
+        cmd_path = str(harness) if runner[0].endswith("cmd.exe") else _wine_path(harness)
+        result = subprocess.run(
+            [*runner, "/d", "/c", cmd_path],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            env=env,
+        )
+
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        assert "CASE=healthy" in output
+        assert "LIFECYCLE_STATE=operational" in output
+        assert "LIFECYCLE_PID=6940" in output
+        assert "SERVICE_PID_AFTER=6940" in output
+        assert "LIFECYCLE_PID_MATCH=1" in output
+        assert "CASE=stale" in output
+        assert "LIFECYCLE_STATE=stale" in output
+        assert "LIFECYCLE_DETAIL=stale_timestamp" in output
+        assert "CASE=pid_mismatch" in output
+        assert "LIFECYCLE_DETAIL=pid_mismatch" in output
+        assert "LIFECYCLE_PID=45796" in output
+        assert "LIFECYCLE_PID_MATCH=0" in output
+        assert "CASE=malformed" in output
+        assert "LIFECYCLE_DETAIL=reader_error" in output
+        assert "LIFECYCLE_READER_ERROR=InvalidData" in output
+        assert "STATE_TEMP_LEFT_BEHIND=1" not in output
+
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
         assert "set LEGACY_INSTALL_DIR=C:\\ProgramData\\TECHI" in self.script
@@ -1314,11 +1507,12 @@ class TestGPOScheduledDeployScript:
         assert "call :read_registry" in self.script
         assert "call :read_agent_service" in self.script
         assert ":read_agent_service" in self.script
-        assert "Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\"" in self.script
+        lifecycle_ps = _decode_powershell(_encoded_command_for_label(self.script, ":read_lifecycle"))
+        assert "Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\"" in lifecycle_ps
         assert "SERVICE_PID_AFTER=" in self.script
         assert 'if /i "%VERSION_STATE%"=="equal" if /i "%BINARY_VERSION%"=="%ACTIVE_VERSION%.0" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" if "%LIFECYCLE_PID_MATCH%"=="1" set DEPLOY_VALID=1' in self.script
         assert "call :read_lifecycle" in self.script
-        assert "pid_mismatch" in self.script
+        assert "pid_mismatch" in lifecycle_ps
         assert "set LIFECYCLE_PID_MATCH=0" in self.script
         assert "if %LIFECYCLE_WAIT% GEQ 12 goto :lifecycle_done" in self.script
         assert 'if not "%DEPLOY_VALID%"=="1" goto :install_failed' in self.script

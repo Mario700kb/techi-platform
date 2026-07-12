@@ -189,6 +189,83 @@ $result | Set-Content -LiteralPath $env:RS_VERSION_OUT -Encoding ASCII
 
 _READ_REMOTE_SUPPORT_VERSION_ENCODED_COMMAND = _powershell_encoded_command(_READ_REMOTE_SUPPORT_VERSION_PS)
 
+_READ_LIFECYCLE_PS = r"""
+function W($s,$d,$p,$sp,$m,$e) {
+    $mv = if ($m) { '1' } else { '0' }
+    $result = @(
+        'LIFECYCLE_STATE=' + $s
+        'LIFECYCLE_DETAIL=' + $d
+        'LIFECYCLE_PID=' + [string]$p
+        'SERVICE_PID_AFTER=' + [string]$sp
+        'LIFECYCLE_PID_MATCH=' + $mv
+        'LIFECYCLE_READER_ERROR=' + $e
+    )
+    $result | Set-Content -LiteralPath $env:STATE_OUT -Encoding ASCII
+}
+function E($r) {
+    $v = ''
+    if ($null -ne $r -and $null -ne $r.CategoryInfo) {
+        $v = [string]$r.CategoryInfo.Category
+    }
+    if ([string]::IsNullOrWhiteSpace($v) -and $null -ne $r) {
+        $v = [string]$r.FullyQualifiedErrorId
+    }
+    if ([string]::IsNullOrWhiteSpace($v)) {
+        $v = 'unknown'
+    }
+    $v = [regex]::Replace($v, '[^A-Za-z0-9_.-]', '_')
+    if ($v.Length -gt 80) {
+        $v = $v.Substring(0, 80)
+    }
+    return $v
+}
+try {
+    $s = 'missing'; $d = 'config_missing'; $pt = ''; $p = 0; $sp = 0; $m = $false
+    $svc = Get-CimInstance Win32_Service -Filter "Name='TechiAgent'" -ErrorAction SilentlyContinue
+    if ($null -ne $svc) {
+        $sp = [int]$svc.ProcessId
+    }
+    if ([string]::IsNullOrWhiteSpace($env:TECHI_STATE_FILE) -or -not (Test-Path -LiteralPath $env:TECHI_STATE_FILE)) {
+        W $s $d $pt $sp $m ''
+        exit 0
+    }
+    $j = Get-Content -LiteralPath $env:TECHI_STATE_FILE -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    $s = [string]$j.state
+    if ([string]::IsNullOrWhiteSpace($s)) {
+        $s = 'missing'
+    }
+    $d = [string]$j.detail
+    if ([string]::IsNullOrWhiteSpace($d)) {
+        $d = 'none'
+    }
+    $p = [int]$j.pid
+    if ($p -gt 0) {
+        $pt = [string]$p
+    }
+    $u = ([datetime]$j.updated_at).ToUniversalTime()
+    $f = ((Get-Date).ToUniversalTime() - $u).TotalMinutes -lt 15
+    $live = $false
+    if ($p -gt 0) {
+        $live = $null -ne (Get-Process -Id $p -ErrorAction SilentlyContinue)
+    }
+    $m = ($sp -gt 0 -and $p -eq $sp)
+    if (-not $f) {
+        $s = 'stale'; $d = 'stale_timestamp'
+    } elseif (-not $live) {
+        $s = 'stale'; $d = 'stale_process'
+    } elseif (-not $m) {
+        $s = 'stale'; $d = 'pid_mismatch'
+    } elseif ($d -notmatch '^(config_missing|config_access_denied|config_invalid|config_migration_failed|config_ready|none)$') {
+        $d = 'none'
+    }
+    W $s $d $pt $sp $m ''
+} catch {
+    W 'missing' 'reader_error' '' 0 $false (E $_)
+}
+"""
+
+_READ_LIFECYCLE_ENCODED_COMMAND = _powershell_encoded_command(_READ_LIFECYCLE_PS)
+
 
 class EnrollmentBootstrapService:
     NOTICE = (
@@ -1676,9 +1753,10 @@ class EnrollmentBootstrapService:
             "set LIFECYCLE_PID=",
             "set SERVICE_PID_AFTER=",
             "set LIFECYCLE_PID_MATCH=0",
+            "set LIFECYCLE_READER_ERROR=",
             "call :read_lifecycle",
             "if /i \"%SERVICE_STATUS_AFTER%\"==\"RUNNING\" if /i \"%LIFECYCLE_STATE%\"==\"operational\" if \"%LIFECYCLE_PID_MATCH%\"==\"1\" set AGENT_HEALTHY=1",
-            "echo [%DATE% %TIME%] agent_health=%AGENT_HEALTHY% service=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "echo [%DATE% %TIME%] agent_health=%AGENT_HEALTHY% service=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% pid_match=%LIFECYCLE_PID_MATCH% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% >> \"%LOG%\"",
             "exit /b 0",
             "",
             ":validate_success",
@@ -1691,6 +1769,7 @@ class EnrollmentBootstrapService:
             "set LIFECYCLE_PID=",
             "set SERVICE_PID_AFTER=",
             "set LIFECYCLE_PID_MATCH=0",
+            "set LIFECYCLE_READER_ERROR=",
             "set /a LIFECYCLE_WAIT=0",
             ":poll_lifecycle",
             "call :read_lifecycle",
@@ -1702,7 +1781,7 @@ class EnrollmentBootstrapService:
             "timeout /t 5 /nobreak >nul",
             "goto :poll_lifecycle",
             ":lifecycle_done",
-            "echo [%DATE% %TIME%] registry_version_after_install=%REG_VERSION% binary_version_after_install=%BINARY_VERSION% installed_product_code_after_install=%REG_PRODUCT_CODE% service_state_after_install=%SERVICE_STATUS_AFTER% service_pid_after_install=%SERVICE_PID_AFTER% version_state=%VERSION_STATE% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "echo [%DATE% %TIME%] registry_version_after_install=%REG_VERSION% binary_version_after_install=%BINARY_VERSION% installed_product_code_after_install=%REG_PRODUCT_CODE% service_state_after_install=%SERVICE_STATUS_AFTER% service_pid_after_install=%SERVICE_PID_AFTER% version_state=%VERSION_STATE% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% >> \"%LOG%\"",
             "if /i \"%VERSION_STATE%\"==\"equal\" if /i \"%BINARY_VERSION%\"==\"%ACTIVE_VERSION%.0\" if /i \"%SERVICE_STATUS_AFTER%\"==\"RUNNING\" if /i \"%LIFECYCLE_STATE%\"==\"operational\" if \"%LIFECYCLE_PID_MATCH%\"==\"1\" set DEPLOY_VALID=1",
             "exit /b 0",
             "",
@@ -1712,10 +1791,11 @@ class EnrollmentBootstrapService:
             "set LIFECYCLE_PID=",
             "set SERVICE_PID_AFTER=",
             "set LIFECYCLE_PID_MATCH=0",
+            "set LIFECYCLE_READER_ERROR=",
             "set TECHI_STATE_FILE=%INSTALL_DIR%\\agent.state.json",
             "set STATE_OUT=%TEMP%\\techi-read-state.out",
             "call :delete_temp_file \"%STATE_OUT%\" \"techi-read-state.out\"",
-            "call \"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"try{$s=Get-Content -LiteralPath $env:TECHI_STATE_FILE -Raw -ErrorAction Stop|ConvertFrom-Json -ErrorAction Stop; $state=[string]$s.state; $detail=[string]$s.detail; $pid=[int]$s.pid; $svc=Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\" -ErrorAction SilentlyContinue; $servicePid=0; if($null -ne $svc){$servicePid=[int]$svc.ProcessId}; $fresh=((Get-Date).ToUniversalTime()-([datetime]$s.updated_at).ToUniversalTime()).TotalMinutes -lt 15; $live=$null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue); $pidMatch=($servicePid -gt 0 -and $pid -eq $servicePid); if((-not $fresh)-or(-not $live)){$state='stale';$detail='stale_process'}elseif(-not $pidMatch){$state='stale';$detail='pid_mismatch'}elseif($detail -notmatch '^(config_missing|config_access_denied|config_invalid|config_migration_failed|config_ready)$'){$detail='none'}; @('LIFECYCLE_STATE='+$state,'LIFECYCLE_DETAIL='+$detail,'LIFECYCLE_PID='+$pid,'SERVICE_PID_AFTER='+$servicePid,'LIFECYCLE_PID_MATCH='+$(if($pidMatch){'1'}else{'0'}))|Set-Content -LiteralPath $env:STATE_OUT -Encoding ASCII}catch{}\" >nul 2>&1",
+            f"call \"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {_READ_LIFECYCLE_ENCODED_COMMAND} >nul 2>&1",
             "if exist \"%STATE_OUT%\" (",
             "    for /f \"tokens=1,* delims==\" %%a in (%STATE_OUT%) do set \"%%a=%%b\"",
             "    call :delete_temp_file \"%STATE_OUT%\" \"techi-read-state.out\"",
@@ -1725,7 +1805,7 @@ class EnrollmentBootstrapService:
             ":install_failed",
             "net start TechiAgent 2>nul",
             "call :read_agent_service",
-            "echo [%DATE% %TIME%] result=failed active_version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% version_state=%VERSION_STATE% service_after=%SERVICE_STATUS_AFTER% service_pid_after=%SERVICE_PID_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% agent_msi_exit_code=%AGENT_MSI_EXIT% remote_msi_exit_code=%REMOTE_MSI_EXIT% >> \"%LOG%\"",
+            "echo [%DATE% %TIME%] result=failed active_version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% version_state=%VERSION_STATE% service_after=%SERVICE_STATUS_AFTER% service_pid_after=%SERVICE_PID_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% agent_msi_exit_code=%AGENT_MSI_EXIT% remote_msi_exit_code=%REMOTE_MSI_EXIT% >> \"%LOG%\"",
             "call :release_agent_install_lock",
             "call :release_remote_install_lock",
             "exit /b 1",
@@ -1745,12 +1825,12 @@ class EnrollmentBootstrapService:
             "    set VERSION_STATE=repair",
             "    goto :do_install",
             ")",
-            "echo [%DATE% %TIME%] result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% service_pid_after=%SERVICE_PID_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "echo [%DATE% %TIME%] result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% service_pid_after=%SERVICE_PID_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_detail=%LIFECYCLE_DETAIL% lifecycle_pid=%LIFECYCLE_PID% lifecycle_pid_match=%LIFECYCLE_PID_MATCH% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% >> \"%LOG%\"",
             "set FINAL_RESULT=uptodate",
             "goto :done",
             "",
             ":agent_managed_by_self_update",
-            "echo [%DATE% %TIME%] result=managed_by_self_update active_version=%ACTIVE_VERSION% registry_version=%REG_VERSION% binary_version=%BINARY_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% >> \"%LOG%\"",
+            "echo [%DATE% %TIME%] result=managed_by_self_update active_version=%ACTIVE_VERSION% registry_version=%REG_VERSION% binary_version=%BINARY_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% >> \"%LOG%\"",
             "set FINAL_RESULT=managed_by_self_update",
             "goto :done",
             # ── end of techi-deploy.cmd content ──

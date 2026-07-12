@@ -27,6 +27,70 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] HOTFIX: encode lifecycle reader PowerShell in generated deploy script
+
+### Problemi
+
+Real Windows reproduction confirmed that generated `techi-deploy.cmd`
+`:read_lifecycle` still failed silently. The real endpoint had
+`TechiAgent` service `Running`, SCM PID `6940`, and
+`C:\ProgramData\TechiAgent\agent.state.json` with
+`state=operational`, fresh `updated_at`, and `pid=6940`, but isolated CMD
+execution returned the defaults:
+
+`LIFECYCLE_STATE=missing`, `LIFECYCLE_DETAIL=config_missing`,
+blank lifecycle/service PIDs, and `LIFECYCLE_PID_MATCH=0`.
+
+### Analiza
+
+The lifecycle reader was the last deployment-critical helper still using a
+large inline `powershell.exe -Command` payload through `cmd.exe`, with nested
+quoting, subexpressions, CIM/service lookup, JSON parsing, process lookup,
+pipeline output, and a silent `catch{}`. When the inline command failed, it did
+not create `STATE_OUT`, so CMD kept misleading default values.
+
+### Shkaku
+
+The helper depended on fragile CMD quoting and swallowed every PowerShell
+exception. It also emitted no bounded diagnostic key, so operator logs could not
+distinguish a genuinely missing lifecycle state from a broken reader.
+
+### Zgjidhja
+
+`:read_lifecycle` now uses a UTF-16LE `-EncodedCommand` payload, like the fixed
+service readers. The payload reads `$env:TECHI_STATE_FILE`, parses
+`agent.state.json`, reads the `TechiAgent` SCM PID via CIM, verifies process
+liveness, enforces lifecycle PID == SCM PID, checks freshness, normalizes
+lifecycle detail, and always writes a deterministic result array with:
+
+`LIFECYCLE_STATE`, `LIFECYCLE_DETAIL`, `LIFECYCLE_PID`,
+`SERVICE_PID_AFTER`, `LIFECYCLE_PID_MATCH`, and
+`LIFECYCLE_READER_ERROR`.
+
+On failure it still creates `STATE_OUT` with `LIFECYCLE_DETAIL=reader_error`
+and a sanitized bounded `LIFECYCLE_READER_ERROR`. The encoded command was kept
+below the practical CMD command-line limit after tests caught an initial
+too-long encoded payload.
+
+### Ndryshimet
+
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `docs/CHANGELOG-SOLUTIONS.md`
+- `docs/PROJECT_STATE.md`
+
+### Rezultati
+
+Added static tests that fail if `:read_lifecycle` uses inline `-Command`, plus a
+real CMD/Wine regression that executes the complete `:read_lifecycle` subroutine
+for healthy, stale timestamp, PID mismatch, and malformed JSON/error cases.
+
+### Mësimet
+
+Generated deployment helpers that determine health must never fail silent. If a
+reader cannot produce a successful result, it must still produce a bounded
+diagnostic result file so the batch log tells the truth.
+
 ## [2026-07-12] HOTFIX: prevent unsafe batch variable expansion in Remote Support classifier
 
 ### Problemi

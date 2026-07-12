@@ -18,7 +18,7 @@
 
 ## WINDOWS AGENT CANARY STATUS
 
-**Current status: CANARY FAILED — BATCH EXPANSION FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
+**Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
 
 Real ADPASCUCCI 2.1.8 split-deploy canary evidence showed the generated
 NETLOGON/GPO flow still had source defects after package activation: Remote
@@ -61,6 +61,22 @@ exits without prompt, detects `RUNNING` + PID, returns `remote_healthy`, leaves
 no temp files, and never invokes MSI. Backend redeploy is required because the
 generator changed; MSI bytes are unchanged. Do not update NETLOGON, reactivate
 the task, or start rollout until the redeployed backend-generated script is
+manually copied/validated for the single ADPASCUCCI canary.
+
+2026-07-12 third follow-up: real Windows then confirmed the remaining lifecycle
+reader defect. `:read_lifecycle` still used a complex inline PowerShell
+`-Command` with nested CMD quoting and silent `catch{}`. Isolated CMD execution
+returned default lifecycle values (`missing` / `config_missing`, blank PID,
+`LIFECYCLE_PID_MATCH=0`) even while the real `TechiAgent` service was Running
+with SCM PID `6940` and `agent.state.json` was fresh/operational with
+`pid=6940`. The source fix converts `:read_lifecycle` to a UTF-16LE
+`-EncodedCommand`, keeps the encoded command below the practical CMD length
+limit, always writes `STATE_OUT`, and adds `LIFECYCLE_READER_ERROR` so reader
+failures become explicit sanitized diagnostics rather than silent defaults.
+Regression coverage now includes complete CMD/Wine execution for healthy,
+stale timestamp, PID mismatch, and malformed JSON/error cases. Backend redeploy
+is required; MSI bytes remain unchanged. Do not update NETLOGON, reactivate the
+task, or start rollout until the redeployed backend-generated script is
 manually copied/validated for the single ADPASCUCCI canary.
 
 2.1.6 remains the production-safe fallback. Do not describe 2.1.6 as broadly
