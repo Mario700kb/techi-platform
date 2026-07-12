@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from urllib.parse import urlsplit, urlunsplit
@@ -100,6 +101,81 @@ _READ_REGISTRY_ENCODED_COMMAND = (
     "AFQAQQBUAEUAPQAkAHMAdABhAHQAZQAiAAoAKQAgAHwAIABTAGUAdAAtAEMAbwBuAHQAZQBuAHQA"
     "IAAtAFAAYQB0AGgAIAAkAG8AdQB0ACAALQBFAG4AYwBvAGQAaQBuAGcAIABBAFMAQwBJAEkACgA="
 )
+
+
+def _powershell_encoded_command(source: str) -> str:
+    """Encode a PowerShell script for powershell.exe -EncodedCommand.
+
+    Windows PowerShell expects UTF-16LE bytes. Keeping these generated helper
+    payloads as readable source strings lets tests decode and validate the
+    exact command text while techi-deploy.cmd avoids fragile CMD quoting.
+    """
+
+    return base64.b64encode(source.strip().encode("utf-16-le")).decode("ascii")
+
+
+_READ_AGENT_SERVICE_PS = r"""
+try {
+    $svc = Get-CimInstance Win32_Service -Filter "Name='TechiAgent'" -ErrorAction SilentlyContinue
+    if ($null -eq $svc) {
+        $result = @(
+            'SERVICE_STATUS_AFTER=missing'
+            'SERVICE_PID_AFTER=0'
+        )
+    } else {
+        $state = if ($svc.State -eq 'Running') {
+            'RUNNING'
+        } elseif ($svc.State -eq 'Stopped') {
+            'STOPPED'
+        } else {
+            [string]$svc.State
+        }
+        $result = @(
+            'SERVICE_STATUS_AFTER=' + $state
+            'SERVICE_PID_AFTER=' + [string]([int]$svc.ProcessId)
+        )
+    }
+} catch {
+    $result = @(
+        'SERVICE_STATUS_AFTER=missing'
+        'SERVICE_PID_AFTER=0'
+    )
+}
+$result | Set-Content -LiteralPath $env:SERVICE_OUT -Encoding ASCII
+"""
+
+_READ_REMOTE_SUPPORT_SERVICE_PS = r"""
+try {
+    $svc = Get-CimInstance Win32_Service -Filter "Name='TECHI Remote Support'" -ErrorAction SilentlyContinue
+    if ($null -eq $svc) {
+        $result = @(
+            'REMOTE_SERVICE_STATUS=missing'
+            'REMOTE_SERVICE_PID=0'
+        )
+    } else {
+        $state = if ($svc.State -eq 'Running') {
+            'RUNNING'
+        } elseif ($svc.State -eq 'Stopped') {
+            'STOPPED'
+        } else {
+            [string]$svc.State
+        }
+        $result = @(
+            'REMOTE_SERVICE_STATUS=' + $state
+            'REMOTE_SERVICE_PID=' + [string]([int]$svc.ProcessId)
+        )
+    }
+} catch {
+    $result = @(
+        'REMOTE_SERVICE_STATUS=missing'
+        'REMOTE_SERVICE_PID=0'
+    )
+}
+$result | Set-Content -LiteralPath $env:REMOTE_SERVICE_OUT -Encoding ASCII
+"""
+
+_READ_AGENT_SERVICE_ENCODED_COMMAND = _powershell_encoded_command(_READ_AGENT_SERVICE_PS)
+_READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND = _powershell_encoded_command(_READ_REMOTE_SUPPORT_SERVICE_PS)
 
 
 class EnrollmentBootstrapService:
@@ -1323,7 +1399,7 @@ class EnrollmentBootstrapService:
             "set TECHI_NETLOGON_MSI=%NETLOGON_AGENT_MSI%",
             "set BUSY_OUT=%TEMP%\\techi-msi-busy.out",
             "del \"%BUSY_OUT%\" 2>nul",
-            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$needle=[IO.Path]::GetFileName($env:TECHI_NETLOGON_MSI); $busy=$false; try{Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\" -ErrorAction SilentlyContinue|ForEach-Object{$cl=[string]$_.CommandLine; if($cl -match 'TECHI-Agent-' -or ($needle -and $cl -like ('*'+$needle+'*'))){$busy=$true}}}catch{}; if($busy){'1'}else{'0'}|Set-Content -LiteralPath $env:BUSY_OUT -Encoding ASCII\" >nul 2>&1",
+            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$needle=[IO.Path]::GetFileName($env:TECHI_NETLOGON_MSI); $busy=$false; try{Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\" -ErrorAction SilentlyContinue|ForEach-Object{$cl=[string]$_.CommandLine; if($cl -match 'TECHI-Agent-' -or ($needle -and $cl -like ('*'+$needle+'*'))){$busy=$true}}}catch{}; $result='0'; if($busy){$result='1'}; $result|Set-Content -LiteralPath $env:BUSY_OUT -Encoding ASCII\" >nul 2>&1",
             "if exist \"%BUSY_OUT%\" (",
             "    for /f \"tokens=*\" %%b in (%BUSY_OUT%) do set TECHI_MSI_BUSY=%%b",
             "    del \"%BUSY_OUT%\" 2>nul",
@@ -1415,7 +1491,7 @@ class EnrollmentBootstrapService:
             "set TECHI_NETLOGON_MSI=%NETLOGON_REMOTE_MSI%",
             "set BUSY_OUT=%TEMP%\\techi-rs-msi-busy.out",
             "del \"%BUSY_OUT%\" 2>nul",
-            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$needle=[IO.Path]::GetFileName($env:TECHI_NETLOGON_MSI); $busy=$false; try{Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\" -ErrorAction SilentlyContinue|ForEach-Object{$cl=[string]$_.CommandLine; if($cl -match 'TECHI-Remote-Support-' -or ($needle -and $cl -like ('*'+$needle+'*'))){$busy=$true}}}catch{}; if($busy){'1'}else{'0'}|Set-Content -LiteralPath $env:BUSY_OUT -Encoding ASCII\" >nul 2>&1",
+            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$needle=[IO.Path]::GetFileName($env:TECHI_NETLOGON_MSI); $busy=$false; try{Get-CimInstance Win32_Process -Filter \\\"Name='msiexec.exe'\\\" -ErrorAction SilentlyContinue|ForEach-Object{$cl=[string]$_.CommandLine; if($cl -match 'TECHI-Remote-Support-' -or ($needle -and $cl -like ('*'+$needle+'*'))){$busy=$true}}}catch{}; $result='0'; if($busy){$result='1'}; $result|Set-Content -LiteralPath $env:BUSY_OUT -Encoding ASCII\" >nul 2>&1",
             "if exist \"%BUSY_OUT%\" (",
             "    for /f \"tokens=*\" %%b in (%BUSY_OUT%) do set TECHI_MSI_BUSY=%%b",
             "    del \"%BUSY_OUT%\" 2>nul",
@@ -1460,7 +1536,7 @@ class EnrollmentBootstrapService:
             "set SERVICE_PID_AFTER=0",
             "set SERVICE_OUT=%TEMP%\\techi-read-agent-service.out",
             "del \"%SERVICE_OUT%\" 2>nul",
-            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"try{$svc=Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\" -ErrorAction SilentlyContinue; if($null -eq $svc){@('SERVICE_STATUS_AFTER=missing','SERVICE_PID_AFTER=0')}else{$state=if($svc.State -eq 'Running'){'RUNNING'}elseif($svc.State -eq 'Stopped'){'STOPPED'}else{[string]$svc.State}; @('SERVICE_STATUS_AFTER='+$state,'SERVICE_PID_AFTER='+([int]$svc.ProcessId))}|Set-Content -LiteralPath $env:SERVICE_OUT -Encoding ASCII}catch{@('SERVICE_STATUS_AFTER=missing','SERVICE_PID_AFTER=0')|Set-Content -LiteralPath $env:SERVICE_OUT -Encoding ASCII}\" >nul 2>&1",
+            f"\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {_READ_AGENT_SERVICE_ENCODED_COMMAND} >nul 2>&1",
             "if exist \"%SERVICE_OUT%\" (",
             "    for /f \"tokens=1,* delims==\" %%a in (%SERVICE_OUT%) do set \"%%a=%%b\"",
             "    del \"%SERVICE_OUT%\" 2>nul",
@@ -1472,7 +1548,7 @@ class EnrollmentBootstrapService:
             "set REMOTE_SERVICE_PID=0",
             "set REMOTE_SERVICE_OUT=%TEMP%\\techi-read-remote-service.out",
             "del \"%REMOTE_SERVICE_OUT%\" 2>nul",
-            "\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"try{$svc=Get-CimInstance Win32_Service -Filter \\\"Name='TECHI Remote Support'\\\" -ErrorAction SilentlyContinue; if($null -eq $svc){@('REMOTE_SERVICE_STATUS=missing','REMOTE_SERVICE_PID=0')}else{$state=if($svc.State -eq 'Running'){'RUNNING'}elseif($svc.State -eq 'Stopped'){'STOPPED'}else{[string]$svc.State}; @('REMOTE_SERVICE_STATUS='+$state,'REMOTE_SERVICE_PID='+([int]$svc.ProcessId))}|Set-Content -LiteralPath $env:REMOTE_SERVICE_OUT -Encoding ASCII}catch{@('REMOTE_SERVICE_STATUS=missing','REMOTE_SERVICE_PID=0')|Set-Content -LiteralPath $env:REMOTE_SERVICE_OUT -Encoding ASCII}\" >nul 2>&1",
+            f"\"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {_READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND} >nul 2>&1",
             "if exist \"%REMOTE_SERVICE_OUT%\" (",
             "    for /f \"tokens=1,* delims==\" %%a in (%REMOTE_SERVICE_OUT%) do set \"%%a=%%b\"",
             "    del \"%REMOTE_SERVICE_OUT%\" 2>nul",

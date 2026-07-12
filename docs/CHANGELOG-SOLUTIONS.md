@@ -27,6 +27,62 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] HOTFIX: valid PowerShell service detection in generated deploy script
+
+### Problemi
+
+Real Windows canary confirmed that the generated `techi-deploy.cmd`
+`:read_agent_service` and `:read_remote_support_service` helpers still contained
+invalid PowerShell syntax:
+
+`if (...) { ... } else { ... } | Set-Content ...`
+
+Windows PowerShell reports `An empty pipe element is not allowed`, so the output
+file is never created and CMD falls back to `SERVICE_STATUS_AFTER=missing` /
+`SERVICE_PID_AFTER=0`.
+
+### Analiza
+
+This was not a CMD escaping issue. The PowerShell statement itself cannot be
+piped directly in that form. The same dangerous pattern was also present in the
+active MSI process-detection helpers (`if($busy){'1'}else{'0'}|Set-Content`).
+
+### Shkaku
+
+The service detection rewrite moved from brittle `sc query` parsing to
+PowerShell/CIM, but kept the result of an `if/else` statement inline in a
+pipeline. PowerShell requires the result to be assigned or otherwise emitted by
+a valid expression before piping.
+
+### Zgjidhja
+
+Both service readers now use `powershell.exe -EncodedCommand` with readable,
+tested source payloads. Each payload assigns `$result` inside `try/if/else` and
+then runs `$result | Set-Content`. Agent/Remote Support MSI busy detection now
+sets `$result='0'` / `$result='1'` before `Set-Content` as well. Regression tests
+decode the exact generated commands and lock Running/Stopped/Missing + SCM PID
+output behavior.
+
+### Ndryshimet
+
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `docs/CHANGELOG-SOLUTIONS.md`
+- `docs/PROJECT_STATE.md`
+
+### Rezultati
+
+Focused bootstrap/reliability/package tests, Windows cross-build, and full
+preflight pass locally. Backend redeploy is required because this changes the
+generated GPO/NETLOGON script. No MSI bytes, package activation, NETLOGON update,
+GPO reactivation, or rollout were performed by this source fix.
+
+### Mësimet
+
+For generated CMD-launched PowerShell, prefer `-EncodedCommand` for anything
+more complex than a trivial one-liner, and regression-test the decoded payload —
+not just the surrounding batch string.
+
 ## [2026-07-12] HOTFIX: ADPASCUCCI 2.1.8 split-deploy canary source defects
 
 ### Problemi

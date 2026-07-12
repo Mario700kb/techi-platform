@@ -27,6 +27,8 @@ from app.schemas.enrollment_bootstrap import (
     EnrollmentBootstrapRequest,
 )
 from app.services.enrollment_bootstrap_service import (
+    _READ_AGENT_SERVICE_ENCODED_COMMAND,
+    _READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND,
     _READ_REGISTRY_ENCODED_COMMAND,
     EnrollmentBootstrapService,
 )
@@ -67,6 +69,20 @@ class _StubTokenService:
 
     def issue_plaintext_for_token(self, token) -> str:
         return self.issued_token
+
+
+def _decode_powershell(encoded: str) -> str:
+    return base64.b64decode(encoded).decode("utf-16-le")
+
+
+def _encoded_command_for_label(script: str, label: str) -> str:
+    label_match = re.search(rf"^{re.escape(label)}\b", script, re.MULTILINE)
+    assert label_match, f"missing label {label}"
+    start = label_match.start()
+    rest = script[start:]
+    match = re.search(r"-EncodedCommand\s+([A-Za-z0-9+/=]+)", rest)
+    assert match, f"missing encoded command after {label}"
+    return match.group(1)
 
 
 def _make_req(**overrides) -> EnrollmentBootstrapRequest:
@@ -918,6 +934,93 @@ class TestGPOScheduledDeployScript:
         assert 'result=0 version=%ACTIVE_VERSION%' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION%' in self.script
         assert "result=done final_result=%FINAL_RESULT%" in self.script
+
+    def test_deploy_cmd_service_readers_use_encoded_result_variable_payloads(self):
+        """Regression: if/else statements cannot be piped directly to Set-Content."""
+        agent_encoded = _encoded_command_for_label(self.script, ":read_agent_service")
+        remote_encoded = _encoded_command_for_label(self.script, ":read_remote_support_service")
+        assert agent_encoded == _READ_AGENT_SERVICE_ENCODED_COMMAND
+        assert remote_encoded == _READ_REMOTE_SUPPORT_SERVICE_ENCODED_COMMAND
+
+        agent_ps = _decode_powershell(agent_encoded)
+        remote_ps = _decode_powershell(remote_encoded)
+
+        for payload, output_env in (
+            (agent_ps, "$env:SERVICE_OUT"),
+            (remote_ps, "$env:REMOTE_SERVICE_OUT"),
+        ):
+            assert "$result = @(" in payload
+            assert "$result | Set-Content" in payload
+            assert f"Set-Content -LiteralPath {output_env} -Encoding ASCII" in payload
+            assert not re.search(r"\}\s*\|\s*Set-Content", payload)
+            assert "}|Set-Content" not in payload
+            assert "if($null" not in payload
+
+        assert "Name='TechiAgent'" in agent_ps
+        assert "'SERVICE_STATUS_AFTER=missing'" in agent_ps
+        assert "'SERVICE_PID_AFTER=0'" in agent_ps
+        assert "'SERVICE_STATUS_AFTER=' + $state" in agent_ps
+        assert "'SERVICE_PID_AFTER=' + [string]([int]$svc.ProcessId)" in agent_ps
+
+        assert "Name='TECHI Remote Support'" in remote_ps
+        assert "'REMOTE_SERVICE_STATUS=missing'" in remote_ps
+        assert "'REMOTE_SERVICE_PID=0'" in remote_ps
+        assert "'REMOTE_SERVICE_STATUS=' + $state" in remote_ps
+        assert "'REMOTE_SERVICE_PID=' + [string]([int]$svc.ProcessId)" in remote_ps
+
+    def test_deploy_cmd_service_reader_semantics_are_locked(self):
+        """Generated readers must classify missing/stopped/running and capture SCM PID."""
+
+        def agent_expected(state: Optional[str], pid: int = 0) -> list[str]:
+            if state is None:
+                return ["SERVICE_STATUS_AFTER=missing", "SERVICE_PID_AFTER=0"]
+            normalized = "RUNNING" if state == "Running" else "STOPPED" if state == "Stopped" else state
+            return [f"SERVICE_STATUS_AFTER={normalized}", f"SERVICE_PID_AFTER={pid}"]
+
+        def remote_expected(state: Optional[str], pid: int = 0) -> list[str]:
+            if state is None:
+                return ["REMOTE_SERVICE_STATUS=missing", "REMOTE_SERVICE_PID=0"]
+            normalized = "RUNNING" if state == "Running" else "STOPPED" if state == "Stopped" else state
+            return [f"REMOTE_SERVICE_STATUS={normalized}", f"REMOTE_SERVICE_PID={pid}"]
+
+        agent_ps = _decode_powershell(_encoded_command_for_label(self.script, ":read_agent_service"))
+        remote_ps = _decode_powershell(_encoded_command_for_label(self.script, ":read_remote_support_service"))
+
+        assert "if ($svc.State -eq 'Running')" in agent_ps
+        assert "elseif ($svc.State -eq 'Stopped')" in agent_ps
+        assert "if ($svc.State -eq 'Running')" in remote_ps
+        assert "elseif ($svc.State -eq 'Stopped')" in remote_ps
+
+        assert agent_expected("Running", 8756) == [
+            "SERVICE_STATUS_AFTER=RUNNING",
+            "SERVICE_PID_AFTER=8756",
+        ]
+        assert agent_expected("Stopped", 0) == [
+            "SERVICE_STATUS_AFTER=STOPPED",
+            "SERVICE_PID_AFTER=0",
+        ]
+        assert agent_expected(None) == [
+            "SERVICE_STATUS_AFTER=missing",
+            "SERVICE_PID_AFTER=0",
+        ]
+        assert remote_expected("Running", 4321) == [
+            "REMOTE_SERVICE_STATUS=RUNNING",
+            "REMOTE_SERVICE_PID=4321",
+        ]
+        assert remote_expected("Stopped", 0) == [
+            "REMOTE_SERVICE_STATUS=STOPPED",
+            "REMOTE_SERVICE_PID=0",
+        ]
+        assert remote_expected(None) == [
+            "REMOTE_SERVICE_STATUS=missing",
+            "REMOTE_SERVICE_PID=0",
+        ]
+
+    def test_deploy_cmd_has_no_if_else_pipeline_to_set_content(self):
+        """Audit generated PowerShell helpers for the prod parser bug pattern."""
+        assert "if($busy){'1'}else{'0'}|Set-Content" not in self.script
+        assert re.search(r"\}\s*\|\s*Set-Content", self.script) is None
+        assert "$result='0'; if($busy){$result='1'}; $result|Set-Content" in self.script
 
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script

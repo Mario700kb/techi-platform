@@ -39,6 +39,14 @@ generated script fix to take effect; package activation, NETLOGON update,
 GPO/task reactivation, canary rerun, and fleet rollout remain blocked until the
 fix commit passes CI and is manually validated.**
 
+2026-07-12 follow-up: real Windows then confirmed the CIM helper itself had
+invalid PowerShell syntax: `if/else` output was piped directly to `Set-Content`,
+which PowerShell rejects with `An empty pipe element is not allowed`. The source
+fix rewrites both Agent and Remote Support service readers as `-EncodedCommand`
+payloads that assign `$result` before `Set-Content`, and removes the same
+invalid if/else pipeline shape from MSI busy detection. Canary status remains
+failed until ADPASCUCCI is regenerated/rerun with the redeployed backend output.
+
 2.1.6 remains the production-safe fallback. Do not describe 2.1.6 as broadly
 broken; its core startup, heartbeat, telemetry, Remote Support, self-update,
 watchdog, and most GPO deployment behavior remain production-proven.
