@@ -16,6 +16,28 @@
 | **Production Server** | Linode VPS `139.162.158.208` (ssh alias `techi-server`), 25 GB disk, live deploy dir **`/root`** |
 | **Documentation Version** | 1.0 (two-document standard, effective 2026-07-04) |
 
+## WINDOWS AGENT CANARY STATUS
+
+**Current status: CANARY FAILED — SOURCE FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
+
+Real ADPASCUCCI 2.1.8 split-deploy canary evidence showed the generated
+NETLOGON/GPO flow still had source defects after package activation: Remote
+Support deployment metadata was derived from the Agent version (`2.1.8`) instead
+of the active Remote Support MSI version (`1.4.6`), and `techi-deploy.cmd`
+misclassified a running `TechiAgent` SCM service as missing because it parsed
+human-formatted `sc query` output. The source fix now requires Remote Support
+version lineage from `remote_support_msi` only, reports unavailable rather than
+inventing Agent-versioned Remote Support files, reads SCM service state/PID via
+CIM, and forces all normal skip/success paths through a terminal `result=done`
+log line. **Backend redeploy is required for the generated script fix to take
+effect; package activation, NETLOGON update, GPO/task reactivation, canary rerun,
+and fleet rollout remain blocked until the fix commit passes CI and is manually
+validated.**
+
+2.1.6 remains the production-safe fallback. Do not describe 2.1.6 as broadly
+broken; its core startup, heartbeat, telemetry, Remote Support, self-update,
+watchdog, and most GPO deployment behavior remain production-proven.
+
 ## CURRENT PRIORITIES
 
 1. ✅ **Reporting Engine v1** — production-ready (2026-07-10): on-demand +

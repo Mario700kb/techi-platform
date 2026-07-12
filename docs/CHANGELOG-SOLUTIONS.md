@@ -27,6 +27,64 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] HOTFIX: ADPASCUCCI 2.1.8 split-deploy canary source defects
+
+### Problemi
+
+Real ADPASCUCCI Windows canary exposed two production defects in the newly
+generated NETLOGON/GPO deployment flow: `techi-remote-support-version.txt` and
+the Remote Support MSI filename were generated from the Agent version (`2.1.8`)
+instead of the active Remote Support MSI package (`1.4.6`), and
+`techi-deploy.cmd` logged `service_before=not-installed` even though the
+`TechiAgent` SCM service was running from
+`C:\ProgramData\TechiAgent\techi-agent.exe`.
+
+### Analiza
+
+The active package state was split correctly at the package layer, but the
+generated deployment script still allowed Remote Support version fallback rather
+than treating a missing `remote_support_msi` as unavailable. The generated CMD
+also parsed `sc query` output with `tokens=3`; on the real `STATE : 4 RUNNING`
+line this can capture `:` instead of `4`, leaving the service classified as
+missing. Success/skip paths could also exit from side labels without writing a
+terminal summary line.
+
+### Shkaku
+
+Remote Support deployment metadata was not enforced as a separate required
+package lineage in the GPO generator. Service detection depended on brittle
+localized text parsing instead of querying SCM state/PID deterministically.
+
+### Zgjidhja
+
+Remote Support version now comes only from the active
+`remote_support_msi` package. If none exists, the generated deployment reports
+`remote-support-package-unavailable` and does not invent an Agent-versioned MSI
+or marker file. `techi-deploy.cmd` now reads Agent and Remote Support service
+state/PID through PowerShell CIM, logs SCM PID before/after, preserves the
+lifecycle PID==SCM PID health gate, and routes normal skip/success paths through
+a shared `:done` label that releases locks and writes `result=done`.
+
+### Ndryshimet
+
+- `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/tests/test_enrollment_bootstrap_script.py`
+- `docs/PROJECT_STATE.md`
+- `docs/reference/OPERATOR-MANUAL.md`
+- `docs/CHANGELOG-SOLUTIONS.md`
+
+### Rezultati
+
+Focused backend bootstrap/package tests pass locally. No package activation,
+NETLOGON update, GPO/task reactivation, or fleet rollout was performed by this
+fix.
+
+### Mësimet
+
+Split deployment must be enforced at generation time, not just upload/API time.
+Batch scripts should not parse human-formatted `sc.exe` output for lifecycle
+decisions when CIM can return exact SCM state and PID.
+
 ## [2026-07-12] HOTFIX: Agent 2.1.8 split deployment architecture and Remote Support independence
 
 ### Problemi

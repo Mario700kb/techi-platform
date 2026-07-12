@@ -14,6 +14,7 @@ import base64
 import json
 import re
 from types import SimpleNamespace
+from typing import Optional
 
 import pytest
 from fastapi import FastAPI
@@ -48,6 +49,9 @@ class _StubService(EnrollmentBootstrapService):
 
     def _active_windows_version(self) -> str:
         return "2.1.0"
+
+    def _active_remote_support_version(self) -> Optional[str]:
+        return "1.4.6"
 
 
 class _StubTokenService:
@@ -734,6 +738,54 @@ class TestGPOScheduledDeployScript:
         # Versioni fallback i baked-in i gjenerimit
         assert "if not defined ACTIVE_VERSION set ACTIVE_VERSION=2.1.0" in self.script
 
+    def test_deploy_cmd_keeps_agent_and_remote_support_versions_independent(self):
+        """ADPASCUCCI regression: Agent 2.1.8 nuk duhet te prodhoje RS 2.1.8.
+
+        Remote Support merr versionin vetem nga paketa aktive remote_support_msi.
+        """
+
+        class IncidentStub(_StubService):
+            def _active_windows_version(self) -> str:
+                return "2.1.8"
+
+            def _active_remote_support_version(self) -> Optional[str]:
+                return "1.4.6"
+
+        script = IncidentStub()._gpo_scheduled_task_setup(
+            "https://api-rdp.techi.com.al",
+            "deploy-token-123",
+        )
+
+        assert "$ActiveVersion        = '2.1.8'" in script
+        assert "$RemoteSupportVersion = '1.4.6'" in script
+        assert "if not defined ACTIVE_VERSION set ACTIVE_VERSION=2.1.8" in script
+        assert "if not defined REMOTE_SUPPORT_VERSION set REMOTE_SUPPORT_VERSION=1.4.6" in script
+        assert 'TECHI-Agent-$ActiveVersion.msi' in script
+        assert 'TECHI-Remote-Support-$RemoteSupportVersion.msi' in script
+        assert "TECHI-Remote-Support-2.1.8.msi" not in script
+
+    def test_deploy_cmd_does_not_invent_remote_support_version_when_no_active_package(self):
+        """Pa paketë aktive remote_support_msi, mos përdor versionin e Agent si fallback."""
+
+        class NoRemotePackageStub(_StubService):
+            def _active_windows_version(self) -> str:
+                return "2.1.8"
+
+            def _active_remote_support_version(self) -> Optional[str]:
+                return None
+
+        script = NoRemotePackageStub()._gpo_scheduled_task_setup(
+            "https://api-rdp.techi.com.al",
+            "deploy-token-123",
+        )
+
+        assert "$ActiveVersion        = '2.1.8'" in script
+        assert "$RemoteSupportVersion = ''" in script
+        assert "set REMOTE_SUPPORT_AVAILABLE=0" in script
+        assert "remote-support-package-unavailable" in script
+        assert "TECHI-Remote-Support-2.1.8.msi" not in script
+        assert "if not defined REMOTE_SUPPORT_VERSION set REMOTE_SUPPORT_VERSION=2.1.8" not in script
+
     def test_deploy_cmd_has_correct_label_structure(self):
         """Labels: :do_install para :already_uptodate."""
         do_install = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
@@ -850,19 +902,22 @@ class TestGPOScheduledDeployScript:
         assert "remote_msi_path=%NETLOGON_REMOTE_MSI%" in self.script
         assert "agent_msi_exit_code=%AGENT_MSI_EXIT%" in self.script
         assert "remote_msi_exit_code=%REMOTE_MSI_EXIT%" in self.script
-        assert "service_before=%SERVICE_STATUS_BEFORE%" in self.script
-        assert 'if "%SERVICE_STATUS_BEFORE%"=="4" set SERVICE_STATUS_BEFORE=RUNNING' in self.script
+        assert "service_before=%SERVICE_STATUS_BEFORE% service_pid_before=%SERVICE_PID_BEFORE%" in self.script
+        assert "call :read_agent_service" in self.script
+        assert "set SERVICE_STATUS_BEFORE=%SERVICE_STATUS_AFTER%" in self.script
+        assert "set SERVICE_PID_BEFORE=%SERVICE_PID_AFTER%" in self.script
+        assert "for /f \"tokens=3\" %%s in ('\"%SC%\" query TechiAgent" not in self.script
         assert "registry_version_after_install=%REG_VERSION%" in self.script
         assert "installed_product_code_after_install=%REG_PRODUCT_CODE%" in self.script
         assert "service_state_after_install=%SERVICE_STATUS_AFTER%" in self.script
         assert "service_pid_after_install=%SERVICE_PID_AFTER%" in self.script
-        assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
         assert "lifecycle_state=%LIFECYCLE_STATE%" in self.script
         assert "lifecycle_detail=%LIFECYCLE_DETAIL%" in self.script
         assert "lifecycle_pid=%LIFECYCLE_PID%" in self.script
         assert "lifecycle_pid_match=%LIFECYCLE_PID_MATCH%" in self.script
         assert 'result=0 version=%ACTIVE_VERSION%' in self.script
         assert 'result=uptodate version=%ACTIVE_VERSION%' in self.script
+        assert "result=done final_result=%FINAL_RESULT%" in self.script
 
     def test_deploy_cmd_uses_techiagent_install_path_and_migrates_legacy(self):
         assert "set INSTALL_DIR=C:\\ProgramData\\TechiAgent" in self.script
@@ -873,7 +928,8 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_already_uptodate_starts_service_if_stopped(self):
         """:already_uptodate kontrollon nëse shërbimi ecën, nëse jo e starton."""
-        assert '"%SC%" query TechiAgent | findstr /i "RUNNING" >nul 2>&1' in self.script
+        assert "call :read_agent_service" in self.script
+        assert 'if /i not "%SERVICE_STATUS_AFTER%"=="RUNNING" net start TechiAgent 2>nul' in self.script
         already_pos = re.search(r"^:already_uptodate\b", self.script, re.MULTILINE).start()
         section = self.script[already_pos:]
         assert "call :ensure_service_running" in section
@@ -882,6 +938,8 @@ class TestGPOScheduledDeployScript:
         assert "equal_version_unhealthy forcing_repair=1" in section
         assert "goto :do_install" in section
         assert 'result=uptodate version=%ACTIVE_VERSION% registry_version=%REG_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER%' in section
+        assert "set FINAL_RESULT=uptodate" in section
+        assert "goto :done" in section
 
     def test_deploy_cmd_repairs_unenrolled_equal_version_config_before_uptodate(self):
         """Version equal por config pa identity/token merr token-in e GPO dhe rinis service."""
@@ -925,7 +983,8 @@ class TestGPOScheduledDeployScript:
     def test_deploy_cmd_service_missing_is_recreated_if_exe_exists(self):
         """Service missing: deploy krijon service me standard Agent EXE dhe pastaj e starton."""
         assert ":ensure_service_running" in self.script
-        assert '"%SC%" query TechiAgent >nul 2>&1' in self.script
+        assert "call :read_agent_service" in self.script
+        assert 'if /i "%SERVICE_STATUS_AFTER%"=="missing" (' in self.script
         assert 'if exist "%AGENT_EXE%" (' in self.script
         assert '"%SC%" create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
         assert 'net start TechiAgent 2>nul' in self.script
@@ -935,10 +994,12 @@ class TestGPOScheduledDeployScript:
         assert ":validate_success" in self.script
         assert "set DEPLOY_VALID=0" in self.script
         assert "call :read_registry" in self.script
-        assert 'if "%SERVICE_STATUS_AFTER%"=="4" set SERVICE_STATUS_AFTER=RUNNING' in self.script
+        assert "call :read_agent_service" in self.script
+        assert ":read_agent_service" in self.script
+        assert "Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\"" in self.script
+        assert "SERVICE_PID_AFTER=" in self.script
         assert 'if /i "%VERSION_STATE%"=="equal" if /i "%BINARY_VERSION%"=="%ACTIVE_VERSION%.0" if /i "%SERVICE_STATUS_AFTER%"=="RUNNING" if /i "%LIFECYCLE_STATE%"=="operational" if "%LIFECYCLE_PID_MATCH%"=="1" set DEPLOY_VALID=1' in self.script
         assert "call :read_lifecycle" in self.script
-        assert "Get-CimInstance Win32_Service -Filter \\\"Name='TechiAgent'\\\"" in self.script
         assert "pid_mismatch" in self.script
         assert "set LIFECYCLE_PID_MATCH=0" in self.script
         assert "if %LIFECYCLE_WAIT% GEQ 12 goto :lifecycle_done" in self.script
@@ -946,7 +1007,7 @@ class TestGPOScheduledDeployScript:
 
     def test_deploy_cmd_manual_replace_lan_creates_service_if_missing(self):
         """Legacy test name: deploy krijon service me sc.exe nëse nuk ekziston."""
-        assert '"%SC%" query TechiAgent >nul 2>&1' in self.script
+        assert 'if /i "%SERVICE_STATUS_AFTER%"=="missing" (' in self.script
         assert '"%SC%" create TechiAgent binPath= "%AGENT_EXE%" start= auto DisplayName= "TECHI Agent"' in self.script
         assert '"%SC%" description TechiAgent "TECHI Solutions endpoint monitoring and management service"' in self.script
         assert '"%SC%" failure TechiAgent reset= 60 actions= restart/60000/restart/60000/restart/300000' in self.script
@@ -1044,7 +1105,8 @@ class TestGPOScheduledDeployScript:
 
     def test_ps1_has_test_path_after_version_file_write(self):
         """PS1 verifikon me Test-Path se techi-version.txt u shkrua."""
-        assert "GABIM KRITIK: version marker files nuk u shkruan ne NETLOGON" in self.script
+        assert "GABIM KRITIK: techi-version.txt nuk u shkrua ne NETLOGON" in self.script
+        assert "GABIM KRITIK: techi-remote-support-version.txt nuk u shkrua ne NETLOGON" in self.script
 
     def test_ps1_has_test_path_after_task_xml_write(self):
         """PS1 verifikon me Test-Path se ScheduledTasks.xml u shkrua."""
@@ -1209,11 +1271,20 @@ class TestWindowsPackageInfoSelectsAgentMsi:
     /platform/windows-amd64/download actually serves. Otherwise the physical
     install fails with 'SHA256 mismatch' (2026-07-03)."""
 
-    def _patch_pkg_service(self, monkeypatch, *, agent_msi_sha, bridge_sha):
+    def _patch_pkg_service(self, monkeypatch, *, agent_msi_sha, bridge_sha, remote_version="1.4.6"):
         from app.services import enrollment_bootstrap_service as mod
 
         agent_msi = SimpleNamespace(version="2.1.3", sha256=agent_msi_sha, filename="TECHI-Agent-2.1.3.msi")
         bridge = SimpleNamespace(version="2.1.3", sha256=bridge_sha, filename="TECHI-Agent-Update-2.1.3.msi")
+        remote = (
+            SimpleNamespace(
+                version=remote_version,
+                sha256="d" * 64,
+                filename=f"TECHI-Remote-Support-{remote_version}.msi",
+            )
+            if remote_version is not None
+            else None
+        )
 
         class FakePkgService:
             def latest_active(self, platform, *, file_type=None):
@@ -1222,6 +1293,8 @@ class TestWindowsPackageInfoSelectsAgentMsi:
                 # under test must always pass file_type="msi" here.
                 if file_type == "msi":
                     return agent_msi
+                if file_type == "remote_support_msi":
+                    return remote
                 if file_type == "agent_update_msi":
                     return bridge
                 return bridge
@@ -1243,3 +1316,24 @@ class TestWindowsPackageInfoSelectsAgentMsi:
         self._patch_pkg_service(monkeypatch, agent_msi_sha="c" * 64, bridge_sha="b" * 64)
         svc = EnrollmentBootstrapService(db=None)
         assert svc._active_windows_version() == "2.1.3"
+
+    def test_active_remote_support_version_uses_remote_support_msi(self, monkeypatch):
+        self._patch_pkg_service(
+            monkeypatch,
+            agent_msi_sha="c" * 64,
+            bridge_sha="b" * 64,
+            remote_version="1.4.6",
+        )
+        svc = EnrollmentBootstrapService(db=None)
+        assert svc._active_windows_version() == "2.1.3"
+        assert svc._active_remote_support_version() == "1.4.6"
+
+    def test_active_remote_support_version_returns_none_when_missing(self, monkeypatch):
+        self._patch_pkg_service(
+            monkeypatch,
+            agent_msi_sha="c" * 64,
+            bridge_sha="b" * 64,
+            remote_version=None,
+        )
+        svc = EnrollmentBootstrapService(db=None)
+        assert svc._active_remote_support_version() is None
