@@ -35,6 +35,54 @@ def test_upload_still_accepts_windows_msi_and_exe(svc):
     _upload(svc, filename="techi-agent.exe", platform="windows-amd64", file_type="agent_binary")
 
 
+def test_remote_support_msi_version_is_canonical_from_filename(svc):
+    pkg = _upload(
+        svc,
+        filename="TECHI-Remote-Support-1.4.6.msi",
+        platform="windows-amd64",
+        file_type="remote_support_msi",
+        version="1.4.6",
+    )
+
+    assert pkg.version == "1.4.6"
+    assert pkg.filename == "TECHI-Remote-Support-1.4.6.msi"
+
+
+def test_remote_support_msi_upload_rejects_agent_version_contamination(svc):
+    with pytest.raises(ValueError, match="Remote Support MSI version must match filename"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.6.msi",
+            platform="windows-amd64",
+            file_type="remote_support_msi",
+            version="2.1.8",
+        )
+
+
+def test_existing_remote_support_manifest_entry_reads_version_from_filename(svc):
+    """ADPASCUCCI regression: manifest had version=2.1.8 but RS MSI filename=1.4.6."""
+    svc._write_manifest(
+        [
+            {
+                "id": "remote-support-prod",
+                "version": "2.1.8",
+                "platform": "windows-amd64",
+                "file_type": "remote_support_msi",
+                "filename": "TECHI-Remote-Support-1.4.6.msi",
+                "uploaded_at": "2026-07-11T23:15:07.698459+00:00",
+                "uploaded_by": "tester",
+                "is_active": True,
+                "sha256": "cbc4c8828ece949510fbc7f6f6b754c8a7e393a5bdf658ba50ec0fe2c7b51253",
+            }
+        ]
+    )
+
+    active = svc.latest_active("windows-amd64", file_type="remote_support_msi")
+    assert active is not None
+    assert active.version == "1.4.6"
+    assert active.filename == "TECHI-Remote-Support-1.4.6.msi"
+
+
 def test_upload_rejects_unknown_extension(svc):
     with pytest.raises(ValueError, match="Unsupported package file extension"):
         _upload(svc, filename="notes.txt", platform="linux-amd64", file_type="agent_binary")

@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 split-deployment hotfix remains canary-only**: ADPASCUCCI exposed generated NETLOGON/GPO source defects (Remote Support version derived from Agent version, and brittle `sc query` service detection). Windows packages remain pinned to the production-proven 2.1.6 fallback until the fixed 2.1.8 canary passes; fleet rollout is not enabled. |
+| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat`. **Agent 2.1.8 split-deployment hotfix remains canary-only**: ADPASCUCCI exposed generated NETLOGON/GPO source defects (Remote Support version/metadata contaminated by Agent version despite the RS MSI filename/SHA being 1.4.6, and brittle `sc query` service detection). Windows packages remain pinned to the production-proven 2.1.6 fallback until the fixed 2.1.8 canary passes; fleet rollout is not enabled. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,

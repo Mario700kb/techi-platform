@@ -25,14 +25,19 @@ NETLOGON/GPO flow still had source defects after package activation: Remote
 Support deployment metadata was derived from the Agent version (`2.1.8`) instead
 of the active Remote Support MSI version (`1.4.6`), and `techi-deploy.cmd`
 misclassified a running `TechiAgent` SCM service as missing because it parsed
-human-formatted `sc query` output. The source fix now requires Remote Support
-version lineage from `remote_support_msi` only, reports unavailable rather than
-inventing Agent-versioned Remote Support files, reads SCM service state/PID via
-CIM, and forces all normal skip/success paths through a terminal `result=done`
-log line. **Backend redeploy is required for the generated script fix to take
-effect; package activation, NETLOGON update, GPO/task reactivation, canary rerun,
-and fleet rollout remain blocked until the fix commit passes CI and is manually
-validated.**
+human-formatted `sc query` output. A production manifest audit then confirmed
+the active `remote_support_msi` artifact filename/SHA were the expected
+`TECHI-Remote-Support-1.4.6.msi` /
+`cbc4c8828ece949510fbc7f6f6b754c8a7e393a5bdf658ba50ec0fe2c7b51253`, but the
+stored package metadata said `version=2.1.8`. The source fix now requires Remote
+Support lineage from `remote_support_msi` only, canonicalizes Remote Support MSI
+version from its own filename, rejects future mismatched uploads, reports
+unavailable rather than inventing Agent-versioned Remote Support files, reads
+SCM service state/PID via CIM, and forces all normal skip/success paths through
+a terminal `result=done` log line. **Backend redeploy is required for the
+generated script fix to take effect; package activation, NETLOGON update,
+GPO/task reactivation, canary rerun, and fleet rollout remain blocked until the
+fix commit passes CI and is manually validated.**
 
 2.1.6 remains the production-safe fallback. Do not describe 2.1.6 as broadly
 broken; its core startup, heartbeat, telemetry, Remote Support, self-update,

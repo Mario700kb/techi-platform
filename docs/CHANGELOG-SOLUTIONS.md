@@ -46,8 +46,11 @@ generated deployment script still allowed Remote Support version fallback rather
 than treating a missing `remote_support_msi` as unavailable. The generated CMD
 also parsed `sc query` output with `tokens=3`; on the real `STATE : 4 RUNNING`
 line this can capture `:` instead of `4`, leaving the service classified as
-missing. Success/skip paths could also exit from side labels without writing a
-terminal summary line.
+missing. A follow-up production manifest audit after the source fix found the
+active `remote_support_msi` record had the correct filename/SHA
+(`TECHI-Remote-Support-1.4.6.msi`) but contaminated metadata
+`version=2.1.8`. Success/skip paths could also exit from side labels without
+writing a terminal summary line.
 
 ### Shkaku
 
@@ -58,17 +61,24 @@ localized text parsing instead of querying SCM state/PID deterministically.
 ### Zgjidhja
 
 Remote Support version now comes only from the active
-`remote_support_msi` package. If none exists, the generated deployment reports
-`remote-support-package-unavailable` and does not invent an Agent-versioned MSI
-or marker file. `techi-deploy.cmd` now reads Agent and Remote Support service
-state/PID through PowerShell CIM, logs SCM PID before/after, preserves the
-lifecycle PID==SCM PID health gate, and routes normal skip/success paths through
-a shared `:done` label that releases locks and writes `result=done`.
+`remote_support_msi` package. For Remote Support MSI packages, the canonical
+version is read and validated from the package filename itself
+(`TECHI-Remote-Support-<version>.msi`): new uploads with mismatched version
+metadata are rejected, and existing manifest entries are read using the filename
+version. If no active Remote Support package exists, the generated deployment
+reports `remote-support-package-unavailable` and does not invent an
+Agent-versioned MSI or marker file. `techi-deploy.cmd` now reads Agent and
+Remote Support service state/PID through PowerShell CIM, logs SCM PID
+before/after, preserves the lifecycle PID==SCM PID health gate, and routes
+normal skip/success paths through a shared `:done` label that releases locks and
+writes `result=done`.
 
 ### Ndryshimet
 
 - `backend/app/services/enrollment_bootstrap_service.py`
+- `backend/app/services/agent_package_service.py`
 - `backend/tests/test_enrollment_bootstrap_script.py`
+- `backend/tests/test_agent_package_upload_linux.py`
 - `docs/PROJECT_STATE.md`
 - `docs/reference/OPERATOR-MANUAL.md`
 - `docs/CHANGELOG-SOLUTIONS.md`

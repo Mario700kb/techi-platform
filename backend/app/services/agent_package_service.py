@@ -71,6 +71,7 @@ class AgentPackageService:
         self._validate_platform(platform)
         self._validate_extension(safe_filename)
         self._validate_file_type(file_type)
+        canonical_version = self._canonical_package_version(version, safe_filename, file_type, strict=True)
 
         package_id = uuid4().hex
         package_dir = self.files_dir / package_id
@@ -81,7 +82,7 @@ class AgentPackageService:
 
         item = {
             "id": package_id,
-            "version": version,
+            "version": canonical_version,
             "platform": platform,
             "file_type": file_type,
             "filename": safe_filename,
@@ -168,12 +169,15 @@ class AgentPackageService:
         os.replace(temp_path, self.manifest_path)
 
     def _to_out(self, item: dict) -> AgentPackageOut:
+        file_type = item.get("file_type", "msi")
+        filename = item["filename"]
+        version = self._canonical_package_version(item["version"], filename, file_type)
         return AgentPackageOut(
             id=item["id"],
-            version=item["version"],
+            version=version,
             platform=AgentPackagePlatform(item["platform"]),
-            file_type=AgentFileType(item.get("file_type", "msi")),
-            filename=item["filename"],
+            file_type=AgentFileType(file_type),
+            filename=filename,
             uploaded_at=datetime.fromisoformat(item["uploaded_at"]),
             uploaded_by=item.get("uploaded_by"),
             is_active=bool(item.get("is_active", False)),
@@ -223,3 +227,19 @@ class AgentPackageService:
     def _validate_file_type(file_type: str) -> None:
         if file_type not in ALLOWED_FILE_TYPES:
             raise ValueError(f"Unsupported file_type '{file_type}'. Allowed: {sorted(ALLOWED_FILE_TYPES)}")
+
+    @classmethod
+    def _canonical_package_version(cls, version: str, filename: str, file_type: str, *, strict: bool = False) -> str:
+        if file_type != AgentFileType.REMOTE_SUPPORT_MSI.value:
+            return version
+        filename_version = cls._remote_support_version_from_filename(filename)
+        if filename_version is None:
+            raise ValueError("Remote Support MSI filename must be TECHI-Remote-Support-<version>.msi")
+        if strict and version != filename_version:
+            raise ValueError("Remote Support MSI version must match filename")
+        return filename_version
+
+    @staticmethod
+    def _remote_support_version_from_filename(filename: str) -> Optional[str]:
+        match = re.match(r"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)\.msi$", filename, re.IGNORECASE)
+        return match.group(1) if match else None
