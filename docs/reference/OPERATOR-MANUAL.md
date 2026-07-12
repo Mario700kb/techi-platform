@@ -313,6 +313,78 @@ systemd `Restart=always` (10 s). Future platforms (macOS, MikroTik proxy,
 storage adapters) reuse this engine; platform code implements platform
 operations only.
 
+### 9b. Domain-wide native rollout via NETLOGON (agent ≥ 2.1.8)
+
+For ~30 domains / ~730 devices you do **not** update healthy agents one at a
+time from the UI. The GPO/NETLOGON deploy script can drive **healthy** older
+agents to an approved **rollout target** using the **native self-update** path
+(binary swap) — **never MSI** (MSI stays first-install / explicit-repair only).
+
+**Three distribution channels — keep them straight:**
+- **Agent MSI** — first install / explicit repair only.
+- **UI self-update** — manual single / group / fleet update from the dashboard.
+- **NETLOGON native self-update** — domain-wide rollout of healthy old agents.
+- **Remote Support MSI** — independent lifecycle (never touched by the above).
+
+**Two orthogonal controls:**
+- *Available package* — activating an `agent_binary` package in the Packages UI
+  makes a version **available**. The rollout **target** is that active
+  `agent_binary` version (byte-identical to what UI self-update serves).
+- *Rollout mode* — the `AGENT_ROLLOUT_MODE` backend env is the **explicit
+  on/off switch**, separate from activation:
+  - `disabled` **(default)** — healthy old agents are left untouched
+    (`final_result=rollout_disabled`). Nothing rolls out.
+  - `canary` — native self-update is allowed; **limit blast radius by linking
+    the "TECHI Agent Deployment" GPO to a small OU / few devices**.
+  - `enabled` — native self-update allowed everywhere the GPO is linked.
+
+**NETLOGON files the DC script writes** (when an `agent_binary` is active):
+`techi-rollout-version.txt` (target), `techi-rollout-mode.txt` (mode),
+`TECHI-Agent-<target>.exe` + `TECHI-Agent-<target>.exe.sha256` (the standalone
+EXE + its identity). If no `agent_binary` is active, these are removed and
+healthy old agents fall back to the legacy `managed_by_self_update` behavior.
+
+**What the per-device deploy task does** (logged in
+`C:\ProgramData\TechiAgent\deploy.log`, one `final_result=` per run):
+
+| Device state | Action | `final_result` |
+|---|---|---|
+| Healthy, binary == target | nothing | `uptodate` |
+| Healthy, binary > target | nothing (**never auto-downgrade**) | `newer_than_rollout_target` |
+| Healthy, binary < target, mode `disabled` | nothing | `rollout_disabled` |
+| Healthy, binary < target, mode `canary`/`enabled` | stage EXE → SHA-verify → native swap → validate | `netlogon_self_update_completed` / `netlogon_self_update_failed` |
+| Staged EXE SHA ≠ expected | abort, **no service stop** | `package_identity_mismatch` |
+| Standalone EXE missing | safe failure, no MSI | `netlogon_self_update_failed` |
+| Another self-update active | retry later | `installer_busy_retryable` |
+| Agent missing / damaged | Agent **MSI** first install / repair | `installed` / `repaired` |
+
+The native update SHA-verifies the staged EXE **before** stopping the service,
+takes a single-update lock, reuses the exact swap+rollback the UI uses, then
+validates binary==target + service RUNNING + lifecycle operational + lifecycle
+PID == SCM PID before declaring success. All version compares are numeric
+MAJOR.MINOR.PATCH (so 2.1.10 > 2.1.9; a `2.1.6.0` binary equals a `2.1.6`
+target).
+
+**Offline-but-domain-reachable devices** (powered on, on the LAN/VPN, reading
+NETLOGON, but currently UI-offline) recover through this task even with no
+recent heartbeat. Powered-off or unreachable devices are out of scope until
+connectivity returns.
+
+**Phased rollout for 30 domains / 730 devices:**
+1. Keep `AGENT_ROLLOUT_MODE=disabled` while you activate the target
+   `agent_binary` and let the DC script publish the NETLOGON artifacts.
+2. Set `canary`, link the "TECHI Agent Deployment" GPO to **one small OU**,
+   watch `deploy.log` for `netlogon_self_update_completed` + the fleet
+   dashboard `agent_version`.
+3. Widen the GPO links wave by wave; only set `enabled` once canary waves are
+   clean.
+
+**Emergency stop / rollback:** set `AGENT_ROLLOUT_MODE=disabled` and redeploy
+the backend, then regenerate GPO so `techi-rollout-mode.txt` reads `disabled` —
+every subsequent deploy task leaves healthy agents alone. Agents that already
+updated stay updated (a failed swap auto-rolls-back to `techi-agent-old.exe`);
+to revert a version, activate the previous `agent_binary` as the target.
+
 ---
 
 ## 10. Linux One-Line Installation 🚩 `FEATURE_LINUX`

@@ -69,6 +69,8 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 	switch command {
 	case "swap-binary":
 		return true, runBinarySwapCommand(args)
+	case "netlogon-self-update":
+		return true, runNetlogonSelfUpdateCommand(args)
 	case "watchdog-check":
 		return true, runWatchdogCheckCommand()
 	case "bootstrap-config":
@@ -110,6 +112,7 @@ func normalizeCommandToken(token string) string {
 func isUtilityCommand(command string) bool {
 	switch command {
 	case "swap-binary",
+		"netlogon-self-update",
 		"watchdog-check",
 		"bootstrap-config",
 		"rs-tray-task",

@@ -50,6 +50,20 @@ class Settings(BaseSettings):
     DEFAULT_DEPLOYMENT_TOKEN_MAX_USES: int = 500
     DEFAULT_DEPLOYMENT_TOKEN_EXPIRES_DAYS: int = 0
 
+    # NETLOGON-driven native Agent rollout control (docs/reference/OPERATOR-MANUAL
+    # §"Domain-wide rollout"). This is an EXPLICIT operator switch, deliberately
+    # separate from "which Agent package is active": activating a package makes
+    # it AVAILABLE; this decides whether the GPO/NETLOGON deploy script may drive
+    # healthy older agents to the rollout target via the native self-update path
+    # (no MSI). The rollout TARGET is the active agent_binary package version
+    # (the byte-identical standalone EXE that UI self_update already serves — so
+    # NETLOGON, self_update, and the MSI-embedded EXE stay SHA-aligned).
+    #   disabled  healthy old agents are left untouched (final_result=rollout_disabled)
+    #   canary    native self-update allowed; limit blast radius by GPO link scope
+    #   enabled   native self-update allowed fleet-wide (per the GPO's OU links)
+    # Default "disabled": no forced rollout without an explicit operator decision.
+    AGENT_ROLLOUT_MODE: str = "disabled"
+
     # Enterprise Credential Vault (Phase 4). Key lives OUTSIDE repo/DB; in the
     # backend container "data/" is the backend_data volume (same as agent_policy).
     VAULT_MASTER_KEY_FILE: str = "data/vault_master.key"

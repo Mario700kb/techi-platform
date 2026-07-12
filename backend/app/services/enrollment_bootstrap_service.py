@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
     EnrollmentBootstrapMode,
@@ -188,6 +189,22 @@ $result | Set-Content -LiteralPath $env:RS_VERSION_OUT -Encoding ASCII
 """
 
 _READ_REMOTE_SUPPORT_VERSION_ENCODED_COMMAND = _powershell_encoded_command(_READ_REMOTE_SUPPORT_VERSION_PS)
+
+# Compute the lowercase SHA256 of the staged standalone Agent EXE so techi-deploy.cmd
+# can verify NETLOGON artifact identity BEFORE invoking the native self-update
+# (a mismatch aborts without ever stopping the service). Encoded, not an inline
+# one-liner, to avoid the CMD/PowerShell triple-quoting that broke earlier readers.
+_HASH_STAGED_EXE_PS = r"""
+try {
+    $h = (Get-FileHash -LiteralPath $env:TECHI_STAGED_EXE -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
+    $result = @([string]$h)
+} catch {
+    $result = @()
+}
+$result | Set-Content -LiteralPath $env:STAGED_SHA_OUT -Encoding ASCII
+"""
+
+_HASH_STAGED_EXE_ENCODED_COMMAND = _powershell_encoded_command(_HASH_STAGED_EXE_PS)
 
 _READ_LIFECYCLE_PS = r"""
 function W($s,$d,$p,$sp,$m,$e) {
@@ -1236,12 +1253,43 @@ class EnrollmentBootstrapService:
         pkg = AgentPackageService().latest_active("windows-amd64", file_type="remote_support_msi")
         return pkg.version if pkg else None
 
+    def _active_agent_binary_info(self) -> tuple[Optional[str], Optional[str]]:
+        """Rollout TARGET for the NETLOGON native self-update: the active
+        standalone agent_binary package (version, sha256). This is the exact
+        byte-identical EXE that UI self_update serves, so NETLOGON native
+        self-update stays SHA-aligned with self_update and the MSI-embedded EXE.
+        Returns (None, None) when no agent_binary is active — in which case the
+        deploy script writes no rollout artifacts and healthy old agents fall
+        back to the existing managed_by_self_update behavior."""
+        pkg = AgentPackageService().latest_active("windows-amd64", file_type="agent_binary")
+        if pkg is None:
+            return None, None
+        sha = (pkg.sha256 or "").strip().lower() or None
+        return pkg.version, sha
+
+    @staticmethod
+    def _agent_rollout_mode() -> str:
+        """Explicit operator control (AGENT_ROLLOUT_MODE), separate from package
+        activation. Only 'canary'/'enabled' permit native self-update of healthy
+        older agents; anything else (default 'disabled') leaves them untouched."""
+        mode = str(getattr(settings, "AGENT_ROLLOUT_MODE", "") or "disabled").strip().lower()
+        if mode not in ("disabled", "canary", "enabled"):
+            mode = "disabled"
+        return mode
+
     def _gpo_scheduled_task_setup(self, backend_url: str, enrollment_token: str) -> str:
         safe_url = self.normalize_backend_url(backend_url)
         token_prefix = enrollment_token[:8] if len(enrollment_token) >= 8 else enrollment_token
         active_version = self._active_windows_version()
         remote_support_version = self._active_remote_support_version()
         remote_support_version_literal = remote_support_version or ""
+
+        # NETLOGON native-rollout controls (see AGENT_ROLLOUT_MODE). Target =
+        # active agent_binary version (byte-identical to the self_update EXE).
+        rollout_target, rollout_sha = self._active_agent_binary_info()
+        rollout_target_literal = rollout_target or ""
+        rollout_sha_literal = rollout_sha or ""
+        rollout_mode_literal = self._agent_rollout_mode()
 
         L: list[str] = []
 
@@ -1270,6 +1318,7 @@ class EnrollmentBootstrapService:
             f"$BackendUrl    = '{safe_url}'",
             f"$AgentMsiDownloadUrl = '{safe_url}/api/v1/agent-packages/platform/windows-amd64/download'",
             f"$RemoteSupportMsiDownloadUrl = '{safe_url}/api/v1/agent-packages/remote-support-msi/download'",
+            f"$AgentBinaryDownloadUrl = '{safe_url}/api/v1/agent-packages/agent-binary/download'",
             "",
             'Write-Host "=== TECHI Agent GPO Scheduled Task Deploy ===" -ForegroundColor Cyan',
             "",
@@ -1396,6 +1445,24 @@ class EnrollmentBootstrapService:
             "if \"%REMOTE_SUPPORT_AVAILABLE%\"==\"1\" set REMOTE_MSI_LOG=%LOG_DIR%\\msi-remote-support-%REMOTE_SUPPORT_VERSION%.log",
             "echo [%DATE% %TIME%] agent_msi_path=%NETLOGON_AGENT_MSI% remote_msi_path=%NETLOGON_REMOTE_MSI% >> \"%LOG%\"",
             "",
+            ":: NETLOGON native-rollout controls: rollout TARGET + MODE + standalone EXE.",
+            ":: MODE gates whether a healthy older agent self-updates natively (no MSI).",
+            ":: Absent rollout files -> ROLLOUT_TARGET stays empty -> legacy behavior.",
+            "set NETLOGON_ROLLOUT_VERSION=\\\\%DOMAIN%\\NETLOGON\\techi-rollout-version.txt",
+            "set NETLOGON_ROLLOUT_MODE=\\\\%DOMAIN%\\NETLOGON\\techi-rollout-mode.txt",
+            "set ROLLOUT_TARGET=",
+            "for /f \"tokens=*\" %%i in ('type \"%NETLOGON_ROLLOUT_VERSION%\" 2^>nul') do set ROLLOUT_TARGET=%%i",
+            f"if not defined ROLLOUT_TARGET set ROLLOUT_TARGET={rollout_target_literal}",
+            "set ROLLOUT_MODE=",
+            "for /f \"tokens=*\" %%i in ('type \"%NETLOGON_ROLLOUT_MODE%\" 2^>nul') do set ROLLOUT_MODE=%%i",
+            f"if not defined ROLLOUT_MODE set ROLLOUT_MODE={rollout_mode_literal}",
+            f"set ROLLOUT_EXPECTED_SHA_FALLBACK={rollout_sha_literal}",
+            "set STANDALONE_EXE=",
+            "set STANDALONE_SHA_FILE=",
+            "if defined ROLLOUT_TARGET set STANDALONE_EXE=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ROLLOUT_TARGET%.exe",
+            "if defined ROLLOUT_TARGET set STANDALONE_SHA_FILE=\\\\%DOMAIN%\\NETLOGON\\TECHI-Agent-%ROLLOUT_TARGET%.exe.sha256",
+            "echo [%DATE% %TIME%] rollout_target=%ROLLOUT_TARGET% rollout_mode=%ROLLOUT_MODE% standalone_exe=%STANDALONE_EXE% >> \"%LOG%\"",
+            "",
             ":: Case 0: Kontrollo version MSI nga registry, jo nga exe/service",
             "call :read_registry",
             "call :read_binary_version",
@@ -1414,6 +1481,14 @@ class EnrollmentBootstrapService:
             "call :recover_missing_agent_binary",
             "call :repair_unenrolled_config",
             "call :validate_agent_health",
+            ":: NETLOGON native rollout: a HEALTHY agent below the approved rollout",
+            ":: target self-updates via the native path (no MSI). Damaged agents skip",
+            ":: this and fall through to MSI repair/install below.",
+            "if \"%AGENT_HEALTHY%\"==\"1\" call :evaluate_rollout",
+            "if /i \"%ROLLOUT_DECISION%\"==\"uptodate\" goto :rollout_uptodate",
+            "if /i \"%ROLLOUT_DECISION%\"==\"newer\" goto :rollout_newer",
+            "if /i \"%ROLLOUT_DECISION%\"==\"disabled\" goto :rollout_disabled_result",
+            "if /i \"%ROLLOUT_DECISION%\"==\"self_update\" goto :netlogon_self_update",
             "if \"%AGENT_HEALTHY%\"==\"1\" if /i \"%VERSION_STATE%\"==\"mixed\" goto :agent_managed_by_self_update",
             "if \"%AGENT_HEALTHY%\"==\"1\" if /i \"%VERSION_STATE%\"==\"binary_only\" goto :agent_managed_by_self_update",
             "if /i \"%VERSION_STATE%\"==\"equal\" goto :already_uptodate",
@@ -1833,6 +1908,180 @@ class EnrollmentBootstrapService:
             "echo [%DATE% %TIME%] result=managed_by_self_update active_version=%ACTIVE_VERSION% registry_version=%REG_VERSION% binary_version=%BINARY_VERSION% product_code=%REG_PRODUCT_CODE% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% lifecycle_reader_error=%LIFECYCLE_READER_ERROR% >> \"%LOG%\"",
             "set FINAL_RESULT=managed_by_self_update",
             "goto :done",
+            "",
+            ":: ── NETLOGON native self-update (healthy agent < rollout target) ────────",
+            ":: compare_versions %1 %2 -> VERSION_COMPARE = -1|0|1 (numeric MAJOR.MINOR.PATCH,",
+            ":: ignoring any 4th part or +build metadata). Uses IF GTR/LSS (numeric when",
+            ":: both sides are all-digits) so there is no set /a octal hazard on 08/09.",
+            ":compare_versions",
+            "set \"CV_LEFT=%~1\"",
+            "set \"CV_RIGHT=%~2\"",
+            "set CV_LA=0",
+            "set CV_LB=0",
+            "set CV_LC=0",
+            "set CV_RA=0",
+            "set CV_RB=0",
+            "set CV_RC=0",
+            "for /f \"tokens=1-3 delims=.+-\" %%a in (\"%CV_LEFT%\") do ( set \"CV_LA=%%a\" & set \"CV_LB=%%b\" & set \"CV_LC=%%c\" )",
+            "for /f \"tokens=1-3 delims=.+-\" %%a in (\"%CV_RIGHT%\") do ( set \"CV_RA=%%a\" & set \"CV_RB=%%b\" & set \"CV_RC=%%c\" )",
+            "if not defined CV_LB set CV_LB=0",
+            "if not defined CV_LC set CV_LC=0",
+            "if not defined CV_RB set CV_RB=0",
+            "if not defined CV_RC set CV_RC=0",
+            "set VERSION_COMPARE=0",
+            "if %CV_LA% GTR %CV_RA% set VERSION_COMPARE=1",
+            "if %CV_LA% LSS %CV_RA% set VERSION_COMPARE=-1",
+            "if \"%VERSION_COMPARE%\"==\"0\" if %CV_LB% GTR %CV_RB% set VERSION_COMPARE=1",
+            "if \"%VERSION_COMPARE%\"==\"0\" if %CV_LB% LSS %CV_RB% set VERSION_COMPARE=-1",
+            "if \"%VERSION_COMPARE%\"==\"0\" if %CV_LC% GTR %CV_RC% set VERSION_COMPARE=1",
+            "if \"%VERSION_COMPARE%\"==\"0\" if %CV_LC% LSS %CV_RC% set VERSION_COMPARE=-1",
+            "exit /b 0",
+            "",
+            ":: evaluate_rollout sets ROLLOUT_DECISION only (no goto) so the call stack",
+            ":: stays clean; the main flow performs the jumps. Empty decision = rollout",
+            ":: not configured -> legacy managed_by_self_update / uptodate / install.",
+            ":evaluate_rollout",
+            "set ROLLOUT_DECISION=",
+            "if not defined ROLLOUT_TARGET exit /b 0",
+            "if not defined BINARY_VERSION exit /b 0",
+            "call :compare_versions \"%BINARY_VERSION%\" \"%ROLLOUT_TARGET%\"",
+            "if \"%VERSION_COMPARE%\"==\"0\" set ROLLOUT_DECISION=uptodate",
+            "if \"%VERSION_COMPARE%\"==\"1\" set ROLLOUT_DECISION=newer",
+            "if \"%VERSION_COMPARE%\"==\"-1\" if /i \"%ROLLOUT_MODE%\"==\"disabled\" set ROLLOUT_DECISION=disabled",
+            "if \"%VERSION_COMPARE%\"==\"-1\" if /i \"%ROLLOUT_MODE%\"==\"canary\" set ROLLOUT_DECISION=self_update",
+            "if \"%VERSION_COMPARE%\"==\"-1\" if /i \"%ROLLOUT_MODE%\"==\"enabled\" set ROLLOUT_DECISION=self_update",
+            "if \"%VERSION_COMPARE%\"==\"-1\" if not defined ROLLOUT_DECISION set ROLLOUT_DECISION=disabled",
+            "echo [%DATE% %TIME%] rollout_eval mode=%ROLLOUT_MODE% target=%ROLLOUT_TARGET% binary=%BINARY_VERSION% compare=%VERSION_COMPARE% decision=%ROLLOUT_DECISION% >> \"%LOG%\"",
+            "exit /b 0",
+            "",
+            ":rollout_uptodate",
+            "echo [%DATE% %TIME%] result=uptodate reason=at_rollout_target rollout_target=%ROLLOUT_TARGET% binary_version=%BINARY_VERSION% registry_version=%REG_VERSION% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "set FINAL_RESULT=uptodate",
+            "goto :done",
+            "",
+            ":rollout_newer",
+            "echo [%DATE% %TIME%] result=newer_than_rollout_target rollout_target=%ROLLOUT_TARGET% binary_version=%BINARY_VERSION% service_after=%SERVICE_STATUS_AFTER% >> \"%LOG%\"",
+            "set FINAL_RESULT=newer_than_rollout_target",
+            "goto :done",
+            "",
+            ":rollout_disabled_result",
+            "echo [%DATE% %TIME%] result=rollout_disabled rollout_mode=%ROLLOUT_MODE% rollout_target=%ROLLOUT_TARGET% binary_version=%BINARY_VERSION% service_after=%SERVICE_STATUS_AFTER% >> \"%LOG%\"",
+            "set FINAL_RESULT=rollout_disabled",
+            "goto :done",
+            "",
+            ":netlogon_self_update",
+            "set NETLOGON_UPDATE_EXIT=not-run",
+            "if not defined STANDALONE_EXE (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=no-rollout-target >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_failed",
+            "    goto :done",
+            ")",
+            "if not exist \"%STANDALONE_EXE%\" (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=standalone-missing path=%STANDALONE_EXE% >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_failed",
+            "    goto :done",
+            ")",
+            ":: Expected identity: NETLOGON sidecar SHA256 (fallback to build-time literal).",
+            "set EXPECTED_SHA=",
+            "if defined STANDALONE_SHA_FILE if exist \"%STANDALONE_SHA_FILE%\" for /f \"usebackq tokens=1\" %%h in (\"%STANDALONE_SHA_FILE%\") do set EXPECTED_SHA=%%h",
+            "if not defined EXPECTED_SHA set EXPECTED_SHA=%ROLLOUT_EXPECTED_SHA_FALLBACK%",
+            ":: Never trust the filename alone: without an expected SHA we cannot",
+            ":: verify identity, so we refuse to swap (and never leave the -expected-sha256",
+            ":: flag empty, which would make the agent's arg parser eat the next flag).",
+            "if not defined EXPECTED_SHA (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=no-expected-sha rollout_target=%ROLLOUT_TARGET% >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_failed",
+            "    goto :done",
+            ")",
+            "if not exist \"%INSTALL_DIR%\\cache\" md \"%INSTALL_DIR%\\cache\" 2>nul",
+            "set STAGED_EXE=%INSTALL_DIR%\\cache\\techi-agent-%ROLLOUT_TARGET%.exe",
+            "copy /y \"%STANDALONE_EXE%\" \"%STAGED_EXE%\" >nul 2>&1",
+            "if not exist \"%STAGED_EXE%\" (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=stage-copy-failed src=%STANDALONE_EXE% dst=%STAGED_EXE% >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_failed",
+            "    goto :done",
+            ")",
+            ":: Identity gate BEFORE any service mutation: mismatch aborts, no swap.",
+            "call :hash_staged_exe",
+            "if defined EXPECTED_SHA if defined STAGED_SHA if /i not \"%STAGED_SHA%\"==\"%EXPECTED_SHA%\" (",
+            "    echo [%DATE% %TIME%] result=package_identity_mismatch source=netlogon expected=%EXPECTED_SHA% actual=%STAGED_SHA% path=%STAGED_EXE% >> \"%LOG%\"",
+            "    set FINAL_RESULT=package_identity_mismatch",
+            "    call :delete_staged_exe",
+            "    goto :done",
+            ")",
+            "echo [%DATE% %TIME%] netlogon_self_update_begin target=%ROLLOUT_TARGET% staged=%STAGED_EXE% expected_sha=%EXPECTED_SHA% staged_sha=%STAGED_SHA% >> \"%LOG%\"",
+            ":: Reuse the EXACT native self-update path (swapAgentBinary) via the agent.",
+            "\"%AGENT_EXE%\" netlogon-self-update -source \"%STAGED_EXE%\" -expected-sha256 %EXPECTED_SHA% -expected-version %ROLLOUT_TARGET%",
+            "set NETLOGON_UPDATE_EXIT=%ERRORLEVEL%",
+            "echo [%DATE% %TIME%] netlogon_self_update_exit=%NETLOGON_UPDATE_EXIT% >> \"%LOG%\"",
+            "if \"%NETLOGON_UPDATE_EXIT%\"==\"3\" (",
+            "    echo [%DATE% %TIME%] result=package_identity_mismatch source=native-agent exit=3 >> \"%LOG%\"",
+            "    set FINAL_RESULT=package_identity_mismatch",
+            "    goto :done",
+            ")",
+            "if \"%NETLOGON_UPDATE_EXIT%\"==\"4\" (",
+            "    echo [%DATE% %TIME%] result=installer_busy_retryable product=self_update reason=update-active exit=4 >> \"%LOG%\"",
+            "    set FINAL_RESULT=installer_busy_retryable",
+            "    goto :done",
+            ")",
+            "if not \"%NETLOGON_UPDATE_EXIT%\"==\"0\" (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=native-exit exit=%NETLOGON_UPDATE_EXIT% >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_failed",
+            "    goto :done",
+            ")",
+            "call :wait_for_rollout_target",
+            "if \"%ROLLOUT_UPDATE_VALID%\"==\"1\" (",
+            "    echo [%DATE% %TIME%] result=netlogon_self_update_completed rollout_target=%ROLLOUT_TARGET% binary_version=%BINARY_VERSION% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "    set FINAL_RESULT=netlogon_self_update_completed",
+            "    goto :done",
+            ")",
+            "echo [%DATE% %TIME%] result=netlogon_self_update_failed reason=post-swap-validation rollout_target=%ROLLOUT_TARGET% binary_version=%BINARY_VERSION% service_after=%SERVICE_STATUS_AFTER% lifecycle_state=%LIFECYCLE_STATE% lifecycle_pid=%LIFECYCLE_PID% service_pid=%SERVICE_PID_AFTER% pid_match=%LIFECYCLE_PID_MATCH% >> \"%LOG%\"",
+            "set FINAL_RESULT=netlogon_self_update_failed",
+            "goto :done",
+            "",
+            ":hash_staged_exe",
+            "set STAGED_SHA=",
+            "set TECHI_STAGED_EXE=%STAGED_EXE%",
+            "set STAGED_SHA_OUT=%TEMP%\\techi-staged-sha.out",
+            "call :delete_temp_file \"%STAGED_SHA_OUT%\" \"techi-staged-sha.out\"",
+            f"call \"%POWERSHELL%\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {_HASH_STAGED_EXE_ENCODED_COMMAND} >nul 2>&1",
+            "if exist \"%STAGED_SHA_OUT%\" (",
+            "    for /f \"usebackq tokens=*\" %%v in (\"%STAGED_SHA_OUT%\") do set \"STAGED_SHA=%%v\"",
+            "    call :delete_temp_file \"%STAGED_SHA_OUT%\" \"techi-staged-sha.out\"",
+            ")",
+            "set STAGED_SHA_OUT=",
+            "exit /b 0",
+            "",
+            ":: Guarded delete: only remove a path that is really the staged cache",
+            ":: EXE (contains \\cache\\techi-agent- and ends in .exe) -- never a blind del.",
+            ":delete_staged_exe",
+            "if not defined STAGED_EXE exit /b 0",
+            "echo %STAGED_EXE%| %SYSTEM32%\\findstr /i /r /c:\"\\\\cache\\\\techi-agent-.*\\.exe$\" >nul 2>&1 && del /f /q \"%STAGED_EXE%\" 2>nul",
+            "exit /b 0",
+            "",
+            ":: wait_for_rollout_target polls (bounded) until the detached swap lands:",
+            ":: binary == rollout target AND service RUNNING AND lifecycle operational AND",
+            ":: lifecycle PID == SCM service PID. Never loops indefinitely.",
+            ":wait_for_rollout_target",
+            "set ROLLOUT_UPDATE_VALID=0",
+            "set /a ROLLOUT_WAIT=0",
+            ":rollout_wait_loop",
+            "timeout /t 5 /nobreak >nul",
+            "call :read_binary_version",
+            "call :read_agent_service",
+            "set LIFECYCLE_STATE=missing",
+            "set LIFECYCLE_DETAIL=config_missing",
+            "set LIFECYCLE_PID=",
+            "set SERVICE_PID_AFTER=",
+            "set LIFECYCLE_PID_MATCH=0",
+            "set LIFECYCLE_READER_ERROR=",
+            "call :read_lifecycle",
+            "call :compare_versions \"%BINARY_VERSION%\" \"%ROLLOUT_TARGET%\"",
+            "if \"%VERSION_COMPARE%\"==\"0\" if /i \"%SERVICE_STATUS_AFTER%\"==\"RUNNING\" if /i \"%LIFECYCLE_STATE%\"==\"operational\" if \"%LIFECYCLE_PID_MATCH%\"==\"1\" set ROLLOUT_UPDATE_VALID=1",
+            "if \"%ROLLOUT_UPDATE_VALID%\"==\"1\" exit /b 0",
+            "set /a ROLLOUT_WAIT+=1",
+            "if %ROLLOUT_WAIT% GEQ 30 exit /b 0",
+            "goto :rollout_wait_loop",
             # ── end of techi-deploy.cmd content ──
             "'@",
             "[System.IO.File]::WriteAllText($DeployScriptPath, $DeployContent, [System.Text.UTF8Encoding]::new($false))",
@@ -1848,6 +2097,8 @@ class EnrollmentBootstrapService:
             'Write-Host "Hapi 4b: Shkarkimi i Agent/Remote Support MSI ne NETLOGON..." -ForegroundColor Yellow',
             f"$ActiveVersion        = '{active_version}'",
             f"$RemoteSupportVersion = '{remote_support_version_literal}'",
+            f"$RolloutTarget        = '{rollout_target_literal}'",
+            f"$RolloutMode          = '{rollout_mode_literal}'",
             '$AgentMsiNetlogonPath  = Join-Path $NetlogonPath "TECHI-Agent-$ActiveVersion.msi"',
             "$RemoteMsiNetlogonPath = $null",
             "if (-not [string]::IsNullOrWhiteSpace($RemoteSupportVersion)) {",
@@ -1855,6 +2106,8 @@ class EnrollmentBootstrapService:
             "}",
             '$VersionFilePath       = Join-Path $NetlogonPath "techi-version.txt"',
             '$RemoteVersionFilePath = Join-Path $NetlogonPath "techi-remote-support-version.txt"',
+            '$RolloutVersionFilePath = Join-Path $NetlogonPath "techi-rollout-version.txt"',
+            '$RolloutModeFilePath    = Join-Path $NetlogonPath "techi-rollout-mode.txt"',
             "",
             "function Refresh-NetlogonArtifact {",
             "    param(",
@@ -1919,6 +2172,29 @@ class EnrollmentBootstrapService:
             "if (-not [string]::IsNullOrWhiteSpace($RemoteSupportVersion) -and -not (Test-Path $RemoteVersionFilePath)) {",
             '    Write-Host "   GABIM KRITIK: techi-remote-support-version.txt nuk u shkrua ne NETLOGON." -ForegroundColor Red',
             "    exit 1",
+            "}",
+            "",
+            "# Hapi 4c: Standalone Agent EXE + rollout controls per NETLOGON native self-update.",
+            "# Publikohet vetem kur ka nje agent_binary aktiv (rollout target). Modaliteti",
+            "# (disabled/canary/enabled) vjen nga AGENT_ROLLOUT_MODE dhe eshte kontroll i",
+            "# qarte operatori -- MOS e ngaterro me aktivizimin e paketes.",
+            'Write-Host "Hapi 4c: Standalone Agent EXE + rollout controls..." -ForegroundColor Yellow',
+            "if (-not [string]::IsNullOrWhiteSpace($RolloutTarget)) {",
+            '    $StandaloneExeName = "TECHI-Agent-$RolloutTarget.exe"',
+            "    $StandaloneExePath = Join-Path $NetlogonPath $StandaloneExeName",
+            "    Refresh-NetlogonArtifact -Url $AgentBinaryDownloadUrl -Destination $StandaloneExePath -TempName 'techi-agent-standalone-refresh.exe' -Label 'TECHI Agent standalone EXE'",
+            "    $StandaloneHash = (Get-FileHash $StandaloneExePath -Algorithm SHA256).Hash.ToLower()",
+            "    $StandaloneHash | Out-File ($StandaloneExePath + '.sha256') -Encoding ASCII -NoNewline",
+            "    $RolloutTarget | Out-File $RolloutVersionFilePath -Encoding ASCII -NoNewline",
+            "    $RolloutMode   | Out-File $RolloutModeFilePath -Encoding ASCII -NoNewline",
+            '    Write-Host "   Rollout: target=$RolloutTarget mode=$RolloutMode standalone=$StandaloneExeName sha256=$StandaloneHash" -ForegroundColor Green',
+            "    if ((Get-Content $RolloutModeFilePath -Raw).Trim() -eq 'disabled') {",
+            '        Write-Host "   NJOFTIM: rollout_mode=disabled -- agentet e shendetshem me version me te vjeter NUK do te perditesohen automatikisht." -ForegroundColor Cyan',
+            "    }",
+            "} else {",
+            '    Write-Host "   Rollout: asnje agent_binary aktiv; native self-update i cakivizuar (fallback managed_by_self_update)." -ForegroundColor Yellow',
+            "    Remove-Item $RolloutVersionFilePath -Force -ErrorAction SilentlyContinue",
+            "    Remove-Item $RolloutModeFilePath -Force -ErrorAction SilentlyContinue",
             "}",
             "",
             "# Hapi 5: GPO per detyren e planifikuar",

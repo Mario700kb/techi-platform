@@ -320,6 +320,22 @@ if active device with different RustDesk ID).
   come back.
 - Completion verified by the next heartbeat's `agent_sha256`
   (`verify_self_update_for_device`), not by the action callback.
+- **NETLOGON native rollout (domain-wide, agent ≥ 2.1.8, SOURCE-READY — no
+  rollout activated):** for ~30 domains / ~730 devices the GPO/NETLOGON deploy
+  task drives **healthy** older agents to the rollout target via the **same**
+  native swap (no MSI). New agent subcommand `netlogon-self-update -source
+  <staged.exe> -expected-sha256 <hex> -expected-version <ver>` runs a path+SHA
+  identity gate **before** any service stop, then reuses `swapAgentBinary()`.
+  Rollout **target** = active `agent_binary` version; rollout **mode** = new
+  `AGENT_ROLLOUT_MODE` env (**default `disabled`** — explicit operator switch,
+  separate from package activation; `canary`/`enabled` permit it). The DC script
+  publishes `TECHI-Agent-<target>.exe` (+`.sha256`), `techi-rollout-version.txt`,
+  `techi-rollout-mode.txt` to NETLOGON. Results: `uptodate` /
+  `newer_than_rollout_target` (never auto-downgrade) / `rollout_disabled` /
+  `netlogon_self_update_completed` / `netlogon_self_update_failed` /
+  `package_identity_mismatch` / `installer_busy_retryable`. Damaged/missing
+  agents still take the Agent MSI repair/install path; Remote Support MSI
+  lifecycle unchanged. See OPERATOR-MANUAL §9b + CHANGELOG 2026-07-12.
 - Watchdog Scheduled Task (`watchdog-check`, 5 min): restarts TechiAgent
   service; ≥2.1.5 also starts the TECHI Remote Support service if stopped.
 - **SHA-alignment rule (critical):** "Needs Agent Update" compares each

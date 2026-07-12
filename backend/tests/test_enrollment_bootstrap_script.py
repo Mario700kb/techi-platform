@@ -1849,3 +1849,256 @@ class TestWindowsPackageInfoSelectsAgentMsi:
         )
         svc = EnrollmentBootstrapService(db=None)
         assert svc._active_remote_support_version() is None
+
+
+# ---------------------------------------------------------------------------
+# NETLOGON-driven native Agent rollout (healthy agent < rollout target)
+# ---------------------------------------------------------------------------
+
+class _RolloutStub(_StubService):
+    """Stub with an active agent_binary (rollout target) + configurable mode."""
+
+    def __init__(self, *, target="2.1.8", sha="a" * 64, mode="canary", **kw):
+        super().__init__(**kw)
+        self._target = target
+        self._sha = sha
+        self._mode = mode
+
+    def _active_windows_version(self) -> str:
+        return "2.1.8"
+
+    def _active_remote_support_version(self):
+        return "1.4.6"
+
+    def _active_agent_binary_info(self):
+        return self._target, self._sha
+
+    def _agent_rollout_mode(self) -> str:
+        return self._mode
+
+
+class TestNetlogonNativeRollout:
+    """The NETLOGON deploy script drives healthy older agents to the approved
+    rollout target via the native self-update path (no MSI), gated by an
+    explicit rollout mode and SHA256 identity."""
+
+    def _script(self, **kw):
+        return _RolloutStub(**kw)._gpo_scheduled_task_setup(
+            "https://api-rdp.techi.com.al", "deploy-token-1234"
+        )
+
+    # ── artifact distribution (PS1 side) ──────────────────────────────────────
+
+    def test_distributes_standalone_exe_and_rollout_files(self):
+        s = self._script()
+        assert "$AgentBinaryDownloadUrl = 'https://api-rdp.techi.com.al/api/v1/agent-packages/agent-binary/download'" in s
+        assert 'Join-Path $NetlogonPath "techi-rollout-version.txt"' in s
+        assert 'Join-Path $NetlogonPath "techi-rollout-mode.txt"' in s
+        assert '"TECHI-Agent-$RolloutTarget.exe"' in s
+        # SHA sidecar is written next to the standalone EXE.
+        assert "($StandaloneExePath + '.sha256')" in s
+        assert "-Label 'TECHI Agent standalone EXE'" in s
+        # mode + target literals surfaced to the script.
+        assert "$RolloutTarget        = '2.1.8'" in s
+        assert "$RolloutMode          = 'canary'" in s
+
+    def test_no_rollout_artifacts_when_no_active_agent_binary(self):
+        s = self._script(target=None, sha=None)
+        # Empty target literal -> the PS1 removes rollout files, the CMD keeps
+        # ROLLOUT_TARGET empty and falls back to legacy managed_by_self_update.
+        assert "$RolloutTarget        = ''" in s
+        assert "Remove-Item $RolloutVersionFilePath" in s
+        assert "Remove-Item $RolloutModeFilePath" in s
+
+    def test_default_rollout_mode_is_disabled(self):
+        # Real service (no override) must default to a SAFE disabled mode so no
+        # forced rollout happens without an explicit operator decision.
+        assert EnrollmentBootstrapService._agent_rollout_mode() == "disabled"
+
+    # ── CMD state-machine wiring ──────────────────────────────────────────────
+
+    def test_cmd_reads_rollout_controls_from_netlogon(self):
+        s = self._script()
+        assert "set NETLOGON_ROLLOUT_VERSION=\\\\%DOMAIN%\\NETLOGON\\techi-rollout-version.txt" in s
+        assert "set NETLOGON_ROLLOUT_MODE=\\\\%DOMAIN%\\NETLOGON\\techi-rollout-mode.txt" in s
+        # NETLOGON value wins; build-time literal is only the fallback.
+        assert "if not defined ROLLOUT_TARGET set ROLLOUT_TARGET=2.1.8" in s
+        assert "if not defined ROLLOUT_MODE set ROLLOUT_MODE=canary" in s
+
+    def test_healthy_agent_routes_through_rollout_decision(self):
+        s = self._script()
+        assert 'if "%AGENT_HEALTHY%"=="1" call :evaluate_rollout' in s
+        assert 'if /i "%ROLLOUT_DECISION%"=="uptodate" goto :rollout_uptodate' in s
+        assert 'if /i "%ROLLOUT_DECISION%"=="newer" goto :rollout_newer' in s
+        assert 'if /i "%ROLLOUT_DECISION%"=="disabled" goto :rollout_disabled_result' in s
+        assert 'if /i "%ROLLOUT_DECISION%"=="self_update" goto :netlogon_self_update' in s
+        # Legacy fallback still present after the rollout gates.
+        assert "goto :agent_managed_by_self_update" in s
+
+    def test_netlogon_self_update_reuses_native_entry_point(self):
+        s = self._script()
+        # Reuses the native agent self-update path via the subcommand.
+        assert '"%AGENT_EXE%" netlogon-self-update -source "%STAGED_EXE%" -expected-sha256 %EXPECTED_SHA% -expected-version %ROLLOUT_TARGET%' in s
+        # No MSI in the native self-update branch.
+        section = _label_section(s, ":netlogon_self_update")
+        assert "msiexec" not in section.lower()
+        assert "%MSIEXEC%" not in section
+
+    def test_identity_gate_precedes_service_mutation(self):
+        s = self._script()
+        section = _label_section(s, ":netlogon_self_update")
+        hash_idx = section.index("call :hash_staged_exe")
+        invoke_idx = section.index("netlogon-self-update -source")
+        assert hash_idx < invoke_idx, "SHA must be verified before invoking the swap"
+        assert "FINAL_RESULT=package_identity_mismatch" in section
+        # On a hash mismatch the staged exe is deleted and we jump straight to
+        # done -- the agent is never invoked, so the service is never stopped.
+        mismatch = section[section.index('if defined EXPECTED_SHA if defined STAGED_SHA'):]
+        assert "call :delete_staged_exe" in mismatch.split("goto :done")[0]
+
+    def test_native_exit_codes_map_to_deterministic_results(self):
+        s = self._script()
+        section = _label_section(s, ":netlogon_self_update")
+        assert 'if "%NETLOGON_UPDATE_EXIT%"=="3"' in section  # identity mismatch
+        assert 'if "%NETLOGON_UPDATE_EXIT%"=="4"' in section  # update busy
+        assert "FINAL_RESULT=installer_busy_retryable" in section
+        assert "FINAL_RESULT=netlogon_self_update_completed" in section
+        assert "FINAL_RESULT=netlogon_self_update_failed" in section
+
+    def test_refuses_swap_without_expected_sha(self):
+        s = self._script()
+        section = _label_section(s, ":netlogon_self_update")
+        # No expected SHA -> refuse (never trust filename alone), and never pass
+        # an empty -expected-sha256 that the agent's flag parser would mis-read.
+        assert "reason=no-expected-sha" in section
+        guard = section[:section.index("netlogon-self-update -source")]
+        assert 'if not defined EXPECTED_SHA (' in guard
+
+    def test_post_swap_validation_checks_version_service_lifecycle_pid(self):
+        s = self._script()
+        # The poll body lives under the :rollout_wait_loop sub-label.
+        wait = _label_section(s, ":wait_for_rollout_target") + _label_section(s, ":rollout_wait_loop")
+        assert 'call :compare_versions "%BINARY_VERSION%" "%ROLLOUT_TARGET%"' in wait
+        assert 'if /i "%SERVICE_STATUS_AFTER%"=="RUNNING"' in wait
+        assert 'if /i "%LIFECYCLE_STATE%"=="operational"' in wait
+        assert 'if "%LIFECYCLE_PID_MATCH%"=="1"' in wait
+        # Bounded loop -- never infinite.
+        assert "if %ROLLOUT_WAIT% GEQ 30 exit /b 0" in wait
+
+    def test_standalone_missing_is_safe_failure_without_msi(self):
+        s = self._script()
+        section = _label_section(s, ":netlogon_self_update")
+        assert 'if not exist "%STANDALONE_EXE%"' in section
+        assert "reason=standalone-missing" in section
+        # No MSI is triggered when the standalone EXE is absent for a healthy agent.
+        assert "msiexec" not in section.lower()
+
+    def test_rollout_branch_never_echoes_enrollment_token(self):
+        s = self._script()
+        for label in (":netlogon_self_update", ":evaluate_rollout", ":compare_versions",
+                      ":wait_for_rollout_target", ":hash_staged_exe", ":rollout_uptodate"):
+            section = _label_section(s, label)
+            assert "deploy-token-1234" not in section
+
+    # ── real cmd.exe/wine execution: pure-CMD subroutines ─────────────────────
+
+    def _run_cmd_harness(self, tmp_path, body: str, sections: str):
+        runner, reason = _cmd_runner()
+        if runner is None:
+            pytest.skip(reason)
+        env = os.environ.copy()
+        if runner[0].endswith("wine"):
+            wineprefix = tmp_path / "wineprefix"
+            env["WINEPREFIX"] = str(wineprefix)
+            (wineprefix / "drive_c" / "windows" / "temp").mkdir(parents=True, exist_ok=True)
+            smoke = subprocess.run([*runner, "/d", "/c", "ver"], text=True,
+                                   capture_output=True, timeout=60, env=env)
+            if smoke.returncode != 0:
+                pytest.skip(f"wine cmd.exe unavailable: {(smoke.stdout + smoke.stderr).strip()}")
+        harness = tmp_path / "harness.cmd"
+        harness.write_text(
+            textwrap.dedent(
+                rf"""
+                @echo off
+                setlocal EnableExtensions EnableDelayedExpansion
+                set "LOG=NUL"
+                {body}
+                exit /b 0
+
+                {sections}
+                """
+            ).strip() + "\r\n",
+            encoding="utf-8",
+        )
+        cmd_path = str(harness) if runner[0].endswith("cmd.exe") else _wine_path(harness)
+        return subprocess.run([*runner, "/d", "/c", cmd_path], text=True,
+                              capture_output=True, timeout=30, env=env)
+
+    def test_compare_versions_executes_under_cmd(self, tmp_path):
+        s = self._script()
+        compare = _label_section(s, ":compare_versions")
+        body = "\n".join([
+            'call :compare_versions "2.1.6" "2.1.8"',
+            'echo R1=!VERSION_COMPARE!',
+            'call :compare_versions "2.1.8" "2.1.8"',
+            'echo R2=!VERSION_COMPARE!',
+            'call :compare_versions "2.1.9" "2.1.8"',
+            'echo R3=!VERSION_COMPARE!',
+            'call :compare_versions "2.1.6.0" "2.1.6"',
+            'echo R4=!VERSION_COMPARE!',
+            'call :compare_versions "2.1.10" "2.1.9"',
+            'echo R5=!VERSION_COMPARE!',
+            'call :compare_versions "2.2.0" "2.1.99"',
+            'echo R6=!VERSION_COMPARE!',
+        ])
+        result = self._run_cmd_harness(tmp_path, body, compare)
+        out = result.stdout + result.stderr
+        assert result.returncode == 0, out
+        assert "R1=-1" in out  # 2.1.6 < 2.1.8
+        assert "R2=0" in out   # equal
+        assert "R3=1" in out   # 2.1.9 > 2.1.8
+        assert "R4=0" in out   # 4-part vs 3-part, same MAJOR.MINOR.PATCH
+        assert "R5=1" in out   # 2.1.10 > 2.1.9 (numeric, not lexical)
+        assert "R6=1" in out   # 2.2.0 > 2.1.99 (minor dominates)
+
+    def test_evaluate_rollout_decisions_execute_under_cmd(self, tmp_path):
+        s = self._script()
+        sections = _label_section(s, ":evaluate_rollout") + "\n" + _label_section(s, ":compare_versions")
+        body = "\n".join([
+            # below target, mode canary -> self_update
+            'set "ROLLOUT_TARGET=2.1.8"',
+            'set "ROLLOUT_MODE=canary"',
+            'set "BINARY_VERSION=2.1.6.0"',
+            'call :evaluate_rollout',
+            'echo D_CANARY=!ROLLOUT_DECISION!',
+            # below target, mode disabled -> disabled
+            'set "ROLLOUT_MODE=disabled"',
+            'call :evaluate_rollout',
+            'echo D_DISABLED=!ROLLOUT_DECISION!',
+            # below target, mode enabled -> self_update
+            'set "ROLLOUT_MODE=enabled"',
+            'call :evaluate_rollout',
+            'echo D_ENABLED=!ROLLOUT_DECISION!',
+            # equal -> uptodate (any mode)
+            'set "BINARY_VERSION=2.1.8.0"',
+            'call :evaluate_rollout',
+            'echo D_EQUAL=!ROLLOUT_DECISION!',
+            # newer -> newer
+            'set "BINARY_VERSION=2.1.9.0"',
+            'call :evaluate_rollout',
+            'echo D_NEWER=!ROLLOUT_DECISION!',
+            # no target -> empty decision (legacy fallback)
+            'set "ROLLOUT_TARGET="',
+            'set "BINARY_VERSION=2.1.6.0"',
+            'call :evaluate_rollout',
+            'echo D_NOTARGET=[!ROLLOUT_DECISION!]',
+        ])
+        result = self._run_cmd_harness(tmp_path, body, sections)
+        out = result.stdout + result.stderr
+        assert result.returncode == 0, out
+        assert "D_CANARY=self_update" in out
+        assert "D_DISABLED=disabled" in out
+        assert "D_ENABLED=self_update" in out
+        assert "D_EQUAL=uptodate" in out
+        assert "D_NEWER=newer" in out
+        assert "D_NOTARGET=[]" in out

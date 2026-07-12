@@ -27,6 +27,92 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-12] FEATURE: NETLOGON-driven native Agent rollout (healthy older agents)
+
+### Problemi
+~30 domains / ~730 devices. The operator does not want to trigger Agent updates
+one device at a time from the UI. Domain-wide upgrade of **healthy** older
+agents (e.g. 2.1.6 → 2.1.8) must be drivable from GPO/NETLOGON — but **without**
+MSI (MSI is first-install / explicit-repair only; normal healthy upgrades belong
+to the native self-update path). Offline-in-UI but domain-reachable devices must
+still be recoverable. No forced mass rollout during implementation.
+
+### Analiza
+The native self-update already used by UI/heartbeat is `swapAgentBinary()` →
+one-shot SYSTEM Scheduled Task → `techi-agent.exe swap-binary` (script-free,
+AV/AMSI-safe, with backup + rollback). The generated `techi-deploy.cmd` already
+classified agent health (service + lifecycle PID == SCM PID) and routed healthy
+mixed/binary_only agents to `managed_by_self_update` — i.e. it *deferred* to the
+UI/heartbeat rather than *driving* the update. CI already builds a standalone
+`TECHI-Agent-<v>.exe` byte-identical to the MSI-embedded EXE (+ `.sha256` +
+identity JSON), and the active `agent_binary` package carries that same SHA — so
+a perfect artifact-lineage source already exists.
+
+### Shkaku
+No explicit domain-wide rollout control existed, and NETLOGON had no standalone
+EXE / rollout-target / rollout-mode artifacts, so a healthy old agent on a
+domain-reachable but UI-offline device could sit un-upgraded indefinitely.
+
+### Zgjidhja
+Reuse, don't rebuild. **Rollout target = active `agent_binary` version** (same
+bytes UI self_update serves → NETLOGON == self_update == MSI-embedded EXE, all
+SHA-aligned). **Rollout mode = new `AGENT_ROLLOUT_MODE` env, default `disabled`**
+— an explicit operator switch, deliberately separate from package activation.
+- **Agent**: new orchestration subcommand `techi-agent.exe netlogon-self-update
+  -source <staged.exe> -expected-sha256 <hex> -expected-version <ver>`. It runs
+  a path+SHA256 **identity gate first** (a mismatch returns before any service
+  mutation — the service is never stopped), takes a single-update lock, stages
+  into the agent cache, then calls the **existing** `swapAgentBinary()` — zero
+  duplication of stop/backup/replace/start/rollback. Bounded exit codes
+  (0 scheduled / 2 bad-args / 3 identity-mismatch / 4 update-busy / 1 other).
+- **Generator**: distributes `TECHI-Agent-<target>.exe` (+ `.sha256`),
+  `techi-rollout-version.txt`, `techi-rollout-mode.txt` to NETLOGON via the
+  existing `Refresh-NetlogonArtifact` (hash-gated, idempotent). Only when an
+  `agent_binary` is active; otherwise rollout files are removed and healthy old
+  agents keep the legacy `managed_by_self_update` behavior (backward compatible).
+- **`techi-deploy.cmd`**: a HEALTHY agent (service RUNNING + lifecycle
+  operational + lifecycle PID == SCM PID) now runs `:evaluate_rollout` (numeric
+  `:compare_versions`, MAJOR.MINOR.PATCH, ignores the 4th/`+build` part):
+  binary == target → `uptodate`; binary > target → `newer_than_rollout_target`
+  (never auto-downgrade); binary < target → mode `disabled` → `rollout_disabled`
+  (untouched), mode `canary`/`enabled` → `:netlogon_self_update`. That branch
+  SHA-verifies the staged EXE (`package_identity_mismatch`, no service stop),
+  invokes the native subcommand, then **bounded** polls binary==target + service
+  RUNNING + lifecycle operational + PID match → `netlogon_self_update_completed`
+  / `netlogon_self_update_failed`. Damaged agents still take the MSI
+  repair/install path; Remote Support MSI lifecycle unchanged.
+
+### Ndryshimet
+- `agent/netlogon_update.go` (new, cross-platform identity gate + exit codes),
+  `agent/netlogon_update_windows.go` (new orchestration), `agent/netlogon_update_other.go`
+  (stub), `agent/netlogon_update_test.go` (new), `agent/main.go` (dispatch).
+- `backend/app/core/config.py` (`AGENT_ROLLOUT_MODE`, default `disabled`).
+- `backend/app/services/enrollment_bootstrap_service.py` (`_active_agent_binary_info`,
+  `_agent_rollout_mode`, `_HASH_STAGED_EXE_ENCODED_COMMAND`, rollout reads +
+  `:compare_versions`/`:evaluate_rollout`/`:netlogon_self_update`/
+  `:wait_for_rollout_target`/`:hash_staged_exe`/`:delete_staged_exe` + Hapi 4c
+  standalone-EXE/rollout-file distribution).
+- `backend/tests/test_enrollment_bootstrap_script.py` (`TestNetlogonNativeRollout`,
+  incl. real cmd.exe/wine execution of `:compare_versions` + `:evaluate_rollout`).
+- Docs: PROJECT_STATE, OPERATOR-MANUAL §9b, this entry.
+
+### Rezultati
+Go tests pass (native + `GOOS=windows` cross-build clean). Backend
+`test_enrollment_bootstrap_script.py` green (incl. 2 live wine CMD executions).
+**Source only — no rollout activated.** `AGENT_ROLLOUT_MODE` defaults `disabled`
+so even after a package/NETLOGON refresh, healthy old agents are untouched until
+the operator explicitly sets `canary`/`enabled`. No NETLOGON/GPO/task change was
+made. 2.1.6 remains the production-safe fallback; 2.1.8 stays canary-only.
+**SOURCE READY FOR CANARY / FLEET ROLLOUT ENABLED = NO.**
+
+### Mësimet
+The cleanest domain-wide rollout was almost entirely *wiring*, not new mechanism:
+the native swap, the health classifier, and the CI artifact lineage already
+existed. The only genuinely new primitives were (1) an explicit rollout **mode**
+decoupled from package activation and (2) an identity gate that fails **before**
+any service mutation. Deriving the rollout target from the active `agent_binary`
+keeps a single SHA source of truth and avoids serving arbitrary versions.
+
 ## [2026-07-12] HOTFIX: encode lifecycle reader PowerShell in generated deploy script
 
 ### Problemi
