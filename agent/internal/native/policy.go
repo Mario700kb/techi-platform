@@ -3,7 +3,9 @@ package native
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -52,10 +54,14 @@ type AgentPolicy struct {
 // ships as a native bundle (EXE + DLLs + data/), the payload is a verified
 // archive/bundle, never an MSI repair.
 type RemoteSupportPolic struct {
-	TargetVersion   string `json:"target_version"`
-	PayloadFilename string `json:"payload_filename"`
-	SHA256          string `json:"sha256"`
-	RepairMissing   bool   `json:"repair_missing"`
+	TargetVersion     string      `json:"target_version"`
+	PayloadFilename   string      `json:"payload_filename"`
+	SHA256            string      `json:"sha256"`
+	ManifestFilename  string      `json:"manifest_filename"`
+	ManifestSHA256    string      `json:"manifest_sha256"`
+	RecoveryMode      RolloutMode `json:"recovery_mode"`
+	EligibleDeviceIDs []string    `json:"eligible_device_ids,omitempty"`
+	RepairMissing     bool        `json:"repair_missing"`
 }
 
 var (
@@ -80,11 +86,18 @@ func LoadPolicy(path string) (*Policy, ExitCode, error) {
 // ParsePolicy validates raw policy bytes. Split from LoadPolicy so tests and
 // the future backend generator can validate in-memory without a file.
 func ParsePolicy(data []byte) (*Policy, ExitCode, error) {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return nil, ExitBadArgs, fmt.Errorf("invalid policy json: %w", err)
+	}
 	var p Policy
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&p); err != nil {
 		return nil, ExitBadArgs, fmt.Errorf("invalid policy json: %w", err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return nil, ExitBadArgs, fmt.Errorf("invalid policy json: trailing data")
 	}
 	if code, err := p.Validate(); err != nil {
 		return nil, code, err
@@ -147,7 +160,7 @@ func (a AgentPolicy) validate() (ExitCode, error) {
 	return ExitOK, nil
 }
 
-func (r RemoteSupportPolic) validate() (ExitCode, error) {
+func (r *RemoteSupportPolic) validate() (ExitCode, error) {
 	if !versionRe.MatchString(r.TargetVersion) {
 		return ExitBadArgs, fmt.Errorf("remote_support.target_version %q is not X.Y.Z", r.TargetVersion)
 	}
@@ -157,7 +170,62 @@ func (r RemoteSupportPolic) validate() (ExitCode, error) {
 	if !sha256Re.MatchString(r.SHA256) {
 		return ExitBadArgs, fmt.Errorf("remote_support.sha256 must be 64 lowercase hex chars")
 	}
+	if !IsNativeBundleFilename(r.PayloadFilename) {
+		return ExitBadArgs, fmt.Errorf("remote_support.payload_filename must be a .zip bundle")
+	}
+	wantPayload := fmt.Sprintf("TECHI-Remote-Support-%s-windows-amd64.zip", r.TargetVersion)
+	if !strings.EqualFold(r.PayloadFilename, wantPayload) {
+		return ExitBadArgs, fmt.Errorf("remote_support.payload_filename must be %q", wantPayload)
+	}
+	if err := validateFilename(r.ManifestFilename); err != nil {
+		return ExitBadArgs, fmt.Errorf("remote_support.manifest_filename: %w", err)
+	}
+	wantManifest := strings.TrimSuffix(r.PayloadFilename, filepath.Ext(r.PayloadFilename)) + ".manifest.json"
+	if !strings.EqualFold(r.ManifestFilename, wantManifest) {
+		return ExitBadArgs, fmt.Errorf("remote_support.manifest_filename must be %q", wantManifest)
+	}
+	if !sha256Re.MatchString(r.ManifestSHA256) {
+		return ExitBadArgs, fmt.Errorf("remote_support.manifest_sha256 must be 64 lowercase hex chars")
+	}
+	switch r.RecoveryMode {
+	case RolloutDisabled, RolloutCanary, RolloutEnabled:
+	case "":
+		r.RecoveryMode = RolloutDisabled
+	default:
+		return ExitBadArgs, fmt.Errorf("remote_support.recovery_mode must be disabled, canary, or enabled")
+	}
+	seen := map[string]bool{}
+	for _, id := range r.EligibleDeviceIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || len(id) > 128 || strings.ContainsAny(id, `/\\\"'`) {
+			return ExitBadArgs, fmt.Errorf("remote_support eligible device id %q is invalid", id)
+		}
+		key := strings.ToLower(id)
+		if seen[key] {
+			return ExitBadArgs, fmt.Errorf("duplicate remote_support eligible device id %q", id)
+		}
+		seen[key] = true
+	}
+	if r.RecoveryMode == RolloutCanary && len(r.EligibleDeviceIDs) == 0 {
+		return ExitBadArgs, fmt.Errorf("remote_support canary mode requires eligible_device_ids")
+	}
 	return ExitOK, nil
+}
+
+// RemoteSupportEligible enforces the independent RS mutation gate. Agent
+// rollout_mode never grants Remote Support recovery permission.
+func (r RemoteSupportPolic) RemoteSupportEligible(deviceID string) bool {
+	switch r.RecoveryMode {
+	case RolloutEnabled:
+		return true
+	case RolloutCanary:
+		for _, allowed := range r.EligibleDeviceIDs {
+			if strings.EqualFold(strings.TrimSpace(allowed), strings.TrimSpace(deviceID)) && strings.TrimSpace(deviceID) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // validateFilename rejects anything that is not a bare filename. A policy must

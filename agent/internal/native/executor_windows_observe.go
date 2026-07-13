@@ -3,14 +3,15 @@
 package native
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/mgr"
 )
 
 // ObserveRemoteSupport probes the reduced Remote Support state on a real device
@@ -20,34 +21,56 @@ import (
 // interpretation. It never mutates.
 func ObserveRemoteSupport(p ExecuteParams) (RSObservation, error) {
 	var obs RSObservation
+	var servicePID uint32
 
 	if fi, err := os.Stat(p.ExpectedExePath); err == nil && !fi.IsDir() {
 		obs.ExeExists = true
 		obs.ExeVersion = fileVersion(p.ExpectedExePath)
 	}
 
-	if m, err := mgr.Connect(); err == nil {
-		defer m.Disconnect()
-		if s, err := m.OpenService(p.ServiceName); err == nil {
-			obs.ServiceExists = true
-			if st, err := s.Query(); err == nil {
-				obs.ServiceRunning = st.State == svc.Running
-			}
-			if cfg, err := s.Config(); err == nil {
-				obs.ServiceImageOK = imagePathMatches(cfg.BinaryPathName, p.ExpectedExePath)
-			}
-			s.Close()
-		}
+	snapshot, err := captureServiceSnapshot(p.ServiceName)
+	if err != nil {
+		return obs, fmt.Errorf("observe service: %w", err)
 	}
+	obs.ServiceExists = snapshot.Exists
+	obs.ServiceRunning = snapshot.Running
+	obs.ServiceImageOK = snapshot.Exists && equalWindowsPath(snapshot.BinaryPath, p.ExpectedExePath)
+	servicePID = snapshot.ProcessID
+	_, _, taskRunning := queryTrayTask(p.TrayTaskName)
+	obs.TrayRunning = taskRunning
 
 	obs.PendingReboot = pendingRebootDetected()
 	obs.StaleTmpFiles = hasStaleTmp(p.InstallDir)
 	obs.OldUninstallReg = hasLegacyRustDeskUninstall()
 	obs.LegacyCombined = obs.OldUninstallReg
 
-	for _, cp := range p.ConfigPaths {
+	for _, cp := range effectiveConfigPaths(p) {
 		if _, err := os.Stat(cp); err == nil {
 			obs.ConfigPresent = true
+			break
+		}
+	}
+
+	// An exact-image process outside the service PID is the tray/runtime process
+	// that can hold install files. This is conservative and never matches by
+	// process name alone.
+	if pids, err := pidsForExactImage(p.ExpectedExePath); err == nil {
+		for _, pid := range pids {
+			if pid != servicePID {
+				obs.TrayRunning = true
+				break
+			}
+		}
+	} else {
+		return obs, fmt.Errorf("observe exact-image processes: %w", err)
+	}
+	lockers, err := lockingPIDsUnder(p.InstallDir)
+	if err != nil {
+		return obs, fmt.Errorf("observe install locks: %w", err)
+	}
+	for pid := range lockers {
+		if pid != 0 && pid != servicePID {
+			obs.FilesLocked = true
 			break
 		}
 	}
@@ -59,6 +82,106 @@ func ObserveRemoteSupport(p ExecuteParams) (RSObservation, error) {
 		}
 	}
 	return obs, nil
+}
+
+const (
+	rmMaxAppName     = 255
+	rmMaxServiceName = 63
+	rmSessionKeyLen  = 32
+)
+
+type rmUniqueProcess struct {
+	ProcessID        uint32
+	ProcessStartTime windows.Filetime
+}
+
+type rmProcessInfo struct {
+	Process          rmUniqueProcess
+	AppName          [rmMaxAppName + 1]uint16
+	ServiceShortName [rmMaxServiceName + 1]uint16
+	ApplicationType  uint32
+	AppStatus        uint32
+	TSSessionID      uint32
+	Restartable      int32
+}
+
+var (
+	restartManagerDLL   = windows.NewLazySystemDLL("rstrtmgr.dll")
+	rmStartSession      = restartManagerDLL.NewProc("RmStartSession")
+	rmRegisterResources = restartManagerDLL.NewProc("RmRegisterResources")
+	rmGetList           = restartManagerDLL.NewProc("RmGetList")
+	rmEndSession        = restartManagerDLL.NewProc("RmEndSession")
+)
+
+// lockingPIDsUnder uses Windows Restart Manager's read-only resource query to
+// identify processes holding any installed runtime file. The caller excludes
+// the known service PID, leaving tray/unrelated lockers without guessing by
+// process name.
+func lockingPIDsUnder(root string) (result map[uint32]bool, err error) {
+	result = map[uint32]bool{}
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return result, nil
+	}
+	var paths []string
+	err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 || isReparsePoint(path) {
+			return fmt.Errorf("reparse path in install tree: %s", path)
+		}
+		if info.Mode().IsRegular() {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil || len(paths) == 0 {
+		return result, err
+	}
+
+	var handle uint32
+	var key [rmSessionKeyLen + 1]uint16
+	if ret, _, _ := rmStartSession.Call(uintptr(unsafe.Pointer(&handle)), 0, uintptr(unsafe.Pointer(&key[0]))); ret != 0 {
+		return nil, fmt.Errorf("RmStartSession error %d", ret)
+	}
+	defer func() {
+		if ret, _, _ := rmEndSession.Call(uintptr(handle)); ret != 0 && err == nil {
+			err = fmt.Errorf("RmEndSession error %d", ret)
+		}
+	}()
+
+	wide := make([]*uint16, len(paths))
+	for i, path := range paths {
+		wide[i], err = windows.UTF16PtrFromString(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if ret, _, _ := rmRegisterResources.Call(
+		uintptr(handle), uintptr(len(wide)), uintptr(unsafe.Pointer(&wide[0])), 0, 0, 0, 0,
+	); ret != 0 {
+		return nil, fmt.Errorf("RmRegisterResources error %d", ret)
+	}
+	var needed, count, reasons uint32
+	ret, _, _ := rmGetList.Call(uintptr(handle), uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&count)), 0, uintptr(unsafe.Pointer(&reasons)))
+	if ret == 0 && needed == 0 {
+		runtime.KeepAlive(wide)
+		return result, nil
+	}
+	if ret != uintptr(windows.ERROR_MORE_DATA) {
+		return nil, fmt.Errorf("RmGetList sizing error %d", ret)
+	}
+	infos := make([]rmProcessInfo, needed)
+	count = needed
+	ret, _, _ = rmGetList.Call(uintptr(handle), uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&count)), uintptr(unsafe.Pointer(&infos[0])), uintptr(unsafe.Pointer(&reasons)))
+	if ret != 0 {
+		return nil, fmt.Errorf("RmGetList error %d", ret)
+	}
+	for i := uint32(0); i < count; i++ {
+		result[infos[i].Process.ProcessID] = true
+	}
+	runtime.KeepAlive(wide)
+	return result, nil
 }
 
 func hasStaleTmp(installDir string) bool {
@@ -119,10 +242,6 @@ func hasLegacyRustDeskUninstall() bool {
 // unknown version conservatively). Defensive throughout: no panic on malformed
 // resources.
 func fileVersion(path string) string {
-	p, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return ""
-	}
 	var handle windows.Handle
 	size, err := windows.GetFileVersionInfoSize(path, &handle)
 	if err != nil || size == 0 {
@@ -134,7 +253,6 @@ func fileVersion(path string) string {
 	}
 	var fixed *windows.VS_FIXEDFILEINFO
 	var fixedLen uint32
-	_ = p
 	if err := windows.VerQueryValue(unsafe.Pointer(&buf[0]), `\`,
 		unsafe.Pointer(&fixed), &fixedLen); err != nil || fixed == nil {
 		return ""

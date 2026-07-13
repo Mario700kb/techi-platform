@@ -113,8 +113,8 @@ func TestRSRecovery_LockedThenPendingReboot(t *testing.T) {
 	if plan.Classification != RSPendingReboot || plan.FinalCode != ExitPendingReboot {
 		t.Fatalf("want pending_reboot/ExitPendingReboot, got %q/%v", plan.Classification, plan.FinalCode)
 	}
-	if !hasAction(plan, ActStopTray) || !hasAction(plan, ActStopProcessExact) {
-		t.Fatalf("locked path must stop tray + exact process: %+v", plan.Actions)
+	if hasAction(plan, ActStopTray) || hasAction(plan, ActStopService) || hasAction(plan, ActStopProcessExact) {
+		t.Fatalf("pending-reboot deferral must not stop the existing installation: %+v", plan.Actions)
 	}
 	if !hasAction(plan, ActScheduleBootRetry) {
 		t.Fatalf("pending reboot must schedule exactly one boot retry: %+v", plan.Actions)
@@ -162,6 +162,17 @@ func TestRSRecovery_LegacyCombinedReclassified(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutEnabled, "1.4.6", obs)
 	if plan.Classification != RSStaleService {
 		t.Fatalf("legacy combined w/ EXE gone must be stale_service, got %q", plan.Classification)
+	}
+}
+
+func TestRSRecovery_UnrelatedPendingRebootDoesNotDefer(t *testing.T) {
+	obs := withPayload(RSObservation{
+		ExeExists: true, ExeVersion: "1.4.5", ServiceExists: true,
+		ServiceRunning: true, ServiceImageOK: true, PendingReboot: true,
+	})
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", obs)
+	if plan.Classification == RSPendingReboot || anyAction(plan.Actions, ActScheduleBootRetry) {
+		t.Fatalf("unrelated reboot marker must not defer RS recovery: %+v", plan)
 	}
 }
 

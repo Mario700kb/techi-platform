@@ -1,6 +1,6 @@
-// Package native is the small, deterministic Windows bootstrap/update
-// foundation that replaces the large generated techi-deploy.cmd + PowerShell
-// orchestration. Everything in this file is platform-neutral and unit-testable
+// Package native is the small, deterministic Windows bootstrap/update source
+// candidate; it does not yet replace the live GPO/CMD orchestration. Everything
+// in this file is platform-neutral and unit-testable
 // off Windows: the pure decision logic (policy contract, path safety, staging,
 // SHA verification, structured results, and the Remote Support / Agent state
 // machines) lives here; the Windows-only side effects (SCM, process
@@ -60,17 +60,20 @@ func (c ExitCode) String() string {
 // operation emits. It is JSON-serialisable so `--json` callers (canary
 // tooling, CI, the future backend collector) get a deterministic contract.
 type OperationResult struct {
-	Operation string    `json:"operation"`
-	Component string    `json:"component,omitempty"`
-	Code      ExitCode  `json:"code"`
-	CodeName  string    `json:"code_name"`
-	OK        bool      `json:"ok"`
-	DryRun    bool      `json:"dry_run"`
-	Message   string    `json:"message,omitempty"`
-	Classify  string    `json:"classification,omitempty"`
-	Planned   []string  `json:"planned_actions,omitempty"`
-	Performed []string  `json:"performed_actions,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	Operation string   `json:"operation"`
+	Component string   `json:"component,omitempty"`
+	Code      ExitCode `json:"code"`
+	CodeName  string   `json:"code_name"`
+	OK        bool     `json:"ok"`
+	DryRun    bool     `json:"dry_run"`
+	Message   string   `json:"message,omitempty"`
+	Classify  string   `json:"classification,omitempty"`
+	Planned   []string `json:"planned_actions,omitempty"`
+	Performed []string `json:"performed_actions,omitempty"`
+	// Rollback records the honest outcome of a transactional rollback, when one
+	// was attempted after a failed mutation.
+	Rollback  *RollbackResult `json:"rollback,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
 }
 
 // NewResult builds a result with the derived convenience fields populated.

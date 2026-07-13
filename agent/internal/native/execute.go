@@ -2,59 +2,78 @@ package native
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
-// Executor is the side-effecting boundary the recovery/apply orchestrator
-// drives. The pure planner (PlanRemoteSupportRecovery) decides WHAT to do; an
-// Executor performs it. Splitting it this way keeps the decision logic
-// unit-testable with a fake and confines every real Windows mutation to one
-// build-tagged implementation. Every method must be exact and bounded: service
-// operations by exact name, process termination by exact image path, file
-// operations confined to the approved install directory.
+// UndoFunc reverses a single mutating step. Every mutating Executor primitive
+// returns one (possibly nil) so the orchestrator can build a strict-reverse
+// undo stack for transactional rollback (#3).
+type UndoFunc func() error
+
+// ServiceSnapshot is the exact captured configuration + state of a service, so
+// rollback can restore it and final validation can compare against the target.
+type ServiceSnapshot struct {
+	Exists     bool     `json:"exists"`
+	BinaryPath string   `json:"binary_path"`
+	Arguments  []string `json:"arguments"`
+	StartType  string   `json:"start_type"`
+	Account    string   `json:"account"`
+	Running    bool     `json:"running"`
+	ProcessID  uint32   `json:"process_id"`
+}
+
+// PriorState is everything captured BEFORE any mutation so rollback can restore
+// the device to how it was found (#3).
+type PriorState struct {
+	Service          ServiceSnapshot
+	InstallDirExists bool
+	TrayExists       bool
+	TrayEnabled      bool
+	TrayRunning      bool
+	RetryTaskExists  bool
+}
+
+// RollbackResult is the honest record of a rollback attempt. Success is NEVER
+// reported unless every recorded undo completed.
+type RollbackResult struct {
+	Attempted   bool     `json:"attempted"`
+	Completed   bool     `json:"completed"`
+	FailedSteps []string `json:"failed_steps,omitempty"`
+	FinalHealth string   `json:"final_health"`
+}
+
+// Executor is the side-effecting boundary. Each mutating primitive returns an
+// UndoFunc recorded on the transaction's undo stack. Everything is exact and
+// bounded: services by exact name, processes by exact image path/handle, files
+// confined to the approved install directory.
 type Executor interface {
-	// VerifyPayload re-checks the payload SHA256 immediately before any
-	// mutation (belt-and-suspenders with the planner's gate).
+	// CaptureState snapshots service/tray/dir/retry state before any mutation.
+	CaptureState(p ExecuteParams) (PriorState, error)
+	// VerifyPayload hashes the exact staged payload file and compares to expected.
 	VerifyPayload(payloadPath, expectedSHA string) error
-	// PreserveConfig snapshots RS id/config/password so it survives promotion.
-	PreserveConfig(installDir string) error
-	// StopService stops the service by exact name; no-op if already stopped.
-	StopService(name string) error
-	// StopTray stops/disables the RS tray scheduled task by exact task name.
-	StopTray(taskName string) error
-	// StopProcessExact terminates ONLY processes whose image path equals
-	// exePath exactly, then waits up to wait for exit. Never name-only.
-	StopProcessExact(exePath string, wait time.Duration) error
-	// RemoveStaleService deletes a service whose EXE is gone, by exact name.
-	RemoveStaleService(name string) error
-	// CleanupTmp removes leftover TBD*.tmp only within installDir.
-	CleanupTmp(installDir string) error
-	// StagePayload expands the verified bundle into stagingDir and, when
-	// manifestPath is set, validates every extracted file against the manifest
-	// before returning (so a mismatched bundle never reaches promotion).
-	StagePayload(payloadPath, stagingDir, manifestPath string) error
-	// PromoteFiles atomically moves staged files into installDir, taking a
-	// backup first so Rollback can undo it.
-	PromoteFiles(stagingDir, installDir string) error
-	// RestoreConfig writes the preserved RS id/config back into installDir.
-	RestoreConfig(installDir string) error
-	// CreateService (re)creates the service pointing at the exact EXE path.
-	CreateService(name, exePath string) error
-	// StartService starts the service by exact name.
-	StartService(name string) error
-	// ScheduleBootRetry registers exactly ONE bounded retry at next boot.
-	ScheduleBootRetry(command string) error
-	// ValidateFinal proves EXE present, expected version, service RUNNING, and
-	// exact image path. Returns an error to trigger rollback.
-	ValidateFinal(p ExecuteParams) error
-	// Rollback restores the pre-promotion backup after a failed validation.
-	Rollback(installDir string) error
+	PreserveConfig(p ExecuteParams) (UndoFunc, error)
+	StopTray(p ExecuteParams, prior PriorState) (UndoFunc, error)
+	StopService(p ExecuteParams, prior PriorState) (UndoFunc, error)
+	StopProcessExact(exePath string, wait time.Duration) (UndoFunc, error)
+	RemoveStaleService(p ExecuteParams, prior PriorState) (UndoFunc, error)
+	CleanupTmp(p ExecuteParams) (UndoFunc, error)
+	StagePayload(p ExecuteParams, stagingDir string, bundle *BoundBundle) (UndoFunc, error)
+	PromoteFiles(p ExecuteParams, stagingDir string, m *BundleManifest) (UndoFunc, error)
+	RestoreConfig(p ExecuteParams) (UndoFunc, error)
+	CreateService(p ExecuteParams, m *BundleManifest, prior PriorState) (UndoFunc, error)
+	StartService(p ExecuteParams, prior PriorState) (UndoFunc, error)
+	ScheduleBootRetry(p ExecuteParams) (UndoFunc, error)
+	// ValidateFinal proves the exact final contract (EXE hash/version, service
+	// config+state+args, exact image path, no stale helper, config restored).
+	ValidateFinal(p ExecuteParams, m *BundleManifest) error
+	// Health returns a short health string for rollback reporting.
+	Health(p ExecuteParams) string
 }
 
 // ExecuteParams carries the concrete, already-validated targets a plan needs.
-// The orchestrator refuses to run a mutating plan unless InstallDir is a safe,
-// non-refused absolute target.
 type ExecuteParams struct {
 	Component       string
 	ServiceName     string
@@ -67,25 +86,140 @@ type ExecuteParams struct {
 	TrayTaskName    string
 	BootRetryCmd    string
 	ProcessWait     time.Duration
-	// ConfigPaths are the exact RS identity/config files to preserve across a
-	// promotion. Supplied by the wiring layer, never guessed by the executor.
-	ConfigPaths []string
-	// BackupRoot is where PromoteFiles stashes the pre-promotion install dir so
-	// Rollback can restore it. Must be a safe, restricted directory.
-	BackupRoot string
-	// BundleManifestPath is the manifest sidecar next to the .zip payload. When
-	// set, StagePayload verifies every extracted file against it before any
-	// promotion. Empty disables manifest verification (plain copy payloads).
+	ConfigPaths     []string
+	BackupRoot      string
+	// BundleManifestPath is the manifest sidecar bound to the .zip payload.
 	BundleManifestPath string
+	// BundleManifestSHA binds the sidecar bytes to the activated package record.
+	BundleManifestSHA string
+	// LockRoot is the machine-wide execution-lock root (…/locks live under it).
+	LockRoot string
+	// RetryRoot holds the TECHI-owned bounded retry-state file.
+	RetryRoot   string
+	DeviceID    string
+	PolicyPath  string
+	ArtifactDir string
+	RetryOwner  string
+	// HeldLock is set by the CLI when it acquired the execution lock before live
+	// observation. Direct callers leave it nil and ExecutePlan acquires the lock.
+	HeldLock *ExecutionLock
 }
 
-// ExecutePlan drives an ordered RecoveryPlan through an Executor. In dry-run it
-// performs NO mutation and only records what it would do. In execute mode it
-// runs each action in order, and on a failed ValidateFinal it rolls back. It
-// returns a machine-readable OperationResult with the deterministic exit code.
-//
-// The plan is run exactly once — there is no internal retry loop; the only
-// retry is the single boot retry scheduled by the pending-reboot plan.
+// BoundBundle contains the exact immutable bytes validated under the execution
+// lock. Extraction consumes PayloadBytes directly, eliminating a verify/open
+// TOCTOU window between package identity checks and staging.
+type BoundBundle struct {
+	Manifest      *BundleManifest
+	PayloadBytes  []byte
+	ManifestBytes []byte
+}
+
+// CrossCheckManifest binds policy/params to the manifest before any mutation
+// (#5): version, platform, arch, product_root, entrypoint, service identity and
+// arguments must all agree, and the manifest's bundle_sha256 must equal the
+// hash of the exact payload file on disk. Any mismatch is a hard refusal.
+func CrossCheckManifest(p ExecuteParams, m *BundleManifest, payloadBytes, manifestBytes []byte) error {
+	if m == nil {
+		return fmt.Errorf("no bound manifest")
+	}
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	if m.Version != p.ExpectedVersion {
+		return fmt.Errorf("manifest version %s != policy target %s", m.Version, p.ExpectedVersion)
+	}
+	if m.Platform != "windows" || m.Architecture != "amd64" {
+		return fmt.Errorf("manifest platform/arch %s/%s unsupported", m.Platform, m.Architecture)
+	}
+	if m.Product != "TECHI Remote Support" || m.ProductRoot != "TECHI Remote Support" {
+		return fmt.Errorf("manifest product/root %q/%q is not canonical", m.Product, m.ProductRoot)
+	}
+	if m.Entrypoint != "TECHI Remote Support/TECHI Remote Support.exe" {
+		return fmt.Errorf("manifest entrypoint %q is not canonical", m.Entrypoint)
+	}
+	if m.ServiceName != "TECHI Remote Support" || len(m.ServiceArguments) != 1 || m.ServiceArguments[0] != "--service" {
+		return fmt.Errorf("manifest service identity/arguments are not canonical")
+	}
+	if m.TrayTaskName != "TECHI Remote Support Tray" || len(m.TrayArguments) != 1 || m.TrayArguments[0] != "--tray" {
+		return fmt.Errorf("manifest tray identity/arguments are not canonical")
+	}
+	if !strings.EqualFold(m.ServiceName, p.ServiceName) {
+		return fmt.Errorf("manifest service_name %q != params %q", m.ServiceName, p.ServiceName)
+	}
+	epBase := m.Entrypoint[strings.LastIndex(m.Entrypoint, "/")+1:]
+	expectedBase := filepath.Base(strings.ReplaceAll(p.ExpectedExePath, `\`, "/"))
+	if !strings.EqualFold(epBase, expectedBase) {
+		return fmt.Errorf("manifest entrypoint %q != expected exe %q", epBase, expectedBase)
+	}
+	canonicalExe := strings.TrimRight(p.InstallDir, `\/`) + `\TECHI Remote Support.exe`
+	if !equalWindowsPath(p.ExpectedExePath, canonicalExe) {
+		return fmt.Errorf("expected exe path %q is not canonical %q", p.ExpectedExePath, canonicalExe)
+	}
+	wantBundle := fmt.Sprintf("TECHI-Remote-Support-%s-windows-amd64.zip", p.ExpectedVersion)
+	if !strings.EqualFold(filepath.Base(p.PayloadPath), wantBundle) {
+		return fmt.Errorf("payload filename must be %q", wantBundle)
+	}
+	wantManifest := strings.TrimSuffix(wantBundle, ".zip") + ".manifest.json"
+	if !strings.EqualFold(filepath.Base(p.BundleManifestPath), wantManifest) {
+		return fmt.Errorf("manifest filename must be %q", wantManifest)
+	}
+	// Bind the manifest to the exact payload bytes on disk.
+	got := HashBytesSHA256(payloadBytes)
+	if !strings.EqualFold(got, m.BundleSHA256) {
+		return fmt.Errorf("payload sha256 != manifest bundle_sha256")
+	}
+	if !strings.EqualFold(got, p.PayloadSHA) {
+		return fmt.Errorf("payload sha256 != policy sha256")
+	}
+	if !sha256Re.MatchString(p.BundleManifestSHA) {
+		return fmt.Errorf("policy manifest_sha256 is invalid")
+	}
+	if !strings.EqualFold(HashBytesSHA256(manifestBytes), p.BundleManifestSHA) {
+		return fmt.Errorf("manifest bytes sha256 != policy manifest_sha256")
+	}
+	return nil
+}
+
+func equalWindowsPath(a, b string) bool {
+	normalize := func(value string) string {
+		return strings.ToLower(strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(value), "/", `\`), `\`))
+	}
+	return normalize(a) == normalize(b)
+}
+
+type txStep struct {
+	name string
+	undo UndoFunc
+}
+
+type transaction struct{ steps []txStep }
+
+func (t *transaction) push(name string, u UndoFunc) {
+	if u != nil {
+		t.steps = append(t.steps, txStep{name, u})
+	}
+}
+
+// rollback runs every recorded undo in strict reverse order and reports honestly.
+func (t *transaction) rollback(health func() string) RollbackResult {
+	res := RollbackResult{Attempted: true, Completed: true}
+	for i := len(t.steps) - 1; i >= 0; i-- {
+		if err := t.steps[i].undo(); err != nil {
+			res.Completed = false
+			res.FailedSteps = append(res.FailedSteps, t.steps[i].name+": "+err.Error())
+		}
+	}
+	if health != nil {
+		res.FinalHealth = health()
+	}
+	return res
+}
+
+// ExecutePlan drives an ordered RecoveryPlan through an Executor transactionally.
+// In dry-run it makes NO change. In execute mode it holds the machine-wide lock,
+// binds+cross-checks the manifest, records an undo for every mutation, and on
+// ANY failure rolls back in strict reverse order — reporting a RollbackResult
+// and never a false success.
 func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool) OperationResult {
 	r := NewResult("repair-remote-support", plan.FinalCode)
 	r.Component = "remote_support"
@@ -94,110 +228,166 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 	r.DryRun = !execute
 	r.Message = plan.Note
 
-	// Non-mutating plans (noop / detect-only / refusals) never touch the device.
 	if !plan.Mutating {
 		return r
 	}
 
-	// Hard safety gate before ANY mutation: the install dir must be a real,
-	// non-refused absolute path. This is the last line before destructive work.
+	// Static safety gates (apply in dry-run and execute).
 	if IsRefusedInstallTarget(p.InstallDir) {
-		out := NewResult("repair-remote-support", ExitUnsafeTarget)
-		out.Component = "remote_support"
-		out.Classify = string(plan.Classification)
-		out.Planned = r.Planned
-		out.DryRun = !execute
-		out.Message = "refused unsafe install target: " + p.InstallDir
-		return out
+		return failStatic(plan, execute, ExitUnsafeTarget, "refused unsafe install target: "+p.InstallDir)
 	}
-
-	// The native RS recovery payload MUST be a bundle/ZIP — never the MSI. This
-	// refuses the failing MSI repair path outright before any mutation.
-	if anyAction(plan.Actions, ActStagePayload) && !IsNativeBundleFilename(p.PayloadPath) {
-		out := NewResult("repair-remote-support", ExitBadArgs)
-		out.Component = "remote_support"
-		out.Classify = string(plan.Classification)
-		out.Planned = r.Planned
-		out.DryRun = !execute
-		out.Message = "native recovery payload must be a .zip bundle, not " + p.PayloadPath
-		return out
+	staging := anyAction(plan.Actions, ActStagePayload)
+	requiresManifest := plan.Mutating
+	if staging && !IsNativeBundleFilename(p.PayloadPath) {
+		return failStatic(plan, execute, ExitBadArgs, "native recovery payload must be a .zip bundle, not "+p.PayloadPath)
+	}
+	if requiresManifest && strings.TrimSpace(p.BundleManifestPath) == "" {
+		return failStatic(plan, execute, ExitBadArgs, "bundle recovery requires a bound manifest")
+	}
+	if requiresManifest && strings.TrimSpace(p.BundleManifestSHA) == "" {
+		return failStatic(plan, execute, ExitBadArgs, "bundle recovery requires a bound manifest sha256")
 	}
 
 	if !execute {
-		// Dry-run: report the plan; make no changes.
 		r.Message = "dry-run: " + plan.Note + " (pass --execute to mutate)"
 		return r
 	}
 
+	// Machine-wide lock over the whole observation→mutation→rollback sequence.
+	lockRoot := p.LockRoot
+	if strings.TrimSpace(lockRoot) == "" {
+		lockRoot = p.BackupRoot
+	}
+	lock := p.HeldLock
+	ownedLock := false
+	if lock == nil || !lock.acquired {
+		var code ExitCode
+		var err error
+		lock, code, err = AcquireExecutionLock(lockRoot)
+		if err != nil {
+			return failStatic(plan, true, code, "cannot acquire execution lock: "+err.Error())
+		}
+		ownedLock = true
+	}
+	if ownedLock {
+		defer lock.Release()
+	}
+
+	// Read and bind the exact ZIP + sidecar bytes once under the lock. Staging
+	// extracts these bytes rather than reopening a replaceable path.
+	var manifest *BundleManifest
+	var bound *BoundBundle
+	if requiresManifest {
+		manifestBytes, rerr := os.ReadFile(p.BundleManifestPath)
+		if rerr != nil {
+			return failStatic(plan, true, ExitValidationError, "manifest read failed: "+rerr.Error())
+		}
+		m, lerr := ParseBundleManifest(manifestBytes)
+		if lerr != nil {
+			return failStatic(plan, true, ExitValidationError, "manifest load failed: "+lerr.Error())
+		}
+		payloadBytes, rerr := os.ReadFile(p.PayloadPath)
+		if rerr != nil {
+			return failStatic(plan, true, ExitPayloadMissing, "payload read failed: "+rerr.Error())
+		}
+		if cerr := CrossCheckManifest(p, m, payloadBytes, manifestBytes); cerr != nil {
+			return failStatic(plan, true, ExitValidationError, "manifest cross-check failed: "+cerr.Error())
+		}
+		manifest = m
+		bound = &BoundBundle{Manifest: m, PayloadBytes: payloadBytes, ManifestBytes: manifestBytes}
+	}
+
 	stagingDir := p.StagingRoot
-	if sd, err := StagingPath(p.StagingRoot, p.Component, p.ExpectedVersion); err == nil {
+	if sd, serr := StagingPath(p.StagingRoot, "remote-support", p.ExpectedVersion); serr == nil {
 		stagingDir = sd
 	}
 
-	promoted := false
+	prior, perr := exec.CaptureState(p)
+	if perr != nil {
+		return failStatic(plan, true, ExitError, "capture state failed: "+perr.Error())
+	}
+
+	tx := &transaction{}
+	health := func() string { return exec.Health(p) }
+
 	fail := func(code ExitCode, action ActionType, err error) OperationResult {
-		if promoted {
-			_ = exec.Rollback(p.InstallDir) // best-effort restore
-		}
+		rb := tx.rollback(health)
 		out := NewResult("repair-remote-support", code)
 		out.Component = "remote_support"
 		out.Classify = string(plan.Classification)
 		out.Planned = r.Planned
 		out.Performed = r.Performed
-		out.DryRun = false
+		out.Rollback = &rb
 		out.Message = fmt.Sprintf("%s failed: %v", action, err)
+		if code == ExitOK { // a failure must never carry ExitOK
+			out.Code = ExitError
+			out.CodeName = ExitError.String()
+			out.OK = false
+		}
 		return out
 	}
 
 	for _, a := range plan.Actions {
-		var err error
+		var undo UndoFunc
+		var aerr error
 		switch a {
 		case ActNoop:
 		case ActVerifyPayload:
-			if err = exec.VerifyPayload(p.PayloadPath, p.PayloadSHA); err != nil {
-				return fail(ExitIdentityFailed, a, err)
+			if aerr = exec.VerifyPayload(p.PayloadPath, p.PayloadSHA); aerr != nil {
+				return fail(ExitIdentityFailed, a, aerr)
 			}
 		case ActPreserveConfig:
-			err = exec.PreserveConfig(p.InstallDir)
+			undo, aerr = exec.PreserveConfig(p)
 		case ActStopTray:
-			err = exec.StopTray(p.TrayTaskName)
+			undo, aerr = exec.StopTray(p, prior)
 		case ActStopService:
-			err = exec.StopService(p.ServiceName)
+			undo, aerr = exec.StopService(p, prior)
 		case ActStopProcessExact:
-			err = exec.StopProcessExact(p.ExpectedExePath, p.ProcessWait)
+			undo, aerr = exec.StopProcessExact(p.ExpectedExePath, p.ProcessWait)
 		case ActRemoveStaleService:
-			err = exec.RemoveStaleService(p.ServiceName)
+			undo, aerr = exec.RemoveStaleService(p, prior)
 		case ActCleanupTmp:
-			err = exec.CleanupTmp(p.InstallDir)
+			undo, aerr = exec.CleanupTmp(p)
 		case ActStagePayload:
-			err = exec.StagePayload(p.PayloadPath, stagingDir, p.BundleManifestPath)
+			undo, aerr = exec.StagePayload(p, stagingDir, bound)
 		case ActPromoteFiles:
-			if err = exec.PromoteFiles(stagingDir, p.InstallDir); err == nil {
-				promoted = true
-			}
+			undo, aerr = exec.PromoteFiles(p, stagingDir, manifest)
 		case ActRestoreConfig:
-			err = exec.RestoreConfig(p.InstallDir)
+			undo, aerr = exec.RestoreConfig(p)
 		case ActCreateService:
-			err = exec.CreateService(p.ServiceName, p.ExpectedExePath)
+			undo, aerr = exec.CreateService(p, manifest, prior)
 		case ActStartService:
-			err = exec.StartService(p.ServiceName)
+			undo, aerr = exec.StartService(p, prior)
 		case ActScheduleBootRetry:
-			err = exec.ScheduleBootRetry(p.BootRetryCmd)
+			undo, aerr = exec.ScheduleBootRetry(p)
 		case ActValidateFinal:
-			if err = exec.ValidateFinal(p); err != nil {
-				return fail(ExitValidationError, a, err)
+			if aerr = exec.ValidateFinal(p, manifest); aerr != nil {
+				return fail(ExitValidationError, a, aerr)
 			}
 		default:
 			return fail(ExitError, a, fmt.Errorf("unknown action"))
 		}
-		if err != nil {
-			return fail(ExitError, a, err)
+		// A primitive can fail after a partial mutation. Record any undo it
+		// returns before handling the error so that partial state is not lost.
+		tx.push(string(a), undo)
+		if aerr != nil {
+			return fail(ExitError, a, aerr)
 		}
 		r.Performed = append(r.Performed, string(a))
 	}
 
 	r.OK = plan.FinalCode == ExitOK
 	return r
+}
+
+func failStatic(plan RecoveryPlan, execute bool, code ExitCode, msg string) OperationResult {
+	out := NewResult("repair-remote-support", code)
+	out.Component = "remote_support"
+	out.Classify = string(plan.Classification)
+	out.Planned = actionNames(plan.Actions)
+	out.DryRun = !execute
+	out.Message = msg
+	return out
 }
 
 func anyAction(actions []ActionType, want ActionType) bool {

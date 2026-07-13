@@ -3,11 +3,13 @@
 package native
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -33,14 +35,26 @@ func restrictACL(dir string) error {
 // runHidden runs an absolute-path Windows command with no visible window and no
 // shell. It refuses a non-absolute program path so nothing is resolved via PATH.
 func runHidden(name string, args ...string) error {
+	_, err := runHiddenOut(name, args...)
+	return err
+}
+
+// runHiddenOut is globally bounded so a stuck system utility cannot hold the
+// recovery lock or leave a transaction half-complete indefinitely.
+func runHiddenOut(name string, args ...string) (string, error) {
 	if !filepath.IsAbs(name) {
-		return fmt.Errorf("refusing to run non-absolute program: %s", name)
+		return "", fmt.Errorf("refusing to run non-absolute program: %s", name)
 	}
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &windows.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s failed: %v: %s", filepath.Base(name), err, strings.TrimSpace(string(out)))
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(out), fmt.Errorf("%s timed out after 30s", filepath.Base(name))
 	}
-	return nil
+	if err != nil {
+		return string(out), fmt.Errorf("%s failed: %v: %s", filepath.Base(name), err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }

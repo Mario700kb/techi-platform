@@ -1,7 +1,7 @@
 package main
 
-// Native bootstrap subcommands. These are the small, deterministic entry points
-// that replace the large generated techi-deploy.cmd + PowerShell orchestration:
+// Native bootstrap report-only subcommands. They exercise the proposed small,
+// deterministic decision core but do not replace the live GPO/CMD path:
 //
 //	techi-agent.exe apply-policy          --policy <path> [--observation <path>] [--json]
 //	techi-agent.exe repair-remote-support --policy <path> [--observation <path>] [--json] [--dry-run]
@@ -13,13 +13,14 @@ package main
 // Windows wiring layer behind an explicit, canary-gated executor, so this
 // binary can never repair a production device by accident. Live probing of a
 // real device is likewise done by the wiring layer; here an --observation
-// fixture supplies the reduced state so the decision is fully exercisable and
-// deterministic on any OS (this is the one-device canary/dry-run harness).
+// fixture supplies reduced state so the decision is deterministic on any OS.
+// This is a source/test harness, not authorization for a device canary.
 
 import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -44,6 +45,10 @@ func loadObservation(path string) (*observationFile, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&o); err != nil {
 		return nil, fmt.Errorf("invalid observation json: %w", err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("invalid observation json: trailing data")
 	}
 	return &o, nil
 }
@@ -114,7 +119,7 @@ func runRepairRemoteSupportCommand(args []string) int {
 		return emitResult(r, *asJSON)
 	}
 
-	plan := native.PlanRemoteSupportRecovery(policy.RolloutMode, policy.RemoteSupport.TargetVersion, obs.RemoteSupport)
+	plan := native.PlanRemoteSupportRecovery(policy.RemoteSupport.RecoveryMode, policy.RemoteSupport.TargetVersion, obs.RemoteSupport)
 	r = native.NewResult("repair-remote-support", plan.FinalCode)
 	r.Component = "remote_support"
 	r.DryRun = true
@@ -150,7 +155,7 @@ func runApplyPolicyCommand(args []string) int {
 	if *obsPath == "" {
 		r := native.NewResult("apply-policy", native.ExitOK)
 		r.DryRun = true
-		r.Message = fmt.Sprintf("policy valid: schema=%d rollout=%s agent_target=%s rs_target=%s",
+		r.Message = fmt.Sprintf("report-only: policy valid but apply-policy performs no live execution: schema=%d rollout=%s agent_target=%s rs_target=%s",
 			policy.SchemaVersion, policy.RolloutMode, policy.Agent.TargetVersion, policy.RemoteSupport.TargetVersion)
 		return emitResult(r, *asJSON)
 	}
@@ -164,7 +169,7 @@ func runApplyPolicyCommand(args []string) int {
 	}
 
 	agentDecision := native.EvaluateAgent(policy.Agent.TargetVersion, obs.Agent)
-	rsPlan := native.PlanRemoteSupportRecovery(policy.RolloutMode, policy.RemoteSupport.TargetVersion, obs.RemoteSupport)
+	rsPlan := native.PlanRemoteSupportRecovery(policy.RemoteSupport.RecoveryMode, policy.RemoteSupport.TargetVersion, obs.RemoteSupport)
 
 	// The command's overall code is the more urgent of the two. RS pending-reboot
 	// or refusal dominates an agent no-op.

@@ -1,5 +1,6 @@
-// Command techi-bootstrap is the small, standalone native bootstrap that a GPO
-// Scheduled Task invokes instead of the large generated techi-deploy.cmd:
+// Command techi-bootstrap is the small standalone recovery candidate intended
+// for a future owned GPO Scheduled Task. That publication/task path is not yet
+// operational; this binary must be staged manually in a disposable lab first:
 //
 //	techi-bootstrap.exe apply-policy          --policy <path> [--json]
 //	techi-bootstrap.exe repair-remote-support --policy <path> [--execute] [--json]
@@ -51,6 +52,8 @@ type rsFlags struct {
 	backupRoot  *string
 	artifactDir *string
 	observation *string
+	deviceID    *string
+	retryOwner  *string
 	asJSON      *bool
 	execute     *bool
 }
@@ -65,12 +68,14 @@ func addRSFlags(fs *flag.FlagSet) *rsFlags {
 		backupRoot:  fs.String("backup-root", `C:\ProgramData\TechiAgent\backup`, "restricted backup root for rollback"),
 		artifactDir: fs.String("artifact-dir", "", "directory holding the payload (defaults to the policy's directory)"),
 		observation: fs.String("observation", "", "device observation JSON (skips live probing)"),
+		deviceID:    fs.String("device-id", "", "explicit device identity required for canary execution"),
+		retryOwner:  fs.String("retry-owner", "", "internal retry-task ownership marker"),
 		asJSON:      fs.Bool("json", false, "emit machine-readable JSON result"),
 		execute:     fs.Bool("execute", false, "actually mutate the device (default is dry-run/plan-only)"),
 	}
 }
 
-func (f *rsFlags) params(policy *native.Policy) native.ExecuteParams {
+func (f *rsFlags) params(policy *native.Policy, policyPath string) native.ExecuteParams {
 	installDir := *f.installDir
 	exe := *f.exe
 	if exe == "" {
@@ -78,11 +83,8 @@ func (f *rsFlags) params(policy *native.Policy) native.ExecuteParams {
 	}
 	artifactDir := *f.artifactDir
 	payload := filepath.Join(artifactDir, policy.RemoteSupport.PayloadFilename)
-	// The manifest sidecar sits next to the .zip: <base>.manifest.json.
-	manifest := ""
-	if strings.HasSuffix(strings.ToLower(payload), ".zip") {
-		manifest = strings.TrimSuffix(payload, filepath.Ext(payload)) + ".manifest.json"
-	}
+	manifest := filepath.Join(artifactDir, policy.RemoteSupport.ManifestFilename)
+	lockRoot := filepath.Dir(*f.stagingRoot)
 	return native.ExecuteParams{
 		Component:          "remote_support",
 		ServiceName:        *f.service,
@@ -92,22 +94,35 @@ func (f *rsFlags) params(policy *native.Policy) native.ExecuteParams {
 		PayloadPath:        payload,
 		PayloadSHA:         policy.RemoteSupport.SHA256,
 		BundleManifestPath: manifest,
+		BundleManifestSHA:  policy.RemoteSupport.ManifestSHA256,
 		StagingRoot:        *f.stagingRoot,
 		BackupRoot:         *f.backupRoot,
 		TrayTaskName:       *f.trayTask,
-		BootRetryCmd:       selfBootRetryCommand(),
+		LockRoot:           lockRoot,
+		RetryRoot:          lockRoot,
+		DeviceID:           strings.TrimSpace(*f.deviceID),
+		PolicyPath:         policyPath,
+		ArtifactDir:        artifactDir,
+		RetryOwner:         strings.TrimSpace(*f.retryOwner),
 		ProcessWait:        20 * time.Second,
 	}
 }
 
-func selfBootRetryCommand() string {
+func selfBootRetryCommand(p native.ExecuteParams) string {
 	self, err := os.Executable()
 	if err != nil {
 		return ""
 	}
-	// One bounded boot retry re-runs the same recovery once; the executor's task
-	// is one-shot (ONSTART) and the retry itself does not reschedule.
-	return fmt.Sprintf(`"%s" repair-remote-support --execute`, self)
+	q := func(s string) string { return `"` + strings.ReplaceAll(s, `"`, ``) + `"` }
+	return strings.Join([]string{
+		q(self), "repair-remote-support",
+		"--policy", q(p.PolicyPath), "--artifact-dir", q(p.ArtifactDir),
+		"--device-id", q(p.DeviceID), "--rs-service", q(p.ServiceName),
+		"--rs-install-dir", q(p.InstallDir), "--rs-exe", q(p.ExpectedExePath),
+		"--rs-tray-task", q(p.TrayTaskName), "--staging-root", q(p.StagingRoot),
+		"--backup-root", q(p.BackupRoot), "--retry-owner", "techi-bootstrap",
+		"--execute", "--json",
+	}, " ")
 }
 
 func emit(r native.OperationResult, asJSON bool) int {
@@ -149,7 +164,7 @@ func runApplyPolicy(args []string) int {
 	}
 	r := native.NewResult("apply-policy", native.ExitOK)
 	r.DryRun = true
-	r.Message = fmt.Sprintf("policy valid: schema=%d rollout=%s agent_target=%s rs_target=%s",
+	r.Message = fmt.Sprintf("report-only: policy valid but apply-policy performs no live execution: schema=%d rollout=%s agent_target=%s rs_target=%s",
 		policy.SchemaVersion, policy.RolloutMode, policy.Agent.TargetVersion, policy.RemoteSupport.TargetVersion)
 	return emit(r, *asJSON)
 }
@@ -169,7 +184,31 @@ func runRepairRemoteSupport(args []string) int {
 		return ec
 	}
 
-	params := rf.params(policy)
+	params := rf.params(policy, *policyPath)
+	params.BootRetryCmd = selfBootRetryCommand(params)
+	if *rf.execute {
+		if !policy.RemoteSupport.RemoteSupportEligible(params.DeviceID) {
+			r := native.NewResult("repair-remote-support", native.ExitBadArgs)
+			r.Component = "remote_support"
+			r.Message = "--execute refused: remote_support policy permission and explicit eligible device identity are required"
+			return emit(r, *rf.asJSON)
+		}
+		if params.RetryOwner != "" && params.RetryOwner != "techi-bootstrap" {
+			r := native.NewResult("repair-remote-support", native.ExitBadArgs)
+			r.Component = "remote_support"
+			r.Message = "invalid retry task owner"
+			return emit(r, *rf.asJSON)
+		}
+		lock, code, lerr := native.AcquireExecutionLock(params.LockRoot)
+		if lerr != nil {
+			r := native.NewResult("repair-remote-support", code)
+			r.Component = "remote_support"
+			r.Message = "cannot acquire execution lock before observation: " + lerr.Error()
+			return emit(r, *rf.asJSON)
+		}
+		defer lock.Release()
+		params.HeldLock = lock
+	}
 
 	// Obtain the device observation: an explicit fixture wins; otherwise probe
 	// natively (Windows only). Off Windows without a fixture we cannot proceed.
@@ -182,7 +221,7 @@ func runRepairRemoteSupport(args []string) int {
 		return emit(r, *rf.asJSON)
 	}
 
-	plan := native.PlanRemoteSupportRecovery(policy.RolloutMode, policy.RemoteSupport.TargetVersion, obs)
+	plan := native.PlanRemoteSupportRecovery(policy.RemoteSupport.RecoveryMode, policy.RemoteSupport.TargetVersion, obs)
 	result := native.ExecutePlan(plan, params, native.NewWindowsExecutor(), *rf.execute)
 	return emit(result, *rf.asJSON)
 }

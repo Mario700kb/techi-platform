@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -30,6 +32,10 @@ func resolveObservation(fixturePath string, params native.ExecuteParams) (native
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&o); err != nil {
 			return native.RSObservation{}, err
+		}
+		var trailing any
+		if err := dec.Decode(&trailing); err != io.EOF {
+			return native.RSObservation{}, fmt.Errorf("invalid observation json: trailing data")
 		}
 		return o.RemoteSupport, nil
 	}

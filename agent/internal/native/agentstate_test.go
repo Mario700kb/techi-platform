@@ -6,7 +6,7 @@ func healthyRuntime() AgentObservation {
 	return AgentObservation{
 		BinaryExists: true, ConfigValid: true,
 		ServiceExists: true, ServiceRunning: true, ServicePIDMatch: true,
-		LifecyclePresent: true,
+		LifecyclePresent: true, LifecycleFresh: true,
 	}
 }
 
@@ -86,5 +86,24 @@ func TestAgent_G_Corrupt_MSIRepair(t *testing.T) {
 	d := EvaluateAgent("2.1.8", obs)
 	if d.Classification != AgentDamaged || d.Action != AgentActMSIRepair {
 		t.Fatalf("corrupt binary must MSI-repair: %+v", d)
+	}
+}
+
+func TestAgent_VersionCannotMaskUnhealthyRuntime(t *testing.T) {
+	for name, mutate := range map[string]func(*AgentObservation){
+		"stopped":         func(o *AgentObservation) { o.ServiceRunning = false },
+		"pid mismatch":    func(o *AgentObservation) { o.ServicePIDMatch = false },
+		"invalid config":  func(o *AgentObservation) { o.ConfigValid = false },
+		"stale lifecycle": func(o *AgentObservation) { o.LifecycleFresh = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			obs := healthyRuntime()
+			obs.BinaryVersion = "2.1.8"
+			mutate(&obs)
+			d := EvaluateAgent("2.1.8", obs)
+			if d.Classification == AgentHealthyCurrent || d.Action == AgentActNoop {
+				t.Fatalf("unhealthy runtime reported current/noop: %+v", d)
+			}
+		})
 	}
 }

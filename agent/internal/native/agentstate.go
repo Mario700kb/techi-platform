@@ -39,6 +39,7 @@ type AgentObservation struct {
 	ServiceRunning   bool   `json:"service_running"`
 	ServicePIDMatch  bool   `json:"service_pid_match"` // SCM PID matches the running agent's lifecycle PID
 	LifecyclePresent bool   `json:"lifecycle_present"` // lifecycle state file readable this cycle
+	LifecycleFresh   bool   `json:"lifecycle_fresh"`   // lifecycle timestamp is within its bounded freshness window
 	LifecycleRetries int    `json:"lifecycle_retries"` // how many bounded retries already spent this run
 	BinaryCorrupt    bool   `json:"binary_corrupt"`    // binary present but failed integrity/exec probe
 }
@@ -89,6 +90,13 @@ func EvaluateAgent(target string, obs AgentObservation) AgentDecision {
 	if obs.ConfigValid && !obs.ServiceExists {
 		return AgentDecision{AgentServiceMissing, AgentActRecreateService,
 			"valid binary/config but service missing; recreate service"}
+	}
+
+	// Health is independent from version. A current/newer version cannot mask a
+	// stopped service, PID mismatch, invalid config, or stale lifecycle state.
+	if !obs.ConfigValid || !obs.LifecyclePresent || !obs.LifecycleFresh || !healthyRuntime {
+		return AgentDecision{AgentDamaged, AgentActMSIRepair,
+			"agent runtime/config/lifecycle unhealthy; bounded repair path required"}
 	}
 
 	// From here the runtime is considered healthy enough to compare versions.

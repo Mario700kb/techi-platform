@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"techi-platform/agent/internal/native"
@@ -42,10 +43,13 @@ func TestParamsBuilder_DefaultsExeUnderInstallDir(t *testing.T) {
 	policy := &native.Policy{
 		RemoteSupport: native.RemoteSupportPolic{
 			TargetVersion: "1.4.6", PayloadFilename: "rs.zip",
-			SHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			SHA256:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			ManifestFilename: "rs.manifest.json",
+			ManifestSHA256:   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 	}
-	p := rf.params(policy)
+	p := rf.params(policy, `C:\ProgramData\TechiAgent\bootstrap\techi-policy.json`)
+	p.BootRetryCmd = selfBootRetryCommand(p)
 	if filepath.Base(p.ExpectedExePath) != "TECHI Remote Support.exe" {
 		t.Fatalf("exe should default under install dir, got %q", p.ExpectedExePath)
 	}
@@ -54,5 +58,10 @@ func TestParamsBuilder_DefaultsExeUnderInstallDir(t *testing.T) {
 	}
 	if p.BootRetryCmd == "" {
 		t.Fatalf("boot retry command should be populated")
+	}
+	for _, required := range []string{"--policy", "--artifact-dir", "--device-id", "--rs-service", "--rs-install-dir", "--rs-exe", "--rs-tray-task", "--staging-root", "--backup-root", "--retry-owner techi-bootstrap", "--execute", "--json"} {
+		if !strings.Contains(p.BootRetryCmd, required) {
+			t.Errorf("retry command missing %q: %s", required, p.BootRetryCmd)
+		}
 	}
 }

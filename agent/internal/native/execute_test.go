@@ -1,7 +1,10 @@
 package native
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -24,30 +27,55 @@ func (f *fakeExecutor) note(name string) error {
 	}
 	return nil
 }
+func (f *fakeExecutor) mutation(name string) (UndoFunc, error) {
+	err := f.note(name)
+	// Model a primitive that prepared its undo before mutating and then failed
+	// after a partial change: the orchestrator must retain this undo on error.
+	return func() error { return f.note("Undo:" + name) }, err
+}
+func (f *fakeExecutor) CaptureState(ExecuteParams) (PriorState, error) {
+	return PriorState{}, f.note("CaptureState")
+}
 func (f *fakeExecutor) VerifyPayload(string, string) error { return f.note("VerifyPayload") }
-func (f *fakeExecutor) PreserveConfig(string) error        { return f.note("PreserveConfig") }
-func (f *fakeExecutor) StopService(string) error           { return f.note("StopService") }
-func (f *fakeExecutor) StopTray(string) error              { return f.note("StopTray") }
-func (f *fakeExecutor) StopProcessExact(exe string, _ time.Duration) error {
+func (f *fakeExecutor) PreserveConfig(ExecuteParams) (UndoFunc, error) {
+	return f.mutation("PreserveConfig")
+}
+func (f *fakeExecutor) StopService(ExecuteParams, PriorState) (UndoFunc, error) {
+	return f.mutation("StopService")
+}
+func (f *fakeExecutor) StopTray(ExecuteParams, PriorState) (UndoFunc, error) {
+	return f.mutation("StopTray")
+}
+func (f *fakeExecutor) StopProcessExact(exe string, _ time.Duration) (UndoFunc, error) {
 	f.killExe = exe
-	return f.note("StopProcessExact")
+	return f.mutation("StopProcessExact")
 }
-func (f *fakeExecutor) RemoveStaleService(string) error { return f.note("RemoveStaleService") }
-func (f *fakeExecutor) CleanupTmp(string) error         { return f.note("CleanupTmp") }
-func (f *fakeExecutor) StagePayload(string, string, string) error {
-	return f.note("StagePayload")
+func (f *fakeExecutor) RemoveStaleService(ExecuteParams, PriorState) (UndoFunc, error) {
+	return f.mutation("RemoveStaleService")
 }
-func (f *fakeExecutor) PromoteFiles(string, string) error { return f.note("PromoteFiles") }
-func (f *fakeExecutor) RestoreConfig(string) error        { return f.note("RestoreConfig") }
-func (f *fakeExecutor) CreateService(string, string) error {
-	return f.note("CreateService")
+func (f *fakeExecutor) CleanupTmp(ExecuteParams) (UndoFunc, error) { return f.mutation("CleanupTmp") }
+func (f *fakeExecutor) StagePayload(ExecuteParams, string, *BoundBundle) (UndoFunc, error) {
+	return f.mutation("StagePayload")
 }
-func (f *fakeExecutor) StartService(string) error      { return f.note("StartService") }
-func (f *fakeExecutor) ScheduleBootRetry(string) error { return f.note("ScheduleBootRetry") }
-func (f *fakeExecutor) ValidateFinal(ExecuteParams) error {
+func (f *fakeExecutor) PromoteFiles(ExecuteParams, string, *BundleManifest) (UndoFunc, error) {
+	return f.mutation("PromoteFiles")
+}
+func (f *fakeExecutor) RestoreConfig(ExecuteParams) (UndoFunc, error) {
+	return f.mutation("RestoreConfig")
+}
+func (f *fakeExecutor) CreateService(ExecuteParams, *BundleManifest, PriorState) (UndoFunc, error) {
+	return f.mutation("CreateService")
+}
+func (f *fakeExecutor) StartService(ExecuteParams, PriorState) (UndoFunc, error) {
+	return f.mutation("StartService")
+}
+func (f *fakeExecutor) ScheduleBootRetry(ExecuteParams) (UndoFunc, error) {
+	return f.mutation("ScheduleBootRetry")
+}
+func (f *fakeExecutor) ValidateFinal(ExecuteParams, *BundleManifest) error {
 	return f.note("ValidateFinal")
 }
-func (f *fakeExecutor) Rollback(string) error { return f.note("Rollback") }
+func (f *fakeExecutor) Health(ExecuteParams) string { return "fake-health" }
 
 func (f *fakeExecutor) called(name string) bool {
 	for _, c := range f.calls {
@@ -67,17 +95,38 @@ func (f *fakeExecutor) count(name string) int {
 	return n
 }
 
-func safeParams() ExecuteParams {
+func safeParams(t *testing.T) ExecuteParams {
+	t.Helper()
+	zb, m := buildTestBundle(t, makeSource(t))
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "TECHI-Remote-Support-1.4.6-windows-amd64.zip")
+	manifestPath := filepath.Join(dir, "TECHI-Remote-Support-1.4.6-windows-amd64.manifest.json")
+	m.BundleSHA256 = HashBytesSHA256(zb)
+	mb, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(zipPath, zb, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, mb, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return ExecuteParams{
-		Component:       "remote_support",
-		ServiceName:     "RustDesk",
-		InstallDir:      `C:\Program Files\TECHI Remote Support`,
-		ExpectedExePath: `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`,
-		ExpectedVersion: "1.4.6",
-		PayloadPath:     `C:\ProgramData\TechiAgent\payloads\rs.zip`,
-		PayloadSHA:      goodSHA,
-		StagingRoot:     `C:\ProgramData\TechiAgent\staging`,
-		ProcessWait:     time.Second,
+		Component:          "remote_support",
+		ServiceName:        "TECHI Remote Support",
+		InstallDir:         `C:\Program Files\TECHI Remote Support`,
+		ExpectedExePath:    `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`,
+		ExpectedVersion:    "1.4.6",
+		PayloadPath:        zipPath,
+		PayloadSHA:         HashBytesSHA256(zb),
+		BundleManifestPath: manifestPath,
+		BundleManifestSHA:  HashBytesSHA256(mb),
+		StagingRoot:        `C:\ProgramData\TechiAgent\staging`,
+		BackupRoot:         t.TempDir(),
+		LockRoot:           t.TempDir(),
+		RetryRoot:          t.TempDir(),
+		ProcessWait:        time.Second,
 	}
 }
 
@@ -88,7 +137,7 @@ func staleServiceObs() RSObservation {
 func TestExecute_DisabledNoMutation(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutDisabled, "1.4.6", staleServiceObs())
 	f := newFake()
-	r := ExecutePlan(plan, safeParams(), f, true) // execute=true, but plan is detect-only
+	r := ExecutePlan(plan, safeParams(t), f, true) // execute=true, but plan is detect-only
 	if len(f.calls) != 0 {
 		t.Fatalf("disabled plan must call NO executor primitives, got %v", f.calls)
 	}
@@ -100,7 +149,7 @@ func TestExecute_DisabledNoMutation(t *testing.T) {
 func TestExecute_CanaryDryRunMakesNoChanges(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()
-	r := ExecutePlan(plan, safeParams(), f, false) // execute=false
+	r := ExecutePlan(plan, safeParams(t), f, false) // execute=false
 	if len(f.calls) != 0 {
 		t.Fatalf("dry-run must call NO executor primitives, got %v", f.calls)
 	}
@@ -112,7 +161,7 @@ func TestExecute_CanaryDryRunMakesNoChanges(t *testing.T) {
 func TestExecute_CanaryExecuteRunsOrderedPlan(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()
-	r := ExecutePlan(plan, safeParams(), f, true)
+	r := ExecutePlan(plan, safeParams(t), f, true)
 	if r.Code != ExitOK {
 		t.Fatalf("want ExitOK, got %v (%s)", r.Code, r.Message)
 	}
@@ -129,7 +178,7 @@ func TestExecute_ServiceMissingRecreateOnly(t *testing.T) {
 	obs := withPayload(RSObservation{ExeExists: true, ExeVersion: "1.4.6"})
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", obs)
 	f := newFake()
-	ExecutePlan(plan, safeParams(), f, true)
+	ExecutePlan(plan, safeParams(t), f, true)
 	if f.called("PromoteFiles") {
 		t.Fatalf("service_missing must not touch files: %v", f.calls)
 	}
@@ -145,7 +194,8 @@ func TestExecute_LockedPendingRebootOneRetryNoPromote(t *testing.T) {
 	})
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", obs)
 	f := newFake()
-	r := ExecutePlan(plan, safeParams(), f, true)
+	p := safeParams(t)
+	r := ExecutePlan(plan, p, f, true)
 	if r.Code != ExitPendingReboot {
 		t.Fatalf("want ExitPendingReboot, got %v", r.Code)
 	}
@@ -155,8 +205,30 @@ func TestExecute_LockedPendingRebootOneRetryNoPromote(t *testing.T) {
 	if f.count("ScheduleBootRetry") != 1 {
 		t.Fatalf("exactly one boot retry expected, got %d", f.count("ScheduleBootRetry"))
 	}
-	if f.killExe != safeParams().ExpectedExePath {
-		t.Fatalf("process kill must use exact expected exe path, got %q", f.killExe)
+	for _, forbidden := range []string{"PreserveConfig", "StopTray", "StopService", "StopProcessExact"} {
+		if f.called(forbidden) {
+			t.Fatalf("pending-reboot deferral must leave the live installation untouched; calls=%v", f.calls)
+		}
+	}
+}
+
+func TestExecute_FailureAfterEveryMutatingStageRollsBack(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	for _, stage := range []string{
+		"PreserveConfig", "StopService", "RemoveStaleService", "CleanupTmp",
+		"StagePayload", "PromoteFiles", "RestoreConfig", "CreateService", "StartService",
+	} {
+		t.Run(stage, func(t *testing.T) {
+			f := newFake()
+			f.failOn[stage] = fmt.Errorf("injected failure after partial mutation")
+			r := ExecutePlan(plan, safeParams(t), f, true)
+			if r.OK || r.Rollback == nil || !r.Rollback.Attempted {
+				t.Fatalf("%s failure must report rollback: result=%+v calls=%v", stage, r, f.calls)
+			}
+			if !f.called("Undo:" + stage) {
+				t.Fatalf("failed stage undo was not retained: calls=%v", f.calls)
+			}
+		})
 	}
 }
 
@@ -164,12 +236,12 @@ func TestExecute_RollbackOnValidationFailure(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()
 	f.failOn["ValidateFinal"] = fmt.Errorf("service not running")
-	r := ExecutePlan(plan, safeParams(), f, true)
+	r := ExecutePlan(plan, safeParams(t), f, true)
 	if r.Code != ExitValidationError {
 		t.Fatalf("want ExitValidationError, got %v", r.Code)
 	}
-	if !f.called("Rollback") {
-		t.Fatalf("failed validation after promote must roll back: %v", f.calls)
+	if r.Rollback == nil || !r.Rollback.Attempted || !f.called("Undo:PromoteFiles") {
+		t.Fatalf("failed validation after promote must roll back: result=%+v calls=%v", r.Rollback, f.calls)
 	}
 }
 
@@ -177,18 +249,18 @@ func TestExecute_BadSHARefusesEarly(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()
 	f.failOn["VerifyPayload"] = fmt.Errorf("sha mismatch")
-	r := ExecutePlan(plan, safeParams(), f, true)
+	r := ExecutePlan(plan, safeParams(t), f, true)
 	if r.Code != ExitIdentityFailed {
 		t.Fatalf("want ExitIdentityFailed, got %v", r.Code)
 	}
-	if f.called("StopService") || f.called("PromoteFiles") || f.called("Rollback") {
+	if f.called("StopService") || f.called("PromoteFiles") {
 		t.Fatalf("no mutation may follow a failed payload verify: %v", f.calls)
 	}
 }
 
 func TestExecute_RefusesUnsafeInstallTarget(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
-	p := safeParams()
+	p := safeParams(t)
 	p.InstallDir = `C:\Windows\System32`
 	f := newFake()
 	r := ExecutePlan(plan, p, f, true)
@@ -203,7 +275,7 @@ func TestExecute_RefusesUnsafeInstallTarget(t *testing.T) {
 func TestExecute_RefusesMSIPayload(t *testing.T) {
 	// The native recovery must never accept the MSI as its payload.
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
-	p := safeParams()
+	p := safeParams(t)
 	p.PayloadPath = `C:\ProgramData\TechiAgent\payloads\TECHI-Remote-Support-1.4.6.msi`
 	f := newFake()
 	r := ExecutePlan(plan, p, f, true)
@@ -218,8 +290,43 @@ func TestExecute_RefusesMSIPayload(t *testing.T) {
 func TestExecute_ConfigPreservedAndRestored(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()
-	ExecutePlan(plan, safeParams(), f, true)
+	ExecutePlan(plan, safeParams(t), f, true)
 	if !f.called("PreserveConfig") || !f.called("RestoreConfig") {
 		t.Fatalf("config must be preserved+restored: %v", f.calls)
+	}
+}
+
+func TestCrossCheckManifestRefusesNoncanonicalServiceAndEntrypoint(t *testing.T) {
+	p := safeParams(t)
+	payload, err := os.ReadFile(p.PayloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := os.ReadFile(p.BundleManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ParseBundleManifest(manifestBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, mutate := range map[string]func(*BundleManifest, *ExecuteParams){
+		"service args": func(m *BundleManifest, _ *ExecuteParams) { m.ServiceArguments = []string{"--anything"} },
+		"nested entrypoint": func(m *BundleManifest, _ *ExecuteParams) {
+			m.Entrypoint = "TECHI Remote Support/nested/TECHI Remote Support.exe"
+			m.ExpectedRelativeFiles[0].Path = m.Entrypoint
+		},
+		"exe target": func(_ *BundleManifest, p *ExecuteParams) { p.ExpectedExePath = `C:\Other\TECHI Remote Support.exe` },
+	} {
+		t.Run(name, func(t *testing.T) {
+			copyManifest := *manifest
+			copyManifest.ExpectedRelativeFiles = append([]BundleFile(nil), manifest.ExpectedRelativeFiles...)
+			copyParams := p
+			mutate(&copyManifest, &copyParams)
+			if err := CrossCheckManifest(copyParams, &copyManifest, payload, manifestBytes); err == nil {
+				t.Fatal("expected canonical identity refusal")
+			}
+		})
 	}
 }

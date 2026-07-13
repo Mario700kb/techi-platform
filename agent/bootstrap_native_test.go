@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"techi-platform/agent/internal/native"
@@ -24,8 +25,11 @@ func writePolicy(t *testing.T, rollout string) string {
 	  },
 	  "remote_support": {
 	    "target_version": "1.4.6",
-	    "payload_filename": "TECHI-Remote-Support-1.4.6.zip",
+	    "payload_filename": "TECHI-Remote-Support-1.4.6-windows-amd64.zip",
 	    "sha256": "` + testSHA + `",
+	    "manifest_filename": "TECHI-Remote-Support-1.4.6-windows-amd64.manifest.json",
+	    "manifest_sha256": "` + testSHA + `",
+	    "recovery_mode": "disabled",
 	    "repair_missing": true
 	  }
 	}`
@@ -102,6 +106,7 @@ func TestApplyPolicy_AgentHealthyOldReportsNativeUpdate(t *testing.T) {
 	d := native.EvaluateAgent("2.1.8", native.AgentObservation{
 		BinaryExists: true, BinaryVersion: "2.1.5", ConfigValid: true,
 		ServiceExists: true, ServiceRunning: true, ServicePIDMatch: true, LifecyclePresent: true,
+		LifecycleFresh: true,
 	})
 	if d.Action != native.AgentActNativeUpdate {
 		t.Fatalf("healthy-old must be native_update, got %s", d.Action)
@@ -109,5 +114,26 @@ func TestApplyPolicy_AgentHealthyOldReportsNativeUpdate(t *testing.T) {
 	code := runApplyPolicyCommand([]string{"-policy", policy, "-observation", obs})
 	if native.ExitCode(code) != native.ExitOK {
 		t.Fatalf("apply-policy should report OK for this state, got %d", code)
+	}
+}
+
+func TestAgentArtifactLineageHasSingleCanonicalBuild(t *testing.T) {
+	nativeScript, err := os.ReadFile("scripts/build-native-bootstrap.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(nativeScript), "go build techi-agent.exe") ||
+		strings.Contains(string(nativeScript), `OUT_DIR/techi-agent.exe`) {
+		t.Fatal("native bootstrap build must not publish a separately built Agent")
+	}
+	workflow, err := os.ReadFile("../.github/workflows/build-agent-msi.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(workflow)
+	for _, contract := range []string{"Validate MSI embedded agent lineage", "Standalone agent hash", "embedded agent hash"} {
+		if !strings.Contains(text, contract) {
+			t.Fatalf("canonical Agent identity contract missing %q", contract)
+		}
 	}
 }

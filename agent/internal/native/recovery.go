@@ -128,8 +128,23 @@ func PlanRemoteSupportRecovery(mode RolloutMode, target string, obs RSObservatio
 	plan := RecoveryPlan{Classification: class, Mutating: true, FinalCode: ExitOK}
 	add := func(a ...ActionType) { plan.Actions = append(plan.Actions, a...) }
 
-	// Identity gate + config preservation always come first.
+	// Identity gate always comes first.
 	add(ActVerifyPayload)
+
+	// A machine-wide reboot marker is not sufficient: unrelated Windows Update
+	// or CBS work must never stop a healthy/repairable RS service. When this
+	// component is demonstrably locked, stage the immutable payload and schedule
+	// the owned retry WITHOUT first stopping the tray, service, or process. The
+	// live installation therefore remains exactly as it was until boot retry.
+	if obs.PendingReboot && (obs.FilesLocked || obs.TrayRunning || class == RSLocked) {
+		add(ActStagePayload, ActScheduleBootRetry)
+		plan.Classification = RSPendingReboot
+		plan.FinalCode = ExitPendingReboot
+		plan.Note = "files locked and reboot pending; staged payload and scheduled bounded boot retry without stopping Remote Support"
+		return plan
+	}
+
+	// Config preservation precedes every installation mutation.
 	if obs.ConfigPresent {
 		add(ActPreserveConfig)
 	}
@@ -146,14 +161,6 @@ func PlanRemoteSupportRecovery(mode RolloutMode, target string, obs RSObservatio
 	}
 	if obs.FilesLocked || class == RSLocked {
 		add(ActStopProcessExact)
-	}
-
-	if obs.PendingReboot {
-		add(ActStagePayload, ActScheduleBootRetry)
-		plan.Classification = RSPendingReboot
-		plan.FinalCode = ExitPendingReboot
-		plan.Note = "files locked and reboot pending; staged payload and scheduled one boot retry"
-		return plan
 	}
 
 	// C: stale service (service present, EXE gone). Remove the stale service

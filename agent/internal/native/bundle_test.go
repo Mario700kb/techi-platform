@@ -3,6 +3,9 @@ package native
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,12 +173,17 @@ func TestExtractZipBytesSafe_Hostile(t *testing.T) {
 		body string
 	}
 	cases := map[string][]ent{
-		"traversal": {{`../evil.txt`, 0, "x"}},
-		"absolute":  {{`/etc/passwd`, 0, "x"}},
-		"drive":     {{`C:\Windows\x`, 0, "x"}},
-		"unc":       {{`\\srv\share\x`, 0, "x"}},
-		"duplicate": {{`a.txt`, 0, "1"}, {`a.txt`, 0, "2"}},
-		"symlink":   {{`link`, os.ModeSymlink, "target"}},
+		"traversal":      {{`../evil.txt`, 0, "x"}},
+		"absolute":       {{`/etc/passwd`, 0, "x"}},
+		"drive":          {{`C:\Windows\x`, 0, "x"}},
+		"unc":            {{`\\srv\share\x`, 0, "x"}},
+		"duplicate":      {{`a.txt`, 0, "1"}, {`a.txt`, 0, "2"}},
+		"case alias":     {{`a.txt`, 0, "1"}, {`A.TXT`, 0, "2"}},
+		"ads":            {{`safe.txt:evil`, 0, "x"}},
+		"reserved":       {{`CON.txt`, 0, "x"}},
+		"trailing dot":   {{`safe.`, 0, "x"}},
+		"trailing space": {{`safe `, 0, "x"}},
+		"symlink":        {{`link`, os.ModeSymlink, "target"}},
 	}
 	for name, entries := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -187,20 +195,78 @@ func TestExtractZipBytesSafe_Hostile(t *testing.T) {
 	}
 }
 
+func setCentralDirectorySizes(t *testing.T, data []byte, sizes []uint32) []byte {
+	t.Helper()
+	out := append([]byte(nil), data...)
+	sig := []byte{'P', 'K', 1, 2}
+	from := 0
+	for _, size := range sizes {
+		i := bytes.Index(out[from:], sig)
+		if i < 0 {
+			t.Fatal("central directory entry not found")
+		}
+		i += from
+		binary.LittleEndian.PutUint32(out[i+24:i+28], size)
+		from = i + 46
+	}
+	return out
+}
+
+func TestExtractZipBytesSafe_ResourceCaps(t *testing.T) {
+	t.Run("entry count", func(t *testing.T) {
+		entries := make([]struct {
+			name string
+			mode os.FileMode
+			body string
+		}, maxBundleEntries+1)
+		for i := range entries {
+			entries[i].name = fmt.Sprintf("f-%04d", i)
+		}
+		if err := ExtractZipBytesSafe(craftZip(t, entries), t.TempDir()); err == nil {
+			t.Fatal("entry cap not enforced")
+		}
+	})
+	t.Run("declared per file", func(t *testing.T) {
+		zipBytes := craftZip(t, []struct {
+			name string
+			mode os.FileMode
+			body string
+		}{{"a", 0, "x"}})
+		zipBytes = setCentralDirectorySizes(t, zipBytes, []uint32{uint32(maxBundleFileBytes + 1)})
+		if err := ExtractZipBytesSafe(zipBytes, t.TempDir()); err == nil {
+			t.Fatal("per-file cap not enforced")
+		}
+	})
+	t.Run("declared total", func(t *testing.T) {
+		entries := []struct {
+			name string
+			mode os.FileMode
+			body string
+		}{{"a", 0, "x"}, {"b", 0, "x"}, {"c", 0, "x"}, {"d", 0, "x"}}
+		zipBytes := setCentralDirectorySizes(t, craftZip(t, entries), []uint32{400 << 20, 400 << 20, 400 << 20, 400 << 20})
+		if err := ExtractZipBytesSafe(zipBytes, t.TempDir()); err == nil {
+			t.Fatal("total expanded-size cap not enforced")
+		}
+	})
+}
+
 func TestManifest_StructuralRejections(t *testing.T) {
 	src := makeSource(t)
 	base := func() *BundleManifest { _, m := buildTestBundle(t, src); return m }
 
 	cases := map[string]func(*BundleManifest){
-		"bad version":        func(m *BundleManifest) { m.Version = "1.4" },
-		"wrong platform":     func(m *BundleManifest) { m.Platform = "linux" },
-		"wrong arch":         func(m *BundleManifest) { m.Architecture = "arm64" },
-		"bad payload fmt":    func(m *BundleManifest) { m.PayloadFormatVersion = 2 },
-		"bad bundle sha":     func(m *BundleManifest) { m.BundleSHA256 = "nope" },
-		"entrypoint missing": func(m *BundleManifest) { m.Entrypoint = "TECHI Remote Support/ghost.exe" },
-		"empty files":        func(m *BundleManifest) { m.ExpectedRelativeFiles = nil },
-		"traversal in path":  func(m *BundleManifest) { m.ExpectedRelativeFiles[0].Path = "../x" },
-		"backslash in path":  func(m *BundleManifest) { m.ExpectedRelativeFiles[0].Path = `a\b` },
+		"bad version":         func(m *BundleManifest) { m.Version = "1.4" },
+		"wrong platform":      func(m *BundleManifest) { m.Platform = "linux" },
+		"wrong arch":          func(m *BundleManifest) { m.Architecture = "arm64" },
+		"bad payload fmt":     func(m *BundleManifest) { m.PayloadFormatVersion = 2 },
+		"bad bundle sha":      func(m *BundleManifest) { m.BundleSHA256 = "nope" },
+		"entrypoint missing":  func(m *BundleManifest) { m.Entrypoint = "TECHI Remote Support/ghost.exe" },
+		"empty files":         func(m *BundleManifest) { m.ExpectedRelativeFiles = nil },
+		"traversal in path":   func(m *BundleManifest) { m.ExpectedRelativeFiles[0].Path = "../x" },
+		"backslash in path":   func(m *BundleManifest) { m.ExpectedRelativeFiles[0].Path = `a\b` },
+		"empty product root":  func(m *BundleManifest) { m.ProductRoot = "" },
+		"nested product root": func(m *BundleManifest) { m.ProductRoot = "a/b" },
+		"reserved root":       func(m *BundleManifest) { m.ProductRoot = "CON" },
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -210,6 +276,45 @@ func TestManifest_StructuralRejections(t *testing.T) {
 				t.Fatalf("expected rejection: %s", name)
 			}
 		})
+	}
+}
+
+func TestBundle_CanonicalPromotionSourceNoDoubleNesting(t *testing.T) {
+	_, manifest := buildTestBundle(t, makeSource(t))
+	root := t.TempDir()
+	source, err := PromoteSourceDir(root, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "TECHI Remote Support")
+	if source != want {
+		t.Fatalf("promotion source=%q want=%q", source, want)
+	}
+	if strings.Contains(strings.TrimPrefix(source, root), filepath.Join("TECHI Remote Support", "TECHI Remote Support")) {
+		t.Fatalf("product root was double nested: %s", source)
+	}
+}
+
+func TestParseBundleManifestRejectsTrailingJSON(t *testing.T) {
+	_, manifest := buildTestBundle(t, makeSource(t))
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseBundleManifest(append(data, []byte(` {}`)...)); err == nil {
+		t.Fatal("trailing JSON must be rejected")
+	}
+}
+
+func TestParseBundleManifestRejectsDuplicateKeys(t *testing.T) {
+	_, manifest := buildTestBundle(t, makeSource(t))
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(`"schema_version":1`), []byte(`"schema_version":1,"schema_version":1`), 1)
+	if _, err := ParseBundleManifest(data); err == nil {
+		t.Fatal("duplicate manifest key must be rejected")
 	}
 }
 

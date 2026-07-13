@@ -105,6 +105,7 @@ func BuildBundle(w io.Writer, opts BuildOptions) (*BundleManifest, error) {
 		SchemaVersion:         BundleManifestSchemaVersion,
 		PayloadFormatVersion:  BundlePayloadFormatVersion,
 		Product:               opts.Product,
+		ProductRoot:           opts.Product,
 		Version:               opts.Version,
 		Platform:              "windows",
 		Architecture:          "amd64",
@@ -115,7 +116,7 @@ func BuildBundle(w io.Writer, opts BuildOptions) (*BundleManifest, error) {
 		TrayArguments:         opts.TrayArguments,
 		ExpectedRelativeFiles: entries,
 		BuildCommit:           opts.BuildCommit,
-		BuildTimestamp:        time.Now().UTC().Format(time.RFC3339),
+		BuildTimestamp:        bundleEpoch.Format(time.RFC3339),
 		Publisher:             opts.Publisher,
 		// RustDesk keeps its ID/config/password OUTSIDE the install dir, so the
 		// bundle carries none of it; these lists document what recovery must
