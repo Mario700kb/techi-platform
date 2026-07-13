@@ -27,6 +27,74 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-13] ARCH: native bootstrap/update foundation + Remote Support recovery planner (source-only, disabled)
+
+### Problemi
+The GPO deploy path is a ~2,600-line Python generator emitting a huge
+`techi-deploy.cmd` full of `powershell -EncodedCommand` blocks parsing state
+through temp `.out` files. It is fragile, hard to test, and its CMD →
+EncodedCommand → TEMP → MSI behavioural chain is exactly what AV/EDR heuristics
+score. It must stop growing.
+
+### Analiza
+On ~30 Agroblend/Drymadess canaries Agent 2.1.8 came up healthy but **TECHI
+Remote Support went missing**. Root cause chain confirmed from the Drymadess
+canary: legacy **combined** MSI owned both Agent and RS files → its uninstall
+removed RS files → the independent RS MSI repair hit locked tray/runtime files
+→ MSI 1321/access-denied → scheduled `TBD*.tmp` replacements → rollback 1603 →
+a **stale RS service** remained while the EXE was gone; manual repairs looped
+1603. Also, an Agent whose lifecycle file was briefly unreadable was falsely
+classified unhealthy, and the flow wrongly reached for the Agent MSI instead of
+native self-update. Repo inspection: RS ships as a **68 MB native bundle** (EXE
++ DLLs + `data/`), so an MSI repair is the wrong recovery primitive.
+
+### Shkaku
+Business/orchestration logic lived in a giant generated CMD script with no
+deterministic state machine; MSI was used for cases (healthy-old upgrade, RS
+repair) where a native, verified, atomic operation is correct.
+
+### Zgjidhja
+New standalone, cross-platform, unit-tested decision core
+`agent/internal/native/`: versioned policy contract (no secrets), deterministic
+exit codes, safe-path/staging guards, SHA256 payload gate, structured
+secret-redacting logs, an **Agent update state machine** (healthy-old → native
+only, never MSI; transient lifecycle → bounded retry; no downgrade) and a
+**Remote Support recovery state machine** (stale_service / missing /
+service_missing / outdated / locked / pending_reboot with one bounded boot
+retry; exact-path/PID termination; verify-before-mutate; legacy-combined
+reclassification). Two new Agent subcommands `apply-policy` and
+`repair-remote-support` wire it in **report/plan-only** (non-destructive); live
+probing and mutation are deferred to a canary-gated Windows executor.
+`rollout_mode=disabled` makes the planner detect-only. Reuses existing Agent
+SHA256/version/service/swap/config code — no duplicate update engine. Accurate
+AV language: "LAN-local distribution; AV/EDR policies remain applicable" — no
+zero-detection claim. Authenticode verifier seam added (no-op default; no cert
+fabricated, no signing performed).
+
+### Ndryshimet
+Added `agent/internal/native/{policy,result,pathsafe,verify,log,recovery,agentstate}.go`
+(+ `_test.go` for each), `agent/bootstrap_native.go` (+ test), dispatch wiring in
+`agent/main.go`, `agent/installer/techi-policy.example.json`,
+`agent/installer/observation.affected-device.example.json`,
+`docs/architecture/native-bootstrap.md`. Legacy CMD generator untouched.
+
+### Rezultati
+`gofmt` clean, `go vet ./...` clean, `go test ./...` green (native package +
+main package), Windows `GOOS=windows` cross-build green. End-to-end: the
+affected-device fixture classifies as `stale_service`; under disabled rollout →
+detect-only (`validate_final`, exit ok); under canary → full ordered plan
+`verify_payload → preserve_config → stop_service → remove_stale_service →
+cleanup_tmp → stage_payload → promote_files → restore_config → create_service →
+start_service → validate_final`.
+
+### Mësimet
+RS recovery must never use the RS MSI repair loop; a native bundle wants a
+native, verified, atomic promotion. A healthy Agent one version behind must be
+updated **only** natively. Verify-before-mutate turns "payload missing"/"bad
+SHA" into deterministic refusals instead of destructive half-repairs. **Not
+deployed, not activated, no NETLOGON change, rollout stays disabled**; live
+execution still needs a one-device Windows canary.
+
 ## [2026-07-12] FORENSIC: bf0bb40 rollout absent in agroblend.local — prod backend stale, NOT a source bug
 
 ### Problemi

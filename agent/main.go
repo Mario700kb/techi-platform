@@ -69,6 +69,10 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 	switch command {
 	case "swap-binary":
 		return true, runBinarySwapCommand(args)
+	case "apply-policy":
+		return true, runApplyPolicyCommand(args)
+	case "repair-remote-support":
+		return true, runRepairRemoteSupportCommand(args)
 	case "netlogon-self-update":
 		return true, runNetlogonSelfUpdateCommand(args)
 	case "watchdog-check":
@@ -112,6 +116,8 @@ func normalizeCommandToken(token string) string {
 func isUtilityCommand(command string) bool {
 	switch command {
 	case "swap-binary",
+		"apply-policy",
+		"repair-remote-support",
 		"netlogon-self-update",
 		"watchdog-check",
 		"bootstrap-config",

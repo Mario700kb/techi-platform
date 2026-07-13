@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "rollout_mode": "disabled",
+  "api_url": "https://api-rdp.techi.com.al",
+  "agent": {
+    "target_version": "2.1.8",
+    "package_type": "exe",
+    "filename": "TECHI-Agent-2.1.8.exe",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "repair_msi_filename": "TECHI-Agent-2.1.8.msi",
+    "repair_msi_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "remote_support": {
+    "target_version": "1.4.6",
+    "payload_filename": "TECHI-Remote-Support-1.4.6.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "repair_missing": true
+  }
+}

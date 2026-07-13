@@ -16,6 +16,24 @@
 | **Production Server** | Linode VPS `139.162.158.208` (ssh alias `techi-server`), 25 GB disk, live deploy dir **`/root`** |
 | **Documentation Version** | 1.0 (two-document standard, effective 2026-07-04) |
 
+## NATIVE BOOTSTRAP / UPDATE ARCHITECTURE
+
+**Status (2026-07-13): foundation landed on `stable/phase-2-heartbeat`,
+report/plan-only, NON-destructive. Not deployed, not activated, no NETLOGON
+change, `rollout_mode=disabled`.** New cross-platform decision core
+`agent/internal/native/` (policy contract with no secrets, deterministic exit
+codes, safe-path/staging guards, SHA256 payload gate, redacting logs, Agent +
+Remote Support state machines) replaces the decision logic of the ~2,600-line
+`enrollment_bootstrap_service.py` → giant `techi-deploy.cmd` generator (which is
+left in place as fallback). Two new Agent subcommands `apply-policy` /
+`repair-remote-support` wire it in; live probing/mutation is deferred to a
+canary-gated Windows executor. Recovery targets the ~30 Agroblend/Drymadess
+devices (Agent 2.1.8 healthy, Remote Support EXE missing + stale service). RS
+payload is a **native bundle/ZIP**, never MSI repair. Design:
+[docs/architecture/native-bootstrap.md](architecture/native-bootstrap.md).
+**Still requires a one-device Windows canary before any live execution.** Fleet
+rollout stays disabled; Windows packages stay pinned to the current active set.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

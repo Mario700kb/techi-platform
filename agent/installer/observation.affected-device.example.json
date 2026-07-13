@@ -1,0 +1,23 @@
+{
+  "agent": {
+    "binary_exists": true,
+    "binary_version": "2.1.8",
+    "config_valid": true,
+    "service_exists": true,
+    "service_running": true,
+    "service_pid_match": true,
+    "lifecycle_present": true
+  },
+  "remote_support": {
+    "exe_exists": false,
+    "service_exists": true,
+    "service_running": false,
+    "service_image_ok": false,
+    "config_present": true,
+    "stale_tmp_files": true,
+    "legacy_combined": true,
+    "old_uninstall_reg": true,
+    "payload_available": true,
+    "payload_sha_match": true
+  }
+}
