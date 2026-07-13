@@ -1,5 +1,10 @@
 # TECHI Agent — Plani Final i Update Sistemit
 
+> **SHËNIM SIGURIE (2026-07):** Ky dokument ruhet si plan historik. Komanda
+> `set_remote_password` me fjalëkalim në payload është hequr dhe refuzohet nga
+> backend-i. Mos e ri-implementoni. Kontrata aktuale autoritative është
+> `docs/architecture/remote-support-credentials.md`.
+
 ## Filozofia
 "MSI instalohet 1 herë — pas kësaj, gjithçka kontrollohet nga UI."
 
@@ -63,7 +68,7 @@ Shto në dispatch() në actions.go:
 
 | Action | Payload | Çfarë bën |
 |--------|---------|-----------|
-| set_remote_password | {"password": "xxx"} | Ndrysho pass TECHI Remote Support |
+| set_remote_password | *(retired; no payload accepted)* | Përdor credential generation authority |
 | change_heartbeat_interval | {"seconds": 300} | Ndrysho intervalin live |
 | collect_full_inventory | {} | Force sync inventar i plotë |
 | reboot_pc | {"delay_seconds": 60} | Reboot i kontrolluar me delay |
@@ -304,7 +309,7 @@ Backend:
 UI (Agent Config tab):
 - [x] Panel "Send Command" me target selector (all/client/group/devices)
 - [x] Payload fields dinamike për çdo command type
-  — set_remote_password: password + confirm + show/hide
+  — set_remote_password: retired; nuk pranon payload me fjalëkalim
   — change_heartbeat_interval: number 60–3600s
   — reboot_pc: delay_seconds + warning
   — run_powershell: textarea + timeout + owner warning
@@ -313,11 +318,11 @@ UI (Agent Config tab):
 - [x] Progress bar real-time 0–100% (poll çdo 3s)
 - [x] Status per device: queued/delivered/executing/completed/failed/timeout
 - [x] History e komandave (collapsible, click për re-open batch)
-- [x] Permission gates: admin/owner për set_remote_password/reboot_pc; owner-only për run_powershell
+- [x] Permission gates: admin/owner për reboot_pc; owner-only për run_powershell (`set_remote_password` retired)
 
 Command types të suportuar (Faza 1 backend):
 ping, restart_agent, restart_device, reboot_pc, collect_inventory,
-sync_rustdesk, restart_rustdesk, set_remote_password,
+sync_rustdesk, restart_rustdesk,
 change_heartbeat_interval, run_powershell, register_protocol
 
 ### FAZA 2 — Agent Golang v2.0 (3-4 ditë) ✅ KOMPLETUAR
@@ -328,7 +333,7 @@ Skedarët e modifikuar:
 - [x] agent.go — heartbeat_interval_seconds dinamik + update check
 - [x] enrollment.go — agentVersion konstante → "2.0.0"
 - [x] heartbeat.go — shto agent_version në payload
-- [x] actions_windows.go — set_remote_password, reboot_pc, run_powershell, self_update, register_protocol
+- [x] actions_windows.go — reboot_pc, run_powershell, self_update, register_protocol (`set_remote_password` removed)
 
 Skedarët e rinj:
 - [x] update.go — performSelfUpdate() me SHA256 + retry

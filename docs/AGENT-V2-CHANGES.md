@@ -1,5 +1,9 @@
 # TECHI Agent v2.0 — Ndryshimet e Plota
 
+> **SHËNIM SIGURIE (2026-07):** Ky dokument përshkruan historikun e v2.0.
+> `set_remote_password` me plaintext është hequr dhe refuzohet; kontrata
+> aktuale është `docs/architecture/remote-support-credentials.md`.
+
 ## Versioni: 1.0.0 → 2.0.0 | Data: Qershor 2026
 
 ---
@@ -23,8 +27,8 @@
   ```
 - Struct i ri `AgentUpdate` (Available, Version, URL, Checksum)
 - `pendingIntervalChange atomic.Int64` — global për interval dinamik
-- `dispatch()` — 6 case të reja: `collect_inventory`, `change_heartbeat_interval`,
-  `set_remote_password`, `register_protocol`, `reboot_pc`, `run_powershell`, `self_update`
+- `dispatch()` historikisht shtoi command cases; `set_remote_password` tani
+  është retired dhe nuk dispatch-ohet.
 - `handleChangeHeartbeatInterval()` — cross-platform, shkruan `pendingIntervalChange`
 
 ### agent.go
@@ -37,7 +41,7 @@
 - Nëse `AgentUpdate.Available` → `go performSelfUpdate(hbResp.AgentUpdate)` (non-blocking)
 
 ### actions_windows.go
-- `handleSetRemotePassword(ctx, cfg, params)`: thërret `setRustDeskPassword()` + restart service
+- `handleSetRemotePassword` është hequr; credential-et aplikohen vetëm me generation authority
 - `handleRegisterTechiProtocol(ctx)`: regjistron `techiremotesupport://` në HKLM via PowerShell
 - `handleRebootPC(ctx, params)`: `shutdown /r /t {delay} /f` (min 30s, max 3600s)
 - `handleRunPowerShell(ctx, params)`: executes PS1 script me timeout (max 300s), output max 4096 chars
@@ -126,7 +130,7 @@ ALTER TABLE devices ADD COLUMN agent_version VARCHAR(20);
 - `run_powershell`: log çdo ekzekutim (script length + device + timestamp)
 - `self_update`: verifiko SHA256 para instalimit, 3 tentativa, abort nëse mismatch
 - `reboot_pc`: minimum delay 30s (mos lejon 0s)
-- `set_remote_password`: thërret binary direkt (`--password`), jo config file
+- `set_remote_password`: retired; plaintext nuk lejohet në payload ose process arguments
 - MSI install: `/quiet /norestart` — pa UI, pa reboot automatik
 
 ---
@@ -139,7 +143,7 @@ ALTER TABLE devices ADD COLUMN agent_version VARCHAR(20);
 4. Verifiko: `agent.log` ka `agent_version="2.0.0"` në heartbeat
 5. Dërgoj **ping** nga Command Center → queued → delivered → completed
 6. Dërgoj **run_powershell** script `"Get-Date | ConvertTo-Json"` → output JSON me datën
-7. Dërgoj **set_remote_password** → konfirmo ndryshimin në TECHI Remote Support
+7. Konfirmo që **set_remote_password** refuzohet dhe nuk persiston payload
 8. Dërgoj **reboot_pc** me delay 60s → konfirmo reboot pas 60s
 9. Dërgoj **register_protocol** → verifiko regjistri me regedit
 10. Dërgoj **change_heartbeat_interval** seconds=120 → verifiko log interval changes
