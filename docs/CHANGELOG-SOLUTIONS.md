@@ -4773,13 +4773,15 @@ first.
 
 ### Why
 
-The TECHI Remote Support password was a single fleet-wide value (`Durres.12`),
+The TECHI Remote Support password was a single fleet-wide value (now retired and redacted),
 written in plaintext into the RustDesk TOMLs and re-applied every heartbeat.
 One compromised/curious user reading a TOML exposed remote access to the
 ENTIRE fleet. The enrollment token was also plaintext in
 `\\DOMAIN\NETLOGON\techi-deploy.cmd` (world-readable by domain users).
 
-### Phase 1 (backend, deployed)
+### Phase 1 (historical; superseded by the acknowledged lifecycle)
+
+> Security correction (2026-07-13): the design below is retained only as incident history. The XOR cipher, unauthenticated password heartbeat response, Agent-version inference, shared fallback, and password-bearing Connect URI are removed. The authoritative contract is `docs/architecture/remote-support-credentials.md`.
 
 - Each device gets a unique, server-generated RS password, stored encrypted
   at rest (`app/core/secret_cipher.py`, XOR+HMAC keyed off SECRET_KEY;
@@ -4808,30 +4810,27 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS remote_support_password_source VARC
 Any new model column that the heartbeat/enrollment fast-path reads MUST be
 ALTER-ed into Postgres before/with the deploy.
 
-### Phase 2 (agent 2.1.5) + Phase 3 (frontend) — done, in commit 0335ec7
+### Phase 2/3 historical implementation — superseded
 
 - Agent 2.1.5: the heartbeat response `remote_support_password` is adopted
   into `cfg.RustDeskDefaultPassword`, persisted to config, and applied to
   RustDesk immediately (`applyRemoteSupportPassword`). The management loop
   now re-applies the server's per-device value, not the old global.
-- Also in 2.1.5: `bootstrap-config -rustdesk-password` (fresh installs write
+- Historical note: `bootstrap-config -rustdesk-password` was introduced here but is now retired (fresh installs no longer write
   the RS password), and `watchdog-check` starts the TECHI Remote Support
   service if stopped (remote access survives agent-down).
 - Frontend: RemoteSupport page password modal (reveal / copy / regenerate /
   set-custom), deployed.
 
-**Rollout dependency:** devices only APPLY the per-device password once on
-2.1.5. Until a device is on 2.1.5, connect-url returns the legacy shared
-password for it (version-gated fallback), so remote access keeps working.
-Standalone 2.1.5 exe: `/private/tmp/techi-agent-2.1.5.exe` SHA256
-`cdc413f191faab7046c04451a7ff6f83300449e03f067377bda96a3ef52e29a3`
-(CI builds the MSIs). Keep the agent_binary SHA aligned to the MSI's exe.
+**Current migration rule:** Agent version is never credential proof. Existing
+Agents must explicitly re-enroll for device-bound heartbeat authentication;
+unsupported legacy devices receive no password/actions and have no shared
+fallback. Direct Connect stays disabled pending a secure local launcher.
 
-### Still open
+### Historical follow-ups (now resolved in source)
 
 - NETLOGON `techi-deploy.cmd` token: restrict ACL to Domain Computers.
-- Optionally stop the install writing the transient Durres.12 bootstrap value
-  (server overrides it on first heartbeat anyway).
+- Bootstrap no longer writes a Remote Support password or deletes profile TOMLs.
 
 ## [2026-07-04] INCIDENT: v2.1.3 Agent Won't Launch — Broken Manifest XML Declaration (SxS)
 
@@ -5811,6 +5810,8 @@ real mappings that operators had not configured.
 
 ## [2026-06-30] Command Center Bulk Password Should Target Online Devices
 
+> Superseded security note (2026-07-13): `set_remote_password` is retired. New creation is rejected, queued historical payloads are not delivered, and a dry-run-first redaction procedure is documented in the credential lifecycle contract.
+
 ### Root cause
 
 Manual per-device `set_remote_password` worked, but several bulk
@@ -6101,7 +6102,7 @@ a Scheduled Task instead of a Startup-folder shortcut):
   TOML-based `setRustDeskPassword` from the earlier fix -- it works
   the same regardless of service vs. tray.
 - `agent/actions_windows.go`: `restart_rustdesk`, `reinstall_rustdesk`,
-  `reopen_rustdesk`, `repair_config_rustdesk`, `set_remote_password`,
+  `reopen_rustdesk`, `repair_config_rustdesk`,
   and `deploy_remote_support`'s Phase 6 all now stop/start the service
   as the primary action, with the tray restarted alongside it
   (non-fatal if the tray step fails).

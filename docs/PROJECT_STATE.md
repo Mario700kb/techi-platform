@@ -7,7 +7,7 @@
 | **Last Updated** | 2026-07-13 |
 | **Production Verified** | 2026-07-11 (Connect V3-mockup alignment deployed `92a521c`: no schema step needed, backend+frontend rebuilt, all containers healthy, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, ~1262 heartbeat log lines/2min, new `GET /connect-status` + `client_os` param confirmed live 401-not-500. **NOT dark** — the Catalog Connect split button + categorized menu changed live for every operator (no flag). Live browser click-through still owner's step — same constraint as the previous two deploys (no browser tool; bootstrap credentials don't match the live `owner` account); see the 2026-07-11 Connect-mockup CHANGELOG entry's validation checklist) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
-| **Current Development Branch** | `stable/phase-2-heartbeat`; native-bootstrap remediation is a local source-only candidate (7 inherited local commits plus an uncommitted hardening worktree), not pushed or deployed; agent work remains parked on `pending-agent-2.1.6` |
+| **Current Development Branch** | `stable/phase-2-heartbeat`; credential/native remediation is a local source-only candidate (7 inherited commits plus 6 new local remediation commits), not pushed, deployed, or activated; rollout remains disabled |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
 | **Agent Version** | **2.1.8 split-deployment canary candidate in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. **2.1.6 remains the production-safe fallback**: its core service startup, heartbeat, telemetry, Remote Support, self-update, watchdog, and most GPO deployment behavior are production-proven; the remaining work is edge-case installer/deployment hardening. Real standalone/domain canaries found and fixed 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6, stale-binary marker sequencing before `InstallFiles`, and stale/mismatched NETLOGON artifacts. Current candidate separates TECHI Agent MSI from TECHI Remote Support MSI, keeps normal Agent upgrades on UI/self-update, runs Agent MSI only for first install/explicit repair, validates lifecycle PID against the current SCM service PID, adds per-product NETLOGON locks/logs/1618 guard, uses absolute `%SystemRoot%\System32` command paths, and CI-checks MSI-embedded EXE lineage against the standalone EXE. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; now packaged as an independent Remote Support MSI candidate, exact fleet version: needs verification) |
@@ -323,7 +323,7 @@ if active device with different RustDesk ID).
   INSERT `device_telemetry`, upsert `device_inventory` (only when the agent
   sends inventory — collect flags default OFF), alert engine, health score.
 - Response fields: `pending_actions[]`, `heartbeat_interval_seconds`,
-  `remote_support_password` (per-device, ≥2.1.5 applies it), `agent_update`,
+  authenticated desired/applied Remote Support credential generations, `agent_update`,
   device/heartbeat ids.
 - Freshness thresholds (fixed constants): Online ≤ 6 min, Stale ≤ 25 min,
   Offline > 25 min. Reconciliation worker (in-process, 30 s) marks stale
@@ -413,7 +413,7 @@ Three package types in Agent Packages UI, all can be active simultaneously
 
 - Operators: JWT auth, roles owner/admin/operator/readonly, teams + team
   permissions, operator scopes (client/group). Role gates on sensitive
-  commands (run_powershell owner-only; set_remote_password, reboot_pc admin+).
+  commands (`set_remote_password` is retired; run_powershell owner-only; reboot_pc admin+).
 - Per-device Remote Support password: server-generated, encrypted at rest
   (`app/core/secret_cipher.py`, keyed off SECRET_KEY), delivered in every
   heartbeat response; agents ≥2.1.5 apply+persist it. `/connect-url` has a

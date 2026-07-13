@@ -170,7 +170,7 @@ komandë mbetën plotësisht të paprekura** — modal-i ndërhyn vetëm mes kli
 **Ndryshime:**
 1. **Lista e komandave "të rrezikshme" u zgjerua** (`DESTRUCTIVE_BULK_COMMANDS`,
    vetëm klasifikim UI — vendos kur hapet `ConfirmModal`, jo logjikë dërgimi):
-   shtohen `set_remote_password`, `restart_rustdesk`, `change_heartbeat_interval`
+   historical note: `set_remote_password` was added here but is now retired; `restart_rustdesk` and `change_heartbeat_interval` remain
    pranë 4 ekzistuesve (`restart_device`, `restart_agent`, `reboot_pc`,
    `run_powershell`) → 7 gjithsej. `ping`, `collect_inventory`, `sync_rustdesk`,
    `register_protocol` dërgohen direkt, pa modal, si më parë.
@@ -264,7 +264,7 @@ konfirmimet ekzistuese) mbeti plotësisht e paprekur.**
    - Diagnostikë: `ping`, `collect_inventory`
    - Agent: `restart_agent`, `change_heartbeat_interval`, `run_powershell`
    - Pajisje: `reboot_pc`, `restart_device`
-   - RustDesk / Remote: `sync_rustdesk`, `restart_rustdesk`, `set_remote_password`, `register_protocol`
+   - RustDesk / Remote: `sync_rustdesk`, `restart_rustdesk`, `register_protocol` (`set_remote_password` retired)
 2. **Përshkrim 1-rresht për çdo komandë** (`BULK_COMMAND_DESCRIPTIONS`,
    anglisht për tani) — shfaqet nën select-in e Command-it, sipas komandës
    aktualisht të zgjedhur.
