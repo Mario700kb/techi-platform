@@ -230,6 +230,16 @@ class AgentPackageService:
 
     @classmethod
     def _canonical_package_version(cls, version: str, filename: str, file_type: str, *, strict: bool = False) -> str:
+        if file_type == AgentFileType.REMOTE_SUPPORT_BUNDLE.value:
+            filename_version = cls._remote_support_version_from_bundle_filename(filename)
+            if filename_version is None:
+                raise ValueError(
+                    "Remote Support bundle filename must be "
+                    "TECHI-Remote-Support-<version>-windows-amd64.zip"
+                )
+            if strict and version != filename_version:
+                raise ValueError("Remote Support bundle version must match filename")
+            return filename_version
         if file_type != AgentFileType.REMOTE_SUPPORT_MSI.value:
             return version
         filename_version = cls._remote_support_version_from_filename(filename)
@@ -242,4 +252,13 @@ class AgentPackageService:
     @staticmethod
     def _remote_support_version_from_filename(filename: str) -> Optional[str]:
         match = re.match(r"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)\.msi$", filename, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _remote_support_version_from_bundle_filename(filename: str) -> Optional[str]:
+        match = re.match(
+            r"^TECHI-Remote-Support-(\d+\.\d+\.\d+)-windows-amd64\.zip$",
+            filename,
+            re.IGNORECASE,
+        )
         return match.group(1) if match else None

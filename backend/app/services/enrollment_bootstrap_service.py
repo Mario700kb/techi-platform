@@ -1306,7 +1306,11 @@ class EnrollmentBootstrapService:
         api = self.normalize_backend_url(backend_url)
         agent_pkg = self._active_package("agent_binary")
         msi_pkg = self._active_package("msi")
-        rs_pkg = self._active_package("remote_support_msi")
+        # Recovery payload is the NATIVE BUNDLE, never the MSI. When no active
+        # bundle exists, the remote_support payload fields stay empty and native
+        # recovery refuses safely (the executor + policy validator both reject an
+        # empty/non-.zip payload).
+        bundle_pkg = self._active_package("remote_support_bundle")
 
         agent_block: dict = {
             "target_version": (agent_pkg.version if agent_pkg else "0.0.0"),
@@ -1324,13 +1328,18 @@ class EnrollmentBootstrapService:
             "api_url": api,
             "agent": agent_block,
             "remote_support": {
-                "target_version": (rs_pkg.version if rs_pkg else "0.0.0"),
-                "payload_filename": (rs_pkg.filename if rs_pkg else ""),
-                "sha256": ((rs_pkg.sha256 or "").strip().lower() if rs_pkg else ""),
+                "target_version": (bundle_pkg.version if bundle_pkg else "0.0.0"),
+                "payload_filename": (bundle_pkg.filename if bundle_pkg else ""),
+                "sha256": ((bundle_pkg.sha256 or "").strip().lower() if bundle_pkg else ""),
                 "repair_missing": True,
             },
         }
         return policy
+
+    def native_recovery_available(self) -> bool:
+        """True only when an active native Remote Support BUNDLE exists. The MSI
+        does not count — it is a first-install fallback, never recovery."""
+        return self._active_package("remote_support_bundle") is not None
 
     def build_native_bootstrap(self, backend_url: str) -> NativeBootstrapArtifacts:
         """Assemble the native GPO artifacts. Publishing happens regardless of
@@ -1345,7 +1354,7 @@ class EnrollmentBootstrapService:
         applicable.
         """
         policy = self.build_native_policy(backend_url)
-        rs_pkg = self._active_package("remote_support_msi")
+        bundle_pkg = self._active_package("remote_support_bundle")
         local = self.NATIVE_LOCAL_DIR
 
         program = rf"{local}\techi-bootstrap.exe"
@@ -1356,9 +1365,12 @@ class EnrollmentBootstrapService:
             {"filename": "techi-bootstrap.exe.sha256", "kind": "sha256_sidecar", "sha256": ""},
             {"filename": "techi-policy.json", "kind": "policy", "sha256": ""},
         ]
+        # Recovery payload is the native bundle (+ its manifest sidecar); the MSI
+        # is enumerated only as a first-install fallback, never as recovery.
         for ft, kind in (("agent_binary", "agent_binary"),
                          ("msi", "agent_repair_msi"),
-                         ("remote_support_msi", "remote_support_payload")):
+                         ("remote_support_bundle", "remote_support_payload"),
+                         ("remote_support_msi", "remote_support_first_install_msi")):
             pkg = self._active_package(ft)
             if pkg:
                 required.append({
@@ -1366,21 +1378,27 @@ class EnrollmentBootstrapService:
                     "kind": kind,
                     "sha256": (pkg.sha256 or "").strip().lower(),
                 })
+        if bundle_pkg:
+            required.append({
+                "filename": bundle_pkg.filename.rsplit(".zip", 1)[0] + ".manifest.json",
+                "kind": "remote_support_manifest",
+                "sha256": "",
+            })
 
-        rs_is_msi = bool(rs_pkg) and str(getattr(rs_pkg, "filename", "")).lower().endswith(".msi")
         notes = (
             "Local-copy-first: a GPO File preference stages techi-bootstrap.exe + "
             "techi-policy.json from \\\\<DOMAIN>\\NETLOGON into "
             f"{local}; the Scheduled Task then runs the LOCAL copy. Do not execute "
             "from the network share. rollout_mode is baked into the policy and "
-            "stays the mutation gate (disabled = detect-only). LAN-local "
+            "stays the mutation gate (disabled = detect-only). Remote Support "
+            "recovery uses the native bundle/ZIP, never the MSI. LAN-local "
             "distribution; AV/EDR policies remain applicable."
         )
-        if rs_is_msi:
+        if not bundle_pkg:
             notes += (
-                " NOTE: the active Remote Support artifact is still an MSI; a "
-                "native RS bundle/ZIP payload must be published before native "
-                "--execute recovery of the affected devices."
+                " BLOCKED: no active native Remote Support bundle "
+                "(remote_support_bundle) is published, so native --execute "
+                "recovery is unavailable; publish the bundle before any canary."
             )
 
         return NativeBootstrapArtifacts(

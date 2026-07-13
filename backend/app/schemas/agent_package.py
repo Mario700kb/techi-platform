@@ -26,7 +26,12 @@ class AgentFileType(str, Enum):
     # agent upgrades never reinstall Remote Support.
     AGENT_UPDATE_MSI = "agent_update_msi"
     # TECHI Remote Support MSI, versioned/deployed independently from Agent.
+    # Reserved for FIRST-INSTALL fallback only — never the recovery payload.
     REMOTE_SUPPORT_MSI = "remote_support_msi"
+    # TECHI Remote Support native bundle (deterministic .zip) consumed by
+    # techi-bootstrap.exe repair-remote-support. This is the recovery payload;
+    # the MSI is not. Filename: TECHI-Remote-Support-<version>-windows-amd64.zip.
+    REMOTE_SUPPORT_BUNDLE = "remote_support_bundle"
 
 
 class AgentPackageOut(BaseModel):
