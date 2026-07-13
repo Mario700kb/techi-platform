@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -37,6 +38,7 @@ def upload_agent_package(
     platform: str = Form(...),
     file_type: str = Form(default="msi"),
     file: UploadFile = File(...),
+    manifest: Optional[UploadFile] = File(default=None),
     operator: Operator = Depends(get_current_operator),
     _: None = Depends(_require_deployment),
 ):
@@ -48,6 +50,8 @@ def upload_agent_package(
             filename=file.filename or "",
             uploaded_by=operator.username,
             stream=file.file,
+            manifest_filename=(manifest.filename or "") if manifest else "",
+            manifest_stream=manifest.file if manifest else None,
         )
         return AgentPackageUploadResponse(package=package)
     except ValueError as exc:

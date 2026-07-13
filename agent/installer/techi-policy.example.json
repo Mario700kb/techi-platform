@@ -12,8 +12,11 @@
   },
   "remote_support": {
     "target_version": "1.4.6",
-    "payload_filename": "TECHI-Remote-Support-1.4.6.zip",
+    "payload_filename": "TECHI-Remote-Support-1.4.6-windows-amd64.zip",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "manifest_filename": "TECHI-Remote-Support-1.4.6-windows-amd64.manifest.json",
+    "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "recovery_mode": "disabled",
     "repair_missing": true
   }
 }

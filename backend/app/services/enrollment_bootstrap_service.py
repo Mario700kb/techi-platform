@@ -376,12 +376,12 @@ class EnrollmentBootstrapService:
             "(TRUSTED_DOMAIN_AUTO_ENROLLMENT=true required). "
             "WORKGROUP machines will not enroll via GPO — use Token Enrollment for those."
         )
-        # Transitional native path: when the feature flag is on, ALSO publish the
-        # native bootstrap + policy artifacts and a direct native Scheduled Task.
-        # The legacy CMD path above is untouched and remains the fallback.
+        # The native GPO publication/copy/task lifecycle is not implemented end
+        # to end. Fail closed even if an environment accidentally flips the
+        # reserved flag: do not expose a nonfunctional operational task.
         native = None
         if getattr(settings, "NATIVE_BOOTSTRAP_ENABLED", False):
-            native = self.build_native_bootstrap(backend_url)
+            notice += " Native bootstrap remains BLOCKED: publication/task lifecycle is not operational."
 
         return EnrollmentBootstrapResponse(
             mode=payload.mode,
@@ -1331,6 +1331,12 @@ class EnrollmentBootstrapService:
                 "target_version": (bundle_pkg.version if bundle_pkg else "0.0.0"),
                 "payload_filename": (bundle_pkg.filename if bundle_pkg else ""),
                 "sha256": ((bundle_pkg.sha256 or "").strip().lower() if bundle_pkg else ""),
+                "manifest_filename": (getattr(bundle_pkg, "manifest_filename", "") if bundle_pkg else ""),
+                "manifest_sha256": ((getattr(bundle_pkg, "manifest_sha256", "") or "").strip().lower() if bundle_pkg else ""),
+                # Independent from Agent rollout. No backend setting currently
+                # authorizes RS mutation, so generated policy remains disabled.
+                "recovery_mode": "disabled",
+                "eligible_device_ids": [],
                 "repair_missing": True,
             },
         }
@@ -1339,7 +1345,8 @@ class EnrollmentBootstrapService:
     def native_recovery_available(self) -> bool:
         """True only when an active native Remote Support BUNDLE exists. The MSI
         does not count — it is a first-install fallback, never recovery."""
-        return self._active_package("remote_support_bundle") is not None
+        package = self._active_package("remote_support_bundle")
+        return bool(package and getattr(package, "manifest_filename", "") and getattr(package, "manifest_sha256", ""))
 
     def build_native_bootstrap(self, backend_url: str) -> NativeBootstrapArtifacts:
         """Assemble the native GPO artifacts. Publishing happens regardless of
@@ -1380,9 +1387,9 @@ class EnrollmentBootstrapService:
                 })
         if bundle_pkg:
             required.append({
-                "filename": bundle_pkg.filename.rsplit(".zip", 1)[0] + ".manifest.json",
+                "filename": getattr(bundle_pkg, "manifest_filename", ""),
                 "kind": "remote_support_manifest",
-                "sha256": "",
+                "sha256": (getattr(bundle_pkg, "manifest_sha256", "") or "").strip().lower(),
             })
 
         notes = (

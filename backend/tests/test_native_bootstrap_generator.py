@@ -18,8 +18,8 @@ from app.schemas.enrollment_bootstrap import (
 from app.services.enrollment_bootstrap_service import EnrollmentBootstrapService
 
 
-def _pkg(version, filename, sha):
-    return SimpleNamespace(version=version, filename=filename, sha256=sha)
+def _pkg(version, filename, sha, **extra):
+    return SimpleNamespace(version=version, filename=filename, sha256=sha, **extra)
 
 
 class _NativeStub(EnrollmentBootstrapService):
@@ -34,7 +34,9 @@ class _NativeStub(EnrollmentBootstrapService):
         }
         if with_bundle:
             self._packages["remote_support_bundle"] = _pkg(
-                "1.4.6", "TECHI-Remote-Support-1.4.6-windows-amd64.zip", "12" * 32
+                "1.4.6", "TECHI-Remote-Support-1.4.6-windows-amd64.zip", "12" * 32,
+                manifest_filename="TECHI-Remote-Support-1.4.6-windows-amd64.manifest.json",
+                manifest_sha256="34" * 32,
             )
 
     def _active_package(self, file_type):
@@ -71,6 +73,8 @@ def test_policy_carries_no_secrets():
     # Recovery payload is the native BUNDLE (12*32), never the MSI (ef*32).
     assert policy["remote_support"]["sha256"] == "12" * 32
     assert policy["remote_support"]["payload_filename"].endswith(".zip")
+    assert policy["remote_support"]["manifest_sha256"] == "34" * 32
+    assert policy["remote_support"]["recovery_mode"] == "disabled"
 
 
 def test_policy_references_native_bundle_not_msi():
@@ -136,9 +140,8 @@ def test_feature_flag_gates_emission_and_legacy_remains(monkeypatch):
 
     monkeypatch.setattr(settings, "NATIVE_BOOTSTRAP_ENABLED", True, raising=False)
     on = svc._generate_gpo(_req(), url)
-    assert on.native_bootstrap is not None
-    assert on.native_bootstrap.policy_json
-    # Even with the native path on, the legacy script is still emitted as fallback.
+    assert on.native_bootstrap is None
+    assert "BLOCKED" in on.preproduction_notice
     assert on.bootstrap_script
 
 

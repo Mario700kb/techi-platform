@@ -51,11 +51,9 @@ class EnrollmentBootstrapRequest(BaseModel):
 class NativeBootstrapArtifacts(BaseModel):
     """The transitional native GPO path (docs/architecture/native-bootstrap.md).
 
-    Published alongside the legacy GPO script when FEATURE flag
-    NATIVE_BOOTSTRAP_ENABLED is on. Carries NO secrets: the policy JSON is the
-    versioned techi-policy.json contract, and enrollment keeps its existing
-    NETLOGON path. The Scheduled Task calls techi-bootstrap.exe directly instead
-    of the large generated CMD.
+    Design/report shape for the incomplete native GPO path. It is not emitted by
+    the live generator; NATIVE_BOOTSTRAP_ENABLED fails closed until publication,
+    local-copy and task lifecycle are implemented and tested end to end.
     """
 
     feature_enabled: bool = False

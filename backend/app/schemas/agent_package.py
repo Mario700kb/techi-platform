@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,9 @@ class AgentPackageOut(BaseModel):
     is_active: bool = False
     download_url: str
     sha256: Optional[str] = None
+    manifest_filename: Optional[str] = None
+    manifest_sha256: Optional[str] = None
+    bundle_metadata: Optional[dict[str, Any]] = None
 
 
 class AgentPackageUploadResponse(BaseModel):
