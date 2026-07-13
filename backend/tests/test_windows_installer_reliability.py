@@ -140,7 +140,7 @@ def test_ci_validates_standalone_and_msi_embedded_agent_lineage():
 
 
 def test_agent_msi_has_no_embedded_remote_support_or_fleet_password():
-    assert 'Value="Durres.12"' not in WXS
+    assert "rustdesk-password" not in WXS.lower()
     assert '<Property Id="ENROLLMENT_TOKEN"' in WXS
     assert "REMOTE_PASSWORD" not in WXS
     assert "REMOTE_KEY" not in WXS

@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     RUSTDESK_SERVER_HOST: str = "139.162.158.208"
     RUSTDESK_RELAY_HOST: str = "139.162.158.208"
     RUSTDESK_PUBLIC_KEY: str = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
-    RUSTDESK_DEFAULT_PASSWORD: str = "Durres.12"
     # No authenticated local launcher/token resolver exists yet. Keep direct
     # protocol launch fail-closed; operators use audited manual ID/password.
     REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED: bool = False

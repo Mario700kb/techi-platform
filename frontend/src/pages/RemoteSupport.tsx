@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -30,6 +30,7 @@ import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
 import { RemoteSupportMobileList } from "../components/mobile/RemoteSupportMobileList";
+import { DeviceRequestGate } from "../services/deviceRequestGate";
 
 // ------------------------------------------------------------------ //
 // Status helpers                                                       //
@@ -157,6 +158,7 @@ export default function RemoteSupport() {
     custom: string;
     saving: boolean;
   } | null>(null);
+  const credentialRequests = useRef(new DeviceRequestGate());
 
   const loadDevices = useCallback(async () => {
     try {
@@ -230,13 +232,16 @@ export default function RemoteSupport() {
 
   const openPasswordModal = useCallback(
     async (device: RemoteSupportDevice) => {
+      const request = credentialRequests.current.begin(device.device_id);
       setPasswordModal({ device, password: "", loading: true, custom: "", saving: false });
       try {
         const res = await getRemoteSupportPassword(device.device_id);
+        if (!credentialRequests.current.isCurrent(request)) return;
         setPasswordModal((m) => (m && m.device.device_id === device.device_id
           ? { ...m, password: res.password, source: res.source ?? undefined, loading: false }
           : m));
       } catch (e: unknown) {
+        if (!credentialRequests.current.isCurrent(request)) return;
         addToast(e instanceof Error ? e.message : "Failed to load password", false);
         setPasswordModal(null);
       }
@@ -248,31 +253,37 @@ export default function RemoteSupport() {
     setPasswordModal((m) => (m ? { ...m, saving: true } : m));
     const dev = passwordModal?.device;
     if (!dev) return;
+    const request = credentialRequests.current.begin(dev.device_id);
     try {
       const res = await regenerateRemoteSupportPassword(dev.device_id);
-      setPasswordModal((m) => (m ? { ...m, password: res.password, source: "generated", saving: false } : m));
+      if (!credentialRequests.current.isCurrent(request)) return;
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, password: res.password, source: "generated", saving: false } : m));
       addToast("New password generated — applied on next heartbeat", true);
     } catch (e: unknown) {
+      if (!credentialRequests.current.isCurrent(request)) return;
       addToast(e instanceof Error ? e.message : "Regenerate failed", false);
-      setPasswordModal((m) => (m ? { ...m, saving: false } : m));
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, saving: false } : m));
     }
   }, [addToast, passwordModal?.device]);
 
   const handleSetCustomPassword = useCallback(async () => {
     const dev = passwordModal?.device;
-    const custom = passwordModal?.custom?.trim() ?? "";
+    const custom = passwordModal?.custom ?? "";
     if (!dev || custom.length < 8) {
       addToast("Password must be at least 8 characters", false);
       return;
     }
+    const request = credentialRequests.current.begin(dev.device_id);
     setPasswordModal((m) => (m ? { ...m, saving: true } : m));
     try {
       const res = await setRemoteSupportPassword(dev.device_id, custom);
-      setPasswordModal((m) => (m ? { ...m, password: res.password, source: "custom", custom: "", saving: false } : m));
+      if (!credentialRequests.current.isCurrent(request)) return;
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, password: res.password, source: "custom", custom: "", saving: false } : m));
       addToast("Custom password set — applied on next heartbeat", true);
     } catch (e: unknown) {
+      if (!credentialRequests.current.isCurrent(request)) return;
       addToast(e instanceof Error ? e.message : "Set password failed", false);
-      setPasswordModal((m) => (m ? { ...m, saving: false } : m));
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, saving: false } : m));
     }
   }, [addToast, passwordModal?.device, passwordModal?.custom]);
 
@@ -422,7 +433,10 @@ export default function RemoteSupport() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={() => setPasswordModal(null)}
+          onClick={() => {
+            credentialRequests.current.invalidate();
+            setPasswordModal(null);
+          }}
         >
           <div
             className="w-full max-w-md rounded-2xl p-6"
@@ -506,7 +520,10 @@ export default function RemoteSupport() {
 
             <button
               type="button"
-              onClick={() => setPasswordModal(null)}
+              onClick={() => {
+                credentialRequests.current.invalidate();
+                setPasswordModal(null);
+              }}
               className="mt-4 w-full rounded-lg px-3 py-2 text-sm font-medium"
               style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
             >

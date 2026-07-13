@@ -22,6 +22,7 @@ def test_agent_enroll_returns_public_https_and_wss_urls(monkeypatch):
                 "enrollment_status": "enrolled",
                 "assigned_client_id": None,
                 "assigned_group_id": None,
+                "agent_credential": "test-device-bound-credential",
             }
 
     def fake_db():

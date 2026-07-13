@@ -62,6 +62,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 
 	installed := isRustDeskInstalled()
 	repaired := false
+	repairFailure := ""
 
 	if !installed {
 		if cfg.RustDeskMSIUrl == "" {
@@ -69,6 +70,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		} else {
 			if err := installRustDeskMSI(cfg); err != nil {
 				log.Printf("[rustdesk_manage] install failed: %v — continuing heartbeat", err)
+				recordRustDeskRepairFailure(cfg, configPath, "install failed")
 				return
 			}
 			repaired = true
@@ -102,6 +104,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		if !skipConfigRepair {
 			if changed, err := writeRustDeskConfig(cfg); err != nil {
 				log.Printf("[rustdesk_manage] config write failed: %v", err)
+				repairFailure = "configuration synchronization failed"
 			} else if changed {
 				repaired = true
 			}
@@ -112,6 +115,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		// of cooldown, same as the tray.
 		if changed, err := ensureRustDeskService(); err != nil {
 			log.Printf("[rustdesk_manage] service ensure failed: %v", err)
+			repairFailure = "service reconciliation failed"
 		} else if changed {
 			repaired = true
 		}
@@ -119,6 +123,7 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		// Tray is a cosmetic companion to the service -- always ensured too.
 		if changed, err := ensureRustDeskTrayRunning(); err != nil {
 			log.Printf("[rustdesk_manage] tray ensure failed: %v", err)
+			repairFailure = "tray reconciliation failed"
 		} else if changed {
 			repaired = true
 		}
@@ -126,11 +131,14 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		if cfg.RustDeskDefaultPassword != "" {
 			if err := setRustDeskPassword(cfg.RustDeskDefaultPassword); err != nil {
 				log.Printf("[rustdesk_manage] password set failed: %v", err)
+				repairFailure = "credential synchronization failed"
 			}
 		}
 	}
 
-	if repaired {
+	if repairFailure != "" {
+		recordRustDeskRepairFailure(cfg, configPath, repairFailure)
+	} else if repaired {
 		recordRustDeskRepair(cfg, configPath)
 	}
 }
@@ -156,29 +164,70 @@ func isRustDeskInstalled() bool {
 }
 
 func verifyRustDeskSync(cfg *Config, info RustDeskInfo) string {
-	if info.InstallStatus != "installed" {
-		return "not_installed"
+	if info.InstallStatus != "installed" || !cfg.RustDeskManageEnabled {
+		return "unknown"
 	}
-	if !cfg.RustDeskManageEnabled {
-		return "discovered"
+	if cfg.RustDeskCredentialGen == 0 {
+		return "unsupported_legacy"
+	}
+	if cfg.RustDeskAckStatus == "failed" {
+		return "failed"
+	}
+	if cfg.RustDeskAckStatus != "applied" || cfg.RustDeskAckGeneration != cfg.RustDeskCredentialGen {
+		return "pending"
+	}
+	conflicted, _ := rustDeskIdentityConflict()
+	if conflicted {
+		return "conflicted"
+	}
+	if _, err := os.Stat(authoritativeRustDeskOptionsPath()); err != nil {
+		return "pending"
 	}
 	found := false
-	for _, dir := range rustDeskConfigDirs() {
-		data, err := os.ReadFile(filepath.Join(dir, "TECHI Remote Support.toml"))
+	for _, path := range rustDeskOptionsPaths() {
+		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		found = true
-		if !rustDeskConfigNeedsRepair(string(data), cfg) {
-			return "synced"
+		if rustDeskConfigNeedsRepair(string(data), cfg) {
+			return "conflicted"
 		}
 	}
 	if !found {
-		return "sync_pending"
+		return "pending"
 	}
-	return "sync_failed"
+	if strings.ToLower(strings.TrimSpace(info.Status)) != "running" {
+		return "failed"
+	}
+	return "applied"
 }
 
+func rustDeskIdentityConflict() (bool, error) {
+	ids := map[string]string{}
+	for _, path := range rustDeskIdentityPaths() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return false, err
+		}
+		identity := parseTOMLTopLevel(string(data))
+		id := strings.TrimSpace(identity["id"])
+		if id == "" {
+			id = strings.TrimSpace(identity["enc_id"])
+		}
+		if id == "" {
+			continue
+		}
+		ids[id] = path
+		if len(ids) > 1 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func installRustDeskMSI(cfg *Config) error {
 	log.Printf("[rustdesk_manage] downloading MSI from %s", cfg.RustDeskMSIUrl)
 
@@ -209,77 +258,67 @@ func installRustDeskMSI(cfg *Config) error {
 }
 
 // writeRustDeskConfig ensures managed [options] keys are correct in every
-// known config location. It operates in patch mode: existing files are updated
-// in-place so identity fields (enc_id, key_pair, etc.) are never overwritten.
-// New config files are created with a minimal base template.
-//
-// Returns (true, nil) only when at least one EXISTING file was repaired
-// (managed values were wrong and have been corrected). Creating a config file
-// that did not previously exist is initialisation, not repair, and is not
-// counted as a change.
+// known options location. Existing files are patched transactionally, identity
+// fields are never touched, and a missing LocalSystem authority is initialized.
 func writeRustDeskConfig(cfg *Config) (bool, error) {
 	managed := managedRustDeskOptions(cfg)
 	if len(managed) == 0 {
 		return false, nil
 	}
 
-	dirs := rustDeskConfigDirs()
-	repaired := false
-
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Printf("[rustdesk_manage] mkdir %s: %v", dir, err)
+	updates := []rustDeskFileUpdate{}
+	authoritative := authoritativeRustDeskOptionsPath()
+	authoritativeFound := false
+	for _, path := range rustDeskOptionsPaths() {
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return false, fmt.Errorf("read options %s: %w", path, err)
+		}
+		if strings.EqualFold(filepath.Clean(path), filepath.Clean(authoritative)) {
+			authoritativeFound = true
+		}
+		patched, changed := applyTOMLOptionPatch(string(existing), managed)
+		if !changed {
 			continue
 		}
-
-		// Only write TECHI Remote Support.toml (the options/config file).
-		// TECHI Remote Support2.toml is the identity file managed by the
-		// service itself — writing to it causes the repair loop.
-		path := filepath.Join(dir, "TECHI Remote Support.toml")
-
-		existing, readErr := os.ReadFile(path)
-
-		if readErr == nil {
-			// File exists: check whether managed values are already correct.
-			existingStr := string(existing)
-			if !cfg.RustDeskForceConfig && !rustDeskConfigNeedsRepair(existingStr, cfg) {
-				continue // already correct, nothing to do
-			}
-			// Patch in-place: update only managed keys, leave identity intact.
-			patched, changed := applyTOMLOptionPatch(existingStr, managed)
-			if !changed {
-				continue
-			}
-			// Clear read-only (set by us after the last repair) before writing,
-			// then restore it immediately after -- this is what prevents RustDesk
-			// from wiping the managed keys when its service restarts.
-			removeTomlReadOnly(path)
-			if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
-				log.Printf("[rustdesk_manage] write %s: %v", path, err)
-				continue
-			}
-			log.Printf("[rustdesk_manage] repaired: %s", path)
-			setTomlReadOnly(path)
-			repaired = true
-		} else {
-			// File does not exist yet: write a fresh minimal config.
-			// Do NOT set read-only here -- RustDesk must be able to write its
-			// own identity fields (id, enc_id, key_pair) into this file on
-			// first run.  The next heartbeat cycle will find the file, detect
-			// that managed options are missing, and patch+protect it then.
-			newContent := buildRustDeskTOML(cfg)
-			if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
-				log.Printf("[rustdesk_manage] init write %s: %v", path, err)
-				continue
-			}
-			log.Printf("[rustdesk_manage] initialized: %s", path)
-			// Intentionally NOT setting repaired=true for fresh files.
+		mode := os.FileMode(0644)
+		if info, statErr := os.Stat(path); statErr == nil {
+			mode = info.Mode()
 		}
+		updates = append(updates, rustDeskFileUpdate{
+			path: path, before: existing, after: []byte(patched),
+			mode: mode, existed: true, protect: true,
+		})
 	}
 
-	return repaired, nil
+	if !authoritativeFound {
+		if authoritative == "" {
+			return false, fmt.Errorf("authoritative LocalSystem options path unavailable")
+		}
+		updates = append(updates, rustDeskFileUpdate{
+			path: authoritative, after: []byte(buildRustDeskTOML(cfg)),
+			mode: 0644, existed: false,
+		})
+	}
+	if len(updates) == 0 {
+		return false, nil
+	}
+	if err := applyRustDeskFileUpdates(updates); err != nil {
+		return false, err
+	}
+	for _, update := range updates {
+		written, err := os.ReadFile(update.path)
+		if err != nil || rustDeskConfigNeedsRepair(string(written), cfg) {
+			rollbackRustDeskFileUpdates(updates)
+			return false, fmt.Errorf("semantic verification failed for %s", update.path)
+		}
+		log.Printf("[rustdesk_manage] synchronized options profile: %s", update.path)
+	}
+	return true, nil
 }
-
 func buildRustDeskTOML(cfg *Config) string {
 	rendezvous := cfg.RustDeskRendezvousServer
 	relay := cfg.RustDeskRelayServer
@@ -294,40 +333,18 @@ func buildRustDeskTOML(cfg *Config) string {
 	sb.WriteString("trusted_devices = ''\n")
 	sb.WriteString("\n[options]\n")
 	if rendezvous != "" {
-		fmt.Fprintf(&sb, "custom-rendezvous-server = '%s'\n", rendezvous)
+		fmt.Fprintf(&sb, "custom-rendezvous-server = %s\n", tomlBasicString(rendezvous))
 	}
 	if relay != "" {
-		fmt.Fprintf(&sb, "relay-server = '%s'\n", relay)
+		fmt.Fprintf(&sb, "relay-server = %s\n", tomlBasicString(relay))
 	}
 	if api != "" {
-		fmt.Fprintf(&sb, "api-server = '%s'\n", api)
+		fmt.Fprintf(&sb, "api-server = %s\n", tomlBasicString(api))
 	}
 	if key != "" {
-		fmt.Fprintf(&sb, "key = '%s'\n", key)
+		fmt.Fprintf(&sb, "key = %s\n", tomlBasicString(key))
 	}
 	return sb.String()
-}
-
-func rustDeskConfigDirs() []string {
-	dirs := []string{
-		`C:\ProgramData\TECHI Remote Support\config`,
-		`C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support\config`,
-		`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support\config`,
-	}
-	usersRoot := os.Getenv("SystemDrive") + `\Users`
-	if entries, err := os.ReadDir(usersRoot); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if name == "Public" || name == "Default" || name == "Default User" || name == "All Users" {
-				continue
-			}
-			dirs = append(dirs, filepath.Join(usersRoot, name, `AppData\Roaming\TECHI Remote Support\config`))
-		}
-	}
-	return dirs
 }
 
 // isRustDeskProcessRunning checks via tasklist whether the tray app process
@@ -464,36 +481,54 @@ func startRustDeskServiceFn() error {
 // flag, which talks to the daemon over IPC and silently no-ops (still exits
 // 0) if nothing is listening.
 func setRustDeskPassword(password string) error {
-	dirs := rustDeskConfigDirs()
-	wrote := false
-	var lastErr error
-	for _, dir := range dirs {
-		path := filepath.Join(dir, "TECHI Remote Support.toml")
+	conflicted, err := rustDeskIdentityConflict()
+	if err != nil {
+		return fmt.Errorf("inspect identity profiles: %w", err)
+	}
+	if conflicted {
+		return fmt.Errorf("conflicting Remote Support profile identities")
+	}
+
+	updates := []rustDeskFileUpdate{}
+	found := false
+	for _, path := range rustDeskIdentityPaths() {
 		existing, readErr := os.ReadFile(path)
 		if readErr != nil {
-			// Identity file doesn't exist here yet -- nothing to patch; it's
-			// created by RustDesk itself on first run, not by us.
-			continue
+			if os.IsNotExist(readErr) {
+				continue
+			}
+			return fmt.Errorf("read identity %s: %w", path, readErr)
 		}
+		found = true
 		patched, changed := applyTOMLTopLevelPatch(string(existing), "password", password)
 		if !changed {
-			wrote = true
 			continue
 		}
-		removeTomlReadOnly(path)
-		if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
-			lastErr = err
-			continue
+		mode := os.FileMode(0600)
+		if info, statErr := os.Stat(path); statErr == nil {
+			mode = info.Mode()
 		}
-		setTomlReadOnly(path)
-		log.Printf("[rustdesk_manage] password written to %s", path)
-		wrote = true
+		updates = append(updates, rustDeskFileUpdate{
+			path: path, before: existing, after: []byte(patched),
+			mode: mode, existed: true, protect: true,
+		})
 	}
-	if !wrote {
-		if lastErr != nil {
-			return fmt.Errorf("set password: %w", lastErr)
+	if !found {
+		return fmt.Errorf("set password: no identity config file found in any approved profile")
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	if err := applyRustDeskFileUpdates(updates); err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	for _, update := range updates {
+		written, readErr := os.ReadFile(update.path)
+		if readErr != nil || parseTOMLTopLevel(string(written))["password"] != password {
+			rollbackRustDeskFileUpdates(updates)
+			return fmt.Errorf("password semantic verification failed for %s", update.path)
 		}
-		return fmt.Errorf("set password: no identity config file found in any known location")
+		log.Printf("[rustdesk_manage] synchronized credential profile: %s", update.path)
 	}
 	return nil
 }
@@ -529,12 +564,29 @@ func applyRemoteSupportCredential(password string) error {
 
 func recordRustDeskRepair(cfg *Config, configPath string) {
 	cfg.RustDeskRepairCount++
+	cfg.RustDeskRepairAttempts++
+	cfg.RustDeskRepairSuccesses++
+	cfg.RustDeskRepairFailures = 0
+	cfg.RustDeskLastRepairReason = "reconciliation applied"
 	cfg.RustDeskLastRepairAt = time.Now().UTC().Format(time.RFC3339)
 	if configPath == "" {
 		return
 	}
 	if err := saveConfig(configPath, cfg); err != nil {
 		log.Printf("[rustdesk_manage] repair state save failed: %v", err)
+	}
+}
+
+func recordRustDeskRepairFailure(cfg *Config, configPath, reason string) {
+	cfg.RustDeskRepairAttempts++
+	cfg.RustDeskRepairFailures++
+	cfg.RustDeskLastRepairReason = reason
+	cfg.RustDeskLastRepairAt = time.Now().UTC().Format(time.RFC3339)
+	if configPath == "" {
+		return
+	}
+	if err := saveConfig(configPath, cfg); err != nil {
+		log.Printf("[rustdesk_manage] repair failure state save failed: %v", err)
 	}
 }
 

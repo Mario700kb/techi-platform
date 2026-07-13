@@ -48,6 +48,10 @@ type Config struct {
 	RustDeskPackageVersion    string `json:"rustdesk_package_version,omitempty"`
 	RustDeskLastRepairAt      string `json:"rustdesk_last_repair_at,omitempty"`
 	RustDeskRepairCount       int    `json:"rustdesk_repair_count,omitempty"`
+	RustDeskRepairAttempts    int    `json:"rustdesk_repair_attempt_count,omitempty"`
+	RustDeskRepairSuccesses   int    `json:"rustdesk_repair_success_count,omitempty"`
+	RustDeskRepairFailures    int    `json:"rustdesk_consecutive_repair_failures,omitempty"`
+	RustDeskLastRepairReason  string `json:"rustdesk_last_repair_reason,omitempty"`
 	RustDeskOptionsSchemaVer  int    `json:"rustdesk_options_schema_version,omitempty"`
 
 	// Availability profile — controls power policy (Windows only).

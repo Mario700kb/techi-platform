@@ -61,6 +61,10 @@ class AgentHeartbeatPayload(BaseModel):
     rustdesk_install_path: Optional[str] = None
     rustdesk_last_repair_at: Optional[datetime] = None
     rustdesk_repair_count: Optional[int] = None
+    rustdesk_repair_attempt_count: Optional[int] = None
+    rustdesk_repair_success_count: Optional[int] = None
+    rustdesk_consecutive_repair_failures: Optional[int] = None
+    rustdesk_last_repair_reason: Optional[str] = Field(default=None, max_length=255)
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
     disk_percent: Optional[float] = None

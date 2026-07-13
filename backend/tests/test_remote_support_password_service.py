@@ -95,6 +95,16 @@ def test_set_custom_and_regenerate():
     assert device.remote_support_desired_source == "generated"
 
 
+def test_set_custom_preserves_spaces_quotes_backslashes_and_unicode():
+    db = _db()
+    device = _device(db)
+    svc = RemoteSupportPasswordService(db)
+    password = " Spécial'\"\\&?= 密码 "
+
+    assert svc.set_custom(device, password) == password
+    assert svc.pending_delivery(device).password == password
+
+
 def test_set_custom_rejects_too_short():
     db = _db()
     device = _device(db)
@@ -112,6 +122,21 @@ def test_generated_passwords_are_unique_per_device():
     svc = RemoteSupportPasswordService(db)
     passwords = {svc.ensure_desired(_device(db)).password for _ in range(20)}
     assert len(passwords) == 20
+
+
+def test_two_devices_apply_distinct_credentials_without_cross_promotion():
+    db = _db()
+    svc = RemoteSupportPasswordService(db)
+    first = _device(db)
+    second = _device(db)
+    first_delivery = svc.ensure_desired(first)
+    second_delivery = svc.ensure_desired(second)
+
+    assert first_delivery.password != second_delivery.password
+    assert svc.process_ack(first, _applied_ack(first, first_delivery)) is True
+    assert svc.get_active_plaintext(first) == first_delivery.password
+    assert svc.get_active_plaintext(second) is None
+    assert second.remote_support_apply_status == "pending"
 
 
 def _applied_ack(device, delivery):

@@ -172,7 +172,6 @@ export default function EnrollmentBootstrap() {
   const [rustdeskRelay, setRustdeskRelay] = useState("");
   const [rustdeskApi, setRustdeskApi] = useState("");
   const [rustdeskKey, setRustdeskKey] = useState("");
-  const [rustdeskPassword, setRustdeskPassword] = useState("");
 
   // ── availability profile state ───────────────────────────────────────────
   const [availProfile, setAvailProfile] = useState<AvailabilityProfile>("workstation");
@@ -462,7 +461,6 @@ export default function EnrollmentBootstrap() {
         rustdesk_relay_server: rustdeskRelay,
         rustdesk_api_server: rustdeskApi,
         rustdesk_key: rustdeskKey,
-        rustdesk_default_password: rustdeskPassword,
         availability_profile: availProfile,
         manage_power_policy: managePower,
         prevent_sleep_on_ac: preventSleepAC,
@@ -881,7 +879,6 @@ export default function EnrollmentBootstrap() {
                       { label: "Relay server", value: rustdeskRelay, set: setRustdeskRelay, placeholder: "relay IP or hostname" },
                       { label: "API server", value: rustdeskApi, set: setRustdeskApi, placeholder: "http://server:21114" },
                       { label: "Public key", value: rustdeskKey, set: setRustdeskKey, placeholder: "base64 key" },
-                      { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "initial TECHI Remote Support password" },
                     ] as const
                   ).map(({ label, value, set, placeholder }) => (
                     <label key={label} className="block">

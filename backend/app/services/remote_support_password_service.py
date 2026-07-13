@@ -94,9 +94,11 @@ class RemoteSupportPasswordService:
         return self._create_desired(device, generate_password(), source="generated")
 
     def set_custom(self, device: Device, password: str) -> str:
-        password = (password or "").strip()
+        password = password or ""
         if not (8 <= len(password) <= 128):
             raise ValueError("Password must be between 8 and 128 characters")
+        if any(ord(char) < 32 or ord(char) == 127 for char in password):
+            raise ValueError("Password must not contain control characters")
         return self._create_desired(device, password, source="custom").password
 
     def regenerate(self, device: Device) -> str:

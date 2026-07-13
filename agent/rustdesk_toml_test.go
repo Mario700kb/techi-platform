@@ -175,7 +175,7 @@ key = '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='
 		}
 	}
 	// Managed value must be updated.
-	if !strings.Contains(result, "custom-rendezvous-server = '139.162.158.208'") {
+	if !strings.Contains(result, `custom-rendezvous-server = "139.162.158.208"`) {
 		t.Error("rendezvous server not updated in patch result")
 	}
 }
@@ -209,7 +209,7 @@ key = '8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw='
 	if !changed {
 		t.Fatal("patch should report changed (relay missing)")
 	}
-	if !strings.Contains(result, "relay-server = '139.162.158.208'") {
+	if !strings.Contains(result, `relay-server = "139.162.158.208"`) {
 		t.Error("relay-server not added")
 	}
 	// Existing keys must be preserved.
@@ -233,7 +233,7 @@ nat_type = 1
 	if !strings.Contains(result, "[options]") {
 		t.Error("[options] section not added")
 	}
-	if !strings.Contains(result, "custom-rendezvous-server = '139.162.158.208'") {
+	if !strings.Contains(result, `custom-rendezvous-server = "139.162.158.208"`) {
 		t.Error("rendezvous server not added")
 	}
 }
@@ -254,7 +254,7 @@ key = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
 	if !changed {
 		t.Fatal("wrong relay-server should trigger change")
 	}
-	if !strings.Contains(result, "relay-server = '139.162.158.208'") {
+	if !strings.Contains(result, `relay-server = "139.162.158.208"`) {
 		t.Error("relay-server not corrected")
 	}
 	// rendezvous value was correct (just different quotes) — implementation
@@ -275,12 +275,12 @@ enc_id = 'AbCdEfGhIjKlMnOp=='
 password = 'oldhash=='
 key_pair = ['pub', 'priv']
 `
-	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	result, changed := applyTOMLTopLevelPatch(original, "password", "UniqueDevice9")
 
 	if !changed {
 		t.Fatal("different password value should report changed")
 	}
-	if !strings.Contains(result, "password = 'Durres.12'") {
+	if !strings.Contains(result, `password = "UniqueDevice9"`) {
 		t.Error("password not updated")
 	}
 	for _, field := range []string{"id = '9876543210'", "enc_id = 'AbCdEfGhIjKlMnOp=='", "key_pair = ['pub', 'priv']"} {
@@ -292,8 +292,8 @@ key_pair = ['pub', 'priv']
 
 // Test 11: Vlerë identike → changed=false, asnjë shkrim i panevojshëm.
 func TestApplyTOMLTopLevelPatchNoChangeWhenSame(t *testing.T) {
-	original := "password = 'Durres.12'\n"
-	_, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	original := "password = 'UniqueDevice9'\n"
+	_, changed := applyTOMLTopLevelPatch(original, "password", "UniqueDevice9")
 	if changed {
 		t.Fatal("identical value should report changed=false")
 	}
@@ -306,11 +306,11 @@ func TestApplyTOMLTopLevelPatchInsertsBeforeFirstSection(t *testing.T) {
 [options]
 key = 'x'
 `
-	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	result, changed := applyTOMLTopLevelPatch(original, "password", "UniqueDevice9")
 	if !changed {
 		t.Fatal("missing key should report changed")
 	}
-	passwordIdx := strings.Index(result, "password = 'Durres.12'")
+	passwordIdx := strings.Index(result, `password = "UniqueDevice9"`)
 	sectionIdx := strings.Index(result, "[options]")
 	if passwordIdx < 0 || sectionIdx < 0 || passwordIdx > sectionIdx {
 		t.Errorf("password must be inserted before [options], got:\n%s", result)
@@ -325,14 +325,32 @@ func TestApplyTOMLTopLevelPatchIgnoresKeyInsideSection(t *testing.T) {
 	original := `[options]
 password = 'should-not-be-touched'
 `
-	result, changed := applyTOMLTopLevelPatch(original, "password", "Durres.12")
+	result, changed := applyTOMLTopLevelPatch(original, "password", "UniqueDevice9")
 	if !changed {
 		t.Fatal("missing top-level password should report changed (key inside [options] doesn't count)")
 	}
 	if !strings.Contains(result, "password = 'should-not-be-touched'") {
 		t.Error("value inside [options] must be left untouched")
 	}
-	if !strings.Contains(result, "password = 'Durres.12'") {
+	if !strings.Contains(result, `password = "UniqueDevice9"`) {
 		t.Error("top-level password not inserted")
+	}
+}
+
+func TestParseTOMLTopLevelStopsBeforeOptions(t *testing.T) {
+	got := parseTOMLTopLevel("id = '123'\npassword = 'secret'\n[options]\nid = 'not-identity'\n")
+	if got["id"] != "123" || got["password"] != "secret" {
+		t.Fatalf("unexpected top-level values: %#v", got)
+	}
+}
+
+func TestTopLevelPasswordPatchRoundTripsSpecialCharacters(t *testing.T) {
+	password := " Spécial'\"\\&?= 密码 "
+	patched, changed := applyTOMLTopLevelPatch("id = '123'\n", "password", password)
+	if !changed {
+		t.Fatal("expected password patch")
+	}
+	if got := parseTOMLTopLevel(patched)["password"]; got != password {
+		t.Fatalf("password round trip = %q, want %q", got, password)
 	}
 }

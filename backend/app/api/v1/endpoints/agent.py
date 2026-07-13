@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -12,6 +13,7 @@ from app.core.agent_auth import (
     verify_heartbeat_request,
 )
 from app.core.config import settings
+from app.core.time import utcnow
 from app.db.session import get_db, SessionLocal
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.agent import (
@@ -132,6 +134,9 @@ async def agent_heartbeat(
         )
         raise HTTPException(status_code=exc.status_code, detail=detail)
 
+    credential_service = RemoteSupportPasswordService(db)
+    credential_service.process_ack(authenticated_device, payload.remote_support_credential_ack)
+
     if not payload.public_ip:
         forwarded_for = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
         client_ip = forwarded_for or (request.client.host if request.client else None)
@@ -149,11 +154,11 @@ async def agent_heartbeat(
 
     background_tasks.add_task(_heartbeat_side_effects, payload, device.id, heartbeat.id, ctx)
 
+    _apply_remote_support_sync_contract(db, device, payload.rustdesk_sync_status)
+
     pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
     interval = _cfg_svc.get_heartbeat_interval(payload.platform)
 
-    credential_service = RemoteSupportPasswordService(db)
-    credential_service.process_ack(device, payload.remote_support_credential_ack)
     credential_delivery = credential_service.pending_delivery(device)
     platform = (payload.platform or "").strip().lower()
     remote_support_present = payload.rustdesk_install_status != "not_installed"
@@ -174,3 +179,33 @@ async def agent_heartbeat(
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
         "remote_support_credential": credential_delivery.__dict__ if credential_delivery else None,
     }
+
+
+def _apply_remote_support_sync_contract(db: Session, device, reported_status: Optional[str]) -> None:
+    reported = (reported_status or "unknown").strip().lower()
+    allowed = {"unknown", "pending", "applied", "failed", "conflicted", "unsupported_legacy"}
+    if reported not in allowed:
+        reported = "unknown"
+
+    credential_status = device.remote_support_apply_status or "unknown"
+    if credential_status == "unsupported_legacy":
+        state = "unsupported_legacy"
+    elif credential_status == "failed":
+        state = "failed"
+    elif credential_status in {"unknown", "pending"}:
+        state = credential_status
+    elif (
+        credential_status == "applied"
+        and device.remote_support_active_generation == device.remote_support_applied_generation
+    ):
+        state = reported
+    else:
+        state = "conflicted"
+
+    device.rustdesk_sync_state = state
+    device.rustdesk_sync_message = None if state == "applied" else f"Remote Support credential/config state: {state}"
+    if state == "applied":
+        device.rustdesk_synced_at = utcnow()
+    db.add(device)
+    db.commit()
+    db.refresh(device)

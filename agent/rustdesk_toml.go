@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -57,12 +58,12 @@ func applyTOMLTopLevelPatch(content string, key, value string) (string, bool) {
 		if oldVal == value {
 			continue
 		}
-		lines[i] = key + " = '" + value + "'"
+		lines[i] = key + " = " + tomlBasicString(value)
 		changed = true
 	}
 
 	if !found {
-		newLine := key + " = '" + value + "'"
+		newLine := key + " = " + tomlBasicString(value)
 		if firstSectionIdx >= 0 {
 			updated := make([]string, 0, len(lines)+1)
 			updated = append(updated, lines[:firstSectionIdx]...)
@@ -78,16 +79,70 @@ func applyTOMLTopLevelPatch(content string, key, value string) (string, bool) {
 	return strings.Join(lines, "\n"), changed
 }
 
+func tomlBasicString(value string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '\\':
+			out.WriteString(`\\`)
+		case '"':
+			out.WriteString(`\"`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\t':
+			out.WriteString(`\t`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\r':
+			out.WriteString(`\r`)
+		default:
+			out.WriteRune(r)
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+
 // stripTOMLQuotes removes surrounding single or double quotes from a TOML value
 // and trims whitespace. "value" and 'value' both become value.
 func stripTOMLQuotes(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 {
-		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+		if s[0] == '"' && s[len(s)-1] == '"' {
+			if decoded, err := strconv.Unquote(s); err == nil {
+				return decoded
+			}
+		}
+		if s[0] == '\'' && s[len(s)-1] == '\'' {
 			return s[1 : len(s)-1]
 		}
 	}
 	return s
+}
+
+// parseTOMLTopLevel extracts scalar keys before the first TOML section. It is
+// used only for semantic identity checks; it never logs returned values.
+func parseTOMLTopLevel(content string) map[string]string {
+	result := make(map[string]string)
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			break
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		idx := strings.IndexByte(trimmed, '=')
+		if idx < 0 {
+			continue
+		}
+		result[strings.TrimSpace(trimmed[:idx])] = stripTOMLQuotes(strings.TrimSpace(trimmed[idx+1:]))
+	}
+	return result
 }
 
 // parseTOMLOptions extracts key→value pairs from the [options] section of a
@@ -216,7 +271,7 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 			continue
 		}
 		log.Printf("[rustdesk_manage] patch [options] %s: %q → %q", key, oldVal, newVal)
-		lines[i] = key + " = '" + newVal + "'"
+		lines[i] = key + " = " + tomlBasicString(newVal)
 		changed = true
 	}
 
@@ -225,7 +280,7 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 	for k, v := range managed {
 		if !applied[k] && v != "" {
 			log.Printf("[rustdesk_manage] patch [options] %s: adding %q", k, v)
-			toInsert = append(toInsert, fmt.Sprintf("%s = '%s'", k, v))
+			toInsert = append(toInsert, fmt.Sprintf("%s = %s", k, tomlBasicString(v)))
 			changed = true
 		}
 	}

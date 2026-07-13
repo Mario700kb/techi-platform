@@ -87,7 +87,6 @@ export interface EnrollmentBootstrapRequest {
   rustdesk_relay_server: string;
   rustdesk_api_server: string;
   rustdesk_key: string;
-  rustdesk_default_password: string;
   // Availability / power profile
   availability_profile: AvailabilityProfile;
   manage_power_policy: boolean;

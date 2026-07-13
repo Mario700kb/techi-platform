@@ -67,6 +67,10 @@ DEVICE_COLUMNS = {
     "remote_support_applied_fingerprint": "VARCHAR(64)",
     "remote_support_apply_status": "VARCHAR(32) NOT NULL DEFAULT 'unsupported_legacy'",
     "remote_support_failure_reason": "VARCHAR(255)",
+    "rustdesk_repair_attempt_count": "INTEGER NOT NULL DEFAULT 0",
+    "rustdesk_repair_success_count": "INTEGER NOT NULL DEFAULT 0",
+    "rustdesk_consecutive_repair_failures": "INTEGER NOT NULL DEFAULT 0",
+    "rustdesk_last_repair_reason": "VARCHAR(255)",
 }
 
 HEARTBEAT_COLUMNS = {

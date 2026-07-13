@@ -67,6 +67,10 @@ class DeviceBase(BaseModel):
     rustdesk_conflict_detected: bool = False
     rustdesk_last_repair_at: Optional[datetime] = None
     rustdesk_repair_count: int = 0
+    rustdesk_repair_attempt_count: int = 0
+    rustdesk_repair_success_count: int = 0
+    rustdesk_consecutive_repair_failures: int = 0
+    rustdesk_last_repair_reason: Optional[str] = None
     auto_assigned: bool = False
     assignment_source: str = "manual"
     is_archived: bool = False
@@ -142,6 +146,10 @@ class DeviceUpdate(BaseModel):
     rustdesk_conflict_detected: Optional[bool] = None
     rustdesk_last_repair_at: Optional[datetime] = None
     rustdesk_repair_count: Optional[int] = None
+    rustdesk_repair_attempt_count: Optional[int] = None
+    rustdesk_repair_success_count: Optional[int] = None
+    rustdesk_consecutive_repair_failures: Optional[int] = None
+    rustdesk_last_repair_reason: Optional[str] = None
     auto_assigned: Optional[bool] = None
     assignment_source: Optional[str] = None
     is_archived: Optional[bool] = None

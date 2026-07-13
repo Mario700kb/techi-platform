@@ -135,7 +135,6 @@ def _make_rustdesk_req(**overrides) -> EnrollmentBootstrapRequest:
         rustdesk_rendezvous_server="139.162.158.208",
         rustdesk_relay_server="139.162.158.208",
         rustdesk_key="8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=",
-        rustdesk_default_password="Durres.12",
     )
     defaults.update(overrides)
     return _make_req(**defaults)
@@ -302,7 +301,7 @@ class TestTokenInstallerScript:
         _check_agent_self_update_flow(self.script, "token-installer")
 
 
-class TestRustDeskForceMigrationScript:
+class TestRustDeskPreservationScript:
     def setup_method(self):
         self.svc = _StubService()
         req = _make_rustdesk_req()
@@ -311,105 +310,27 @@ class TestRustDeskForceMigrationScript:
             "http://10.5.50.63:8000", "tok123tok123tok123", cfg, req
         )
 
-    def test_stops_service_and_process_before_config_cleanup(self):
-        service_index = self.script.index("Stopping TECHI Remote Support service")
-        process_index = self.script.index("Stopping TECHI Remote Support process")
-        cleanup_index = self.script.index("Old TECHI Remote Support config found")
+    def test_bootstrap_preserves_remote_support_configuration(self):
+        assert "TECHI Remote Support configuration preserved" in self.script
+        assert "authenticated Agent reconciliation" in self.script
 
-        assert service_index < cleanup_index
-        assert process_index < cleanup_index
+    def test_bootstrap_contains_no_destructive_remote_support_migration(self):
+        forbidden = [
+            "Forcing TECHI Remote Support migration",
+            "TECHI Remote Support config removed",
+            "Remove-Item -LiteralPath $_.FullName -Recurse -Force",
+            "Set-TechiPermanentPasswordSafe",
+            "$TechiPassword",
+            "sc.exe",
+        ]
+        for value in forbidden:
+            assert value not in self.script
 
-    def test_removes_all_requested_config_locations(self):
-        assert "C:\\ProgramData\\TECHI Remote Support" in self.script
-        assert "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\TECHI Remote Support" in self.script
-        assert "Join-Path $env:APPDATA 'TECHI Remote Support'" in self.script
-        assert "Join-Path $env:LOCALAPPDATA 'TECHI Remote Support'" in self.script
+    def test_config_template_contains_no_bootstrap_password(self):
+        assert "rustdesk_default_password" not in self.script
+        assert "--password" not in self.script
 
-    def test_removes_requested_config_files_and_config_contents(self):
-        assert "'TECHI Remote Support.toml', 'TECHI Remote Support2.toml'" in self.script
-        assert "-Filter '*.toml'" in self.script
-        assert "Join-Path $Root 'config'" in self.script
-        assert "Remove-Item -LiteralPath $_.FullName -Recurse -Force" in self.script
-
-    def test_profile_cleanup_is_access_denied_safe(self):
-        assert "function Test-PathSafe" in self.script
-        assert "Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue" in self.script
-        assert "function Get-ChildItemSafe" in self.script
-        assert "Get-ChildItem -LiteralPath $Path" in self.script
-        assert "WARNING: TECHI Remote Support path inaccessible, skipping" in self.script
-        assert "WARNING: TECHI Remote Support profile scan inaccessible, skipping" in self.script
-        assert "TECHI Remote Support config root not present or inaccessible" in self.script
-
-    def test_profile_rewrite_is_access_denied_safe(self):
-        assert "function New-DirectorySafe" in self.script
-        assert "function Write-TechiConfigSafe" in self.script
-        assert "WARNING: TECHI Remote Support directory inaccessible, skipping" in self.script
-        assert "WARNING: TECHI Remote Support config write inaccessible, skipping" in self.script
-        assert "WARNING: TECHI Remote Support TECHI config verification failed; continuing bootstrap" in self.script
-        assert "ERROR: TECHI Remote Support TECHI config verification failed" not in self.script
-
-    def test_rewrites_techi_config_and_verifies_host(self):
-        assert "rendezvous_server = '$TechiRendezvous'" in self.script
-        assert "relay-server = '$TechiRelay'" in self.script
-        assert "key = '$TechiKey'" in self.script
-        assert "TECHI Remote Support config rewritten" in self.script
-        assert "$Written.Contains($TechiRendezvous)" in self.script
-        assert "TECHI Remote Support TECHI config verified" in self.script
-
-    def test_restarts_rustdesk_and_logs_migration(self):
-        # TECHI Remote Support no longer runs as a Windows Service (Session 0
-        # can't do interactive screen capture) -- it's relaunched via the
-        # "TECHI Remote Support Tray" Scheduled Task installer.wxs creates.
-        assert "Starting TECHI Remote Support via Scheduled Task" in self.script
-        assert "Get-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
-        assert "Start-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
-        assert "TECHI Remote Support Tray task triggered." in self.script
-        assert "TECHI Remote Support forced migration complete" in self.script
-
-    def test_removes_orphaned_service_instead_of_restarting_it(self):
-        # Any "TECHI Remote Support"/"RustDesk"/"rustdesk" service found is an
-        # orphan from before the Scheduled-Task model -- delete it, don't
-        # restart it back into the broken Session 0 state.
-        assert "Removing orphaned TECHI Remote Support service registration" in self.script
-        assert "$ScPath = Join-Path $env:SystemRoot 'System32\\sc.exe'" in self.script
-        assert "Start-Process -FilePath $ScPath -ArgumentList @('delete', $ServiceName)" in self.script
-
-    def test_sets_unattended_password_by_writing_identity_toml(self):
-        # --password (CLI/IPC) silently no-ops when no daemon is running --
-        # exits 0 having done nothing, which read as a false "configured" in
-        # earlier testing. Writing the plaintext password directly into the
-        # suffix-less identity TOML works without any daemon: RustDesk hashes
-        # it automatically the next time it loads/stores that file.
-        assert "$TechiPassword = 'Durres.12'" in self.script
-        assert "function Set-TechiPermanentPasswordSafe" in self.script
-        assert "password = '$Password'" in self.script
-        assert "Join-Path $Root 'TECHI Remote Support.toml'" in self.script
-        assert "TECHI Remote Support password written" in self.script
-        assert "TECHI Remote Support identity TOML not found yet -- waiting" in self.script
-        assert "WARNING: TECHI Remote Support password not set -- identity TOML never appeared" in self.script
-        assert "Start-Process -FilePath $TechiExe -ArgumentList @('--password', $TechiPassword)" not in self.script
-        assert "function Get-TechiExecutable" not in self.script
-        assert 'Write-Log "Durres.12' not in self.script
-        assert "Write-Log 'Durres.12" not in self.script
-
-    def test_tray_restarts_before_password_write(self):
-        # The cleanup loop earlier in this script deletes config\ entirely,
-        # so the identity TOML doesn't exist on disk again until RustDesk
-        # itself runs and recreates it -- the Scheduled Task must be started
-        # (and given time to do so) before any write attempt, or every
-        # candidate path is missing and nothing gets patched.
-        restart_index = self.script.index("Starting TECHI Remote Support via Scheduled Task")
-        password_index = self.script.index("function Set-TechiPermanentPasswordSafe")
-
-        assert restart_index < password_index
-
-    def test_idempotent_cleanup_then_rewrite_order(self):
-        remove_index = self.script.index("TECHI Remote Support config removed")
-        rewrite_index = self.script.index("Write-TechiConfigSafe -Path $Path")
-
-        assert remove_index < rewrite_index
-
-    def test_public_endpoint_enables_techi_rustdesk_migration(self, monkeypatch):
+    def test_public_endpoint_enables_management_without_a_password(self, monkeypatch):
         captured = {}
 
         class FakeTokenService:
@@ -444,8 +365,7 @@ class TestRustDeskForceMigrationScript:
         assert captured["payload"].rustdesk_rendezvous_server == "139.162.158.208"
         assert captured["payload"].rustdesk_relay_server == "139.162.158.208"
         assert captured["payload"].rustdesk_key == "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
-        assert captured["payload"].rustdesk_default_password == "Durres.12"
-
+        assert not hasattr(captured["payload"], "rustdesk_default_password")
 
 class TestPublicWindowsBootstrapEndpoint:
     def setup_method(self):

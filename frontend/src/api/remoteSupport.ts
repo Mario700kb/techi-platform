@@ -19,6 +19,10 @@ export interface RemoteSupportDevice {
   app_version?: string;
   install_path?: string;
   repair_count: number;
+  repair_attempt_count: number;
+  repair_success_count: number;
+  consecutive_repair_failures: number;
+  last_repair_reason?: string;
   last_repair_at?: string;
   client_id?: number;
   group_id?: number;

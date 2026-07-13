@@ -1,7 +1,3 @@
-from datetime import datetime
-from types import SimpleNamespace
-from unittest.mock import patch
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -64,82 +60,30 @@ def test_incomplete_legacy_heartbeat_does_not_create_device(client, db):
     assert db.query(Device).count() == 0
 
 
-def test_current_v1_heartbeat_route_is_unchanged(client):
-    device = SimpleNamespace(
-        id=7,
-        rustdesk_id="123456789",
-        device_type="client",
-        status="online",
-        last_seen=None,
+def test_current_v1_heartbeat_rejects_missing_authentication(client):
+    response = client.post(
+        "/api/v1/agent/heartbeat",
+        json={"agent_id": "current-agent", "hostname": "current-host"},
     )
-    heartbeat = SimpleNamespace(id=11, created_at=datetime(2026, 1, 1))
 
-    with (
-        patch(
-            "app.api.v1.endpoints.agent.DeviceHeartbeatService.process_heartbeat_core",
-            return_value=(device, heartbeat, {}),
-        ),
-        patch("app.api.v1.endpoints.agent._heartbeat_side_effects"),
-        patch(
-            "app.api.v1.endpoints.agent.RemoteActionService.collect_pending_for_delivery",
-            return_value=[],
-        ),
-        patch(
-            "app.api.v1.endpoints.agent.RemoteSupportPasswordService.get_or_create",
-            return_value="pw-per-device",
-        ),
-    ):
-        response = client.post(
-            "/api/v1/agent/heartbeat",
-            json={"agent_id": "current-agent", "hostname": "current-host"},
-        )
-
-    assert response.status_code == 200
-    assert response.json()["device_id"] == 7
-    assert response.json()["heartbeat_id"] == 11
-    assert response.json()["heartbeat_interval_seconds"] > 0
+    assert response.status_code == 428
+    assert "pending_actions" not in response.text
+    assert "remote_support_credential" not in response.text
 
 
-def test_legacy_heartbeat_for_known_device_returns_json_body(client, db):
-    """Old agents treat a bodyless 204 as a failed heartbeat and retry in a
-    tight loop (2026-07-03 CPU incident: the legacy route called the v1
-    handler with a stale signature, every request blew up and was 'ignored').
-    A known device must get the same JSON response the v1 route returns."""
+def test_legacy_heartbeat_for_known_device_requires_reenrollment(client, db):
     db.add(Device(id=7, hostname="legacy-host", agent_id="legacy-agent"))
     db.commit()
 
-    device = SimpleNamespace(
-        id=7,
-        rustdesk_id="123456789",
-        device_type="client",
-        status="online",
-        last_seen=None,
+    response = client.post(
+        "/api/heartbeat",
+        json={"agent_id": "legacy-agent", "hostname": "legacy-host"},
     )
-    heartbeat = SimpleNamespace(id=11, created_at=datetime(2026, 1, 1))
 
-    with (
-        patch(
-            "app.api.v1.endpoints.agent.DeviceHeartbeatService.process_heartbeat_core",
-            return_value=(device, heartbeat, {}),
-        ),
-        patch("app.api.v1.endpoints.agent._heartbeat_side_effects"),
-        patch(
-            "app.api.v1.endpoints.agent.RemoteActionService.collect_pending_for_delivery",
-            return_value=[],
-        ),
-        patch(
-            "app.api.v1.endpoints.agent.RemoteSupportPasswordService.get_or_create",
-            return_value="pw-per-device",
-        ),
-    ):
-        response = client.post(
-            "/api/heartbeat",
-            json={"agent_id": "legacy-agent", "hostname": "legacy-host"},
-        )
-
-    assert response.status_code == 200
-    assert response.json()["device_id"] == 7
-    assert response.json()["heartbeat_id"] == 11
+    assert response.status_code == 428
+    assert response.json()["authentication_required"] is True
+    assert "pending_actions" not in response.text
+    assert "remote_support_credential" not in response.text
 
 
 @pytest.mark.parametrize("method", ["get", "post"])

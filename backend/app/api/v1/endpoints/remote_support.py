@@ -87,6 +87,10 @@ class RemoteSupportDevice(BaseModel):
     app_version: Optional[str]
     install_path: Optional[str]
     repair_count: int
+    repair_attempt_count: int
+    repair_success_count: int
+    consecutive_repair_failures: int
+    last_repair_reason: Optional[str]
     last_repair_at: Optional[datetime]
     client_id: Optional[int]
     group_id: Optional[int]
@@ -131,6 +135,10 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
         app_version=device.rustdesk_version,
         install_path=device.rustdesk_install_path,
         repair_count=device.rustdesk_repair_count or 0,
+        repair_attempt_count=getattr(device, "rustdesk_repair_attempt_count", 0) or 0,
+        repair_success_count=getattr(device, "rustdesk_repair_success_count", 0) or 0,
+        consecutive_repair_failures=getattr(device, "rustdesk_consecutive_repair_failures", 0) or 0,
+        last_repair_reason=getattr(device, "rustdesk_last_repair_reason", None),
         last_repair_at=device.rustdesk_last_repair_at,
         client_id=device.client_id,
         group_id=device.group_id,

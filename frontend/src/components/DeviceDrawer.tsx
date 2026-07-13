@@ -12,6 +12,7 @@ import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
+import { DeviceRequestGate } from "../services/deviceRequestGate";
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
@@ -265,6 +266,7 @@ export default function DeviceDrawer({
   const [rsPasswordSource, setRsPasswordSource] = useState<string | null>(null);
   const [rsPasswordBusy, setRsPasswordBusy] = useState(false);
   const [rsCustomPassword, setRsCustomPassword] = useState("");
+  const rsCredentialRequests = useRef(new DeviceRequestGate());
 
   // Offline analysis state
   const [offlineAnalysis, setOfflineAnalysis] = useState<DeviceOfflineAnalysis | null>(null);
@@ -410,6 +412,7 @@ export default function DeviceDrawer({
   }, [isOpen, activeTab, device.id, loadRsDevice]);
 
   useEffect(() => {
+    rsCredentialRequests.current.activate(device.id);
     rsLoadedFor.current = null;
     setRsDevice(null);
     setRsCopySuccess(false);
@@ -420,6 +423,7 @@ export default function DeviceDrawer({
     setRsCustomPassword("");
     offlineAnalysisLoadedFor.current = null;
     setOfflineAnalysis(null);
+    return () => rsCredentialRequests.current.invalidate();
   }, [device.id]);
 
   // Load offline analysis when Overview tab becomes active
@@ -540,7 +544,7 @@ export default function DeviceDrawer({
   const syncColor =
     device.rustdesk_conflict_detected
       ? "text-red-400"
-      : device.rustdesk_sync_state === "synced"
+      : device.rustdesk_sync_state === "applied"
       ? "text-emerald-400"
       : device.rustdesk_sync_state === "degraded"
       ? "text-amber-400"
@@ -2117,15 +2121,18 @@ export default function DeviceDrawer({
                       type="button"
                       disabled={rsPasswordBusy}
                       onClick={async () => {
+                        const request = rsCredentialRequests.current.begin(device.id);
                         setRsPasswordBusy(true);
                         try {
                           const res = await getRemoteSupportPassword(device.id);
+                          if (!rsCredentialRequests.current.isCurrent(request)) return;
                           setRsPassword(res.password);
                           setRsPasswordSource(res.source ?? null);
                         } catch (e) {
+                          if (!rsCredentialRequests.current.isCurrent(request)) return;
                           setRsToast({ message: e instanceof Error ? e.message : "Failed to load password", ok: false });
                         } finally {
-                          setRsPasswordBusy(false);
+                          if (rsCredentialRequests.current.isCurrent(request)) setRsPasswordBusy(false);
                         }
                       }}
                       className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
@@ -2163,17 +2170,20 @@ export default function DeviceDrawer({
                             type="button"
                             disabled={rsPasswordBusy}
                             onClick={async () => {
+                              const request = rsCredentialRequests.current.begin(device.id);
                               setRsPasswordBusy(true);
                               try {
                                 const res = await regenerateRemoteSupportPassword(device.id);
+                                if (!rsCredentialRequests.current.isCurrent(request)) return;
                                 setRsPassword(res.password);
                                 setRsPasswordSource("generated");
                                 setRsToast({ message: "New password — applied on next heartbeat", ok: true });
                                 setTimeout(() => setRsToast(null), 3000);
                               } catch (e) {
+                                if (!rsCredentialRequests.current.isCurrent(request)) return;
                                 setRsToast({ message: e instanceof Error ? e.message : "Regenerate failed", ok: false });
                               } finally {
-                                setRsPasswordBusy(false);
+                                if (rsCredentialRequests.current.isCurrent(request)) setRsPasswordBusy(false);
                               }
                             }}
                             className="rounded-md px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
@@ -2191,20 +2201,23 @@ export default function DeviceDrawer({
                           />
                           <button
                             type="button"
-                            disabled={rsPasswordBusy || rsCustomPassword.trim().length < 8}
+                            disabled={rsPasswordBusy || rsCustomPassword.length < 8}
                             onClick={async () => {
+                              const request = rsCredentialRequests.current.begin(device.id);
                               setRsPasswordBusy(true);
                               try {
-                                const res = await setRemoteSupportPassword(device.id, rsCustomPassword.trim());
+                                const res = await setRemoteSupportPassword(device.id, rsCustomPassword);
+                                if (!rsCredentialRequests.current.isCurrent(request)) return;
                                 setRsPassword(res.password);
                                 setRsPasswordSource("custom");
                                 setRsCustomPassword("");
                                 setRsToast({ message: "Custom password set — applied on next heartbeat", ok: true });
                                 setTimeout(() => setRsToast(null), 3000);
                               } catch (e) {
+                                if (!rsCredentialRequests.current.isCurrent(request)) return;
                                 setRsToast({ message: e instanceof Error ? e.message : "Set failed", ok: false });
                               } finally {
-                                setRsPasswordBusy(false);
+                                if (rsCredentialRequests.current.isCurrent(request)) setRsPasswordBusy(false);
                               }
                             }}
                             className="rounded-md px-2.5 py-1 text-xs font-semibold text-white transition"
@@ -2264,7 +2277,7 @@ export default function DeviceDrawer({
                     <p className="premium-kicker mb-1">Config Status</p>
                     {device.rustdesk_install_status === "not_installed"
                       ? <p className="text-xs font-medium text-slate-500">Not installed</p>
-                      : device.rustdesk_sync_state === "synced"
+                      : device.rustdesk_sync_state === "applied"
                         ? <p className="text-xs font-medium text-emerald-400">Synced</p>
                         : device.rustdesk_sync_state === "degraded"
                           ? <p className="text-xs font-medium text-amber-400">Degraded</p>

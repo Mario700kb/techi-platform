@@ -80,6 +80,10 @@ class Device(Base):
     rustdesk_conflict_detected = Column(Boolean, default=False, nullable=False)
     rustdesk_last_repair_at = Column(DateTime, nullable=True)
     rustdesk_repair_count = Column(Integer, default=0, nullable=False)
+    rustdesk_repair_attempt_count = Column(Integer, default=0, nullable=False)
+    rustdesk_repair_success_count = Column(Integer, default=0, nullable=False)
+    rustdesk_consecutive_repair_failures = Column(Integer, default=0, nullable=False)
+    rustdesk_last_repair_reason = Column(String(255), nullable=True)
 
     duplicate_candidate = Column(Boolean, default=False, nullable=False)
     duplicate_of_device_id = Column(Integer, nullable=True)

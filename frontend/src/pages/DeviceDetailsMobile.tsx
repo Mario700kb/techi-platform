@@ -517,7 +517,7 @@ export default function DeviceDetailsMobile() {
           <dt style={{ color: "var(--th-text-muted)" }}>Version</dt>
           <dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{device.rustdesk_version ?? "—"}</dd>
           <dt style={{ color: "var(--th-text-muted)" }}>Sync</dt>
-          <dd style={{ color: device.rustdesk_sync_state === "synced" ? "var(--th-status-online)" : "var(--th-text-primary)" }}>
+          <dd style={{ color: device.rustdesk_sync_state === "applied" ? "var(--th-status-online)" : "var(--th-text-primary)" }}>
             {device.rustdesk_sync_state ?? "—"}
           </dd>
         </dl>

@@ -153,7 +153,10 @@ class DeviceHeartbeatService:
         if device:
             update_data = payload.model_dump(
                 exclude_unset=True,
-                exclude={"device_id", "rustdesk_id", "client_id", "group_id", "rustdesk_sync_status"},
+                exclude={
+                    "device_id", "rustdesk_id", "client_id", "group_id",
+                    "rustdesk_sync_status", "remote_support_credential_ack",
+                },
             )
             self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
@@ -271,7 +274,10 @@ class DeviceHeartbeatService:
     ) -> Device:
         create_data = payload.model_dump(
             exclude_unset=True,
-            exclude={"device_id", "rustdesk_id", "capabilities"},
+            exclude={
+                "device_id", "rustdesk_id", "capabilities",
+                "rustdesk_sync_status", "remote_support_credential_ack",
+            },
         )
         self._drop_stale_repair_counter(create_data, now)
         create_data["agent_id"] = payload.agent_id
@@ -397,7 +403,11 @@ class DeviceHeartbeatService:
             return self._reuse_device(effective_match.device, payload, device_type, now)
 
         create_data = payload.model_dump(
-            exclude_unset=True, exclude={"agent_id", "device_id", "rustdesk_id", "capabilities"}
+            exclude_unset=True,
+            exclude={
+                "agent_id", "device_id", "rustdesk_id", "capabilities",
+                "rustdesk_sync_status", "remote_support_credential_ack",
+            },
         )
         self._drop_stale_repair_counter(create_data, now)
         create_data["agent_id"] = payload.agent_id
@@ -499,7 +509,10 @@ class DeviceHeartbeatService:
         """
         update_data = payload.model_dump(
             exclude_unset=True,
-            exclude={"device_id", "rustdesk_id", "capabilities"},
+            exclude={
+                "device_id", "rustdesk_id", "capabilities",
+                "rustdesk_sync_status", "remote_support_credential_ack",
+            },
         )
         self._drop_stale_repair_counter(update_data, now)
 

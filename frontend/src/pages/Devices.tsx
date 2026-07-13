@@ -988,6 +988,7 @@ export default function Devices() {
           />
         ) : (
           <DeviceDrawer
+            key={drawerDevice.id}
             device={drawerDevice}
             isOpen={drawerOpen}
             onClose={closeDrawer}

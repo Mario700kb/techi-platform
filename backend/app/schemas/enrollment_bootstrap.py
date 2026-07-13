@@ -37,7 +37,6 @@ class EnrollmentBootstrapRequest(BaseModel):
     rustdesk_relay_server: str = ""
     rustdesk_api_server: str = ""
     rustdesk_key: str = ""
-    rustdesk_default_password: str = ""
 
     # Availability / power profile — embedded in agent config (Windows only).
     # Lock screen is NEVER disabled regardless of profile.

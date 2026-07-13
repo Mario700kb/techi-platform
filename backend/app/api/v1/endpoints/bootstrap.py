@@ -44,7 +44,6 @@ def _trusted_domain_payload(*, request: Request, availability_profile: Availabil
         rustdesk_rendezvous_server=settings.RUSTDESK_SERVER_HOST,
         rustdesk_relay_server=settings.RUSTDESK_RELAY_HOST,
         rustdesk_key=settings.RUSTDESK_PUBLIC_KEY,
-        rustdesk_default_password=settings.RUSTDESK_DEFAULT_PASSWORD,
         availability_profile=availability_profile,
         manage_power_policy=availability_profile == AvailabilityProfile.SERVER,
     )
@@ -120,7 +119,6 @@ def windows_bootstrap_script(
         rustdesk_rendezvous_server=settings.RUSTDESK_SERVER_HOST,
         rustdesk_relay_server=settings.RUSTDESK_RELAY_HOST,
         rustdesk_key=settings.RUSTDESK_PUBLIC_KEY,
-        rustdesk_default_password=settings.RUSTDESK_DEFAULT_PASSWORD,
         availability_profile=AvailabilityProfile.WORKSTATION,
         manage_power_policy=False,
     )

@@ -2,14 +2,12 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
-from fastapi.encoders import jsonable_encoder
+from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse
 
-from app.api.v1.endpoints.agent import agent_heartbeat
 from app.db.session import get_db
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.agent import AgentHeartbeatPayload
@@ -83,22 +81,16 @@ async def heartbeat_legacy(request: Request, db: Session = Depends(get_db)):
         logger.debug("Ignoring legacy heartbeat without an existing device identity")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    try:
-        # agent_heartbeat defers side effects (telemetry, inventory, actions
-        # bookkeeping) to BackgroundTasks; run them inline here so legacy
-        # devices get the same processing as the v1 route. Calling with the
-        # wrong signature would raise, return a bodyless 204, and old agents
-        # would treat every heartbeat as failed and hammer this endpoint in a
-        # tight retry loop (2026-07-03 CPU incident).
-        background_tasks = BackgroundTasks()
-        response = agent_heartbeat(payload, request, background_tasks, db)
-        await background_tasks()
-    except Exception as exc:
-        db.rollback()
-        logger.info("Ignoring legacy heartbeat that could not be processed: %s", type(exc).__name__)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    return JSONResponse(content=jsonable_encoder(response))
+    # Numeric IDs and Remote IDs are not authentication. Known legacy Agents
+    # get an explicit migration response, but no heartbeat mutation, pending
+    # action, or Remote Support credential is disclosed.
+    return JSONResponse(
+        status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+        content={
+            "detail": "Agent re-enrollment is required before authenticated heartbeats can resume",
+            "authentication_required": True,
+        },
+    )
 
 
 @router.api_route("/api/sysinfo", methods=["GET", "POST"])

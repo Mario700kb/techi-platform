@@ -183,13 +183,14 @@ class AlertEngine:
                 self._resolve(device.id, AlertKind.LOW_DISK, reason="disk_normalized")
 
     def evaluate_rustdesk_sync(self, device) -> None:
-        if device.rustdesk_sync_state == "failed":
+        repeated_failures = (getattr(device, "rustdesk_consecutive_repair_failures", 0) or 0) >= 3
+        if device.rustdesk_sync_state in {"failed", "conflicted"} or repeated_failures:
             hostname = device.hostname or f"device-{device.id}"
             self._open_alert(
                 device_id=device.id,
                 kind=AlertKind.RUSTDESK_SYNC_FAILURE,
                 severity=AlertSeverity.WARNING,
-                message=f"TECHI Remote Support sync failed on {hostname}",
+                message=f"TECHI Remote Support sync requires attention on {hostname}",
                 detail=device.rustdesk_sync_message,
                 device=device,
             )
