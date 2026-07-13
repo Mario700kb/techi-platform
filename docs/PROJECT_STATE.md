@@ -18,13 +18,17 @@
 
 ## NATIVE BOOTSTRAP / UPDATE ARCHITECTURE
 
-**Status (2026-07-13, pass 2): foundation + real Windows executor + standalone
-`techi-bootstrap.exe` + transitional native GPO generator + CI on
-`stable/phase-2-heartbeat`. Default NON-destructive (`--execute` required;
-native GPO path behind `NATIVE_BOOTSTRAP_ENABLED` default OFF; rollout
-disabled). Live Windows execution is compiled + fake-tested but UNPROVEN on a
-real device. Not deployed, not activated, no NETLOGON change.** New
-cross-platform decision core
+**Status (2026-07-13, pass 3): foundation + real Windows executor + standalone
+`techi-bootstrap.exe` + native GPO generator + CI + deterministic native Remote
+Support bundle packaging on `stable/phase-2-heartbeat`. Default NON-destructive
+(`--execute` required; native GPO path behind `NATIVE_BOOTSTRAP_ENABLED` default
+OFF; rollout disabled). The RS recovery payload is now a verified bundle/ZIP
+(`cmd/techi-rs-package`, manifest-checked before promotion), NOT the MSI; backend
+has a `remote_support_bundle` package type and refuses recovery when no bundle is
+active. Canary artifacts + `techi-policy.canary.example.json` build locally.
+Live Windows execution is compiled + fake-tested but UNPROVEN on a real device;
+the bundle must be published/activated before a canary. Not deployed, not
+activated, no NETLOGON change, unsigned.** New cross-platform decision core
 `agent/internal/native/` (policy contract with no secrets, deterministic exit
 codes, safe-path/staging guards, SHA256 payload gate, redacting logs, Agent +
 Remote Support state machines) replaces the decision logic of the ~2,600-line

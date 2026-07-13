@@ -27,6 +27,63 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-13] ARCH (pass 3): native Remote Support bundle packaging + artifact contract
+
+### Problemi
+The native RS executor existed but had no native payload: the active RS artifact
+was still an MSI, and the MSI repair path fails on the affected devices (locked
+files / legacy ownership / rollback 1603). Recovery could not proceed.
+
+### Zgjidhja
+Built a deterministic, immutable, versioned native RS bundle
+(`TECHI-Remote-Support-<version>-windows-amd64.zip`) from the authoritative
+source bytes (`installer/TECHI-Remote-Support/`, the same tree the MSI wraps) via
+a new Go packager (`cmd/techi-rs-package`). Added the bundle manifest contract +
+verifier (`internal/native/bundle.go`): schema/payload-format versions, product/
+version/platform/arch, entrypoint, service+tray args, per-file sha256+size,
+bundle_sha256, config-preserve + never-overwrite lists, signing_status. The
+executor now extracts via one hardened extractor (`ExtractZipBytesSafe`: rejects
+`..`/absolute/UNC/drive/duplicate/symlink) and validates every file against the
+manifest (`VerifyExtractedBundle`: missing/extra/hash/size/entrypoint) before any
+promotion, and refuses an MSI as the native payload. Backend gained a
+`remote_support_bundle` package type (filename↔version enforced); the generator
+references the bundle as the RS payload and marks recovery unavailable when no
+bundle is active (MSI only listed as first-install fallback). Added canary policy
+example + README and extended the build script + CI to build/verify/upload the
+bundle.
+
+### Shkaku
+RS ships as a 68 MB native bundle (EXE + DLLs + data/); the runtime config/ID/
+password live OUTSIDE the install dir, so a verified atomic bundle promotion is
+the correct recovery primitive and the MSI is not.
+
+### Ndryshimet
+Added `agent/internal/native/{bundle,bundle_build}.go` (+ `bundle_test.go`),
+`agent/cmd/techi-rs-package/{main,main_test}.go`,
+`agent/installer/techi-policy.canary.example.json` + `.canary.README.md`;
+extended `execute.go`/`executor_windows*.go` (manifest-verified staging, MSI
+refusal), `scripts/build-native-bootstrap.sh`,
+`.github/workflows/build-native-bootstrap.yml`; backend `agent_package.py`
+(`REMOTE_SUPPORT_BUNDLE`), `agent_package_service.py` (bundle filename/version),
+`enrollment_bootstrap_service.py` (bundle-as-payload + `native_recovery_available`),
+`test_native_bootstrap_generator.py`. Docs updated.
+
+### Rezultati
+Deterministic bundle proven (identical `bundle_sha256=e1aa5097…d4d9d` across
+rebuilds); packager self-verifies via round-trip extraction. gofmt/vet clean;
+`go test ./...` green (native+cmd, incl. hostile-zip, manifest-rejection,
+round-trip, MSI-refusal); Windows+Linux cross-build green; canary policy example
+validates against Go `apply-policy`; end-to-end dry-run with the real bundle
+yields the full ordered plan. Backend generator tests 9 passed.
+
+### Mësimet
+Verify-before-promote + "no unexpected extra files" turns a tampered/partial
+bundle into a deterministic refusal instead of a broken install. The bundle
+carries only runtime files — RS identity/config/password are preserved because
+they live outside the install dir. Still: not deployed, not activated, no
+NETLOGON change, rollout disabled, `NATIVE_BOOTSTRAP_ENABLED` OFF, unsigned, and
+real Windows execution UNPROVEN (needs the one-device canary).
+
 ## [2026-07-13] ARCH (pass 2): Windows RS executor + standalone techi-bootstrap.exe + native GPO generator + CI
 
 ### Problemi

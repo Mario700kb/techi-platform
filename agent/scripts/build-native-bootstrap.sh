@@ -69,6 +69,17 @@ cat > "$OUT_DIR/identity.json" <<JSON
 }
 JSON
 
+RS_SOURCE="${RS_SOURCE:-$AGENT_DIR/installer/TECHI-Remote-Support}"
+RS_VERSION="${RS_VERSION:-1.4.6}"
+if [ -d "$RS_SOURCE" ]; then
+  echo "▶ build deterministic Remote Support native bundle ($RS_VERSION)"
+  ( cd "$AGENT_DIR" && go run ./cmd/techi-rs-package \
+      --source "$RS_SOURCE" --version "$RS_VERSION" --out "$OUT_DIR" \
+      --commit "$GIT_COMMIT" )
+else
+  echo "⚠ Remote Support source not found at $RS_SOURCE; skipping bundle build"
+fi
+
 echo "▶ validate the example policy contract with the freshly built bootstrap"
 # Cross-check the schema on the host toolchain (linux/mac) build too.
 ( cd "$AGENT_DIR" && go build -o "$OUT_DIR/.techi-bootstrap-host" ./cmd/techi-bootstrap \

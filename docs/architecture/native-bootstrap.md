@@ -13,6 +13,22 @@ Status: **foundation + Windows executor + standalone `techi-bootstrap.exe` + tra
 
 Cross-language contract is verified: the Python-generated policy validates against the Go `apply-policy` validator.
 
+## Native Remote Support bundle (pass 3)
+
+The recovery payload is a **deterministic, immutable, versioned ZIP** — never
+the MSI (the MSI's repair loop is what fails on the affected devices). It is
+built by `agent/cmd/techi-rs-package` from the authoritative source bytes
+(`agent/installer/TECHI-Remote-Support/`, the same tree the MSI wraps).
+
+- **Filename:** `TECHI-Remote-Support-<version>-windows-amd64.zip` (+ `.sha256`, `.manifest.json`, `.identity.json` sidecars).
+- **Deterministic:** sorted entries, normalized 2020-01-01 mtime, forward-slash paths, one product dir (`TECHI Remote Support/`); rebuilding yields byte-identical bytes (verified: `bundle_sha256=e1aa5097…d4d9d` for 1.4.6).
+- **Manifest** (`internal/native/bundle.go`): schema + payload-format versions, product/version/platform/arch, entrypoint, service name+args (`--service`), tray task+args (`--tray`), per-file `sha256`+size, `bundle_sha256`, build commit/timestamp, `config_paths_to_preserve`, `never_overwrite_paths`, `signing_status: unsigned`.
+- **Included:** the 97 runtime files (EXE + DLLs + `data/`). **Excluded/preserved:** RustDesk ID/config/password live *outside* the install dir (ServiceProfiles/roaming, `*.toml`) and are never bundled or overwritten.
+- **What is replaced:** the install-dir runtime files, atomically (rename promotion + backup + rollback). **What is preserved:** identity/config/password and any `never_overwrite` file.
+- **Verification before promotion** (`VerifyExtractedBundle`): every expected file present with matching size+SHA, entrypoint present, **no unexpected extra files**, no symlink/reparse, no path escape. Extraction (`ExtractZipBytesSafe`) additionally rejects `..`/absolute/UNC/drive/duplicate/symlink entries into `C:\ProgramData\TechiAgent\staging\remote-support\<version>\`, never `%TEMP%`.
+- **Backend:** new `remote_support_bundle` package type (filename↔version enforced); the generator references the bundle as the RS payload, enumerates its manifest, and **refuses/marks recovery unavailable when no active bundle exists** — the MSI is listed only as `remote_support_first_install_msi`.
+- **Canary prep:** `agent/installer/techi-policy.canary.example.json` (valid, `rollout_mode=disabled`, real bundle SHA) + `techi-policy.canary.README.md` (step-by-step, rollback = `<install-dir>.techibak`). Build all artifacts with `agent/scripts/build-native-bootstrap.sh`.
+
 ---
 
 _Original foundation notes:_

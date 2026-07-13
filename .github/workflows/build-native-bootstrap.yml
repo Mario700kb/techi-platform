@@ -54,8 +54,23 @@ jobs:
           GOOS=windows GOARCH=amd64 go build ./...
           GOOS=linux   GOARCH=amd64 go build ./...
 
-      - name: build native artifacts (bootstrap + agent + sha256 + identity)
+      - name: build native artifacts (bootstrap + agent + RS bundle + sidecars)
         run: scripts/build-native-bootstrap.sh
+
+      - name: verify Remote Support bundle (manifest + round-trip + no secrets)
+        run: |
+          set -euo pipefail
+          zip="$(ls dist/native/TECHI-Remote-Support-*-windows-amd64.zip)"
+          man="${zip%.zip}.manifest.json"
+          # bundle_sha256 in the manifest must equal the actual zip hash.
+          calc="$(sha256sum "$zip" | awk '{print $1}')"
+          decl="$(grep -o '"bundle_sha256": *"[0-9a-f]\{64\}"' "$man" | grep -o '[0-9a-f]\{64\}')"
+          [ "$calc" = "$decl" ] || { echo "❌ bundle_sha256 mismatch"; exit 1; }
+          # The manifest/zip must carry no config/identity/secret files.
+          if grep -Eqi '\.toml|id_ed25519|password|config\.json|\.log' "$man"; then
+            echo "❌ bundle manifest references a secret/config file"; exit 1
+          fi
+          echo "bundle files: $(grep -c '"path":' "$man")  sha=$calc"
 
       - name: policy schema validation
         run: |
@@ -84,4 +99,8 @@ jobs:
             agent/dist/native/techi-agent.exe
             agent/dist/native/techi-agent.exe.sha256
             agent/dist/native/identity.json
+            agent/dist/native/TECHI-Remote-Support-*-windows-amd64.zip
+            agent/dist/native/TECHI-Remote-Support-*-windows-amd64.zip.sha256
+            agent/dist/native/TECHI-Remote-Support-*-windows-amd64.manifest.json
+            agent/dist/native/TECHI-Remote-Support-*-windows-amd64.identity.json
           if-no-files-found: error
