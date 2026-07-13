@@ -18,9 +18,13 @@
 
 ## NATIVE BOOTSTRAP / UPDATE ARCHITECTURE
 
-**Status (2026-07-13): foundation landed on `stable/phase-2-heartbeat`,
-report/plan-only, NON-destructive. Not deployed, not activated, no NETLOGON
-change, `rollout_mode=disabled`.** New cross-platform decision core
+**Status (2026-07-13, pass 2): foundation + real Windows executor + standalone
+`techi-bootstrap.exe` + transitional native GPO generator + CI on
+`stable/phase-2-heartbeat`. Default NON-destructive (`--execute` required;
+native GPO path behind `NATIVE_BOOTSTRAP_ENABLED` default OFF; rollout
+disabled). Live Windows execution is compiled + fake-tested but UNPROVEN on a
+real device. Not deployed, not activated, no NETLOGON change.** New
+cross-platform decision core
 `agent/internal/native/` (policy contract with no secrets, deterministic exit
 codes, safe-path/staging guards, SHA256 payload gate, redacting logs, Agent +
 Remote Support state machines) replaces the decision logic of the ~2,600-line

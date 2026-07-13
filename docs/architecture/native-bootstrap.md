@@ -1,6 +1,21 @@
 # Native Bootstrap / Update Architecture
 
-Status: **foundation landed on `stable/phase-2-heartbeat` (report/plan-only, non-destructive). Rollout = disabled. Not deployed, not activated, no NETLOGON change.**
+Status: **foundation + Windows executor + standalone `techi-bootstrap.exe` + transitional native GPO generator + CI landed on `stable/phase-2-heartbeat`. Default non-destructive: `--execute` is required to mutate, the native GPO path is behind `NATIVE_BOOTSTRAP_ENABLED` (default OFF), and rollout stays disabled. Not deployed, not activated, no NETLOGON change. Live Windows execution is compiled + unit-tested via a fake executor but UNPROVEN on a real device.**
+
+## Components added in the second pass
+
+- `agent/internal/native/execute.go` — `Executor` interface + `ExecutePlan` orchestrator (dry-run vs `--execute`, verify-before-mutate, rollback on failed validation, one boot retry, unsafe-target refusal). Fake-tested off Windows.
+- `agent/internal/native/executor_windows*.go` — real Windows executor: exact-name SCM stop/start/delete/create, exact-image-path (not name-only) process termination via `QueryFullProcessImageName`, tray scheduled-task disable, pending-reboot + `TBD*.tmp` detection, restricted-ACL staging (`icacls` SYSTEM+Administrators), zip-slip-safe extraction, reparse-point refusal, no-TEMP execution, atomic rename promotion + rollback, one ONSTART boot-retry, `VerQueryValue` version validation, and a native state prober (`ObserveRemoteSupport`).
+- `agent/internal/native/executor_other.go` — non-Windows stub: every mutating primitive returns `ErrNotWindows`; pure payload verify still runs.
+- `agent/cmd/techi-bootstrap/` — the standalone `techi-bootstrap.exe`: `apply-policy` / `repair-remote-support`, `--dry-run`/`--execute`, `--json`, reuses `internal/native`, does **not** depend on `techi-agent.exe` to orchestrate.
+- Backend `EnrollmentBootstrapService.build_native_policy` / `build_native_bootstrap` (+ `NativeBootstrapArtifacts` schema, `NATIVE_BOOTSTRAP_ENABLED` flag) — publishes `techi-policy.json` + artifact manifest + a **local-copy-first** direct native Scheduled Task, alongside (not replacing) the legacy CMD.
+- `agent/scripts/build-native-bootstrap.sh` + `.github/workflows/build-native-bootstrap.yml` — build bootstrap+agent, SHA256 sidecars, `identity.json` (`signed:false`), policy-schema validation, unsigned/signed status, mandatory-signing gate scaffold (`REQUIRE_SIGNED`).
+
+Cross-language contract is verified: the Python-generated policy validates against the Go `apply-policy` validator.
+
+---
+
+_Original foundation notes:_
 
 ## Why
 

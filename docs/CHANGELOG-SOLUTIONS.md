@@ -27,6 +27,63 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-13] ARCH (pass 2): Windows RS executor + standalone techi-bootstrap.exe + native GPO generator + CI
+
+### Problemi
+The pass-1 foundation was planner/dry-run only: no live Windows SCM/process/
+file/ACL/promotion execution, no standalone bootstrap binary, no native GPO
+artifacts, so no one-device recovery canary was even technically possible.
+
+### Zgjidhja
+Implemented the real Windows executor behind the pure planner (`Executor`
+interface + `ExecutePlan` orchestrator, fake-tested off Windows): exact-name SCM
+stop/start/delete/create, exact-image-path process termination (never name-only
+taskkill), tray scheduled-task disable, pending-reboot/`TBD*.tmp` detection,
+restricted-ACL staging, zip-slip-safe extraction, reparse-point refusal, no-TEMP
+execution, atomic rename promotion + rollback, exactly one ONSTART boot retry,
+and version validation. Added standalone `techi-bootstrap.exe`
+(`agent/cmd/techi-bootstrap`) exposing `apply-policy` / `repair-remote-support`
+with `--dry-run`/`--execute`, reusing `internal/native`, independent of
+`techi-agent.exe`. Added the transitional native GPO generator
+(`build_native_policy` / `build_native_bootstrap`, `NativeBootstrapArtifacts`,
+`NATIVE_BOOTSTRAP_ENABLED` flag default OFF) publishing `techi-policy.json` + an
+artifact manifest + a local-copy-first direct native Scheduled Task, alongside
+the untouched legacy CMD fallback. Added a build script (bootstrap+agent, SHA256
+sidecars, `identity.json` signed:false, signing-gate scaffold) and a CI
+workflow.
+
+### Shkaku (payload format)
+Remote Support is a 68 MB native bundle, so recovery promotes a verified
+bundle/ZIP atomically; the MSI stays a first-install fallback only, never the
+recovery primitive for the affected state.
+
+### Ndryshimet
+Added `agent/internal/native/{execute,executor_windows,executor_windows_fs,
+executor_windows_observe,executor_other}.go` (+ execute/executor tests),
+`agent/cmd/techi-bootstrap/{main,observation,main_test}.go`,
+`agent/scripts/build-native-bootstrap.sh`,
+`.github/workflows/build-native-bootstrap.yml`,
+`backend/app/schemas/enrollment_bootstrap.py` (`NativeBootstrapArtifacts`),
+`backend/app/core/config.py` (`NATIVE_BOOTSTRAP_ENABLED`),
+`backend/app/services/enrollment_bootstrap_service.py` (native builders + GPO
+wiring), `backend/tests/test_native_bootstrap_generator.py`. Docs updated.
+
+### Rezultati
+gofmt/vet clean; `go test ./...` green (main + native + cmd); Windows+Linux
+cross-build green; native build script emits bootstrap/agent + SHA256 +
+identity.json; Python-generated policy validates against the Go `apply-policy`
+validator; full preflight PASSED (backend 840 passed / 4 known-baseline failed,
+frontend build OK, agent OK).
+
+### Mësimet
+The live executor is compiled and fully unit-tested through a fake, but its real
+Windows side effects (SCM, exact-PID kill, atomic promotion, ACL, boot retry,
+version-info read) are UNPROVEN on a real device and need a one-device canary.
+The affected devices can now be repaired one at a time **once** a native RS
+bundle/ZIP payload is published (the active RS artifact is still an MSI) and the
+canary passes. Still: not deployed, not activated, no NETLOGON change, rollout
+disabled, `NATIVE_BOOTSTRAP_ENABLED` OFF, no signing.
+
 ## [2026-07-13] ARCH: native bootstrap/update foundation + Remote Support recovery planner (source-only, disabled)
 
 ### Problemi

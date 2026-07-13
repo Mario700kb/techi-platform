@@ -1,0 +1,87 @@
+name: build-native-bootstrap
+
+# Builds and verifies the native bootstrap/update architecture
+# (docs/architecture/native-bootstrap.md). It does NOT sign, publish, activate,
+# or deploy anything — it proves the source builds, tests pass, the policy
+# schema is honoured, and it emits identity metadata with an explicit
+# signed:false status so a later release gate can refuse unsigned binaries once
+# signing becomes mandatory.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "agent/**"
+      - ".github/workflows/build-native-bootstrap.yml"
+  pull_request:
+    paths:
+      - "agent/**"
+      - ".github/workflows/build-native-bootstrap.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache-dependency-path: agent/go.sum
+
+      - name: gofmt (must be clean)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "❌ gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: windows + linux cross-build
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=linux   GOARCH=amd64 go build ./...
+
+      - name: build native artifacts (bootstrap + agent + sha256 + identity)
+        run: scripts/build-native-bootstrap.sh
+
+      - name: policy schema validation
+        run: |
+          go build -o /tmp/techi-bootstrap-host ./cmd/techi-bootstrap
+          /tmp/techi-bootstrap-host apply-policy \
+            --policy installer/techi-policy.example.json --json
+          # Reject a policy that carries a secret-looking field.
+          if grep -qi 'enrollment_token\|password\|api_secret' installer/techi-policy.example.json; then
+            echo "❌ example policy leaked a secret field"; exit 1
+          fi
+
+      - name: signing gate scaffold (informational until signing is mandatory)
+        run: |
+          echo "signing_status=$(grep -o '\"signing_status\": *\"[^\"]*\"' dist/native/identity.json || true)"
+          # To enforce later: set REQUIRE_SIGNED=1 and this build fails while
+          # binaries are unsigned. Signing is NOT implemented yet.
+          echo "REQUIRE_SIGNED is currently ${REQUIRE_SIGNED:-0}"
+
+      - name: upload native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: techi-native-bootstrap
+          path: |
+            agent/dist/native/techi-bootstrap.exe
+            agent/dist/native/techi-bootstrap.exe.sha256
+            agent/dist/native/techi-agent.exe
+            agent/dist/native/techi-agent.exe.sha256
+            agent/dist/native/identity.json
+          if-no-files-found: error
