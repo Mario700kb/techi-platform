@@ -101,9 +101,13 @@ class ConnectUrlResponse(BaseModel):
 
 class RemoteSupportPasswordResponse(BaseModel):
     device_id: int
-    password: str
+    password: Optional[str] = None
     source: Optional[str] = None
     updated_at: Optional[datetime] = None
+    desired_generation: int = 0
+    applied_generation: int = 0
+    apply_status: str = "unknown"
+    failure_reason: Optional[str] = None
 
 
 class SetRemoteSupportPasswordRequest(BaseModel):
@@ -144,20 +148,6 @@ def _build_connect_url(remote_id: str, password: Optional[str]) -> str:
     return connect_url
 
 
-def _agent_applies_per_device_password(device: Device) -> bool:
-    """Only >= 2.1.5 agents apply the server's per-device password to RustDesk.
-    Older agents still hold the legacy shared password, so connecting to them
-    must use that during the rollout — otherwise remote access breaks fleet-wide
-    until every device is upgraded."""
-    parts = []
-    for piece in (getattr(device, "agent_version", None) or "").strip().lstrip("vV").split("."):
-        digits = "".join(ch for ch in piece if ch.isdigit())
-        if not digits:
-            return False
-        parts.append(int(digits))
-    return tuple(parts) >= (2, 1, 5)
-
-
 def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlResponse:
     remote_id = (device.rustdesk_id or "").strip()
     if not remote_id:
@@ -165,14 +155,14 @@ def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlR
             status_code=422,
             detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
         )
-    if _agent_applies_per_device_password(device):
-        # Server-authoritative per-device password. The agent applies exactly
-        # this value to RustDesk every heartbeat — no fleet-wide shared secret.
-        password = RemoteSupportPasswordService(db).get_or_create(device)
-    else:
-        # Transition fallback for agents < 2.1.5 that still hold the legacy
-        # shared password. Automatically retired once the fleet is upgraded.
-        password = settings.RUSTDESK_DEFAULT_PASSWORD
+    if device.remote_support_apply_status != "applied":
+        raise HTTPException(
+            status_code=409,
+            detail="Remote Support credential is not confirmed applied on this device",
+        )
+    password = RemoteSupportPasswordService(db).get_active_plaintext(device)
+    if not password or device.remote_support_active_generation != device.remote_support_applied_generation:
+        raise HTTPException(status_code=409, detail="Remote Support credential state is inconsistent")
     return ConnectUrlResponse(
         device_id=device.id,
         techi_remote_id=remote_id,
@@ -324,7 +314,9 @@ def get_remote_support_password(
     Owner/admin only — operators must not see the plaintext password."""
     device = _get_device(device_id, db, scope)
     svc = RemoteSupportPasswordService(db)
-    password = svc.get_or_create(device)
+    password = svc.get_active_plaintext(device)
+    if not password:
+        raise HTTPException(status_code=409, detail="No confirmed applied Remote Support credential is available")
     audit_log(
         db,
         operator=operator,
@@ -338,6 +330,10 @@ def get_remote_support_password(
         password=password,
         source=device.remote_support_password_source,
         updated_at=device.remote_support_password_updated_at,
+        desired_generation=device.remote_support_desired_generation or 0,
+        applied_generation=device.remote_support_applied_generation or 0,
+        apply_status=device.remote_support_apply_status or "unknown",
+        failure_reason=device.remote_support_failure_reason,
     )
 
 
@@ -350,8 +346,7 @@ def set_remote_support_password(
     device_id: int,
     body: SetRemoteSupportPasswordRequest,
 ):
-    """Set a custom per-device password. The >= 2.1.5 agent applies it on the
-    next heartbeat; connect-url returns it immediately."""
+    """Create a desired custom generation. It is not active until Agent ACK."""
     device = _get_device(device_id, db, scope)
     svc = RemoteSupportPasswordService(db)
     try:
@@ -368,7 +363,10 @@ def set_remote_support_password(
     )
     return RemoteSupportPasswordResponse(
         device_id=device.id, password=password, source="custom",
-        updated_at=device.remote_support_password_updated_at,
+        updated_at=device.remote_support_desired_created_at,
+        desired_generation=device.remote_support_desired_generation,
+        applied_generation=device.remote_support_applied_generation,
+        apply_status=device.remote_support_apply_status,
     )
 
 
@@ -394,7 +392,10 @@ def regenerate_remote_support_password(
     )
     return RemoteSupportPasswordResponse(
         device_id=device.id, password=password, source="generated",
-        updated_at=device.remote_support_password_updated_at,
+        updated_at=device.remote_support_desired_created_at,
+        desired_generation=device.remote_support_desired_generation,
+        applied_generation=device.remote_support_applied_generation,
+        apply_status=device.remote_support_apply_status,
     )
 
 

@@ -152,9 +152,14 @@ async def agent_heartbeat(
     pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
     interval = _cfg_svc.get_heartbeat_interval(payload.platform)
 
-    # Server-authoritative per-device RS password. Generated on first use and
-    # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it.
-    rs_password = RemoteSupportPasswordService(db).get_or_create(device)
+    credential_service = RemoteSupportPasswordService(db)
+    credential_service.process_ack(device, payload.remote_support_credential_ack)
+    credential_delivery = credential_service.pending_delivery(device)
+    platform = (payload.platform or "").strip().lower()
+    remote_support_present = payload.rustdesk_install_status != "not_installed"
+    if credential_delivery is None and platform == "windows" and remote_support_present:
+        if device.remote_support_apply_status in ("unknown", "unsupported_legacy"):
+            credential_delivery = credential_service.ensure_desired(device)
 
     return {
         "device_id": device.id,
@@ -167,5 +172,5 @@ async def agent_heartbeat(
         "pending_actions": [a.model_dump() for a in pending_actions],
         "heartbeat_interval_seconds": interval,
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
-        "remote_support_password": rs_password,
+        "remote_support_credential": credential_delivery.__dict__ if credential_delivery else None,
     }

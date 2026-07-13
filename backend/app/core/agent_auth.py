@@ -87,6 +87,8 @@ def issue_agent_credential(device: Device) -> str:
     device.agent_auth_revoked_at = None
     device.agent_auth_last_timestamp_ms = None
     device.agent_auth_last_nonce = None
+    if device.remote_support_apply_status in (None, "unsupported_legacy"):
+        device.remote_support_apply_status = "unknown"
     return credential
 
 

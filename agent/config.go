@@ -39,6 +39,11 @@ type Config struct {
 	RustDeskAPIServer         string `json:"rustdesk_api_server,omitempty"`
 	RustDeskKey               string `json:"rustdesk_key,omitempty"`
 	RustDeskDefaultPassword   string `json:"rustdesk_default_password,omitempty"`
+	RustDeskCredentialGen     int    `json:"rustdesk_credential_generation,omitempty"`
+	RustDeskAckGeneration     int    `json:"rustdesk_ack_generation,omitempty"`
+	RustDeskAckStatus         string `json:"rustdesk_ack_status,omitempty"`
+	RustDeskAckFingerprint    string `json:"rustdesk_ack_fingerprint,omitempty"`
+	RustDeskAckError          string `json:"rustdesk_ack_error,omitempty"`
 	RustDeskMSIChecksumSHA256 string `json:"rustdesk_msi_checksum_sha256,omitempty"`
 	RustDeskPackageVersion    string `json:"rustdesk_package_version,omitempty"`
 	RustDeskLastRepairAt      string `json:"rustdesk_last_repair_at,omitempty"`

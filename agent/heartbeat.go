@@ -44,31 +44,32 @@ type HeartbeatPayload struct {
 	RAM                string `json:"ram"`
 	Storage            string `json:"storage"`
 	// Platform Expansion additive fields — omitempty; empty on Windows.
-	FQDN                  string         `json:"fqdn,omitempty"`
-	KernelVersion         string         `json:"kernel_version,omitempty"`
-	Architecture          string         `json:"architecture,omitempty"`
-	MACAddress            string         `json:"mac_address,omitempty"`
-	Timezone              string         `json:"timezone,omitempty"`
-	LastBootAt            string         `json:"last_boot_at,omitempty"`
-	Capabilities          []string       `json:"capabilities,omitempty"`
-	RustDeskInstallStatus string         `json:"rustdesk_install_status"`
-	RustDeskStatus        string         `json:"rustdesk_status"`
-	RustDeskVersion       string         `json:"rustdesk_version"`
-	RustDeskInstallPath   string         `json:"rustdesk_install_path"`
-	RustDeskSyncStatus    string         `json:"rustdesk_sync_status,omitempty"`
-	RustDeskLastRepairAt  string         `json:"rustdesk_last_repair_at,omitempty"`
-	RustDeskRepairCount   int            `json:"rustdesk_repair_count,omitempty"`
-	CPUPercent            float64        `json:"cpu_percent"`
-	RAMPercent            float64        `json:"ram_percent"`
-	DiskPercent           float64        `json:"disk_percent"`
-	UptimeSeconds         uint64         `json:"uptime_seconds"`
-	HeartbeatLatencyMs    int64          `json:"heartbeat_latency_ms"`
-	Processes             []ProcessInfo  `json:"processes,omitempty"`
-	Services              []ServiceInfo  `json:"services,omitempty"`
-	Software              []SoftwareInfo `json:"software,omitempty"`
-	PatchStatus           *PatchStatus   `json:"patch_status,omitempty"`
-	AgentVersion          string         `json:"agent_version,omitempty"`
-	AgentSHA256           string         `json:"agent_sha256,omitempty"`
+	FQDN                       string                      `json:"fqdn,omitempty"`
+	KernelVersion              string                      `json:"kernel_version,omitempty"`
+	Architecture               string                      `json:"architecture,omitempty"`
+	MACAddress                 string                      `json:"mac_address,omitempty"`
+	Timezone                   string                      `json:"timezone,omitempty"`
+	LastBootAt                 string                      `json:"last_boot_at,omitempty"`
+	Capabilities               []string                    `json:"capabilities,omitempty"`
+	RustDeskInstallStatus      string                      `json:"rustdesk_install_status"`
+	RustDeskStatus             string                      `json:"rustdesk_status"`
+	RustDeskVersion            string                      `json:"rustdesk_version"`
+	RustDeskInstallPath        string                      `json:"rustdesk_install_path"`
+	RustDeskSyncStatus         string                      `json:"rustdesk_sync_status,omitempty"`
+	RustDeskLastRepairAt       string                      `json:"rustdesk_last_repair_at,omitempty"`
+	RustDeskRepairCount        int                         `json:"rustdesk_repair_count,omitempty"`
+	CPUPercent                 float64                     `json:"cpu_percent"`
+	RAMPercent                 float64                     `json:"ram_percent"`
+	DiskPercent                float64                     `json:"disk_percent"`
+	UptimeSeconds              uint64                      `json:"uptime_seconds"`
+	HeartbeatLatencyMs         int64                       `json:"heartbeat_latency_ms"`
+	Processes                  []ProcessInfo               `json:"processes,omitempty"`
+	Services                   []ServiceInfo               `json:"services,omitempty"`
+	Software                   []SoftwareInfo              `json:"software,omitempty"`
+	PatchStatus                *PatchStatus                `json:"patch_status,omitempty"`
+	AgentVersion               string                      `json:"agent_version,omitempty"`
+	AgentSHA256                string                      `json:"agent_sha256,omitempty"`
+	RemoteSupportCredentialAck *RemoteSupportCredentialAck `json:"remote_support_credential_ack,omitempty"`
 }
 
 func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, tel *Telemetry, procs []ProcessInfo, svcs []ServiceInfo, software []SoftwareInfo, patchStatus *PatchStatus) *HeartbeatPayload {
@@ -125,6 +126,14 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 	}
 	p.AgentVersion = AgentVersion
 	p.AgentSHA256 = currentAgentSHA256()
+	if cfg.RustDeskAckGeneration > 0 && (cfg.RustDeskAckStatus == "applied" || cfg.RustDeskAckStatus == "failed") {
+		p.RemoteSupportCredentialAck = &RemoteSupportCredentialAck{
+			Generation:  cfg.RustDeskAckGeneration,
+			Status:      cfg.RustDeskAckStatus,
+			Fingerprint: cfg.RustDeskAckFingerprint,
+			Error:       cfg.RustDeskAckError,
+		}
+	}
 	return p
 }
 

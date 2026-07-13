@@ -1,10 +1,24 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.device import DeviceStatus, DeviceType
 from app.schemas.remote_action import PendingActionDelivery
+
+
+class RemoteSupportCredentialAck(BaseModel):
+    generation: int = Field(ge=1)
+    status: Literal["applied", "failed"]
+    fingerprint: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    error: Optional[str] = Field(default=None, max_length=255)
+
+
+class RemoteSupportCredentialDelivery(BaseModel):
+    generation: int
+    password: str
+    source: Literal["generated", "custom"]
+    verification_key: str
 
 
 class AgentHeartbeatPayload(BaseModel):
@@ -59,6 +73,7 @@ class AgentHeartbeatPayload(BaseModel):
     agent_version: Optional[str] = None
     agent_sha256: Optional[str] = None
     rustdesk_sync_status: Optional[str] = None
+    remote_support_credential_ack: Optional[RemoteSupportCredentialAck] = None
 
 
 class DeviceHeartbeatCreate(BaseModel):
@@ -108,11 +123,8 @@ class AgentHeartbeatResponse(BaseModel):
     pending_actions: List[PendingActionDelivery] = []
     heartbeat_interval_seconds: Optional[int] = None
     agent_update: Optional[AgentUpdateInfo] = None
-    # Per-device TECHI Remote Support password the agent must apply to RustDesk
-    # (>= 2.1.5). Replaces the fleet-wide default. Sent every heartbeat so a
-    # wiped RS config self-heals to the server-authoritative value.
-    remote_support_password: Optional[str] = None
     authentication_required: bool = False
+    remote_support_credential: Optional[RemoteSupportCredentialDelivery] = None
 
 
 class AgentEnrollmentRequest(BaseModel):

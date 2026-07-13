@@ -53,6 +53,20 @@ DEVICE_COLUMNS = {
     "agent_auth_revoked_at": "DATETIME",
     "agent_auth_last_timestamp_ms": "BIGINT",
     "agent_auth_last_nonce": "VARCHAR(64)",
+    "remote_support_active_generation": "INTEGER NOT NULL DEFAULT 0",
+    "remote_support_desired_generation": "INTEGER NOT NULL DEFAULT 0",
+    "remote_support_desired_password_ciphertext": "TEXT",
+    "remote_support_desired_password_wrapped_dek": "TEXT",
+    "remote_support_desired_source": "VARCHAR(16)",
+    "remote_support_desired_created_at": "DATETIME",
+    "remote_support_verification_key_ciphertext": "TEXT",
+    "remote_support_verification_key_wrapped_dek": "TEXT",
+    "remote_support_expected_fingerprint": "VARCHAR(64)",
+    "remote_support_applied_generation": "INTEGER NOT NULL DEFAULT 0",
+    "remote_support_applied_at": "DATETIME",
+    "remote_support_applied_fingerprint": "VARCHAR(64)",
+    "remote_support_apply_status": "VARCHAR(32) NOT NULL DEFAULT 'unsupported_legacy'",
+    "remote_support_failure_reason": "VARCHAR(255)",
 }
 
 HEARTBEAT_COLUMNS = {

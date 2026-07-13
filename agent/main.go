@@ -212,17 +212,28 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)
-
-	// Adopt the server-authoritative per-device RS password. Persisting it into
-	// cfg.RustDeskDefaultPassword means the RustDesk management loop applies THIS
-	// value (not the old fleet-wide default) on the next cycle, and it survives
-	// restarts. applyRemoteSupportPassword also sets it on RS immediately.
-	if pw := strings.TrimSpace(hbResp.RemoteSupportPassword); pw != "" && pw != cfg.RustDeskDefaultPassword {
-		cfg.RustDeskDefaultPassword = pw
-		if err := saveConfig(configPath, cfg); err != nil {
-			log.Printf("[rustdesk_manage] persist per-device password failed: %v", err)
+	if desired := hbResp.RemoteSupportCredential; desired != nil && desired.Generation > cfg.RustDeskCredentialGen {
+		applyErr := applyRemoteSupportCredential(desired.Password)
+		cfg.RustDeskAckGeneration = desired.Generation
+		cfg.RustDeskAckFingerprint = ""
+		cfg.RustDeskAckError = ""
+		if applyErr != nil {
+			cfg.RustDeskAckStatus = "failed"
+			cfg.RustDeskAckError = sanitizeCredentialApplyError(applyErr)
+		} else if fingerprint, fpErr := remoteSupportCredentialFingerprint(
+			desired.VerificationKey, cfg.DeviceID, desired.Generation, desired.Password,
+		); fpErr != nil {
+			cfg.RustDeskAckStatus = "failed"
+			cfg.RustDeskAckError = "credential fingerprint failed"
+		} else {
+			cfg.RustDeskDefaultPassword = desired.Password
+			cfg.RustDeskCredentialGen = desired.Generation
+			cfg.RustDeskAckStatus = "applied"
+			cfg.RustDeskAckFingerprint = fingerprint
 		}
-		applyRemoteSupportPassword(pw)
+		if err := saveConfig(configPath, cfg); err != nil {
+			log.Printf("[rustdesk_manage] persist credential acknowledgement failed: %v", err)
+		}
 	}
 
 	// Apply dynamic interval from server response (change_heartbeat_interval action
