@@ -34,7 +34,7 @@ func (f *fakeExecutor) StopProcessExact(exe string, _ time.Duration) error {
 }
 func (f *fakeExecutor) RemoveStaleService(string) error { return f.note("RemoveStaleService") }
 func (f *fakeExecutor) CleanupTmp(string) error         { return f.note("CleanupTmp") }
-func (f *fakeExecutor) StagePayload(string, string) error {
+func (f *fakeExecutor) StagePayload(string, string, string) error {
 	return f.note("StagePayload")
 }
 func (f *fakeExecutor) PromoteFiles(string, string) error { return f.note("PromoteFiles") }
@@ -197,6 +197,21 @@ func TestExecute_RefusesUnsafeInstallTarget(t *testing.T) {
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("unsafe target must abort before any primitive: %v", f.calls)
+	}
+}
+
+func TestExecute_RefusesMSIPayload(t *testing.T) {
+	// The native recovery must never accept the MSI as its payload.
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	p := safeParams()
+	p.PayloadPath = `C:\ProgramData\TechiAgent\payloads\TECHI-Remote-Support-1.4.6.msi`
+	f := newFake()
+	r := ExecutePlan(plan, p, f, true)
+	if r.Code != ExitBadArgs {
+		t.Fatalf("MSI payload must be refused (ExitBadArgs), got %v", r.Code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("MSI refusal must abort before any primitive: %v", f.calls)
 	}
 }
 

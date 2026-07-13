@@ -28,7 +28,7 @@ func (stubExecutor) StopTray(string) error                        { return ErrNo
 func (stubExecutor) StopProcessExact(string, time.Duration) error { return ErrNotWindows }
 func (stubExecutor) RemoveStaleService(string) error              { return ErrNotWindows }
 func (stubExecutor) CleanupTmp(string) error                      { return ErrNotWindows }
-func (stubExecutor) StagePayload(string, string) error            { return ErrNotWindows }
+func (stubExecutor) StagePayload(string, string, string) error    { return ErrNotWindows }
 func (stubExecutor) PromoteFiles(string, string) error            { return ErrNotWindows }
 func (stubExecutor) RestoreConfig(string) error                   { return ErrNotWindows }
 func (stubExecutor) CreateService(string, string) error           { return ErrNotWindows }

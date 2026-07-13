@@ -3,9 +3,7 @@
 package native
 
 import (
-	"archive/zip"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,113 +12,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// extractZipSafe extracts src into dest with zip-slip protection (every entry
-// must resolve under dest via SafeJoinUnder) and reparse-point rejection. It
-// never sets executable-from-TEMP: dest is an already-safe staging dir.
-func extractZipSafe(src, dest string) error {
-	zr, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer zr.Close()
-	for _, f := range zr.File {
-		// Reject absolute/escape/UNC names outright.
-		target, err := SafeJoinUnder(dest, f.Name)
-		if err != nil {
-			return fmt.Errorf("unsafe zip entry %q: %w", f.Name, err)
-		}
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0o700); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return err
-		}
-		if isReparsePoint(filepath.Dir(target)) {
-			return fmt.Errorf("refusing to write through a reparse point: %s", target)
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-		if err != nil {
-			rc.Close()
-			return err
-		}
-		// Bound decompression to a sane per-file cap to resist zip bombs.
-		if _, err := io.Copy(out, io.LimitReader(rc, 512<<20)); err != nil {
-			out.Close()
-			rc.Close()
-			return err
-		}
-		out.Close()
-		rc.Close()
-	}
-	return nil
-}
-
-// copyTreeSafe copies a directory payload into dest, guarding every path with
-// SafeJoinUnder and skipping reparse points.
-func copyTreeSafe(src, dest string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		// Single-file payload: copy under dest by base name.
-		target, err := SafeJoinUnder(dest, filepath.Base(src))
-		if err != nil {
-			return err
-		}
-		return copyFile(src, target)
-	}
-	return filepath.Walk(src, func(path string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if fi.Mode()&os.ModeSymlink != 0 || isReparsePoint(path) {
-			return nil // never copy through reparse points
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		target, err := SafeJoinUnder(dest, rel)
-		if err != nil {
-			return err
-		}
-		if fi.IsDir() {
-			return os.MkdirAll(target, 0o700)
-		}
-		return copyFile(path, target)
-	})
-}
-
-func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		return err
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
-}
+// The safe zip extraction lives in bundle.go (ExtractZipFileSafe) so the
+// packager and executor share one hardened extractor. This file keeps only the
+// Windows-specific ACL restriction and hidden-exec helpers.
 
 // restrictACL restricts dir to SYSTEM + Administrators using icacls (a standard
 // Windows tool; no PowerShell -EncodedCommand). Inheritance is removed so the

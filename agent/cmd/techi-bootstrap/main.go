@@ -78,19 +78,25 @@ func (f *rsFlags) params(policy *native.Policy) native.ExecuteParams {
 	}
 	artifactDir := *f.artifactDir
 	payload := filepath.Join(artifactDir, policy.RemoteSupport.PayloadFilename)
+	// The manifest sidecar sits next to the .zip: <base>.manifest.json.
+	manifest := ""
+	if strings.HasSuffix(strings.ToLower(payload), ".zip") {
+		manifest = strings.TrimSuffix(payload, filepath.Ext(payload)) + ".manifest.json"
+	}
 	return native.ExecuteParams{
-		Component:       "remote_support",
-		ServiceName:     *f.service,
-		InstallDir:      installDir,
-		ExpectedExePath: exe,
-		ExpectedVersion: policy.RemoteSupport.TargetVersion,
-		PayloadPath:     payload,
-		PayloadSHA:      policy.RemoteSupport.SHA256,
-		StagingRoot:     *f.stagingRoot,
-		BackupRoot:      *f.backupRoot,
-		TrayTaskName:    *f.trayTask,
-		BootRetryCmd:    selfBootRetryCommand(),
-		ProcessWait:     20 * time.Second,
+		Component:          "remote_support",
+		ServiceName:        *f.service,
+		InstallDir:         installDir,
+		ExpectedExePath:    exe,
+		ExpectedVersion:    policy.RemoteSupport.TargetVersion,
+		PayloadPath:        payload,
+		PayloadSHA:         policy.RemoteSupport.SHA256,
+		BundleManifestPath: manifest,
+		StagingRoot:        *f.stagingRoot,
+		BackupRoot:         *f.backupRoot,
+		TrayTaskName:       *f.trayTask,
+		BootRetryCmd:       selfBootRetryCommand(),
+		ProcessWait:        20 * time.Second,
 	}
 }
 

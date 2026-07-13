@@ -30,8 +30,10 @@ type Executor interface {
 	RemoveStaleService(name string) error
 	// CleanupTmp removes leftover TBD*.tmp only within installDir.
 	CleanupTmp(installDir string) error
-	// StagePayload expands/copies the verified bundle into stagingDir.
-	StagePayload(payloadPath, stagingDir string) error
+	// StagePayload expands the verified bundle into stagingDir and, when
+	// manifestPath is set, validates every extracted file against the manifest
+	// before returning (so a mismatched bundle never reaches promotion).
+	StagePayload(payloadPath, stagingDir, manifestPath string) error
 	// PromoteFiles atomically moves staged files into installDir, taking a
 	// backup first so Rollback can undo it.
 	PromoteFiles(stagingDir, installDir string) error
@@ -71,6 +73,10 @@ type ExecuteParams struct {
 	// BackupRoot is where PromoteFiles stashes the pre-promotion install dir so
 	// Rollback can restore it. Must be a safe, restricted directory.
 	BackupRoot string
+	// BundleManifestPath is the manifest sidecar next to the .zip payload. When
+	// set, StagePayload verifies every extracted file against it before any
+	// promotion. Empty disables manifest verification (plain copy payloads).
+	BundleManifestPath string
 }
 
 // ExecutePlan drives an ordered RecoveryPlan through an Executor. In dry-run it
@@ -102,6 +108,18 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 		out.Planned = r.Planned
 		out.DryRun = !execute
 		out.Message = "refused unsafe install target: " + p.InstallDir
+		return out
+	}
+
+	// The native RS recovery payload MUST be a bundle/ZIP — never the MSI. This
+	// refuses the failing MSI repair path outright before any mutation.
+	if anyAction(plan.Actions, ActStagePayload) && !IsNativeBundleFilename(p.PayloadPath) {
+		out := NewResult("repair-remote-support", ExitBadArgs)
+		out.Component = "remote_support"
+		out.Classify = string(plan.Classification)
+		out.Planned = r.Planned
+		out.DryRun = !execute
+		out.Message = "native recovery payload must be a .zip bundle, not " + p.PayloadPath
 		return out
 	}
 
@@ -152,7 +170,7 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 		case ActCleanupTmp:
 			err = exec.CleanupTmp(p.InstallDir)
 		case ActStagePayload:
-			err = exec.StagePayload(p.PayloadPath, stagingDir)
+			err = exec.StagePayload(p.PayloadPath, stagingDir, p.BundleManifestPath)
 		case ActPromoteFiles:
 			if err = exec.PromoteFiles(stagingDir, p.InstallDir); err == nil {
 				promoted = true
@@ -180,6 +198,15 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 
 	r.OK = plan.FinalCode == ExitOK
 	return r
+}
+
+func anyAction(actions []ActionType, want ActionType) bool {
+	for _, a := range actions {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func actionNames(actions []ActionType) []string {

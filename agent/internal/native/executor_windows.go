@@ -249,19 +249,34 @@ func (windowsExecutor) CleanupTmp(installDir string) error {
 
 // --- staging + atomic promotion + rollback --------------------------------
 
-func (windowsExecutor) StagePayload(payloadPath, stagingDir string) error {
+func (windowsExecutor) StagePayload(payloadPath, stagingDir, manifestPath string) error {
+	// Refuse an MSI as the native recovery payload — the MSI repair loop is
+	// exactly what fails on the affected devices.
+	if !IsNativeBundleFilename(payloadPath) {
+		return fmt.Errorf("native payload must be a .zip bundle, not %s", payloadPath)
+	}
 	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
 		return err
 	}
 	if err := restrictACL(stagingDir); err != nil {
 		return err
 	}
-	// The approved RS payload is a native bundle delivered as a .zip; extract it
-	// with zip-slip and reparse protection. A raw directory payload is copied.
-	if strings.HasSuffix(strings.ToLower(payloadPath), ".zip") {
-		return extractZipSafe(payloadPath, stagingDir)
+	// Extract the native bundle with the shared hardened extractor (zip-slip,
+	// duplicate, symlink, reparse protection).
+	if err := ExtractZipFileSafe(payloadPath, stagingDir); err != nil {
+		return err
 	}
-	return copyTreeSafe(payloadPath, stagingDir)
+	// Validate EVERY extracted file against the manifest before promotion.
+	if strings.TrimSpace(manifestPath) != "" {
+		m, err := LoadBundleManifest(manifestPath)
+		if err != nil {
+			return err
+		}
+		if err := VerifyExtractedBundle(stagingDir, m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (windowsExecutor) PromoteFiles(stagingDir, installDir string) error {
