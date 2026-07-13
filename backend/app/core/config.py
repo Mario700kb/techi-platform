@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     # Default "disabled": no forced rollout without an explicit operator decision.
     AGENT_ROLLOUT_MODE: str = "disabled"
 
+    # Transitional native bootstrap/update architecture
+    # (docs/architecture/native-bootstrap.md). When True, the GPO generator ALSO
+    # publishes the native techi-bootstrap.exe + techi-policy.json artifacts and a
+    # Scheduled Task that calls the native bootstrap directly, instead of only the
+    # large generated CMD (which remains as the fallback). This is the "native
+    # path" feature flag; it is independent of AGENT_ROLLOUT_MODE, which stays the
+    # mutation gate. Default False: the native path is dark until a canary.
+    NATIVE_BOOTSTRAP_ENABLED: bool = False
+
     # Enterprise Credential Vault (Phase 4). Key lives OUTSIDE repo/DB; in the
     # backend container "data/" is the backend_data volume (same as agent_policy).
     VAULT_MASTER_KEY_FILE: str = "data/vault_master.key"

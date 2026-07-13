@@ -13,6 +13,7 @@ from app.schemas.enrollment_bootstrap import (
     EnrollmentBootstrapPlatform,
     EnrollmentBootstrapRequest,
     EnrollmentBootstrapResponse,
+    NativeBootstrapArtifacts,
 )
 from app.services.agent_package_service import AgentPackageService
 from app.services.enrollment_token_service import EnrollmentTokenService
@@ -375,6 +376,13 @@ class EnrollmentBootstrapService:
             "(TRUSTED_DOMAIN_AUTO_ENROLLMENT=true required). "
             "WORKGROUP machines will not enroll via GPO — use Token Enrollment for those."
         )
+        # Transitional native path: when the feature flag is on, ALSO publish the
+        # native bootstrap + policy artifacts and a direct native Scheduled Task.
+        # The legacy CMD path above is untouched and remains the fallback.
+        native = None
+        if getattr(settings, "NATIVE_BOOTSTRAP_ENABLED", False):
+            native = self.build_native_bootstrap(backend_url)
+
         return EnrollmentBootstrapResponse(
             mode=payload.mode,
             enrollment_token_id=None,
@@ -385,6 +393,7 @@ class EnrollmentBootstrapService:
             config_template=config_template,
             preproduction_notice=notice,
             installer_filename="techi-gpo-bootstrap.ps1",
+            native_bootstrap=native,
         )
 
     # ─── Config template (JSON) ───────────────────────────────────────────────
@@ -1276,6 +1285,114 @@ class EnrollmentBootstrapService:
         if mode not in ("disabled", "canary", "enabled"):
             mode = "disabled"
         return mode
+
+    # ─── Transitional native bootstrap (docs/architecture/native-bootstrap.md) ──
+
+    # Where the GPO stages the native bootstrap + policy locally before running
+    # them. Local-copy-first (below) is preferred over executing straight off the
+    # network share.
+    NATIVE_LOCAL_DIR = r"C:\ProgramData\TechiAgent\bootstrap"
+
+    @staticmethod
+    def _active_package(file_type: str):
+        return AgentPackageService().latest_active("windows-amd64", file_type=file_type)
+
+    def build_native_policy(self, backend_url: str) -> dict:
+        """Build the versioned techi-policy.json contract from the ACTIVE
+        packages. Carries NO secrets (no enrollment token / RS password). SHAs
+        come straight from the published artifacts; empty means "not yet built",
+        which the native bootstrap's own validator will reject until published.
+        """
+        api = self.normalize_backend_url(backend_url)
+        agent_pkg = self._active_package("agent_binary")
+        msi_pkg = self._active_package("msi")
+        rs_pkg = self._active_package("remote_support_msi")
+
+        agent_block: dict = {
+            "target_version": (agent_pkg.version if agent_pkg else "0.0.0"),
+            "package_type": "exe",
+            "filename": (agent_pkg.filename if agent_pkg else ""),
+            "sha256": ((agent_pkg.sha256 or "").strip().lower() if agent_pkg else ""),
+        }
+        if msi_pkg:
+            agent_block["repair_msi_filename"] = msi_pkg.filename
+            agent_block["repair_msi_sha256"] = (msi_pkg.sha256 or "").strip().lower()
+
+        policy = {
+            "schema_version": 1,
+            "rollout_mode": self._agent_rollout_mode(),
+            "api_url": api,
+            "agent": agent_block,
+            "remote_support": {
+                "target_version": (rs_pkg.version if rs_pkg else "0.0.0"),
+                "payload_filename": (rs_pkg.filename if rs_pkg else ""),
+                "sha256": ((rs_pkg.sha256 or "").strip().lower() if rs_pkg else ""),
+                "repair_missing": True,
+            },
+        }
+        return policy
+
+    def build_native_bootstrap(self, backend_url: str) -> NativeBootstrapArtifacts:
+        """Assemble the native GPO artifacts. Publishing happens regardless of
+        rollout_mode (disabled still ships the native architecture); AGENT_
+        ROLLOUT_MODE remains the mutation gate baked into the policy JSON.
+
+        Local-copy-first model: the Scheduled Task runs a LOCAL copy of the
+        bootstrap + policy (staged from NETLOGON by a GPO File preference)
+        rather than executing straight off the network share. That avoids the
+        AV-sensitive "run EXE from remote share every boot" pattern and survives
+        transient share outages. LAN-local distribution; AV/EDR policies remain
+        applicable.
+        """
+        policy = self.build_native_policy(backend_url)
+        rs_pkg = self._active_package("remote_support_msi")
+        local = self.NATIVE_LOCAL_DIR
+
+        program = rf"{local}\techi-bootstrap.exe"
+        arguments = rf"apply-policy --policy {local}\techi-policy.json"
+
+        required = [
+            {"filename": "techi-bootstrap.exe", "kind": "native_bootstrap", "sha256": ""},
+            {"filename": "techi-bootstrap.exe.sha256", "kind": "sha256_sidecar", "sha256": ""},
+            {"filename": "techi-policy.json", "kind": "policy", "sha256": ""},
+        ]
+        for ft, kind in (("agent_binary", "agent_binary"),
+                         ("msi", "agent_repair_msi"),
+                         ("remote_support_msi", "remote_support_payload")):
+            pkg = self._active_package(ft)
+            if pkg:
+                required.append({
+                    "filename": pkg.filename,
+                    "kind": kind,
+                    "sha256": (pkg.sha256 or "").strip().lower(),
+                })
+
+        rs_is_msi = bool(rs_pkg) and str(getattr(rs_pkg, "filename", "")).lower().endswith(".msi")
+        notes = (
+            "Local-copy-first: a GPO File preference stages techi-bootstrap.exe + "
+            "techi-policy.json from \\\\<DOMAIN>\\NETLOGON into "
+            f"{local}; the Scheduled Task then runs the LOCAL copy. Do not execute "
+            "from the network share. rollout_mode is baked into the policy and "
+            "stays the mutation gate (disabled = detect-only). LAN-local "
+            "distribution; AV/EDR policies remain applicable."
+        )
+        if rs_is_msi:
+            notes += (
+                " NOTE: the active Remote Support artifact is still an MSI; a "
+                "native RS bundle/ZIP payload must be published before native "
+                "--execute recovery of the affected devices."
+            )
+
+        return NativeBootstrapArtifacts(
+            feature_enabled=bool(getattr(settings, "NATIVE_BOOTSTRAP_ENABLED", False)),
+            rollout_mode=self._agent_rollout_mode(),
+            policy_filename="techi-policy.json",
+            policy_json=json.dumps(policy, indent=2),
+            scheduled_task_program=program,
+            scheduled_task_arguments=arguments,
+            required_artifacts=required,
+            notes=notes,
+        )
 
     def _gpo_scheduled_task_setup(self, backend_url: str, enrollment_token: str) -> str:
         safe_url = self.normalize_backend_url(backend_url)

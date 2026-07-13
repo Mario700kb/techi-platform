@@ -48,6 +48,28 @@ class EnrollmentBootstrapRequest(BaseModel):
     allow_display_off_on_ac: bool = True
 
 
+class NativeBootstrapArtifacts(BaseModel):
+    """The transitional native GPO path (docs/architecture/native-bootstrap.md).
+
+    Published alongside the legacy GPO script when FEATURE flag
+    NATIVE_BOOTSTRAP_ENABLED is on. Carries NO secrets: the policy JSON is the
+    versioned techi-policy.json contract, and enrollment keeps its existing
+    NETLOGON path. The Scheduled Task calls techi-bootstrap.exe directly instead
+    of the large generated CMD.
+    """
+
+    feature_enabled: bool = False
+    rollout_mode: str = "disabled"
+    policy_filename: str = "techi-policy.json"
+    policy_json: str = ""
+    scheduled_task_program: str = ""
+    scheduled_task_arguments: str = ""
+    # Each entry: {"filename": ..., "kind": ..., "sha256": ...}. SHAs may be
+    # empty until the artifact is built/published; never a secret.
+    required_artifacts: list[dict] = []
+    notes: str = ""
+
+
 class EnrollmentBootstrapResponse(BaseModel):
     mode: EnrollmentBootstrapMode = EnrollmentBootstrapMode.TOKEN
     enrollment_token_id: Optional[int] = None
@@ -58,3 +80,5 @@ class EnrollmentBootstrapResponse(BaseModel):
     config_template: str
     preproduction_notice: str
     installer_filename: str = ""   # suggested .ps1 filename for download
+    # Transitional native GPO artifacts; None unless NATIVE_BOOTSTRAP_ENABLED.
+    native_bootstrap: Optional[NativeBootstrapArtifacts] = None
