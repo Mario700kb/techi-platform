@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -101,10 +101,22 @@ class Device(Base):
     agent_version = Column(String(20), nullable=True)
     agent_sha256 = Column(String(64), nullable=True)
 
+    # Device-bound heartbeat authentication. The bearer credential is envelope-
+    # encrypted; requests use it only as an HMAC key. The last accepted request
+    # identity provides a bounded replay guard.
+    agent_auth_secret_ciphertext = Column(Text, nullable=True)
+    agent_auth_secret_wrapped_dek = Column(Text, nullable=True)
+    agent_auth_key_hash = Column(String(64), nullable=True, index=True)
+    agent_auth_issued_at = Column(DateTime, nullable=True)
+    agent_auth_revoked_at = Column(DateTime, nullable=True)
+    agent_auth_last_timestamp_ms = Column(BigInteger, nullable=True)
+    agent_auth_last_nonce = Column(String(64), nullable=True)
+
     # Per-device TECHI Remote Support (RustDesk) permanent password, encrypted
     # at rest. Server-generated unique value (or operator-set custom). Replaces
     # the fleet-wide shared password so one device compromise can't expose all.
     remote_support_password_ciphertext = Column(Text, nullable=True)
+    remote_support_password_wrapped_dek = Column(Text, nullable=True)
     remote_support_password_updated_at = Column(DateTime, nullable=True)
     remote_support_password_source = Column(String(16), nullable=True)  # "generated" | "custom"
 

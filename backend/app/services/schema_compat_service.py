@@ -43,8 +43,16 @@ DEVICE_COLUMNS = {
     "archived_by": "VARCHAR(128)",
     "agent_sha256": "VARCHAR(64)",
     "remote_support_password_ciphertext": "TEXT",
+    "remote_support_password_wrapped_dek": "TEXT",
     "remote_support_password_updated_at": "DATETIME",
     "remote_support_password_source": "VARCHAR(16)",
+    "agent_auth_secret_ciphertext": "TEXT",
+    "agent_auth_secret_wrapped_dek": "TEXT",
+    "agent_auth_key_hash": "VARCHAR(64)",
+    "agent_auth_issued_at": "DATETIME",
+    "agent_auth_revoked_at": "DATETIME",
+    "agent_auth_last_timestamp_ms": "BIGINT",
+    "agent_auth_last_nonce": "VARCHAR(64)",
 }
 
 HEARTBEAT_COLUMNS = {

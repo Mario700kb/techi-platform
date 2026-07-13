@@ -39,6 +39,7 @@ type EnrollmentResponse struct {
 	EnrollmentStatus string `json:"enrollment_status"`
 	AssignedClientID *int   `json:"assigned_client_id"`
 	AssignedGroupID  *int   `json:"assigned_group_id"`
+	AgentCredential  string `json:"agent_credential"`
 }
 
 func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk RustDeskInfo) error {
@@ -60,6 +61,7 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 
 	cfg.AgentID = resp.AgentID
 	cfg.DeviceID = resp.DeviceID
+	cfg.AgentCredential = resp.AgentCredential
 	if resp.HeartbeatURL != "" {
 		cfg.BackendURL = resp.HeartbeatURL
 	}
@@ -126,7 +128,7 @@ func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*Enrollmen
 	if err := json.Unmarshal(body, &enrollment); err != nil {
 		return nil, err
 	}
-	if enrollment.AgentID == "" || enrollment.DeviceID <= 0 {
+	if enrollment.AgentID == "" || enrollment.DeviceID <= 0 || enrollment.AgentCredential == "" {
 		return nil, fmt.Errorf("enrollment failed: backend returned incomplete identity")
 	}
 	return &enrollment, nil

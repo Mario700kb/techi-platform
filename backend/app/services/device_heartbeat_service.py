@@ -99,7 +99,7 @@ class DeviceHeartbeatService:
         self._run_side_effects(payload, device, heartbeat.id, ctx)
         return device, heartbeat
 
-    def process_heartbeat_core(self, payload: AgentHeartbeatPayload):
+    def process_heartbeat_core(self, payload: AgentHeartbeatPayload, *, expected_device_id: Optional[int] = None):
         """
         Fast path: resolve/create/update device record + write heartbeat row.
         Returns (device, heartbeat, ctx) where ctx carries data needed by _run_side_effects.
@@ -127,8 +127,8 @@ class DeviceHeartbeatService:
             payload.rustdesk_id or ""
         )
 
-        device = None
-        if payload.agent_id:
+        device = self.device_repo.get(expected_device_id) if expected_device_id is not None else None
+        if device is None and payload.agent_id:
             cached = _AGENT_ID_CACHE.get(payload.agent_id)
             if cached and time.monotonic() - cached[1] < _AGENT_ID_CACHE_TTL:
                 _AGENT_ID_CACHE.move_to_end(payload.agent_id)
@@ -151,7 +151,10 @@ class DeviceHeartbeatService:
         prev_user = device.current_user if device else None
         prev_repair_count = device.rustdesk_repair_count if device else 0
         if device:
-            update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id"})
+            update_data = payload.model_dump(
+                exclude_unset=True,
+                exclude={"device_id", "rustdesk_id", "client_id", "group_id", "rustdesk_sync_status"},
+            )
             self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)

@@ -4,7 +4,13 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.agent_auth import enroll_limiter
+from app.core.agent_auth import (
+    AgentAuthError,
+    enroll_limiter,
+    heartbeat_auth_limiter,
+    heartbeat_identity_limiter,
+    verify_heartbeat_request,
+)
 from app.core.config import settings
 from app.db.session import get_db, SessionLocal
 from app.repositories.device_repository import DeviceRepository
@@ -19,6 +25,7 @@ from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
+from app.services.audit_service import AuditAction, system_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +95,7 @@ def agent_enroll(
 
 
 @router.post("/heartbeat", response_model=AgentHeartbeatResponse)
-def agent_heartbeat(
+async def agent_heartbeat(
     payload: AgentHeartbeatPayload,
     request: Request,
     background_tasks: BackgroundTasks,
@@ -98,6 +105,33 @@ def agent_heartbeat(
     Agent heartbeat endpoint. Returns immediately after writing the device record;
     telemetry, inventory, alerts, and realtime events run in a background task.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    if not heartbeat_auth_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many heartbeat authentication attempts")
+    claimed_agent_id = request.headers.get("x-techi-agent-id", "").strip() or "missing"
+    if not heartbeat_identity_limiter.is_allowed(f"{client_ip}:{claimed_agent_id}"):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many heartbeat authentication attempts")
+    try:
+        authenticated_device = verify_heartbeat_request(
+            db,
+            body=await request.body(),
+            headers=request.headers,
+            payload=payload,
+        )
+    except AgentAuthError as exc:
+        system_audit_log(
+            db,
+            action=AuditAction.AGENT_HEARTBEAT_AUTH_FAILED,
+            entity_type="device",
+            details={"reason": exc.reason, "source_ip": client_ip},
+        )
+        detail = (
+            "Agent re-enrollment is required before authenticated heartbeats can resume"
+            if exc.status_code == 428
+            else "Invalid Agent heartbeat authentication"
+        )
+        raise HTTPException(status_code=exc.status_code, detail=detail)
+
     if not payload.public_ip:
         forwarded_for = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
         client_ip = forwarded_for or (request.client.host if request.client else None)
@@ -106,7 +140,10 @@ def agent_heartbeat(
 
     service = DeviceHeartbeatService(db)
     try:
-        device, heartbeat, ctx = service.process_heartbeat_core(payload)
+        device, heartbeat, ctx = service.process_heartbeat_core(
+            payload,
+            expected_device_id=authenticated_device.id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

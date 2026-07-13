@@ -18,6 +18,7 @@ type Config struct {
 	EnrollmentToken  string `json:"enrollment_token,omitempty"`
 	AgentName        string `json:"agent_name,omitempty"`
 	AgentID          string `json:"agent_id,omitempty"`
+	AgentCredential  string `json:"agent_credential,omitempty"`
 	DeviceID         int    `json:"device_id,omitempty"`
 	RustDeskID       string `json:"rustdesk_id"`
 	PublicIPService  string `json:"public_ip_service"`

@@ -2,6 +2,7 @@ import logging
 import secrets
 from datetime import datetime
 from app.core.time import utcnow
+from app.core.agent_auth import issue_agent_credential
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -152,6 +153,11 @@ class AgentEnrollmentService:
             )
             raise
 
+        agent_credential = issue_agent_credential(device)
+        self.db.add(device)
+        self.db.commit()
+        self.db.refresh(device)
+
         self._record_audit(
             payload=payload,
             token=token,
@@ -168,6 +174,7 @@ class AgentEnrollmentService:
             enrollment_status="enrolled",
             assigned_client_id=token.client_id,
             assigned_group_id=token.group_id,
+            agent_credential=agent_credential,
         )
 
     def _enroll_trusted_domain(
@@ -214,6 +221,11 @@ class AgentEnrollmentService:
                 ),
             )
         device = self.assignment_service.apply_resolution(device)
+        agent_credential = issue_agent_credential(device)
+        self.db.add(device)
+        self.db.commit()
+        self.db.refresh(device)
+
         system_audit_log(
             self.db,
             action=AuditAction.BOOTSTRAP_SCRIPT_SERVED,
@@ -236,6 +248,7 @@ class AgentEnrollmentService:
             enrollment_status="enrolled_trusted_domain",
             assigned_client_id=device.client_id,
             assigned_group_id=device.group_id,
+            agent_credential=agent_credential,
         )
 
     def _find_existing_device(

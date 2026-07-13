@@ -58,6 +58,7 @@ class AgentHeartbeatPayload(BaseModel):
     patch_status: Optional[Dict[str, Any]] = None
     agent_version: Optional[str] = None
     agent_sha256: Optional[str] = None
+    rustdesk_sync_status: Optional[str] = None
 
 
 class DeviceHeartbeatCreate(BaseModel):
@@ -111,6 +112,7 @@ class AgentHeartbeatResponse(BaseModel):
     # (>= 2.1.5). Replaces the fleet-wide default. Sent every heartbeat so a
     # wiped RS config self-heals to the server-authoritative value.
     remote_support_password: Optional[str] = None
+    authentication_required: bool = False
 
 
 class AgentEnrollmentRequest(BaseModel):
@@ -141,3 +143,4 @@ class AgentEnrollmentResponse(BaseModel):
     enrollment_status: str
     assigned_client_id: Optional[int] = None
     assigned_group_id: Optional[int] = None
+    agent_credential: str
