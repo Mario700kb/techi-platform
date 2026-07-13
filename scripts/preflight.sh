@@ -16,9 +16,9 @@ AGENT="$ROOT/agent"
 : "${LOG_DIR:=$(mktemp -d)}"
 export LOG_DIR
 
-# The 4 long-standing, unrelated failures (missing trusted_domains table in that
-# test's setup; PROJECT_STATE Known Issue #12). Anything ABOVE this is new.
-KNOWN_BACKEND_FAILURES=4
+# The backend suite is a hard gate. Known failures must be fixed or explicitly
+# excluded at the test level; preflight never treats failures as success.
+KNOWN_BACKEND_FAILURES=0
 
 fail() { echo ""; echo "❌ PREFLIGHT FAILED: $1"; exit 1; }
 step() { echo ""; echo "▶ $1"; }
@@ -83,4 +83,4 @@ step "Agent go build (windows + linux)"
 echo "  agent OK"
 
 echo ""
-echo "✅ PREFLIGHT PASSED — safe to deploy."
+echo "✅ PREFLIGHT PASSED — local source verification succeeded."
