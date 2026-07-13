@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"techi-platform/agent/internal/native"
 )
@@ -92,7 +91,7 @@ func run(src, version, out, product, commit string) error {
 		"file_count":     len(manifest.ExpectedRelativeFiles),
 		"entrypoint":     manifest.Entrypoint,
 		"build_commit":   commit,
-		"built_at":       time.Now().UTC().Format(time.RFC3339),
+		"built_at":       manifest.BuildTimestamp,
 		"signing_status": "unsigned",
 		"signed":         false,
 		"distribution":   "LAN-local; AV/EDR policies remain applicable",

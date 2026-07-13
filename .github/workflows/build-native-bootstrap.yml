@@ -12,10 +12,16 @@ on:
     branches: ["**"]
     paths:
       - "agent/**"
+      - "backend/app/**"
+      - "backend/tests/**"
+      - "docs/architecture/native-bootstrap.md"
       - ".github/workflows/build-native-bootstrap.yml"
   pull_request:
     paths:
       - "agent/**"
+      - "backend/app/**"
+      - "backend/tests/**"
+      - "docs/architecture/native-bootstrap.md"
       - ".github/workflows/build-native-bootstrap.yml"
   workflow_dispatch: {}
 
@@ -36,6 +42,10 @@ jobs:
           go-version: "1.21"
           cache-dependency-path: agent/go.sum
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: gofmt (must be clean)
         run: |
           unformatted="$(gofmt -l .)"
@@ -49,12 +59,20 @@ jobs:
       - name: go test
         run: go test ./...
 
+      - name: focused backend package/generator tests
+        run: |
+          python -m pip install -r ../backend/requirements.txt pytest
+          PYTHONPATH=../backend python -m pytest -q \
+            ../backend/tests/test_remote_support_bundle_upload.py \
+            ../backend/tests/test_agent_package_upload_linux.py \
+            ../backend/tests/test_native_bootstrap_generator.py
+
       - name: windows + linux cross-build
         run: |
           GOOS=windows GOARCH=amd64 go build ./...
           GOOS=linux   GOARCH=amd64 go build ./...
 
-      - name: build native artifacts (bootstrap + agent + RS bundle + sidecars)
+      - name: build native artifacts (bootstrap + RS bundle + sidecars)
         run: scripts/build-native-bootstrap.sh
 
       - name: verify Remote Support bundle (manifest + round-trip + no secrets)
@@ -70,7 +88,20 @@ jobs:
           if grep -Eqi '\.toml|id_ed25519|password|config\.json|\.log' "$man"; then
             echo "❌ bundle manifest references a secret/config file"; exit 1
           fi
+          tmp="$(mktemp -d)"
+          unzip -q "$zip" -d "$tmp"
+          if grep -RIEni \
+            '(enrollment[_-]?token|api[_-]?secret|password)[[:space:]]*[:=]|BEGIN (RSA |OPENSSH )?PRIVATE KEY' "$tmp"; then
+            echo "❌ bundle file contents contain secret-like assignments"; exit 1
+          fi
           echo "bundle files: $(grep -c '"path":' "$man")  sha=$calc"
+
+      - name: deterministic Remote Support bundle rebuild
+        run: |
+          first="$(sha256sum dist/native/TECHI-Remote-Support-*.zip dist/native/TECHI-Remote-Support-*.manifest.json)"
+          scripts/build-native-bootstrap.sh >/dev/null
+          second="$(sha256sum dist/native/TECHI-Remote-Support-*.zip dist/native/TECHI-Remote-Support-*.manifest.json)"
+          [ "$first" = "$second" ] || { echo "❌ bundle rebuild is not deterministic"; exit 1; }
 
       - name: policy schema validation
         run: |
@@ -96,8 +127,6 @@ jobs:
           path: |
             agent/dist/native/techi-bootstrap.exe
             agent/dist/native/techi-bootstrap.exe.sha256
-            agent/dist/native/techi-agent.exe
-            agent/dist/native/techi-agent.exe.sha256
             agent/dist/native/identity.json
             agent/dist/native/TECHI-Remote-Support-*-windows-amd64.zip
             agent/dist/native/TECHI-Remote-Support-*-windows-amd64.zip.sha256

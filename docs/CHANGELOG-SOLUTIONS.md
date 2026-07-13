@@ -27,6 +27,29 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-13] Native bootstrap adversarial blocker remediation (source only)
+
+### Problemi
+The prior source candidate overstated GPO readiness and accepted a native RS ZIP
+without binding or validating its manifest. Transaction, pending-reboot, retry
+ownership, service rollback, live observation, filesystem, artifact-lineage,
+and final-validation gaps remained.
+
+### Zgjidhja
+Hardened canonical product-root/ZIP extraction, exact ZIP+manifest package upload
+and activation binding, machine-wide locking, bounded owned retry handling,
+service/tray/config rollback, service-PID image validation, independent device
+eligibility, and failure-injection coverage. Pending-reboot deferral now stages
+and schedules retry without stopping the current installation. Native CI no
+longer builds a second Agent binary and checks deterministic rebuilds plus
+bundle contents for secret-like assignments. `apply-policy` is report-only and
+the incomplete native GPO path fails closed without exposing a task.
+
+### Rezultati
+Local source work only. No deployment, activation, NETLOGON/GPO access, or
+Windows execution occurred. `NATIVE_BOOTSTRAP_ENABLED` and RS recovery remain
+OFF; real Windows behavior is unproven and fleet rollout remains blocked.
+
 ## [2026-07-13] ARCH (pass 3): native Remote Support bundle packaging + artifact contract
 
 ### Problemi

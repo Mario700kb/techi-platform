@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-12 |
+| **Last Updated** | 2026-07-13 |
 | **Production Verified** | 2026-07-11 (Connect V3-mockup alignment deployed `92a521c`: no schema step needed, backend+frontend rebuilt, all containers healthy, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, ~1262 heartbeat log lines/2min, new `GET /connect-status` + `client_os` param confirmed live 401-not-500. **NOT dark** — the Catalog Connect split button + categorized menu changed live for every operator (no flag). Live browser click-through still owner's step — same constraint as the previous two deploys (no browser tool; bootstrap credentials don't match the live `owner` account); see the 2026-07-11 Connect-mockup CHANGELOG entry's validation checklist) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
-| **Current Development Branch** | `stable/phase-2-heartbeat` (in sync with origin and prod); agent work parked on `pending-agent-2.1.6` |
+| **Current Development Branch** | `stable/phase-2-heartbeat`; native-bootstrap remediation is a local source-only candidate (7 inherited local commits plus an uncommitted hardening worktree), not pushed or deployed; agent work remains parked on `pending-agent-2.1.6` |
 | **Backend Version** | `PROJECT_VERSION 1.0.0`, code of commit `218203d` (deployed; container health verified) |
 | **Agent Version** | **2.1.8 split-deployment canary candidate in validation**. Broken 2.1.7 Windows packages were deactivated and 2.1.6 restored active on 2026-07-11. **2.1.6 remains the production-safe fallback**: its core service startup, heartbeat, telemetry, Remote Support, self-update, watchdog, and most GPO deployment behavior are production-proven; the remaining work is edge-case installer/deployment hardening. Real standalone/domain canaries found and fixed 2.1.8 candidate issues: combined-MSI Agent/Remote Support start ordering, helper subcommands (`installer-marker create` etc.) entering normal runtime and writing `state=operational` with a helper PID, MSI registration drift where EXE 2.1.8 could run while Windows Installer registration remained 2.1.6, stale-binary marker sequencing before `InstallFiles`, and stale/mismatched NETLOGON artifacts. Current candidate separates TECHI Agent MSI from TECHI Remote Support MSI, keeps normal Agent upgrades on UI/self-update, runs Agent MSI only for first install/explicit repair, validates lifecycle PID against the current SCM service PID, adds per-product NETLOGON locks/logs/1618 guard, uses absolute `%SystemRoot%\System32` command paths, and CI-checks MSI-embedded EXE lineage against the standalone EXE. 2.1.8 remains **not approved for fleet rollout**; Windows packages stay pinned to 2.1.6 until canaries pass and the new 2.1.8 package is explicitly activated. |
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; now packaged as an independent Remote Support MSI candidate, exact fleet version: needs verification) |
@@ -18,17 +18,16 @@
 
 ## NATIVE BOOTSTRAP / UPDATE ARCHITECTURE
 
-**Status (2026-07-13, pass 3): foundation + real Windows executor + standalone
-`techi-bootstrap.exe` + native GPO generator + CI + deterministic native Remote
-Support bundle packaging on `stable/phase-2-heartbeat`. Default NON-destructive
-(`--execute` required; native GPO path behind `NATIVE_BOOTSTRAP_ENABLED` default
-OFF; rollout disabled). The RS recovery payload is now a verified bundle/ZIP
-(`cmd/techi-rs-package`, manifest-checked before promotion), NOT the MSI; backend
-has a `remote_support_bundle` package type and refuses recovery when no bundle is
-active. Canary artifacts + `techi-policy.canary.example.json` build locally.
-Live Windows execution is compiled + fake-tested but UNPROVEN on a real device;
-the bundle must be published/activated before a canary. Not deployed, not
-activated, no NETLOGON change, unsigned.** New cross-platform decision core
+**Status (2026-07-13, adversarial-remediation worktree): source candidate only.
+The standalone recovery CLI, transaction/state core, hardened deterministic RS
+bundle, and backend ZIP+manifest upload/activation binding exist locally.
+`apply-policy` is report-only. The native GPO publication/local-copy/task path is
+incomplete and emits no operational task; `NATIVE_BOOTSTRAP_ENABLED` remains OFF
+by default and fails closed if accidentally enabled. Remote Support recovery
+permission is independent from Agent rollout and remains disabled in generated
+policy. Live Windows execution only cross-compiles and is fake-tested; it is
+UNPROVEN on a real device. Nothing was deployed, published, activated, copied to
+NETLOGON, or changed in GPO; artifacts remain unsigned.** New cross-platform decision core
 `agent/internal/native/` (policy contract with no secrets, deterministic exit
 codes, safe-path/staging guards, SHA256 payload gate, redacting logs, Agent +
 Remote Support state machines) replaces the decision logic of the ~2,600-line
@@ -39,7 +38,7 @@ canary-gated Windows executor. Recovery targets the ~30 Agroblend/Drymadess
 devices (Agent 2.1.8 healthy, Remote Support EXE missing + stale service). RS
 payload is a **native bundle/ZIP**, never MSI repair. Design:
 [docs/architecture/native-bootstrap.md](architecture/native-bootstrap.md).
-**Still requires a one-device Windows canary before any live execution.** Fleet
+**Still requires a disposable Windows lab before any one-device canary.** Fleet
 rollout stays disabled; Windows packages stay pinned to the current active set.
 
 ## WINDOWS AGENT CANARY STATUS

@@ -1,6 +1,6 @@
 # Native Bootstrap / Update Architecture
 
-Status: **foundation + Windows executor + standalone `techi-bootstrap.exe` + transitional native GPO generator + CI landed on `stable/phase-2-heartbeat`. Default non-destructive: `--execute` is required to mutate, the native GPO path is behind `NATIVE_BOOTSTRAP_ENABLED` (default OFF), and rollout stays disabled. Not deployed, not activated, no NETLOGON change. Live Windows execution is compiled + unit-tested via a fake executor but UNPROVEN on a real device.**
+Status: **source candidate only. The decision core, standalone `techi-bootstrap.exe`, hardened bundle contract, backend ZIP+manifest binding, and Windows executor are implemented and locally tested. `apply-policy` is explicitly report-only. The native GPO publication/local-copy/task lifecycle is incomplete and the generator emits no native operational task even if `NATIVE_BOOTSTRAP_ENABLED` is accidentally set; the flag defaults OFF. Nothing was deployed or activated, no NETLOGON/GPO change was made, and all Windows mutations remain unproven on a real device.**
 
 ## Components added in the second pass
 
@@ -8,8 +8,8 @@ Status: **foundation + Windows executor + standalone `techi-bootstrap.exe` + tra
 - `agent/internal/native/executor_windows*.go` — real Windows executor: exact-name SCM stop/start/delete/create, exact-image-path (not name-only) process termination via `QueryFullProcessImageName`, tray scheduled-task disable, pending-reboot + `TBD*.tmp` detection, restricted-ACL staging (`icacls` SYSTEM+Administrators), zip-slip-safe extraction, reparse-point refusal, no-TEMP execution, atomic rename promotion + rollback, one ONSTART boot-retry, `VerQueryValue` version validation, and a native state prober (`ObserveRemoteSupport`).
 - `agent/internal/native/executor_other.go` — non-Windows stub: every mutating primitive returns `ErrNotWindows`; pure payload verify still runs.
 - `agent/cmd/techi-bootstrap/` — the standalone `techi-bootstrap.exe`: `apply-policy` / `repair-remote-support`, `--dry-run`/`--execute`, `--json`, reuses `internal/native`, does **not** depend on `techi-agent.exe` to orchestrate.
-- Backend `EnrollmentBootstrapService.build_native_policy` / `build_native_bootstrap` (+ `NativeBootstrapArtifacts` schema, `NATIVE_BOOTSTRAP_ENABLED` flag) — publishes `techi-policy.json` + artifact manifest + a **local-copy-first** direct native Scheduled Task, alongside (not replacing) the legacy CMD.
-- `agent/scripts/build-native-bootstrap.sh` + `.github/workflows/build-native-bootstrap.yml` — build bootstrap+agent, SHA256 sidecars, `identity.json` (`signed:false`), policy-schema validation, unsigned/signed status, mandatory-signing gate scaffold (`REQUIRE_SIGNED`).
+- Backend `EnrollmentBootstrapService.build_native_policy` / `build_native_bootstrap` describe a future artifact contract. The live GPO response does **not** expose the native task while publication/copy/task ownership is incomplete.
+- `agent/scripts/build-native-bootstrap.sh` + `.github/workflows/build-native-bootstrap.yml` build the bootstrap and RS bundle only. The canonical Agent binary comes exclusively from `build-agent-msi.yml`, which proves the standalone binary equals the MSI-embedded binary.
 
 Cross-language contract is verified: the Python-generated policy validates against the Go `apply-policy` validator.
 
@@ -21,12 +21,12 @@ built by `agent/cmd/techi-rs-package` from the authoritative source bytes
 (`agent/installer/TECHI-Remote-Support/`, the same tree the MSI wraps).
 
 - **Filename:** `TECHI-Remote-Support-<version>-windows-amd64.zip` (+ `.sha256`, `.manifest.json`, `.identity.json` sidecars).
-- **Deterministic:** sorted entries, normalized 2020-01-01 mtime, forward-slash paths, one product dir (`TECHI Remote Support/`); rebuilding yields byte-identical bytes (verified: `bundle_sha256=e1aa5097…d4d9d` for 1.4.6).
+- **Deterministic:** sorted entries, normalized 2020-01-01 ZIP and metadata timestamps, forward-slash paths, and one declared product root (`TECHI Remote Support/`). CI compares ZIP and manifest hashes across a rebuild.
 - **Manifest** (`internal/native/bundle.go`): schema + payload-format versions, product/version/platform/arch, entrypoint, service name+args (`--service`), tray task+args (`--tray`), per-file `sha256`+size, `bundle_sha256`, build commit/timestamp, `config_paths_to_preserve`, `never_overwrite_paths`, `signing_status: unsigned`.
 - **Included:** the 97 runtime files (EXE + DLLs + `data/`). **Excluded/preserved:** RustDesk ID/config/password live *outside* the install dir (ServiceProfiles/roaming, `*.toml`) and are never bundled or overwritten.
 - **What is replaced:** the install-dir runtime files, atomically (rename promotion + backup + rollback). **What is preserved:** identity/config/password and any `never_overwrite` file.
 - **Verification before promotion** (`VerifyExtractedBundle`): every expected file present with matching size+SHA, entrypoint present, **no unexpected extra files**, no symlink/reparse, no path escape. Extraction (`ExtractZipBytesSafe`) additionally rejects `..`/absolute/UNC/drive/duplicate/symlink entries into `C:\ProgramData\TechiAgent\staging\remote-support\<version>\`, never `%TEMP%`.
-- **Backend:** new `remote_support_bundle` package type (filename↔version enforced); the generator references the bundle as the RS payload, enumerates its manifest, and **refuses/marks recovery unavailable when no active bundle exists** — the MSI is listed only as `remote_support_first_install_msi`.
+- **Backend:** `remote_support_bundle` upload requires both ZIP and manifest, validates canonical metadata plus the complete file set/hashes, stores both hashes and validated metadata, and revalidates the exact pair before activation. Empty, non-ZIP, malformed, corrupt, or mismatched inputs are rejected.
 - **Canary prep:** `agent/installer/techi-policy.canary.example.json` (valid, `rollout_mode=disabled`, real bundle SHA) + `techi-policy.canary.README.md` (step-by-step, rollback = `<install-dir>.techibak`). Build all artifacts with `agent/scripts/build-native-bootstrap.sh`.
 
 ---
@@ -49,7 +49,7 @@ a stale RS service remained.
 > Distribution is **LAN-local (NETLOGON)**; AV/EDR policies remain fully
 > applicable. There is **no "zero AV detection" guarantee** and none is claimed.
 
-## Target flow
+## Target flow (not yet an operational GPO path)
 
 ```
 GPO Scheduled Task
@@ -60,11 +60,10 @@ GPO Scheduled Task
      -> Remote Support: PlanRemoteSupportRecovery() -> ordered native recovery plan
 ```
 
-The bootstrap is currently the Agent binary itself (`techi-agent.exe apply-policy` /
-`repair-remote-support`), reusing the Agent's verified SHA256, version, service,
-swap, and config code. A separate signed `techi-bootstrap.exe` can be split out
-later without changing the decision logic — it already lives in the standalone,
-OS-neutral `agent/internal/native` package.
+The recovery CLI is the separate `techi-bootstrap.exe`; it does not claim to be
+the canonical Agent artifact. `apply-policy` only validates and reports. The
+canonical Agent binary remains the binary produced once and checked against the
+MSI by `build-agent-msi.yml`.
 
 ## Components (this branch)
 
@@ -102,8 +101,8 @@ A absent → MSI first-install · B lifecycle transiently missing on a healthy,
 PID-matched service → **bounded retry, never MSI** · C healthy & older →
 **native updater only, never MSI** · D healthy & equal → no-op · E newer → no
 downgrade · F valid binary/config, service gone → recreate service · G
-missing/corrupt → MSI repair. UI self-update and NETLOGON use **byte-identical**
-Agent artifacts.
+missing/corrupt → MSI repair. No native-GPO Agent publication is exposed. UI
+self-update uses the canonical active `agent_binary` from the MSI workflow.
 
 ## Remote Support recovery (PlanRemoteSupportRecovery)
 
@@ -132,10 +131,9 @@ Staging is `C:\ProgramData\TechiAgent\staging\<component>\<version>\` (never
 `rollout_mode=disabled` (the mandatory default) makes the planner **detect-only**:
 it classifies and reports but emits no mutating action. `canary` restricts
 mutation to allowlisted devices; `enabled` is fleet (still gated on signing).
-Disabling runtime rollout does **not** strip the native artifacts from generated
-GPO output — the transitional generator publishes the native bootstrap + policy
-regardless, behind a default-disabled feature flag, with the legacy CMD script as
-explicit fallback.
+Native artifacts are not emitted in generated GPO output. The reserved feature
+flag remains OFF and fails closed until publication, local-copy, ownership, and
+task lifecycle are implemented and lab-tested.
 
 ## Signing / release gate (future, not yet implemented)
 
@@ -147,7 +145,8 @@ rollback artifacts.
 
 ## What still needs a real Windows canary
 
-The decision core is fully unit-tested off Windows. The **execution** of each
+The decision core and fake transaction boundary are unit-tested off Windows.
+Windows code cross-compiles, but the **execution** of each
 action (SCM control, exact-PID termination, atomic bundle promotion, ACL
 lockdown, boot-retry scheduling) is implemented against existing Agent Windows
 functions but must be validated on a **single real affected device** before any
