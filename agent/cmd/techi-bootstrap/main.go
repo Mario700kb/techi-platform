@@ -220,6 +220,23 @@ func runRepairRemoteSupport(args []string) int {
 		r.Message = "observation unavailable: " + err.Error()
 		return emit(r, *rf.asJSON)
 	}
+	if *rf.execute {
+		manifest, manifestErr := native.LoadBundleManifest(params.BundleManifestPath)
+		if manifestErr != nil {
+			r := native.NewResult("repair-remote-support", native.ExitValidationError)
+			r.Component = "remote_support"
+			r.Message = "cannot load config preservation contract: " + manifestErr.Error()
+			return emit(r, *rf.asJSON)
+		}
+		configPaths, pathErr := native.ResolveManifestConfigPaths(manifest)
+		if pathErr != nil {
+			r := native.NewResult("repair-remote-support", native.ExitValidationError)
+			r.Component = "remote_support"
+			r.Message = "invalid config preservation contract: " + pathErr.Error()
+			return emit(r, *rf.asJSON)
+		}
+		params.ConfigPaths = configPaths
+	}
 
 	plan := native.PlanRemoteSupportRecovery(policy.RemoteSupport.RecoveryMode, policy.RemoteSupport.TargetVersion, obs)
 	result := native.ExecutePlan(plan, params, native.NewWindowsExecutor(), *rf.execute)

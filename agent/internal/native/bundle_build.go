@@ -122,11 +122,18 @@ func BuildBundle(w io.Writer, opts BuildOptions) (*BundleManifest, error) {
 		// bundle carries none of it; these lists document what recovery must
 		// leave untouched. RustDesk config lives under ServiceProfiles/roaming.
 		ConfigPathsToPreserve: []string{
+			`C:\ProgramData\TechiAgent\agent.config.json`,
+			`C:\ProgramData\TECHI Remote Support`,
+			`C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support`,
 			`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support`,
+			`C:\Windows\ServiceProfiles\NetworkService\AppData\Roaming\TECHI Remote Support`,
 			`C:\Users\*\AppData\Roaming\TECHI Remote Support`,
+			`C:\Users\*\AppData\Local\TECHI Remote Support`,
 		},
 		NeverOverwrite: []string{
-			"*/RustDesk.toml", "*/RustDesk2.toml", "*/*.toml",
+			"agent.config.json",
+			"TECHI Remote Support.toml", "TECHI Remote Support2.toml",
+			"RustDesk.toml", "RustDesk2.toml", "*.toml",
 		},
 		MinimumSupportedWin: "10",
 		SigningStatus:       "unsigned",

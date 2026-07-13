@@ -151,6 +151,7 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 		return undo, err
 	}
 	e.preserved = nil
+	identities := map[string]bool{}
 	for _, src := range effectiveConfigPaths(p) {
 		if err := validateApprovedConfigPath(src); err != nil {
 			return undo, err
@@ -164,6 +165,20 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 		}
 		if !info.Mode().IsRegular() {
 			return undo, fmt.Errorf("config is not a regular file: %s", src)
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return undo, err
+		}
+		identity, err := validatePreservableConfig(src, data)
+		if err != nil {
+			return undo, fmt.Errorf("unsafe config %s: %w", src, err)
+		}
+		if identity != "" {
+			identities[identity] = true
+			if len(identities) > 1 {
+				return undo, fmt.Errorf("conflicting Remote Support profile identities")
+			}
 		}
 		dst := filepath.Join(backupDir, HashBytesSHA256([]byte(strings.ToLower(src)))+".toml")
 		if err := copyOneFile(src, dst); err != nil {
@@ -191,6 +206,13 @@ func (e *windowsExecutor) RestoreConfig(ExecuteParams) (UndoFunc, error) {
 
 func (e *windowsExecutor) restorePreservedConfig() error {
 	for _, saved := range e.preserved {
+		backupData, err := os.ReadFile(saved.backup)
+		if err != nil {
+			return err
+		}
+		if _, err := validatePreservableConfig(saved.path, backupData); err != nil {
+			return fmt.Errorf("preserved backup failed semantic validation: %w", err)
+		}
 		current, err := HashFileSHA256(saved.path)
 		if err == nil && strings.EqualFold(current, saved.sha256) {
 			info, statErr := os.Stat(saved.path)
@@ -1283,6 +1305,7 @@ func restoreFileSecurityDescriptor(path, sddl string) error {
 }
 
 var approvedConfigNames = map[string]bool{
+	"agent.config.json":         true,
 	"techi remote support.toml": true, "techi remote support2.toml": true,
 	"techi remote support_local.toml": true, "techi remote support2_local.toml": true,
 	"rustdesk.toml": true, "rustdesk2.toml": true,
@@ -1293,45 +1316,52 @@ func validateApprovedConfigPath(path string) error {
 	if !approvedConfigNames[strings.ToLower(filepath.Base(clean))] {
 		return fmt.Errorf("config filename is not approved: %s", path)
 	}
-	lower := strings.ToLower(strings.ReplaceAll(clean, "/", `\`))
-	approvedRoot := strings.HasPrefix(lower, `c:\programdata\techi remote support\config\`) ||
-		strings.HasPrefix(lower, `c:\windows\serviceprofiles\localservice\appdata\roaming\techi remote support\config\`) ||
-		strings.HasPrefix(lower, `c:\windows\system32\config\systemprofile\appdata\roaming\techi remote support\config\`) ||
-		(strings.HasPrefix(lower, `c:\users\`) && strings.Contains(lower, `\appdata\roaming\techi remote support\config\`))
-	if !approvedRoot {
+	if strings.EqualFold(filepath.Base(clean), "agent.config.json") {
+		if normalizeWindowsPath(clean) != normalizeWindowsPath(`C:\ProgramData\TechiAgent\agent.config.json`) {
+			return fmt.Errorf("agent config path outside approved root: %s", path)
+		}
+		return nil
+	}
+	root := normalizeWindowsPath(filepath.Dir(clean))
+	root = strings.TrimSuffix(root, `\config`)
+	approved := root == normalizeWindowsPath(`C:\ProgramData\TECHI Remote Support`) ||
+		root == normalizeWindowsPath(`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support`) ||
+		root == normalizeWindowsPath(`C:\Windows\ServiceProfiles\NetworkService\AppData\Roaming\TECHI Remote Support`) ||
+		root == normalizeWindowsPath(`C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support`) ||
+		approvedInteractiveUserRoot(root)
+	if !approved {
 		return fmt.Errorf("config path outside approved roots: %s", path)
 	}
 	return nil
 }
 
+func approvedInteractiveUserRoot(root string) bool {
+	if !strings.HasPrefix(root, `c:\users\`) {
+		return false
+	}
+	rest := strings.TrimPrefix(root, `c:\users\`)
+	parts := strings.Split(rest, `\`)
+	if len(parts) != 4 || skippedWindowsProfile(parts[0]) {
+		return false
+	}
+	return strings.EqualFold(parts[1], "appdata") &&
+		(strings.EqualFold(parts[2], "roaming") || strings.EqualFold(parts[2], "local")) &&
+		strings.EqualFold(parts[3], "techi remote support")
+}
 func effectiveConfigPaths(p ExecuteParams) []string {
 	if len(p.ConfigPaths) > 0 {
 		return append([]string(nil), p.ConfigPaths...)
 	}
-	dirs := []string{
-		`C:\ProgramData\TECHI Remote Support\config`,
-		`C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support\config`,
-		`C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support\config`,
+	manifest := &BundleManifest{
+		ConfigPathsToPreserve: append([]string(nil), requiredPreserveRoots...),
+		NeverOverwrite:        []string{"*.toml", "agent.config.json"},
 	}
-	if entries, err := os.ReadDir(`C:\Users`); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				dirs = append(dirs, filepath.Join(`C:\Users`, entry.Name(), `AppData\Roaming\TECHI Remote Support\config`))
-			}
-		}
+	paths, err := ResolveManifestConfigPaths(manifest)
+	if err != nil {
+		return nil
 	}
-	var out []string
-	for _, dir := range dirs {
-		for name := range approvedConfigNames {
-			path := filepath.Join(dir, name)
-			if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
-				out = append(out, path)
-			}
-		}
-	}
-	return out
+	return paths
 }
-
 func hasReparseAncestor(path string) bool {
 	cur := filepath.Clean(path)
 	for {

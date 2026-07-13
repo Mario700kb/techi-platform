@@ -155,6 +155,11 @@ func CrossCheckManifest(p ExecuteParams, m *BundleManifest, payloadBytes, manife
 	if !equalWindowsPath(p.ExpectedExePath, canonicalExe) {
 		return fmt.Errorf("expected exe path %q is not canonical %q", p.ExpectedExePath, canonicalExe)
 	}
+	for _, file := range m.ExpectedRelativeFiles {
+		if manifestPathIsNeverOverwrite(file.Path, m.NeverOverwrite) {
+			return fmt.Errorf("bundle payload attempts to overwrite protected config path: %s", file.Path)
+		}
+	}
 	wantBundle := fmt.Sprintf("TECHI-Remote-Support-%s-windows-amd64.zip", p.ExpectedVersion)
 	if !strings.EqualFold(filepath.Base(p.PayloadPath), wantBundle) {
 		return fmt.Errorf("payload filename must be %q", wantBundle)
@@ -178,6 +183,17 @@ func CrossCheckManifest(p ExecuteParams, m *BundleManifest, payloadBytes, manife
 		return fmt.Errorf("manifest bytes sha256 != policy manifest_sha256")
 	}
 	return nil
+}
+
+func manifestPathIsNeverOverwrite(filePath string, patterns []string) bool {
+	base := filepath.Base(strings.ReplaceAll(filePath, `\`, "/"))
+	for _, pattern := range patterns {
+		patternBase := filepath.Base(strings.ReplaceAll(strings.TrimSpace(pattern), `\`, "/"))
+		if matched, err := filepath.Match(strings.ToLower(patternBase), strings.ToLower(base)); err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func equalWindowsPath(a, b string) bool {
