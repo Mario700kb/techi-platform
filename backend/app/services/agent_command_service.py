@@ -63,6 +63,10 @@ class AgentCommandService:
         operator_id: Optional[int] = None,
         operator_username: Optional[str] = None,
     ) -> BatchCreateResponse:
+        # Historical rows may contain this retired action, but no new plaintext
+        # credential payload may enter either command table.
+        if create_in.command_type == "set_remote_password":
+            raise ValueError("set_remote_password is disabled; use credential generations")
         devices = self._resolve_devices(create_in)
         if not devices:
             raise ValueError("No active devices found for the specified target")
@@ -280,8 +284,6 @@ class AgentCommandService:
     def _effective_timeout_seconds(create_in: BulkCommandCreate) -> int:
         if create_in.command_type == "self_update":
             return max(create_in.timeout_seconds, 900)
-        if create_in.command_type == "set_remote_password":
-            return max(create_in.timeout_seconds, 300)
         return create_in.timeout_seconds
 
     def _resolve_devices(self, create_in: BulkCommandCreate) -> List[Device]:

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Eye,
-  EyeOff,
   History,
   Info,
   Play,
@@ -401,58 +400,7 @@ interface PayloadEditorProps {
 }
 
 function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
-  const [showPwd, setShowPwd] = useState(false);
-
   const set = (k: string, v: string) => onChange({ ...payload, [k]: v });
-
-  if (commandType === "set_remote_password") {
-    return (
-      <div className="space-y-3">
-        <div>
-          <FieldLabel>New Password</FieldLabel>
-          <div className="relative">
-            <input
-              type={showPwd ? "text" : "password"}
-              value={payload["password"] ?? ""}
-              onChange={(e) => set("password", e.target.value)}
-              placeholder="Enter new remote password"
-              className={inputCls + " pr-9"}
-              style={inputStyle}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPwd((v) => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-100"
-              style={{ color: "var(--th-text-muted)" }}
-            >
-              {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-        </div>
-        <div>
-          <FieldLabel>Confirm Password</FieldLabel>
-          <input
-            type={showPwd ? "text" : "password"}
-            value={payload["confirm"] ?? ""}
-            onChange={(e) => set("confirm", e.target.value)}
-            placeholder="Repeat password"
-            className={inputCls}
-            style={{
-              ...inputStyle,
-              borderColor:
-                payload["confirm"] && payload["password"] !== payload["confirm"]
-                  ? "rgba(239,68,68,0.6)"
-                  : (inputStyle as Record<string, string>)["borderColor"],
-            }}
-          />
-          {payload["confirm"] && payload["password"] !== payload["confirm"] && (
-            <p className="mt-1 text-xs text-red-400">Passwords do not match</p>
-          )}
-        </div>
-        <WarnNote>Password will be set on all targeted devices via next heartbeat.</WarnNote>
-      </div>
-    );
-  }
 
   if (commandType === "change_heartbeat_interval") {
     return (
@@ -673,7 +621,6 @@ export default function AgentCommandsPanel() {
       collect_inventory: 60,
       sync_rustdesk: 60,
       restart_rustdesk: 30,
-      set_remote_password: 300,
       change_heartbeat_interval: 20,
       run_powershell: 60,
       run_command: 60,
@@ -704,9 +651,6 @@ export default function AgentCommandsPanel() {
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   function buildPayload(): Record<string, unknown> {
-    if (commandType === "set_remote_password") {
-      return { password: payload["password"] ?? "" };
-    }
     if (commandType === "change_heartbeat_interval") {
       return { seconds: parseInt(payload["seconds"] ?? "120", 10) };
     }
@@ -732,10 +676,6 @@ export default function AgentCommandsPanel() {
     if (target === "client" && !clientId) return false;
     if (target === "group" && !groupId) return false;
     if (target === "devices" && !deviceIdsInput.trim()) return false;
-    if (commandType === "set_remote_password") {
-      if (!payload["password"]) return false;
-      if (payload["password"] !== payload["confirm"]) return false;
-    }
     if (commandType === "run_powershell" && !payload["script"]) return false;
     if (commandType === "run_command" && !payload["command"]) return false;
     if (OWNER_ONLY_BULK_COMMANDS.has(commandType) && !isOwner) return false;

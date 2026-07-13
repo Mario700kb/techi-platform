@@ -39,10 +39,6 @@ func handleDeployRemoteSupport(_ context.Context, _ *Config, _ map[string]interf
 	return actionResult{err: fmt.Errorf("deploy_remote_support: Windows-only action")}
 }
 
-func handleSetRemotePassword(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
-	return actionResult{err: fmt.Errorf("set_remote_password: Windows-only action")}
-}
-
 func handleRegisterTechiProtocol(_ context.Context) actionResult {
 	return actionResult{err: fmt.Errorf("register_protocol: Windows-only action")}
 }

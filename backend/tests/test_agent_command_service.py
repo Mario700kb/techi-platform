@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -61,8 +62,8 @@ def test_online_bulk_target_queues_only_online_devices():
 
     result = AgentCommandService(db).create_bulk(
         BulkCommandCreate(
-            command_type="set_remote_password",
-            payload={"password": "secret"},
+            command_type="ping",
+            payload={},
             target=BulkCommandTarget.ONLINE,
             timeout_seconds=30,
         ),
@@ -72,10 +73,50 @@ def test_online_bulk_target_queues_only_online_devices():
     actions = db.query(RemoteAction).filter(RemoteAction.batch_id == result.batch_id).all()
     hostnames = sorted(action.device.hostname for action in actions)
     assert hostnames == ["online-one", "online-two"]
-    assert {action.execution_timeout_seconds for action in actions} == {300}
+    assert {action.execution_timeout_seconds for action in actions} == {30}
 
     batch = db.get(AgentCommandBatch, result.batch_id)
-    assert batch.timeout_seconds == 300
+    assert batch.timeout_seconds == 30
+
+
+def test_set_remote_password_command_is_rejected_without_persistence():
+    db = next(_db())
+    db.add(_device("online-one", DeviceStatus.ONLINE))
+    db.commit()
+
+    retired = BulkCommandCreate.model_construct(
+        command_type="set_remote_password",
+        payload={"password": "must-not-persist"},
+        target=BulkCommandTarget.ONLINE,
+        timeout_seconds=300,
+    )
+    with pytest.raises(ValueError, match="is disabled"):
+        AgentCommandService(db).create_bulk(retired)
+
+    assert db.query(AgentCommandBatch).count() == 0
+    assert db.query(RemoteAction).count() == 0
+
+
+def test_historical_password_action_is_not_delivered():
+    db = next(_db())
+    device = _device("online-one", DeviceStatus.ONLINE)
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    historical = RemoteAction(
+        device_id=device.id,
+        action_type="set_remote_password",
+        payload=json.dumps({"password": "historical-sensitive-value"}),
+        status=ActionStatus.QUEUED,
+        queued_at=agent_command_service_module.utcnow(),
+    )
+    db.add(historical)
+    db.commit()
+
+    assert RemoteActionService(db).collect_pending_for_delivery(device.id) == []
+    db.refresh(historical)
+    assert historical.status == ActionStatus.FAILED
+    assert historical.error_message == "retired credential command blocked before delivery"
 
 
 def test_outdated_agents_target_queues_only_agent_binary_mismatches(monkeypatch):
@@ -357,8 +398,8 @@ def test_online_bulk_target_with_no_online_devices_does_not_create_empty_batch()
     try:
         service.create_bulk(
             BulkCommandCreate(
-                command_type="set_remote_password",
-                payload={"password": "secret"},
+                command_type="ping",
+                payload={},
                 target=BulkCommandTarget.ONLINE,
                 timeout_seconds=300,
             )

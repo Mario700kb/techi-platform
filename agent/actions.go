@@ -141,8 +141,6 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleDeployRemoteSupport(ctx, cfg, action.Parameters)
 	case "change_heartbeat_interval":
 		return handleChangeHeartbeatInterval(action.Parameters)
-	case "set_remote_password":
-		return handleSetRemotePassword(ctx, cfg, action.Parameters)
 	case "register_protocol":
 		return handleRegisterTechiProtocol(ctx)
 	case "reboot_pc":

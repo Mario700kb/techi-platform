@@ -22,7 +22,6 @@ BULK_COMMAND_TYPES = frozenset({
     "collect_inventory",
     "sync_rustdesk",
     "restart_rustdesk",
-    "set_remote_password",
     "change_heartbeat_interval",
     "run_powershell",
     "run_command",
@@ -32,7 +31,7 @@ BULK_COMMAND_TYPES = frozenset({
 
 # Requires admin or owner role. run_command (Linux/Platform Expansion bash/sh/
 # python execution) is admin+ (run_powershell stays owner-only below).
-ADMIN_ONLY_COMMAND_TYPES = frozenset({"set_remote_password", "reboot_pc", "run_powershell", "run_command", "self_update"})
+ADMIN_ONLY_COMMAND_TYPES = frozenset({"reboot_pc", "run_powershell", "run_command", "self_update"})
 
 # Requires owner role only
 OWNER_ONLY_COMMAND_TYPES = frozenset({"run_powershell"})

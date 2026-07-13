@@ -481,40 +481,6 @@ func ensureRustDeskProtocolHandler() string {
 }
 
 // ------------------------------------------------------------------ //
-// set_remote_password                                                  //
-// ------------------------------------------------------------------ //
-
-func handleSetRemotePassword(_ context.Context, _ *Config, params map[string]interface{}) actionResult {
-	password := stringParam(params, "password")
-	if password == "" {
-		return actionResult{err: fmt.Errorf("set_remote_password: missing 'password' parameter")}
-	}
-
-	// setRustDeskPassword writes the password directly into the identity TOML.
-	if err := setRustDeskPassword(password); err != nil {
-		return actionResult{
-			err:    fmt.Errorf("set_remote_password: %w", err),
-			stderr: err.Error(),
-		}
-	}
-
-	// Restart the service (and tray) so the new password takes effect
-	// immediately instead of waiting for the next process/load cycle.
-	stopRustDeskServiceFn()
-	stopRustDeskTray()
-	time.Sleep(2 * time.Second)
-	if err := startRustDeskServiceFn(); err != nil {
-		log.Printf("[action] set_remote_password: service restart failed (non-fatal): %v", err)
-	}
-	if err := startRustDeskTray(); err != nil {
-		log.Printf("[action] set_remote_password: tray restart failed (non-fatal): %v", err)
-	}
-
-	log.Printf("[action] set_remote_password: password updated and service+tray restarted")
-	return actionResult{message: "Remote password changed successfully"}
-}
-
-// ------------------------------------------------------------------ //
 // register_protocol                                                    //
 // ------------------------------------------------------------------ //
 

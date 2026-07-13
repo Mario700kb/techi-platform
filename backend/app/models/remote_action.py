@@ -29,7 +29,6 @@ BULK_ACTION_TYPES = frozenset({
     "collect_inventory",
     "sync_rustdesk",
     "restart_rustdesk",
-    "set_remote_password",
     "change_heartbeat_interval",
     "run_powershell",
     "register_protocol",

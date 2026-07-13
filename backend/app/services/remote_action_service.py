@@ -354,6 +354,17 @@ class RemoteActionService:
         pending = self.repo.get_pending_for_device(device_id)
         deliveries: List[PendingActionDelivery] = []
         for action in pending:
+            if action.action_type == "set_remote_password":
+                # Retired split-brain command: never send its historical
+                # plaintext payload to an Agent. A separate controlled cleanup
+                # procedure redacts rows at rest.
+                action = self.repo.mark_failed(
+                    action,
+                    error_message="retired credential command blocked before delivery",
+                )
+                _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+                logger.warning("[action] blocked retired credential action #%d", action.id)
+                continue
             action = self.repo.mark_sent(action)
             _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
             deliveries.append(

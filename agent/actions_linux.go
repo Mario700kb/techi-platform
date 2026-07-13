@@ -79,10 +79,6 @@ func handleDeployRemoteSupport(_ context.Context, _ *Config, _ map[string]interf
 	return notSupportedOnLinux("deploy_remote_support")
 }
 
-func handleSetRemotePassword(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
-	return notSupportedOnLinux("set_remote_password")
-}
-
 func handleRegisterTechiProtocol(_ context.Context) actionResult {
 	return notSupportedOnLinux("register_protocol")
 }

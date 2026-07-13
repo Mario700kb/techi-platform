@@ -25,18 +25,13 @@ export default function AgentConfigPage() {
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [heartbeatInputs, setHeartbeatInputs] = useState<Record<string, string>>({});
   const [inventoryInputs, setInventoryInputs] = useState<Record<string, string>>({});
-  const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [remoteSaving, setRemoteSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [remoteSaved, setRemoteSaved] = useState(false);
   const [copying, setCopying] = useState<CopyTarget>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const remoteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -46,7 +41,6 @@ export default function AgentConfigPage() {
         setConfig(cfg);
         setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_heartbeat_intervals[id] ?? cfg.heartbeat_interval_seconds)])));
         setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_inventory_intervals[id] ?? 1800)])));
-        setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
@@ -79,7 +73,6 @@ export default function AgentConfigPage() {
       setConfig(updated);
       setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
       setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
-      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
       setSaved(true);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => setSaved(false), 2500);
@@ -87,27 +80,6 @@ export default function AgentConfigPage() {
       setError(String(err));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleSaveRemoteSupport() {
-    setRemoteSaving(true);
-    setRemoteError(null);
-    try {
-      const updated = await putAgentConfig({
-        remote_support_managed_password_enabled: managedPasswordEnabled,
-      });
-      setConfig(updated);
-      setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
-      setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
-      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
-      setRemoteSaved(true);
-      if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
-      remoteSaveTimer.current = setTimeout(() => setRemoteSaved(false), 2500);
-    } catch (err) {
-      setRemoteError(String(err));
-    } finally {
-      setRemoteSaving(false);
     }
   }
 
@@ -133,7 +105,6 @@ export default function AgentConfigPage() {
     const inv = config.platform_inventory_intervals[id] ?? 1800;
     return heartbeatInputs[id] !== String(hb) || inventoryInputs[id] !== String(inv);
   });
-  const remoteSupportDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -277,82 +248,6 @@ export default function AgentConfigPage() {
               )}
             </button>
           </div>
-        )}
-      </div>
-
-      {/* Remote Support card */}
-      <div
-        className="rounded-xl p-5 space-y-4"
-        style={{
-          background: "var(--th-bg-drawer-section)",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-      >
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-            TECHI Remote Support
-          </p>
-          <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
-            Controls whether Connect links include the global managed password for direct sessions.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
-        ) : (
-          <label
-            className="flex cursor-pointer items-center justify-between gap-4 rounded-lg px-4 py-3"
-            style={{
-              background: "var(--th-bg-shell)",
-              border: "1px solid var(--th-border-subtle)",
-            }}
-          >
-            <span>
-              <span className="block text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                Auto-connect with managed password
-              </span>
-              <span className="mt-0.5 block text-xs" style={{ color: "var(--th-text-muted)" }}>
-                When enabled, Connect uses the global password; unmatched devices will still ask manually.
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={managedPasswordEnabled}
-              onChange={(e) => {
-                setManagedPasswordEnabled(e.target.checked);
-                setRemoteError(null);
-              }}
-              className="h-5 w-5 shrink-0 rounded border-white/15 accent-orange-500"
-              aria-label="Auto-connect with managed password"
-            />
-          </label>
-        )}
-
-        {remoteError && (
-          <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
-            {remoteError}
-          </p>
-        )}
-
-        {!loading && (
-          <button
-            type="button"
-            onClick={handleSaveRemoteSupport}
-            disabled={remoteSaving || !remoteSupportDirty}
-            className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
-            style={{
-              background: "var(--th-accent-orange, #ff553f)",
-              color: "#fff",
-            }}
-          >
-            {remoteSaved ? (
-              <><Check className="h-3.5 w-3.5" /> Saved</>
-            ) : remoteSaving ? (
-              "Saving…"
-            ) : (
-              <><Save className="h-3.5 w-3.5" /> Save Remote Support</>
-            )}
-          </button>
         )}
       </div>
 

@@ -34,7 +34,6 @@ class AgentConfigResponse(BaseModel):
     platform_inventory_intervals: Dict[str, int]
     online_threshold_minutes: int
     stale_threshold_minutes: int
-    remote_support_managed_password_enabled: bool
 
 
 class AgentConfigUpdate(BaseModel):
@@ -52,7 +51,6 @@ class AgentConfigUpdate(BaseModel):
         None,
         description="Per-platform inventory intervals in seconds",
     )
-    remote_support_managed_password_enabled: Optional[bool] = None
 
 
 @router.get("", response_model=AgentConfigResponse)
@@ -72,7 +70,6 @@ def put_agent_config(
             heartbeat_interval_seconds=body.heartbeat_interval_seconds,
             platform_heartbeat_intervals=body.platform_heartbeat_intervals,
             platform_inventory_intervals=body.platform_inventory_intervals,
-            remote_support_managed_password_enabled=body.remote_support_managed_password_enabled,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

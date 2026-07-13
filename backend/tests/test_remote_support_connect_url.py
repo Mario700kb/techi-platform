@@ -6,51 +6,50 @@ from fastapi import HTTPException
 from app.api.v1.endpoints.remote_support import (
     _connect_url_response_for_device,
     _build_connect_url,
+    get_connect_url,
 )
 
 
-def test_connect_url_includes_encoded_per_device_password(monkeypatch):
+def test_connect_url_is_id_only_and_encoded():
+    url = _build_connect_url("294 938 618")
+    assert url == "techiremotesupport://294%20938%20618"
+    assert "password" not in url
+    assert "?" not in url
+
+
+def test_direct_connect_is_fail_closed_and_audited(monkeypatch):
+    device = SimpleNamespace(id=590, rustdesk_id="486641675")
+    audits = []
     monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.agent_config_service.get_policy",
-        lambda: {"remote_support_managed_password_enabled": True},
+        "app.api.v1.endpoints.remote_support._get_device",
+        lambda *args, **kwargs: device,
     )
-    assert _build_connect_url("294 938 618", "Durres.12!") == (
-        "techiremotesupport://294%20938%20618?password=Durres.12%21"
-    )
-
-
-def test_connect_url_omits_password_when_feature_disabled(monkeypatch):
     monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.agent_config_service.get_policy",
-        lambda: {"remote_support_managed_password_enabled": False},
+        "app.api.v1.endpoints.remote_support.settings.REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED",
+        False,
     )
-    assert _build_connect_url("294938618", "anything") == "techiremotesupport://294938618"
-
-
-def test_connect_url_omits_blank_password(monkeypatch):
     monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.agent_config_service.get_policy",
-        lambda: {"remote_support_managed_password_enabled": True},
-    )
-    assert _build_connect_url("294938618", "   ") == "techiremotesupport://294938618"
-
-
-def test_connect_url_uses_only_confirmed_active_generation(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.agent_config_service.get_policy",
-        lambda: {"remote_support_managed_password_enabled": True},
+        "app.api.v1.endpoints.remote_support.audit_log",
+        lambda *args, **kwargs: audits.append(kwargs),
     )
 
-    class FakePwSvc:
-        def __init__(self, db):
-            pass
+    with pytest.raises(HTTPException) as exc:
+        get_connect_url(
+            db=None,
+            operator=SimpleNamespace(username="operator"),
+            scope=None,
+            _perm=None,
+            device_id=device.id,
+        )
 
-        def get_active_plaintext(self, device):
-            return "UniquePerDevice9"
+    assert exc.value.status_code == 503
+    assert audits[0]["details"] == {
+        "result": "blocked",
+        "reason": "direct_connect_disabled",
+    }
 
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.RemoteSupportPasswordService", FakePwSvc
-    )
+
+def test_connect_url_uses_only_confirmed_active_generation():
     device = SimpleNamespace(
         id=590,
         rustdesk_id="486641675",
@@ -63,21 +62,11 @@ def test_connect_url_uses_only_confirmed_active_generation(monkeypatch):
     response = _connect_url_response_for_device(device, db=None)
 
     assert response.device_id == 590
-    assert response.connect_url == "techiremotesupport://486641675?password=UniquePerDevice9"
+    assert response.connect_url == "techiremotesupport://486641675"
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "unknown", "unsupported_legacy"])
-def test_connect_url_blocks_unconfirmed_credential_state(monkeypatch, status):
-    class BoomPwSvc:
-        def __init__(self, db):
-            pass
-
-        def get_active_plaintext(self, device):
-            raise AssertionError("unconfirmed credentials must not be revealed")
-
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.RemoteSupportPasswordService", BoomPwSvc
-    )
+def test_connect_url_blocks_unconfirmed_credential_state(status):
     device = SimpleNamespace(
         id=590,
         rustdesk_id="486641675",
@@ -100,17 +89,7 @@ def test_connect_url_still_rejects_missing_remote_id():
     assert exc.value.status_code == 422
 
 
-def test_connect_url_rejects_generation_mismatch(monkeypatch):
-    class FakePwSvc:
-        def __init__(self, db):
-            pass
-
-        def get_active_plaintext(self, device):
-            return "ConfirmedButMismatched9"
-
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.remote_support.RemoteSupportPasswordService", FakePwSvc
-    )
+def test_connect_url_rejects_generation_mismatch():
     device = SimpleNamespace(
         id=590,
         rustdesk_id="486641675",

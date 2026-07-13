@@ -15,7 +15,6 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.remote_action import ActionType, RemoteActionCreate, RemoteActionResponse
-from app.services import agent_config_service
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
@@ -138,14 +137,9 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
     )
 
 
-def _build_connect_url(remote_id: str, password: Optional[str]) -> str:
-    encoded_id = quote(remote_id, safe="")
-    connect_url = f"techiremotesupport://{encoded_id}"
-    policy = agent_config_service.get_policy()
-    password = (password or "").strip()
-    if policy["remote_support_managed_password_enabled"] and password:
-        connect_url += f"?password={quote(password, safe='')}"
-    return connect_url
+def _build_connect_url(remote_id: str) -> str:
+    """Build an ID-only protocol URL. Credentials must never enter a URI."""
+    return f"techiremotesupport://{quote(remote_id, safe='')}"
 
 
 def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlResponse:
@@ -160,13 +154,12 @@ def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlR
             status_code=409,
             detail="Remote Support credential is not confirmed applied on this device",
         )
-    password = RemoteSupportPasswordService(db).get_active_plaintext(device)
-    if not password or device.remote_support_active_generation != device.remote_support_applied_generation:
+    if device.remote_support_active_generation != device.remote_support_applied_generation:
         raise HTTPException(status_code=409, detail="Remote Support credential state is inconsistent")
     return ConnectUrlResponse(
         device_id=device.id,
         techi_remote_id=remote_id,
-        connect_url=_build_connect_url(remote_id, password),
+        connect_url=_build_connect_url(remote_id),
     )
 
 
@@ -280,8 +273,22 @@ def get_connect_url(
     _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
     device_id: int,
 ):
-    """Return the techiremotesupport:// protocol URL for connecting to this device."""
+    """Return an ID-only protocol URL only when the fail-closed feature is enabled."""
     device = _get_device(device_id, db, scope)
+
+    if not settings.REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED:
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.REMOTE_CONNECT,
+            entity_type="device",
+            entity_id=device_id,
+            details={"result": "blocked", "reason": "direct_connect_disabled"},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Direct Connect is disabled; use the audited manual Remote ID/password workflow",
+        )
 
     # A stale TechiAgent heartbeat does not prove TECHI Remote Support itself is
     # unreachable: it is a separate Windows service and may still be registered

@@ -41,10 +41,6 @@ PLATFORM_HEARTBEAT_DEFAULTS: Dict[str, int] = {
 PLATFORM_INVENTORY_DEFAULTS: Dict[str, int] = {
     platform: INVENTORY_INTERVAL_DEFAULT for platform in PLATFORM_HEARTBEAT_DEFAULTS
 }
-REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT: bool = os.environ.get(
-    "RUSTDESK_DEEP_LINK_PASSWORD_ENABLED", "true"
-).strip().lower() not in {"0", "false", "no", "off"}
-
 # Fixed constants — kept in sync with device_repository.py and device.py
 ONLINE_THRESHOLD_MINUTES: int = 6
 STALE_THRESHOLD_MINUTES: int = 25
@@ -70,13 +66,11 @@ def _load() -> dict:
     except FileNotFoundError:
         _policy = {
             "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT,
-            "remote_support_managed_password_enabled": REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
         }
     except Exception as exc:
         log.warning("Cannot read agent policy %s: %s — using defaults", _POLICY_FILE, exc)
         _policy = {
             "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_DEFAULT,
-            "remote_support_managed_password_enabled": REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
         }
     return _policy
 
@@ -136,12 +130,6 @@ def get_policy() -> dict:
             "platform_inventory_intervals": platform_inventory,
             "online_threshold_minutes": ONLINE_THRESHOLD_MINUTES,
             "stale_threshold_minutes": STALE_THRESHOLD_MINUTES,
-            "remote_support_managed_password_enabled": bool(
-                data.get(
-                    "remote_support_managed_password_enabled",
-                    REMOTE_SUPPORT_MANAGED_PASSWORD_DEFAULT,
-                )
-            ),
         }
 
 
@@ -166,7 +154,6 @@ def set_policy(
     heartbeat_interval_seconds: Optional[int] = None,
     platform_heartbeat_intervals: Optional[Mapping[str, int]] = None,
     platform_inventory_intervals: Optional[Mapping[str, int]] = None,
-    remote_support_managed_password_enabled: Optional[bool] = None,
 ) -> dict:
     with _lock:
         data = _load()
@@ -198,8 +185,6 @@ def set_policy(
                 high=INVENTORY_INTERVAL_MAX,
                 label="platform_inventory_intervals",
             )
-        if remote_support_managed_password_enabled is not None:
-            data["remote_support_managed_password_enabled"] = remote_support_managed_password_enabled
         _persist(data)
     return get_policy()
 
