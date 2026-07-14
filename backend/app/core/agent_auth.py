@@ -5,7 +5,8 @@ import secrets
 import threading
 import time
 from collections import defaultdict
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 from app.core.config import settings
 from app.core.time import utcnow
@@ -70,6 +71,27 @@ class AgentAuthError(Exception):
         super().__init__(reason)
         self.reason = reason
         self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class HeartbeatTrust:
+    mode: str
+    authenticated: bool
+    legacy_restricted: bool
+    reason: str
+    device: Optional[Device] = None
+
+
+_HEARTBEAT_AUTH_HEADERS = (
+    "x-techi-agent-id",
+    "x-techi-agent-timestamp",
+    "x-techi-agent-nonce",
+    "x-techi-agent-signature",
+)
+
+
+def heartbeat_auth_material_missing(headers) -> bool:
+    return not any((headers.get(name) or "").strip() for name in _HEARTBEAT_AUTH_HEADERS)
 
 
 def issue_agent_credential(device: Device) -> str:
@@ -150,3 +172,29 @@ def verify_heartbeat_request(db, *, body: bytes, headers, payload) -> Device:
     db.commit()
     db.refresh(device)
     return device
+
+
+def resolve_heartbeat_trust(db, *, body: bytes, headers, payload) -> HeartbeatTrust:
+    mode = settings.AGENT_HEARTBEAT_AUTH_MODE
+    if mode not in {"disabled", "observe", "enforce"}:
+        raise AgentAuthError("invalid_heartbeat_auth_mode", status_code=500)
+
+    try:
+        device = verify_heartbeat_request(db, body=body, headers=headers, payload=payload)
+        return HeartbeatTrust(
+            mode=mode,
+            authenticated=True,
+            legacy_restricted=False,
+            reason="authenticated",
+            device=device,
+        )
+    except AgentAuthError:
+        if mode == "enforce" or not heartbeat_auth_material_missing(headers):
+            raise
+        return HeartbeatTrust(
+            mode=mode,
+            authenticated=False,
+            legacy_restricted=True,
+            reason=f"{mode}_legacy_missing_auth",
+            device=None,
+        )

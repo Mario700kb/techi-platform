@@ -1,17 +1,20 @@
 import time
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.agent_auth import (
     AgentAuthError,
+    heartbeat_auth_material_missing,
     heartbeat_signature,
     issue_agent_credential,
+    resolve_heartbeat_trust,
     verify_heartbeat_request,
 )
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.vault_cipher import reset_master_key_cache_for_tests
 from app.db.base import Base
 from app.models.client import Client
@@ -149,3 +152,71 @@ def test_signature_covers_exact_body_bytes():
             headers=headers,
             payload=payload,
         )
+
+
+def test_missing_auth_can_be_distinguished_from_malformed_attempt():
+    assert heartbeat_auth_material_missing({}) is True
+    assert heartbeat_auth_material_missing({"x-techi-agent-id": "agent-a"}) is False
+
+
+def test_observe_missing_auth_resolves_restricted_trust(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    db = _db()
+    payload = AgentHeartbeatPayload(agent_id="legacy-agent", device_id=1)
+
+    trust = resolve_heartbeat_trust(db, body=b"{}", headers={}, payload=payload)
+
+    assert trust.mode == "observe"
+    assert trust.authenticated is False
+    assert trust.legacy_restricted is True
+    assert trust.reason == "observe_legacy_missing_auth"
+
+
+def test_observe_invalid_signature_is_not_downgraded(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    db = _db()
+    device, credential = _device(db)
+    payload = AgentHeartbeatPayload(agent_id=device.agent_id, device_id=device.id)
+    body, headers = _signed(device, credential, payload)
+    headers["x-techi-agent-signature"] = "0" * 64
+
+    with pytest.raises(AgentAuthError, match="invalid_signature"):
+        resolve_heartbeat_trust(db, body=body, headers=headers, payload=payload)
+
+
+def test_observe_replay_is_not_downgraded(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    db = _db()
+    device, credential = _device(db)
+    payload = AgentHeartbeatPayload(agent_id=device.agent_id, device_id=device.id)
+    body, headers = _signed(device, credential, payload)
+    verify_heartbeat_request(db, body=body, headers=headers, payload=payload)
+
+    with pytest.raises(AgentAuthError, match="replayed_request"):
+        resolve_heartbeat_trust(db, body=body, headers=headers, payload=payload)
+
+
+def test_disabled_missing_auth_resolves_restricted_trust(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "disabled")
+    db = _db()
+    payload = AgentHeartbeatPayload(agent_id="legacy-agent", device_id=1)
+
+    trust = resolve_heartbeat_trust(db, body=b"{}", headers={}, payload=payload)
+
+    assert trust.mode == "disabled"
+    assert trust.authenticated is False
+    assert trust.legacy_restricted is True
+    assert trust.reason == "disabled_legacy_missing_auth"
+
+
+def test_config_default_and_allowed_values():
+    assert Settings(SECRET_KEY="test-secret").AGENT_HEARTBEAT_AUTH_MODE == "enforce"
+    assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="disabled").AGENT_HEARTBEAT_AUTH_MODE == "disabled"
+    assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="observe").AGENT_HEARTBEAT_AUTH_MODE == "observe"
+    assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="enforce").AGENT_HEARTBEAT_AUTH_MODE == "enforce"
+
+
+@pytest.mark.parametrize("mode", ["", "bogus", " enforce ", "observe-now"])
+def test_config_invalid_values_fail_closed(mode):
+    with pytest.raises(ValidationError):
+        Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE=mode)

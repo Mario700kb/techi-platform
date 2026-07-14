@@ -1,4 +1,5 @@
 import pytest
+import time
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,12 +7,21 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.legacy_compat import router as legacy_router
+from app.api.v1.endpoints import agent as agent_endpoint
 from app.api.v1.endpoints.agent import router as agent_router
+from app.core.agent_auth import heartbeat_signature, issue_agent_credential
+from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db
+from app.models.agent_command_batch import AgentCommandBatch
+from app.models.audit_log import AuditLog
 from app.models.client import Client
-from app.models.device import Device
+from app.models.device import Device, DeviceStatus
 from app.models.device_group import DeviceGroup
+from app.models.device_heartbeat import DeviceHeartbeat
+from app.models.remote_action import ActionStatus, RemoteAction
+from app.services.audit_service import AuditAction
+from app.services.remote_support_password_service import RemoteSupportPasswordService
 
 
 @pytest.fixture()
@@ -23,7 +33,15 @@ def db():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[Client.__table__, DeviceGroup.__table__, Device.__table__],
+        tables=[
+            Client.__table__,
+            DeviceGroup.__table__,
+            Device.__table__,
+            DeviceHeartbeat.__table__,
+            AuditLog.__table__,
+            AgentCommandBatch.__table__,
+            RemoteAction.__table__,
+        ],
     )
     session = sessionmaker(bind=engine)()
     yield session
@@ -37,6 +55,27 @@ def client(db):
     app.include_router(legacy_router)
     app.include_router(agent_router, prefix="/api/v1/agent")
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture(autouse=True)
+def heartbeat_auth_mode(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "enforce")
+
+
+def _signed_headers(device, credential, payload: dict, *, timestamp_ms=None, nonce="nonce-1234567890-abcd"):
+    import json
+
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    timestamp_ms = timestamp_ms or int(time.time() * 1000)
+    return body, {
+        "content-type": "application/json",
+        "x-techi-agent-id": device.agent_id,
+        "x-techi-agent-timestamp": str(timestamp_ms),
+        "x-techi-agent-nonce": nonce,
+        "x-techi-agent-signature": heartbeat_signature(
+            credential, device.agent_id, timestamp_ms, nonce, body
+        ),
+    }
 
 
 def test_legacy_heartbeat_empty_body_is_acknowledged(client):
@@ -69,6 +108,153 @@ def test_current_v1_heartbeat_rejects_missing_authentication(client):
     assert response.status_code == 428
     assert "pending_actions" not in response.text
     assert "remote_support_credential" not in response.text
+
+
+def test_observe_v1_signed_heartbeat_is_accepted_normally(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    monkeypatch.setattr(agent_endpoint, "_heartbeat_side_effects", lambda *args, **kwargs: None)
+    device = Device(hostname="signed-host", agent_id="signed-agent", status=DeviceStatus.ONLINE)
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    credential = issue_agent_credential(device)
+    db.add(device)
+    db.commit()
+    payload = {"agent_id": device.agent_id, "device_id": device.id, "hostname": "signed-new"}
+    body, headers = _signed_headers(device, credential, payload)
+
+    response = client.post("/api/v1/agent/heartbeat", content=body, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["authentication_required"] is False
+    db.refresh(device)
+    assert device.hostname == "signed-new"
+
+
+def test_observe_v1_missing_auth_accepts_restricted_legacy_path(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    device = Device(id=11, hostname="legacy-host", agent_id="legacy-agent", rustdesk_id="123456789")
+    db.add(device)
+    db.commit()
+    RemoteSupportPasswordService(db).ensure_desired(device)
+    db.add(
+        RemoteAction(
+            device_id=device.id,
+            action_type="restart_agent",
+            status=ActionStatus.QUEUED,
+            created_by="operator",
+            execution_timeout_seconds=300,
+        )
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/v1/agent/heartbeat",
+        json={
+            "agent_id": "legacy-agent",
+            "device_id": 11,
+            "hostname": "must-not-update",
+            "rustdesk_id": "123456789",
+            "remote_support_credential_ack": {"generation": 1, "status": "failed", "error": "nope"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authentication_required"] is True
+    assert body["pending_actions"] == []
+    assert body["remote_support_credential"] is None
+    db.refresh(device)
+    assert device.hostname == "legacy-host"
+    assert device.remote_support_apply_status == "pending"
+    assert db.query(DeviceHeartbeat).filter(DeviceHeartbeat.device_id == device.id).count() == 1
+    audit = db.query(AuditLog).filter(AuditLog.action == AuditAction.AGENT_HEARTBEAT_LEGACY_ACCEPTED).one()
+    assert audit.entity_id == device.id
+    assert "observe_legacy_missing_auth" in (audit.details_json or "")
+
+
+def test_observe_v1_invalid_signature_is_rejected_not_downgraded(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    device = Device(hostname="signed-host", agent_id="signed-agent")
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    credential = issue_agent_credential(device)
+    db.add(device)
+    db.commit()
+    payload = {"agent_id": device.agent_id, "device_id": device.id}
+    body, headers = _signed_headers(device, credential, payload)
+    headers["x-techi-agent-signature"] = "0" * 64
+
+    response = client.post("/api/v1/agent/heartbeat", content=body, headers=headers)
+
+    assert response.status_code == 401
+
+
+def test_observe_v1_cross_device_legacy_identity_is_rejected(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    db.add_all([
+        Device(id=21, hostname="a", agent_id="agent-a"),
+        Device(id=22, hostname="b", agent_id="agent-b"),
+    ])
+    db.commit()
+
+    response = client.post(
+        "/api/v1/agent/heartbeat",
+        json={"agent_id": "agent-a", "device_id": 22},
+    )
+
+    assert response.status_code == 400
+    assert "legacy heartbeat requires one existing device identity" in response.text
+
+
+def test_observe_v1_cross_tenant_legacy_claim_is_rejected(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    client_a = Client(id=101, name="A", slug="a")
+    client_b = Client(id=102, name="B", slug="b")
+    db.add_all([client_a, client_b, Device(id=23, hostname="tenant-a", agent_id="agent-a", client_id=101)])
+    db.commit()
+
+    response = client.post(
+        "/api/v1/agent/heartbeat",
+        json={"agent_id": "agent-a", "device_id": 23, "client_id": 102},
+    )
+
+    assert response.status_code == 400
+    assert "cross_tenant_identity" in response.text
+
+
+def test_disabled_v1_missing_auth_is_restricted_and_no_credentials(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "disabled")
+    device = Device(id=31, hostname="legacy-disabled", agent_id="legacy-disabled")
+    db.add(device)
+    db.commit()
+    RemoteSupportPasswordService(db).ensure_desired(device)
+    db.add(
+        RemoteAction(
+            device_id=device.id,
+            action_type="set_remote_password",
+            payload='{"password":"legacy-plaintext"}',
+            status=ActionStatus.QUEUED,
+            created_by="operator",
+            execution_timeout_seconds=300,
+        )
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/v1/agent/heartbeat",
+        json={"agent_id": "legacy-disabled", "device_id": 31, "rustdesk_install_status": "installed"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authentication_required"] is True
+    assert body["pending_actions"] == []
+    assert body["agent_update"] is None
+    assert body["remote_support_credential"] is None
+    db.refresh(device)
+    assert device.remote_support_apply_status == "pending"
 
 
 def test_legacy_heartbeat_for_known_device_requires_reenrollment(client, db):

@@ -27,6 +27,48 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-14] Heartbeat auth staged migration mode (source only)
+
+### Problemi
+The hardened Agent heartbeat endpoint verified signed heartbeat authentication
+unconditionally. That is correct for the new enrolled Agent path, but it made a
+backend-only deploy unsafe for the existing fleet: legacy Agents without
+heartbeat-auth headers would receive `428` until upgraded/re-enrolled.
+
+### Analiza
+Source confirmed the blocker: `/api/v1/agent/heartbeat` always called
+`verify_heartbeat_request`, while the legacy `/api/heartbeat` compatibility
+route returned `428` for known devices and deliberately disclosed no pending
+actions or Remote Support credentials.
+
+### Zgjidhja
+Added explicit backend setting `AGENT_HEARTBEAT_AUTH_MODE` with allowed values
+`disabled`, `observe`, and `enforce`; default is `enforce`. Unsupported, empty,
+or malformed values fail configuration validation. `enforce` preserves the
+hardened behavior. `observe` and `disabled` accept only genuinely missing auth
+material on a structurally separate restricted legacy path. Any attempted auth
+with invalid signature, malformed headers, replay, stale timestamp, or
+tenant/device mismatch remains rejected and is not downgraded.
+
+### Ndryshimet
+The endpoint now receives an explicit trust result: authenticated heartbeats use
+the existing full path, while restricted legacy heartbeats update only basic
+liveness by resolving exactly one existing device, setting `last_seen`/online,
+and writing a minimal heartbeat row. The restricted path never processes
+credential ACKs, never returns or generates Remote Support credentials, never
+delivers pending actions/commands, never runs native rollout/recovery behavior,
+and never performs assignment/configuration mutations. Legacy observe acceptance
+is audited as `agent_heartbeat_legacy_accepted` with a reason and no secrets.
+
+### Rezultati
+Focused local tests pass for heartbeat auth and legacy compatibility:
+`29 passed`. This is source-only validation; production has not deployed this
+source. Recommended migration sequence: deploy backend with
+`AGENT_HEARTBEAT_AUTH_MODE=observe`, roll out/re-enroll signing Agents, verify
+the fleet is authenticated, then switch to `enforce`. The independent gates
+`NATIVE_BOOTSTRAP_ENABLED=false`, `AGENT_ROLLOUT_MODE=disabled`, and
+`REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED=false` remain unchanged.
+
 ## [2026-07-14] Production platform features off + `/root`↔`/opt` deploy-root split — restored & guarded
 
 ### Problemi

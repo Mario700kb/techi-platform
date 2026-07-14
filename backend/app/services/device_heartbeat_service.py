@@ -269,6 +269,75 @@ class DeviceHeartbeatService:
             "prev_repair_count": prev_repair_count,
         }
 
+    def process_legacy_liveness_heartbeat(self, payload: AgentHeartbeatPayload):
+        """Restricted migration path for unauthenticated legacy heartbeats.
+
+        This path intentionally does not create devices, reassign tenants/groups,
+        process Remote Support state, acknowledge credentials, deliver actions, or
+        run inventory/telemetry side effects. It keeps an already-known device
+        visible during migration by updating last_seen/status and recording a
+        minimal heartbeat row using the existing device state.
+        """
+        device = self._resolve_single_existing_legacy_device(payload)
+        if payload.client_id is not None and payload.client_id != device.client_id:
+            raise ValueError("cross_tenant_identity")
+        if payload.group_id is not None and payload.group_id != device.group_id:
+            raise ValueError("cross_tenant_identity")
+
+        now = utcnow()
+        device.last_seen = now
+        device.status = DeviceStatus.ONLINE
+        self.db.add(device)
+        self.db.commit()
+        self.db.refresh(device)
+
+        heartbeat = self.heartbeat_repo.create(
+            DeviceHeartbeatCreate(
+                device_id=device.id,
+                rustdesk_id=device.rustdesk_id,
+                hostname=device.hostname,
+                current_user=device.current_user,
+                domain=device.domain,
+                public_ip=device.public_ip,
+                local_ip=device.local_ip,
+                os_name=device.os_name,
+                os_version=device.os_version,
+                os_caption=device.os_caption,
+                os_build=device.os_build,
+                windows_product_type=device.windows_product_type,
+                platform=device.platform,
+                device_type=device.device_type,
+                status=device.status,
+                cpu=device.cpu,
+                ram=device.ram,
+                storage=device.storage,
+                rustdesk_install_status=device.rustdesk_install_status,
+                rustdesk_status=device.rustdesk_status,
+                rustdesk_version=device.rustdesk_version,
+                rustdesk_install_path=device.rustdesk_install_path,
+            )
+        )
+        return device, heartbeat
+
+    def _resolve_single_existing_legacy_device(self, payload: AgentHeartbeatPayload) -> Device:
+        resolved: dict[int, Device] = {}
+        if payload.device_id is not None:
+            device = self.device_repo.get(payload.device_id)
+            if device is not None:
+                resolved[device.id] = device
+        if payload.agent_id:
+            device = self.device_repo.get_by_agent_id(payload.agent_id)
+            if device is not None:
+                resolved[device.id] = device
+        if payload.rustdesk_id:
+            device = self.device_repo.get_by_rustdesk_id(payload.rustdesk_id)
+            if device is not None:
+                resolved[device.id] = device
+
+        if len(resolved) != 1:
+            raise ValueError("legacy heartbeat requires one existing device identity")
+        return next(iter(resolved.values()))
+
     def _create_from_stable_identity(
         self, payload: AgentHeartbeatPayload, device_type: DeviceType, now: datetime
     ) -> Device:

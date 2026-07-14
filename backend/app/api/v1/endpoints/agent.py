@@ -10,7 +10,7 @@ from app.core.agent_auth import (
     enroll_limiter,
     heartbeat_auth_limiter,
     heartbeat_identity_limiter,
-    verify_heartbeat_request,
+    resolve_heartbeat_trust,
 )
 from app.core.config import settings
 from app.core.time import utcnow
@@ -113,10 +113,11 @@ async def agent_heartbeat(
     claimed_agent_id = request.headers.get("x-techi-agent-id", "").strip() or "missing"
     if not heartbeat_identity_limiter.is_allowed(f"{client_ip}:{claimed_agent_id}"):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many heartbeat authentication attempts")
+    body = await request.body()
     try:
-        authenticated_device = verify_heartbeat_request(
+        trust = resolve_heartbeat_trust(
             db,
-            body=await request.body(),
+            body=body,
             headers=request.headers,
             payload=payload,
         )
@@ -134,6 +135,53 @@ async def agent_heartbeat(
         )
         raise HTTPException(status_code=exc.status_code, detail=detail)
 
+    if trust.legacy_restricted:
+        service = DeviceHeartbeatService(db)
+        try:
+            device, heartbeat = service.process_legacy_liveness_heartbeat(payload)
+        except ValueError as exc:
+            system_audit_log(
+                db,
+                action=AuditAction.AGENT_HEARTBEAT_AUTH_FAILED,
+                entity_type="device",
+                details={
+                    "reason": str(exc),
+                    "source_ip": client_ip,
+                    "mode": trust.mode,
+                    "trust": "legacy_restricted",
+                },
+            )
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        system_audit_log(
+            db,
+            action=AuditAction.AGENT_HEARTBEAT_LEGACY_ACCEPTED,
+            entity_type="device",
+            entity_id=device.id,
+            details={
+                "reason": trust.reason,
+                "source_ip": client_ip,
+                "mode": trust.mode,
+                "trust": "legacy_restricted",
+            },
+        )
+        interval = _cfg_svc.get_heartbeat_interval(payload.platform)
+        return {
+            "device_id": device.id,
+            "heartbeat_id": heartbeat.id,
+            "rustdesk_id": device.rustdesk_id,
+            "device_type": device.device_type,
+            "status": device.status,
+            "last_seen": device.last_seen,
+            "heartbeat_at": heartbeat.created_at,
+            "pending_actions": [],
+            "heartbeat_interval_seconds": interval,
+            "agent_update": None,
+            "authentication_required": True,
+            "remote_support_credential": None,
+        }
+
+    authenticated_device = trust.device
     credential_service = RemoteSupportPasswordService(db)
     credential_service.process_ack(authenticated_device, payload.remote_support_credential_ack)
 

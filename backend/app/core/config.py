@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     # Default "disabled": no forced rollout without an explicit operator decision.
     AGENT_ROLLOUT_MODE: str = "disabled"
 
+    # Heartbeat authentication migration control. Default remains fail-closed:
+    # "enforce" preserves the hardened authenticated heartbeat contract,
+    # "observe" admits only genuinely missing legacy auth on a restricted
+    # liveness path, and "disabled" is an emergency compatibility mode with the
+    # same containment. Invalid values must fail startup/config validation.
+    AGENT_HEARTBEAT_AUTH_MODE: str = "enforce"
+
     # Transitional native bootstrap/update architecture
     # (docs/architecture/native-bootstrap.md). When True, the GPO generator ALSO
     # is reserved for a future complete publication/local-copy/task lifecycle.
@@ -148,6 +155,17 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("AGENT_HEARTBEAT_AUTH_MODE")
+    @classmethod
+    def validate_agent_heartbeat_auth_mode(cls, value: str) -> str:
+        mode = value or ""
+        allowed = {"disabled", "observe", "enforce"}
+        if mode not in allowed:
+            raise ValueError(
+                "AGENT_HEARTBEAT_AUTH_MODE must be one of: disabled, observe, enforce"
+            )
+        return mode
 
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")

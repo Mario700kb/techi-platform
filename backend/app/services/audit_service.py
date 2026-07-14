@@ -27,6 +27,7 @@ class AuditAction:
     ENROLLMENT_TOKEN_DELETED = "enrollment_token_deleted"
     BOOTSTRAP_SCRIPT_SERVED = "bootstrap_script_served"
     AGENT_HEARTBEAT_AUTH_FAILED = "agent_heartbeat_auth_failed"
+    AGENT_HEARTBEAT_LEGACY_ACCEPTED = "agent_heartbeat_legacy_accepted"
     AGENT_PACKAGE_ACTIVATED = "agent_package_activated"
     AGENT_PACKAGE_DEACTIVATED = "agent_package_deactivated"
     AGENT_PACKAGE_DELETED = "agent_package_deleted"
