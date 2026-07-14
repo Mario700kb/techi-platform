@@ -85,7 +85,7 @@ class _OneTimePackageStub(EnrollmentBootstrapService):
         return (
             f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download",
             "a" * 64,
-            "2.1.8",
+            "2.1.9",
         )
 
     def _remote_support_msi_package_info(self, backend_url: str):
@@ -113,6 +113,14 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles():
     assert "taskkill.exe" not in script
     assert "remote-support-auto-repair-mode $RemoteSupportAutoRepairMode" in script
     assert "remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds" in script
+    assert "$AgentTargetVersion = '2.1.9'" in script
+    assert "$BootstrapConfigContractVersion = '1'" in script
+    assert "bootstrap-config-contract" in script
+    assert "$agentContractCompatible" in script
+    assert "refusing unsupported flags" in script
+    assert script.index("if (-not (Test-AgentBootstrapConfigContract $AgentExe))") < script.index(
+        "& $AgentExe bootstrap-config "
+    )
     assert "'pending_reboot'" in script
     assert "'executable_missing'" in script
     assert "Restore-RemoteSupportState $before $backup" in script

@@ -16,6 +16,10 @@ from app.schemas.enrollment_bootstrap import (
     NativeBootstrapArtifacts,
 )
 from app.services.agent_package_service import AgentPackageService
+from app.services.bootstrap_config_contract import (
+    BOOTSTRAP_CONFIG_CONTRACT_VERSION,
+    BOOTSTRAP_CONFIG_REQUIRED_FLAGS,
+)
 from app.services.enrollment_token_service import EnrollmentTokenService
 
 # Base64 (UTF-16LE) -EncodedCommand for techi-deploy.cmd's :read_registry label.
@@ -2532,6 +2536,9 @@ function Install-OrRepairRemoteSupport {
             for item in settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
             if item.strip().isdigit() and int(item.strip()) > 0
         )
+        required_bootstrap_flags = ", ".join(
+            f"'{flag}'" for flag in BOOTSTRAP_CONFIG_REQUIRED_FLAGS
+        )
         slug = self._safe_filename_slug(token_name)
 
         L: list[str] = []
@@ -2551,6 +2558,8 @@ function Install-OrRepairRemoteSupport {
             f"$MsiUrl        = '{safe_msi_url}'",
             f"$ExpectedSha256 = '{safe_sha256}'",
             f"$AgentTargetVersion = '{safe_agent_version}'",
+            f"$BootstrapConfigContractVersion = '{BOOTSTRAP_CONFIG_CONTRACT_VERSION}'",
+            f"$RequiredBootstrapConfigFlags = @({required_bootstrap_flags})",
             f"$RemoteSupportMsiUrl = '{safe_rs_msi_url}'",
             f"$RemoteSupportExpectedSha256 = '{safe_rs_sha256}'",
             f"$RemoteSupportTargetVersion = '{safe_rs_version}'",
@@ -2567,6 +2576,49 @@ function Install-OrRepairRemoteSupport {
             '    $line = "$ts  $Msg"',
             "    Write-Host $line",
             "    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}",
+            "}",
+            "",
+            "function Get-AgentBootstrapConfigContract {",
+            "    param([string]$Path)",
+            "    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }",
+            "    $psi = New-Object System.Diagnostics.ProcessStartInfo",
+            "    $psi.FileName = $Path",
+            "    $psi.Arguments = 'bootstrap-config-contract'",
+            "    $psi.UseShellExecute = $false",
+            "    $psi.CreateNoWindow = $true",
+            "    $psi.RedirectStandardOutput = $true",
+            "    $psi.RedirectStandardError = $true",
+            "    $process = New-Object System.Diagnostics.Process",
+            "    $process.StartInfo = $psi",
+            "    try {",
+            "        if (-not $process.Start()) { return $null }",
+            "        if (-not $process.WaitForExit(5000)) {",
+            "            $process.Kill()",
+            "            $process.WaitForExit()",
+            "            return $null",
+            "        }",
+            "        if ($process.ExitCode -ne 0) { return $null }",
+            "        $raw = $process.StandardOutput.ReadToEnd().Trim()",
+            "        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }",
+            "        return $raw | ConvertFrom-Json -ErrorAction Stop",
+            "    } catch {",
+            "        return $null",
+            "    } finally {",
+            "        $process.Dispose()",
+            "    }",
+            "}",
+            "",
+            "function Test-AgentBootstrapConfigContract {",
+            "    param([string]$Path)",
+            "    $contract = Get-AgentBootstrapConfigContract $Path",
+            "    if ($null -eq $contract) { return $false }",
+            "    if ((Get-NormalizedVersion ([string]$contract.agent_version)) -ne (Get-NormalizedVersion $AgentTargetVersion)) { return $false }",
+            "    if ([string]$contract.contract_version -ne $BootstrapConfigContractVersion) { return $false }",
+            "    $supported = @($contract.supported_flags)",
+            "    foreach ($required in $RequiredBootstrapConfigFlags) {",
+            "        if ($supported -notcontains $required) { return $false }",
+            "    }",
+            "    return $true",
             "}",
             "",
             *self._remote_support_one_time_ps_lines(),
@@ -2588,13 +2640,17 @@ function Install-OrRepairRemoteSupport {
             "$AgentCurrentHealthy = $false",
             "if ($AgentWasPresent) {",
             "    $agentVersion = Get-NormalizedVersion ((Get-Item -LiteralPath $AgentExe).VersionInfo.ProductVersion)",
+            "    $agentContractCompatible = $false",
+            "    if ($agentVersion -eq (Get-NormalizedVersion $AgentTargetVersion)) {",
+            "        $agentContractCompatible = Test-AgentBootstrapConfigContract $AgentExe",
+            "    }",
             "    $agentService = Get-Service -Name 'TechiAgent' -ErrorAction SilentlyContinue",
             "    $agentStatePath = 'C:\\ProgramData\\TechiAgent\\agent.state.json'",
             "    try {",
             "        $agentState = Get-Content -LiteralPath $agentStatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop",
             "        $agentSvcInfo = Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\" -ErrorAction SilentlyContinue",
             "        $agentLive = $null -ne (Get-Process -Id ([int]$agentState.pid) -ErrorAction SilentlyContinue)",
-            "        $agentCurrentHealthy = $agentVersion -eq (Get-NormalizedVersion $AgentTargetVersion) -and $agentService.Status -eq 'Running' -and $agentState.state -eq 'operational' -and $agentLive -and [int]$agentState.pid -eq [int]$agentSvcInfo.ProcessId",
+            "        $agentCurrentHealthy = $agentVersion -eq (Get-NormalizedVersion $AgentTargetVersion) -and $agentContractCompatible -and $agentService.Status -eq 'Running' -and $agentState.state -eq 'operational' -and $agentLive -and [int]$agentState.pid -eq [int]$agentSvcInfo.ProcessId",
             "    } catch {}",
             "}",
             "if ($AgentCurrentHealthy) {",
@@ -2661,6 +2717,10 @@ function Install-OrRepairRemoteSupport {
             "# -- Refresh enrollment independently from Agent package installation",
             "if (-not (Test-Path -LiteralPath $AgentExe -PathType Leaf)) {",
             '    Write-Log "ERROR: Agent executable is missing after Agent phase."',
+            "    exit 1",
+            "}",
+            "if (-not (Test-AgentBootstrapConfigContract $AgentExe)) {",
+            '    Write-Log "ERROR: Agent bootstrap-config contract does not match the active bootstrap package; refusing unsupported flags."',
             "    exit 1",
             "}",
             "& $AgentExe bootstrap-config -api-url $BackendUrl -enrollment-token $Token -reenroll 1 -remote-support-auto-repair-mode $RemoteSupportAutoRepairMode -remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds",

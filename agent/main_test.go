@@ -51,6 +51,7 @@ func TestUtilityCommandSetIncludesInstallerHelpers(t *testing.T) {
 		"swap-binary",
 		"watchdog-check",
 		"bootstrap-config",
+		"bootstrap-config-contract",
 		"rs-tray-task",
 		"installer-marker",
 		"installer-ensure-service",
@@ -59,6 +60,30 @@ func TestUtilityCommandSetIncludesInstallerHelpers(t *testing.T) {
 	} {
 		if !isUtilityCommand(command) {
 			t.Fatalf("isUtilityCommand(%q) = false", command)
+		}
+	}
+}
+
+func TestBootstrapConfigContractMatchesParser(t *testing.T) {
+	want := map[string]bool{
+		"-api-url":                               true,
+		"-enrollment-token":                      true,
+		"-reenroll":                              true,
+		"-rustdesk-server":                       true,
+		"-rustdesk-relay":                        true,
+		"-rustdesk-key":                          true,
+		"-remote-support-auto-repair-mode":       true,
+		"-remote-support-auto-repair-device-ids": true,
+	}
+	if bootstrapConfigContractVersion == "" {
+		t.Fatal("bootstrap config contract version must not be empty")
+	}
+	if len(bootstrapConfigSupportedFlags) != len(want) {
+		t.Fatalf("supported flags=%v want=%v", bootstrapConfigSupportedFlags, want)
+	}
+	for _, flag := range bootstrapConfigSupportedFlags {
+		if !want[flag] {
+			t.Fatalf("unexpected bootstrap config contract flag %q", flag)
 		}
 	}
 }

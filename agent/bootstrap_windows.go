@@ -41,14 +41,14 @@ const installerActiveMarkerPath = `C:\ProgramData\TechiAgent\installer.active`
 // token) explicitly asks to overwrite. Field set matches the old PS body.
 func runBootstrapConfigCommand(args []string) int {
 	fs := flag.NewFlagSet("bootstrap-config", flag.ContinueOnError)
-	apiURL := fs.String("api-url", "https://api-rdp.techi.com.al", "backend api url")
-	enrollmentToken := fs.String("enrollment-token", "", "enrollment token for first heartbeat")
-	reenroll := fs.String("reenroll", "", "set to 1 to overwrite an existing config (manual re-enroll)")
-	rustdeskServer := fs.String("rustdesk-server", "", "rustdesk rendezvous server")
-	rustdeskRelay := fs.String("rustdesk-relay", "", "rustdesk relay server")
-	rustdeskKey := fs.String("rustdesk-key", "", "rustdesk public key")
-	remoteSupportAutoRepairMode := fs.String("remote-support-auto-repair-mode", "disabled", "remote support mutation mode")
-	remoteSupportAutoRepairIDs := fs.String("remote-support-auto-repair-device-ids", "", "comma-separated canary device ids")
+	apiURL := fs.String(bootstrapFlagAPIURL, "https://api-rdp.techi.com.al", "backend api url")
+	enrollmentToken := fs.String(bootstrapFlagEnrollmentToken, "", "enrollment token for first heartbeat")
+	reenroll := fs.String(bootstrapFlagReenroll, "", "set to 1 to overwrite an existing config (manual re-enroll)")
+	rustdeskServer := fs.String(bootstrapFlagRustDeskServer, "", "rustdesk rendezvous server")
+	rustdeskRelay := fs.String(bootstrapFlagRustDeskRelay, "", "rustdesk relay server")
+	rustdeskKey := fs.String(bootstrapFlagRustDeskKey, "", "rustdesk public key")
+	remoteSupportAutoRepairMode := fs.String(bootstrapFlagRemoteSupportRepairMode, "disabled", "remote support mutation mode")
+	remoteSupportAutoRepairIDs := fs.String(bootstrapFlagRemoteSupportRepairIDs, "", "comma-separated canary device ids")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}

@@ -6,6 +6,9 @@ on:
       - stable/phase-2-heartbeat
     paths:
       - 'agent/**'
+      - 'backend/app/services/bootstrap_config_contract.py'
+      - 'backend/app/services/enrollment_bootstrap_service.py'
+      - 'scripts/verify_bootstrap_config_contract.py'
       - '.github/workflows/build-agent-msi.yml'
   workflow_dispatch:
 
@@ -35,6 +38,11 @@ jobs:
         with:
           go-version: '1.21'
           cache-dependency-path: agent/go.sum
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       # ------------------------------------------------------------------ #
       # 3. WiX v7 + UI extension (per WixUI_Common dialogs)                 #
@@ -117,6 +125,18 @@ jobs:
         shell: pwsh
         working-directory: agent
         run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
+
+      - name: Verify bootstrap script and executable contract
+        shell: pwsh
+        run: |
+          $contract = & .\agent\installer\techi-agent.exe bootstrap-config-contract
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($contract)) {
+            throw "techi-agent bootstrap-config contract probe failed"
+          }
+          $contract | Set-Content -Path "$env:RUNNER_TEMP\bootstrap-config-contract.json" -Encoding utf8NoBOM
+          python scripts/verify_bootstrap_config_contract.py `
+            --contract-json "$env:RUNNER_TEMP\bootstrap-config-contract.json" `
+            --compare-ref HEAD^
 
       # ------------------------------------------------------------------ #
       # 8. Build MSI me WiX v7                                              #

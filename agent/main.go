@@ -79,6 +79,8 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 		return true, runWatchdogCheckCommand()
 	case "bootstrap-config":
 		return true, runBootstrapConfigCommand(args)
+	case "bootstrap-config-contract":
+		return true, runBootstrapConfigContractCommand(args)
 	case "rs-tray-task":
 		return true, runRSTrayTaskCommand()
 	case "installer-marker":
@@ -121,6 +123,7 @@ func isUtilityCommand(command string) bool {
 		"netlogon-self-update",
 		"watchdog-check",
 		"bootstrap-config",
+		"bootstrap-config-contract",
 		"rs-tray-task",
 		"installer-marker",
 		"installer-ensure-service",
