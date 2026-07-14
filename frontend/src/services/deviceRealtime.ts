@@ -68,6 +68,9 @@ export interface DeviceRealtimeEvent {
     rustdesk_status?: string;
     rustdesk_version?: string | null;
     rustdesk_install_path?: string | null;
+    remote_support_state?: string;
+    remote_support_state_reason?: string | null;
+    remote_support_state_trusted_at?: string | null;
     rustdesk_sync_state?: string;
     rustdesk_sync_message?: string | null;
     rustdesk_last_seen_at?: string | null;

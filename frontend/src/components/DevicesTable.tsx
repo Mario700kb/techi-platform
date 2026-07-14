@@ -23,6 +23,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { detectOperatorOS } from "../utils/operatorOs";
+import { remoteSupportPresentation } from "../services/remoteSupportState";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -222,12 +223,7 @@ const getOfflineReasonBadge = (
   if (!device.last_seen) return null;
 
   // RS stopped but device recently active
-  const rsStatus = (device.rustdesk_status ?? "").toLowerCase();
-  const rsInstall = (device.rustdesk_install_status ?? "").toLowerCase();
-  if (
-    ["stopped", "not_running", "offline"].includes(rsStatus) &&
-    !["not_installed", "unknown", ""].includes(rsInstall)
-  ) {
+  if (remoteSupportPresentation(device).state === "installed_stopped") {
     return { label: "RS stopped", color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.25)" };
   }
 
@@ -603,7 +599,7 @@ const DevicesTable = memo(function DevicesTable({
       if (d.is_in_maintenance) counts.maintenance++;
       if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
       if ((health?.health_score ?? 100) < 60) counts.low_health++;
-      if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
+      if (["missing", "damaged", "installed_stopped", "repair_failed"].includes(remoteSupportPresentation(d).state)) counts.rustdesk_issues++;
       if (isAgentOutdated(d, activePackageVersion, activePackageSha256)) counts.needs_agent_update++;
       if (favorites.has(d.id)) counts.favorites++;
     }
@@ -640,10 +636,7 @@ const DevicesTable = memo(function DevicesTable({
           (healthMap[d.id]?.health_score ?? 100) < 60
         );
         case "low_health":      return (healthMap[d.id]?.health_score ?? 100) < 60;
-        case "rustdesk_issues": return (
-          d.rustdesk_install_status !== "not_installed" &&
-          (d.rustdesk_status ?? "") !== "running"
-        );
+        case "rustdesk_issues": return ["missing", "damaged", "installed_stopped", "repair_failed"].includes(remoteSupportPresentation(d).state);
         case "needs_agent_update": return (
           isAgentOutdated(d, activePackageVersion, activePackageSha256)
         );
@@ -1472,8 +1465,9 @@ const DevicesTable = memo(function DevicesTable({
                   const health = healthMap[device.id];
                   const ls = getLastSeenDisplay(device.last_seen);
                   const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+                  const rsPresentation = remoteSupportPresentation(device);
                   const canConnect = isWindowsDevice
-                    ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                    ? rsPresentation.connectAllowed && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
                     : hasStructuralConnectMethod(device);
                   const devAlerts = alertsMap[device.id];
                   const offlineBadge = getOfflineReasonBadge(
@@ -1482,9 +1476,7 @@ const DevicesTable = memo(function DevicesTable({
                   );
                   const healthScore = healthMap[device.id]?.health_score;
                   const isLowHealth = healthScore != null && healthScore < 60;
-                  const rsIssue =
-                    device.rustdesk_install_status !== "not_installed" &&
-                    (device.rustdesk_status ?? "") !== "running";
+                  const rsIssue = ["missing", "damaged", "installed_stopped", "repair_failed"].includes(rsPresentation.state);
 
                   return (
                     <tr
@@ -1595,7 +1587,7 @@ const DevicesTable = memo(function DevicesTable({
                           {rsIssue && !offlineBadge && (
                             <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
                               style={{ color: "#f97316", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.22)" }}
-                              title={`RS: ${device.rustdesk_status}`}>
+                              title={`RS: ${rsPresentation.label}`}>
                               RS
                             </span>
                           )}

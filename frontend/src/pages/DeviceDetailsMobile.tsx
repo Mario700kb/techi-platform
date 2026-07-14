@@ -34,6 +34,7 @@ import {
   buildRustDeskFallbackUrlFromTechiUrl,
   launchConnect,
 } from "../services/rustdeskLaunch";
+import { remoteSupportPresentation } from "../services/remoteSupportState";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import { useFavorites } from "../hooks/useFavorites";
@@ -272,7 +273,8 @@ export default function DeviceDetailsMobile() {
 
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const canConnect = isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+  const rsPresentation = remoteSupportPresentation(device);
+  const canConnect = rsPresentation.connectAllowed && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
   const criticalCount = deviceAlerts.openAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = deviceAlerts.openAlerts.length - criticalCount;
   const live = realtimeStatus === "connected";
@@ -513,7 +515,7 @@ export default function DeviceDetailsMobile() {
       >
         <dl className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-[6px]">
           <dt style={{ color: "var(--th-text-muted)" }}>Status</dt>
-          <dd style={{ color: "var(--th-text-primary)" }}>{device.rustdesk_status ?? "—"}</dd>
+          <dd style={{ color: "var(--th-text-primary)" }}>{rsPresentation.label}</dd>
           <dt style={{ color: "var(--th-text-muted)" }}>Version</dt>
           <dd className="font-mono" style={{ color: "var(--th-text-primary)" }}>{device.rustdesk_version ?? "—"}</dd>
           <dt style={{ color: "var(--th-text-muted)" }}>Sync</dt>

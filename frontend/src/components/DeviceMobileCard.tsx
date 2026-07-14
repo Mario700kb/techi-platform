@@ -6,6 +6,7 @@ import { parseUTC } from "../utils/time";
 import { ActiveActionEntry } from "./DevicesTable";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { MBadge, MBadgeVariant, StatusDot, FreshnessState } from "./mobile/primitives";
+import { remoteSupportPresentation } from "../services/remoteSupportState";
 
 /**
  * Mobile UI 2.0 device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
@@ -117,9 +118,7 @@ function getOfflineReasonBadge(device: Device, clientSummary?: ClientOfflineSumm
   if (freshness === "online") return null;
   if (!device.last_seen) return null;
 
-  const rsStatus = (device.rustdesk_status ?? "").toLowerCase();
-  const rsInstall = (device.rustdesk_install_status ?? "").toLowerCase();
-  if (["stopped", "not_running", "offline"].includes(rsStatus) && !["not_installed", "unknown", ""].includes(rsInstall))
+  if (remoteSupportPresentation(device).state === "installed_stopped")
     return { label: "RS stopped", variant: "agent" as MBadgeVariant };
 
   if (device.client_id && device.last_seen) {
@@ -206,9 +205,8 @@ export function DeviceMobileCard({
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
   const outdated = isAgentOutdated(device, activePackageVersion, activePackageSha256);
-  const rsIssue =
-    device.rustdesk_install_status !== "not_installed" &&
-    (device.rustdesk_status ?? "") !== "running";
+  const rsPresentation = remoteSupportPresentation(device);
+  const rsIssue = ["missing", "damaged", "installed_stopped", "repair_failed"].includes(rsPresentation.state);
 
   return (
     <div
@@ -262,7 +260,7 @@ export function DeviceMobileCard({
                   background: "var(--th-accent-glow)",
                   border: "1px solid var(--th-accent-border)",
                 }}
-                title={`RS: ${device.rustdesk_status}`}
+                title={`RS: ${rsPresentation.label}`}
               >
                 RS
               </span>

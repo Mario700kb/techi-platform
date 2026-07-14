@@ -44,6 +44,7 @@ import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
+import { remoteSupportPresentation } from "../services/remoteSupportState";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -538,6 +539,11 @@ export default function DeviceDrawer({
   }, [inventory, softwareSearch]);
 
   const isOnline = device.status === "online";
+  const rsPresentation = remoteSupportPresentation(device);
+  const rsConnectAllowed =
+    rsPresentation.connectAllowed &&
+    isValidRustDeskId(device.rustdesk_id) &&
+    !device.rustdesk_conflict_detected;
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
 
@@ -2044,7 +2050,7 @@ export default function DeviceDrawer({
                 </div>
                 <button
                   type="button"
-                  disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected || !hasPermission("remote_support_connect")}
+                  disabled={!rsConnectAllowed || !hasPermission("remote_support_connect")}
                   onClick={async () => {
                     try {
                       const res = await getConnectUrl(device.id);
@@ -2063,6 +2069,8 @@ export default function DeviceDrawer({
                       ? "Permission required: remote_support_connect"
                       : device.rustdesk_conflict_detected
                       ? "Remote Support ID conflict detected"
+                      : !rsPresentation.connectAllowed
+                      ? rsPresentation.detail
                       : isValidRustDeskId(device.rustdesk_id)
                       ? "Open TECHI Remote Support"
                       : "Remote ID not resolved yet"
@@ -2236,7 +2244,7 @@ export default function DeviceDrawer({
                 <div className="grid grid-cols-2 gap-x-5 gap-y-3">
                   <div>
                     <p className="premium-kicker mb-1">Service</p>
-                    <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} />
+                    <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} trustedState={rsPresentation.state} />
                   </div>
                   <div>
                     <p className="premium-kicker mb-1">Version</p>
@@ -2293,6 +2301,11 @@ export default function DeviceDrawer({
                     TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.
                   </p>
                 )}
+                {!rsPresentation.connectAllowed && (
+                  <p className="mt-3 text-[11px] font-medium text-slate-400">
+                    {rsPresentation.detail}
+                  </p>
+                )}
               </div>
             </section>
 
@@ -2305,10 +2318,12 @@ export default function DeviceDrawer({
                   style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
                 >
                   {/* Deploy prompt when not installed */}
-                  {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && hasPermission("deployment") && (
+                  {(rsPresentation.state === "missing" || rsPresentation.state === "damaged") && hasPermission("deployment") && (
                     <div className="mb-3">
                       <p className="mb-2 text-[11px] font-medium text-slate-400">
-                        TECHI Remote Support does not appear to be installed on this device.
+                        {rsPresentation.state === "missing"
+                          ? "TECHI Remote Support is missing on this device."
+                          : "TECHI Remote Support is damaged and requires an independent repair."}
                       </p>
                       <button
                         type="button"
@@ -2535,23 +2550,25 @@ function ActionRow({
 
 // ─── Remote Support tab helpers ────────────────────────────────────────────
 
-function RsServiceBadge({ status }: { status?: string }) {
-  const isRunning = status === "running";
-  const isStopped = status === "stopped" || status === "not_running";
-  const isNotInstalled = status === "not_installed";
+function RsServiceBadge({ status, trustedState }: { status?: string; trustedState?: string }) {
+  const isRunning = trustedState === "healthy" || trustedState === "installed_running";
+  const isStopped = trustedState === "installed_stopped" || status === "stopped" || status === "not_running";
+  const isNotInstalled = trustedState === "missing";
+  const isDamaged = trustedState === "damaged" || trustedState === "repair_failed";
+  const label = isRunning ? "Running" : isStopped ? "Stopped" : isNotInstalled ? "Missing" : isDamaged ? "Damaged" : "Status unavailable";
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
       style={{
-        color: isRunning ? "#22c55e" : isStopped || isNotInstalled ? "#6b7280" : "#94a3b8",
-        background: isRunning ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.05)",
+        color: isRunning ? "#22c55e" : isDamaged || isNotInstalled ? "#f87171" : isStopped ? "#f59e0b" : "#94a3b8",
+        background: isRunning ? "rgba(34,197,94,0.1)" : isDamaged || isNotInstalled ? "rgba(248,113,113,0.1)" : "rgba(255,255,255,0.05)",
       }}
     >
       <span
         className="h-1.5 w-1.5 rounded-full"
-        style={{ background: isRunning ? "#22c55e" : "#4b5563" }}
+        style={{ background: isRunning ? "#22c55e" : isDamaged || isNotInstalled ? "#f87171" : isStopped ? "#f59e0b" : "#4b5563" }}
       />
-      {isRunning ? "Running" : isStopped ? "Stopped" : isNotInstalled ? "Not installed" : (status ?? "Unknown")}
+      {label}
     </span>
   );
 }

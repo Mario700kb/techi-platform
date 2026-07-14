@@ -59,6 +59,10 @@ export interface Device {
   rustdesk_status: string;
   rustdesk_version?: string;
   rustdesk_install_path?: string;
+  heartbeat_auth_state?: string;
+  remote_support_state?: string;
+  remote_support_state_reason?: string | null;
+  remote_support_state_trusted_at?: string | null;
   rustdesk_last_seen_at?: string;
   rustdesk_synced_at?: string;
   rustdesk_sync_state: string;
