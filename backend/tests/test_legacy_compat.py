@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.legacy_compat import router as legacy_router
 from app.api.v1.endpoints import agent as agent_endpoint
 from app.api.v1.endpoints.agent import router as agent_router
-from app.core.agent_auth import heartbeat_signature, issue_agent_credential
+from app.core.agent_auth import heartbeat_identity_limiter, heartbeat_signature, issue_agent_credential
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db
@@ -60,6 +60,8 @@ def client(db):
 @pytest.fixture(autouse=True)
 def heartbeat_auth_mode(monkeypatch):
     monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "enforce")
+    with heartbeat_identity_limiter._lock:
+        heartbeat_identity_limiter._hits.clear()
 
 
 def _signed_headers(device, credential, payload: dict, *, timestamp_ms=None, nonce="nonce-1234567890-abcd"):
@@ -171,6 +173,26 @@ def test_observe_v1_missing_auth_accepts_restricted_legacy_path(client, db, monk
     audit = db.query(AuditLog).filter(AuditLog.action == AuditAction.AGENT_HEARTBEAT_LEGACY_ACCEPTED).one()
     assert audit.entity_id == device.id
     assert "observe_legacy_missing_auth" in (audit.details_json or "")
+
+
+def test_observe_v1_missing_auth_rate_limits_by_legacy_identity(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    devices = [
+        Device(id=i, hostname=f"legacy-{i}", agent_id=f"legacy-agent-{i}")
+        for i in range(100, 131)
+    ]
+    db.add_all(devices)
+    db.commit()
+
+    statuses = [
+        client.post(
+            "/api/v1/agent/heartbeat",
+            json={"agent_id": device.agent_id, "device_id": device.id},
+        ).status_code
+        for device in devices
+    ]
+
+    assert statuses == [200] * len(devices)
 
 
 def test_observe_v1_invalid_signature_is_rejected_not_downgraded(client, db, monkeypatch):

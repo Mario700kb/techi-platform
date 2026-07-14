@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.agent_auth import (
     AgentAuthError,
     enroll_limiter,
+    heartbeat_auth_material_missing,
     heartbeat_auth_limiter,
     heartbeat_identity_limiter,
     resolve_heartbeat_trust,
@@ -64,6 +65,26 @@ def _heartbeat_side_effects(
         db.close()
 
 
+def _heartbeat_identity_rate_limit_key(request: Request, payload: AgentHeartbeatPayload, client_ip: str) -> str:
+    header_agent_id = request.headers.get("x-techi-agent-id", "").strip()
+    if header_agent_id:
+        return f"{client_ip}:{header_agent_id}"
+
+    if (
+        settings.AGENT_HEARTBEAT_AUTH_MODE in {"observe", "disabled"}
+        and heartbeat_auth_material_missing(request.headers)
+    ):
+        legacy_identity = (
+            payload.agent_id
+            or (f"device:{payload.device_id}" if payload.device_id is not None else "")
+            or (f"rustdesk:{payload.rustdesk_id}" if payload.rustdesk_id else "")
+            or "missing"
+        )
+        return f"{client_ip}:legacy:{legacy_identity}"
+
+    return f"{client_ip}:missing"
+
+
 @router.post("/enroll", response_model=AgentEnrollmentResponse)
 def agent_enroll(
     payload: AgentEnrollmentRequest,
@@ -110,8 +131,8 @@ async def agent_heartbeat(
     client_ip = request.client.host if request.client else "unknown"
     if not heartbeat_auth_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many heartbeat authentication attempts")
-    claimed_agent_id = request.headers.get("x-techi-agent-id", "").strip() or "missing"
-    if not heartbeat_identity_limiter.is_allowed(f"{client_ip}:{claimed_agent_id}"):
+    identity_rate_limit_key = _heartbeat_identity_rate_limit_key(request, payload, client_ip)
+    if not heartbeat_identity_limiter.is_allowed(identity_rate_limit_key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many heartbeat authentication attempts")
     body = await request.body()
     try:
