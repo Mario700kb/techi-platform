@@ -38,6 +38,8 @@ jobs:
         working-directory: agent
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - uses: actions/setup-go@v5
         with:
