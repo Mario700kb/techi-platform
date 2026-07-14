@@ -51,8 +51,8 @@ const (
 // ensureRustDesk checks and heals TECHI Remote Support installation, config, and service.
 // Returns without error even if healing steps fail so heartbeat always continues.
 func ensureRustDesk(cfg *Config, configPath string) {
-	if !cfg.RustDeskManageEnabled {
-		log.Printf("[rustdesk_manage] disabled — skipping")
+	if !cfg.RustDeskManageEnabled || !remoteSupportMutationAllowed(cfg) {
+		log.Printf("[rustdesk_manage] mutation disabled by independent Remote Support gate — skipping")
 		return
 	}
 	if installerTransactionActive() {
@@ -347,24 +347,17 @@ func buildRustDeskTOML(cfg *Config) string {
 	return sb.String()
 }
 
-// isRustDeskProcessRunning checks via tasklist whether the tray app process
-// is already running in some session. There is no SCM service to query --
-// see the rustdeskTrayTaskName comment for why.
+// isRustDeskProcessRunning accepts only processes running from owned paths.
 func isRustDeskProcessRunning() bool {
-	out, err := runWithTimeout(10*time.Second, system32ExePath("tasklist.exe"), "/FI", "IMAGENAME eq TECHI Remote Support.exe")
-	if err == nil && strings.Contains(string(out), "TECHI Remote Support.exe") {
-		return true
-	}
-	out, err = runWithTimeout(10*time.Second, system32ExePath("tasklist.exe"), "/FI", "IMAGENAME eq rustdesk.exe")
-	return err == nil && strings.Contains(strings.ToLower(string(out)), "rustdesk.exe")
+	pids, err := exactImagePIDs(rustdeskDefaultInstallPath, rustdeskLegacyExePath)
+	return err == nil && len(pids) > 0
 }
 
-// stopRustDeskTray kills any running tray process, across sessions. Used
-// before a restart/reinstall/config-repair/password-change so the relaunch
-// picks up fresh state. No SCM service to stop -- see rustdeskTrayTaskName.
+// stopRustDeskTray terminates only processes running from owned exact paths.
 func stopRustDeskTray() {
-	_, _ = runWithTimeout(15*time.Second, system32ExePath("taskkill.exe"), "/F", "/IM", "TECHI Remote Support.exe")
-	_, _ = runWithTimeout(15*time.Second, system32ExePath("taskkill.exe"), "/F", "/IM", "rustdesk.exe")
+	if err := terminateExactImageProcesses(rustdeskDefaultInstallPath, rustdeskLegacyExePath); err != nil {
+		log.Printf("[rustdesk_manage] exact-path tray stop failed: %v", err)
+	}
 }
 
 // startRustDeskTray triggers the Scheduled Task to relaunch the tray app in

@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # even if this flag is accidentally enabled. Default must remain False.
     NATIVE_BOOTSTRAP_ENABLED: bool = False
 
+    # Remote Support mutation is independently gated from Agent rollout,
+    # heartbeat authentication and native bootstrap publication. Activation of
+    # an RS package only makes bytes available; it never authorizes mutation.
+    REMOTE_SUPPORT_AUTO_REPAIR_MODE: str = "disabled"
+    REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS: str = ""
+
     # Enterprise Credential Vault (Phase 4). Key lives OUTSIDE repo/DB; in the
     # backend container "data/" is the backend_data volume (same as agent_policy).
     VAULT_MASTER_KEY_FILE: str = "data/vault_master.key"
@@ -166,6 +172,34 @@ class Settings(BaseSettings):
                 "AGENT_HEARTBEAT_AUTH_MODE must be one of: disabled, observe, enforce"
             )
         return mode
+
+    @field_validator("REMOTE_SUPPORT_AUTO_REPAIR_MODE")
+    @classmethod
+    def validate_remote_support_auto_repair_mode(cls, value: str) -> str:
+        mode = (value or "disabled").strip().lower()
+        if mode not in {"disabled", "canary", "enabled"}:
+            raise ValueError(
+                "REMOTE_SUPPORT_AUTO_REPAIR_MODE must be one of: disabled, canary, enabled"
+            )
+        return mode
+
+    @model_validator(mode="after")
+    def validate_remote_support_canary_allowlist(self):
+        if self.REMOTE_SUPPORT_AUTO_REPAIR_MODE == "canary":
+            allowed = [
+                item.strip()
+                for item in self.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
+                if item.strip()
+            ]
+            if not allowed:
+                raise ValueError(
+                    "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS is required in canary mode"
+                )
+            if any(not item.isdigit() or int(item) <= 0 for item in allowed):
+                raise ValueError(
+                    "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS must contain positive numeric device IDs"
+                )
+        return self
 
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")

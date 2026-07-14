@@ -11,7 +11,6 @@ $logPath = Join-Path $logDir 'remote-support-install.log'
 $system32 = Join-Path $env:SystemRoot 'System32'
 $scExe = Join-Path $system32 'sc.exe'
 $schtasksExe = Join-Path $system32 'schtasks.exe'
-$taskkillExe = Join-Path $system32 'taskkill.exe'
 
 function Write-InstallLog([string]$Message) {
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
@@ -25,14 +24,25 @@ function Get-RSServiceStatus {
     return [string]$svc.Status
 }
 
+function Stop-OwnedRSProcesses {
+    $approved = @(
+        [IO.Path]::GetFullPath($ExePath),
+        [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($ExePath)) 'rustdesk.exe'))
+    )
+    foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+        if ($process.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($process.ExecutablePath)) {
+            $null = Invoke-CimMethod -InputObject $process -MethodName Terminate -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 try {
     Write-InstallLog "begin exe=$ExePath"
     if (!(Test-Path -LiteralPath $ExePath)) {
         throw "remote support exe not found: $ExePath"
     }
 
-    Start-Process -FilePath $taskkillExe -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-    Start-Process -FilePath $taskkillExe -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
+    Stop-OwnedRSProcesses
 
     $status = Get-RSServiceStatus
     Write-InstallLog "service status before=$status"

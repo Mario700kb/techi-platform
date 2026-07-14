@@ -214,6 +214,11 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	}
 
 	info.Status = rustDeskWindowsStatus()
+	info.InstallStatus, info.Status = classifyRustDeskWindowsState(
+		info.InstallStatus,
+		info.Status,
+		installPath,
+	)
 
 	// Prefer CLI: rustdesk.exe --get-id gives the exact ID shown in the UI.
 	// Only probe when we don't have a usable ID yet, or periodically to

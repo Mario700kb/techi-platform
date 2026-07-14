@@ -330,7 +330,7 @@ class EnrollmentBootstrapService:
         config_template = self._config_template(backend_url, enrollment_token, payload)
 
         if payload.platform == EnrollmentBootstrapPlatform.WINDOWS:
-            msi_url, _ = self._windows_msi_package_info(backend_url)
+            msi_url, _, _ = self._windows_msi_package_info(backend_url)
             token_name = getattr(token, "name", None) or "client"
             slug = self._safe_filename_slug(token_name)
             if msi_url:
@@ -419,6 +419,12 @@ class EnrollmentBootstrapService:
             "collect_software": False,
             "availability_profile": payload.availability_profile.value,
             "manage_power_policy": payload.manage_power_policy,
+            "remote_support_auto_repair_mode": settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE,
+            "remote_support_auto_repair_device_ids": [
+                int(item.strip())
+                for item in settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
+                if item.strip().isdigit() and int(item.strip()) > 0
+            ],
         }
         if enrollment_token:
             cfg["enrollment_token"] = enrollment_token
@@ -2287,14 +2293,221 @@ class EnrollmentBootstrapService:
         slug = slug.strip("-")[:40]
         return slug or "client"
 
-    def _windows_msi_package_info(self, backend_url: str) -> tuple[str, str]:
+    def _windows_msi_package_info(self, backend_url: str) -> tuple[str, str, str]:
         backend_url = self.normalize_backend_url(backend_url)
         svc = AgentPackageService()
-        package = svc.latest_active("windows", file_type="msi")
+        package = svc.latest_active("windows-amd64", file_type="msi")
         if package is None:
-            return "", ""
-        url = f"{backend_url.rstrip('/')}{svc.latest_download_url('windows')}"
-        return url, package.sha256 or ""
+            return "", "", ""
+        url = f"{backend_url.rstrip('/')}{svc.latest_download_url('windows-amd64')}"
+        return url, package.sha256 or "", package.version
+
+    def _remote_support_msi_package_info(self, backend_url: str) -> tuple[str, str, str]:
+        backend_url = self.normalize_backend_url(backend_url)
+        package = AgentPackageService().latest_active(
+            "windows-amd64", file_type="remote_support_msi"
+        )
+        if package is None:
+            return "", "", ""
+        return (
+            f"{backend_url.rstrip('/')}/api/v1/agent-packages/remote-support-msi/download",
+            package.sha256 or "",
+            package.version,
+        )
+
+    @staticmethod
+    def _remote_support_one_time_ps_lines() -> list[str]:
+        """Explicit one-time RS lifecycle, independent from Agent installation."""
+        source = r'''
+function Get-NormalizedVersion([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $m = [regex]::Match($Value, '\d+\.\d+\.\d+')
+    if ($m.Success) { return $m.Value }
+    return $Value.Trim()
+}
+
+function Get-RemoteSupportConfigPaths {
+    $patterns = @(
+        'C:\ProgramData\TECHI Remote Support\config\*.toml',
+        'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support\config\*.toml',
+        'C:\Users\*\AppData\Roaming\TECHI Remote Support\config\*.toml'
+    )
+    $paths = @()
+    foreach ($pattern in $patterns) {
+        $paths += @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+    }
+    return @($paths | Sort-Object -Unique)
+}
+
+function Test-RemoteSupportIdentityConflict {
+    $identities = @{}
+    foreach ($path in @(Get-RemoteSupportConfigPaths)) {
+        foreach ($line in @(Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)) {
+            if ($line -match '^\s*(id|enc_id)\s*=\s*["'']?([^"'']+)["'']?\s*$') {
+                $value = $Matches[2].Trim()
+                if (-not [string]::IsNullOrWhiteSpace($value)) { $identities[$value] = $true }
+            }
+        }
+    }
+    return $identities.Count -gt 1
+}
+
+function Get-RemoteSupportObservation {
+    $root = 'C:\Program Files\TECHI Remote Support'
+    $exe = Join-Path $root 'TECHI Remote Support.exe'
+    $legacyExe = Join-Path $root 'rustdesk.exe'
+    $svc = Get-CimInstance Win32_Service -Filter "Name='TECHI Remote Support'" -ErrorAction SilentlyContinue
+    $exeExists = Test-Path -LiteralPath $exe -PathType Leaf
+    $serviceExists = $null -ne $svc
+    $serviceRunning = $serviceExists -and $svc.State -eq 'Running'
+    $serviceExe = ''
+    if ($serviceExists -and $svc.PathName -match '^\s*"([^"]+\.exe)"') { $serviceExe = $Matches[1] }
+    elseif ($serviceExists -and $svc.PathName -match '^\s*([^"].*?\.exe)') { $serviceExe = $Matches[1].Trim() }
+    $servicePathOK = $serviceExists -and $serviceExe -ieq $exe
+    $version = if ($exeExists) { Get-NormalizedVersion ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion) } else { '' }
+    $tmp = @(Get-ChildItem -LiteralPath $root -Filter 'TBD*.tmp' -File -ErrorAction SilentlyContinue)
+    $ownedProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.ExecutablePath -and ($_.ExecutablePath -ieq $exe -or $_.ExecutablePath -ieq $legacyExe)
+    })
+    $pendingReboot = $false
+    try {
+        $pendingRename = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction Stop).PendingFileRenameOperations
+        $pendingReboot = $null -ne $pendingRename -and @($pendingRename).Count -gt 0
+    } catch {}
+    $state = 'unknown_untrusted'
+    if (Test-RemoteSupportIdentityConflict) { $state = 'config_conflict' }
+    elseif ($pendingReboot -and $tmp.Count -gt 0) { $state = 'pending_reboot' }
+    elseif (-not $exeExists -and -not $serviceExists) { $state = 'missing' }
+    elseif (-not $exeExists -and $serviceExists) { $state = 'executable_missing' }
+    elseif ($exeExists -and -not $serviceExists) { $state = 'service_missing' }
+    elseif ($tmp.Count -gt 0) { $state = 'partial_install' }
+    elseif (-not $servicePathOK) { $state = 'stale_service' }
+    elseif ((Get-NormalizedVersion $RemoteSupportTargetVersion) -ne '' -and $version -ne (Get-NormalizedVersion $RemoteSupportTargetVersion)) { $state = 'version_mismatch' }
+    elseif ($serviceRunning) { $state = 'healthy' }
+    else { $state = 'installed_stopped' }
+    if ($state -ne 'healthy' -and $ownedProcesses.Count -gt 0) { $state = 'locked_runtime' }
+    return [pscustomobject]@{
+        State = $state; Exe = $exe; LegacyExe = $legacyExe; Root = $root;
+        Service = $svc; ServicePathOK = $servicePathOK; Version = $version
+    }
+}
+
+function Stop-RemoteSupportOwnedRuntime($Observation) {
+    Stop-ScheduledTask -TaskName 'TECHI Remote Support Tray' -ErrorAction SilentlyContinue
+    Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue
+    $approved = @($Observation.Exe.ToLowerInvariant(), $Observation.LegacyExe.ToLowerInvariant())
+    foreach ($proc in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+        if ($proc.ExecutablePath -and $approved -contains $proc.ExecutablePath.ToLowerInvariant()) {
+            $null = Invoke-CimMethod -InputObject $proc -MethodName Terminate -ErrorAction SilentlyContinue
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
+function Backup-RemoteSupportState($Observation) {
+    $backup = Join-Path $env:TEMP ('techi-rs-backup-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $backup -Force | Out-Null
+    $files = Join-Path $backup 'files'
+    if (Test-Path -LiteralPath $Observation.Root) {
+        New-Item -ItemType Directory -Path $files -Force | Out-Null
+        Copy-Item -Path (Join-Path $Observation.Root '*') -Destination $files -Recurse -Force -ErrorAction Stop
+    }
+    $configs = @()
+    $i = 0
+    foreach ($path in @(Get-RemoteSupportConfigPaths)) {
+        $copy = Join-Path $backup ("config-$i.toml")
+        Copy-Item -LiteralPath $path -Destination $copy -Force -ErrorAction Stop
+        $configs += [pscustomobject]@{ Source = $path; Backup = $copy }
+        $i++
+    }
+    return [pscustomobject]@{ Root = $backup; Files = $files; Configs = $configs; Service = $Observation.Service }
+}
+
+function Restore-RemoteSupportState($Observation, $Backup) {
+    Stop-RemoteSupportOwnedRuntime $Observation
+    $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
+    & $sc delete 'TECHI Remote Support' | Out-Null
+    Start-Sleep -Seconds 1
+    Remove-Item -LiteralPath $Observation.Root -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Backup.Files) {
+        New-Item -ItemType Directory -Path $Observation.Root -Force | Out-Null
+        Copy-Item -Path (Join-Path $Backup.Files '*') -Destination $Observation.Root -Recurse -Force -ErrorAction Stop
+    }
+    foreach ($item in @($Backup.Configs)) {
+        New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Source)) -Force | Out-Null
+        Copy-Item -LiteralPath $item.Backup -Destination $item.Source -Force -ErrorAction Stop
+    }
+    if ($null -ne $Backup.Service) {
+        & $sc create 'TECHI Remote Support' binPath= $Backup.Service.PathName start= auto DisplayName= 'TECHI Remote Support' | Out-Null
+        if ($Backup.Service.State -eq 'Running') { Start-Service -Name 'TECHI Remote Support' -ErrorAction SilentlyContinue }
+    }
+}
+
+function Install-OrRepairRemoteSupport {
+    $before = Get-RemoteSupportObservation
+    Write-Log "remote_support_state=$($before.State)"
+    if ($before.State -eq 'healthy') { return 'unchanged' }
+    if ($before.State -eq 'config_conflict') { throw 'Remote Support configuration identities conflict; automatic repair refused.' }
+    if ([string]::IsNullOrWhiteSpace($RemoteSupportMsiUrl) -or [string]::IsNullOrWhiteSpace($RemoteSupportExpectedSha256)) {
+        throw 'No verified active Remote Support MSI is available.'
+    }
+
+    $rsMsi = Join-Path $env:TEMP 'techi-remote-support-setup.msi'
+    Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
+    Invoke-WebRequest -Uri $RemoteSupportMsiUrl -OutFile $rsMsi -UseBasicParsing -ErrorAction Stop
+    $actual = (Get-FileHash -LiteralPath $rsMsi -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
+    if ($actual -ne $RemoteSupportExpectedSha256.ToLower()) {
+        Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
+        throw 'Remote Support MSI SHA256 mismatch.'
+    }
+
+    $backup = $null
+    if ($before.State -ne 'missing') { $backup = Backup-RemoteSupportState $before }
+    try {
+        if ($before.State -ne 'missing') {
+            Stop-RemoteSupportOwnedRuntime $before
+            if ($before.State -in @('stale_service', 'service_missing', 'executable_missing')) {
+                $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
+                & $sc delete 'TECHI Remote Support' | Out-Null
+                Start-Sleep -Seconds 1
+            }
+            Get-ChildItem -LiteralPath $before.Root -Filter 'TBD*.tmp' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction Stop
+        }
+        $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+        $rsLog = 'C:\Windows\Temp\techi-remote-support-install.log'
+        $proc = Start-Process -FilePath $msiexec -ArgumentList @('/i', $rsMsi, '/qn', '/norestart', '/L*v', $rsLog) -Wait -PassThru
+        if ($proc.ExitCode -notin @(0, 3010)) { throw "Remote Support MSI failed with exit $($proc.ExitCode)." }
+        if ($null -ne $backup) {
+            Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue
+            foreach ($item in @($backup.Configs)) {
+                New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Source)) -Force | Out-Null
+                Copy-Item -LiteralPath $item.Backup -Destination $item.Source -Force -ErrorAction Stop
+            }
+        }
+        Start-Service -Name 'TECHI Remote Support' -ErrorAction Stop
+        Start-Sleep -Seconds 3
+        $after = Get-RemoteSupportObservation
+        if ($after.State -ne 'healthy') { throw "Remote Support validation failed: $($after.State)." }
+        if (@(Get-RemoteSupportConfigPaths).Count -eq 0) { throw 'Remote Support configuration was not materialized.' }
+        return $(if ($before.State -eq 'missing') { 'installed' } else { 'repaired' })
+    } catch {
+        if ($null -ne $backup) {
+            Restore-RemoteSupportState $before $backup
+        } else {
+            $partial = Get-RemoteSupportObservation
+            Stop-RemoteSupportOwnedRuntime $partial
+            $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
+            & $sc delete 'TECHI Remote Support' | Out-Null
+            Remove-Item -LiteralPath $partial.Root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    } finally {
+        Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
+        if ($null -ne $backup) { Remove-Item -LiteralPath $backup.Root -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+'''
+        return source.strip().splitlines()
 
     def _windows_msi_bootstrap(
         self,
@@ -2303,11 +2516,22 @@ class EnrollmentBootstrapService:
         token_name: str,
         payload: EnrollmentBootstrapRequest,
     ) -> tuple[str, str]:
-        msi_url, sha256 = self._windows_msi_package_info(backend_url)
+        msi_url, sha256, agent_version = self._windows_msi_package_info(backend_url)
+        rs_msi_url, rs_sha256, rs_version = self._remote_support_msi_package_info(backend_url)
         safe_token = enrollment_token.replace("'", "''")
         safe_url = backend_url.replace("'", "''")
         safe_msi_url = msi_url.replace("'", "''")
         safe_sha256 = sha256.replace("'", "''")
+        safe_agent_version = agent_version.replace("'", "''")
+        safe_rs_msi_url = rs_msi_url.replace("'", "''")
+        safe_rs_sha256 = rs_sha256.replace("'", "''")
+        safe_rs_version = rs_version.replace("'", "''")
+        safe_rs_repair_mode = settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE.replace("'", "''")
+        safe_rs_repair_ids = ",".join(
+            item.strip()
+            for item in settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
+            if item.strip().isdigit() and int(item.strip()) > 0
+        )
         slug = self._safe_filename_slug(token_name)
 
         L: list[str] = []
@@ -2326,6 +2550,12 @@ class EnrollmentBootstrapService:
             f"$BackendUrl    = '{safe_url}'",
             f"$MsiUrl        = '{safe_msi_url}'",
             f"$ExpectedSha256 = '{safe_sha256}'",
+            f"$AgentTargetVersion = '{safe_agent_version}'",
+            f"$RemoteSupportMsiUrl = '{safe_rs_msi_url}'",
+            f"$RemoteSupportExpectedSha256 = '{safe_rs_sha256}'",
+            f"$RemoteSupportTargetVersion = '{safe_rs_version}'",
+            f"$RemoteSupportAutoRepairMode = '{safe_rs_repair_mode}'",
+            f"$RemoteSupportAutoRepairDeviceIds = '{safe_rs_repair_ids}'",
             f"$Token         = '{safe_token}'",
             "$MsiPath       = Join-Path $env:TEMP 'techi-endpoint-setup.msi'",
             "$LogFile       = 'C:\\Windows\\Temp\\techi-bootstrap.log'",
@@ -2339,6 +2569,8 @@ class EnrollmentBootstrapService:
             "    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}",
             "}",
             "",
+            *self._remote_support_one_time_ps_lines(),
+            "",
             "# -- Admin elevation check",
             "$identity  = [System.Security.Principal.WindowsIdentity]::GetCurrent()",
             "$principal = [System.Security.Principal.WindowsPrincipal]$identity",
@@ -2349,6 +2581,26 @@ class EnrollmentBootstrapService:
             "",
             'Write-Log "=== TECHI Endpoint Bootstrap ==="',
             "",
+            "$AgentResult = 'pending'",
+            "$RemoteSupportResult = 'pending'",
+            "$AgentExe = 'C:\\ProgramData\\TechiAgent\\techi-agent.exe'",
+            "$AgentWasPresent = Test-Path -LiteralPath $AgentExe -PathType Leaf",
+            "$AgentCurrentHealthy = $false",
+            "if ($AgentWasPresent) {",
+            "    $agentVersion = Get-NormalizedVersion ((Get-Item -LiteralPath $AgentExe).VersionInfo.ProductVersion)",
+            "    $agentService = Get-Service -Name 'TechiAgent' -ErrorAction SilentlyContinue",
+            "    $agentStatePath = 'C:\\ProgramData\\TechiAgent\\agent.state.json'",
+            "    try {",
+            "        $agentState = Get-Content -LiteralPath $agentStatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop",
+            "        $agentSvcInfo = Get-CimInstance Win32_Service -Filter \"Name='TechiAgent'\" -ErrorAction SilentlyContinue",
+            "        $agentLive = $null -ne (Get-Process -Id ([int]$agentState.pid) -ErrorAction SilentlyContinue)",
+            "        $agentCurrentHealthy = $agentVersion -eq (Get-NormalizedVersion $AgentTargetVersion) -and $agentService.Status -eq 'Running' -and $agentState.state -eq 'operational' -and $agentLive -and [int]$agentState.pid -eq [int]$agentSvcInfo.ProcessId",
+            "    } catch {}",
+            "}",
+            "if ($AgentCurrentHealthy) {",
+            "    $AgentResult = 'unchanged'",
+            '    Write-Log "agent_result=unchanged reason=healthy_current"',
+            "} else {",
             "# -- Download MSI",
             'Write-Log "Downloading TECHI Endpoint package from $MsiUrl"',
             "Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
@@ -2392,20 +2644,36 @@ class EnrollmentBootstrapService:
             "try {",
             "    $MsiexecPath = Join-Path $env:SystemRoot 'System32\\msiexec.exe'",
             "    $proc = Start-Process -FilePath $MsiexecPath -ArgumentList $msiArgs -Wait -PassThru",
-            "    if ($proc.ExitCode -ne 0) {",
+            "    if ($proc.ExitCode -notin @(0, 3010)) {",
             '        Write-Log "ERROR: msiexec exited with code $($proc.ExitCode). See: $MsiLog"',
             "        exit 1",
             "    }",
-            '    Write-Log "Installation complete (exit 0)."',
+            '    Write-Log "Agent MSI complete (exit $($proc.ExitCode))."',
             "} catch {",
             '    Write-Log "ERROR: msiexec launch failed: $_"',
             "    exit 1",
             "} finally {",
             "    Remove-Item -LiteralPath $MsiPath -Force -ErrorAction SilentlyContinue",
             "}",
+            "$AgentResult = if ($AgentWasPresent) { 'updated' } else { 'installed' }",
+            "}",
+            "",
+            "# -- Refresh enrollment independently from Agent package installation",
+            "if (-not (Test-Path -LiteralPath $AgentExe -PathType Leaf)) {",
+            '    Write-Log "ERROR: Agent executable is missing after Agent phase."',
+            "    exit 1",
+            "}",
+            "& $AgentExe bootstrap-config -api-url $BackendUrl -enrollment-token $Token -reenroll 1 -remote-support-auto-repair-mode $RemoteSupportAutoRepairMode -remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds",
+            "if ($LASTEXITCODE -ne 0) {",
+            '    Write-Log "ERROR: Agent enrollment configuration refresh failed."',
+            "    exit 1",
+            "}",
+            "$agentSvc = Get-Service -Name 'TechiAgent' -ErrorAction SilentlyContinue",
+            "if ($null -ne $agentSvc -and $agentSvc.Status -eq 'Running') { Restart-Service -Name 'TechiAgent' -Force -ErrorAction Stop }",
+            "elseif ($null -ne $agentSvc) { Start-Service -Name 'TechiAgent' -ErrorAction Stop }",
             "",
             "# -- Verify services and authoritative lifecycle health",
-            '$RequiredServices = @("TechiAgent", "TECHI Remote Support")',
+            '$RequiredServices = @("TechiAgent")',
             "foreach ($ServiceName in $RequiredServices) {",
             "    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue",
             "    if ($null -eq $svc) {",
@@ -2442,6 +2710,17 @@ class EnrollmentBootstrapService:
             "    exit 1",
             "}",
             "",
+            "# -- Reconcile Remote Support only after Agent is operational",
+            "try {",
+            "    $RemoteSupportResult = Install-OrRepairRemoteSupport",
+            '    Write-Log "remote_support_result=$RemoteSupportResult"',
+            "} catch {",
+            "    $RemoteSupportResult = 'failed'",
+            '    Write-Log "ERROR: remote_support_result=failed reason=$($_.Exception.Message)"',
+            "    exit 1",
+            "}",
+            "",
+            'Write-Log "agent_result=$AgentResult remote_support_result=$RemoteSupportResult"',
             'Write-Log "TECHI Endpoint deployed successfully."',
             'Write-Log "Install log: $MsiLog"',
             "exit 0",

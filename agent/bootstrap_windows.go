@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -46,7 +47,19 @@ func runBootstrapConfigCommand(args []string) int {
 	rustdeskServer := fs.String("rustdesk-server", "", "rustdesk rendezvous server")
 	rustdeskRelay := fs.String("rustdesk-relay", "", "rustdesk relay server")
 	rustdeskKey := fs.String("rustdesk-key", "", "rustdesk public key")
+	remoteSupportAutoRepairMode := fs.String("remote-support-auto-repair-mode", "disabled", "remote support mutation mode")
+	remoteSupportAutoRepairIDs := fs.String("remote-support-auto-repair-device-ids", "", "comma-separated canary device ids")
 	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	mode := strings.ToLower(strings.TrimSpace(*remoteSupportAutoRepairMode))
+	if mode != "disabled" && mode != "canary" && mode != "enabled" {
+		writeDeployLog("[bootstrap-config]", "invalid remote support auto repair mode")
+		return 1
+	}
+	allowedIDs, err := parsePositiveDeviceIDs(*remoteSupportAutoRepairIDs)
+	if err != nil || (mode == "canary" && len(allowedIDs) == 0) {
+		writeDeployLog("[bootstrap-config]", "invalid remote support auto repair device allowlist")
 		return 1
 	}
 
@@ -62,15 +75,17 @@ func runBootstrapConfigCommand(args []string) int {
 	}
 
 	cfg := map[string]interface{}{
-		"api_url":                    strings.TrimSpace(*apiURL),
-		"enrollment_token":           strings.TrimSpace(*enrollmentToken),
-		"timeout_seconds":            30,
-		"heartbeat_interval_seconds": 60,
-		"retries":                    3,
-		"retry_delay_seconds":        10,
-		"collect_processes":          true,
-		"collect_software":           true,
-		"collect_services":           true,
+		"api_url":                               strings.TrimSpace(*apiURL),
+		"enrollment_token":                      strings.TrimSpace(*enrollmentToken),
+		"timeout_seconds":                       30,
+		"heartbeat_interval_seconds":            60,
+		"retries":                               3,
+		"retry_delay_seconds":                   10,
+		"collect_processes":                     true,
+		"collect_software":                      true,
+		"collect_services":                      true,
+		"remote_support_auto_repair_mode":       mode,
+		"remote_support_auto_repair_device_ids": allowedIDs,
 	}
 	if strings.TrimSpace(*rustdeskServer) != "" {
 		cfg["rustdesk_manage_enabled"] = true
@@ -89,6 +104,25 @@ func runBootstrapConfigCommand(args []string) int {
 	lockdownConfigACL(windowsConfigPath)
 	writeDeployLog("[bootstrap-config]", "config created path="+windowsConfigPath)
 	return 0
+}
+
+func parsePositiveDeviceIDs(raw string) ([]int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []int{}, nil
+	}
+	ids := make([]int, 0)
+	seen := make(map[int]bool)
+	for _, item := range strings.Split(raw, ",") {
+		id, err := strconv.Atoi(strings.TrimSpace(item))
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("device IDs must be positive integers")
+		}
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	return ids, nil
 }
 
 // runInstallerHealthCheckCommand is the MSI transaction's authoritative

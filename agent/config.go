@@ -31,28 +31,30 @@ type Config struct {
 	CollectServices  bool   `json:"collect_services"`
 
 	// TECHI Remote Support self-healing policy (Windows only)
-	RustDeskManageEnabled     bool   `json:"rustdesk_manage_enabled"`
-	RustDeskForceConfig       bool   `json:"rustdesk_force_config"`
-	RustDeskMSIUrl            string `json:"rustdesk_msi_url,omitempty"`
-	RustDeskRendezvousServer  string `json:"rustdesk_rendezvous_server,omitempty"`
-	RustDeskRelayServer       string `json:"rustdesk_relay_server,omitempty"`
-	RustDeskAPIServer         string `json:"rustdesk_api_server,omitempty"`
-	RustDeskKey               string `json:"rustdesk_key,omitempty"`
-	RustDeskDefaultPassword   string `json:"rustdesk_default_password,omitempty"`
-	RustDeskCredentialGen     int    `json:"rustdesk_credential_generation,omitempty"`
-	RustDeskAckGeneration     int    `json:"rustdesk_ack_generation,omitempty"`
-	RustDeskAckStatus         string `json:"rustdesk_ack_status,omitempty"`
-	RustDeskAckFingerprint    string `json:"rustdesk_ack_fingerprint,omitempty"`
-	RustDeskAckError          string `json:"rustdesk_ack_error,omitempty"`
-	RustDeskMSIChecksumSHA256 string `json:"rustdesk_msi_checksum_sha256,omitempty"`
-	RustDeskPackageVersion    string `json:"rustdesk_package_version,omitempty"`
-	RustDeskLastRepairAt      string `json:"rustdesk_last_repair_at,omitempty"`
-	RustDeskRepairCount       int    `json:"rustdesk_repair_count,omitempty"`
-	RustDeskRepairAttempts    int    `json:"rustdesk_repair_attempt_count,omitempty"`
-	RustDeskRepairSuccesses   int    `json:"rustdesk_repair_success_count,omitempty"`
-	RustDeskRepairFailures    int    `json:"rustdesk_consecutive_repair_failures,omitempty"`
-	RustDeskLastRepairReason  string `json:"rustdesk_last_repair_reason,omitempty"`
-	RustDeskOptionsSchemaVer  int    `json:"rustdesk_options_schema_version,omitempty"`
+	RustDeskManageEnabled       bool   `json:"rustdesk_manage_enabled"`
+	RustDeskForceConfig         bool   `json:"rustdesk_force_config"`
+	RustDeskMSIUrl              string `json:"rustdesk_msi_url,omitempty"`
+	RustDeskRendezvousServer    string `json:"rustdesk_rendezvous_server,omitempty"`
+	RustDeskRelayServer         string `json:"rustdesk_relay_server,omitempty"`
+	RustDeskAPIServer           string `json:"rustdesk_api_server,omitempty"`
+	RustDeskKey                 string `json:"rustdesk_key,omitempty"`
+	RustDeskDefaultPassword     string `json:"rustdesk_default_password,omitempty"`
+	RustDeskCredentialGen       int    `json:"rustdesk_credential_generation,omitempty"`
+	RustDeskAckGeneration       int    `json:"rustdesk_ack_generation,omitempty"`
+	RustDeskAckStatus           string `json:"rustdesk_ack_status,omitempty"`
+	RustDeskAckFingerprint      string `json:"rustdesk_ack_fingerprint,omitempty"`
+	RustDeskAckError            string `json:"rustdesk_ack_error,omitempty"`
+	RustDeskMSIChecksumSHA256   string `json:"rustdesk_msi_checksum_sha256,omitempty"`
+	RustDeskPackageVersion      string `json:"rustdesk_package_version,omitempty"`
+	RustDeskLastRepairAt        string `json:"rustdesk_last_repair_at,omitempty"`
+	RustDeskRepairCount         int    `json:"rustdesk_repair_count,omitempty"`
+	RustDeskRepairAttempts      int    `json:"rustdesk_repair_attempt_count,omitempty"`
+	RustDeskRepairSuccesses     int    `json:"rustdesk_repair_success_count,omitempty"`
+	RustDeskRepairFailures      int    `json:"rustdesk_consecutive_repair_failures,omitempty"`
+	RustDeskLastRepairReason    string `json:"rustdesk_last_repair_reason,omitempty"`
+	RustDeskOptionsSchemaVer    int    `json:"rustdesk_options_schema_version,omitempty"`
+	RemoteSupportAutoRepairMode string `json:"remote_support_auto_repair_mode,omitempty"`
+	RemoteSupportAutoRepairIDs  []int  `json:"remote_support_auto_repair_device_ids,omitempty"`
 
 	// Availability profile — controls power policy (Windows only).
 	// "server": prevent sleep + hibernate on AC; "workstation": use explicit flags; "custom": use explicit flags.

@@ -78,6 +78,31 @@ def test_upload_binds_zip_manifest_and_metadata(svc):
     svc.set_active(package.id, True)
 
 
+def test_agent_and_remote_support_packages_activate_independently(svc):
+    agent = svc.upload(
+        version="2.1.8",
+        platform="windows-amd64",
+        file_type="msi",
+        filename="TECHI-Agent-2.1.8.msi",
+        uploaded_by="tester",
+        stream=io.BytesIO(b"agent-only"),
+    )
+    remote = svc.upload(
+        version="1.4.6",
+        platform="windows-amd64",
+        file_type="remote_support_msi",
+        filename="TECHI-Remote-Support-1.4.6.msi",
+        uploaded_by="tester",
+        stream=io.BytesIO(b"remote-support-only"),
+    )
+
+    svc.set_active(agent.id, True)
+    svc.set_active(remote.id, True)
+
+    assert svc.latest_active("windows-amd64", file_type="msi").id == agent.id
+    assert svc.latest_active("windows-amd64", file_type="remote_support_msi").id == remote.id
+
+
 @pytest.mark.parametrize(
     "bundle,manifest,error",
     [

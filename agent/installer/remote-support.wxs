@@ -121,14 +121,14 @@
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeInstall"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@([IO.Path]::GetFullPath((Join-Path $root 'TECHI Remote Support.exe')),[IO.Path]::GetFullPath((Join-Path $root 'rustdesk.exe'))); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($_.ExecutablePath) } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeRemove"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'taskkill.exe') -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@([IO.Path]::GetFullPath((Join-Path $root 'TECHI Remote Support.exe')),[IO.Path]::GetFullPath((Join-Path $root 'rustdesk.exe'))); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($_.ExecutablePath) } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

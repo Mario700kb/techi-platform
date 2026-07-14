@@ -214,9 +214,20 @@ def test_config_default_and_allowed_values():
     assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="disabled").AGENT_HEARTBEAT_AUTH_MODE == "disabled"
     assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="observe").AGENT_HEARTBEAT_AUTH_MODE == "observe"
     assert Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE="enforce").AGENT_HEARTBEAT_AUTH_MODE == "enforce"
+    assert Settings(SECRET_KEY="test-secret").REMOTE_SUPPORT_AUTO_REPAIR_MODE == "disabled"
+    assert Settings(
+        SECRET_KEY="test-secret",
+        REMOTE_SUPPORT_AUTO_REPAIR_MODE="canary",
+        REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS="11",
+    ).REMOTE_SUPPORT_AUTO_REPAIR_MODE == "canary"
 
 
 @pytest.mark.parametrize("mode", ["", "bogus", " enforce ", "observe-now"])
 def test_config_invalid_values_fail_closed(mode):
     with pytest.raises(ValidationError):
         Settings(SECRET_KEY="test-secret", AGENT_HEARTBEAT_AUTH_MODE=mode)
+
+
+def test_remote_support_canary_requires_explicit_allowlist():
+    with pytest.raises(ValidationError):
+        Settings(SECRET_KEY="test-secret", REMOTE_SUPPORT_AUTO_REPAIR_MODE="canary")

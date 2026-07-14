@@ -186,7 +186,10 @@ def test_remote_support_msi_and_helper_use_absolute_windows_tools():
     assert "system32 = Join-Path $env:SystemRoot 'System32'" in REMOTE_HELPER
     assert "$scExe = Join-Path $system32 'sc.exe'" in REMOTE_HELPER
     assert "$schtasksExe = Join-Path $system32 'schtasks.exe'" in REMOTE_HELPER
-    assert "$taskkillExe = Join-Path $system32 'taskkill.exe'" in REMOTE_HELPER
+    assert "Get-CimInstance Win32_Process" in REMOTE_HELPER
+    assert "Invoke-CimMethod -InputObject $process -MethodName Terminate" in REMOTE_HELPER
+    assert "taskkill.exe" not in REMOTE_HELPER
+    assert "'/IM'" not in REMOTE_WXS
 
 
 def test_deploy_orchestrator_splits_agent_and_remote_support_lifecycles():

@@ -77,6 +77,51 @@ class _StubTokenService:
         return self.issued_token
 
 
+class _OneTimePackageStub(EnrollmentBootstrapService):
+    def __init__(self):
+        pass
+
+    def _windows_msi_package_info(self, backend_url: str):
+        return (
+            f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download",
+            "a" * 64,
+            "2.1.8",
+        )
+
+    def _remote_support_msi_package_info(self, backend_url: str):
+        return (
+            f"{backend_url}/api/v1/agent-packages/remote-support-msi/download",
+            "b" * 64,
+            "1.4.6",
+        )
+
+
+def test_one_time_install_separates_agent_and_remote_support_lifecycles():
+    _, script = _OneTimePackageStub()._windows_msi_bootstrap(
+        "https://api-rdp.techi.com.al",
+        "token-value-that-is-long-enough",
+        "Device 11",
+        _make_req(),
+    )
+
+    assert "agent_result=unchanged reason=healthy_current" in script
+    assert "remote_support_result=$RemoteSupportResult" in script
+    assert "Install-OrRepairRemoteSupport" in script
+    assert "remote_support_state=$($before.State)" in script
+    assert "Get-CimInstance Win32_Process" in script
+    assert "Invoke-CimMethod -InputObject $proc -MethodName Terminate" in script
+    assert "taskkill.exe" not in script
+    assert "remote-support-auto-repair-mode $RemoteSupportAutoRepairMode" in script
+    assert "remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds" in script
+    assert "'pending_reboot'" in script
+    assert "'executable_missing'" in script
+    assert "Restore-RemoteSupportState $before $backup" in script
+    assert "Remove-Item -LiteralPath $partial.Root" in script
+    assert "agent_result=$AgentResult remote_support_result=$RemoteSupportResult" in script
+    assert script.index("AgentCurrentHealthy") < script.index("Downloading TECHI Endpoint package")
+    assert script.index("service exists but lifecycle did not reach operational") < script.index("$RemoteSupportResult = Install-OrRepairRemoteSupport")
+
+
 def _decode_powershell(encoded: str) -> str:
     return base64.b64decode(encoded).decode("utf-16-le")
 
