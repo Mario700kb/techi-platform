@@ -27,6 +27,84 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-14] Production platform features off + `/root`↔`/opt` deploy-root split — restored & guarded
+
+### Problemi
+Production UI regressed: the Reports menu disappeared, the Linux and MikroTik
+device drawers stayed stuck on "Loading device…", Terminal/expansion surfaces
+vanished, and the UI looked an older generation. Keylock was also reported
+missing from the Device Drawer.
+
+### Analiza — (read-only forensic audit, evidence)
+- Running containers shared one compose project `techi-platform` but came from
+  **two roots**: `techi-platform-frontend-1` built 2026-07-11 23:04 from `/root`
+  (`/root/docker-compose.yml`, `/root` HEAD `862b1bf`); `techi-platform-backend-1`
+  recreated 2026-07-12 20:24 from `/opt/techi/techi-platform`
+  (`/opt/.../docker-compose.yml`, HEAD `f7207a7`).
+- `backend` `env_file: - .env` resolves to `/opt/techi/techi-platform/.env`, which
+  had **zero** `FEATURE_` lines. `/root/.env` had them all ON. Effective flags in
+  the running backend were therefore **all False** (`settings` defaults + `flags.py`
+  fail-closed).
+- Runtime path: frontend `GET /api/v1/platform/features` returned every flag false
+  → `Sidebar` hid the `FEATURE_REPORTING`-gated Reports item; the drawer feed
+  `GET /api/v1/devices/{id}/drawer` returns **404 when `FEATURE_PLATFORM_CORE` is
+  off** (`connect.py:405`), and `GenericDeviceDrawer` collapses that 404 into
+  `setMeta(null)` (`GenericDeviceDrawer.tsx:74`), which its render treats as the
+  loading state (`:177`) → **permanent "Loading device…"**.
+- `git diff 862b1bf..f7207a7 -- frontend/src` was **empty** → the "older" UI was
+  **not** stale JS; it was flags-off. `Keylock` appears in **no commit** on any
+  branch and in no compiled bundle → never implemented (not removed/renamed/gated).
+
+### Shkaku
+Two docker-compose stacks living in different directories (`/root`, `/opt`) but
+sharing the same compose **project name** `techi-platform`. A `docker compose up`
+run from `/opt` reconciled the shared project and recreated the **backend** using
+`/opt`'s `.env`, which lacked every `FEATURE_` flag — silently disabling
+Reports / Linux / MikroTik / Terminal and 404-ing the drawer feed. Frontend code
+was fine throughout.
+
+### Zgjidhja
+1. Appended the 8 last-known-good `FEATURE_` lines from `/root/.env` to
+   `/opt/techi/techi-platform/.env` (nothing else changed; original backed up to
+   `.env.bak-featurefix-20260714T095209Z`) and recreated **only** the backend
+   (`docker compose up -d --no-deps --no-build backend`) — no rebuild.
+2. Confirmed both compose files are byte-identical and the frontend image
+   (`techi-platform-frontend` `9cf4abc`) is the one already running, then
+   `--force-recreate --no-build`'d the frontend **from `/opt`** so both services
+   share one deployment root. Frontend stayed byte-identical (same image, no rebuild).
+3. Added a fail-closed deploy guard (`scripts/deploy-guard.sh`, installed on the
+   host as `/usr/local/bin/techi-deploy-guard`) that aborts a deploy if the
+   frontend and backend do not share one compose root, or if any required
+   `FEATURE_` flag is not effective.
+
+### Ndryshimet
+- `/opt/techi/techi-platform/.env` — +8 `FEATURE_` lines (CORE, LINUX, VAULT,
+  MIKROTIK, REPORTING, TERMINAL + `TERMINAL_SCOPE=device`,
+  `TERMINAL_ALLOWED_DEVICE_IDS=729`). Backup alongside.
+- `techi-platform-backend-1` recreated (env only); `techi-platform-frontend-1`
+  recreated from `/opt` (same image, now `project.working_dir=/opt/techi/techi-platform`).
+- New `scripts/deploy-guard.sh` (repo, **unpushed**) + `/usr/local/bin/techi-deploy-guard` on host.
+- Rollback refs under `/root/techi-featurefix-rollback/`.
+
+### Rezultati — verified
+- `GET /api/v1/platform/features` → **200**: `PLATFORM_CORE, LINUX, VAULT,
+  TERMINAL, MIKROTIK, REPORTING = true` (STORAGE/HYPERVISOR/NOTIFICATIONS false).
+- Linux device 729 & MikroTik device 734 `GET /drawer` → **200** with full
+  capabilities (were 404).
+- `/api/v1/reports/*` over HTTP → **401** (feature-open, auth-required); was 404.
+- `techi-deploy-guard` → **PASS** (single root `/opt/techi/techi-platform`, flags effective).
+- All containers healthy; frontend byte-identical (image `9cf4abc`, no rebuild).
+- No code pushed.
+
+### Mësimet
+- Never run two compose stacks from different directories under the **same**
+  project name — a deploy from either dir can recreate the other's services with
+  the wrong `.env`.
+- Platform visibility is governed by the **backend's effective `.env`**, resolved
+  at runtime; a flag-less `.env` fails closed and hides everything.
+- Run `techi-deploy-guard` before/after every production deploy.
+- `Keylock` is not part of this codebase; any expectation of it is external.
+
 ## [2026-07-13] Native bootstrap adversarial blocker remediation (source only)
 
 ### Problemi

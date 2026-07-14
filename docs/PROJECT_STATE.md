@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-13 |
+| **Last Updated** | 2026-07-14 |
 | **Production Verified** | 2026-07-11 (Connect V3-mockup alignment deployed `92a521c`: no schema step needed, backend+frontend rebuilt, all containers healthy, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, ~1262 heartbeat log lines/2min, new `GET /connect-status` + `client_os` param confirmed live 401-not-500. **NOT dark** — the Catalog Connect split button + categorized menu changed live for every operator (no flag). Live browser click-through still owner's step — same constraint as the previous two deploys (no browser tool; bootstrap credentials don't match the live `owner` account); see the 2026-07-11 Connect-mockup CHANGELOG entry's validation checklist) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat`; credential/native remediation is a local source-only candidate (7 inherited commits plus 6 new local remediation commits), not pushed, deployed, or activated; rollout remains disabled |
@@ -13,7 +13,7 @@
 | **TECHI Remote Version** | 1.4.6.0 (repo build default in `remote-support.wxs`; now packaged as an independent Remote Support MSI candidate, exact fleet version: needs verification) |
 | **Heartbeat Interval** | **250 s** (global UI policy, verified in prod) |
 | **Heartbeat Retention** | **7 days** (verified in prod) |
-| **Production Server** | Linode VPS `139.162.158.208` (ssh alias `techi-server`), 25 GB disk, live deploy dir **`/root`** |
+| **Production Server** | Linode VPS `139.162.158.208` (ssh alias `techi-server`), 25 GB disk. Live deploy dir unified to **`/opt/techi/techi-platform`** for **both** frontend + backend as of 2026-07-14 (recovered from a prior split where the frontend ran from `/root` and the backend from `/opt` under a shared compose project — see CHANGELOG `[2026-07-14]`). Deploy guard: `/usr/local/bin/techi-deploy-guard` (source `scripts/deploy-guard.sh`) — run before/after every deploy; fails closed on a split root or any required `FEATURE_` flag off |
 | **Documentation Version** | 1.0 (two-document standard, effective 2026-07-04) |
 
 ## NATIVE BOOTSTRAP / UPDATE ARCHITECTURE
