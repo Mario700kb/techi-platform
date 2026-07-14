@@ -7,6 +7,11 @@
   repair, or restart TECHI Remote Support. Deployment orchestration writes
   bootstrap config before install/repair and starts/validates the service only
   after msiexec has exited.
+
+  This Agent-only product has its own UpgradeCode. The legacy combined endpoint
+  product used E6AD0A88-5F26-5665-9B1F-70B8C5EE8363 and contains uninstall
+  custom actions that mutate both Agent and Remote Support state. Treating the
+  split package as its MajorUpgrade invokes that unsafe legacy uninstall.
 -->
 <?ifndef Version?>
 <?define Version="0.0.0.0"?>
@@ -20,7 +25,7 @@
   <Package Name="TECHI Agent"
            Version="$(var.Version)"
            Manufacturer="TECHI Solutions SH.P.K."
-           UpgradeCode="E6AD0A88-5F26-5665-9B1F-70B8C5EE8363"
+           UpgradeCode="4F51EEB8-8B56-43A6-A2F0-684C6653B51F"
            Scope="perMachine">
 
     <MajorUpgrade AllowSameVersionUpgrades="yes"

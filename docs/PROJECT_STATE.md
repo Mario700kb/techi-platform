@@ -1117,7 +1117,10 @@ current state.
    from v1.0 onward must keep working.
 2. **`pending_actions[]` format** — backward compatible since v1.
 3. **Enrollment endpoints** (`POST /api/v1/agent/enroll`, legacy `/api/enroll`).
-4. **MSI UpgradeCode `E6AD0A88-5F26-5665-9B1F-70B8C5EE8363`** — never.
+4. **MSI product lineages**: legacy combined endpoint UpgradeCode
+   `E6AD0A88-5F26-5665-9B1F-70B8C5EE8363` is frozen for historical detection
+   only. Agent-only MSI uses `4F51EEB8-8B56-43A6-A2F0-684C6653B51F`; never
+   merge these lineages or MajorUpgrade the legacy combined package.
 5. **Windows service name `TechiAgent`**; agent config path
    `C:\ProgramData\TechiAgent\agent.config.json` (+ legacy
    `C:\ProgramData\TECHI\agent.config.json` migration path).

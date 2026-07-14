@@ -262,6 +262,15 @@ jobs:
             if ($null -eq $record) { return $null }
             return $record.StringData(1)
           }
+          $msiUpgradeCode = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
+          $expectedAgentOnlyUpgradeCode = "{4F51EEB8-8B56-43A6-A2F0-684C6653B51F}"
+          $legacyCombinedUpgradeCode = "{E6AD0A88-5F26-5665-9B1F-70B8C5EE8363}"
+          if ($msiUpgradeCode -ne $expectedAgentOnlyUpgradeCode) {
+            throw "Agent-only MSI UpgradeCode $msiUpgradeCode does not match $expectedAgentOnlyUpgradeCode"
+          }
+          if ($msiUpgradeCode -eq $legacyCombinedUpgradeCode) {
+            throw "Agent-only MSI must not MajorUpgrade the legacy combined endpoint package"
+          }
           $summary = $db.SummaryInformation(0)
           $identity = [ordered]@{
             source_commit = "${{ github.sha }}"
@@ -277,7 +286,8 @@ jobs:
             embedded_equals_standalone = $true
             msi_product_version = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductVersion'"
             msi_product_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductCode'"
-            msi_upgrade_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
+            msi_upgrade_code = $msiUpgradeCode
+            legacy_combined_upgrade_code_excluded = $true
             msi_package_code = $summary.Property(9)
             msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
           }

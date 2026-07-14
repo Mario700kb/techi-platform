@@ -86,7 +86,7 @@ class _OneTimePackageStub(EnrollmentBootstrapService):
         return (
             f"{backend_url}/api/v1/agent-packages/platform/windows-amd64/download",
             "a" * 64,
-            "2.1.9",
+            "2.1.10",
         )
 
     def _remote_support_msi_package_info(self, backend_url: str):
@@ -117,7 +117,7 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypa
     bootstrap_config_invocation = _bootstrap_config_invocation(script)
     assert "-remote-support-auto-repair-mode disabled" in bootstrap_config_invocation
     assert "-remote-support-auto-repair-device-ids" not in bootstrap_config_invocation
-    assert "$AgentTargetVersion = '2.1.9'" in script
+    assert "$AgentTargetVersion = '2.1.10'" in script
     assert "$BootstrapConfigContractVersion = '1'" in script
     assert "bootstrap-config-contract" in script
     assert "$agentContractCompatible" in script
@@ -896,9 +896,11 @@ class TestGPOScheduledDeployScript:
         assert "installed_product_code=%REG_PRODUCT_CODE%" in self.script
 
     def test_deploy_cmd_routes_non_equal_state_to_install(self):
-        """Fresh install DHE upgrade (missing/older) shkojne te i njejti :do_install --
-        installer.wxs (UpgradeCode E6AD0A88) ka MajorUpgrade qe e bën upgrade-in
-        automatikisht brenda nje msiexec /i te vetem."""
+        """Fresh install and Agent-only upgrade share one msiexec /i path.
+
+        The isolated MSI lineage never invokes the unsafe legacy combined
+        product uninstall.
+        """
         assert 'if /i "%VERSION_STATE%"=="equal" goto :already_uptodate' in self.script
         assert "goto :do_install" in self.script
         do_install_pos = re.search(r"^:do_install\b", self.script, re.MULTILINE).start()
@@ -957,11 +959,11 @@ class TestGPOScheduledDeployScript:
         assert 'if /i "%VERSION_STATE%"=="equal" goto :already_uptodate' in self.script
 
     def test_deploy_cmd_does_not_uninstall_explicitly_before_install(self):
-        """Upgrade-i NUK ben msiexec /x manual para /i -- nje uninstall i ndare nuk
-        vendos UPGRADINGPRODUCTCODE dhe shkakton humbje te device_id (installer.wxs
-        CustomAction CleanupProgramData fshin C:\\ProgramData\\TECHI ne ate rast).
-        MajorUpgrade brenda nje transaksioni te vetem mbron device_id (verifikuar
-        me teste elevated lokale: device_id i ruajtur 2.0.0 -> 2.1.0)."""
+        """Never invoke the destructive legacy combined-product uninstall.
+
+        Future Agent-only versions use their isolated MajorUpgrade lineage;
+        the old combined ARP registration remains untouched.
+        """
         assert 'msiexec /x "' not in self.script
         assert ":do_upgrade" not in self.script
         assert ":wait_registry_removed" not in self.script

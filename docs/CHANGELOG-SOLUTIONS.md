@@ -27,6 +27,39 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-14] HOTFIX: Agent-only MSI no longer MajorUpgrades the legacy combined endpoint package
+
+### Problem
+
+Device 11's Agent 2.1.9 bootstrap failed with MSI 1603. The new Agent file and
+service were installed successfully, but `RemoveExistingProducts` then invoked
+the installed `TECHI Endpoint Deployment 1.0.4.53117` uninstall. That legacy
+uninstall deletes Agent/Remote Support services and files and then runs
+unconditional service-creation custom actions after file removal. Its
+`CreateTechiAgentService` action could not find `techi-agent.exe`, returned
+1603, and rolled back the new Agent installation.
+
+### Root cause
+
+The split Agent-only MSI retained the combined endpoint product's
+`UpgradeCode=E6AD0A88-5F26-5665-9B1F-70B8C5EE8363`. Windows Installer therefore
+treated a product-boundary split as a normal MajorUpgrade and executed the
+known-destructive legacy uninstall. `StartServices` was not the failing action.
+
+### Fix
+
+- Assigned the Agent-only MSI its own permanent UpgradeCode
+  `4F51EEB8-8B56-43A6-A2F0-684C6653B51F`.
+- Kept the Agent component identity/path stable so Windows Installer can share
+  the Agent resource without invoking the legacy product's uninstall.
+- Bumped Agent release identity to 2.1.10.
+- Added source and Windows-CI identity gates that fail if the Agent-only MSI
+  ever reuses the combined, Remote Support, or update-bridge lineage.
+
+The legacy combined ARP registration is intentionally left in place. Removing
+it is a separate data-preserving cleanup operation; the Agent bootstrap must
+not execute its unsafe uninstall as part of installation.
+
 ## [2026-07-14] Heartbeat auth staged migration mode (source only)
 
 ### Problemi

@@ -3,6 +3,7 @@
 Real MSI execution remains a Windows canary gate; these tests prevent the
 authoring defects that caused the production 2.1.7 rollback incident.
 """
+import re
 from pathlib import Path
 
 
@@ -215,12 +216,24 @@ def test_deploy_orchestrator_splits_agent_and_remote_support_lifecycles():
 
 def test_known_production_msi_identity_map_is_locked():
     # Extracted from the actual published MSI Property tables during incident
-    # response. Upgrade/component identity is stable; ProductCode is per build.
+    # response. ProductCode is per build; component identity stays stable.
     identities = {
         "2.1.5": "{C2C44BD3-D859-43F6-8EE2-95C9F0E7EC8A}",
         "2.1.6": "{D5B2B5A1-C7E8-4B67-B11F-DC1FAB4AB688}",
         "2.1.7": "{09276C39-5BBE-4ED0-9B21-A831E3FD7669}",
     }
     assert len(set(identities.values())) == 3
-    assert "E6AD0A88-5F26-5665-9B1F-70B8C5EE8363" in WXS
     assert "B2C3D4E5-F6A7-8901-BCDE-F12345678901" in WXS
+
+
+def test_agent_only_msi_does_not_major_upgrade_legacy_combined_product():
+    upgrade_code = re.search(r'<Package\b[^>]*\bUpgradeCode="([^"]+)"', WXS, re.DOTALL)
+    assert upgrade_code is not None
+    assert upgrade_code.group(1) == "4F51EEB8-8B56-43A6-A2F0-684C6653B51F"
+    assert upgrade_code.group(1) != "E6AD0A88-5F26-5665-9B1F-70B8C5EE8363"
+    assert upgrade_code.group(1) not in REMOTE_WXS
+    assert upgrade_code.group(1) not in (ROOT / "agent/installer/agent-update.wxs").read_text(
+        encoding="utf-8"
+    )
+    assert "expectedAgentOnlyUpgradeCode" in WORKFLOW
+    assert "legacyCombinedUpgradeCode" in WORKFLOW
