@@ -57,6 +57,7 @@ def test_connect_url_uses_only_confirmed_active_generation():
         remote_support_apply_status="applied",
         remote_support_active_generation=2,
         remote_support_applied_generation=2,
+        remote_support_state="installed_running",
     )
 
     response = _connect_url_response_for_device(device, db=None)
@@ -72,6 +73,7 @@ def test_connect_url_blocks_unconfirmed_credential_state(status):
         rustdesk_id="486641675",
         agent_version="99.0.0",
         remote_support_apply_status=status,
+        remote_support_state="installed_running",
     )
 
     with pytest.raises(HTTPException) as exc:
@@ -96,6 +98,7 @@ def test_connect_url_rejects_generation_mismatch():
         remote_support_apply_status="applied",
         remote_support_active_generation=3,
         remote_support_applied_generation=2,
+        remote_support_state="installed_running",
     )
 
     with pytest.raises(HTTPException) as exc:

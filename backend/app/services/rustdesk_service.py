@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from app.core.time import utcnow
+from app.services.remote_support_state_service import classify_authenticated_remote_support
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -88,6 +89,13 @@ class RustDeskIdentityService:
         device.rustdesk_status = rustdesk_status or "unknown"
         device.rustdesk_version = version
         device.rustdesk_install_path = install_path
+        trusted = classify_authenticated_remote_support(
+            install_status=install_status,
+            runtime_status=rustdesk_status,
+        )
+        device.remote_support_trusted_state = trusted.state
+        device.remote_support_state_trusted_at = now
+        device.remote_support_state_reason = trusted.reason
 
         effective_id = (reported_rustdesk_id or "").strip()
 

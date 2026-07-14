@@ -115,6 +115,15 @@ class Device(Base):
     agent_auth_revoked_at = Column(DateTime, nullable=True)
     agent_auth_last_timestamp_ms = Column(BigInteger, nullable=True)
     agent_auth_last_nonce = Column(String(64), nullable=True)
+    heartbeat_auth_state = Column(String(32), default="unknown", nullable=False)
+    heartbeat_auth_state_changed_at = Column(DateTime, nullable=True)
+
+    # Last state reported by an authenticated Agent. Legacy-restricted
+    # heartbeats never overwrite it; without trusted evidence the public state
+    # is exposed as legacy_status_unavailable rather than missing.
+    remote_support_trusted_state = Column(String(32), default="unknown", nullable=False)
+    remote_support_state_trusted_at = Column(DateTime, nullable=True)
+    remote_support_state_reason = Column(String(64), nullable=True)
 
     # Per-device TECHI Remote Support (RustDesk) permanent password, encrypted
     # at rest. Server-generated unique value (or operator-set custom). Replaces
@@ -156,6 +165,12 @@ class Device(Base):
     @property
     def group_name(self):
         return self.group.name if self.group else None
+
+    @property
+    def remote_support_state(self):
+        if self.heartbeat_auth_state == "legacy_restricted" and self.remote_support_state_trusted_at is None:
+            return "legacy_status_unavailable"
+        return self.remote_support_trusted_state or "unknown"
 
     @property
     def freshness_state(self):

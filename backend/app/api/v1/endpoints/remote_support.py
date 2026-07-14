@@ -20,6 +20,7 @@ from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
+from app.services.remote_support_state_service import TRUSTED_USABLE_STATES
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
 
@@ -51,15 +52,14 @@ def compute_remote_support_status(device: Device) -> RemoteSupportStatus:
     age = (_ensure_utc(utcnow()) - _ensure_utc(device.last_seen)).total_seconds()
 
     has_valid_id = bool(device.rustdesk_id and device.rustdesk_id.strip())
-    service_running = device.rustdesk_status == "running"
-    installed = device.rustdesk_install_status == "installed"
+    trusted_usable = device.remote_support_state in TRUSTED_USABLE_STATES
 
     if age > _WARNING_TTL:
         return RemoteSupportStatus.OFFLINE
     if age > _ONLINE_TTL:
         return RemoteSupportStatus.WARNING
     # Age <= 90s
-    if service_running and has_valid_id and installed:
+    if trusted_usable and has_valid_id:
         return RemoteSupportStatus.ONLINE
     return RemoteSupportStatus.WARNING
 
@@ -83,6 +83,8 @@ class RemoteSupportDevice(BaseModel):
     remote_support_status: RemoteSupportStatus
     service_status: str
     install_status: str
+    trusted_state: str
+    state_reason: Optional[str]
     last_seen: Optional[datetime]
     app_version: Optional[str]
     install_path: Optional[str]
@@ -131,6 +133,8 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
         remote_support_status=compute_remote_support_status(device),
         service_status=device.rustdesk_status or "unknown",
         install_status=device.rustdesk_install_status or "unknown",
+        trusted_state=device.remote_support_state,
+        state_reason=device.remote_support_state_reason,
         last_seen=device.last_seen,
         app_version=device.rustdesk_version,
         install_path=device.rustdesk_install_path,
@@ -156,6 +160,11 @@ def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlR
         raise HTTPException(
             status_code=422,
             detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
+        )
+    if device.remote_support_state not in TRUSTED_USABLE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Remote Support Connect unavailable: {device.remote_support_state}",
         )
     if device.remote_support_apply_status != "applied":
         raise HTTPException(

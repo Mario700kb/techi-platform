@@ -152,11 +152,20 @@ def _add_rustdesk_penalties(penalties: List[Tuple[float, str]], device: Device) 
     platform = (getattr(device, "platform", "") or "").strip().lower()
     if platform in {"mikrotik", "routeros"} or (isinstance(capabilities, dict) and "remote_support" not in capabilities):
         return
-    install_status = (getattr(device, "rustdesk_install_status", "") or "").lower()
-    status = (getattr(device, "rustdesk_status", "") or "").lower()
-    if install_status in {"missing", "not_installed", "not installed", "absent"}:
+    raw_state = getattr(device, "remote_support_state", None)
+    if raw_state is None:
+        install_status = (getattr(device, "rustdesk_install_status", "") or "").lower()
+        runtime_status = (getattr(device, "rustdesk_status", "") or "").lower()
+        if install_status in {"missing", "not_installed", "not installed", "absent"}:
+            raw_state = "missing"
+        elif runtime_status in {"offline", "stopped", "not_running", "not running"}:
+            raw_state = "installed_stopped"
+    state = (raw_state or "unknown").lower()
+    if state == "missing":
         penalties.append((24.0, "TECHI Remote Support missing"))
-    elif status in {"offline", "stopped", "not_running", "not running"}:
+    elif state in {"damaged", "repair_failed"}:
+        penalties.append((20.0, "TECHI Remote Support damaged"))
+    elif state == "installed_stopped":
         penalties.append((16.0, "TECHI Remote Support offline"))
 
 

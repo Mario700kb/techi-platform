@@ -256,7 +256,7 @@ class DeviceRepository:
         if key == "offline":
             return self._apply_freshness_filter(query, DeviceFreshnessState.OFFLINE)
         if key == "rustdesk_missing":
-            return query.filter(Device.rustdesk_install_status.in_(["missing", "not_installed", "not installed", "absent", "unknown"]))
+            return query.filter(Device.remote_support_trusted_state == "missing")
         return query
 
     def _apply_freshness_filter(self, query, freshness_state: Optional[DeviceFreshnessState]):

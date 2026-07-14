@@ -224,6 +224,10 @@ class Device(DeviceBase):
     resolved_assignment_source: str = "unassigned"
     resolved_device_category: str = "unassigned"
     freshness_state: DeviceFreshnessState = DeviceFreshnessState.OFFLINE
+    heartbeat_auth_state: str = "unknown"
+    remote_support_state: str = "unknown"
+    remote_support_state_trusted_at: Optional[datetime] = None
+    remote_support_state_reason: Optional[str] = None
 
 
 class DeviceStats(BaseModel):

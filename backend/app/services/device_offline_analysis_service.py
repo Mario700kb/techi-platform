@@ -115,9 +115,19 @@ def analyze_device(
 
     # ── E: Remote Support stopped while agent recently alive ─────────────── #
     rs_status = (getattr(device, "rustdesk_status", "") or "").lower()
-    rs_install = (getattr(device, "rustdesk_install_status", "") or "").lower()
-    rs_stopped = rs_status in {"stopped", "not_running", "not running", "offline"}
-    rs_installed = rs_install not in {"not_installed", "not installed", "unknown", ""}
+    raw_rs_state = getattr(device, "remote_support_state", None)
+    if raw_rs_state is None:
+        rs_install = (getattr(device, "rustdesk_install_status", "") or "").lower()
+        if rs_install not in {"not_installed", "not installed", "unknown", ""} and rs_status in {
+            "stopped",
+            "not_running",
+            "not running",
+            "offline",
+        }:
+            raw_rs_state = "installed_stopped"
+    rs_state = (raw_rs_state or "unknown").lower()
+    rs_stopped = rs_state == "installed_stopped"
+    rs_installed = rs_state in {"installed_stopped", "installed_running", "healthy"}
 
     if rs_stopped and rs_installed and last_seen_age < _AGENT_RECENTLY_ALIVE:
         evidence = [
