@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "expected_relative_files": [
+    { "sha256": "aa", "size": 1, "signed": false },
+    { "path": "", "sha256": "bb", "size": 2, "signed": false }
+  ],
+  "signing_status": "unsigned"
+}

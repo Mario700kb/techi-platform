@@ -75,26 +75,32 @@ jobs:
       - name: build native artifacts (bootstrap + RS bundle + sidecars)
         run: scripts/build-native-bootstrap.sh
 
+      - name: manifest secret/config check self-test
+        run: scripts/verify-bundle-manifest.selftest.sh
+
       - name: verify Remote Support bundle (manifest + round-trip + no secrets)
         run: |
           set -euo pipefail
+          command -v jq >/dev/null 2>&1 || { echo "❌ jq is required"; exit 1; }
           zip="$(ls dist/native/TECHI-Remote-Support-*-windows-amd64.zip)"
           man="${zip%.zip}.manifest.json"
           # bundle_sha256 in the manifest must equal the actual zip hash.
           calc="$(sha256sum "$zip" | awk '{print $1}')"
-          decl="$(grep -o '"bundle_sha256": *"[0-9a-f]\{64\}"' "$man" | grep -o '[0-9a-f]\{64\}')"
+          decl="$(jq -er '.bundle_sha256' "$man")" || { echo "❌ manifest bundle_sha256 unreadable"; exit 1; }
           [ "$calc" = "$decl" ] || { echo "❌ bundle_sha256 mismatch"; exit 1; }
-          # The manifest/zip must carry no config/identity/secret files.
-          if grep -Eqi '\.toml|id_ed25519|password|config\.json|\.log' "$man"; then
-            echo "❌ bundle manifest references a secret/config file"; exit 1
-          fi
+          # No secret/config file among the ACTUALLY-bundled files. Scans only the
+          # canonical .expected_relative_files[].path list (parsed with jq, fail-closed);
+          # ignores the config_paths_to_preserve / never_overwrite_paths metadata that
+          # intentionally names *.toml / agent.config.json as files to PRESERVE.
+          scripts/verify-bundle-manifest.sh "$man"
+          # And the extracted bundle CONTENTS must carry no secret-like assignments.
           tmp="$(mktemp -d)"
           unzip -q "$zip" -d "$tmp"
           if grep -RIEni \
             '(enrollment[_-]?token|api[_-]?secret|password)[[:space:]]*[:=]|BEGIN (RSA |OPENSSH )?PRIVATE KEY' "$tmp"; then
             echo "❌ bundle file contents contain secret-like assignments"; exit 1
           fi
-          echo "bundle files: $(grep -c '"path":' "$man")  sha=$calc"
+          echo "bundle files: $(jq -r '.expected_relative_files | length' "$man")  sha=$calc"
 
       - name: deterministic Remote Support bundle rebuild
         run: |

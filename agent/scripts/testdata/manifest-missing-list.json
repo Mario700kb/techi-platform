@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "product": "TECHI Remote Support",
+  "never_overwrite_paths": ["*.toml", "agent.config.json"],
+  "signing_status": "unsigned"
+}

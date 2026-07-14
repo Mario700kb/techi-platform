@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "expected_relative_files": [
+    { "path": "TECHI Remote Support/TECHI Remote Support.exe", "sha256": "aa", "size": 1, "signed": false },
+    { "path": "TECHI Remote Support/RustDesk.toml", "sha256": "bb", "size": 2, "signed": false }
+  ],
+  "never_overwrite_paths": ["*.toml"],
+  "signing_status": "unsigned"
+}

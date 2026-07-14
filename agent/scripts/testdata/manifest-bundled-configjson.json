@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "expected_relative_files": [
+    { "path": "TECHI Remote Support/TECHI Remote Support.exe", "sha256": "aa", "size": 1, "signed": false },
+    { "path": "TECHI Remote Support/config.json", "sha256": "bb", "size": 2, "signed": false }
+  ],
+  "config_paths_to_preserve": ["C:\\ProgramData\\TechiAgent\\agent.config.json"],
+  "signing_status": "unsigned"
+}

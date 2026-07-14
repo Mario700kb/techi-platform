@@ -272,3 +272,7 @@ agent/installer/*.log
 
 # Static installers
 static/rustdesk/
+
+# Generated Vault master key (runtime/test artifact; never a source fixture).
+# Narrow by design — do NOT ignore all of backend/data/.
+/backend/data/vault_master.key
