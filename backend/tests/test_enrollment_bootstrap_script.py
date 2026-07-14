@@ -182,15 +182,18 @@ def test_generated_one_time_powershell_parses(monkeypatch, tmp_path):
     parser = (
         "$tokens=$null; $errors=$null; "
         "[System.Management.Automation.Language.Parser]::ParseFile("
-        "$args[0], [ref]$tokens, [ref]$errors) | Out-Null; "
+        "$env:TECHI_POWERSHELL_PARSE_PATH, [ref]$tokens, [ref]$errors) | Out-Null; "
         "if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }"
     )
-    subprocess.run(
-        [powershell, "-NoProfile", "-Command", parser, str(path)],
-        check=True,
+    env = os.environ.copy()
+    env["TECHI_POWERSHELL_PARSE_PATH"] = str(path)
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-Command", parser],
         text=True,
         capture_output=True,
+        env=env,
     )
+    assert result.returncode == 0, result.stderr
 
 
 def _decode_powershell(encoded: str) -> str:
