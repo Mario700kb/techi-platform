@@ -23,7 +23,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { detectOperatorOS } from "../utils/operatorOs";
-import { remoteSupportPresentation } from "../services/remoteSupportState";
+import { remoteSupportConnectAvailable, remoteSupportPresentation } from "../services/remoteSupportState";
 
 export interface ActiveActionEntry {
   action_type: string;
@@ -1467,7 +1467,7 @@ const DevicesTable = memo(function DevicesTable({
                   const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
                   const rsPresentation = remoteSupportPresentation(device);
                   const canConnect = isWindowsDevice
-                    ? rsPresentation.connectAllowed && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                    ? remoteSupportConnectAvailable(device)
                     : hasStructuralConnectMethod(device);
                   const devAlerts = alertsMap[device.id];
                   const offlineBadge = getOfflineReasonBadge(

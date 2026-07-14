@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Device } from "../api/devices";
-import { remoteSupportPresentation } from "./remoteSupportState";
+import { remoteSupportConnectAvailable, remoteSupportPresentation } from "./remoteSupportState";
 
-function device(state: string): Device {
-  return { remote_support_state: state } as Device;
+function device(state: string, rustdeskId: string | null = "486641675"): Device {
+  return {
+    remote_support_state: state,
+    rustdesk_id: rustdeskId,
+    rustdesk_conflict_detected: false,
+  } as Device;
 }
 
 describe("remoteSupportPresentation", () => {
@@ -12,9 +16,19 @@ describe("remoteSupportPresentation", () => {
     expect(remoteSupportPresentation(device("legacy_status_unavailable")).label).toBe("Status unavailable");
   });
 
-  it("allows Connect only for trusted running states", () => {
-    expect(remoteSupportPresentation(device("installed_running")).connectAllowed).toBe(true);
-    expect(remoteSupportPresentation(device("missing")).connectAllowed).toBe(false);
-    expect(remoteSupportPresentation(device("damaged")).connectAllowed).toBe(false);
+  it.each(["installed_running", "unknown", "damaged", "legacy_status_unavailable"])(
+    "keeps Connect available with persisted Remote ID when state is %s",
+    (state) => {
+      expect(remoteSupportConnectAvailable(device(state))).toBe(true);
+    },
+  );
+
+  it("blocks Connect only for a missing, invalid, or conflicting Remote ID", () => {
+    expect(remoteSupportConnectAvailable(device("installed_running", null))).toBe(false);
+    expect(remoteSupportConnectAvailable(device("installed_running", "pending_device"))).toBe(false);
+    expect(remoteSupportConnectAvailable({
+      ...device("installed_running"),
+      rustdesk_conflict_detected: true,
+    })).toBe(false);
   });
 });

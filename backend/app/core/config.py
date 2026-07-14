@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     RUSTDESK_SERVER_HOST: str = "139.162.158.208"
     RUSTDESK_RELAY_HOST: str = "139.162.158.208"
     RUSTDESK_PUBLIC_KEY: str = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
-    # No authenticated local launcher/token resolver exists yet. Keep direct
-    # protocol launch fail-closed; operators use audited manual ID/password.
+    # Gates credential-bearing direct-connect automation only. The audited
+    # ID-only launcher remains available as an Agent-independent recovery path.
     REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED: bool = False
     RUSTDESK_SERVER_DB_PATH: str = ""
     RUSTDESK_RESOLVER_ENABLED: bool = False

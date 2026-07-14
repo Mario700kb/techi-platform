@@ -34,7 +34,7 @@ import {
   buildRustDeskFallbackUrlFromTechiUrl,
   launchConnect,
 } from "../services/rustdeskLaunch";
-import { remoteSupportPresentation } from "../services/remoteSupportState";
+import { remoteSupportConnectAvailable, remoteSupportPresentation } from "../services/remoteSupportState";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import { useFavorites } from "../hooks/useFavorites";
@@ -274,7 +274,7 @@ export default function DeviceDetailsMobile() {
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
   const rsPresentation = remoteSupportPresentation(device);
-  const canConnect = rsPresentation.connectAllowed && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+  const canConnect = remoteSupportConnectAvailable(device);
   const criticalCount = deviceAlerts.openAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = deviceAlerts.openAlerts.length - criticalCount;
   const live = realtimeStatus === "connected";

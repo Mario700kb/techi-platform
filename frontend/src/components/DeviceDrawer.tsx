@@ -44,7 +44,7 @@ import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
-import { remoteSupportPresentation } from "../services/remoteSupportState";
+import { remoteSupportConnectAvailable, remoteSupportPresentation } from "../services/remoteSupportState";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -540,10 +540,7 @@ export default function DeviceDrawer({
 
   const isOnline = device.status === "online";
   const rsPresentation = remoteSupportPresentation(device);
-  const rsConnectAllowed =
-    rsPresentation.connectAllowed &&
-    isValidRustDeskId(device.rustdesk_id) &&
-    !device.rustdesk_conflict_detected;
+  const rsConnectAllowed = remoteSupportConnectAvailable(device);
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
 
@@ -2069,8 +2066,6 @@ export default function DeviceDrawer({
                       ? "Permission required: remote_support_connect"
                       : device.rustdesk_conflict_detected
                       ? "Remote Support ID conflict detected"
-                      : !rsPresentation.connectAllowed
-                      ? rsPresentation.detail
                       : isValidRustDeskId(device.rustdesk_id)
                       ? "Open TECHI Remote Support"
                       : "Remote ID not resolved yet"
@@ -2301,7 +2296,7 @@ export default function DeviceDrawer({
                     TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.
                   </p>
                 )}
-                {!rsPresentation.connectAllowed && (
+                {rsPresentation.severity !== "healthy" && (
                   <p className="mt-3 text-[11px] font-medium text-slate-400">
                     {rsPresentation.detail}
                   </p>

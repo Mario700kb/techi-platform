@@ -21,6 +21,7 @@ from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
 from app.services.remote_support_state_service import TRUSTED_USABLE_STATES
+from app.services.rustdesk_service import RustDeskIdentityService
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
 
@@ -155,24 +156,17 @@ def _build_connect_url(remote_id: str) -> str:
 
 
 def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlResponse:
-    remote_id = (device.rustdesk_id or "").strip()
-    if not remote_id:
+    valid, remote_id, validation_error = RustDeskIdentityService.validate_rustdesk_id(device.rustdesk_id)
+    if not valid:
         raise HTTPException(
             status_code=422,
-            detail="Device does not have a valid TECHI Remote Support ID — cannot connect",
+            detail=validation_error or "Device does not have a valid TECHI Remote Support ID",
         )
-    if device.remote_support_state not in TRUSTED_USABLE_STATES:
+    if getattr(device, "rustdesk_conflict_detected", False):
         raise HTTPException(
             status_code=409,
-            detail=f"Remote Support Connect unavailable: {device.remote_support_state}",
+            detail="Remote Support ID conflict must be resolved before connecting",
         )
-    if device.remote_support_apply_status != "applied":
-        raise HTTPException(
-            status_code=409,
-            detail="Remote Support credential is not confirmed applied on this device",
-        )
-    if device.remote_support_active_generation != device.remote_support_applied_generation:
-        raise HTTPException(status_code=409, detail="Remote Support credential state is inconsistent")
     return ConnectUrlResponse(
         device_id=device.id,
         techi_remote_id=remote_id,
@@ -290,22 +284,14 @@ def get_connect_url(
     _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
     device_id: int,
 ):
-    """Return an ID-only protocol URL only when the fail-closed feature is enabled."""
-    device = _get_device(device_id, db, scope)
+    """Return an audited ID-only launcher URL for an authorized device.
 
-    if not settings.REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED:
-        audit_log(
-            db,
-            operator=operator,
-            action=AuditAction.REMOTE_CONNECT,
-            entity_type="device",
-            entity_id=device_id,
-            details={"result": "blocked", "reason": "direct_connect_disabled"},
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Direct Connect is disabled; use the audited manual Remote ID/password workflow",
-        )
+    REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED gates future credential-bearing
+    automation, not this password-free recovery launcher. Agent liveness and
+    credential application state must not remove the independent Remote
+    Support recovery path when a valid, conflict-free Remote ID is persisted.
+    """
+    device = _get_device(device_id, db, scope)
 
     # A stale TechiAgent heartbeat does not prove TECHI Remote Support itself is
     # unreachable: it is a separate Windows service and may still be registered
@@ -320,7 +306,11 @@ def get_connect_url(
         action=AuditAction.REMOTE_CONNECT,
         entity_type="device",
         entity_id=device_id,
-        details={"techi_remote_id": response.techi_remote_id, "remote_support_status": status.value},
+        details={
+            "launcher": "id_only",
+            "remote_support_status": status.value,
+            "credential_in_url": False,
+        },
     )
 
     return response
