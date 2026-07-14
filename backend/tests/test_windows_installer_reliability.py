@@ -1,4 +1,4 @@
-"""Regression contracts for the 2.1.8 installer hotfix.
+"""Regression contracts for the Windows Agent installer and release build.
 
 Real MSI execution remains a Windows canary gate; these tests prevent the
 authoring defects that caused the production 2.1.7 rollback incident.
@@ -138,6 +138,38 @@ def test_ci_validates_standalone_and_msi_embedded_agent_lineage():
     assert "embedded_equals_standalone" in WORKFLOW
     assert "identity.json" in WORKFLOW
     assert '$buildCommit = "${{ github.sha }}"' in WORKFLOW
+
+
+def test_agent_watchdog_is_opt_in_in_normal_runtime():
+    agent_source = (ROOT / "agent/agent.go").read_text(encoding="utf-8")
+    config_source = (ROOT / "agent/config.go").read_text(encoding="utf-8")
+    bootstrap_source = (ROOT / "agent/bootstrap_windows.go").read_text(encoding="utf-8")
+    enrollment_source = (ROOT / "agent/enrollment.go").read_text(encoding="utf-8")
+    assert "reconcileAgentServiceWatchdog(cfg.AgentWatchdogEnabled)" in agent_source
+    assert "ensureAgentServiceWatchdog()" not in agent_source
+    assert 'json:"agent_watchdog_enabled"' in config_source
+    assert '"agent_watchdog_enabled":                false' in bootstrap_source
+    assert 'AgentVersion = "0.0.0-dev"' not in enrollment_source
+
+
+def test_ci_reports_authenticode_and_blocks_unsigned_fleet_release_when_required():
+    required = [
+        "WINDOWS_CODE_SIGNING_PFX_BASE64",
+        "WINDOWS_CODE_SIGNING_PFX_PASSWORD",
+        "WINDOWS_CODE_SIGNING_TIMESTAMP_URL",
+        "REQUIRE_SIGNED_WINDOWS_ARTIFACTS",
+        "Get-AuthenticodeSignature",
+        "agent_authenticode_status",
+        "msi_authenticode_status",
+        "agent_timestamped",
+        "msi_timestamped",
+        "fleet_rollout_eligible",
+        "legacy 0.0.0-dev marker",
+    ]
+    for token in required:
+        assert token in WORKFLOW
+    assert WORKFLOW.index("- name: Sign Agent EXE when release certificate is configured") < WORKFLOW.index("- name: Build MSI\n")
+    assert WORKFLOW.index("- name: Sign Agent MSI packages when release certificate is configured") < WORKFLOW.index("- name: Compute SHA256")
 
 
 def test_agent_msi_has_no_embedded_remote_support_or_fleet_password():

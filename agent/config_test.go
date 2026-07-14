@@ -73,6 +73,27 @@ func TestLoadConfigNormalizesProductionURLs(t *testing.T) {
 	}
 }
 
+func TestAgentWatchdogIsOptInAndReleaseDefaultHasNoDevVersion(t *testing.T) {
+	if defaultConfig().AgentWatchdogEnabled {
+		t.Fatal("agent watchdog must be disabled unless explicitly configured")
+	}
+	if AgentVersion == "0.0.0-dev" {
+		t.Fatal("release binary must not retain the legacy development version marker")
+	}
+
+	path := filepath.Join(t.TempDir(), "agent.config.json")
+	if err := os.WriteFile(path, []byte(`{"agent_watchdog_enabled":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AgentWatchdogEnabled {
+		t.Fatal("explicit agent_watchdog_enabled=true was not preserved")
+	}
+}
+
 func TestWindowsDefaultPathsUseTechiAgentProgramData(t *testing.T) {
 	if windowsConfigPath != `C:\ProgramData\TechiAgent\agent.config.json` {
 		t.Fatalf("unexpected windows config path: %s", windowsConfigPath)

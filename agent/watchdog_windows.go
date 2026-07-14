@@ -5,6 +5,7 @@ package main
 import (
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 )
@@ -12,6 +13,31 @@ import (
 const agentWatchdogTaskName = "TECHI Agent Watchdog"
 
 var agentWatchdogOnce sync.Once
+
+func reconcileAgentServiceWatchdog(enabled bool) {
+	if enabled {
+		ensureAgentServiceWatchdog()
+		return
+	}
+	disableAgentServiceWatchdog()
+}
+
+func disableAgentServiceWatchdog() {
+	agentWatchdogOnce.Do(func() {
+		query := exec.Command(schtasksPath(), "/Query", "/TN", agentWatchdogTaskName)
+		if err := query.Run(); err != nil {
+			return
+		}
+		remove := exec.Command(schtasksPath(), "/Delete", "/TN", agentWatchdogTaskName, "/F")
+		if out, err := remove.CombinedOutput(); err != nil {
+			log.Printf("[watchdog] disable failed: %v: %s", err, string(out))
+			return
+		}
+		_ = os.Remove(filepath.Join(agentProgramDataDir(), "techi-agent-watchdog.ps1"))
+		writeDeployLog("[watchdog]", "scheduled task removed; runtime watchdog is disabled")
+		log.Printf("[watchdog] %s scheduled task removed", agentWatchdogTaskName)
+	})
+}
 
 // ensureAgentServiceWatchdog registers (or refreshes) the "TECHI Agent
 // Watchdog" scheduled task: every 5 minutes, SYSTEM runs

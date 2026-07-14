@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var AgentVersion = "0.0.0-dev"
+var AgentVersion = "unknown"
 
 type EnrollmentRequest struct {
 	AgentID            string `json:"agent_id,omitempty"`

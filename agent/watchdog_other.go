@@ -2,4 +2,5 @@
 
 package main
 
-func ensureAgentServiceWatchdog() {}
+func reconcileAgentServiceWatchdog(bool) {}
+func ensureAgentServiceWatchdog()        {}

@@ -84,6 +84,7 @@ func runBootstrapConfigCommand(args []string) int {
 		"collect_processes":                     true,
 		"collect_software":                      true,
 		"collect_services":                      true,
+		"agent_watchdog_enabled":                false,
 		"remote_support_auto_repair_mode":       mode,
 		"remote_support_auto_repair_device_ids": allowedIDs,
 	}

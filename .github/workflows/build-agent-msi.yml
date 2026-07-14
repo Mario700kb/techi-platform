@@ -11,6 +11,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REQUIRE_SIGNED_WINDOWS_ARTIFACTS: ${{ vars.REQUIRE_SIGNED_WINDOWS_ARTIFACTS || '0' }}
 
 jobs:
   build-msi:
@@ -123,6 +124,30 @@ jobs:
         working-directory: agent
         run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
 
+      - name: Sign Agent EXE when release certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_PFX_BASE64 }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          WINDOWS_CODE_SIGNING_TIMESTAMP_URL: ${{ vars.WINDOWS_CODE_SIGNING_TIMESTAMP_URL }}
+        run: |
+          $configured = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_BASE64)
+          if (-not $configured) {
+            Write-Host "No production code-signing certificate configured; artifact will be marked unsigned."
+            exit 0
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL)) {
+            throw "Code-signing configuration is partial; PFX password and RFC3161 timestamp URL are required"
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_PFX_BASE64))
+          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
+            /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
+            /d "TECHI Platform Endpoint Agent" agent/installer/techi-agent.exe
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for techi-agent.exe" }
+
       - name: Verify bootstrap script and executable contract
         shell: pwsh
         run: |
@@ -178,6 +203,36 @@ jobs:
             -d Version=1.4.6.0 `
             -d BuildCommit=$buildCommit `
             -o TECHI-Remote-Support-1.4.6.msi
+
+      - name: Sign Agent MSI packages when release certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_PFX_BASE64 }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          WINDOWS_CODE_SIGNING_TIMESTAMP_URL: ${{ vars.WINDOWS_CODE_SIGNING_TIMESTAMP_URL }}
+        working-directory: agent/installer
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_BASE64)) {
+            Write-Host "No production code-signing certificate configured; MSI artifacts will be marked unsigned."
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx'
+          if (-not (Test-Path -LiteralPath $pfx)) { throw "Temporary signing certificate is missing" }
+          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          foreach ($path in @(
+            "TECHI-Agent-${{ steps.version.outputs.version }}.msi",
+            "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi"
+          )) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
+              /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
+              /d "TECHI Platform Endpoint Agent" $path
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $path" }
+          }
+
+      - name: Remove temporary signing certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx') -Force -ErrorAction SilentlyContinue
 
       # Standalone techi-agent.exe — the SAME binary embedded in the Agent MSI
       # (built once at step 7). Upload it as the Agent Binary package so a
@@ -257,12 +312,13 @@ jobs:
           $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
           function Read-MsiValue([string]$sql) {
             $view = $db.OpenView($sql)
-            $view.Execute()
+            $null = $view.Execute()
             $record = $view.Fetch()
             if ($null -eq $record) { return $null }
             return $record.StringData(1)
           }
           $msiUpgradeCode = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
+          $msiProductName = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductName'"
           $expectedAgentOnlyUpgradeCode = "{4F51EEB8-8B56-43A6-A2F0-684C6653B51F}"
           $legacyCombinedUpgradeCode = "{E6AD0A88-5F26-5665-9B1F-70B8C5EE8363}"
           if ($msiUpgradeCode -ne $expectedAgentOnlyUpgradeCode) {
@@ -270,6 +326,30 @@ jobs:
           }
           if ($msiUpgradeCode -eq $legacyCombinedUpgradeCode) {
             throw "Agent-only MSI must not MajorUpgrade the legacy combined endpoint package"
+          }
+          if ($msiProductName -ne "TECHI Agent") {
+            throw "Unexpected Agent MSI ProductName: $msiProductName"
+          }
+          $versionInfo = $standaloneItem.VersionInfo
+          $expectedVersion = "${{ steps.version.outputs.version4 }}"
+          if ($versionInfo.FileVersion -ne $expectedVersion -or
+              $versionInfo.ProductVersion -ne $expectedVersion -or
+              $versionInfo.CompanyName -ne "TECHI Solutions SH.P.K." -or
+              $versionInfo.ProductName -ne "TECHI Platform Endpoint Agent" -or
+              $versionInfo.OriginalFilename -ne "techi-agent.exe") {
+            throw "Agent PE release metadata is incomplete or inconsistent"
+          }
+          $binaryText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Resolve-Path $standalone)))
+          if ($binaryText.Contains("0.0.0-dev")) {
+            throw "Agent release binary contains legacy 0.0.0-dev marker"
+          }
+          $exeSignature = Get-AuthenticodeSignature -FilePath $standalone
+          $msiSignature = Get-AuthenticodeSignature -FilePath $msi
+          $exeSigned = $exeSignature.Status -eq 'Valid'
+          $msiSigned = $msiSignature.Status -eq 'Valid'
+          $fleetRolloutEligible = $exeSigned -and $msiSigned
+          if ($env:REQUIRE_SIGNED_WINDOWS_ARTIFACTS -eq '1' -and -not $fleetRolloutEligible) {
+            throw "Signed Windows release gate is enabled but Agent EXE/MSI signatures are not both valid"
           }
           $summary = $db.SummaryInformation(0)
           $identity = [ordered]@{
@@ -284,12 +364,24 @@ jobs:
             embedded_agent_sha256 = $embeddedHash
             embedded_agent_file_version = $embeddedItem.VersionInfo.FileVersion
             embedded_equals_standalone = $true
+            pe_company_name = $versionInfo.CompanyName
+            pe_product_name = $versionInfo.ProductName
+            pe_original_filename = $versionInfo.OriginalFilename
+            pe_dev_marker_absent = $true
+            agent_authenticode_status = $exeSignature.Status.ToString()
+            agent_signer_subject = $(if ($exeSignature.SignerCertificate) { $exeSignature.SignerCertificate.Subject } else { $null })
+            agent_timestamped = $null -ne $exeSignature.TimeStamperCertificate
+            msi_product_name = $msiProductName
             msi_product_version = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductVersion'"
             msi_product_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductCode'"
             msi_upgrade_code = $msiUpgradeCode
             legacy_combined_upgrade_code_excluded = $true
             msi_package_code = $summary.Property(9)
             msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
+            msi_authenticode_status = $msiSignature.Status.ToString()
+            msi_signer_subject = $(if ($msiSignature.SignerCertificate) { $msiSignature.SignerCertificate.Subject } else { $null })
+            msi_timestamped = $null -ne $msiSignature.TimeStamperCertificate
+            fleet_rollout_eligible = $fleetRolloutEligible
           }
           $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Agent-$v.identity.json" -Encoding utf8NoBOM
           Write-Host "MSI embedded agent matches standalone: $embeddedHash"
@@ -304,7 +396,7 @@ jobs:
           $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
           function Read-MsiValue([string]$sql) {
             $view = $db.OpenView($sql)
-            $view.Execute()
+            $null = $view.Execute()
             $record = $view.Fetch()
             if ($null -eq $record) { return $null }
             return $record.StringData(1)

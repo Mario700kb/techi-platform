@@ -12,23 +12,24 @@ const defaultLocalAPIURL = "http://localhost:8000"
 const heartbeatPath = "/api/v1/agent/heartbeat"
 
 type Config struct {
-	BackendURL       string `json:"backend_url"`
-	APIURL           string `json:"api_url"`
-	WebSocketURL     string `json:"websocket_url"`
-	EnrollmentToken  string `json:"enrollment_token,omitempty"`
-	AgentName        string `json:"agent_name,omitempty"`
-	AgentID          string `json:"agent_id,omitempty"`
-	AgentCredential  string `json:"agent_credential,omitempty"`
-	DeviceID         int    `json:"device_id,omitempty"`
-	RustDeskID       string `json:"rustdesk_id"`
-	PublicIPService  string `json:"public_ip_service"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
-	HeartbeatSeconds int    `json:"heartbeat_interval_seconds"`
-	Retries          int    `json:"retries"`
-	RetryDelaySecond int    `json:"retry_delay_seconds"`
-	CollectProcesses bool   `json:"collect_processes"`
-	CollectSoftware  bool   `json:"collect_software"`
-	CollectServices  bool   `json:"collect_services"`
+	BackendURL           string `json:"backend_url"`
+	APIURL               string `json:"api_url"`
+	WebSocketURL         string `json:"websocket_url"`
+	EnrollmentToken      string `json:"enrollment_token,omitempty"`
+	AgentName            string `json:"agent_name,omitempty"`
+	AgentID              string `json:"agent_id,omitempty"`
+	AgentCredential      string `json:"agent_credential,omitempty"`
+	DeviceID             int    `json:"device_id,omitempty"`
+	RustDeskID           string `json:"rustdesk_id"`
+	PublicIPService      string `json:"public_ip_service"`
+	TimeoutSeconds       int    `json:"timeout_seconds"`
+	HeartbeatSeconds     int    `json:"heartbeat_interval_seconds"`
+	Retries              int    `json:"retries"`
+	RetryDelaySecond     int    `json:"retry_delay_seconds"`
+	CollectProcesses     bool   `json:"collect_processes"`
+	CollectSoftware      bool   `json:"collect_software"`
+	CollectServices      bool   `json:"collect_services"`
+	AgentWatchdogEnabled bool   `json:"agent_watchdog_enabled"`
 
 	// TECHI Remote Support self-healing policy (Windows only)
 	RustDeskManageEnabled       bool   `json:"rustdesk_manage_enabled"`

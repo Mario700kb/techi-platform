@@ -27,6 +27,51 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-14] Canary remediation: current health truth, Agent-independent Connect, and Windows release trust
+
+### Problem
+
+The successful Agent 2.1.10 damaged-PC canary exposed three follow-up issues:
+the device displayed `H:20` with an orange/degraded state, the ID-only Remote
+Support launcher was blocked by Agent/credential gates, and Symantec SONAR
+quarantined the unsigned `techi-agent.exe` about five minutes after install.
+
+### Root cause
+
+- Production `Techi-Server` health was not a package-selection defect. Its
+  score contained current disk, heartbeat freshness, patch, and open-alert
+  penalties. The red `1` was an open critical offline alert. The score service
+  also used a lower disk-critical threshold than the alert engine.
+- The password-free launcher was incorrectly gated by
+  `REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED`, trusted Agent-reported RS state, and
+  credential generations even though a persisted Remote ID is an independent
+  recovery path.
+- The 2.1.10 EXE and MSI were unsigned. The strongest timing match for SONAR
+  was the default recurring SYSTEM watchdog: normal Agent startup registered a
+  task and the same multi-purpose unsigned binary ran `watchdog-check` after
+  five minutes, combining scheduled-task persistence with service management.
+  The release EXE also retained the literal `0.0.0-dev` fallback string despite
+  otherwise stable 2.1.10 PE metadata.
+
+### Solution
+
+- Current heartbeats now idempotently resolve an inconsistent stale offline
+  alert, and health scoring imports the same CPU/RAM/disk thresholds as the
+  alert engine. Real current warnings and critical failures remain visible;
+  five pending updates alone still classify healthy.
+- Connect eligibility now requires only a valid, conflict-free persisted
+  Remote ID plus existing tenant scope and permission checks. The returned URL
+  remains ID-only and successful launches remain audited. Credential retrieval
+  stays separate and automatic password injection remains disabled.
+- Agent 2.1.11 makes scheduled-task watchdog recovery opt-in and removes the
+  old watchdog task when disabled. RS mutation remains separately disabled.
+  The dev fallback marker is removed. Windows CI now supports optional trusted
+  Authenticode signing before packaging, validates PE metadata, reports EXE/MSI
+  signature and timestamp state, and emits a fail-closed fleet-rollout identity
+  gate. No certificate or private key is stored in the repository.
+
+See `docs/operations/windows-release-signing.md` for certificate and CI inputs.
+
 ## [2026-07-14] HOTFIX: Agent-only MSI no longer MajorUpgrades the legacy combined endpoint package
 
 ### Problem
