@@ -35,6 +35,45 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _record_heartbeat_trust_transition(
+    db: Session,
+    *,
+    device,
+    state: str,
+    source_ip: str,
+    mode: str,
+    reason: str,
+) -> None:
+    """Persist and audit trust transitions, never individual heartbeats."""
+    previous = device.heartbeat_auth_state or "unknown"
+    if previous == state:
+        return
+    device.heartbeat_auth_state = state
+    device.heartbeat_auth_state_changed_at = utcnow()
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    if state == "legacy_restricted":
+        action = AuditAction.AGENT_HEARTBEAT_LEGACY_ACCEPTED
+    elif previous == "legacy_restricted" and state == "authenticated":
+        action = AuditAction.AGENT_HEARTBEAT_AUTHENTICATED
+    else:
+        return
+    system_audit_log(
+        db,
+        action=action,
+        entity_type="device",
+        entity_id=device.id,
+        details={
+            "transition": f"{previous}->{state}",
+            "reason": reason,
+            "source_ip": source_ip,
+            "mode": mode,
+        },
+    )
+
+
 def _normalize_public_backend_url(request: Request) -> str:
     configured_url = (settings.PUBLIC_BACKEND_URL or "").strip().rstrip("/")
     raw = configured_url or str(request.base_url).strip().rstrip("/")
@@ -174,17 +213,13 @@ async def agent_heartbeat(
             )
             raise HTTPException(status_code=400, detail=str(exc))
 
-        system_audit_log(
+        _record_heartbeat_trust_transition(
             db,
-            action=AuditAction.AGENT_HEARTBEAT_LEGACY_ACCEPTED,
-            entity_type="device",
-            entity_id=device.id,
-            details={
-                "reason": trust.reason,
-                "source_ip": client_ip,
-                "mode": trust.mode,
-                "trust": "legacy_restricted",
-            },
+            device=device,
+            state="legacy_restricted",
+            source_ip=client_ip,
+            mode=trust.mode,
+            reason=trust.reason,
         )
         interval = _cfg_svc.get_heartbeat_interval(payload.platform)
         return {
@@ -220,6 +255,15 @@ async def agent_heartbeat(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    _record_heartbeat_trust_transition(
+        db,
+        device=device,
+        state="authenticated",
+        source_ip=client_ip,
+        mode=trust.mode,
+        reason=trust.reason,
+    )
 
     background_tasks.add_task(_heartbeat_side_effects, payload, device.id, heartbeat.id, ctx)
 
