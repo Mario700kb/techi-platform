@@ -83,15 +83,10 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 	}
 
 	// Additive platform facts (empty on Windows/other → payload unchanged).
-	platform := currentPlatform()
-	extra := platform.ExtraInventory()
-	inventory.FQDN = extra.FQDN
-	inventory.KernelVersion = extra.KernelVersion
-	inventory.Architecture = extra.Architecture
-	inventory.MACAddress = extra.MACAddress
-	inventory.Timezone = extra.Timezone
-	inventory.LastBootAt = extra.LastBootAt
-	inventory.Capabilities = platform.Capabilities()
+	// currentPlatform() is the build-tag-selected implementation for the OS this
+	// agent was compiled for, so Linux-only inventory is collected only on a real
+	// Linux Agent execution path.
+	applyExpansionInventory(inventory, currentPlatform())
 
 	return inventory, nil
 }

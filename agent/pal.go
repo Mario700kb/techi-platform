@@ -34,3 +34,28 @@ type Platform interface {
 	// value (all omitempty → omitted).
 	ExtraInventory() ExtraInventory
 }
+
+// applyExpansionInventory copies a platform's additive expansion facts and
+// capabilities onto inv. It is the single, OS-neutral wiring point shared by
+// collectInventory (production) and the unit tests.
+//
+// The platform is passed in explicitly rather than read from a package global,
+// so production supplies the build-tag-selected currentPlatform() while tests
+// inject a deterministic fake Platform. That keeps the tests from depending on
+// the host OS that compiles them: a Linux CI runner's currentPlatform() reports
+// real Linux data, which would otherwise leak into a simulated Windows payload.
+//
+// A platform that reports nothing (Windows/other → zero ExtraInventory, nil
+// capabilities) leaves every field empty, so buildHeartbeatPayload omits them
+// via the struct's omitempty tags. Linux-only fields are therefore present only
+// when the supplied platform actually collected them.
+func applyExpansionInventory(inv *Inventory, p Platform) {
+	extra := p.ExtraInventory()
+	inv.FQDN = extra.FQDN
+	inv.KernelVersion = extra.KernelVersion
+	inv.Architecture = extra.Architecture
+	inv.MACAddress = extra.MACAddress
+	inv.Timezone = extra.Timezone
+	inv.LastBootAt = extra.LastBootAt
+	inv.Capabilities = p.Capabilities()
+}
