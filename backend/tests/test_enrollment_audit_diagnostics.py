@@ -110,6 +110,12 @@ def test_reenrollment_does_not_increment_use_count():
     )
 
     assert second.device_id == first.device_id
+    assert second.agent_credential
+    assert second.agent_credential != first.agent_credential
+    retained = db.get(Device, first.device_id)
+    assert retained.agent_auth_secret_ciphertext
+    assert retained.agent_auth_secret_wrapped_dek
+    assert retained.agent_auth_key_hash
     assert db.get(EnrollmentToken, token.id).use_count == 1
     reenroll_event = (
         db.query(EnrollmentAudit)

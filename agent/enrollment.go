@@ -43,7 +43,9 @@ type EnrollmentResponse struct {
 }
 
 func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk RustDeskInfo) error {
-	if cfg.AgentID != "" && cfg.DeviceID > 0 {
+	hasIdentity := strings.TrimSpace(cfg.AgentID) != "" && cfg.DeviceID > 0
+	hasCredential := strings.TrimSpace(cfg.AgentCredential) != ""
+	if hasIdentity && hasCredential {
 		return nil
 	}
 	// Allow enrollment without a token when a non-workgroup domain is present
@@ -51,6 +53,9 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 	hasDomain := strings.TrimSpace(inv.Domain) != "" &&
 		strings.ToLower(strings.TrimSpace(inv.Domain)) != "workgroup"
 	if strings.TrimSpace(cfg.EnrollmentToken) == "" && !hasDomain {
+		if hasIdentity {
+			return fmt.Errorf("agent identity is missing heartbeat credential; re-enrollment token is required")
+		}
 		return fmt.Errorf("agent is not enrolled and no enrollment token was provided")
 	}
 

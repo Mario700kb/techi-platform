@@ -82,7 +82,7 @@ func runBootstrapConfigCommand(args []string) int {
 	if err != nil {
 		return 1
 	}
-	if err := os.WriteFile(windowsConfigPath, data, 0600); err != nil {
+	if err := atomicWriteFile(windowsConfigPath, data, 0600); err != nil {
 		writeDeployLog("[bootstrap-config]", "config write failed: "+err.Error())
 		return 1
 	}

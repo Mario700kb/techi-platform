@@ -75,16 +75,26 @@ func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath s
 	if err != nil {
 		return err
 	}
-	tmp := configPath + ".migrate.tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(configPath), ".techi-config-validate-*.tmp")
+	if err != nil {
 		return err
 	}
-	if _, err := loadConfig(tmp); err != nil {
-		_ = os.Remove(tmp)
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpPath)
 		return err
 	}
-	if err := os.Rename(tmp, configPath); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if _, err := loadConfig(tmpPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	_ = os.Remove(tmpPath)
+	if err := atomicWriteFile(configPath, data, 0600); err != nil {
 		return err
 	}
 	lockdownConfigACL(configPath)
@@ -143,7 +153,7 @@ func refreshEnrollmentTokenIfNeeded(configPath string, legacyConfigPath string) 
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(configPath, updated, 0600); err != nil {
+	if err := atomicWriteFile(configPath, updated, 0600); err != nil {
 		return err
 	}
 	log.Printf("refreshed enrollment_token in %s from %s (device not yet enrolled)", configPath, legacyConfigPath)
