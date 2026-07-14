@@ -231,3 +231,15 @@ def test_config_invalid_values_fail_closed(mode):
 def test_remote_support_canary_requires_explicit_allowlist():
     with pytest.raises(ValidationError):
         Settings(SECRET_KEY="test-secret", REMOTE_SUPPORT_AUTO_REPAIR_MODE="canary")
+
+
+@pytest.mark.parametrize(
+    "device_ids", ["11, 22", "11;22", "11&22", "11|22", "0", "-1", "abc"]
+)
+def test_remote_support_allowlist_rejects_malformed_or_shell_input(device_ids):
+    with pytest.raises(ValidationError):
+        Settings(
+            SECRET_KEY="test-secret",
+            REMOTE_SUPPORT_AUTO_REPAIR_MODE="disabled",
+            REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS=device_ids,
+        )

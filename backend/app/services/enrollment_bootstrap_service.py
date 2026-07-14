@@ -6,6 +6,10 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.bootstrap_arguments import (
+    build_windows_bootstrap_config_invocation,
+    canonical_remote_support_device_ids,
+)
 from app.core.config import settings
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
@@ -409,6 +413,9 @@ class EnrollmentBootstrapService:
         payload: EnrollmentBootstrapRequest,
     ) -> str:
         backend_url = self.normalize_backend_url(backend_url)
+        remote_support_device_ids = canonical_remote_support_device_ids(
+            settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS
+        )
         cfg: dict = {
             "api_url": backend_url,
             "backend_url": f"{backend_url}/api/v1/agent/heartbeat",
@@ -425,9 +432,7 @@ class EnrollmentBootstrapService:
             "manage_power_policy": payload.manage_power_policy,
             "remote_support_auto_repair_mode": settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE,
             "remote_support_auto_repair_device_ids": [
-                int(item.strip())
-                for item in settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
-                if item.strip().isdigit() and int(item.strip()) > 0
+                int(item) for item in remote_support_device_ids.split(",") if item
             ],
         }
         if enrollment_token:
@@ -2530,11 +2535,11 @@ function Install-OrRepairRemoteSupport {
         safe_rs_msi_url = rs_msi_url.replace("'", "''")
         safe_rs_sha256 = rs_sha256.replace("'", "''")
         safe_rs_version = rs_version.replace("'", "''")
-        safe_rs_repair_mode = settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE.replace("'", "''")
-        safe_rs_repair_ids = ",".join(
-            item.strip()
-            for item in settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
-            if item.strip().isdigit() and int(item.strip()) > 0
+        bootstrap_config_invocation = build_windows_bootstrap_config_invocation(
+            remote_support_auto_repair_mode=settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE,
+            remote_support_auto_repair_device_ids=(
+                settings.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS
+            ),
         )
         required_bootstrap_flags = ", ".join(
             f"'{flag}'" for flag in BOOTSTRAP_CONFIG_REQUIRED_FLAGS
@@ -2563,8 +2568,6 @@ function Install-OrRepairRemoteSupport {
             f"$RemoteSupportMsiUrl = '{safe_rs_msi_url}'",
             f"$RemoteSupportExpectedSha256 = '{safe_rs_sha256}'",
             f"$RemoteSupportTargetVersion = '{safe_rs_version}'",
-            f"$RemoteSupportAutoRepairMode = '{safe_rs_repair_mode}'",
-            f"$RemoteSupportAutoRepairDeviceIds = '{safe_rs_repair_ids}'",
             f"$Token         = '{safe_token}'",
             "$MsiPath       = Join-Path $env:TEMP 'techi-endpoint-setup.msi'",
             "$LogFile       = 'C:\\Windows\\Temp\\techi-bootstrap.log'",
@@ -2723,7 +2726,7 @@ function Install-OrRepairRemoteSupport {
             '    Write-Log "ERROR: Agent bootstrap-config contract does not match the active bootstrap package; refusing unsupported flags."',
             "    exit 1",
             "}",
-            "& $AgentExe bootstrap-config -api-url $BackendUrl -enrollment-token $Token -reenroll 1 -remote-support-auto-repair-mode $RemoteSupportAutoRepairMode -remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds",
+            bootstrap_config_invocation,
             "if ($LASTEXITCODE -ne 0) {",
             '    Write-Log "ERROR: Agent enrollment configuration refresh failed."',
             "    exit 1",

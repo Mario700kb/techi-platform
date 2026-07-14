@@ -7,9 +7,6 @@ on:
     paths:
       - 'agent/**'
       - 'backend/app/services/bootstrap_config_contract.py'
-      - 'backend/app/services/enrollment_bootstrap_service.py'
-      - 'scripts/verify_bootstrap_config_contract.py'
-      - '.github/workflows/build-agent-msi.yml'
   workflow_dispatch:
 
 env:

@@ -6,6 +6,8 @@ from typing import Any, List
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
+from app.core.bootstrap_arguments import canonical_remote_support_device_ids
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "TECHI Platform"
@@ -183,21 +185,17 @@ class Settings(BaseSettings):
             )
         return mode
 
+    @field_validator("REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS")
+    @classmethod
+    def validate_remote_support_auto_repair_device_ids(cls, value: str) -> str:
+        return canonical_remote_support_device_ids(value)
+
     @model_validator(mode="after")
     def validate_remote_support_canary_allowlist(self):
         if self.REMOTE_SUPPORT_AUTO_REPAIR_MODE == "canary":
-            allowed = [
-                item.strip()
-                for item in self.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS.split(",")
-                if item.strip()
-            ]
-            if not allowed:
+            if not self.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS:
                 raise ValueError(
                     "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS is required in canary mode"
-                )
-            if any(not item.isdigit() or int(item) <= 0 for item in allowed):
-                raise ValueError(
-                    "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS must contain positive numeric device IDs"
                 )
         return self
 

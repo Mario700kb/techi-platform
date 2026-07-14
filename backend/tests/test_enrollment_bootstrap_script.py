@@ -25,6 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import bootstrap as bootstrap_endpoint
+from app.core.config import settings
 from app.schemas.enrollment_bootstrap import (
     AvailabilityProfile,
     EnrollmentBootstrapPlatform,
@@ -96,7 +97,9 @@ class _OneTimePackageStub(EnrollmentBootstrapService):
         )
 
 
-def test_one_time_install_separates_agent_and_remote_support_lifecycles():
+def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypatch):
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_MODE", "disabled")
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS", "")
     _, script = _OneTimePackageStub()._windows_msi_bootstrap(
         "https://api-rdp.techi.com.al",
         "token-value-that-is-long-enough",
@@ -111,8 +114,9 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles():
     assert "Get-CimInstance Win32_Process" in script
     assert "Invoke-CimMethod -InputObject $proc -MethodName Terminate" in script
     assert "taskkill.exe" not in script
-    assert "remote-support-auto-repair-mode $RemoteSupportAutoRepairMode" in script
-    assert "remote-support-auto-repair-device-ids $RemoteSupportAutoRepairDeviceIds" in script
+    bootstrap_config_invocation = _bootstrap_config_invocation(script)
+    assert "-remote-support-auto-repair-mode disabled" in bootstrap_config_invocation
+    assert "-remote-support-auto-repair-device-ids" not in bootstrap_config_invocation
     assert "$AgentTargetVersion = '2.1.9'" in script
     assert "$BootstrapConfigContractVersion = '1'" in script
     assert "bootstrap-config-contract" in script
@@ -128,6 +132,65 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles():
     assert "agent_result=$AgentResult remote_support_result=$RemoteSupportResult" in script
     assert script.index("AgentCurrentHealthy") < script.index("Downloading TECHI Endpoint package")
     assert script.index("service exists but lifecycle did not reach operational") < script.index("$RemoteSupportResult = Install-OrRepairRemoteSupport")
+
+
+def _bootstrap_config_invocation(script: str) -> str:
+    return next(
+        line for line in script.splitlines() if line.startswith("& $AgentExe bootstrap-config ")
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "device_ids", "expected_suffix"),
+    [
+        ("canary", "11", '-remote-support-auto-repair-device-ids "11"'),
+        ("canary", "11,22", '-remote-support-auto-repair-device-ids "11,22"'),
+    ],
+)
+def test_one_time_install_quotes_allowlist_as_one_argument(
+    monkeypatch, mode, device_ids, expected_suffix
+):
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_MODE", mode)
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS", device_ids)
+
+    _, script = _OneTimePackageStub()._windows_msi_bootstrap(
+        "https://api-rdp.techi.com.al",
+        "token-value-that-is-long-enough",
+        "Device 11",
+        _make_req(),
+    )
+
+    invocation = _bootstrap_config_invocation(script)
+    assert invocation.endswith(expected_suffix)
+    assert invocation.count("-remote-support-auto-repair-device-ids") == 1
+
+
+def test_generated_one_time_powershell_parses(monkeypatch, tmp_path):
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if not powershell:
+        pytest.skip("PowerShell parser is not available")
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_MODE", "disabled")
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS", "")
+    _, script = _OneTimePackageStub()._windows_msi_bootstrap(
+        "https://api-rdp.techi.com.al",
+        "token-value-that-is-long-enough",
+        "Device 11",
+        _make_req(),
+    )
+    path = tmp_path / "windows.ps1"
+    path.write_text(script, encoding="utf-8")
+    parser = (
+        "$tokens=$null; $errors=$null; "
+        "[System.Management.Automation.Language.Parser]::ParseFile("
+        "$args[0], [ref]$tokens, [ref]$errors) | Out-Null; "
+        "if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }"
+    )
+    subprocess.run(
+        [powershell, "-NoProfile", "-Command", parser, str(path)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
 
 
 def _decode_powershell(encoded: str) -> str:
