@@ -628,6 +628,9 @@ class DeviceHeartbeatService:
     def _evaluate_post_heartbeat_alerts(self, device) -> None:
         from app.repositories.device_status_history_repository import DeviceStatusHistoryRepository
         engine = AlertEngine(self.db)
+        # Current heartbeat truth supersedes an inconsistent OPEN offline alert
+        # even when the device row was already marked online before this cycle.
+        engine.resolve_device_offline(device)
         engine.evaluate_archived_checkin(device)
         engine.evaluate_rustdesk_sync(device)
         window_start = utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)

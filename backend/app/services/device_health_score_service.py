@@ -10,6 +10,7 @@ from app.repositories.alert_repository import AlertRepository
 from app.repositories.device_inventory_repository import DeviceInventoryRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 from app.services import agent_config_service
+from app.services.alert_rules import CPU_CRIT, CPU_WARN, DISK_CRIT, DISK_WARN, RAM_CRIT, RAM_WARN
 
 
 class DeviceHealthScoreService:
@@ -86,9 +87,9 @@ def _add_telemetry_penalties(penalties: List[Tuple[float, str]], snapshot: Optio
         return
 
     for label, value, warning, critical, warning_penalty, critical_penalty in [
-        ("CPU", snapshot.cpu_percent, 75.0, 90.0, 10.0, 22.0),
-        ("RAM", snapshot.ram_percent, 80.0, 90.0, 10.0, 22.0),
-        ("Disk", snapshot.disk_percent, 80.0, 90.0, 12.0, 28.0),
+        ("CPU", snapshot.cpu_percent, CPU_WARN, CPU_CRIT, 10.0, 22.0),
+        ("RAM", snapshot.ram_percent, RAM_WARN, RAM_CRIT, 10.0, 22.0),
+        ("Disk", snapshot.disk_percent, DISK_WARN, DISK_CRIT, 12.0, 28.0),
     ]:
         if value is None:
             continue
