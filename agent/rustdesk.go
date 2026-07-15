@@ -213,7 +213,7 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 		info.InstallStatus = "not_installed"
 	}
 
-	info.Status = rustDeskWindowsStatus()
+	info.Status = rustDeskWindowsStatusForInstallPath(installPath)
 	info.InstallStatus, info.Status = classifyRustDeskWindowsState(
 		info.InstallStatus,
 		info.Status,
@@ -300,36 +300,7 @@ func rustDeskVersion(path string) string {
 }
 
 func rustDeskWindowsStatus() string {
-	// Primary process: branded TECHI exe.
-	output, err := exec.Command(windowsSystemExe("tasklist.exe"), "/FI", "IMAGENAME eq TECHI Remote Support.exe").Output()
-	if err == nil && strings.Contains(string(output), "TECHI Remote Support.exe") {
-		return "running"
-	}
-	// Fallback process: legacy upstream binary name.
-	output, err = exec.Command(windowsSystemExe("tasklist.exe"), "/FI", "IMAGENAME eq rustdesk.exe").Output()
-	if err == nil && strings.Contains(strings.ToLower(string(output)), "rustdesk.exe") {
-		return "running"
-	}
-
-	// Primary service: TECHI Remote Support.
-	output, err = exec.Command(scPath(), "query", "TECHI Remote Support").Output()
-	if err == nil {
-		lower := strings.ToLower(string(output))
-		if strings.Contains(lower, "running") {
-			return "running"
-		}
-		if strings.Contains(lower, "stopped") {
-			return "stopped"
-		}
-	}
-	// Fallback services: legacy RustDesk service names.
-	for _, svc := range []string{"RustDesk", "rustdesk"} {
-		output, err = exec.Command(scPath(), "query", svc).Output()
-		if err == nil && strings.Contains(strings.ToLower(string(output)), "running") {
-			return "running"
-		}
-	}
-	return "not_running"
+	return rustDeskWindowsStatusForInstallPath("")
 }
 
 func windowsSystemExe(name string) string {

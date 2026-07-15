@@ -179,22 +179,32 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 		defer release()
 		rd := discoverRustDesk(cfg)
 		if rd.Status == "running" {
-			done <- actionResult{message: fmt.Sprintf("TECHI Remote Support already running (id=%s)", rd.ID)}
+			if err := openRustDeskDesktopUI(rd.InstallPath); err != nil {
+				done <- actionResult{
+					err:    fmt.Errorf("reopen_rustdesk: %w", err),
+					stderr: rustDeskStatusUILaunchFailed,
+				}
+				return
+			}
+			done <- actionResult{message: fmt.Sprintf("TECHI Remote Support UI restored — status=%s id=%s", rd.Status, rd.ID)}
 			return
 		}
-		log.Printf("[action] reopen_rustdesk: not running — starting")
-		if err := startRustDeskServiceFn(); err != nil {
+		log.Printf("[action] reopen_rustdesk: status=%s — launching desktop UI", rd.Status)
+		if err := openRustDeskDesktopUI(rd.InstallPath); err != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("start service failed: %w", err),
-				stderr: err.Error(),
+				err:    fmt.Errorf("reopen_rustdesk: %w", err),
+				stderr: rustDeskStatusUILaunchFailed,
 			}
 			return
 		}
-		if err := startRustDeskTray(); err != nil {
-			log.Printf("[action] reopen_rustdesk: tray start failed (non-fatal): %v", err)
-		}
-		time.Sleep(2 * time.Second)
 		rd = discoverRustDesk(cfg)
+		if rd.Status != "running" {
+			done <- actionResult{
+				err:    fmt.Errorf("reopen_rustdesk: %s", rustDeskStatusUILaunchFailed),
+				stderr: fmt.Sprintf("status=%s", rd.Status),
+			}
+			return
+		}
 		done <- actionResult{
 			message: fmt.Sprintf("TECHI Remote Support reopened — status=%s id=%s", rd.Status, rd.ID),
 		}
