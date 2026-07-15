@@ -91,6 +91,10 @@ step "Remote Support Connect bridge security"
 python3 "$ROOT/scripts/verify_macos_remote_support_connect_security.py" || fail "macOS remote support security contract failed"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   swiftc -typecheck -framework AppKit "$ROOT/remote-support-macos/Launcher.swift" || fail "macOS launcher typecheck failed"
+  swiftc -typecheck -framework AppKit "$ROOT/remote-support-macos/PackageProcessControl.swift" || fail "macOS package process control typecheck failed"
+  bash -n "$ROOT/scripts/build-macos-remote-support.sh" \
+    "$ROOT/remote-support-macos/package-scripts/preinstall" \
+    "$ROOT/remote-support-macos/package-scripts/postinstall" || fail "macOS package script syntax failed"
 fi
 python3 "$ROOT/scripts/verify_remote_support_connect_security.py" || fail "remote support connect security contract failed"
 rm -f /tmp/techi-rs-bridge.test.exe /tmp/techi-rs-bridge-darwin.test

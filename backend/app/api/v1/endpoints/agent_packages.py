@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from app.core.auth import get_current_operator, require_team_permission
@@ -37,6 +37,7 @@ def upload_agent_package(
     version: str = Form(...),
     platform: str = Form(...),
     file_type: str = Form(default="msi"),
+    build_version: str = Form(default=""),
     file: UploadFile = File(...),
     manifest: Optional[UploadFile] = File(default=None),
     operator: Operator = Depends(get_current_operator),
@@ -47,6 +48,7 @@ def upload_agent_package(
             version=version,
             platform=platform,
             file_type=file_type,
+            build_version=build_version,
             filename=file.filename or "",
             uploaded_by=operator.username,
             stream=file.file,
@@ -195,26 +197,31 @@ def download_active_remote_support_msi():
 
 
 @router.get("/remote-support/{platform}/download")
-def download_active_remote_support_package(platform: str):
+def download_active_remote_support_package(
+    platform: str,
+    artifact: str = Query(default="pkg", pattern="^(pkg|dmg)$"),
+):
     if platform != "darwin-arm64":
         raise HTTPException(status_code=400, detail="Unsupported Remote Support platform")
     service = AgentPackageService()
-    package = service.latest_active(platform, file_type="remote_support_dmg")
+    file_type = f"remote_support_{artifact}"
+    package = service.latest_active(platform, file_type=file_type)
     if package is None:
         raise HTTPException(status_code=404, detail="No active remote support package for platform")
     path = service.package_path(package)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Package file not found")
     logger.info(
-        "Remote Support package download package_id=%s platform=%s version=%s",
+        "Remote Support package download package_id=%s platform=%s artifact=%s version=%s",
         package.id,
         platform,
+        artifact,
         package.version,
     )
     return FileResponse(
         path,
         filename=package.filename,
-        media_type="application/x-apple-diskimage",
+        media_type="application/vnd.apple.installer+xml" if artifact == "pkg" else "application/x-apple-diskimage",
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 

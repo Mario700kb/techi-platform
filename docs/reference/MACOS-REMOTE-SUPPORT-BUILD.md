@@ -1,16 +1,36 @@
 # TECHI Remote Support for macOS
 
-The macOS package wraps the verified TECHI-branded RustDesk client with the
-secure Connect launcher and shared token-redemption bridge.
+The macOS release wraps the verified TECHI-branded Remote Support client with
+the secure Connect launcher and shared token-redemption bridge. The marketing
+version is `1.4.8`; every byte-changing release must increment
+`remote-support-macos/BUILD_VERSION` (`CFBundleVersion`).
+
+## Distribution
+
+Recommended:
+
+- `TECHI-Remote-Support-1.4.8-darwin-arm64.pkg`
+- Installer closes only the exact installed TECHI bundle, performs an atomic
+  bundle upgrade, validates the result, refreshes LaunchServices, and reports
+  success only after validation.
+
+Alternative:
+
+- `TECHI-Remote-Support-1.4.8-darwin-arm64.dmg`
+- Drag `TECHI Remote Support.app` to Applications and choose Replace.
+
+Neither format removes configuration or identity stored outside the app
+bundle. The DMG contains no scripts and does not launch the app automatically.
 
 ## Build
 
 Requirements:
 
 - Apple Silicon macOS with Xcode command-line tools, Go 1.21+, and Swift.
-- A canonical `TECHI Remote Support.app` base with bundle identifier
-  `al.techi.remote-support`. The default is the installed application at
-  `/Applications/TECHI Remote Support.app`.
+- `create-dmg` 1.2.3 or newer.
+- A canonical unwrapped TECHI Remote Support 1.4.6 app, or a previously
+  verified TECHI 1.4.8 wrapper, with bundle identifier
+  `al.techi.remote-support`.
 
 Run:
 
@@ -19,14 +39,60 @@ MACOS_RS_BASE_APP="/Applications/TECHI Remote Support.app" \
   scripts/build-macos-remote-support.sh
 ```
 
-The output is `dist/TECHI-Remote-Support-<version>-darwin-arm64.dmg` plus an
-identity JSON sidecar. The script verifies product identity and architecture,
-installs the AppKit URL dispatcher and Go bridge, registers only the
-`techiremotesupport` scheme, and validates the resulting bundle signature.
+Outputs:
 
-Without `MACOS_CODESIGN_IDENTITY`, the application receives only an ad-hoc
-signature and is not notarized. Developer ID signing can be selected with
-`MACOS_CODESIGN_IDENTITY`; notarization additionally requires an existing
-notarytool keychain profile named by `MACOS_NOTARY_PROFILE`.
+```text
+dist/TECHI-Remote-Support-1.4.8-darwin-arm64.dmg
+dist/TECHI-Remote-Support-1.4.8-darwin-arm64.pkg
+dist/TECHI-Remote-Support-1.4.8-darwin-arm64.identity.json
+```
 
-The build never clears quarantine attributes and never changes Gatekeeper.
+Verify the mounted DMG, PKG payload, isolated upgrade, process scoping,
+configuration preservation, rollback, and LaunchServices registration:
+
+```bash
+scripts/verify_macos_remote_support_artifacts.py \
+  --dmg dist/TECHI-Remote-Support-1.4.8-darwin-arm64.dmg \
+  --pkg dist/TECHI-Remote-Support-1.4.8-darwin-arm64.pkg
+```
+
+## Signing And Notarization
+
+The builder supports Developer ID signing, hardened runtime, Apple timestamps,
+notarization, and stapling. It never creates or invents an identity. Required
+build environment variables are:
+
+```text
+MACOS_APP_SIGNING_IDENTITY=Developer ID Application: <legal name> (<TEAM_ID>)
+MACOS_INSTALLER_SIGNING_IDENTITY=Developer ID Installer: <legal name> (<TEAM_ID>)
+MACOS_NOTARY_PROFILE=<existing notarytool keychain profile>
+```
+
+Recommended CI secrets for provisioning those identities without committing
+certificates or passwords:
+
+```text
+MACOS_SIGNING_CERTIFICATE_P12_BASE64
+MACOS_SIGNING_CERTIFICATE_PASSWORD
+MACOS_NOTARY_PRIVATE_KEY_BASE64
+MACOS_NOTARY_KEY_ID
+MACOS_NOTARY_ISSUER_ID
+```
+
+Recommended non-secret CI variables:
+
+```text
+MACOS_APP_SIGNING_IDENTITY
+MACOS_INSTALLER_SIGNING_IDENTITY
+MACOS_NOTARY_PROFILE
+```
+
+The CI setup must import the P12 into an ephemeral keychain and create the
+named profile with `xcrun notarytool store-credentials` before invoking the
+builder. The ephemeral keychain and private key file must be deleted in an
+always-running cleanup step.
+
+Without both Developer ID identities, current canary output is explicitly
+`AD_HOC`/`UNSIGNED` and `NOT_NOTARIZED`. Gatekeeper is not disabled and
+quarantine is not cleared. Because ad-hoc signing is not a stable trusted code
+identity, Screen Recording and Accessibility may require reauthorization.

@@ -1,7 +1,7 @@
 import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
 
 export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "linux-arm64" | "linux-armhf" | "darwin-arm64";
-export type AgentFileType = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "remote_support_dmg";
+export type AgentFileType = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "remote_support_dmg" | "remote_support_pkg";
 
 export interface AgentPackage {
   id: string;
@@ -14,6 +14,7 @@ export interface AgentPackage {
   is_active: boolean;
   download_url: string;
   sha256?: string | null;
+  build_version?: string | null;
 }
 
 export async function getAgentPackages(): Promise<AgentPackage[]> {
@@ -25,11 +26,13 @@ export async function uploadAgentPackage(payload: {
   platform: AgentPackagePlatform;
   file: File;
   file_type?: AgentFileType;
+  build_version?: string;
 }): Promise<AgentPackage> {
   const formData = new FormData();
   formData.append("version", payload.version);
   formData.append("platform", payload.platform);
   formData.append("file_type", payload.file_type ?? "msi");
+  if (payload.build_version) formData.append("build_version", payload.build_version);
   formData.append("file", payload.file);
 
   const result = await fetchJson<{ package: AgentPackage }>("/api/v1/agent-packages", {

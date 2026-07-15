@@ -8,7 +8,14 @@ on:
       - 'remote-support-bridge/**'
       - 'remote-support-macos/**'
       - 'scripts/build-macos-remote-support.sh'
+      - 'scripts/test_macos_remote_support_packaging.sh'
+      - 'scripts/verify_macos_remote_support_artifacts.py'
       - 'scripts/verify_macos_remote_support_connect_security.py'
+      - 'backend/app/schemas/agent_package.py'
+      - 'backend/app/services/agent_package_service.py'
+      - 'backend/app/api/v1/endpoints/agent_packages.py'
+      - 'frontend/src/api/agentPackages.ts'
+      - 'frontend/src/pages/AgentPackages.tsx'
       - '.github/workflows/build-remote-support-macos.yml'
   workflow_dispatch:
 
@@ -28,6 +35,9 @@ jobs:
         with:
           go-version: '1.21'
           cache-dependency-path: remote-support-bridge/go.sum
+
+      - name: Install DMG builder
+        run: brew install create-dmg
 
       - name: Test shared and macOS bridge
         working-directory: remote-support-bridge
@@ -49,8 +59,22 @@ jobs:
             -target arm64-apple-macos12.3 \
             remote-support-macos/Launcher.swift -o "TECHI Remote Support"
 
+      - name: Typecheck package process control
+        run: |
+          swiftc -typecheck -framework AppKit -target arm64-apple-macos12.3 \
+            remote-support-macos/PackageProcessControl.swift
+          swiftc -O -whole-module-optimization -framework AppKit \
+            -target arm64-apple-macos12.3 \
+            remote-support-macos/PackageProcessControl.swift -o package-process-control
+
+      - name: Validate package scripts
+        run: bash -n scripts/build-macos-remote-support.sh remote-support-macos/package-scripts/preinstall remote-support-macos/package-scripts/postinstall
+
       - name: Verify security contract
         run: python3 scripts/verify_macos_remote_support_connect_security.py
+
+      - name: Build and verify isolated DMG and PKG
+        run: scripts/test_macos_remote_support_packaging.sh
 
       - name: Report signing and notarization status
         run: |
@@ -66,4 +90,6 @@ jobs:
           path: |
             techi-remote-support-bridge
             TECHI Remote Support
+            package-process-control
             remote-support-macos/VERSION
+            remote-support-macos/BUILD_VERSION

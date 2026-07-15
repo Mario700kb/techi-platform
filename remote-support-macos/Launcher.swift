@@ -1,4 +1,33 @@
 import AppKit
+import Darwin
+
+private func validateInstalledBundle() -> Int32 {
+    guard Bundle.main.bundleIdentifier == "al.techi.remote-support" else { return 2 }
+
+    let requiredExecutables = [
+        "Contents/MacOS/TECHI Remote Support Client",
+        "Contents/Helpers/techi-remote-support-bridge",
+    ]
+    let fileManager = FileManager.default
+    for relativePath in requiredExecutables {
+        let path = Bundle.main.bundleURL.appendingPathComponent(relativePath).path
+        guard fileManager.isExecutableFile(atPath: path) else { return 3 }
+    }
+
+    guard
+        let urlTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
+        urlTypes.contains(where: { entry in
+            guard let schemes = entry["CFBundleURLSchemes"] as? [String] else { return false }
+            return schemes.contains("techiremotesupport")
+        })
+    else { return 4 }
+
+    return 0
+}
+
+if CommandLine.arguments.dropFirst() == ["--validate-install"] {
+    exit(validateInstalledBundle())
+}
 
 final class RemoteSupportLauncherDelegate: NSObject, NSApplicationDelegate {
     private var receivedURL = false

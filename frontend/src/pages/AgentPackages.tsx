@@ -25,7 +25,7 @@ function formatDate(iso: string): string {
   return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "remote_support_dmg";
+type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "remote_support_dmg" | "remote_support_pkg";
 
 type PackageTab = { id: TabId; label: string; fileType: AgentFileType; hint: string; fixedPlatform?: AgentPackagePlatform };
 
@@ -59,13 +59,22 @@ const WINDOWS_TABS: PackageTab[] = [
   },
 ];
 
-const MACOS_TAB: PackageTab = {
-  id: "remote_support_dmg",
-  label: "Remote Support macOS",
-  fileType: "remote_support_dmg",
-  hint: "TECHI Remote Support për operatorët Apple Silicon. DMG përmban klientin, URL launcher-in dhe bridge-in secure token Connect.",
-  fixedPlatform: "darwin-arm64",
-};
+const MACOS_TABS: PackageTab[] = [
+  {
+    id: "remote_support_pkg",
+    label: "Recommended PKG",
+    fileType: "remote_support_pkg",
+    hint: "Download PKG — automatic replacement/update.",
+    fixedPlatform: "darwin-arm64",
+  },
+  {
+    id: "remote_support_dmg",
+    label: "Alternative DMG",
+    fileType: "remote_support_dmg",
+    hint: "Download DMG — drag TECHI Remote Support into Applications and choose Replace.",
+    fixedPlatform: "darwin-arm64",
+  },
+];
 
 export default function AgentPackages() {
   const { can } = useAuth();
@@ -77,6 +86,7 @@ export default function AgentPackages() {
   const [tab, setTab] = useState<TabId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
   const [version, setVersion] = useState("");
+  const [buildVersion, setBuildVersion] = useState("");
   const [platform, setPlatform] = useState<AgentPackagePlatform>("windows-amd64");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,7 +97,7 @@ export default function AgentPackages() {
   const [error, setError] = useState<string | null>(null);
 
   const currentTab = platformScope === "macos"
-    ? MACOS_TAB
+    ? MACOS_TABS.find((item) => item.id === tab) ?? MACOS_TABS[0]
     : WINDOWS_TABS.find((item) => item.id === tab) ?? WINDOWS_TABS[0];
 
   const visiblePackages = useMemo(
@@ -117,15 +127,22 @@ export default function AgentPackages() {
   }, []);
 
   const handleUpload = async () => {
-    if (!file || !version.trim()) {
-      setError("Version and package file are required");
+    if (!file || !version.trim() || (platformScope === "macos" && !buildVersion.trim())) {
+      setError(platformScope === "macos" ? "Version, internal build, and package file are required" : "Version and package file are required");
       return;
     }
     try {
       setUploading(true);
       setError(null);
-      await uploadAgentPackage({ version: version.trim(), platform: currentTab.fixedPlatform ?? platform, file, file_type: currentTab.fileType });
+      await uploadAgentPackage({
+        version: version.trim(),
+        build_version: platformScope === "macos" ? buildVersion.trim() : undefined,
+        platform: currentTab.fixedPlatform ?? platform,
+        file,
+        file_type: currentTab.fileType,
+      });
       setVersion("");
+      setBuildVersion("");
       setFile(null);
       await load();
     } catch (err) {
@@ -202,7 +219,7 @@ export default function AgentPackages() {
                 type="button"
                 onClick={() => {
                   setPlatformScope(scope);
-                  setTab(scope === "macos" ? "remote_support_dmg" : "msi");
+                  setTab(scope === "macos" ? "remote_support_pkg" : "msi");
                   setError(null);
                 }}
                 className={[
@@ -242,7 +259,27 @@ export default function AgentPackages() {
         )}
 
         {platformScope === "macos" && (
-          <p className="mt-3 text-xs text-slate-500">{MACOS_TAB.hint}</p>
+          <>
+            <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
+              {MACOS_TABS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => { setTab(item.id); setError(null); }}
+                  className={[
+                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
+                    tab === item.id
+                      ? "border-b-2 border-techi-orange text-techi-orange"
+                      : "text-slate-400 hover:text-slate-200",
+                  ].join(" ")}
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
+          </>
         )}
       </div>
 
@@ -261,16 +298,31 @@ export default function AgentPackages() {
                     ? "Upload Remote Support MSI"
                     : tab === "remote_support_dmg"
                       ? "Upload Remote Support macOS DMG"
+                      : tab === "remote_support_pkg"
+                        ? "Upload Remote Support macOS PKG"
                     : "Upload Agent Binary (techi-agent.exe)"}
             </h2>
           </div>
-          <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
+          <div className={[
+            "grid gap-2",
+            platformScope === "macos"
+              ? "lg:grid-cols-[160px_160px_190px_minmax(0,1fr)_auto]"
+              : "lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]",
+          ].join(" ")}>
             <input
               value={version}
               onChange={(event) => setVersion(event.target.value)}
               placeholder="Version (e.g. 2.1.1)"
               className={INPUT_CLS}
             />
+            {platformScope === "macos" && (
+              <input
+                value={buildVersion}
+                onChange={(event) => setBuildVersion(event.target.value)}
+                placeholder="Internal build (e.g. 148.2)"
+                className={INPUT_CLS}
+              />
+            )}
             {currentTab.fixedPlatform ? (
               <div className={`${INPUT_CLS} flex items-center text-slate-400`}>
                 {currentTab.fixedPlatform}
@@ -294,7 +346,7 @@ export default function AgentPackages() {
               id="package-file"
               name="package-file"
               aria-label="Package file"
-              accept={tab === "agent_binary" ? ".exe" : tab === "remote_support_dmg" ? ".dmg" : ".msi"}
+              accept={tab === "agent_binary" ? ".exe" : tab === "remote_support_dmg" ? ".dmg" : tab === "remote_support_pkg" ? ".pkg" : ".msi"}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
             />
@@ -332,6 +384,7 @@ export default function AgentPackages() {
             <thead className="bg-slate-950/80">
               <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Version</th>
+                {platformScope === "macos" && <th className="px-4 py-3">Build</th>}
                 {tab === "msi" && <th className="px-4 py-3">Platform</th>}
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Uploaded</th>
@@ -344,7 +397,7 @@ export default function AgentPackages() {
             <tbody className="divide-y divide-white/[0.04]">
               {visiblePackages.length === 0 && (
                 <tr>
-                  <td colSpan={tab === "msi" ? 8 : 7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                  <td colSpan={(tab === "msi" ? 8 : 7) + (platformScope === "macos" ? 1 : 0)} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
                     {loading
                       ? "Loading..."
                       : `No ${tab === "msi"
@@ -355,6 +408,8 @@ export default function AgentPackages() {
                             ? "Remote Support MSI packages"
                             : tab === "remote_support_dmg"
                               ? "Remote Support macOS packages"
+                              : tab === "remote_support_pkg"
+                                ? "Remote Support macOS updater packages"
                             : "agent binaries"} uploaded yet.`}
                   </td>
                 </tr>
@@ -362,6 +417,7 @@ export default function AgentPackages() {
               {visiblePackages.map((pkg) => (
                 <tr key={pkg.id} className="text-slate-300 hover:bg-white/[0.025]">
                   <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">{pkg.version}</td>
+                  {platformScope === "macos" && <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">{pkg.build_version ?? "-"}</td>}
                   {tab === "msi" && <td className="whitespace-nowrap px-4 py-3 text-slate-300">{pkg.platform}</td>}
                   <td className="whitespace-nowrap px-4 py-3">
                     {pkg.is_active ? (

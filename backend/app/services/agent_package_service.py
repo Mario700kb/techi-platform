@@ -19,7 +19,7 @@ from app.schemas.agent_package import AgentFileType, AgentPackageOut, AgentPacka
 ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
 # .bin = a raw Linux agent binary (served as-is; the installer chmod +x's it).
 # Windows artifacts keep their existing extensions unchanged.
-ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin", ".dmg")
+ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin", ".dmg", ".pkg")
 ALLOWED_FILE_TYPES = {ft.value for ft in AgentFileType}
 
 
@@ -65,19 +65,27 @@ class AgentPackageService:
         uploaded_by: str,
         stream: BinaryIO,
         file_type: str = "msi",
+        build_version: str = "",
         manifest_filename: str = "",
         manifest_stream: Optional[BinaryIO] = None,
     ) -> AgentPackageOut:
         version = version.strip()
         platform = platform.strip()
         file_type = file_type.strip()
+        build_version = build_version.strip()
         safe_filename = self._safe_filename(filename)
         self._validate_version(version)
         self._validate_platform(platform)
         self._validate_extension(safe_filename)
         self._validate_file_type(file_type)
-        if file_type == AgentFileType.REMOTE_SUPPORT_DMG.value and platform != AgentPackagePlatform.DARWIN_ARM64.value:
+        macos_types = {
+            AgentFileType.REMOTE_SUPPORT_DMG.value,
+            AgentFileType.REMOTE_SUPPORT_PKG.value,
+        }
+        if file_type in macos_types and platform != AgentPackagePlatform.DARWIN_ARM64.value:
             raise ValueError("macOS Remote Support package requires darwin-arm64 platform")
+        if file_type in macos_types:
+            self._validate_build_version(build_version)
         canonical_version = self._canonical_package_version(version, safe_filename, file_type, strict=True)
 
         safe_manifest_filename = ""
@@ -100,6 +108,15 @@ class AgentPackageService:
             sha256 = self._write_and_hash(stream, package_path)
             if package_path.stat().st_size == 0:
                 raise ValueError("Package file is empty")
+            for existing in self._read_manifest():
+                if (
+                    existing.get("platform") == platform
+                    and existing.get("file_type", "msi") == file_type
+                    and existing.get("version") == canonical_version
+                    and existing.get("build_version") == build_version
+                    and existing.get("sha256") != sha256
+                ):
+                    raise ValueError("Different package bytes already exist for this macOS build version")
 
             manifest_sha256 = None
             bundle_metadata = None
@@ -129,6 +146,8 @@ class AgentPackageService:
             "is_active": False,
             "sha256": sha256,
         }
+        if build_version:
+            item["build_version"] = build_version
         if safe_manifest_filename:
             item["manifest_filename"] = safe_manifest_filename
             item["manifest_sha256"] = manifest_sha256
@@ -230,6 +249,7 @@ class AgentPackageService:
             is_active=bool(item.get("is_active", False)),
             download_url=self.download_url(item["id"]),
             sha256=item.get("sha256"),
+            build_version=item.get("build_version"),
             manifest_filename=item.get("manifest_filename"),
             manifest_sha256=item.get("manifest_sha256"),
             bundle_metadata=item.get("bundle_metadata"),
@@ -439,6 +459,11 @@ class AgentPackageService:
             raise ValueError("Unsupported package platform")
 
     @staticmethod
+    def _validate_build_version(build_version: str) -> None:
+        if not build_version or len(build_version) > 32 or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", build_version):
+            raise ValueError("macOS Remote Support package requires a numeric internal build version")
+
+    @staticmethod
     def _validate_extension(filename: str) -> None:
         lowered = filename.lower()
         if not any(lowered.endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -461,12 +486,16 @@ class AgentPackageService:
             if strict and version != filename_version:
                 raise ValueError("Remote Support bundle version must match filename")
             return filename_version
-        if file_type == AgentFileType.REMOTE_SUPPORT_DMG.value:
-            filename_version = cls._remote_support_dmg_version(filename)
+        if file_type in {
+            AgentFileType.REMOTE_SUPPORT_DMG.value,
+            AgentFileType.REMOTE_SUPPORT_PKG.value,
+        }:
+            extension = "dmg" if file_type == AgentFileType.REMOTE_SUPPORT_DMG.value else "pkg"
+            filename_version = cls._remote_support_macos_version(filename, extension)
             if filename_version is None:
                 raise ValueError(
                     "macOS Remote Support filename must be "
-                    "TECHI-Remote-Support-<version>-darwin-arm64.dmg"
+                    f"TECHI-Remote-Support-<version>-darwin-arm64.{extension}"
                 )
             if strict and version != filename_version:
                 raise ValueError("macOS Remote Support version must match filename")
@@ -486,9 +515,9 @@ class AgentPackageService:
         return match.group(1) if match else None
 
     @staticmethod
-    def _remote_support_dmg_version(filename: str) -> Optional[str]:
+    def _remote_support_macos_version(filename: str, extension: str) -> Optional[str]:
         match = re.match(
-            r"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)-darwin-arm64\.dmg$",
+            rf"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)-darwin-arm64\.{re.escape(extension)}$",
             filename,
             re.IGNORECASE,
         )

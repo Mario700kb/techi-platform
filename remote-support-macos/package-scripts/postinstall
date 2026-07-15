@@ -1,0 +1,68 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+TARGET_VOLUME=${3:-/}
+APP="$TARGET_VOLUME/Applications/TECHI Remote Support.app"
+PLIST="$APP/Contents/Info.plist"
+BACKUP_ROOT="$TARGET_VOLUME/private/var/tmp/al.techi.remote-support.pkg-backup"
+BACKUP_APP="$BACKUP_ROOT/TECHI Remote Support.app"
+BACKUP_MARKER="$BACKUP_ROOT/has-backup"
+METADATA="$SCRIPT_DIR/package-metadata.plist"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+INSTALL_SUCCEEDED=0
+
+restore_previous_app() {
+  if [[ -f "$BACKUP_MARKER" && -d "$BACKUP_APP" ]]; then
+    /bin/rm -rf "$APP"
+    /usr/bin/ditto --rsrc --extattr "$BACKUP_APP" "$APP"
+    if [[ "$TARGET_VOLUME" == "/" ]]; then
+      "$LSREGISTER" -f "$APP" >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+cleanup() {
+  status=$?
+  if [[ "$INSTALL_SUCCEEDED" -ne 1 ]]; then
+    restore_previous_app
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+
+EXPECTED_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :MarketingVersion' "$METADATA")
+EXPECTED_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :BuildVersion' "$METADATA")
+
+[[ -d "$APP" && -f "$PLIST" ]]
+[[ ! -d "$APP/TECHI Remote Support.app" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == "al.techi.remote-support" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")" == "TECHI Remote Support" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST")" == "TECHI Remote Support" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" == "$EXPECTED_VERSION" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" == "$EXPECTED_BUILD" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")" == "TECHI Remote Support" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$PLIST")" == "techiremotesupport" ]]
+[[ -x "$APP/Contents/MacOS/TECHI Remote Support" ]]
+[[ -x "$APP/Contents/MacOS/TECHI Remote Support Client" ]]
+[[ -x "$APP/Contents/Helpers/techi-remote-support-bridge" ]]
+[[ "$(/usr/bin/lipo -archs "$APP/Contents/MacOS/TECHI Remote Support")" == *arm64* ]]
+[[ -z "$(/usr/bin/find "$APP" -type l ! -exec test -e {} \; -print -quit)" ]]
+[[ -z "$(/usr/bin/find "$APP" -perm -0022 -print -quit)" ]]
+
+if [[ "$TARGET_VOLUME" == "/" ]]; then
+  /usr/sbin/chown -R root:wheel "$APP"
+fi
+/usr/bin/codesign --verify --deep --strict "$APP"
+"$APP/Contents/MacOS/TECHI Remote Support" --validate-install
+
+if [[ "$TARGET_VOLUME" == "/" ]]; then
+  "$LSREGISTER" -f "$APP"
+  "$SCRIPT_DIR/package-process-control" verify-registration "$APP"
+fi
+
+/bin/rm -rf "$BACKUP_ROOT"
+INSTALL_SUCCEEDED=1
+trap - EXIT
+exit 0

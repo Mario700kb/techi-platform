@@ -16,10 +16,13 @@ def svc(tmp_path, monkeypatch):
     return AgentPackageService()
 
 
-def _upload(svc, *, filename, platform, file_type, version="2.1.5", data=b"x"):
+def _upload(svc, *, filename, platform, file_type, version="2.1.5", data=b"x", build_version=None):
+    if build_version is None and platform == "darwin-arm64":
+        build_version = "148.2"
     return svc.upload(
         version=version, platform=platform, filename=filename,
         uploaded_by="tester", stream=io.BytesIO(data), file_type=file_type,
+        build_version=build_version or "",
     )
 
 
@@ -69,7 +72,55 @@ def test_macos_remote_support_dmg_version_is_canonical(svc):
     )
 
     assert pkg.version == "1.4.8"
+    assert pkg.build_version == "148.2"
     assert pkg.platform.value == "darwin-arm64"
+
+
+def test_macos_remote_support_pkg_version_and_build_are_canonical(svc):
+    pkg = _upload(
+        svc,
+        filename="TECHI-Remote-Support-1.4.8-darwin-arm64.pkg",
+        platform="darwin-arm64",
+        file_type="remote_support_pkg",
+        version="1.4.8",
+        build_version="148.2",
+    )
+
+    assert pkg.version == "1.4.8"
+    assert pkg.build_version == "148.2"
+
+
+def test_macos_remote_support_requires_build_and_rejects_reused_build_bytes(svc):
+    with pytest.raises(ValueError, match="numeric internal build version"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.8-darwin-arm64.pkg",
+            platform="darwin-arm64",
+            file_type="remote_support_pkg",
+            version="1.4.8",
+            build_version="",
+        )
+
+    first = _upload(
+        svc,
+        filename="TECHI-Remote-Support-1.4.8-darwin-arm64.pkg",
+        platform="darwin-arm64",
+        file_type="remote_support_pkg",
+        version="1.4.8",
+        build_version="148.2",
+        data=b"first",
+    )
+    assert first.sha256
+    with pytest.raises(ValueError, match="Different package bytes"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.8-darwin-arm64.pkg",
+            platform="darwin-arm64",
+            file_type="remote_support_pkg",
+            version="1.4.8",
+            build_version="148.2",
+            data=b"second",
+        )
 
 
 def test_macos_remote_support_dmg_rejects_malformed_identity(svc):

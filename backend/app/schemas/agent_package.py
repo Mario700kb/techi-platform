@@ -30,6 +30,8 @@ class AgentFileType(str, Enum):
     REMOTE_SUPPORT_MSI = "remote_support_msi"
     # macOS TECHI Remote Support application bundle distributed as a DMG.
     REMOTE_SUPPORT_DMG = "remote_support_dmg"
+    # Recommended macOS TECHI Remote Support updater package.
+    REMOTE_SUPPORT_PKG = "remote_support_pkg"
     # TECHI Remote Support native bundle (deterministic .zip) consumed by
     # techi-bootstrap.exe repair-remote-support. This is the recovery payload;
     # the MSI is not. Filename: TECHI-Remote-Support-<version>-windows-amd64.zip.
@@ -47,6 +49,7 @@ class AgentPackageOut(BaseModel):
     is_active: bool = False
     download_url: str
     sha256: Optional[str] = None
+    build_version: Optional[str] = None
     manifest_filename: Optional[str] = None
     manifest_sha256: Optional[str] = None
     bundle_metadata: Optional[dict[str, Any]] = None

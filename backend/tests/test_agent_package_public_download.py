@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -357,32 +358,42 @@ def test_public_windows_remote_support_msi_download_remains_unchanged(monkeypatc
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_public_macos_remote_support_download(monkeypatch, tmp_path):
-    dmg = tmp_path / "TECHI-Remote-Support-1.4.8-darwin-arm64.dmg"
-    dmg.write_bytes(b"macos-dmg")
+@pytest.mark.parametrize(
+    ("query", "artifact", "file_type", "filename", "content_type"),
+    [
+        ("", "pkg", "remote_support_pkg", "TECHI-Remote-Support-1.4.8-darwin-arm64.pkg", "application/vnd.apple.installer+xml"),
+        ("?artifact=dmg", "dmg", "remote_support_dmg", "TECHI-Remote-Support-1.4.8-darwin-arm64.dmg", "application/x-apple-diskimage"),
+    ],
+)
+def test_public_macos_remote_support_download(
+    monkeypatch, tmp_path, query, artifact, file_type, filename, content_type
+):
+    package_path = tmp_path / filename
+    package_path.write_bytes(f"macos-{artifact}".encode())
     package = SimpleNamespace(
         id="pkg-macos-rs",
         platform=SimpleNamespace(value="darwin-arm64"),
-        filename=dmg.name,
+        filename=package_path.name,
         version="1.4.8",
     )
 
     class FakeAgentPackageService:
         def latest_active(self, platform: str, *, file_type=None):
             assert platform == "darwin-arm64"
-            assert file_type == "remote_support_dmg"
+            assert file_type == file_type_expected
             return package
 
         def package_path(self, selected_package):
             assert selected_package is package
-            return dmg
+            return package_path
 
+    file_type_expected = file_type
     monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
-    response = _client().get("/api/v1/agent-packages/remote-support/darwin-arm64/download")
+    response = _client().get(f"/api/v1/agent-packages/remote-support/darwin-arm64/download{query}")
 
     assert response.status_code == 200
-    assert response.content == b"macos-dmg"
-    assert response.headers["content-type"] == "application/x-apple-diskimage"
+    assert response.content == f"macos-{artifact}".encode()
+    assert response.headers["content-type"] == content_type
     assert response.headers["cache-control"] == "no-store"
 
 

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+TARGET_VOLUME=${3:-/}
+APP="$TARGET_VOLUME/Applications/TECHI Remote Support.app"
+BACKUP_ROOT="$TARGET_VOLUME/private/var/tmp/al.techi.remote-support.pkg-backup"
+BACKUP_APP="$BACKUP_ROOT/TECHI Remote Support.app"
+BACKUP_MARKER="$BACKUP_ROOT/has-backup"
+
+if [[ ! -d "$APP" ]]; then
+  exit 0
+fi
+
+PLIST="$APP/Contents/Info.plist"
+if [[ ! -f "$PLIST" ]] ||
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST" 2>/dev/null || true)" != "al.techi.remote-support" ]]; then
+  echo "Refusing to replace an application with an unexpected bundle identity" >&2
+  exit 1
+fi
+
+if [[ -e "$BACKUP_APP" || -e "$BACKUP_MARKER" ]]; then
+  echo "A previous TECHI Remote Support recovery backup still exists" >&2
+  exit 1
+fi
+
+"$SCRIPT_DIR/package-process-control" stop "$APP"
+"$SCRIPT_DIR/package-process-control" verify-stopped "$APP"
+
+/bin/mkdir -p -m 700 "$BACKUP_ROOT"
+/usr/bin/ditto --rsrc --extattr "$APP" "$BACKUP_APP"
+/usr/bin/touch "$BACKUP_MARKER"
+
