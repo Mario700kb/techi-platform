@@ -136,6 +136,14 @@ def test_observe_v1_signed_heartbeat_is_accepted_normally(client, db, monkeypatc
     assert device.hostname == "signed-new"
 
 
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("2.1.11", False), ("2.1.12", True), ("2.2.0", True), ("unknown", False), (None, False)],
+)
+def test_credential_retry_requires_fixed_agent_version(version, expected):
+    assert agent_endpoint._agent_supports_credential_retry(version) is expected
+
+
 def test_authenticated_remote_support_credential_lifecycle_retries_and_promotes(client, db, monkeypatch):
     monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
     monkeypatch.setattr(agent_endpoint, "_heartbeat_side_effects", lambda *args, **kwargs: None)

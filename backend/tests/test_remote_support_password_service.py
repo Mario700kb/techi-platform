@@ -214,7 +214,8 @@ def test_failed_generation_remains_deliverable_for_agent_retry():
         ),
     ) is True
 
-    retry = svc.pending_delivery(device)
+    assert svc.pending_delivery(device) is None
+    retry = svc.pending_delivery(device, retry_failed=True)
     assert retry is not None
     assert retry.generation == delivery.generation
     assert retry.password == delivery.password
@@ -240,7 +241,8 @@ def test_conflicted_generation_remains_deliverable_for_agent_retry():
     ) is True
 
     assert device.remote_support_apply_status == "conflicted"
-    assert svc.pending_delivery(device).generation == delivery.generation
+    assert svc.pending_delivery(device) is None
+    assert svc.pending_delivery(device, retry_failed=True).generation == delivery.generation
     assert device.remote_support_active_generation == 0
 
 

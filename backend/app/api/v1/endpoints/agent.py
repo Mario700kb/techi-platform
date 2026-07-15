@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_CREDENTIAL_RETRY_MIN_AGENT_VERSION = (2, 1, 12)
+
+
+def _agent_supports_credential_retry(raw_version: Optional[str]) -> bool:
+    text = (raw_version or "").strip().lstrip("vV")
+    try:
+        version = tuple(int(piece) for piece in text.split("."))
+    except (TypeError, ValueError):
+        return False
+    return version >= _CREDENTIAL_RETRY_MIN_AGENT_VERSION
+
 
 def _record_heartbeat_trust_transition(
     db: Session,
@@ -272,7 +283,10 @@ async def agent_heartbeat(
     pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
     interval = _cfg_svc.get_heartbeat_interval(payload.platform)
 
-    credential_delivery = credential_service.pending_delivery(device)
+    credential_delivery = credential_service.pending_delivery(
+        device,
+        retry_failed=_agent_supports_credential_retry(payload.agent_version),
+    )
     platform = (payload.platform or "").strip().lower()
     remote_support_present = payload.rustdesk_install_status != "not_installed"
     if credential_delivery is None and platform == "windows" and remote_support_present:

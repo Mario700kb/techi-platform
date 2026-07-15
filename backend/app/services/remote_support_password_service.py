@@ -95,7 +95,7 @@ class RemoteSupportPasswordService:
         return self.get_active_plaintext(device)
 
     def ensure_desired(self, device: Device) -> CredentialDelivery:
-        existing = self.pending_delivery(device)
+        existing = self.pending_delivery(device, retry_failed=True)
         if existing is not None:
             return existing
         return self._create_desired(device, generate_password(), source="generated")
@@ -111,11 +111,14 @@ class RemoteSupportPasswordService:
     def regenerate(self, device: Device) -> str:
         return self._create_desired(device, generate_password(), source="generated").password
 
-    def pending_delivery(self, device: Device) -> Optional[CredentialDelivery]:
+    def pending_delivery(self, device: Device, *, retry_failed: bool = False) -> Optional[CredentialDelivery]:
         # A failed ACK is not terminal while the desired encrypted material is
         # still present. Re-deliver the same generation so a corrected/current
         # Agent can retry without rotating away from the operator's intent.
-        if device.remote_support_apply_status not in ("pending", "failed", "conflicted"):
+        retryable_statuses = {"pending"}
+        if retry_failed:
+            retryable_statuses.update({"failed", "conflicted"})
+        if device.remote_support_apply_status not in retryable_statuses:
             return None
         required = (
             device.remote_support_desired_password_ciphertext,
