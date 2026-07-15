@@ -22,12 +22,14 @@ import (
 // to the contract, but its real side effects are UNPROVEN on a real device and
 // require a disposable Windows lab run before any canary.
 type configBackup struct {
-	path   string
-	backup string
-	sha256 string
-	mode   os.FileMode
-	mtime  time.Time
-	sddl   string
+	path          string
+	backup        string
+	sha256        string
+	mode          os.FileMode
+	mtime         time.Time
+	sddl          string
+	ownerFallback bool
+	groupFallback bool
 }
 
 type windowsExecutor struct {
@@ -205,7 +207,8 @@ func (e *windowsExecutor) RestoreConfig(ExecuteParams) (UndoFunc, error) {
 }
 
 func (e *windowsExecutor) restorePreservedConfig() error {
-	for _, saved := range e.preserved {
+	for i := range e.preserved {
+		saved := &e.preserved[i]
 		backupData, err := os.ReadFile(saved.backup)
 		if err != nil {
 			return err
@@ -234,9 +237,12 @@ func (e *windowsExecutor) restorePreservedConfig() error {
 				return err
 			}
 			if currentSDDL != saved.sddl {
-				if err := restoreFileSecurityDescriptor(saved.path, saved.sddl); err != nil {
+				result, err := restoreFileSecurityDescriptor(saved.path, saved.sddl)
+				if err != nil {
 					return err
 				}
+				saved.ownerFallback = saved.ownerFallback || result.ownerFallback
+				saved.groupFallback = saved.groupFallback || result.groupFallback
 			}
 			continue
 		}
@@ -249,9 +255,12 @@ func (e *windowsExecutor) restorePreservedConfig() error {
 		if err := os.Chtimes(saved.path, saved.mtime, saved.mtime); err != nil {
 			return err
 		}
-		if err := restoreFileSecurityDescriptor(saved.path, saved.sddl); err != nil {
+		result, err := restoreFileSecurityDescriptor(saved.path, saved.sddl)
+		if err != nil {
 			return err
 		}
+		saved.ownerFallback = saved.ownerFallback || result.ownerFallback
+		saved.groupFallback = saved.groupFallback || result.groupFallback
 		got, err := HashFileSHA256(saved.path)
 		if err != nil || !strings.EqualFold(got, saved.sha256) {
 			return fmt.Errorf("restored config hash mismatch: %s", saved.path)
@@ -740,7 +749,7 @@ func (e *windowsExecutor) ValidateFinal(p ExecuteParams, m *BundleManifest) erro
 		if err != nil || info.Mode().Perm() != saved.mode || !info.ModTime().Equal(saved.mtime) {
 			return fmt.Errorf("preserved config metadata mismatch after recovery: %s", saved.path)
 		}
-		if sddl, err := fileSecurityDescriptor(saved.path); err != nil || sddl != saved.sddl {
+		if sddl, err := fileSecurityDescriptor(saved.path); err != nil || !preservedSecurityMatches(saved.sddl, sddl, saved.ownerFallback, saved.groupFallback) {
 			return fmt.Errorf("preserved config ACL/owner mismatch after recovery: %s", saved.path)
 		}
 	}
@@ -1272,6 +1281,13 @@ func copyOneFile(src, dst string) error {
 const configSecurityInformation = windows.OWNER_SECURITY_INFORMATION |
 	windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION
 
+type configSecurityRestoreResult struct {
+	ownerFallback bool
+	groupFallback bool
+}
+
+var setNamedSecurityInfoFunc = windows.SetNamedSecurityInfo
+
 func fileSecurityDescriptor(path string) (string, error) {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, configSecurityInformation)
 	if err != nil {
@@ -1284,24 +1300,77 @@ func fileSecurityDescriptor(path string) (string, error) {
 	return sddl, nil
 }
 
-func restoreFileSecurityDescriptor(path, sddl string) error {
+func restoreFileSecurityDescriptor(path, sddl string) (configSecurityRestoreResult, error) {
+	var result configSecurityRestoreResult
 	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
-		return err
+		return result, err
 	}
 	owner, _, err := sd.Owner()
 	if err != nil {
-		return err
+		return result, err
 	}
 	group, _, err := sd.Group()
 	if err != nil {
-		return err
+		return result, err
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil {
-		return err
+		return result, err
 	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, configSecurityInformation, owner, group, dacl, nil)
+	if err := setNamedSecurityInfoFunc(path, windows.SE_FILE_OBJECT, configSecurityInformation, owner, group, dacl, nil); err == nil {
+		return result, nil
+	} else if !isInvalidOwnerAssignment(err) {
+		return result, err
+	}
+	result.ownerFallback = true
+	if err := setNamedSecurityInfoFunc(path, windows.SE_FILE_OBJECT, windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION, nil, group, dacl, nil); err == nil {
+		return result, nil
+	} else if !isInvalidOwnerAssignment(err) {
+		return result, err
+	}
+	result.groupFallback = true
+	if err := setNamedSecurityInfoFunc(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func isInvalidOwnerAssignment(err error) bool {
+	if errors.Is(err, windows.ERROR_INVALID_OWNER) {
+		return true
+	}
+	return strings.Contains(err.Error(), "This security ID may not be assigned as the owner of this object")
+}
+
+func preservedSecurityMatches(want, got string, ownerFallback, groupFallback bool) bool {
+	if !ownerFallback && !groupFallback {
+		return want == got
+	}
+	if sddlSection(want, "D:") == "" || sddlSection(want, "D:") != sddlSection(got, "D:") {
+		return false
+	}
+	if !groupFallback && sddlSection(want, "G:") != sddlSection(got, "G:") {
+		return false
+	}
+	return true
+}
+
+func sddlSection(sddl, prefix string) string {
+	start := strings.Index(sddl, prefix)
+	if start < 0 {
+		return ""
+	}
+	end := len(sddl)
+	for _, marker := range []string{"O:", "G:", "D:", "S:"} {
+		if marker == prefix {
+			continue
+		}
+		if idx := strings.Index(sddl[start+len(prefix):], marker); idx >= 0 && start+len(prefix)+idx < end {
+			end = start + len(prefix) + idx
+		}
+	}
+	return sddl[start:end]
 }
 
 var approvedConfigNames = map[string]bool{
