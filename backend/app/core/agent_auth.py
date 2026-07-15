@@ -63,6 +63,8 @@ heartbeat_identity_limiter = _SlidingWindowRateLimiter(limit=30, window_seconds=
 remote_connect_create_limiter = _SlidingWindowRateLimiter(limit=20, window_seconds=60)
 remote_connect_redeem_limiter = _SlidingWindowRateLimiter(limit=60, window_seconds=60)
 remote_connect_report_limiter = _SlidingWindowRateLimiter(limit=120, window_seconds=60)
+agent_migration_ip_limiter = _SlidingWindowRateLimiter(limit=60, window_seconds=60)
+agent_migration_device_limiter = _SlidingWindowRateLimiter(limit=10, window_seconds=60)
 
 
 HEARTBEAT_SIGNATURE_VERSION = "v1"

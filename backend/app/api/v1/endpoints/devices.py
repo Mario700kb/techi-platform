@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.activity import ActivityEvent
+from app.schemas.agent import AgentAuthMigrationApprovalRequest
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import (
     Device as DeviceSchema,
@@ -39,6 +40,7 @@ from app.services.device_overview_service import DeviceOverviewService
 from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
+from app.services.agent_auth_migration_service import AgentAuthMigrationError, AgentAuthMigrationService
 from app.services.rustdesk_service import RustDeskIdentityService
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
@@ -64,6 +66,28 @@ def get_scoped_device(
     if not device_in_scope(device.client_id, device.group_id, device.id, scope):
         raise HTTPException(status_code=404, detail="Device not found")
     return device
+
+
+@router.post("/{device_id}/agent-auth-migration/approve")
+def approve_agent_auth_migration(
+    payload: AgentAuthMigrationApprovalRequest,
+    device: Device = Depends(get_scoped_device),
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+):
+    try:
+        AgentAuthMigrationService(db).approve(device, payload.fingerprint)
+    except AgentAuthMigrationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.AGENT_AUTH_MIGRATION_APPROVED,
+        entity_type="device",
+        entity_id=device.id,
+        details={"change": "agent_auth_migration_approved", "fingerprint": payload.fingerprint.lower()},
+    )
+    return {"status": "approved", "device_id": device.id, "fingerprint": payload.fingerprint.lower()}
 
 
 # ------------------------------------------------------------------ #

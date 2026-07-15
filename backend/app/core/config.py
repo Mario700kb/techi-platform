@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     # liveness path, and "disabled" is an emergency compatibility mode with the
     # same containment. Invalid values must fail startup/config validation.
     AGENT_HEARTBEAT_AUTH_MODE: str = "enforce"
+    AGENT_AUTH_MIGRATION_MODE: str = "disabled"
+    AGENT_AUTH_MIGRATION_DEVICE_IDS: str = ""
 
     # Transitional native bootstrap/update architecture
     # (docs/architecture/native-bootstrap.md). When True, the GPO generator ALSO
@@ -175,6 +177,25 @@ class Settings(BaseSettings):
             )
         return mode
 
+    @field_validator("AGENT_AUTH_MIGRATION_MODE")
+    @classmethod
+    def validate_agent_auth_migration_mode(cls, value: str) -> str:
+        mode = (value or "disabled").strip().lower()
+        if mode not in {"disabled", "canary", "fleet"}:
+            raise ValueError("AGENT_AUTH_MIGRATION_MODE must be one of: disabled, canary, fleet")
+        return mode
+
+    @field_validator("AGENT_AUTH_MIGRATION_DEVICE_IDS")
+    @classmethod
+    def validate_agent_auth_migration_device_ids(cls, value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return ""
+        parts = [part.strip() for part in raw.split(",")]
+        if any(not part.isdigit() or int(part) <= 0 for part in parts):
+            raise ValueError("AGENT_AUTH_MIGRATION_DEVICE_IDS must contain positive comma-separated IDs")
+        return ",".join(str(item) for item in sorted({int(part) for part in parts}))
+
     @field_validator("REMOTE_SUPPORT_AUTO_REPAIR_MODE")
     @classmethod
     def validate_remote_support_auto_repair_mode(cls, value: str) -> str:
@@ -192,6 +213,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_remote_support_canary_allowlist(self):
+        if self.AGENT_AUTH_MIGRATION_MODE == "canary" and not self.AGENT_AUTH_MIGRATION_DEVICE_IDS:
+            raise ValueError("AGENT_AUTH_MIGRATION_DEVICE_IDS is required in canary mode")
         if self.REMOTE_SUPPORT_AUTO_REPAIR_MODE == "canary":
             if not self.REMOTE_SUPPORT_AUTO_REPAIR_DEVICE_IDS:
                 raise ValueError(

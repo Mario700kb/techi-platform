@@ -160,3 +160,33 @@ class AgentEnrollmentResponse(BaseModel):
     assigned_client_id: Optional[int] = None
     assigned_group_id: Optional[int] = None
     agent_credential: str
+
+
+class AgentAuthMigrationChallengeRequest(BaseModel):
+    device_id: int
+    agent_id: str
+    public_key: str
+
+
+class AgentAuthMigrationChallengeResponse(BaseModel):
+    challenge: str
+    fingerprint: str
+    expires_in_seconds: int
+
+
+class AgentAuthMigrationProofRequest(BaseModel):
+    device_id: int
+    agent_id: str
+    public_key: str
+    challenge: str
+    signature: str
+
+
+class AgentAuthMigrationProofResponse(BaseModel):
+    status: str
+    fingerprint: str
+    encrypted_credential: Optional[str] = None
+
+
+class AgentAuthMigrationApprovalRequest(BaseModel):
+    fingerprint: str

@@ -48,6 +48,16 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 	if hasIdentity && hasCredential {
 		return nil
 	}
+	if hasIdentity && !hasCredential && strings.TrimSpace(cfg.EnrollmentToken) == "" {
+		handled, err := tryAgentAuthMigration(cfg, configPath)
+		if err != nil {
+			return fmt.Errorf("agent identity is missing heartbeat credential: %w", err)
+		}
+		if handled {
+			return nil
+		}
+		return fmt.Errorf("agent identity is missing heartbeat credential; controlled authentication migration is required")
+	}
 	// Allow enrollment without a token when a non-workgroup domain is present
 	// and the backend has TRUSTED_DOMAIN_AUTO_ENROLLMENT enabled.
 	hasDomain := strings.TrimSpace(inv.Domain) != "" &&

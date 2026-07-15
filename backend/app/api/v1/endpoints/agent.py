@@ -11,6 +11,8 @@ from app.core.agent_auth import (
     heartbeat_auth_material_missing,
     heartbeat_auth_limiter,
     heartbeat_identity_limiter,
+    agent_migration_device_limiter,
+    agent_migration_ip_limiter,
     resolve_heartbeat_trust,
 )
 from app.core.config import settings
@@ -22,9 +24,15 @@ from app.schemas.agent import (
     AgentEnrollmentResponse,
     AgentHeartbeatPayload,
     AgentHeartbeatResponse,
+    AgentAuthMigrationChallengeRequest,
+    AgentAuthMigrationChallengeResponse,
+    AgentAuthMigrationProofRequest,
+    AgentAuthMigrationProofResponse,
 )
 from app.services import agent_config_service as _cfg_svc
 from app.services.agent_enrollment_service import AgentEnrollmentService
+from app.services.agent_auth_migration_service import AgentAuthMigrationError, AgentAuthMigrationService
+from app.services.agent_package_service import AgentPackageService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
@@ -135,6 +143,53 @@ def _heartbeat_identity_rate_limit_key(request: Request, payload: AgentHeartbeat
     return f"{client_ip}:missing"
 
 
+def _migration_rate_limit(request: Request, device_id: int) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    if not agent_migration_ip_limiter.is_allowed(client_ip) or not agent_migration_device_limiter.is_allowed(str(device_id)):
+        raise HTTPException(status_code=429, detail="Too many Agent migration attempts")
+
+
+@router.post("/auth-migration/challenge", response_model=AgentAuthMigrationChallengeResponse)
+def agent_auth_migration_challenge(
+    payload: AgentAuthMigrationChallengeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _migration_rate_limit(request, payload.device_id)
+    try:
+        return AgentAuthMigrationService(db).challenge(**payload.model_dump())
+    except AgentAuthMigrationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@router.post("/auth-migration/prove", response_model=AgentAuthMigrationProofResponse)
+def agent_auth_migration_prove(
+    payload: AgentAuthMigrationProofRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _migration_rate_limit(request, payload.device_id)
+    try:
+        return AgentAuthMigrationService(db).prove(**payload.model_dump())
+    except AgentAuthMigrationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+def _legacy_migration_update(request: Request, device, reported_version: Optional[str]):
+    if not AgentAuthMigrationService.allowed(device.id):
+        return None
+    package = AgentPackageService().latest_active("windows-amd64", file_type="agent_binary")
+    if package is None or package.version == (reported_version or "").strip():
+        return None
+    base_url = _normalize_public_backend_url(request)
+    return {
+        "available": True,
+        "version": package.version,
+        "download_url": f"{base_url}{settings.API_PREFIX}/agent-packages/agent-binary/download",
+        "sha256": package.sha256,
+    }
+
+
 @router.post("/enroll", response_model=AgentEnrollmentResponse)
 def agent_enroll(
     payload: AgentEnrollmentRequest,
@@ -243,7 +298,7 @@ async def agent_heartbeat(
             "heartbeat_at": heartbeat.created_at,
             "pending_actions": [],
             "heartbeat_interval_seconds": interval,
-            "agent_update": None,
+            "agent_update": _legacy_migration_update(request, device, payload.agent_version),
             "authentication_required": True,
             "remote_support_credential": None,
         }

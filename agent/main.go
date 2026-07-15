@@ -81,6 +81,8 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 		return true, runBootstrapConfigCommand(args)
 	case "bootstrap-config-contract":
 		return true, runBootstrapConfigContractCommand(args)
+	case "auth-migration-fingerprint":
+		return true, runAuthMigrationFingerprintCommand(args)
 	case "rs-tray-task":
 		return true, runRSTrayTaskCommand()
 	case "installer-marker":
@@ -124,6 +126,7 @@ func isUtilityCommand(command string) bool {
 		"watchdog-check",
 		"bootstrap-config",
 		"bootstrap-config-contract",
+		"auth-migration-fingerprint",
 		"rs-tray-task",
 		"installer-marker",
 		"installer-ensure-service",

@@ -117,6 +117,14 @@ class Device(Base):
     agent_auth_last_nonce = Column(String(64), nullable=True)
     heartbeat_auth_state = Column(String(32), default="unknown", nullable=False)
     heartbeat_auth_state_changed_at = Column(DateTime, nullable=True)
+    agent_auth_migration_public_key = Column(Text, nullable=True)
+    agent_auth_migration_fingerprint = Column(String(64), nullable=True, index=True)
+    agent_auth_migration_challenge_hash = Column(String(64), nullable=True)
+    agent_auth_migration_challenge_expires_at = Column(DateTime, nullable=True)
+    agent_auth_migration_proof_verified_at = Column(DateTime, nullable=True)
+    agent_auth_migration_approved_at = Column(DateTime, nullable=True)
+    agent_auth_migration_completed_at = Column(DateTime, nullable=True)
+    agent_auth_migration_status = Column(String(32), default="none", nullable=False)
 
     # Last state reported by an authenticated Agent. Legacy-restricted
     # heartbeats never overwrite it; without trusted evidence the public state
