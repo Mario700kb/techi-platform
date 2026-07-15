@@ -4,20 +4,21 @@ import (
 	"context"
 	"errors"
 	"os"
-	"runtime"
 	"time"
 )
 
 var version = "dev"
 
 func run(args []string) error {
-	if runtime.GOOS != "windows" {
-		return errors.New("unsupported_platform")
+	if len(args) == 1 && args[0] == "--cleanup-stale" {
+		return cleanupPlatformHandoffs()
 	}
-	if len(args) != 1 {
-		return errors.New("invalid_protocol_uri")
+	rawURI, err := platformProtocolURI(args)
+	if err != nil {
+		return err
 	}
-	token, err := parseProtocolURI(args[0])
+	token, err := parseProtocolURI(rawURI)
+	rawURI = ""
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func run(args []string) error {
 	redeemed.Password = ""
 	defer zero(password)
 
-	err = secureWindowsHandoff(ctx, redeemed.RemoteID, password)
+	err = securePlatformHandoff(ctx, redeemed.RemoteID, password)
 	if err != nil {
 		_ = api.report(ctx, redeemed.Receipt, "failed", safeFailureCode(err))
 		return err
@@ -62,7 +63,11 @@ func safeFailureCode(err error) string {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		showBridgeError(safeFailureCode(err))
+		code := safeFailureCode(err)
+		showBridgeError(code)
+		if code == "token_expired_or_used" {
+			os.Exit(20)
+		}
 		os.Exit(1)
 	}
 }

@@ -19,7 +19,7 @@ from app.schemas.agent_package import AgentFileType, AgentPackageOut, AgentPacka
 ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
 # .bin = a raw Linux agent binary (served as-is; the installer chmod +x's it).
 # Windows artifacts keep their existing extensions unchanged.
-ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin")
+ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin", ".dmg")
 ALLOWED_FILE_TYPES = {ft.value for ft in AgentFileType}
 
 
@@ -76,6 +76,8 @@ class AgentPackageService:
         self._validate_platform(platform)
         self._validate_extension(safe_filename)
         self._validate_file_type(file_type)
+        if file_type == AgentFileType.REMOTE_SUPPORT_DMG.value and platform != AgentPackagePlatform.DARWIN_ARM64.value:
+            raise ValueError("macOS Remote Support package requires darwin-arm64 platform")
         canonical_version = self._canonical_package_version(version, safe_filename, file_type, strict=True)
 
         safe_manifest_filename = ""
@@ -192,6 +194,9 @@ class AgentPackageService:
 
     def remote_support_msi_download_url(self) -> str:
         return f"{settings.API_PREFIX}/agent-packages/remote-support-msi/download"
+
+    def remote_support_download_url(self, platform: str) -> str:
+        return f"{settings.API_PREFIX}/agent-packages/remote-support/{platform}/download"
 
     def _read_manifest(self) -> List[dict]:
         if not self.manifest_path.exists():
@@ -456,6 +461,16 @@ class AgentPackageService:
             if strict and version != filename_version:
                 raise ValueError("Remote Support bundle version must match filename")
             return filename_version
+        if file_type == AgentFileType.REMOTE_SUPPORT_DMG.value:
+            filename_version = cls._remote_support_dmg_version(filename)
+            if filename_version is None:
+                raise ValueError(
+                    "macOS Remote Support filename must be "
+                    "TECHI-Remote-Support-<version>-darwin-arm64.dmg"
+                )
+            if strict and version != filename_version:
+                raise ValueError("macOS Remote Support version must match filename")
+            return filename_version
         if file_type != AgentFileType.REMOTE_SUPPORT_MSI.value:
             return version
         filename_version = cls._remote_support_version_from_filename(filename)
@@ -468,6 +483,15 @@ class AgentPackageService:
     @staticmethod
     def _remote_support_version_from_filename(filename: str) -> Optional[str]:
         match = re.match(r"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)\.msi$", filename, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _remote_support_dmg_version(filename: str) -> Optional[str]:
+        match = re.match(
+            r"^TECHI-Remote-Support-([A-Za-z0-9._+\-]+)-darwin-arm64\.dmg$",
+            filename,
+            re.IGNORECASE,
+        )
         return match.group(1) if match else None
 
     @staticmethod

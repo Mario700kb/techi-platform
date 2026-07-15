@@ -27,9 +27,9 @@ type bridgeAPI struct {
 }
 
 func newProductionAPI() (*bridgeAPI, error) {
-	base, err := url.Parse(productionAPIBase)
-	if err != nil || base.Scheme != "https" || base.Hostname() != "api-rdp.techi.com.al" || base.Port() != "" {
-		return nil, errors.New("invalid_backend_configuration")
+	base, err := validateProductionAPIBase(productionAPIBase)
+	if err != nil {
+		return nil, err
 	}
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -48,6 +48,14 @@ func newProductionAPI() (*bridgeAPI, error) {
 			},
 		},
 	}, nil
+}
+
+func validateProductionAPIBase(raw string) (*url.URL, error) {
+	base, err := url.Parse(raw)
+	if err != nil || base.Scheme != "https" || base.Hostname() != "api-rdp.techi.com.al" || base.Port() != "" || base.Path != "" || base.RawQuery != "" || base.Fragment != "" || base.User != nil {
+		return nil, errors.New("invalid_backend_configuration")
+	}
+	return base, nil
 }
 
 func (a *bridgeAPI) postJSON(ctx context.Context, path string, requestBody, responseBody any) error {

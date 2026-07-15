@@ -9,7 +9,7 @@
   in CI identity metadata so canaries can prove the exact source lineage.
 -->
 <?ifndef Version?>
-<?define Version="1.4.7.0"?>
+<?define Version="1.4.8.0"?>
 <?endif?>
 <?ifndef BuildCommit?>
 <?define BuildCommit="dev"?>

@@ -24,6 +24,7 @@ func TestParseProtocolURIRejectsCredentialAndExtraData(t *testing.T) {
 	token := strings.Repeat("A", 43)
 	cases := []string{
 		"techiremotesupport://connect?token=" + token + "&password=secret",
+		"techiremotesupport://connect?token=" + token + "&credential=secret",
 		"techiremotesupport://486641675?token=" + token,
 		"rustdesk://connect?token=" + token,
 		"techiremotesupport://connect/path?token=" + token,
@@ -33,6 +34,23 @@ func TestParseProtocolURIRejectsCredentialAndExtraData(t *testing.T) {
 	for _, raw := range cases {
 		if _, err := parseProtocolURI(raw); err == nil {
 			t.Fatalf("accepted non-contract URI %q", raw)
+		}
+	}
+}
+
+func TestProductionBackendHostIsExact(t *testing.T) {
+	if _, err := validateProductionAPIBase("https://api-rdp.techi.com.al"); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{
+		"http://api-rdp.techi.com.al",
+		"https://api-rdp.techi.com.al.evil.example",
+		"https://api-rdp.techi.com.al:443",
+		"https://user@api-rdp.techi.com.al",
+		"https://api-rdp.techi.com.al/path",
+	} {
+		if _, err := validateProductionAPIBase(raw); err == nil {
+			t.Fatalf("accepted untrusted backend %q", raw)
 		}
 	}
 }
@@ -70,6 +88,18 @@ func TestHTTPSRedemptionAndNoRedirect(t *testing.T) {
 	redirectAPI := &bridgeAPI{baseURL: redirectSource.URL, client: client}
 	if _, err := redirectAPI.redeem(context.Background(), token); err == nil {
 		t.Fatal("redirect response was accepted")
+	}
+}
+
+func TestExpiredOrReplayedTokenHasDeterministicError(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusGone)
+	}))
+	defer server.Close()
+	api := &bridgeAPI{baseURL: server.URL, client: server.Client()}
+	_, err := api.redeem(context.Background(), strings.Repeat("T", 43))
+	if err == nil || err.Error() != "token_expired_or_used" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

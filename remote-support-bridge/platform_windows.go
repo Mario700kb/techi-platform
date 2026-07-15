@@ -24,7 +24,18 @@ var (
 	waitForObject = kernel32.NewProc("WaitForSingleObject")
 )
 
-func secureWindowsHandoff(ctx context.Context, remoteID string, password []byte) error {
+func platformProtocolURI(args []string) (string, error) {
+	if len(args) != 1 {
+		return "", errors.New("invalid_protocol_uri")
+	}
+	return args[0], nil
+}
+
+func cleanupPlatformHandoffs() error {
+	return nil
+}
+
+func securePlatformHandoff(ctx context.Context, remoteID string, password []byte) error {
 	release, err := acquireBridgeMutex()
 	if err != nil {
 		return err

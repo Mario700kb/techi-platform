@@ -87,8 +87,13 @@ echo "  agent OK"
 step "Remote Support Connect bridge security"
 ( cd "$RS_BRIDGE" && go test ./... ) || fail "remote support bridge tests failed"
 ( cd "$RS_BRIDGE" && GOOS=windows GOARCH=amd64 go test -c -o /tmp/techi-rs-bridge.test.exe . ) || fail "remote support bridge windows compile failed"
+( cd "$RS_BRIDGE" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go test -c -o /tmp/techi-rs-bridge-darwin.test . ) || fail "remote support bridge macOS compile failed"
+python3 "$ROOT/scripts/verify_macos_remote_support_connect_security.py" || fail "macOS remote support security contract failed"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  swiftc -typecheck -framework AppKit "$ROOT/remote-support-macos/Launcher.swift" || fail "macOS launcher typecheck failed"
+fi
 python3 "$ROOT/scripts/verify_remote_support_connect_security.py" || fail "remote support connect security contract failed"
-rm -f /tmp/techi-rs-bridge.test.exe
+rm -f /tmp/techi-rs-bridge.test.exe /tmp/techi-rs-bridge-darwin.test
 echo "  bridge OK"
 
 echo ""

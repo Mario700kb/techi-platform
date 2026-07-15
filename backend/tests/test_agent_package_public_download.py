@@ -326,3 +326,73 @@ def test_public_agent_update_msi_download_404_when_missing(monkeypatch):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "No active agent update MSI package for windows-amd64"
+
+
+def test_public_windows_remote_support_msi_download_remains_unchanged(monkeypatch, tmp_path):
+    msi = tmp_path / "TECHI-Remote-Support-1.4.7.msi"
+    msi.write_bytes(b"windows-rs-msi")
+    package = SimpleNamespace(
+        id="pkg-windows-rs",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename=msi.name,
+        version="1.4.7",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            assert file_type == "remote_support_msi"
+            return package
+
+        def package_path(self, selected_package):
+            assert selected_package is package
+            return msi
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+    response = _client().get("/api/v1/agent-packages/remote-support-msi/download")
+
+    assert response.status_code == 200
+    assert response.content == b"windows-rs-msi"
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_macos_remote_support_download(monkeypatch, tmp_path):
+    dmg = tmp_path / "TECHI-Remote-Support-1.4.8-darwin-arm64.dmg"
+    dmg.write_bytes(b"macos-dmg")
+    package = SimpleNamespace(
+        id="pkg-macos-rs",
+        platform=SimpleNamespace(value="darwin-arm64"),
+        filename=dmg.name,
+        version="1.4.8",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "darwin-arm64"
+            assert file_type == "remote_support_dmg"
+            return package
+
+        def package_path(self, selected_package):
+            assert selected_package is package
+            return dmg
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+    response = _client().get("/api/v1/agent-packages/remote-support/darwin-arm64/download")
+
+    assert response.status_code == 200
+    assert response.content == b"macos-dmg"
+    assert response.headers["content-type"] == "application/x-apple-diskimage"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_macos_remote_support_download_rejects_other_platform(monkeypatch):
+    class UnexpectedAgentPackageService:
+        def __init__(self):
+            raise AssertionError("service must not be called")
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", UnexpectedAgentPackageService)
+    response = _client().get("/api/v1/agent-packages/remote-support/windows-amd64/download")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported Remote Support platform"

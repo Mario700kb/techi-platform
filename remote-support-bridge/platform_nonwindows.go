@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package main
 
@@ -7,7 +7,15 @@ import (
 	"errors"
 )
 
-func secureWindowsHandoff(_ context.Context, _ string, _ []byte) error {
+func platformProtocolURI(_ []string) (string, error) {
+	return "", errors.New("unsupported_platform")
+}
+
+func cleanupPlatformHandoffs() error {
+	return errors.New("unsupported_platform")
+}
+
+func securePlatformHandoff(_ context.Context, _ string, _ []byte) error {
 	return errors.New("unsupported_platform")
 }
 

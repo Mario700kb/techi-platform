@@ -59,6 +59,48 @@ def test_remote_support_msi_upload_rejects_agent_version_contamination(svc):
         )
 
 
+def test_macos_remote_support_dmg_version_is_canonical(svc):
+    pkg = _upload(
+        svc,
+        filename="TECHI-Remote-Support-1.4.8-darwin-arm64.dmg",
+        platform="darwin-arm64",
+        file_type="remote_support_dmg",
+        version="1.4.8",
+    )
+
+    assert pkg.version == "1.4.8"
+    assert pkg.platform.value == "darwin-arm64"
+
+
+def test_macos_remote_support_dmg_rejects_malformed_identity(svc):
+    with pytest.raises(ValueError, match="macOS Remote Support filename"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.8.dmg",
+            platform="darwin-arm64",
+            file_type="remote_support_dmg",
+            version="1.4.8",
+        )
+
+    with pytest.raises(ValueError, match="macOS Remote Support version must match filename"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.8-darwin-arm64.dmg",
+            platform="darwin-arm64",
+            file_type="remote_support_dmg",
+            version="2.1.12",
+        )
+
+    with pytest.raises(ValueError, match="requires darwin-arm64"):
+        _upload(
+            svc,
+            filename="TECHI-Remote-Support-1.4.8-darwin-arm64.dmg",
+            platform="windows-amd64",
+            file_type="remote_support_dmg",
+            version="1.4.8",
+        )
+
+
 def test_existing_remote_support_manifest_entry_reads_version_from_filename(svc):
     """ADPASCUCCI regression: manifest had version=2.1.8 but RS MSI filename=1.4.6."""
     svc._write_manifest(

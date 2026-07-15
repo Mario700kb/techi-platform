@@ -25,9 +25,11 @@ function formatDate(iso: string): string {
   return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";
+type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "remote_support_dmg";
 
-const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string; fixedPlatform?: AgentPackagePlatform }[] = [
+type PackageTab = { id: TabId; label: string; fileType: AgentFileType; hint: string; fixedPlatform?: AgentPackagePlatform };
+
+const WINDOWS_TABS: PackageTab[] = [
   {
     id: "msi",
     label: "Agent MSI",
@@ -57,13 +59,21 @@ const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string; f
   },
 ];
 
+const MACOS_TAB: PackageTab = {
+  id: "remote_support_dmg",
+  label: "Remote Support macOS",
+  fileType: "remote_support_dmg",
+  hint: "TECHI Remote Support për operatorët Apple Silicon. DMG përmban klientin, URL launcher-in dhe bridge-in secure token Connect.",
+  fixedPlatform: "darwin-arm64",
+};
+
 export default function AgentPackages() {
   const { can } = useAuth();
   const canManage = can("admin");
-  // Platform Expansion: a Windows|Linux scope toggle appears only when Linux
-  // is enabled. Default "windows" ⇒ flag-off UI is identical to today.
+  // Linux remains feature-gated; macOS is an operator package surface and is
+  // independent of endpoint Agent rollout.
   const showLinux = usePlatformFeatures().FEATURE_LINUX;
-  const [platformScope, setPlatformScope] = useState<"windows" | "linux">("windows");
+  const [platformScope, setPlatformScope] = useState<"windows" | "linux" | "macos">("windows");
   const [tab, setTab] = useState<TabId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
   const [version, setVersion] = useState("");
@@ -76,7 +86,9 @@ export default function AgentPackages() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentTab = TABS.find((t) => t.id === tab)!;
+  const currentTab = platformScope === "macos"
+    ? MACOS_TAB
+    : WINDOWS_TABS.find((item) => item.id === tab) ?? WINDOWS_TABS[0];
 
   const visiblePackages = useMemo(
     () => packages.filter((pkg) => pkg.file_type === currentTab.fileType),
@@ -183,31 +195,32 @@ export default function AgentPackages() {
           </div>
         </div>
 
-        {/* Platform scope toggle — only when Linux is enabled */}
-        {showLinux && (
-          <div className="mt-4 inline-flex rounded-lg border border-white/[0.08] p-0.5">
-            {(["windows", "linux"] as const).map((scope) => (
+        <div className="mt-4 inline-flex rounded-lg border border-white/[0.08] p-0.5">
+            {(["windows", ...(showLinux ? ["linux" as const] : []), "macos"] as const).map((scope) => (
               <button
                 key={scope}
                 type="button"
-                onClick={() => { setPlatformScope(scope); setError(null); }}
+                onClick={() => {
+                  setPlatformScope(scope);
+                  setTab(scope === "macos" ? "remote_support_dmg" : "msi");
+                  setError(null);
+                }}
                 className={[
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
                   platformScope === scope ? "bg-[#3A1A14] text-[#FF6B47]" : "text-slate-400 hover:text-slate-200",
                 ].join(" ")}
               >
-                <PlatformIcon platform={scope} size={13} />
-                {scope}
+                <PlatformIcon platform={scope === "macos" ? "darwin" : scope} size={13} />
+                {scope === "macos" ? "macOS" : scope}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* Windows tabs (unchanged) — only in the Windows scope */}
         {platformScope === "windows" && (
           <>
             <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
-              {TABS.map((t) => (
+              {WINDOWS_TABS.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -227,11 +240,15 @@ export default function AgentPackages() {
             <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
           </>
         )}
+
+        {platformScope === "macos" && (
+          <p className="mt-3 text-xs text-slate-500">{MACOS_TAB.hint}</p>
+        )}
       </div>
 
       {platformScope === "linux" && <LinuxPackagesPanel canManage={canManage} />}
 
-      {platformScope === "windows" && canManage && (
+      {platformScope !== "linux" && canManage && (
         <div className="premium-card-soft p-4">
           <div className="mb-3 flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-techi-orange" />
@@ -242,6 +259,8 @@ export default function AgentPackages() {
                   ? "Upload Agent Update Bridge MSI"
                   : tab === "remote_support_msi"
                     ? "Upload Remote Support MSI"
+                    : tab === "remote_support_dmg"
+                      ? "Upload Remote Support macOS DMG"
                     : "Upload Agent Binary (techi-agent.exe)"}
             </h2>
           </div>
@@ -275,7 +294,7 @@ export default function AgentPackages() {
               id="package-file"
               name="package-file"
               aria-label="Package file"
-              accept={tab === "agent_binary" ? ".exe" : ".msi"}
+              accept={tab === "agent_binary" ? ".exe" : tab === "remote_support_dmg" ? ".dmg" : ".msi"}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
             />
@@ -293,7 +312,7 @@ export default function AgentPackages() {
         </div>
       )}
 
-      {platformScope === "windows" && (
+      {platformScope !== "linux" && (
       <div className="premium-card-soft overflow-hidden">
         <div className="border-b border-white/[0.08] px-4 py-3">
           <div className="flex items-center gap-2">
@@ -334,6 +353,8 @@ export default function AgentPackages() {
                           ? "bridge MSI packages"
                           : tab === "remote_support_msi"
                             ? "Remote Support MSI packages"
+                            : tab === "remote_support_dmg"
+                              ? "Remote Support macOS packages"
                             : "agent binaries"} uploaded yet.`}
                   </td>
                 </tr>
