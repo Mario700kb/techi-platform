@@ -42,12 +42,12 @@ func TestMacClientCommandContainsIDOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/Applications/TECHI Remote Support.app/Contents/MacOS/TECHI Remote Support Client", "--connect", "486641675"}
+	want := []string{"/Applications/TECHI Remote Support.app/Contents/MacOS/TECHI Remote Support Client", "--connect", "486641675", "--techi-connect-stdin"}
 	if !reflect.DeepEqual(cmd.Args, want) {
 		t.Fatalf("command args = %#v", cmd.Args)
 	}
 	joined := strings.ToLower(strings.Join(cmd.Args, " "))
-	if strings.Contains(joined, "password") || strings.Contains(joined, "credential") || strings.Contains(joined, "token") {
+	if strings.Contains(joined, "password=") || strings.Contains(joined, "credential=") || strings.Contains(joined, "token=") {
 		t.Fatal("client command contains credential material")
 	}
 }

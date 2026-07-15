@@ -60,9 +60,14 @@ if ! /usr/bin/lipo -archs "$BASE_CLIENT" | tr ' ' '\n' | grep -qx "$ARCH"; then
 fi
 ABOUT_AOT="$BASE_APP/Contents/Frameworks/App.framework/Versions/A/App"
 ABOUT_MARKER='bundle-metadata:CFBundleShortVersionString+CFBundleVersion'
+SECURE_CONNECT_MARKER='techi-secure-connect-stdin-v1'
 if ! { [[ -f "$ABOUT_AOT" ]] && /usr/bin/grep -aFq "$ABOUT_MARKER" "$ABOUT_AOT"; } &&
    ! /usr/bin/grep -aFq "$ABOUT_MARKER" "$BASE_CLIENT"; then
   echo "Base application does not contain the macOS About bundle-metadata contract" >&2
+  exit 1
+fi
+if ! /usr/bin/grep -aRFq "$SECURE_CONNECT_MARKER" "$BASE_APP/Contents"; then
+  echo "Base application does not contain the secure stdin credential contract" >&2
   exit 1
 fi
 

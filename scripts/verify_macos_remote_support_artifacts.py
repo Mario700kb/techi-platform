@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "remote-support-macos/VERSION").read_text().strip()
 BUILD_VERSION = (ROOT / "remote-support-macos/BUILD_VERSION").read_text().strip()
 ABOUT_VERSION_MARKER = b"bundle-metadata:CFBundleShortVersionString+CFBundleVersion"
+SECURE_CONNECT_MARKER = b"techi-secure-connect-stdin-v1"
 LSREGISTER = Path(
     "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
     "LaunchServices.framework/Support/lsregister"
@@ -85,6 +86,23 @@ def validate_app(app: Path) -> None:
         for candidate in (flutter_aot, executables[1])
     ):
         fail("Flutter About UI does not contain the bundle-metadata version contract")
+    if not any(
+        path.is_file() and not path.is_symlink() and SECURE_CONNECT_MARKER in path.read_bytes()
+        for path in (app / "Contents").rglob("*")
+    ):
+        fail("packaged client does not contain the secure stdin credential contract")
+    contract = subprocess.run(
+        [os.fspath(executables[1]), "--techi-connect-self-test"],
+        input="synthetic-contract-secret",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+    )
+    if contract.returncode != 0 or contract.stdout.strip() != "TECHI_CONNECT_ACCEPTED_V1":
+        fail("packaged client did not consume the secure stdin credential contract")
+    if "synthetic-contract-secret" in contract.stdout or "synthetic-contract-secret" in contract.stderr:
+        fail("packaged client exposed the stdin credential")
 
     for path in app.rglob("*"):
         if path.is_symlink() and not path.exists():

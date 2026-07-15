@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -84,25 +86,14 @@ func securePlatformHandoff(ctx context.Context, remoteID string, password []byte
 	}
 	defer release()
 
-	configRoot := macConfigRoot(home)
-	if err := cleanupStaleHandoffs(filepath.Join(configRoot, "peers")); err != nil {
+	if err := cleanupStaleHandoffs(filepath.Join(macConfigRoot(home), "peers")); err != nil {
 		return errors.New("stale_handoff_recovery_failed")
-	}
-	target, err := peerConfigPath(configRoot, remoteID)
-	if err != nil {
-		return err
 	}
 	clientPath, err := macClientPath()
 	if err != nil {
 		return err
 	}
-	return performPeerConfigHandoff(ctx, target, password, restrictFileMode, func(_ string) error {
-		cmd, err := macClientLaunchCommand(clientPath, remoteID)
-		if err != nil {
-			return err
-		}
-		return cmd.Start()
-	})
+	return launchMacClientWithCredential(ctx, clientPath, remoteID, password)
 }
 
 func acquireMacBridgeLock(runtimeRoot string) (func(), error) {
@@ -162,9 +153,62 @@ func macClientLaunchCommand(clientPath, remoteID string) (*exec.Cmd, error) {
 	if !remoteIDPattern.MatchString(remoteID) {
 		return nil, errors.New("invalid_remote_id")
 	}
-	cmd := exec.Command(clientPath, "--connect", remoteID)
+	cmd := exec.Command(clientPath, "--connect", remoteID, "--techi-connect-stdin")
 	cmd.Dir = filepath.Dir(clientPath)
 	return cmd, nil
+}
+
+func launchMacClientWithCredential(ctx context.Context, clientPath, remoteID string, password []byte) error {
+	if len(password) == 0 || len(password) > 512 {
+		return errors.New("invalid_credential")
+	}
+	cmd, err := macClientLaunchCommand(clientPath, remoteID)
+	if err != nil {
+		return err
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return errors.New("client_stdin_failed")
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return errors.New("client_ack_failed")
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return errors.New("client_launch_failed")
+	}
+	if _, err := stdin.Write(password); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		return errors.New("client_stdin_failed")
+	}
+	if err := stdin.Close(); err != nil {
+		_ = cmd.Process.Kill()
+		return errors.New("client_stdin_failed")
+	}
+
+	ack := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(io.LimitReader(stdout, 65)).ReadString('\n')
+		ack <- strings.TrimSpace(line)
+	}()
+	timer := time.NewTimer(8 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		return errors.New("handoff_cancelled")
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		return errors.New("client_ack_timeout")
+	case value := <-ack:
+		if value != "TECHI_CONNECT_ACCEPTED_V1" {
+			_ = cmd.Process.Kill()
+			return errors.New("client_ack_failed")
+		}
+		return nil
+	}
 }
 
 func showBridgeError(_ string) {}

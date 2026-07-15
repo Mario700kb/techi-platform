@@ -26,12 +26,12 @@ def main() -> int:
     require("if (!macOS)" in helper, "Windows/native path guard missing")
     require("nativeVersionLoader" in helper, "build-time fallback missing")
     require("1.4.6" not in combined, "stale About version literal remains")
-    require("1.4.8 (148.3)" in tests, "packaged About display regression missing")
+    require("1.4.8 (148.4)" in tests, "packaged About display regression missing")
 
     version = (ROOT / "remote-support-macos/VERSION").read_text().strip()
     build = (ROOT / "remote-support-macos/BUILD_VERSION").read_text().strip()
     require(version == "1.4.8", f"unexpected public version: {version}")
-    require(build == "148.3", f"unexpected internal build: {build}")
+    require(build == "148.4", f"unexpected internal build: {build}")
 
     with tempfile.TemporaryDirectory(prefix="techi-about-contract.") as temp:
         source = Path(temp)

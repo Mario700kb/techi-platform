@@ -15,12 +15,12 @@ void main() {
     final result = await loadAboutVersionData(
       macOS: true,
       nativeVersionLoader: () async => '9.9.9',
-      packageInfoLoader: () async => packageInfo('1.4.8', '148.3'),
+      packageInfoLoader: () async => packageInfo('1.4.8', '148.4'),
     );
 
     expect(result.marketingVersion, '1.4.8');
-    expect(result.internalBuild, '148.3');
-    expect(result.displayVersion, '1.4.8 (148.3)');
+    expect(result.internalBuild, '148.4');
+    expect(result.displayVersion, '1.4.8 (148.4)');
     expect(result.source, bundleMetadataVersionSource);
   });
 
@@ -42,7 +42,7 @@ void main() {
       nativeVersionLoader: () async => '7.7.7',
       packageInfoLoader: () async {
         packageLookupCalled = true;
-        return packageInfo('1.4.8', '148.3');
+        return packageInfo('1.4.8', '148.4');
       },
     );
 
@@ -56,7 +56,7 @@ void main() {
     final result = await loadAboutVersionData(
       macOS: true,
       nativeVersionLoader: () async => '6.6.6',
-      packageInfoLoader: () async => packageInfo('  ', '148.3'),
+      packageInfoLoader: () async => packageInfo('  ', '148.4'),
     );
 
     expect(result.displayVersion, '6.6.6');
