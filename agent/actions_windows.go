@@ -74,8 +74,13 @@ func handleRestartAgent(_ context.Context) actionResult {
 }
 
 func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
+	release, err := acquireRemoteSupportRepairLock()
+	if err != nil {
+		return actionResult{err: err}
+	}
 	done := make(chan actionResult, 1)
 	go func() {
+		defer release()
 		log.Printf("[action] restart_rustdesk: stopping service+tray")
 		stopRustDeskServiceFn()
 		stopRustDeskTray()
@@ -105,12 +110,24 @@ func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 	}
 }
 
-func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
+func handleReinstallRustDesk(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
+	state := discoverRustDesk(cfg)
+	if state.InstallStatus == "installed" && state.Status == "running" {
+		return actionResult{message: "TECHI Remote Support unchanged: already healthy"}
+	}
+	if state.InstallStatus == "damaged" || state.InstallStatus == "installed" {
+		return handleNativeRemoteSupportRepair(ctx, cfg, params)
+	}
 	if cfg.RustDeskMSIUrl == "" {
 		return actionResult{err: fmt.Errorf("reinstall_rustdesk: no MSI URL configured")}
 	}
+	release, lockErr := acquireRemoteSupportRepairLock()
+	if lockErr != nil {
+		return actionResult{err: lockErr}
+	}
 	done := make(chan actionResult, 1)
 	go func() {
+		defer release()
 		log.Printf("[action] reinstall_rustdesk: stopping service+tray")
 		stopRustDeskServiceFn()
 		stopRustDeskTray()
@@ -153,8 +170,13 @@ func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
 }
 
 func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
+	release, err := acquireRemoteSupportRepairLock()
+	if err != nil {
+		return actionResult{err: err}
+	}
 	done := make(chan actionResult, 1)
 	go func() {
+		defer release()
 		rd := discoverRustDesk(cfg)
 		if rd.Status == "running" {
 			done <- actionResult{message: fmt.Sprintf("TECHI Remote Support already running (id=%s)", rd.ID)}
@@ -186,8 +208,13 @@ func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {
 }
 
 func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
+	release, err := acquireRemoteSupportRepairLock()
+	if err != nil {
+		return actionResult{err: err}
+	}
 	done := make(chan actionResult, 1)
 	go func() {
+		defer release()
 		log.Printf("[action] repair_config_rustdesk: writing config")
 		changed, err := writeRustDeskConfig(cfg)
 		if err != nil {
@@ -251,8 +278,13 @@ type deployRemoteSupportResult struct {
 }
 
 func handleDeployRemoteSupport(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
+	release, err := acquireRemoteSupportRepairLock()
+	if err != nil {
+		return actionResult{err: err}
+	}
 	done := make(chan actionResult, 1)
 	go func() {
+		defer release()
 		done <- executeDeployRemoteSupport(cfg, params)
 	}()
 	select {

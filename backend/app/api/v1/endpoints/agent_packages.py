@@ -148,6 +148,30 @@ def download_active_agent_binary():
     )
 
 
+@router.get("/remote-support-bundle/download")
+def download_active_remote_support_bundle():
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="remote_support_bundle")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active Windows Remote Support recovery bundle")
+    path = service.package_path(package)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Remote Support recovery bundle is missing")
+    return FileResponse(path, filename=package.filename, media_type="application/zip", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/remote-support-bundle/manifest")
+def download_active_remote_support_bundle_manifest():
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="remote_support_bundle")
+    if package is None or not package.manifest_filename:
+        raise HTTPException(status_code=404, detail="No active Windows Remote Support recovery manifest")
+    path = service.package_path(package).parent / package.manifest_filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Remote Support recovery manifest is missing")
+    return FileResponse(path, filename=package.manifest_filename, media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
 @router.get("/agent-update-msi/download")
 def download_active_agent_update_msi():
     """Public endpoint: returns the currently active agent_update_msi (Agent

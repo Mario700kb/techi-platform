@@ -45,8 +45,12 @@ func AcquireExecutionLock(root string) (*ExecutionLock, ExitCode, error) {
 				// when it contains no unexpected files. Never RemoveAll here.
 				ownerPath := filepath.Join(dir, "owner")
 				owner, readErr := os.ReadFile(ownerPath)
-				if readErr != nil || parsePIDFromOwner(owner) <= 0 || !strings.Contains(string(owner), "owner=techi-bootstrap") {
+				pid := parsePIDFromOwner(owner)
+				if readErr != nil || pid <= 0 || !strings.Contains(string(owner), "owner=techi-bootstrap") {
 					return nil, ExitBusy, fmt.Errorf("stale lock is not TECHI-owned")
+				}
+				if processAlive(pid) {
+					return nil, ExitBusy, fmt.Errorf("lock owner is still running")
 				}
 				if err := os.Remove(ownerPath); err != nil {
 					return nil, ExitBusy, err

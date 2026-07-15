@@ -61,6 +61,12 @@ func ensureRustDesk(cfg *Config, configPath string) {
 		log.Printf("[rustdesk_manage] installer transaction active — deferring Remote Support reconciliation")
 		return
 	}
+	release, err := acquireRemoteSupportRepairLock()
+	if err != nil {
+		log.Printf("[rustdesk_manage] %v — deferring reconciliation", err)
+		return
+	}
+	defer release()
 
 	installed := isRustDeskInstalled()
 	repaired := false
@@ -547,6 +553,11 @@ func applyRemoteSupportPassword(password string) {
 }
 
 func applyRemoteSupportCredential(password string) error {
+	release, lockErr := acquireRemoteSupportRepairLock()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 	err := applyRemoteSupportCredentialSteps(
 		password,
 		setRustDeskPassword,

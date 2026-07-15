@@ -1,6 +1,7 @@
 package native
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -63,4 +64,23 @@ func TestExecutionLockOwnedStaleReclaimAndUnownedRefusal(t *testing.T) {
 		t.Fatalf("owned stale reclaim: code=%v err=%v", code, err)
 	}
 	lock.Release()
+}
+
+func TestExecutionLockDoesNotReclaimLiveOwner(t *testing.T) {
+	root := t.TempDir()
+	lockDir := filepath.Join(root, "locks", "remote-support.lock")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	owner := []byte(fmt.Sprintf("owner=techi-bootstrap pid=%d ts=1\n", os.Getpid()))
+	if err := os.WriteFile(filepath.Join(lockDir, "owner"), owner, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-lockStaleAfter - time.Minute)
+	if err := os.Chtimes(lockDir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if lock, code, err := AcquireExecutionLock(root); lock != nil || code != ExitBusy || err == nil {
+		t.Fatalf("live owner lock must remain busy: lock=%v code=%v err=%v", lock, code, err)
+	}
 }

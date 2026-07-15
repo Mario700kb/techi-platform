@@ -130,7 +130,7 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 	case "restart_rustdesk":
 		return handleRestartRustDesk(ctx, cfg)
 	case "reinstall_rustdesk":
-		return handleReinstallRustDesk(ctx, cfg)
+		return handleReinstallRustDesk(ctx, cfg, action.Parameters)
 	case "reopen_rustdesk":
 		return handleReopenRustDesk(ctx, cfg)
 	case "apply_power_policy":

@@ -6,15 +6,10 @@ package main
 //	techi-agent.exe apply-policy          --policy <path> [--observation <path>] [--json]
 //	techi-agent.exe repair-remote-support --policy <path> [--observation <path>] [--json] [--dry-run]
 //
-// Both are report/plan-first and NON-DESTRUCTIVE in this build: they load and
-// validate the versioned policy, classify device state, and emit the exact
-// ordered plan + a machine-readable OperationResult. Actually mutating a live
-// device (stopping services, promoting files) is deliberately deferred to the
-// Windows wiring layer behind an explicit, canary-gated executor, so this
-// binary can never repair a production device by accident. Live probing of a
-// real device is likewise done by the wiring layer; here an --observation
-// fixture supplies reduced state so the decision is deterministic on any OS.
-// This is a source/test harness, not authorization for a device canary.
+// Both commands are report/plan-first. Live repair is available only on Windows
+// behind --execute, a canary policy, and an explicit eligible device identity.
+// Without --execute, an --observation fixture supplies reduced state so the
+// decision remains deterministic and non-destructive on every platform.
 
 import (
 	"encoding/json"
@@ -85,7 +80,10 @@ func runRepairRemoteSupportCommand(args []string) int {
 	policyPath := fs.String("policy", "", "path to techi-policy.json")
 	obsPath := fs.String("observation", "", "path to a device observation JSON (canary/dry-run harness)")
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON result")
-	_ = fs.Bool("dry-run", true, "plan only; never mutate a live device (always on in this build)")
+	execute := fs.Bool("execute", false, "execute a policy-authorized Windows recovery")
+	artifactDir := fs.String("artifact-dir", "", "directory containing the bound bundle and manifest")
+	deviceID := fs.String("device-id", "", "explicit policy-eligible device id")
+	retryOwner := fs.String("retry-owner", "", "internal bounded-retry ownership marker")
 	if err := fs.Parse(args); err != nil {
 		return int(native.ExitBadArgs)
 	}
@@ -101,6 +99,9 @@ func runRepairRemoteSupportCommand(args []string) int {
 		r.DryRun = true
 		r.Message = "policy load failed: " + err.Error()
 		return emitResult(r, *asJSON)
+	}
+	if *execute {
+		return executeNativeRemoteSupport(policy, *policyPath, *artifactDir, *deviceID, *retryOwner, *asJSON)
 	}
 
 	if *obsPath == "" {

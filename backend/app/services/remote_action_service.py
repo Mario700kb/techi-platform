@@ -17,6 +17,7 @@ from app.schemas.remote_action import (
 )
 from app.services.notification_events import NotificationEvent
 from app.services.notification_service import NotificationService
+from app.services.agent_package_service import AgentPackageService
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
 
@@ -161,10 +162,31 @@ class RemoteActionService:
         if conflict_msg:
             raise ValueError(conflict_msg)
 
+        parameters = dict(create_in.parameters or {})
+        if create_in.action_type == ActionType.REINSTALL_RUSTDESK:
+            package = AgentPackageService().latest_active(
+                "windows-amd64", file_type="remote_support_bundle"
+            )
+            if (
+                package is not None
+                and package.sha256
+                and package.manifest_filename
+                and package.manifest_sha256
+            ):
+                parameters.update(
+                    {
+                        "native_bundle_version": package.version,
+                        "native_bundle_filename": package.filename,
+                        "native_bundle_sha256": package.sha256,
+                        "native_manifest_filename": package.manifest_filename,
+                        "native_manifest_sha256": package.manifest_sha256,
+                    }
+                )
+
         action = self.repo.create(
             device_id=device_id,
             action_type=create_in.action_type.value,
-            parameters=create_in.parameters,
+            parameters=parameters or None,
             created_by=create_in.created_by,
             execution_timeout_seconds=create_in.execution_timeout_seconds or 300,
         )

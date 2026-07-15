@@ -2324,6 +2324,23 @@ class EnrollmentBootstrapService:
             package.version,
         )
 
+    def _remote_support_bundle_package_info(self, backend_url: str) -> dict:
+        backend_url = self.normalize_backend_url(backend_url).rstrip("/")
+        package = AgentPackageService().latest_active(
+            "windows-amd64", file_type="remote_support_bundle"
+        )
+        if package is None or not package.manifest_filename or not package.manifest_sha256:
+            return {}
+        return {
+            "url": f"{backend_url}/api/v1/agent-packages/remote-support-bundle/download",
+            "sha256": package.sha256 or "",
+            "filename": package.filename,
+            "version": package.version,
+            "manifest_url": f"{backend_url}/api/v1/agent-packages/remote-support-bundle/manifest",
+            "manifest_sha256": package.manifest_sha256,
+            "manifest_filename": package.manifest_filename,
+        }
+
     @staticmethod
     def _remote_support_one_time_ps_lines() -> list[str]:
         """Explicit one-time RS lifecycle, independent from Agent installation."""
@@ -2457,63 +2474,57 @@ function Install-OrRepairRemoteSupport {
     Write-Log "remote_support_state=$($before.State)"
     if ($before.State -eq 'healthy') { return 'unchanged' }
     if ($before.State -eq 'config_conflict') { throw 'Remote Support configuration identities conflict; automatic repair refused.' }
-    if ([string]::IsNullOrWhiteSpace($RemoteSupportMsiUrl) -or [string]::IsNullOrWhiteSpace($RemoteSupportExpectedSha256)) {
-        throw 'No verified active Remote Support MSI is available.'
+    if ($before.State -eq 'missing') {
+        if ([string]::IsNullOrWhiteSpace($RemoteSupportMsiUrl) -or [string]::IsNullOrWhiteSpace($RemoteSupportExpectedSha256)) {
+            throw 'No verified active Remote Support MSI is available for clean install.'
+        }
+        $rsMsi = Join-Path $env:TEMP 'techi-remote-support-setup.msi'
+        try {
+            Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri $RemoteSupportMsiUrl -OutFile $rsMsi -UseBasicParsing -ErrorAction Stop
+            $actual = (Get-FileHash -LiteralPath $rsMsi -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
+            if ($actual -ne $RemoteSupportExpectedSha256.ToLower()) { throw 'Remote Support MSI SHA256 mismatch.' }
+            $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+            $rsLog = 'C:\Windows\Temp\techi-remote-support-install.log'
+            $proc = Start-Process -FilePath $msiexec -ArgumentList @('/i', $rsMsi, '/qn', '/norestart', '/L*v', $rsLog) -Wait -PassThru
+            if ($proc.ExitCode -notin @(0, 3010)) { throw "Remote Support clean-install MSI failed with exit $($proc.ExitCode)." }
+            Start-Sleep -Seconds 3
+            if ((Get-RemoteSupportObservation).State -ne 'healthy') { throw 'Remote Support clean install did not reach healthy state.' }
+            return 'installed'
+        } finally {
+            Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    $rsMsi = Join-Path $env:TEMP 'techi-remote-support-setup.msi'
-    Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
-    Invoke-WebRequest -Uri $RemoteSupportMsiUrl -OutFile $rsMsi -UseBasicParsing -ErrorAction Stop
-    $actual = (Get-FileHash -LiteralPath $rsMsi -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
-    if ($actual -ne $RemoteSupportExpectedSha256.ToLower()) {
-        Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
-        throw 'Remote Support MSI SHA256 mismatch.'
+    if (@($RemoteSupportBundleUrl, $RemoteSupportBundleSha256, $RemoteSupportManifestUrl, $RemoteSupportManifestSha256) | Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
+        throw 'Verified native Remote Support recovery bundle is unavailable; MSI repair is refused for damaged state.'
     }
-
-    $backup = $null
-    if ($before.State -ne 'missing') { $backup = Backup-RemoteSupportState $before }
-    try {
-        if ($before.State -ne 'missing') {
-            Stop-RemoteSupportOwnedRuntime $before
-            if ($before.State -in @('stale_service', 'service_missing', 'executable_missing')) {
-                $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
-                & $sc delete 'TECHI Remote Support' | Out-Null
-                Start-Sleep -Seconds 1
-            }
-            Get-ChildItem -LiteralPath $before.Root -Filter 'TBD*.tmp' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction Stop
-        }
-        $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
-        $rsLog = 'C:\Windows\Temp\techi-remote-support-install.log'
-        $proc = Start-Process -FilePath $msiexec -ArgumentList @('/i', $rsMsi, '/qn', '/norestart', '/L*v', $rsLog) -Wait -PassThru
-        if ($proc.ExitCode -notin @(0, 3010)) { throw "Remote Support MSI failed with exit $($proc.ExitCode)." }
-        if ($null -ne $backup) {
-            Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue
-            foreach ($item in @($backup.Configs)) {
-                New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Source)) -Force | Out-Null
-                Copy-Item -LiteralPath $item.Backup -Destination $item.Source -Force -ErrorAction Stop
-            }
-        }
-        Start-Service -Name 'TECHI Remote Support' -ErrorAction Stop
-        Start-Sleep -Seconds 3
-        $after = Get-RemoteSupportObservation
-        if ($after.State -ne 'healthy') { throw "Remote Support validation failed: $($after.State)." }
-        if (@(Get-RemoteSupportConfigPaths).Count -eq 0) { throw 'Remote Support configuration was not materialized.' }
-        return $(if ($before.State -eq 'missing') { 'installed' } else { 'repaired' })
-    } catch {
-        if ($null -ne $backup) {
-            Restore-RemoteSupportState $before $backup
-        } else {
-            $partial = Get-RemoteSupportObservation
-            Stop-RemoteSupportOwnedRuntime $partial
-            $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
-            & $sc delete 'TECHI Remote Support' | Out-Null
-            Remove-Item -LiteralPath $partial.Root -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        throw
-    } finally {
-        Remove-Item -LiteralPath $rsMsi -Force -ErrorAction SilentlyContinue
-        if ($null -ne $backup) { Remove-Item -LiteralPath $backup.Root -Recurse -Force -ErrorAction SilentlyContinue }
+    $artifactDir = 'C:\ProgramData\TechiAgent\recovery\remote-support'
+    New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+    $bundlePath = Join-Path $artifactDir $RemoteSupportBundleFilename
+    $manifestPath = Join-Path $artifactDir $RemoteSupportManifestFilename
+    foreach ($item in @(
+        @($RemoteSupportBundleUrl, $bundlePath, $RemoteSupportBundleSha256),
+        @($RemoteSupportManifestUrl, $manifestPath, $RemoteSupportManifestSha256)
+    )) {
+        $tmp = $item[1] + '.download'
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        Invoke-WebRequest -Uri $item[0] -OutFile $tmp -UseBasicParsing -ErrorAction Stop
+        $actual = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
+        if ($actual -ne $item[2].ToLower()) { Remove-Item -LiteralPath $tmp -Force; throw 'Native Remote Support recovery artifact SHA256 mismatch.' }
+        Move-Item -LiteralPath $tmp -Destination $item[1] -Force
     }
+    $agentConfig = Get-Content -LiteralPath 'C:\ProgramData\TechiAgent\agent.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if ([int]$agentConfig.device_id -le 0) { throw 'Agent device identity unavailable for native RS canary policy.' }
+    $policy = $RemoteSupportNativePolicyJson | ConvertFrom-Json -ErrorAction Stop
+    $policy.remote_support.recovery_mode = 'canary'
+    $policy.remote_support.eligible_device_ids = @([string]$agentConfig.device_id)
+    $policyPath = Join-Path $artifactDir 'techi-policy.json'
+    [IO.File]::WriteAllText($policyPath, ($policy | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+    & $AgentExe repair-remote-support --policy $policyPath --artifact-dir $artifactDir --device-id ([string]$agentConfig.device_id) --execute --json
+    if ($LASTEXITCODE -ne 0) { throw "Native Remote Support recovery failed with exit $LASTEXITCODE." }
+    if ((Get-RemoteSupportObservation).State -ne 'healthy') { throw 'Native Remote Support recovery did not reach healthy state.' }
+    return 'repaired'
 }
 '''
         return source.strip().splitlines()
@@ -2527,6 +2538,8 @@ function Install-OrRepairRemoteSupport {
     ) -> tuple[str, str]:
         msi_url, sha256, agent_version = self._windows_msi_package_info(backend_url)
         rs_msi_url, rs_sha256, rs_version = self._remote_support_msi_package_info(backend_url)
+        rs_bundle = self._remote_support_bundle_package_info(backend_url)
+        native_policy_json = json.dumps(self.build_native_policy(backend_url), separators=(",", ":"))
         safe_token = enrollment_token.replace("'", "''")
         safe_url = backend_url.replace("'", "''")
         safe_msi_url = msi_url.replace("'", "''")
@@ -2535,6 +2548,13 @@ function Install-OrRepairRemoteSupport {
         safe_rs_msi_url = rs_msi_url.replace("'", "''")
         safe_rs_sha256 = rs_sha256.replace("'", "''")
         safe_rs_version = rs_version.replace("'", "''")
+        safe_rs_bundle_url = rs_bundle.get("url", "").replace("'", "''")
+        safe_rs_bundle_sha = rs_bundle.get("sha256", "").replace("'", "''")
+        safe_rs_bundle_filename = rs_bundle.get("filename", "").replace("'", "''")
+        safe_rs_manifest_url = rs_bundle.get("manifest_url", "").replace("'", "''")
+        safe_rs_manifest_sha = rs_bundle.get("manifest_sha256", "").replace("'", "''")
+        safe_rs_manifest_filename = rs_bundle.get("manifest_filename", "").replace("'", "''")
+        safe_native_policy_json = native_policy_json.replace("'", "''")
         bootstrap_config_invocation = build_windows_bootstrap_config_invocation(
             remote_support_auto_repair_mode=settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE,
             remote_support_auto_repair_device_ids=(
@@ -2568,6 +2588,13 @@ function Install-OrRepairRemoteSupport {
             f"$RemoteSupportMsiUrl = '{safe_rs_msi_url}'",
             f"$RemoteSupportExpectedSha256 = '{safe_rs_sha256}'",
             f"$RemoteSupportTargetVersion = '{safe_rs_version}'",
+            f"$RemoteSupportBundleUrl = '{safe_rs_bundle_url}'",
+            f"$RemoteSupportBundleSha256 = '{safe_rs_bundle_sha}'",
+            f"$RemoteSupportBundleFilename = '{safe_rs_bundle_filename}'",
+            f"$RemoteSupportManifestUrl = '{safe_rs_manifest_url}'",
+            f"$RemoteSupportManifestSha256 = '{safe_rs_manifest_sha}'",
+            f"$RemoteSupportManifestFilename = '{safe_rs_manifest_filename}'",
+            f"$RemoteSupportNativePolicyJson = '{safe_native_policy_json}'",
             f"$Token         = '{safe_token}'",
             "$MsiPath       = Join-Path $env:TEMP 'techi-endpoint-setup.msi'",
             "$LogFile       = 'C:\\Windows\\Temp\\techi-bootstrap.log'",

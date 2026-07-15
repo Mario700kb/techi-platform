@@ -59,7 +59,7 @@ func handleRestartRustDesk(_ context.Context, _ *Config) actionResult {
 	return notSupportedOnLinux("restart_rustdesk")
 }
 
-func handleReinstallRustDesk(_ context.Context, _ *Config) actionResult {
+func handleReinstallRustDesk(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
 	return notSupportedOnLinux("reinstall_rustdesk")
 }
 

@@ -127,8 +127,10 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypa
     )
     assert "'pending_reboot'" in script
     assert "'executable_missing'" in script
-    assert "Restore-RemoteSupportState $before $backup" in script
-    assert "Remove-Item -LiteralPath $partial.Root" in script
+    assert "MSI repair is refused for damaged state" in script
+    assert "repair-remote-support --policy $policyPath" in script
+    assert "$policy.remote_support.recovery_mode = 'canary'" in script
+    assert "Native Remote Support recovery did not reach healthy state" in script
     assert "agent_result=$AgentResult remote_support_result=$RemoteSupportResult" in script
     assert script.index("AgentCurrentHealthy") < script.index("Downloading TECHI Endpoint package")
     assert script.index("service exists but lifecycle did not reach operational") < script.index("$RemoteSupportResult = Install-OrRepairRemoteSupport")
