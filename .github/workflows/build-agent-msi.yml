@@ -418,6 +418,17 @@ jobs:
             if ($null -eq $record) { return $null }
             return $record.StringData(1)
           }
+          function Find-MsiRegistryValue([string]$needle) {
+            # Windows Installer SQL has no LIKE operator. Enumerate the small
+            # Registry table and apply PowerShell matching instead.
+            $view = $db.OpenView("SELECT Value FROM Registry")
+            $null = $view.Execute()
+            while ($record = $view.Fetch()) {
+              $value = $record.StringData(1)
+              if ($value -like "*$needle*") { return $value }
+            }
+            return $null
+          }
           $summary = $db.SummaryInformation(0)
           $rsExe = Get-ChildItem -Path "TECHI-Remote-Support" -Recurse -Filter "TECHI Remote Support.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           $bridgeExe = Get-Item -LiteralPath "techi-remote-support-bridge.exe"
@@ -427,7 +438,7 @@ jobs:
               ($bridgeSignature.Status -ne 'Valid' -or $remoteSupportMsiSignature.Status -ne 'Valid')) {
             throw "Signed Windows release gate requires valid Remote Support bridge and MSI signatures"
           }
-          $protocolCommand = Read-MsiValue "SELECT Value FROM Registry WHERE Value LIKE '%techi-remote-support-bridge.exe%'"
+          $protocolCommand = Find-MsiRegistryValue "techi-remote-support-bridge.exe"
           if ($protocolCommand -notlike '*techi-remote-support-bridge.exe*%1*') {
             throw "Remote Support protocol is not registered to the secure bridge: $protocolCommand"
           }
