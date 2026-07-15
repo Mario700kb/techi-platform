@@ -58,6 +58,13 @@ if ! /usr/bin/lipo -archs "$BASE_CLIENT" | tr ' ' '\n' | grep -qx "$ARCH"; then
   echo "Base application does not contain architecture $ARCH" >&2
   exit 1
 fi
+ABOUT_AOT="$BASE_APP/Contents/Frameworks/App.framework/Versions/A/App"
+ABOUT_MARKER='bundle-metadata:CFBundleShortVersionString+CFBundleVersion'
+if ! { [[ -f "$ABOUT_AOT" ]] && /usr/bin/grep -aFq "$ABOUT_MARKER" "$ABOUT_AOT"; } &&
+   ! /usr/bin/grep -aFq "$ABOUT_MARKER" "$BASE_CLIENT"; then
+  echo "Base application does not contain the macOS About bundle-metadata contract" >&2
+  exit 1
+fi
 
 mkdir -p "$WORK/app" "$WORK/dmg-source" "$WORK/pkg-root/Applications" "$WORK/pkg-scripts" "$OUTPUT_DIR"
 /usr/bin/ditto "$BASE_APP" "$WORK/app/$APP_NAME"
@@ -142,6 +149,7 @@ PY
 /usr/bin/find "$APP" -type d -exec /bin/chmod 755 {} +
 /usr/bin/find "$APP" -type f -perm -u+x -exec /bin/chmod 755 {} +
 /usr/bin/find "$APP" -type f ! -perm -u+x -exec /bin/chmod 644 {} +
+/usr/bin/xattr -cr "$APP"
 if [[ -n "$(/usr/bin/find "$APP" -type l ! -exec test -e {} \; -print -quit)" ]]; then
   echo "Application bundle contains a broken symlink" >&2
   exit 1

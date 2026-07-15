@@ -89,6 +89,7 @@ step "Remote Support Connect bridge security"
 ( cd "$RS_BRIDGE" && GOOS=windows GOARCH=amd64 go test -c -o /tmp/techi-rs-bridge.test.exe . ) || fail "remote support bridge windows compile failed"
 ( cd "$RS_BRIDGE" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go test -c -o /tmp/techi-rs-bridge-darwin.test . ) || fail "remote support bridge macOS compile failed"
 python3 "$ROOT/scripts/verify_macos_remote_support_connect_security.py" || fail "macOS remote support security contract failed"
+python3 "$ROOT/scripts/verify_macos_remote_support_about_contract.py" || fail "macOS About version contract failed"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   swiftc -typecheck -framework AppKit "$ROOT/remote-support-macos/Launcher.swift" || fail "macOS launcher typecheck failed"
   swiftc -typecheck -framework AppKit "$ROOT/remote-support-macos/PackageProcessControl.swift" || fail "macOS package process control typecheck failed"

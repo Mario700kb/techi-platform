@@ -16,8 +16,10 @@ from pathlib import Path
 
 APP_NAME = "TECHI Remote Support.app"
 BUNDLE_ID = "al.techi.remote-support"
-VERSION = "1.4.8"
-BUILD_VERSION = "148.2"
+ROOT = Path(__file__).resolve().parents[1]
+VERSION = (ROOT / "remote-support-macos/VERSION").read_text().strip()
+BUILD_VERSION = (ROOT / "remote-support-macos/BUILD_VERSION").read_text().strip()
+ABOUT_VERSION_MARKER = b"bundle-metadata:CFBundleShortVersionString+CFBundleVersion"
 LSREGISTER = Path(
     "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
     "LaunchServices.framework/Support/lsregister"
@@ -76,6 +78,13 @@ def validate_app(app: Path) -> None:
             fail(f"missing executable: {executable.relative_to(app)}")
         if "arm64" not in run("/usr/bin/lipo", "-archs", executable).stdout.split():
             fail(f"non-arm64 executable: {executable.relative_to(app)}")
+
+    flutter_aot = app / "Contents/Frameworks/App.framework/Versions/A/App"
+    if not any(
+        candidate.is_file() and ABOUT_VERSION_MARKER in candidate.read_bytes()
+        for candidate in (flutter_aot, executables[1])
+    ):
+        fail("Flutter About UI does not contain the bundle-metadata version contract")
 
     for path in app.rglob("*"):
         if path.is_symlink() and not path.exists():

@@ -11,6 +11,8 @@ on:
       - 'scripts/test_macos_remote_support_packaging.sh'
       - 'scripts/verify_macos_remote_support_artifacts.py'
       - 'scripts/verify_macos_remote_support_connect_security.py'
+      - 'scripts/apply_macos_remote_support_about_overlay.py'
+      - 'scripts/verify_macos_remote_support_about_contract.py'
       - 'backend/app/schemas/agent_package.py'
       - 'backend/app/services/agent_package_service.py'
       - 'backend/app/api/v1/endpoints/agent_packages.py'
@@ -72,6 +74,9 @@ jobs:
 
       - name: Verify security contract
         run: python3 scripts/verify_macos_remote_support_connect_security.py
+
+      - name: Verify About version contract
+        run: python3 scripts/verify_macos_remote_support_about_contract.py
 
       - name: Build and verify isolated DMG and PKG
         run: scripts/test_macos_remote_support_packaging.sh
