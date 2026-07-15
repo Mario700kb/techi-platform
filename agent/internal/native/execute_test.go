@@ -69,6 +69,9 @@ func (f *fakeExecutor) CreateService(ExecuteParams, *BundleManifest, PriorState)
 func (f *fakeExecutor) StartService(ExecuteParams, PriorState) (UndoFunc, error) {
 	return f.mutation("StartService")
 }
+func (f *fakeExecutor) StartUI(ExecuteParams) (UndoFunc, error) {
+	return f.mutation("StartUI")
+}
 func (f *fakeExecutor) ScheduleBootRetry(ExecuteParams) (UndoFunc, error) {
 	return f.mutation("ScheduleBootRetry")
 }
@@ -165,25 +168,24 @@ func TestExecute_CanaryExecuteRunsOrderedPlan(t *testing.T) {
 	if r.Code != ExitOK {
 		t.Fatalf("want ExitOK, got %v (%s)", r.Code, r.Message)
 	}
-	for _, want := range []string{"VerifyPayload", "PreserveConfig", "StopService",
-		"RemoveStaleService", "CleanupTmp", "StagePayload", "PromoteFiles",
-		"RestoreConfig", "CreateService", "StartService", "ValidateFinal"} {
+	for _, want := range []string{"VerifyPayload", "PreserveConfig", "StopTray", "StopService",
+		"StopProcessExact", "RemoveStaleService", "StagePayload", "PromoteFiles",
+		"RestoreConfig", "CreateService", "StartService", "StartUI", "ValidateFinal"} {
 		if !f.called(want) {
 			t.Errorf("expected %s to be called; calls=%v", want, f.calls)
 		}
 	}
 }
 
-func TestExecute_ServiceMissingRecreateOnly(t *testing.T) {
+func TestExecute_ServiceMissingUsesFullReplacement(t *testing.T) {
 	obs := withPayload(RSObservation{ExeExists: true, ExeVersion: "1.4.6"})
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", obs)
 	f := newFake()
 	ExecutePlan(plan, safeParams(t), f, true)
-	if f.called("PromoteFiles") {
-		t.Fatalf("service_missing must not touch files: %v", f.calls)
-	}
-	if !f.called("CreateService") || !f.called("StartService") {
-		t.Fatalf("must recreate+start service: %v", f.calls)
+	for _, want := range []string{"StopTray", "StopService", "StopProcessExact", "StagePayload", "PromoteFiles", "CreateService", "StartService", "StartUI", "ValidateFinal"} {
+		if !f.called(want) {
+			t.Fatalf("service_missing full replacement omitted %s: %v", want, f.calls)
+		}
 	}
 }
 
@@ -215,8 +217,8 @@ func TestExecute_LockedPendingRebootOneRetryNoPromote(t *testing.T) {
 func TestExecute_FailureAfterEveryMutatingStageRollsBack(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	for _, stage := range []string{
-		"PreserveConfig", "StopService", "RemoveStaleService", "CleanupTmp",
-		"StagePayload", "PromoteFiles", "RestoreConfig", "CreateService", "StartService",
+		"PreserveConfig", "StopTray", "StopService", "StopProcessExact", "RemoveStaleService",
+		"StagePayload", "PromoteFiles", "RestoreConfig", "CreateService", "StartService", "StartUI",
 	} {
 		t.Run(stage, func(t *testing.T) {
 			f := newFake()

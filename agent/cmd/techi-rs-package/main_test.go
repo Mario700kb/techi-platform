@@ -13,8 +13,11 @@ func writeSource(t *testing.T) string {
 	dir := t.TempDir()
 	for rel, body := range map[string]string{
 		"TECHI Remote Support.exe": "MZ fake",
+		"flutter_windows.dll":      "flutter",
 		"librustdesk.dll":          "dll",
+		"data/icudtl.dat":          "icu",
 		"data/app.so":              "so",
+		"data/flutter_assets/x":    "asset",
 	} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

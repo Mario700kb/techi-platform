@@ -18,10 +18,12 @@ func makeSource(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string][]byte{
-		"TECHI Remote Support.exe":           []byte("MZ fake exe bytes"),
-		"librustdesk.dll":                    []byte("dll bytes here"),
-		filepath.Join("data", "app.so"):      []byte("shared object"),
-		filepath.Join("data", "assets", "x"): []byte("asset"),
+		"TECHI Remote Support.exe":                   []byte("MZ fake exe bytes"),
+		"flutter_windows.dll":                        []byte("flutter runtime"),
+		"librustdesk.dll":                            []byte("dll bytes here"),
+		filepath.Join("data", "icudtl.dat"):          []byte("icu data"),
+		filepath.Join("data", "app.so"):              []byte("shared object"),
+		filepath.Join("data", "flutter_assets", "x"): []byte("asset"),
 	}
 	for rel, data := range files {
 		p := filepath.Join(dir, rel)
@@ -73,8 +75,8 @@ func TestBundle_ManifestCompleteAndValid(t *testing.T) {
 	if err := m.Validate(); err != nil {
 		t.Fatalf("manifest invalid: %v", err)
 	}
-	if len(m.ExpectedRelativeFiles) != 4 {
-		t.Fatalf("want 4 files, got %d", len(m.ExpectedRelativeFiles))
+	if len(m.ExpectedRelativeFiles) != 6 {
+		t.Fatalf("want 6 files, got %d", len(m.ExpectedRelativeFiles))
 	}
 	if m.Entrypoint != "TECHI Remote Support/TECHI Remote Support.exe" {
 		t.Fatalf("entrypoint wrong: %q", m.Entrypoint)
@@ -87,6 +89,54 @@ func TestBundle_ManifestCompleteAndValid(t *testing.T) {
 		if strings.Contains(f.Path, `\`) {
 			t.Errorf("backslash in path: %q", f.Path)
 		}
+	}
+}
+
+func TestBundle_RejectsIncompleteRuntime(t *testing.T) {
+	for name, mutate := range map[string]func(string) error{
+		"missing app.so": func(root string) error {
+			return os.Remove(filepath.Join(root, "data", "app.so"))
+		},
+		"zero-byte app.so": func(root string) error {
+			return os.WriteFile(filepath.Join(root, "data", "app.so"), nil, 0o644)
+		},
+		"double-nested runtime": func(root string) error {
+			nested := filepath.Join(root, "TECHI Remote Support")
+			if err := os.MkdirAll(nested, 0o755); err != nil {
+				return err
+			}
+			return os.Rename(filepath.Join(root, "data"), filepath.Join(nested, "data"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			source := makeSource(t)
+			if err := mutate(source); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			_, err := BuildBundle(&out, BuildOptions{
+				SourceDir: source, Product: "TECHI Remote Support", Version: "1.4.8",
+				EntrypointName: "TECHI Remote Support.exe", ServiceName: "TECHI Remote Support",
+				ServiceArguments: []string{"--service"}, TrayTaskName: "TECHI Remote Support Tray",
+				TrayArguments: []string{"--tray"},
+			})
+			if err == nil {
+				t.Fatal("incomplete runtime must fail packaging")
+			}
+		})
+	}
+}
+
+func TestBundle_ManifestRejectsMissingRequiredRuntime(t *testing.T) {
+	_, manifest := buildTestBundle(t, makeSource(t))
+	for i, file := range manifest.ExpectedRelativeFiles {
+		if strings.EqualFold(file.Path, "TECHI Remote Support/data/app.so") {
+			manifest.ExpectedRelativeFiles = append(manifest.ExpectedRelativeFiles[:i], manifest.ExpectedRelativeFiles[i+1:]...)
+			break
+		}
+	}
+	if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), "data/app.so") {
+		t.Fatalf("manifest without app.so must fail, got %v", err)
 	}
 }
 

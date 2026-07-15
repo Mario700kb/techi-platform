@@ -115,11 +115,11 @@ func (*windowsExecutor) VerifyPayload(path, sha string) error {
 
 func (*windowsExecutor) Health(p ExecuteParams) string {
 	snap := queryServiceSnapshot(p.ServiceName)
-	exe := "missing"
-	if _, err := os.Stat(p.ExpectedExePath); err == nil {
-		exe = "present"
-	}
-	return fmt.Sprintf("exe=%s service_exists=%t running=%t", exe, snap.Exists, snap.Running)
+	runtimeComplete := ValidateRequiredRuntimeLayout(p.InstallDir) == nil
+	uiAvailable := remoteSupportMainWindowAvailable(p.ExpectedExePath)
+	configReadable := remoteSupportConfigsReadable(p)
+	return fmt.Sprintf("runtime_complete=%t service_exists=%t running=%t ui_available=%t config_readable=%t",
+		runtimeComplete, snap.Exists, snap.Running, uiAvailable, configReadable)
 }
 
 // --- config preservation (allowlist) --------------------------------------
@@ -155,6 +155,9 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 	e.preserved = nil
 	identities := map[string]bool{}
 	for _, src := range effectiveConfigPaths(p) {
+		if !isRemoteSupportConfigPath(src) {
+			continue
+		}
 		if err := validateApprovedConfigPath(src); err != nil {
 			return undo, err
 		}
@@ -368,11 +371,6 @@ func (*windowsExecutor) StopTray(p ExecuteParams, prior PriorState) (UndoFunc, e
 	}
 	schtasks := system32("schtasks.exe")
 	undo := func() error {
-		if prior.TrayEnabled {
-			if err := runHidden(schtasks, "/Change", "/TN", p.TrayTaskName, "/ENABLE"); err != nil {
-				return err
-			}
-		}
 		if prior.TrayRunning {
 			return runHidden(schtasks, "/Run", "/TN", p.TrayTaskName)
 		}
@@ -380,11 +378,6 @@ func (*windowsExecutor) StopTray(p ExecuteParams, prior PriorState) (UndoFunc, e
 	}
 	if prior.TrayRunning {
 		if err := runHidden(schtasks, "/End", "/TN", p.TrayTaskName); err != nil {
-			return undo, err
-		}
-	}
-	if err := runHidden(schtasks, "/Change", "/TN", p.TrayTaskName, "/DISABLE"); err != nil {
-		if !strings.Contains(err.Error(), "cannot find") && !strings.Contains(err.Error(), "does not exist") {
 			return undo, err
 		}
 	}
@@ -752,8 +745,39 @@ func (e *windowsExecutor) ValidateFinal(p ExecuteParams, m *BundleManifest) erro
 		if sddl, err := fileSecurityDescriptor(saved.path); err != nil || !preservedSecurityMatches(saved.sddl, sddl, saved.ownerFallback, saved.groupFallback) {
 			return fmt.Errorf("preserved config ACL/owner mismatch after recovery: %s", saved.path)
 		}
+		data, err := os.ReadFile(saved.path)
+		if err != nil {
+			return fmt.Errorf("preserved config unreadable after recovery: %s", saved.path)
+		}
+		if _, err := validatePreservableConfig(saved.path, data); err != nil {
+			return fmt.Errorf("preserved config invalid after recovery: %s: %w", saved.path, err)
+		}
+	}
+	if !remoteSupportConfigsReadable(p) {
+		return fmt.Errorf("no readable Remote Support TOML config after recovery")
+	}
+	if !restoreRemoteSupportMainWindow(p.ExpectedExePath) {
+		return fmt.Errorf("Remote Support main UI is not available after launch")
 	}
 	return nil
+}
+
+func remoteSupportConfigsReadable(p ExecuteParams) bool {
+	found := false
+	for _, path := range effectiveConfigPaths(p) {
+		if !isRemoteSupportConfigPath(path) {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		if _, err := validatePreservableConfig(path, data); err != nil {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // --- live observation (#8) -------------------------------------------------

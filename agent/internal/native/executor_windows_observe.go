@@ -27,6 +27,7 @@ func ObserveRemoteSupport(p ExecuteParams) (RSObservation, error) {
 		obs.ExeExists = true
 		obs.ExeVersion = fileVersion(p.ExpectedExePath)
 	}
+	obs.RuntimeComplete = ValidateRequiredRuntimeLayout(p.InstallDir) == nil
 
 	snapshot, err := captureServiceSnapshot(p.ServiceName)
 	if err != nil {
@@ -45,11 +46,16 @@ func ObserveRemoteSupport(p ExecuteParams) (RSObservation, error) {
 	obs.LegacyCombined = obs.OldUninstallReg
 
 	for _, cp := range effectiveConfigPaths(p) {
+		if !isRemoteSupportConfigPath(cp) {
+			continue
+		}
 		if _, err := os.Stat(cp); err == nil {
 			obs.ConfigPresent = true
 			break
 		}
 	}
+	obs.ConfigReadable = remoteSupportConfigsReadable(p)
+	obs.UIAvailable = remoteSupportMainWindowAvailable(p.ExpectedExePath)
 
 	// An exact-image process outside the service PID is the tray/runtime process
 	// that can hold install files. This is conservative and never matches by

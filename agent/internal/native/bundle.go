@@ -20,6 +20,14 @@ const BundlePayloadFormatVersion = 1
 // BundleManifestSchemaVersion versions the manifest JSON shape itself.
 const BundleManifestSchemaVersion = 1
 
+var requiredRuntimeFiles = []string{
+	"TECHI Remote Support.exe",
+	"flutter_windows.dll",
+	"librustdesk.dll",
+	"data/icudtl.dat",
+	"data/app.so",
+}
+
 // BundleFile is one file inside the native bundle. Path is the bundle-relative
 // path with forward slashes; SHA256 is lowercase hex.
 type BundleFile struct {
@@ -163,6 +171,73 @@ func (m *BundleManifest) Validate() error {
 	}
 	if !entrypointListed {
 		return fmt.Errorf("entrypoint %q not present in expected_relative_files", m.Entrypoint)
+	}
+	for _, required := range requiredRuntimeFiles {
+		entry, ok := manifestFileByPath(m.ExpectedRelativeFiles, m.ProductRoot+"/"+required)
+		if !ok {
+			return fmt.Errorf("required runtime file %q missing from manifest", required)
+		}
+		if entry.Size <= 0 {
+			return fmt.Errorf("required runtime file %q is empty", required)
+		}
+	}
+	assetsPrefix := strings.ToLower(m.ProductRoot + "/data/flutter_assets/")
+	hasAssets := false
+	for _, file := range m.ExpectedRelativeFiles {
+		if strings.HasPrefix(strings.ToLower(file.Path), assetsPrefix) && file.Size > 0 {
+			hasAssets = true
+			break
+		}
+	}
+	if !hasAssets {
+		return fmt.Errorf("required runtime directory data/flutter_assets is missing or empty")
+	}
+	return nil
+}
+
+func manifestFileByPath(files []BundleFile, want string) (BundleFile, bool) {
+	for _, file := range files {
+		if strings.EqualFold(file.Path, want) {
+			return file, true
+		}
+	}
+	return BundleFile{}, false
+}
+
+// ValidateRequiredRuntimeLayout proves the concrete Flutter runtime exists at
+// the exact installed/source paths and rejects missing, empty, or double-nested
+// layouts before packaging or health can succeed.
+func ValidateRequiredRuntimeLayout(root string) error {
+	for _, rel := range requiredRuntimeFiles {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("required runtime file %q: %w", rel, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() <= 0 {
+			return fmt.Errorf("required runtime file %q is not a non-empty regular file", rel)
+		}
+	}
+	assets := filepath.Join(root, "data", "flutter_assets")
+	info, err := os.Stat(assets)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("required runtime directory data/flutter_assets is missing")
+	}
+	hasAsset := false
+	err = filepath.Walk(assets, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() && info.Size() > 0 {
+			hasAsset = true
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("scan data/flutter_assets: %w", err)
+	}
+	if !hasAsset {
+		return fmt.Errorf("required runtime directory data/flutter_assets is empty")
 	}
 	return nil
 }
@@ -348,6 +423,12 @@ func (m *BundleManifest) EntrypointUnderRoot() string {
 func VerifyInstallDirAgainstManifest(installDir string, m *BundleManifest) error {
 	if m == nil {
 		return fmt.Errorf("nil manifest")
+	}
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	if err := ValidateRequiredRuntimeLayout(installDir); err != nil {
+		return err
 	}
 	expected := m.FilesUnderRoot()
 	expectedFolded := make(map[string]BundleFile, len(expected))

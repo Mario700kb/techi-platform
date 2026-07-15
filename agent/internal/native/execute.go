@@ -65,6 +65,7 @@ type Executor interface {
 	RestoreConfig(p ExecuteParams) (UndoFunc, error)
 	CreateService(p ExecuteParams, m *BundleManifest, prior PriorState) (UndoFunc, error)
 	StartService(p ExecuteParams, prior PriorState) (UndoFunc, error)
+	StartUI(p ExecuteParams) (UndoFunc, error)
 	ScheduleBootRetry(p ExecuteParams) (UndoFunc, error)
 	// ValidateFinal proves the exact final contract (EXE hash/version, service
 	// config+state+args, exact image path, no stale helper, config restored).
@@ -374,6 +375,8 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 			undo, aerr = exec.CreateService(p, manifest, prior)
 		case ActStartService:
 			undo, aerr = exec.StartService(p, prior)
+		case ActStartUI:
+			undo, aerr = exec.StartUI(p)
 		case ActScheduleBootRetry:
 			undo, aerr = exec.ScheduleBootRetry(p)
 		case ActValidateFinal:

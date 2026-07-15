@@ -26,6 +26,7 @@ func TestRSRecovery_HealthyCurrent_NeverTouched(t *testing.T) {
 	obs := RSObservation{
 		ExeExists: true, ExeVersion: "1.4.6",
 		ServiceExists: true, ServiceRunning: true, ServiceImageOK: true,
+		RuntimeComplete: true, ConfigReadable: true, UIAvailable: true,
 	}
 	plan := PlanRemoteSupportRecovery(RolloutEnabled, "1.4.6", obs)
 	if plan.Classification != RSHealthyCurrent || plan.Mutating {
@@ -33,6 +34,23 @@ func TestRSRecovery_HealthyCurrent_NeverTouched(t *testing.T) {
 	}
 	if !hasAction(plan, ActNoop) || plan.FinalCode != ExitOK {
 		t.Fatalf("expected noop/ok, got %+v", plan)
+	}
+}
+
+func TestRSRecovery_ServiceProcessOnlyIsNotHealthy(t *testing.T) {
+	obs := withPayload(RSObservation{
+		ExeExists: true, ExeVersion: "1.4.6",
+		ServiceExists: true, ServiceRunning: true, ServiceImageOK: true,
+		RuntimeComplete: false, ConfigReadable: true, UIAvailable: false,
+	})
+	plan := PlanRemoteSupportRecovery(RolloutEnabled, "1.4.6", obs)
+	if plan.Classification == RSHealthyCurrent || !plan.Mutating {
+		t.Fatalf("incomplete tray/service-only runtime must use full recovery: %+v", plan)
+	}
+	for _, action := range []ActionType{ActStopTray, ActStopService, ActStopProcessExact, ActPromoteFiles, ActStartUI, ActValidateFinal} {
+		if !hasAction(plan, action) {
+			t.Fatalf("full recovery omitted %s: %+v", action, plan.Actions)
+		}
 	}
 }
 
@@ -58,12 +76,14 @@ func TestRSRecovery_StaleService(t *testing.T) {
 	if plan.Classification != RSStaleService {
 		t.Fatalf("want stale_service, got %q", plan.Classification)
 	}
-	// Must verify first, preserve config, remove the stale service, clean tmp,
-	// then stage/promote/create/start/validate — in that order.
-	wantOrder := []ActionType{ActVerifyPayload, ActPreserveConfig, ActStopService,
-		ActRemoveStaleService, ActCleanupTmp, ActStagePayload, ActPromoteFiles,
-		ActRestoreConfig, ActCreateService, ActStartService, ActValidateFinal}
+	// Every damaged state uses the same stop/remove/full-replace/start/validate sequence.
+	wantOrder := []ActionType{ActVerifyPayload, ActStopTray, ActStopService, ActStopProcessExact,
+		ActPreserveConfig, ActRemoveStaleService, ActStagePayload, ActPromoteFiles,
+		ActRestoreConfig, ActCreateService, ActStartService, ActStartUI, ActValidateFinal}
 	assertOrder(t, plan.Actions, wantOrder)
+	if hasAction(plan, ActCleanupTmp) {
+		t.Fatalf("full replacement must not patch individual temporary files: %+v", plan.Actions)
+	}
 }
 
 func TestRSRecovery_ExeMissingServiceMissing(t *testing.T) {
@@ -83,12 +103,8 @@ func TestRSRecovery_ServiceMissingExePresent(t *testing.T) {
 	if plan.Classification != RSServiceMissing {
 		t.Fatalf("want service_missing, got %q", plan.Classification)
 	}
-	// EXE is fine — must NOT restage/promote files, only recreate the service.
-	if hasAction(plan, ActPromoteFiles) {
-		t.Fatalf("service_missing must not touch files: %+v", plan.Actions)
-	}
-	if !hasAction(plan, ActCreateService) || !hasAction(plan, ActStartService) {
-		t.Fatalf("must recreate+start service: %+v", plan.Actions)
+	if !hasAction(plan, ActPromoteFiles) || !hasAction(plan, ActStartUI) {
+		t.Fatalf("service_missing must perform full replacement and UI validation: %+v", plan.Actions)
 	}
 }
 
@@ -147,11 +163,11 @@ func TestRSRecovery_ConfigPreservedWhenPresent(t *testing.T) {
 	if !hasAction(plan, ActPreserveConfig) || !hasAction(plan, ActRestoreConfig) {
 		t.Fatalf("config present must be preserved+restored: %+v", plan.Actions)
 	}
-	// Preserve must come before any stop/promote.
+	// Stop all runtime roles before capturing the final on-disk identity/config.
 	iPreserve := indexOf(plan.Actions, ActPreserveConfig)
 	iStop := indexOf(plan.Actions, ActStopService)
-	if iPreserve < 0 || iStop < 0 || iPreserve > iStop {
-		t.Fatalf("preserve must precede stop: %+v", plan.Actions)
+	if iPreserve < 0 || iStop < 0 || iPreserve < iStop {
+		t.Fatalf("preserve must follow runtime stop: %+v", plan.Actions)
 	}
 }
 

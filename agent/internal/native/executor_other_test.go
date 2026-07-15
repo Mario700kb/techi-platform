@@ -11,11 +11,13 @@ func TestStubExecutorRefusesMutation(t *testing.T) {
 	e := NewWindowsExecutor()
 	_, stopErr := e.StopService(ExecuteParams{}, PriorState{})
 	_, startErr := e.StartService(ExecuteParams{}, PriorState{})
+	_, uiErr := e.StartUI(ExecuteParams{})
 	_, removeErr := e.RemoveStaleService(ExecuteParams{}, PriorState{})
 	_, promoteErr := e.PromoteFiles(ExecuteParams{}, "a", nil)
 	for name, err := range map[string]error{
 		"StopService":        stopErr,
 		"StartService":       startErr,
+		"StartUI":            uiErr,
 		"RemoveStaleService": removeErr,
 		"PromoteFiles":       promoteErr,
 		"ValidateFinal":      e.ValidateFinal(ExecuteParams{}, nil),

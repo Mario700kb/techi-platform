@@ -24,6 +24,10 @@ func filepathBase(path string) string {
 	return path
 }
 
+func isRemoteSupportConfigPath(path string) bool {
+	return !strings.EqualFold(filepathBase(path), "agent.config.json")
+}
+
 func validateAgentConfigJSON(data []byte) error {
 	if len(data) == 0 || len(data) > maxPreservedConfigBytes || bytes.IndexByte(data, 0) >= 0 {
 		return fmt.Errorf("agent config size/content outside allowed range")

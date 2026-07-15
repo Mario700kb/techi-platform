@@ -33,6 +33,7 @@ const (
 	ActCleanupTmp         ActionType = "cleanup_tmp"          // remove leftover TBD*.tmp from the failed MSI
 	ActCreateService      ActionType = "create_service"       // (re)create the RS service pointing at exact EXE
 	ActStartService       ActionType = "start_service"        // start the RS service
+	ActStartUI            ActionType = "start_ui"             // launch/restore a usable interactive main window
 	ActRestoreConfig      ActionType = "restore_config"       // write preserved RS id/config back
 	ActScheduleBootRetry  ActionType = "schedule_boot_retry"  // one bounded retry at next boot
 	ActValidateFinal      ActionType = "validate_final"       // EXE+version+service RUNNING+exact path
@@ -55,6 +56,9 @@ type RSObservation struct {
 	LegacyCombined  bool   `json:"legacy_combined"` // legacy combined-MSI product lineage detected
 	OldUninstallReg bool   `json:"old_uninstall_reg"`
 	ConfigPresent   bool   `json:"config_present"` // RS id/config exists and should be preserved
+	RuntimeComplete bool   `json:"runtime_complete"`
+	ConfigReadable  bool   `json:"config_readable"`
+	UIAvailable     bool   `json:"ui_available"`
 
 	// Payload availability is materialised so "payload missing" / "bad SHA"
 	// are decision outcomes, not runtime surprises. The planner refuses any
@@ -66,7 +70,7 @@ type RSObservation struct {
 // RecoveryPlan is the planner's deterministic output: a classification, an
 // ordered action list, the final exit code the operation will return if the
 // plan runs cleanly, and a human note. Actions are always ordered
-// verify → preserve → stop → stage → promote → recreate → validate.
+// verify → stop → preserve → replace → recreate → launch → validate.
 type RecoveryPlan struct {
 	Classification RSClassification
 	Actions        []ActionType
@@ -144,51 +148,21 @@ func PlanRemoteSupportRecovery(mode RolloutMode, target string, obs RSObservatio
 		return plan
 	}
 
-	// Config preservation precedes every installation mutation.
+	// Every damaged state uses one full replacement transaction. Stop all
+	// Remote Support runtime roles, remove the service registration, atomically
+	// replace the entire install directory from the verified active bundle, and
+	// recreate the runtime. No individual installed file is patched.
+	add(ActStopTray, ActStopService, ActStopProcessExact)
 	if obs.ConfigPresent {
 		add(ActPreserveConfig)
 	}
-
-	// F: files locked by the tray/runtime. Stop exact-path processes and the
-	// tray task first, never a name-only taskkill. If the OS still reports a
-	// pending reboot, we do not fight locked files — we stage what we can,
-	// schedule ONE boot retry, and return pending_reboot.
-	if obs.TrayRunning {
-		add(ActStopTray)
+	add(ActRemoveStaleService)
+	add(ActStagePayload, ActPromoteFiles)
+	if obs.ConfigPresent {
+		add(ActRestoreConfig)
 	}
-	if obs.ServiceExists {
-		add(ActStopService)
-	}
-	if obs.FilesLocked || class == RSLocked {
-		add(ActStopProcessExact)
-	}
-
-	// C: stale service (service present, EXE gone). Remove the stale service
-	// through the native manager before reinstalling — never leave a stale
-	// service pointing at a missing EXE.
-	if class == RSStaleService {
-		add(ActRemoveStaleService)
-	}
-	if obs.StaleTmpFiles {
-		add(ActCleanupTmp)
-	}
-
-	switch class {
-	case RSServiceMissing:
-		// D: EXE is fine; only the service is gone. Recreate + start, no file work.
-		add(ActCreateService, ActStartService)
-	default:
-		// B/C/E/G: (re)stage and promote the native bundle, then (re)create the
-		// service. Promotion is atomic; the wiring layer backs up + rolls back.
-		add(ActStagePayload, ActPromoteFiles)
-		if obs.ConfigPresent {
-			add(ActRestoreConfig)
-		}
-		add(ActCreateService, ActStartService)
-	}
-
-	add(ActValidateFinal)
-	plan.Note = "native Remote Support recovery: " + string(class)
+	add(ActCreateService, ActStartService, ActStartUI, ActValidateFinal)
+	plan.Note = "full Remote Support replacement: " + string(class)
 	return plan
 }
 
@@ -212,7 +186,8 @@ func classifyRemoteSupport(target string, obs RSObservation) RSClassification {
 		return RSLocked // F
 	case CompareVersions(obs.ExeVersion, target) < 0:
 		return RSOutdated // E
-	case obs.ServiceRunning && obs.ServiceImageOK && CompareVersions(obs.ExeVersion, target) >= 0:
+	case obs.ServiceRunning && obs.ServiceImageOK && CompareVersions(obs.ExeVersion, target) >= 0 &&
+		obs.RuntimeComplete && obs.ConfigReadable && obs.UIAvailable:
 		return RSHealthyCurrent // A
 	default:
 		// EXE present, version current, but service not cleanly RUNNING or image

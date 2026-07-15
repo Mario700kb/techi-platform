@@ -31,3 +31,12 @@ func TestValidatePreservableAgentConfigJSON(t *testing.T) {
 		t.Fatal("expected malformed Agent config to be rejected")
 	}
 }
+
+func TestRemoteSupportConfigScopeExcludesAgentState(t *testing.T) {
+	if isRemoteSupportConfigPath(`C:\ProgramData\TechiAgent\agent.config.json`) {
+		t.Fatal("Remote Support recovery must not preserve or restore Agent config")
+	}
+	if !isRemoteSupportConfigPath(`C:\Users\USER\AppData\Roaming\TECHI Remote Support\config\TECHI Remote Support2.toml`) {
+		t.Fatal("Remote Support TOML must remain in the preservation scope")
+	}
+}

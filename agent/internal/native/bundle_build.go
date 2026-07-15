@@ -46,6 +46,9 @@ func BuildBundle(w io.Writer, opts BuildOptions) (*BundleManifest, error) {
 	if strings.ContainsAny(opts.Product, `/\`) || opts.Product == "" {
 		return nil, fmt.Errorf("invalid product name %q", opts.Product)
 	}
+	if err := ValidateRequiredRuntimeLayout(opts.SourceDir); err != nil {
+		return nil, fmt.Errorf("incomplete Remote Support source runtime: %w", err)
+	}
 
 	files, err := collectBundleFiles(opts.SourceDir)
 	if err != nil {

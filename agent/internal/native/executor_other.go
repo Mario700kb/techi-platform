@@ -53,6 +53,7 @@ func (stubExecutor) CreateService(ExecuteParams, *BundleManifest, PriorState) (U
 func (stubExecutor) StartService(ExecuteParams, PriorState) (UndoFunc, error) {
 	return nil, ErrNotWindows
 }
+func (stubExecutor) StartUI(ExecuteParams) (UndoFunc, error)            { return nil, ErrNotWindows }
 func (stubExecutor) ScheduleBootRetry(ExecuteParams) (UndoFunc, error)  { return nil, ErrNotWindows }
 func (stubExecutor) ValidateFinal(ExecuteParams, *BundleManifest) error { return ErrNotWindows }
 func (stubExecutor) Health(ExecuteParams) string                        { return "unknown (non-windows)" }
