@@ -46,7 +46,7 @@ def bundle_pair(*, content=b"MZ canonical", manifest_overrides=None):
         "build_timestamp": "2020-01-01T00:00:00Z",
         "publisher": "TECHI",
         "config_paths_to_preserve": [],
-        "never_overwrite": [],
+        "never_overwrite_paths": [],
         "minimum_supported_windows": "10",
         "signing_status": "unsigned",
     }

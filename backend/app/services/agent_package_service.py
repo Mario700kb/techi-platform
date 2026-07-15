@@ -312,7 +312,7 @@ class AgentPackageService:
             "platform", "architecture", "entrypoint", "service_name", "service_arguments",
             "tray_task_name", "tray_arguments", "expected_relative_files", "bundle_sha256",
             "build_commit", "build_timestamp", "publisher", "config_paths_to_preserve",
-            "never_overwrite", "minimum_supported_windows", "signing_status",
+            "never_overwrite_paths", "minimum_supported_windows", "signing_status",
         }
         unknown = set(manifest) - allowed
         if unknown:
@@ -356,9 +356,10 @@ class AgentPackageService:
                 raise ValueError("Remote Support manifest file has invalid sha256")
             if not isinstance(size, int) or isinstance(size, bool) or size < 0 or size > 512 * 1024 * 1024:
                 raise ValueError("Remote Support manifest file has invalid size")
-            if not isinstance(entry.get("executable"), bool) or not isinstance(entry.get("signed"), bool):
+            executable = entry.get("executable", False)
+            if not isinstance(executable, bool) or not isinstance(entry.get("signed"), bool):
                 raise ValueError("Remote Support manifest file flags must be booleans")
-            if entry["executable"] != rel.lower().endswith(".exe"):
+            if executable != rel.lower().endswith(".exe"):
                 raise ValueError("Remote Support manifest executable flag does not match path")
             expected[key] = entry
 
