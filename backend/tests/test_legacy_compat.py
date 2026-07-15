@@ -21,7 +21,10 @@ from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.remote_action import ActionStatus, RemoteAction
 from app.services.audit_service import AuditAction
-from app.services.remote_support_password_service import RemoteSupportPasswordService
+from app.services.remote_support_password_service import (
+    RemoteSupportPasswordService,
+    credential_fingerprint,
+)
 
 
 @pytest.fixture()
@@ -131,6 +134,149 @@ def test_observe_v1_signed_heartbeat_is_accepted_normally(client, db, monkeypatc
     assert response.json()["authentication_required"] is False
     db.refresh(device)
     assert device.hostname == "signed-new"
+
+
+def test_authenticated_remote_support_credential_lifecycle_retries_and_promotes(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_HEARTBEAT_AUTH_MODE", "observe")
+    monkeypatch.setattr(agent_endpoint, "_heartbeat_side_effects", lambda *args, **kwargs: None)
+    device = Device(
+        id=12,
+        hostname="device-12-equivalent",
+        agent_id="signed-device-12",
+        agent_version="2.1.12",
+        platform="windows",
+        rustdesk_install_status="installed",
+        rustdesk_status="running",
+        remote_support_apply_status="unknown",
+        status=DeviceStatus.ONLINE,
+    )
+    db.add(device)
+    db.commit()
+    credential = issue_agent_credential(device)
+    db.add(device)
+    db.commit()
+
+    def heartbeat(extra=None, nonce="nonce-credential-0001"):
+        payload = {
+            "agent_id": device.agent_id,
+            "device_id": device.id,
+            "hostname": device.hostname,
+            "agent_version": "2.1.12",
+            "platform": "windows",
+            "rustdesk_install_status": "installed",
+            "rustdesk_status": "running",
+            "rustdesk_sync_status": "pending",
+        }
+        payload.update(extra or {})
+        body, headers = _signed_headers(device, credential, payload, nonce=nonce)
+        return client.post("/api/v1/agent/heartbeat", content=body, headers=headers)
+
+    first = heartbeat()
+    assert first.status_code == 200
+    generation_one = first.json()["remote_support_credential"]
+    assert generation_one["generation"] == 1
+    db.refresh(device)
+    assert (
+        device.remote_support_active_generation,
+        device.remote_support_desired_generation,
+        device.remote_support_applied_generation,
+        device.remote_support_apply_status,
+    ) == (0, 1, 0, "pending")
+
+    failed = heartbeat(
+        {
+            "remote_support_credential_ack": {
+                "generation": 1,
+                "status": "failed",
+                "error": "tray reload timed out",
+            }
+        },
+        nonce="nonce-credential-0002",
+    )
+    assert failed.status_code == 200
+    assert failed.json()["remote_support_credential"]["generation"] == 1
+    db.refresh(device)
+    assert device.remote_support_active_generation == 0
+    assert device.remote_support_apply_status == "failed"
+
+    applied = heartbeat(
+        {
+            "rustdesk_sync_status": "applied",
+            "remote_support_credential_ack": {
+                "generation": 1,
+                "status": "applied",
+                "fingerprint": credential_fingerprint(
+                    generation_one["verification_key"],
+                    device_id=device.id,
+                    generation=1,
+                    password=generation_one["password"],
+                ),
+            },
+        },
+        nonce="nonce-credential-0003",
+    )
+    assert applied.status_code == 200
+    assert applied.json()["remote_support_credential"] is None
+    db.refresh(device)
+    assert (
+        device.remote_support_active_generation,
+        device.remote_support_desired_generation,
+        device.remote_support_applied_generation,
+        device.remote_support_apply_status,
+    ) == (1, 1, 1, "applied")
+    assert RemoteSupportPasswordService(db).get_active_plaintext(device) == generation_one["password"]
+
+    generation_two_password = RemoteSupportPasswordService(db).regenerate(device)
+    db.refresh(device)
+    assert (
+        device.remote_support_active_generation,
+        device.remote_support_desired_generation,
+        device.remote_support_applied_generation,
+        device.remote_support_apply_status,
+    ) == (1, 2, 1, "pending")
+
+    stale = heartbeat(
+        {
+            "remote_support_credential_ack": {
+                "generation": 1,
+                "status": "applied",
+                "fingerprint": "0" * 64,
+            }
+        },
+        nonce="nonce-credential-0004",
+    )
+    assert stale.status_code == 200
+    generation_two = stale.json()["remote_support_credential"]
+    assert generation_two["generation"] == 2
+    assert generation_two["password"] == generation_two_password
+    db.refresh(device)
+    assert device.remote_support_active_generation == 1
+    assert device.remote_support_apply_status == "pending"
+
+    promoted = heartbeat(
+        {
+            "rustdesk_sync_status": "applied",
+            "remote_support_credential_ack": {
+                "generation": 2,
+                "status": "applied",
+                "fingerprint": credential_fingerprint(
+                    generation_two["verification_key"],
+                    device_id=device.id,
+                    generation=2,
+                    password=generation_two["password"],
+                ),
+            },
+        },
+        nonce="nonce-credential-0005",
+    )
+    assert promoted.status_code == 200
+    db.refresh(device)
+    assert (
+        device.remote_support_active_generation,
+        device.remote_support_desired_generation,
+        device.remote_support_applied_generation,
+        device.remote_support_apply_status,
+    ) == (2, 2, 2, "applied")
 
 
 def test_observe_v1_missing_auth_accepts_restricted_legacy_path(client, db, monkeypatch):

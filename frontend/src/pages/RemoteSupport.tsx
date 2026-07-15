@@ -255,16 +255,17 @@ export default function RemoteSupport() {
     if (!dev) return;
     const request = credentialRequests.current.begin(dev.device_id);
     try {
-      const res = await regenerateRemoteSupportPassword(dev.device_id);
+      await regenerateRemoteSupportPassword(dev.device_id);
       if (!credentialRequests.current.isCurrent(request)) return;
-      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, password: res.password, source: "generated", saving: false } : m));
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, saving: false } : m));
+      await runNow();
       addToast("New password generated — applied on next heartbeat", true);
     } catch (e: unknown) {
       if (!credentialRequests.current.isCurrent(request)) return;
       addToast(e instanceof Error ? e.message : "Regenerate failed", false);
       setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, saving: false } : m));
     }
-  }, [addToast, passwordModal?.device]);
+  }, [addToast, passwordModal?.device, runNow]);
 
   const handleSetCustomPassword = useCallback(async () => {
     const dev = passwordModal?.device;
@@ -276,16 +277,17 @@ export default function RemoteSupport() {
     const request = credentialRequests.current.begin(dev.device_id);
     setPasswordModal((m) => (m ? { ...m, saving: true } : m));
     try {
-      const res = await setRemoteSupportPassword(dev.device_id, custom);
+      await setRemoteSupportPassword(dev.device_id, custom);
       if (!credentialRequests.current.isCurrent(request)) return;
-      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, password: res.password, source: "custom", custom: "", saving: false } : m));
+      setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, custom: "", saving: false } : m));
+      await runNow();
       addToast("Custom password set — applied on next heartbeat", true);
     } catch (e: unknown) {
       if (!credentialRequests.current.isCurrent(request)) return;
       addToast(e instanceof Error ? e.message : "Set password failed", false);
       setPasswordModal((m) => (m && m.device.device_id === dev.device_id ? { ...m, saving: false } : m));
     }
-  }, [addToast, passwordModal?.device, passwordModal?.custom]);
+  }, [addToast, passwordModal?.device, passwordModal?.custom, runNow]);
 
   const handleRestart = useCallback(
     async (device: RemoteSupportDevice) => {

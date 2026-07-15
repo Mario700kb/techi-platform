@@ -74,6 +74,7 @@ def test_ensure_desired_is_stable_pending_and_encrypted_at_rest():
     assert device.remote_support_desired_source == "generated"
     assert device.remote_support_apply_status == "pending"
     assert device.remote_support_password_ciphertext is None
+    assert svc.get_confirmed_active_plaintext(device) is None
 
     # idempotent: same value on subsequent reads
     assert svc.ensure_desired(device).password == pw1
@@ -166,6 +167,7 @@ def test_matching_ack_promotes_desired_to_active():
     assert device.remote_support_applied_generation == delivery.generation
     assert device.remote_support_apply_status == "applied"
     assert device.remote_support_verification_key_ciphertext is None
+    assert svc.get_confirmed_active_plaintext(device) == delivery.password
 
 
 def test_failed_rotation_retains_previous_active_credential():
@@ -193,6 +195,53 @@ def test_failed_rotation_retains_previous_active_credential():
     assert device.remote_support_active_generation == first.generation
     assert device.remote_support_apply_status == "failed"
     assert "\n" not in device.remote_support_failure_reason
+    assert svc.get_confirmed_active_plaintext(device) == active_before
+
+
+def test_failed_generation_remains_deliverable_for_agent_retry():
+    db = _db()
+    device = _device(db)
+    svc = RemoteSupportPasswordService(db)
+    delivery = svc.ensure_desired(device)
+
+    assert svc.process_ack(
+        device,
+        SimpleNamespace(
+            generation=delivery.generation,
+            status="failed",
+            fingerprint=None,
+            error="tray reload timed out",
+        ),
+    ) is True
+
+    retry = svc.pending_delivery(device)
+    assert retry is not None
+    assert retry.generation == delivery.generation
+    assert retry.password == delivery.password
+    assert device.remote_support_active_generation == 0
+    assert device.remote_support_applied_generation == 0
+    assert device.remote_support_apply_status == "failed"
+
+
+def test_conflicted_generation_remains_deliverable_for_agent_retry():
+    db = _db()
+    device = _device(db)
+    svc = RemoteSupportPasswordService(db)
+    delivery = svc.ensure_desired(device)
+
+    assert svc.process_ack(
+        device,
+        SimpleNamespace(
+            generation=delivery.generation,
+            status="conflicted",
+            fingerprint=None,
+            error="conflicting Remote Support profile identities",
+        ),
+    ) is True
+
+    assert device.remote_support_apply_status == "conflicted"
+    assert svc.pending_delivery(device).generation == delivery.generation
+    assert device.remote_support_active_generation == 0
 
 
 def test_stale_ack_is_ignored():

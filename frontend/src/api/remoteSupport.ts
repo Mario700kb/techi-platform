@@ -26,6 +26,12 @@ export interface RemoteSupportDevice {
   last_repair_at?: string;
   client_id?: number;
   group_id?: number;
+  heartbeat_auth_state: string;
+  credential_active_generation: number;
+  credential_desired_generation: number;
+  credential_applied_generation: number;
+  credential_apply_status: string;
+  credential_failure_reason?: string | null;
 }
 
 export interface ConnectUrlResponse {
@@ -72,6 +78,11 @@ export interface RemoteSupportPasswordResponse {
   password: string;
   source?: string | null;
   updated_at?: string | null;
+  desired_generation: number;
+  active_generation: number;
+  applied_generation: number;
+  apply_status: string;
+  failure_reason?: string | null;
 }
 
 export async function getRemoteSupportPassword(deviceId: number): Promise<RemoteSupportPasswordResponse> {

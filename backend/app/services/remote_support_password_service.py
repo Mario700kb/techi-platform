@@ -83,6 +83,13 @@ class RemoteSupportPasswordService:
         logger.info("[rs_credential] migrated active credential encryption for device #%d", device.id)
         return plaintext
 
+    def get_confirmed_active_plaintext(self, device: Device) -> Optional[str]:
+        active = device.remote_support_active_generation or 0
+        applied = device.remote_support_applied_generation or 0
+        if active <= 0 or active != applied:
+            return None
+        return self.get_active_plaintext(device)
+
     # Compatibility name for callers that explicitly reveal the active value.
     def get_plaintext(self, device: Device) -> Optional[str]:
         return self.get_active_plaintext(device)
@@ -105,7 +112,10 @@ class RemoteSupportPasswordService:
         return self._create_desired(device, generate_password(), source="generated").password
 
     def pending_delivery(self, device: Device) -> Optional[CredentialDelivery]:
-        if device.remote_support_apply_status != "pending":
+        # A failed ACK is not terminal while the desired encrypted material is
+        # still present. Re-deliver the same generation so a corrected/current
+        # Agent can retry without rotating away from the operator's intent.
+        if device.remote_support_apply_status not in ("pending", "failed", "conflicted"):
             return None
         required = (
             device.remote_support_desired_password_ciphertext,
@@ -131,8 +141,8 @@ class RemoteSupportPasswordService:
         if generation != device.remote_support_desired_generation:
             return False
         status = (getattr(ack, "status", "") or "").strip().lower()
-        if status == "failed":
-            device.remote_support_apply_status = "failed"
+        if status in ("failed", "conflicted"):
+            device.remote_support_apply_status = status
             device.remote_support_failure_reason = self._sanitize_reason(getattr(ack, "error", None))
             self._save(device)
             return True

@@ -10,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -172,6 +174,9 @@ func verifyRustDeskSync(cfg *Config, info RustDeskInfo) string {
 	}
 	if cfg.RustDeskAckStatus == "failed" {
 		return "failed"
+	}
+	if cfg.RustDeskAckStatus == "conflicted" {
+		return "conflicted"
 	}
 	if cfg.RustDeskAckStatus != "applied" || cfg.RustDeskAckGeneration != cfg.RustDeskCredentialGen {
 		return "pending"
@@ -368,8 +373,14 @@ func startRustDeskTray() error {
 	if _, err := runWithTimeout(15*time.Second, schtasksPath(), "/run", "/tn", rustdeskTrayTaskName); err == nil {
 		return nil
 	}
-	_, err := runWithTimeout(15*time.Second, rustdeskDefaultInstallPath, "--tray")
-	return err
+	cmd := exec.Command(rustdeskDefaultInstallPath, "--tray")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW,
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
 }
 
 // ensureRustDeskTrayRunning nudges Remote Support back open if it's not
@@ -479,7 +490,7 @@ func setRustDeskPassword(password string) error {
 		return fmt.Errorf("inspect identity profiles: %w", err)
 	}
 	if conflicted {
-		return fmt.Errorf("conflicting Remote Support profile identities")
+		return errRemoteSupportCredentialConflict
 	}
 
 	updates := []rustDeskFileUpdate{}
@@ -536,20 +547,19 @@ func applyRemoteSupportPassword(password string) {
 }
 
 func applyRemoteSupportCredential(password string) error {
-	if strings.TrimSpace(password) == "" {
-		return fmt.Errorf("empty credential")
-	}
-	if err := setRustDeskPassword(password); err != nil {
+	err := applyRemoteSupportCredentialSteps(
+		password,
+		setRustDeskPassword,
+		func() error {
+			stopRustDeskServiceFn()
+			stopRustDeskTray()
+			time.Sleep(1 * time.Second)
+			return startRustDeskServiceFn()
+		},
+		startRustDeskTray,
+	)
+	if err != nil {
 		return err
-	}
-	stopRustDeskServiceFn()
-	stopRustDeskTray()
-	time.Sleep(1 * time.Second)
-	if err := startRustDeskServiceFn(); err != nil {
-		return fmt.Errorf("restart service after credential: %w", err)
-	}
-	if err := startRustDeskTray(); err != nil {
-		return fmt.Errorf("restart tray after credential: %w", err)
 	}
 	log.Printf("[rustdesk_manage] applied per-device password from server")
 	return nil

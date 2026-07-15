@@ -134,7 +134,7 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 	}
 	p.AgentVersion = AgentVersion
 	p.AgentSHA256 = currentAgentSHA256()
-	if cfg.RustDeskAckGeneration > 0 && (cfg.RustDeskAckStatus == "applied" || cfg.RustDeskAckStatus == "failed") {
+	if cfg.RustDeskAckGeneration > 0 && (cfg.RustDeskAckStatus == "applied" || cfg.RustDeskAckStatus == "failed" || cfg.RustDeskAckStatus == "conflicted") {
 		p.RemoteSupportCredentialAck = &RemoteSupportCredentialAck{
 			Generation:  cfg.RustDeskAckGeneration,
 			Status:      cfg.RustDeskAckStatus,

@@ -97,6 +97,12 @@ class RemoteSupportDevice(BaseModel):
     last_repair_at: Optional[datetime]
     client_id: Optional[int]
     group_id: Optional[int]
+    heartbeat_auth_state: str
+    credential_active_generation: int
+    credential_desired_generation: int
+    credential_applied_generation: int
+    credential_apply_status: str
+    credential_failure_reason: Optional[str]
 
 
 class ConnectUrlResponse(BaseModel):
@@ -111,6 +117,7 @@ class RemoteSupportPasswordResponse(BaseModel):
     source: Optional[str] = None
     updated_at: Optional[datetime] = None
     desired_generation: int = 0
+    active_generation: int = 0
     applied_generation: int = 0
     apply_status: str = "unknown"
     failure_reason: Optional[str] = None
@@ -147,6 +154,12 @@ def _device_to_rs(device: Device) -> RemoteSupportDevice:
         last_repair_at=device.rustdesk_last_repair_at,
         client_id=device.client_id,
         group_id=device.group_id,
+        heartbeat_auth_state=device.heartbeat_auth_state or "unknown",
+        credential_active_generation=device.remote_support_active_generation or 0,
+        credential_desired_generation=device.remote_support_desired_generation or 0,
+        credential_applied_generation=device.remote_support_applied_generation or 0,
+        credential_apply_status=device.remote_support_apply_status or "unknown",
+        credential_failure_reason=device.remote_support_failure_reason,
     )
 
 
@@ -328,7 +341,7 @@ def get_remote_support_password(
     Owner/admin only — operators must not see the plaintext password."""
     device = _get_device(device_id, db, scope)
     svc = RemoteSupportPasswordService(db)
-    password = svc.get_active_plaintext(device)
+    password = svc.get_confirmed_active_plaintext(device)
     if not password:
         raise HTTPException(status_code=409, detail="No confirmed applied Remote Support credential is available")
     audit_log(
@@ -345,6 +358,7 @@ def get_remote_support_password(
         source=device.remote_support_password_source,
         updated_at=device.remote_support_password_updated_at,
         desired_generation=device.remote_support_desired_generation or 0,
+        active_generation=device.remote_support_active_generation or 0,
         applied_generation=device.remote_support_applied_generation or 0,
         apply_status=device.remote_support_apply_status or "unknown",
         failure_reason=device.remote_support_failure_reason,
@@ -379,6 +393,7 @@ def set_remote_support_password(
         device_id=device.id, password=password, source="custom",
         updated_at=device.remote_support_desired_created_at,
         desired_generation=device.remote_support_desired_generation,
+        active_generation=device.remote_support_active_generation,
         applied_generation=device.remote_support_applied_generation,
         apply_status=device.remote_support_apply_status,
     )
@@ -408,6 +423,7 @@ def regenerate_remote_support_password(
         device_id=device.id, password=password, source="generated",
         updated_at=device.remote_support_desired_created_at,
         desired_generation=device.remote_support_desired_generation,
+        active_generation=device.remote_support_active_generation,
         applied_generation=device.remote_support_applied_generation,
         apply_status=device.remote_support_apply_status,
     )

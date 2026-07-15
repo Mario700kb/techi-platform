@@ -44,7 +44,12 @@ import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
-import { remoteSupportConnectAvailable, remoteSupportPresentation } from "../services/remoteSupportState";
+import {
+  remoteSupportConnectAvailable,
+  remoteSupportCredentialPresentation,
+  remoteSupportCredentialRevealAvailable,
+  remoteSupportPresentation,
+} from "../services/remoteSupportState";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -392,15 +397,15 @@ export default function DeviceDrawer({
   }, [device.id]);
 
   // Remote Support data loading
-  const loadRsDevice = useCallback(async () => {
-    setRsLoading(true);
+  const loadRsDevice = useCallback(async (showLoading = true) => {
+    if (showLoading) setRsLoading(true);
     try {
       const data = await getRemoteSupportDevice(device.id);
       setRsDevice(data);
     } catch {
       // non-critical — device may not have RS data yet
     } finally {
-      setRsLoading(false);
+      if (showLoading) setRsLoading(false);
     }
   }, [device.id]);
 
@@ -411,6 +416,12 @@ export default function DeviceDrawer({
       void loadRsDevice();
     }
   }, [isOpen, activeTab, device.id, loadRsDevice]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "remote_support") return;
+    const timer = window.setInterval(() => void loadRsDevice(false), 10000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, activeTab, loadRsDevice]);
 
   useEffect(() => {
     rsCredentialRequests.current.activate(device.id);
@@ -541,6 +552,16 @@ export default function DeviceDrawer({
   const isOnline = device.status === "online";
   const rsPresentation = remoteSupportPresentation(device);
   const rsConnectAllowed = remoteSupportConnectAvailable(device);
+  const rsCredentialState = {
+    heartbeatAuthState: rsDevice?.heartbeat_auth_state ?? device.heartbeat_auth_state,
+    applyStatus: rsDevice?.credential_apply_status,
+    activeGeneration: rsDevice?.credential_active_generation,
+    desiredGeneration: rsDevice?.credential_desired_generation,
+    appliedGeneration: rsDevice?.credential_applied_generation,
+    failureReason: rsDevice?.credential_failure_reason,
+  };
+  const rsCredentialPresentation = remoteSupportCredentialPresentation(rsCredentialState);
+  const rsCredentialRevealAllowed = remoteSupportCredentialRevealAvailable(rsCredentialState);
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
 
@@ -2119,7 +2140,21 @@ export default function DeviceDrawer({
                 {can("admin") && (
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
                   <p className="premium-kicker mb-1">Password</p>
-                  {rsPassword === null ? (
+                  <p className={`text-xs font-medium ${
+                    rsCredentialPresentation.severity === "healthy"
+                      ? "text-emerald-400"
+                      : rsCredentialPresentation.severity === "warning"
+                        ? "text-amber-300"
+                        : rsCredentialPresentation.severity === "error"
+                          ? "text-red-400"
+                          : "text-slate-400"
+                  }`}>
+                    {rsCredentialPresentation.label}
+                  </p>
+                  {rsCredentialPresentation.severity !== "healthy" && (
+                    <p className="mt-1 text-xs text-slate-500">{rsCredentialPresentation.detail}</p>
+                  )}
+                  {rsCredentialRevealAllowed && rsPassword === null ? (
                     <button
                       type="button"
                       disabled={rsPasswordBusy}
@@ -2138,12 +2173,12 @@ export default function DeviceDrawer({
                           if (rsCredentialRequests.current.isCurrent(request)) setRsPasswordBusy(false);
                         }
                       }}
-                      className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                      className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
                       style={{ border: "1px solid var(--th-border-drawer-section)" }}
                     >
                       {rsPasswordBusy ? "Loading…" : "Reveal password"}
                     </button>
-                  ) : (
+                  ) : rsCredentialRevealAllowed && rsPassword !== null ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-semibold text-orange-300">{rsPassword}</span>
@@ -2176,10 +2211,9 @@ export default function DeviceDrawer({
                               const request = rsCredentialRequests.current.begin(device.id);
                               setRsPasswordBusy(true);
                               try {
-                                const res = await regenerateRemoteSupportPassword(device.id);
+                                await regenerateRemoteSupportPassword(device.id);
                                 if (!rsCredentialRequests.current.isCurrent(request)) return;
-                                setRsPassword(res.password);
-                                setRsPasswordSource("generated");
+                                await loadRsDevice(false);
                                 setRsToast({ message: "New password — applied on next heartbeat", ok: true });
                                 setTimeout(() => setRsToast(null), 3000);
                               } catch (e) {
@@ -2209,11 +2243,10 @@ export default function DeviceDrawer({
                               const request = rsCredentialRequests.current.begin(device.id);
                               setRsPasswordBusy(true);
                               try {
-                                const res = await setRemoteSupportPassword(device.id, rsCustomPassword);
+                                await setRemoteSupportPassword(device.id, rsCustomPassword);
                                 if (!rsCredentialRequests.current.isCurrent(request)) return;
-                                setRsPassword(res.password);
-                                setRsPasswordSource("custom");
                                 setRsCustomPassword("");
+                                await loadRsDevice(false);
                                 setRsToast({ message: "Custom password set — applied on next heartbeat", ok: true });
                                 setTimeout(() => setRsToast(null), 3000);
                               } catch (e) {
@@ -2231,7 +2264,7 @@ export default function DeviceDrawer({
                         </div>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </div>
                 )}
 

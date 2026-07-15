@@ -221,7 +221,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 		cfg.RustDeskAckFingerprint = ""
 		cfg.RustDeskAckError = ""
 		if applyErr != nil {
-			cfg.RustDeskAckStatus = "failed"
+			cfg.RustDeskAckStatus = credentialApplyFailureStatus(applyErr)
 			cfg.RustDeskAckError = sanitizeCredentialApplyError(applyErr)
 		} else if fingerprint, fpErr := remoteSupportCredentialFingerprint(
 			desired.VerificationKey, cfg.DeviceID, desired.Generation, desired.Password,

@@ -9,7 +9,7 @@ from app.schemas.remote_action import PendingActionDelivery
 
 class RemoteSupportCredentialAck(BaseModel):
     generation: int = Field(ge=1)
-    status: Literal["applied", "failed"]
+    status: Literal["applied", "failed", "conflicted"]
     fingerprint: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     error: Optional[str] = Field(default=None, max_length=255)
 
