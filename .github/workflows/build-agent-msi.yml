@@ -6,6 +6,8 @@ on:
       - stable/phase-2-heartbeat
     paths:
       - 'agent/**'
+      - 'remote-support-bridge/**'
+      - 'scripts/verify_remote_support_connect_security.py'
       - 'backend/app/services/bootstrap_config_contract.py'
   workflow_dispatch:
 
@@ -35,7 +37,9 @@ jobs:
         uses: actions/setup-go@v5.3.0
         with:
           go-version: '1.21'
-          cache-dependency-path: agent/go.sum
+          cache-dependency-path: |
+            agent/go.sum
+            remote-support-bridge/go.sum
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -124,6 +128,13 @@ jobs:
         working-directory: agent
         run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
 
+      - name: Test and build Remote Support Connect Bridge
+        shell: pwsh
+        working-directory: remote-support-bridge
+        run: |
+          go test ./...
+          go build -ldflags="-s -w -X main.version=1.4.7" -trimpath -o ../agent/installer/techi-remote-support-bridge.exe .
+
       - name: Sign Agent EXE when release certificate is configured
         shell: pwsh
         env:
@@ -143,10 +154,15 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_PFX_BASE64))
           $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
-            /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
-            /d "TECHI Platform Endpoint Agent" agent/installer/techi-agent.exe
-          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for techi-agent.exe" }
+          foreach ($item in @(
+            @{ Path = "agent/installer/techi-agent.exe"; Description = "TECHI Platform Endpoint Agent" },
+            @{ Path = "agent/installer/techi-remote-support-bridge.exe"; Description = "TECHI Remote Support Connect Bridge" }
+          )) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
+              /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
+              /d $item.Description $item.Path
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($item.Path)" }
+          }
 
       - name: Verify bootstrap script and executable contract
         shell: pwsh
@@ -200,9 +216,9 @@ jobs:
           wix build remote-support.wxs `
             -arch x64 `
             -d SourceDir=. `
-            -d Version=1.4.6.0 `
+            -d Version=1.4.7.0 `
             -d BuildCommit=$buildCommit `
-            -o TECHI-Remote-Support-1.4.6.msi
+            -o TECHI-Remote-Support-1.4.7.msi
 
       - name: Sign Agent MSI packages when release certificate is configured
         shell: pwsh
@@ -221,11 +237,12 @@ jobs:
           $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
           foreach ($path in @(
             "TECHI-Agent-${{ steps.version.outputs.version }}.msi",
-            "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi"
+            "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi",
+            "TECHI-Remote-Support-1.4.7.msi"
           )) {
             & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
               /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
-              /d "TECHI Platform Endpoint Agent" $path
+              /d "TECHI Windows Package" $path
             if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $path" }
           }
 
@@ -266,7 +283,7 @@ jobs:
           $agentHash = (Get-FileHash $agent -Algorithm SHA256).Hash.ToLower()
           "$agentHash  $agent" | Out-File "$agent.sha256" -Encoding utf8NoBOM
           Write-Host "Agent EXE SHA256: $agentHash"
-          $remoteSupport = "TECHI-Remote-Support-1.4.6.msi"
+          $remoteSupport = "TECHI-Remote-Support-1.4.7.msi"
           $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
           "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
           Write-Host "Remote Support SHA256: $remoteSupportHash"
@@ -390,7 +407,7 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $msi = "TECHI-Remote-Support-1.4.6.msi"
+          $msi = "TECHI-Remote-Support-1.4.7.msi"
           $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
           $installer = New-Object -ComObject WindowsInstaller.Installer
           $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
@@ -403,20 +420,66 @@ jobs:
           }
           $summary = $db.SummaryInformation(0)
           $rsExe = Get-ChildItem -Path "TECHI-Remote-Support" -Recurse -Filter "TECHI Remote Support.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $bridgeExe = Get-Item -LiteralPath "techi-remote-support-bridge.exe"
+          $bridgeSignature = Get-AuthenticodeSignature -FilePath $bridgeExe
+          $remoteSupportMsiSignature = Get-AuthenticodeSignature -FilePath $msi
+          if ($env:REQUIRE_SIGNED_WINDOWS_ARTIFACTS -eq '1' -and
+              ($bridgeSignature.Status -ne 'Valid' -or $remoteSupportMsiSignature.Status -ne 'Valid')) {
+            throw "Signed Windows release gate requires valid Remote Support bridge and MSI signatures"
+          }
+          $protocolCommand = Read-MsiValue "SELECT Value FROM Registry WHERE Value LIKE '%techi-remote-support-bridge.exe%'"
+          if ($protocolCommand -notlike '*techi-remote-support-bridge.exe*%1*') {
+            throw "Remote Support protocol is not registered to the secure bridge: $protocolCommand"
+          }
+          if ($protocolCommand -like '*TECHI Remote Support.exe*') {
+            throw "Remote Support protocol still targets the client directly"
+          }
+          $extract = Join-Path $env:RUNNER_TEMP "techi-rs-msi-extract"
+          Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          $msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+          $admin = Start-Process -FilePath $msiexec -ArgumentList @('/a', (Resolve-Path $msi), '/qn', "TARGETDIR=$extract") -Wait -PassThru
+          if ($admin.ExitCode -ne 0) {
+            throw "Remote Support MSI extraction failed with exit code $($admin.ExitCode)"
+          }
+          $embeddedBridges = @(Get-ChildItem -LiteralPath $extract -Recurse -Filter "techi-remote-support-bridge.exe")
+          if ($embeddedBridges.Count -ne 1) {
+            throw "Expected exactly one secure bridge in Remote Support MSI, found $($embeddedBridges.Count)"
+          }
+          $bridgeHash = (Get-FileHash $bridgeExe.FullName -Algorithm SHA256).Hash.ToLower()
+          $embeddedBridgeHash = (Get-FileHash $embeddedBridges[0].FullName -Algorithm SHA256).Hash.ToLower()
+          if ($bridgeHash -ne $embeddedBridgeHash) {
+            throw "Embedded Remote Support bridge differs from the tested bridge"
+          }
+          $bridgeText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($embeddedBridges[0].FullName))
+          if ($bridgeText -match '\?password=' -or $bridgeText.Contains('--password')) {
+            throw "Built bridge contains a forbidden password-bearing URI or command argument"
+          }
           $identity = [ordered]@{
             product = "TECHI Remote Support"
             source_commit = "${{ github.sha }}"
-            version = "1.4.6"
+            version = "1.4.7"
             msi_sha256 = $hash
             executable_sha256 = $(if ($rsExe) { (Get-FileHash $rsExe.FullName -Algorithm SHA256).Hash.ToLower() } else { $null })
             executable_size = $(if ($rsExe) { $rsExe.Length } else { $null })
+            bridge_sha256 = $bridgeHash
+            embedded_bridge_sha256 = $embeddedBridgeHash
+            embedded_bridge_matches_tested_binary = $true
+            bridge_size = $bridgeExe.Length
+            bridge_authenticode_status = $bridgeSignature.Status.ToString()
+            msi_authenticode_status = $remoteSupportMsiSignature.Status.ToString()
+            protocol_handler = $protocolCommand
             msi_product_version = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductVersion'"
             msi_product_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='ProductCode'"
             msi_upgrade_code = Read-MsiValue "SELECT Value FROM Property WHERE Property='UpgradeCode'"
             msi_package_code = $summary.Property(9)
             msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
           }
-          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-1.4.6.identity.json" -Encoding utf8NoBOM
+          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-1.4.7.identity.json" -Encoding utf8NoBOM
+
+      - name: Verify secure Remote Support Connect contract
+        shell: pwsh
+        run: python scripts/verify_remote_support_connect_security.py
 
       # ------------------------------------------------------------------ #
       # 10. Upload artifact (30 ditë)                                        #
@@ -445,11 +508,11 @@ jobs:
       - name: Upload Remote Support MSI artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: TECHI-Remote-Support-1.4.6
+          name: TECHI-Remote-Support-1.4.7
           path: |
-            agent/installer/TECHI-Remote-Support-1.4.6.msi
-            agent/installer/TECHI-Remote-Support-1.4.6.msi.sha256
-            agent/installer/TECHI-Remote-Support-1.4.6.identity.json
+            agent/installer/TECHI-Remote-Support-1.4.7.msi
+            agent/installer/TECHI-Remote-Support-1.4.7.msi.sha256
+            agent/installer/TECHI-Remote-Support-1.4.7.identity.json
           retention-days: 30
           if-no-files-found: error
 

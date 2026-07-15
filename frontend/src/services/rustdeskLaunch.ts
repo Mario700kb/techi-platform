@@ -1,4 +1,5 @@
 const RUSTDESK_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
+const CONNECT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 
 export function isValidRustDeskId(rustdeskId?: string | null): boolean {
   if (!rustdeskId) return false;
@@ -61,6 +62,26 @@ export function clickProtocolUrl(url: string): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+export function validateTokenOnlyConnectUrl(url: string): string {
+  const parsed = new URL(url);
+  const keys = Array.from(parsed.searchParams.keys());
+  const token = parsed.searchParams.get("token") ?? "";
+  if (
+    parsed.protocol !== "techiremotesupport:" ||
+    parsed.hostname !== "connect" ||
+    (parsed.pathname !== "" && parsed.pathname !== "/") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== "" ||
+    keys.length !== 1 ||
+    keys[0] !== "token" ||
+    !CONNECT_TOKEN_PATTERN.test(token)
+  ) {
+    throw new Error("Invalid secure Remote Support launch URL");
+  }
+  return url;
 }
 
 function isIOS(): boolean {

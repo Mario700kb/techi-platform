@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import {
   getRemoteSupportDevices,
-  getConnectUrl,
   restartRemoteSupportService,
   repairRemoteSupportConfig,
   deployRemoteSupport,
@@ -26,6 +25,7 @@ import {
   RemoteSupportDevice,
   RemoteSupportStatus,
 } from "../api/remoteSupport";
+import { launchRemoteSupportConnect } from "../services/remoteSupportConnect";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
@@ -205,9 +205,8 @@ export default function RemoteSupport() {
       }
       setDeviceAction(device.device_id, "connect", "loading");
       try {
-        const res = await getConnectUrl(device.device_id);
-        window.location.href = res.connect_url;
-        setDeviceAction(device.device_id, "connect", "success");
+        const launched = await launchRemoteSupportConnect(device.device_id);
+        setDeviceAction(device.device_id, "connect", launched ? "success" : "idle");
       } catch (e: unknown) {
         addToast(e instanceof Error ? e.message : "Connect failed", false);
         setDeviceAction(device.device_id, "connect", "error");

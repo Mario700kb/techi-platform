@@ -3,11 +3,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
+from app.core.agent_auth import remote_connect_create_limiter
 from app.core.config import settings
 from app.core.scope import AllowedScope, device_in_scope
 from app.core.time import utcnow
@@ -20,6 +21,11 @@ from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
+from app.services.remote_support_connect_service import (
+    CONNECT_TOKEN_TTL_SECONDS,
+    ConnectTokenError,
+    RemoteSupportConnectService,
+)
 from app.services.remote_support_state_service import TRUSTED_USABLE_STATES
 from app.services.rustdesk_service import RustDeskIdentityService
 
@@ -109,6 +115,13 @@ class ConnectUrlResponse(BaseModel):
     device_id: int
     techi_remote_id: str
     connect_url: str
+
+
+class ConnectLaunchTokenResponse(BaseModel):
+    device_id: int
+    connect_url: str
+    expires_at: datetime
+    expires_in_seconds: int
 
 
 class RemoteSupportPasswordResponse(BaseModel):
@@ -327,6 +340,49 @@ def get_connect_url(
     )
 
     return response
+
+
+@router.post("/devices/{device_id}/launch-token", response_model=ConnectLaunchTokenResponse)
+def create_connect_launch_token(
+    *,
+    request: Request,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
+    device_id: int,
+):
+    """Issue a short-lived token-only URI for the installed native bridge."""
+    if not remote_connect_create_limiter.is_allowed(f"operator:{operator.id}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many Remote Support launch attempts",
+        )
+    device = _get_device(device_id, db, scope)
+    try:
+        capability = RemoteSupportConnectService(db).create(operator=operator, device=device)
+    except ConnectTokenError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.REMOTE_CONNECT_TOKEN_CREATED,
+        entity_type="device",
+        entity_id=device.id,
+        details={
+            "client_id": device.client_id,
+            "purpose": "remote_support_connect",
+            "ttl_seconds": CONNECT_TOKEN_TTL_SECONDS,
+            "credential_in_url": False,
+        },
+    )
+    return ConnectLaunchTokenResponse(
+        device_id=device.id,
+        connect_url=capability.connect_url,
+        expires_at=capability.expires_at,
+        expires_in_seconds=CONNECT_TOKEN_TTL_SECONDS,
+    )
 
 
 @router.get("/devices/{device_id}/password", response_model=RemoteSupportPasswordResponse)

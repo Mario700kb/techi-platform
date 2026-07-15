@@ -9,7 +9,7 @@
   in CI identity metadata so canaries can prove the exact source lineage.
 -->
 <?ifndef Version?>
-<?define Version="1.4.6.0"?>
+<?define Version="1.4.7.0"?>
 <?endif?>
 <?ifndef BuildCommit?>
 <?define BuildCommit="dev"?>
@@ -41,6 +41,7 @@
     <Feature Id="RemoteSupportFeature" Title="TECHI Remote Support" Level="1">
       <ComponentGroupRef Id="RemoteSupportComponents"/>
       <ComponentRef Id="RemoteSupportProtocol"/>
+      <ComponentRef Id="RemoteSupportConnectBridge"/>
       <ComponentRef Id="RemoteSupportStartMenu"/>
       <ComponentRef Id="RemoteSupportHelper"/>
     </Feature>
@@ -57,8 +58,16 @@
       </RegistryKey>
       <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\techiremotesupport\shell\open\command">
         <RegistryValue Type="string"
-                       Value="&quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot; &quot;%1&quot;"/>
+                       Value="&quot;[REMOTESUPPORTFOLDER]techi-remote-support-bridge.exe&quot; &quot;%1&quot;"/>
       </RegistryKey>
+    </Component>
+
+    <Component Id="RemoteSupportConnectBridge" Guid="F4099A20-CB85-4C41-B8A7-4692CC52B24B"
+               Directory="REMOTESUPPORTFOLDER">
+      <File Id="RemoteSupportConnectBridgeExe"
+            Source="$(var.SourceDir)\techi-remote-support-bridge.exe"
+            Name="techi-remote-support-bridge.exe"
+            KeyPath="yes"/>
     </Component>
 
     <Component Id="RemoteSupportStartMenu" Guid="F9AF05C3-B717-4EB3-A3A1-A5202297A5D7"

@@ -13,6 +13,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
 AGENT="$ROOT/agent"
+RS_BRIDGE="$ROOT/remote-support-bridge"
 : "${LOG_DIR:=$(mktemp -d)}"
 export LOG_DIR
 
@@ -81,6 +82,14 @@ step "Agent go build (windows + linux)"
 ( cd "$AGENT" && GOOS=linux GOARCH=amd64 go build -o /dev/null . ) || fail "agent linux build failed"
 ( cd "$AGENT" && go test ./... >/tmp/preflight_go.log 2>&1 ) || { tail -20 /tmp/preflight_go.log; fail "agent go test failed"; }
 echo "  agent OK"
+
+# 7. Remote Support Connect bridge and credential transport contract.
+step "Remote Support Connect bridge security"
+( cd "$RS_BRIDGE" && go test ./... ) || fail "remote support bridge tests failed"
+( cd "$RS_BRIDGE" && GOOS=windows GOARCH=amd64 go test -c -o /tmp/techi-rs-bridge.test.exe . ) || fail "remote support bridge windows compile failed"
+python3 "$ROOT/scripts/verify_remote_support_connect_security.py" || fail "remote support connect security contract failed"
+rm -f /tmp/techi-rs-bridge.test.exe
+echo "  bridge OK"
 
 echo ""
 echo "✅ PREFLIGHT PASSED — local source verification succeeded."

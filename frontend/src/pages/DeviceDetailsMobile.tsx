@@ -28,12 +28,8 @@ import { getDeviceTelemetryHistory } from "../api/telemetry";
 import { TelemetrySnapshot } from "../types/telemetry";
 import { createDeviceNote, getDeviceNotes, DeviceNote } from "../api/notes";
 import { queueDeviceAction } from "../api/actions";
-import { getConnectUrl } from "../api/remoteSupport";
-import {
-  isValidRustDeskId,
-  buildRustDeskFallbackUrlFromTechiUrl,
-  launchConnect,
-} from "../services/rustdeskLaunch";
+import { launchRemoteSupportConnect } from "../services/remoteSupportConnect";
+import { isValidRustDeskId } from "../services/rustdeskLaunch";
 import { remoteSupportConnectAvailable, remoteSupportPresentation } from "../services/remoteSupportState";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
@@ -233,10 +229,7 @@ export default function DeviceDetailsMobile() {
   const handleConnect = async () => {
     if (!device) return;
     try {
-      const res = await getConnectUrl(device.id);
-      launchConnect(res.connect_url, buildRustDeskFallbackUrlFromTechiUrl(res.connect_url), () =>
-        setSnack("Opening with RustDesk instead"),
-      );
+      await launchRemoteSupportConnect(device.id);
     } catch (err) {
       setSnack(err instanceof Error ? err.message : "Connect failed");
     }

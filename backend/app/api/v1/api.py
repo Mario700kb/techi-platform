@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, install, operators, packages, platform, remote_support, terminal, teams, trusted_domains, vault
+from app.api.v1.endpoints import actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, install, operators, packages, platform, remote_support, remote_support_bridge, terminal, teams, trusted_domains, vault
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="", tags=["health"])
@@ -23,6 +23,7 @@ api_router.include_router(actions.router, prefix="", tags=["actions"])
 api_router.include_router(agent_commands.router, prefix="", tags=["agent-commands"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(remote_support.router, prefix="/remote-support", tags=["remote-support"])
+api_router.include_router(remote_support_bridge.router, prefix="/remote-support", tags=["remote-support-bridge"])
 api_router.include_router(teams.router, prefix="/teams", tags=["teams"])
 api_router.include_router(agent_config.router, prefix="/agent-config", tags=["agent-config"])
 api_router.include_router(platform.router, prefix="/platform", tags=["platform"])

@@ -1,17 +1,17 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
 import {
-  getConnectUrl,
   getRemoteSupportDevice,
   getRemoteSupportPassword,
   setRemoteSupportPassword,
   regenerateRemoteSupportPassword,
   RemoteSupportDevice,
 } from "../api/remoteSupport";
+import { launchRemoteSupportConnect } from "../services/remoteSupportConnect";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
 import { parseUTC, timeAgo } from "../utils/time";
-import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
+import { isValidRustDeskId } from "../services/rustdeskLaunch";
 import { DeviceRequestGate } from "../services/deviceRequestGate";
 import {
   ACTION_LABELS,
@@ -2071,12 +2071,7 @@ export default function DeviceDrawer({
                   disabled={!rsConnectAllowed || !hasPermission("remote_support_connect")}
                   onClick={async () => {
                     try {
-                      const res = await getConnectUrl(device.id);
-                      launchConnect(
-                        res.connect_url,
-                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                        () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
-                      );
+                      await launchRemoteSupportConnect(device.id);
                     } catch (err) {
                       setRsToast({ message: err instanceof Error ? err.message : "Connect failed", ok: false });
                       setTimeout(() => setRsToast(null), 3000);

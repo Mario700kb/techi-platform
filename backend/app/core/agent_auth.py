@@ -58,6 +58,11 @@ verify_token_limiter = _SlidingWindowRateLimiter(limit=10, window_seconds=60)
 # one NAT/proxy address; the per-Agent guard is the primary abuse boundary.
 heartbeat_auth_limiter = _SlidingWindowRateLimiter(limit=6000, window_seconds=60)
 heartbeat_identity_limiter = _SlidingWindowRateLimiter(limit=30, window_seconds=60)
+# Native Remote Support launch capabilities are short-lived, but issuance and
+# redemption still get independent abuse boundaries.
+remote_connect_create_limiter = _SlidingWindowRateLimiter(limit=20, window_seconds=60)
+remote_connect_redeem_limiter = _SlidingWindowRateLimiter(limit=60, window_seconds=60)
+remote_connect_report_limiter = _SlidingWindowRateLimiter(limit=120, window_seconds=60)
 
 
 HEARTBEAT_SIGNATURE_VERSION = "v1"

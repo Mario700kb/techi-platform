@@ -40,6 +40,13 @@ export interface ConnectUrlResponse {
   connect_url: string;
 }
 
+export interface ConnectLaunchTokenResponse {
+  device_id: number;
+  connect_url: string;
+  expires_at: string;
+  expires_in_seconds: number;
+}
+
 export interface RemoteSupportFilters {
   status?: RemoteSupportStatus;
   domain?: string;
@@ -71,6 +78,13 @@ export async function getRemoteSupportDevice(deviceId: number): Promise<RemoteSu
 
 export async function getConnectUrl(deviceId: number): Promise<ConnectUrlResponse> {
   return fetchJson<ConnectUrlResponse>(`/api/v1/remote-support/devices/${deviceId}/connect-url`);
+}
+
+export async function createConnectLaunchToken(deviceId: number): Promise<ConnectLaunchTokenResponse> {
+  return fetchJson<ConnectLaunchTokenResponse>(
+    `/api/v1/remote-support/devices/${deviceId}/launch-token`,
+    { method: "POST" },
+  );
 }
 
 export interface RemoteSupportPasswordResponse {

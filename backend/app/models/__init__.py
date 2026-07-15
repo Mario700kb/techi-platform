@@ -16,6 +16,7 @@ from app.models.notification import NotificationChannel, NotificationDelivery, N
 from app.models.report import ReportRun, ReportSchedule
 from app.models.operator import Operator
 from app.models.remote_action import RemoteAction
+from app.models.remote_support_connect_token import RemoteSupportConnectToken
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
 from app.models.terminal_session import TerminalSession
@@ -43,6 +44,7 @@ __all__ = [
     "Operator",
     "OperatorConnectPreference",
     "RemoteAction",
+    "RemoteSupportConnectToken",
     "TerminalSession",
     "TrustedDomain",
     "VaultCredential",

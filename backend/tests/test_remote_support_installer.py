@@ -42,6 +42,9 @@ def test_remote_support_installer_ships_remote_support_runtime():
     assert "TECHI-Remote-Support\\**" in text
     assert "TECHI Remote Support.exe" in text
     assert "techiremotesupport" in text
+    assert "techi-remote-support-bridge.exe" in text
+    assert 'Value="&quot;[REMOTESUPPORTFOLDER]techi-remote-support-bridge.exe&quot; &quot;%1&quot;"' in text
+    assert 'Value="&quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot; &quot;%1&quot;"' not in text
     assert "WriteTechiConfigs" in text
     assert "ApplyTechiRemoteSupportConfigFinal" in text
 

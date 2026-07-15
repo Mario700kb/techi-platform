@@ -8,9 +8,9 @@ import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
 import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
-import { getConnectUrl } from "../api/remoteSupport";
+import { launchRemoteSupportConnect } from "../services/remoteSupportConnect";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
-import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
+import { isValidRustDeskId } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
@@ -1307,12 +1307,7 @@ const DevicesTable = memo(function DevicesTable({
                     isWindowsDevice
                       ? async () => {
                           try {
-                            const res = await getConnectUrl(device.id);
-                            launchConnect(
-                              res.connect_url,
-                              buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                              () => showBulkToast("Opening with RustDesk instead", true)
-                            );
+                            await launchRemoteSupportConnect(device.id);
                           } catch (err) {
                             showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
                           }
@@ -1729,12 +1724,7 @@ const DevicesTable = memo(function DevicesTable({
                                 isWindowsDevice
                                   ? async () => {
                                       try {
-                                        const res = await getConnectUrl(device.id);
-                                        launchConnect(
-                                          res.connect_url,
-                                          buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                          () => showBulkToast("Opening with RustDesk instead", true)
-                                        );
+                                        await launchRemoteSupportConnect(device.id);
                                       } catch (err) {
                                         showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
                                       }

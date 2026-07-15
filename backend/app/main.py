@@ -46,6 +46,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_status_history,
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
+        cleanup_old_remote_support_connect_tokens,
     )
     tasks = (
         cleanup_old_heartbeats,
@@ -57,6 +58,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_status_history,
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
+        cleanup_old_remote_support_connect_tokens,
     )
     db = SessionLocal()
     try:

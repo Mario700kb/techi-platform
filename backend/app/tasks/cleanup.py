@@ -140,3 +140,17 @@ def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
     _vacuum_analyze(db, "enrollment_audit")
     logger.info(f"Cleanup: deleted {deleted} enrollment audit records older than {days} days")
     return deleted
+
+
+def cleanup_old_remote_support_connect_tokens(db: Session, days: int = 7) -> int:
+    """Launch capabilities are useful only for audit correlation after expiry."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    result = db.execute(
+        text("DELETE FROM remote_support_connect_tokens WHERE created_at < :cutoff"),
+        {"cutoff": cutoff},
+    )
+    db.commit()
+    deleted = result.rowcount
+    _vacuum_analyze(db, "remote_support_connect_tokens")
+    logger.info(f"Cleanup: deleted {deleted} Remote Support connect tokens older than {days} days")
+    return deleted
