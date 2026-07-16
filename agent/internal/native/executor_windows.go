@@ -32,8 +32,16 @@ type configBackup struct {
 	groupFallback bool
 }
 
+type corruptConfigBackup struct {
+	path        string
+	quarantine  string
+	originalSHA string
+	fresh       []byte
+}
+
 type windowsExecutor struct {
-	preserved []configBackup
+	preserved   []configBackup
+	quarantined []corruptConfigBackup
 }
 
 // NewWindowsExecutor returns the live Windows Executor.
@@ -134,6 +142,9 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 		if err := e.restorePreservedConfig(); err != nil {
 			return err
 		}
+		if err := e.ensureFreshConfigs(); err != nil {
+			return err
+		}
 		return removeOwnedDir(backupDir)
 	}
 	if _, err := os.Lstat(backupDir); err == nil {
@@ -153,6 +164,7 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 		return undo, err
 	}
 	e.preserved = nil
+	e.quarantined = nil
 	identities := map[string]bool{}
 	for _, src := range effectiveConfigPaths(p) {
 		if !isRemoteSupportConfigPath(src) {
@@ -175,10 +187,21 @@ func (e *windowsExecutor) PreserveConfig(p ExecuteParams) (UndoFunc, error) {
 		if err != nil {
 			return undo, err
 		}
-		identity, err := validatePreservableConfig(src, data)
-		if err != nil {
-			return undo, fmt.Errorf("unsafe config %s: %w", src, err)
+		decision := prepareConfigForRecovery(src, data)
+		if !decision.preserve {
+			quarantine, err := quarantineCorruptConfig(src, time.Now())
+			if err != nil {
+				return undo, fmt.Errorf("quarantine invalid config %s: %w", src, err)
+			}
+			e.quarantined = append(e.quarantined, corruptConfigBackup{
+				path: src, quarantine: quarantine, originalSHA: HashBytesSHA256(data), fresh: decision.fresh,
+			})
+			if err := e.ensureFreshConfigs(); err != nil {
+				return undo, err
+			}
+			continue
 		}
+		identity := decision.identity
 		if identity != "" {
 			identities[identity] = true
 			if len(identities) > 1 {
@@ -206,7 +229,38 @@ func (e *windowsExecutor) RestoreConfig(ExecuteParams) (UndoFunc, error) {
 	if err := e.restorePreservedConfig(); err != nil {
 		return nil, err
 	}
+	if err := e.ensureFreshConfigs(); err != nil {
+		return nil, err
+	}
 	return nil, nil
+}
+
+func (e *windowsExecutor) ensureFreshConfigs() error {
+	for _, saved := range e.quarantined {
+		if _, err := validatePreservableConfig(saved.path, saved.fresh); err != nil {
+			return fmt.Errorf("generated replacement config is invalid: %s: %w", saved.path, err)
+		}
+		if current, err := os.ReadFile(saved.path); err == nil {
+			if _, err := validatePreservableConfig(saved.path, current); err == nil {
+				continue
+			}
+			if _, err := quarantineCorruptConfig(saved.path, time.Now()); err != nil {
+				return fmt.Errorf("requarantine invalid replacement config %s: %w", saved.path, err)
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(saved.path), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(saved.path, saved.fresh, 0o600); err != nil {
+			return fmt.Errorf("write fresh config %s: %w", saved.path, err)
+		}
+		if err := restrictFileACL(saved.path); err != nil {
+			return fmt.Errorf("protect fresh config %s: %w", saved.path, err)
+		}
+	}
+	return nil
 }
 
 func (e *windowsExecutor) restorePreservedConfig() error {
@@ -751,6 +805,22 @@ func (e *windowsExecutor) ValidateFinal(p ExecuteParams, m *BundleManifest) erro
 		}
 		if _, err := validatePreservableConfig(saved.path, data); err != nil {
 			return fmt.Errorf("preserved config invalid after recovery: %s: %w", saved.path, err)
+		}
+	}
+	for _, saved := range e.quarantined {
+		got, err := HashFileSHA256(saved.quarantine)
+		if err != nil || !strings.EqualFold(got, saved.originalSHA) {
+			return fmt.Errorf("corrupt config quarantine mismatch after recovery: %s", saved.quarantine)
+		}
+		data, err := os.ReadFile(saved.path)
+		if err != nil {
+			return fmt.Errorf("fresh config unreadable after recovery: %s", saved.path)
+		}
+		if HashBytesSHA256(data) == saved.originalSHA {
+			return fmt.Errorf("corrupt config was restored after recovery: %s", saved.path)
+		}
+		if _, err := validatePreservableConfig(saved.path, data); err != nil {
+			return fmt.Errorf("fresh config invalid after recovery: %s: %w", saved.path, err)
 		}
 	}
 	if !remoteSupportConfigsReadable(p) {

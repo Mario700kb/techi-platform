@@ -32,6 +32,17 @@ func restrictACL(dir string) error {
 	return runHidden(icacls, dir, "/grant:r", "*S-1-5-32-544:(OI)(CI)F") // Administrators
 }
 
+func restrictFileACL(path string) error {
+	icacls := filepath.Join(os.Getenv("SystemRoot"), "System32", "icacls.exe")
+	if err := runHidden(icacls, path, "/inheritance:r"); err != nil {
+		return err
+	}
+	if err := runHidden(icacls, path, "/grant:r", "*S-1-5-18:F"); err != nil {
+		return err
+	}
+	return runHidden(icacls, path, "/grant:r", "*S-1-5-32-544:F")
+}
+
 // runHidden runs an absolute-path Windows command with no visible window and no
 // shell. It refuses a non-absolute program path so nothing is resolved via PATH.
 func runHidden(name string, args ...string) error {

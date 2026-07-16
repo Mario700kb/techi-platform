@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +17,29 @@ type fakeExecutor struct {
 	calls   []string
 	failOn  map[string]error
 	killExe string // records the exact path passed to StopProcessExact
+}
+
+type malformedConfigExecutor struct {
+	*fakeExecutor
+	path    string
+	corrupt []byte
+	fresh   []byte
+}
+
+func (f *malformedConfigExecutor) PreserveConfig(ExecuteParams) (UndoFunc, error) {
+	decision := prepareConfigForRecovery(f.path, f.corrupt)
+	if decision.preserve {
+		return nil, fmt.Errorf("malformed config was selected for preservation")
+	}
+	f.fresh = append([]byte(nil), decision.fresh...)
+	return f.mutation("PreserveConfig")
+}
+
+func (f *malformedConfigExecutor) RestoreConfig(ExecuteParams) (UndoFunc, error) {
+	if _, err := validatePreservableConfig(f.path, f.fresh); err != nil {
+		return nil, err
+	}
+	return f.mutation("RestoreConfig")
 }
 
 func newFake() *fakeExecutor { return &fakeExecutor{failOn: map[string]error{}} }
@@ -295,6 +319,27 @@ func TestExecute_ConfigPreservedAndRestored(t *testing.T) {
 	ExecutePlan(plan, safeParams(t), f, true)
 	if !f.called("PreserveConfig") || !f.called("RestoreConfig") {
 		t.Fatalf("config must be preserved+restored: %v", f.calls)
+	}
+}
+
+func TestExecute_InvalidConfigQuarantineContinuesFullReinstall(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	f := &malformedConfigExecutor{
+		fakeExecutor: newFake(),
+		path:         `C:\Users\USER\AppData\Roaming\TECHI Remote Support\config\TECHI Remote Support.toml`,
+		corrupt:      []byte("id = '123456789'\ninvalid assignment\n"),
+	}
+	r := ExecutePlan(plan, safeParams(t), f, true)
+	if !r.OK {
+		t.Fatalf("invalid config must not block full reinstall: code=%v message=%s", r.Code, r.Message)
+	}
+	for _, action := range []string{"PromoteFiles", "RestoreConfig", "CreateService", "StartService", "StartUI", "ValidateFinal"} {
+		if !f.called(action) {
+			t.Fatalf("full reinstall stopped before %s: %v", action, f.calls)
+		}
+	}
+	if string(f.fresh) == string(f.corrupt) || strings.Contains(string(f.fresh), "invalid assignment") {
+		t.Fatalf("corrupt config was restored: %q", f.fresh)
 	}
 }
 
