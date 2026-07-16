@@ -177,6 +177,19 @@ the usable UI and live ID are then verified again before success. Reinstall,
 MSI, backend, Package Manager, and rollout remain unchanged. Agent CI and the
 Device 11 endpoint retest are pending.
 
+**2026-07-16 canonical plaintext-ID validation correction candidate:** The
+first endpoint retest of the encrypted-identity change failed before writing
+because the active-user identity had valid plaintext ID `90498408` but no
+usable `key_pair`. The repair validator incorrectly required key material for
+all canonical candidates. Selection now prefers a valid plaintext `id`, which
+does not require `key_pair` or `key_confirmed`. A candidate with only `enc_id`
+remains fail-closed unless complete crypto material and an independently
+verified numeric UI ID are available. For a plaintext identity, incomplete
+`key_pair`, `key_confirmed`, and associated host confirmations are omitted
+rather than copied. Password, salt, and managed options are preserved, and the
+same `id=90498408`/empty `enc_id` write plus service-before-UI ID gates remain
+unchanged. Agent CI and Device 11 retest are pending.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

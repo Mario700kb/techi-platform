@@ -97,23 +97,58 @@ func hasProtectedRustDeskCredential(content string) bool {
 func materializeRustDeskRepairIdentity(content []byte, configuredID string) ([]byte, string, error) {
 	fields := parseTOMLTopLevel(string(content))
 	id := normalizeRustDeskID(fields["id"])
-	if !isNumericRustDeskID(id) {
+	plaintextID := isNumericRustDeskID(id)
+	cryptoComplete := hasUsableRustDeskKeyMaterial(fields)
+	if !plaintextID {
 		if strings.TrimSpace(fields["enc_id"]) == "" {
 			return nil, "", fmt.Errorf("required identity field mismatch: field=id/enc_id")
+		}
+		if !cryptoComplete {
+			return nil, "", fmt.Errorf("encrypted identity requires complete key_pair/key_confirmed material")
 		}
 		id = normalizeRustDeskID(configuredID)
 		if !isNumericRustDeskID(id) {
 			return nil, "", fmt.Errorf("canonical UI ID unavailable for encrypted identity")
 		}
 	}
-	for _, field := range []string{"password", "salt", "key_pair", "key_confirmed"} {
+	for _, field := range []string{"password", "salt"} {
 		if strings.TrimSpace(fields[field]) == "" {
 			return nil, "", fmt.Errorf("required identity field mismatch: field=%s", field)
 		}
 	}
 	patched, _ := applyTOMLTopLevelPatch(string(content), "id", id)
 	patched, _ = applyTOMLTopLevelPatch(patched, "enc_id", "")
+	if !cryptoComplete {
+		patched = removeRustDeskKeyMaterial(patched)
+	}
 	return []byte(patched), id, nil
+}
+
+func hasUsableRustDeskKeyMaterial(fields map[string]string) bool {
+	keyPair := strings.TrimSpace(fields["key_pair"])
+	keyConfirmed := strings.TrimSpace(fields["key_confirmed"])
+	return len(keyPair) > 2 && strings.HasPrefix(keyPair, "[") && strings.HasSuffix(keyPair, "]") &&
+		(keyConfirmed == "true" || keyConfirmed == "false")
+}
+
+func removeRustDeskKeyMaterial(content string) string {
+	remove := map[string]bool{"key_pair": true, "key_confirmed": true, "keys_confirmed": true}
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	kept := lines[:0]
+	inSection := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inSection = true
+		}
+		if !inSection {
+			if idx := strings.IndexByte(trimmed, '='); idx > 0 && remove[strings.TrimSpace(trimmed[:idx])] {
+				continue
+			}
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 func rustDeskRepairRuntimeIdentityMismatchField(content []byte, canonical rustDeskCanonicalIdentity) string {

@@ -164,11 +164,42 @@ func TestRepairIdentityMaterializesCanonicalUIIDAndCompleteMaterial(t *testing.T
 	}
 }
 
-func TestRepairIdentityRejectsMissingKeyPairInsteadOfGeneratingIdentity(t *testing.T) {
+func TestRepairIdentityAcceptsPlaintextIDWithoutKeyPair(t *testing.T) {
+	content := []byte("id = '90498408'\nenc_id = 'stale-encrypted-id'\npassword = 'encrypted-password'\nsalt = 'verified-salt'\n")
+	materialized, id, err := materializeRustDeskRepairIdentity(content, "1967664801")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := parseTOMLTopLevel(string(materialized))
+	if id != "90498408" || fields["id"] != "90498408" || fields["enc_id"] != "" {
+		t.Fatalf("plaintext canonical ID did not win: id=%q fields=%v", id, fields)
+	}
+	for _, field := range []string{"key_pair", "key_confirmed", "keys_confirmed"} {
+		if _, exists := fields[field]; exists {
+			t.Fatalf("incomplete optional crypto field %s was copied", field)
+		}
+	}
+}
+
+func TestRepairIdentityDropsIncompleteKeyPairForPlaintextID(t *testing.T) {
+	content := []byte("id = '90498408'\npassword = 'encrypted-password'\nsalt = 'verified-salt'\nkey_pair = []\nkey_confirmed = true\nkeys_confirmed = { 'server' = true }\n")
+	materialized, _, err := materializeRustDeskRepairIdentity(content, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := parseTOMLTopLevel(string(materialized))
+	for _, field := range []string{"key_pair", "key_confirmed", "keys_confirmed"} {
+		if _, exists := fields[field]; exists {
+			t.Fatalf("incomplete crypto field %s was retained", field)
+		}
+	}
+}
+
+func TestRepairIdentityRejectsEncryptedIDWithoutCompleteCryptoMaterial(t *testing.T) {
 	content := []byte("enc_id = 'profile-encrypted-id'\npassword = 'encrypted-password'\nsalt = 'verified-salt'\nkey_confirmed = true\n")
 	_, _, err := materializeRustDeskRepairIdentity(content, "90498408")
-	if err == nil || !strings.Contains(err.Error(), "field=key_pair") {
-		t.Fatalf("missing key pair was not rejected exactly: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "complete key_pair/key_confirmed") {
+		t.Fatalf("encrypted identity without complete crypto material was accepted: %v", err)
 	}
 }
 

@@ -4,6 +4,30 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Accept canonical plaintext ID without optional key material
+
+**Confirmed failure:** the repaired active-user profile had valid plaintext ID
+`90498408`, but canonical selection failed with
+`required identity field mismatch: field=key_pair`.
+
+**Root cause:** the repair validator required `key_pair` and `key_confirmed`
+even after it had selected a valid plaintext `id`. RustDesk can load that
+plaintext ID directly when `enc_id` is empty; key material is required only to
+accept an encrypted-only identity candidate.
+
+**Fix:** canonical selection now prioritizes a valid plaintext `id`. That path
+preserves valid password/salt and options, writes `id=90498408` with an empty
+`enc_id`, and removes incomplete `key_pair`, `key_confirmed`, and related host
+confirmations instead of copying them. An encrypted-only candidate still
+requires complete crypto material plus an independently verified numeric UI
+ID or the repair fails. Service ID is verified before UI launch, and the live
+ID is verified again after a usable interactive UI exists.
+
+Reinstall, MSI, backend, Package Manager, and rollout remain unchanged. Device
+11 remains unresolved until Agent CI and endpoint retest pass.
+
+---
+
 ## 2026-07-16 — Preserve one decryptable Remote Support identity during config repair
 
 **Confirmed failure:** after `repair_config_rustdesk`, Device 11's UI retained

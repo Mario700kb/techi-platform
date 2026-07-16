@@ -136,19 +136,28 @@ generic config mismatch. The final UI/service ID equality check is still
 required. These repair-only rules do not alter reinstall profile handling.
 
 RustDesk 1.4.6 derives its local device ID only from the suffixless
-`config\TECHI Remote Support.toml` file. Treat these fields as one identity:
-`id`/`enc_id`, `password`, `salt`, `key_pair`, and `key_confirmed`; preserve
-`keys_confirmed` when present. `TECHI Remote Support2.toml` is the separate
-options store. `TECHI Remote Support_local.toml` stores UI-local state such as
-the most recently used remote peer and is not a local identity source.
+`config\TECHI Remote Support.toml` file. Canonical selection priority is:
+
+1. a valid plaintext `id`;
+2. an encrypted-only `enc_id` with complete `key_pair`/`key_confirmed` material and an independently verified numeric UI ID;
+3. fail without writing or generating an identity.
+
+Password and salt are preserved when valid. Preserve `key_pair`,
+`key_confirmed`, and `keys_confirmed` only as one complete usable set; omit an
+incomplete set when a valid plaintext ID already exists.
+`TECHI Remote Support2.toml` is the separate options store.
+`TECHI Remote Support_local.toml` stores UI-local state such as the most
+recently used remote peer and is not a local identity source.
 
 For config repair, do not copy an encrypted `enc_id` alone between the user and
 LocalService profiles. Stop the service and every owned server/tray/UI process,
 then atomically write the complete canonical material to both required
 suffixless files with the verified existing UI ID in plaintext `id` and an
 empty `enc_id`. On first load, each RustDesk profile will encrypt that same ID
-for its runtime context. Missing key pair or key confirmation is a failed
-repair; never allow RustDesk to generate replacement identity material.
+for its runtime context. Missing or incomplete key material does not invalidate
+a canonical plaintext ID and must not be copied. It remains fatal for an
+encrypted-only candidate. Never allow RustDesk to generate replacement
+identity material.
 
 Restart and validate in this order:
 
