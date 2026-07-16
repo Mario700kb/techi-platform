@@ -112,8 +112,11 @@ service or reconfigures an existing one, captures each native command's stdout,
 stderr, exit code, and failing step, and waits up to 30 seconds for `Running`.
 The first Windows CI execution exposed the formerly hidden clean-install error:
 `sc.exe create` returned 1639 because SCM option names and values were combined
-into single arguments. They are now passed as distinct `binPath=`/value,
-`start=`/value, and `DisplayName=`/value arguments.
+into single arguments. A second run confirmed Windows PowerShell 5.1 still
+serialized the corrected splatted array into invalid `sc.exe` syntax. Missing
+services are now created with `New-Service`; existing services are updated with
+`Win32_Service.Change`, avoiding native command-line quoting for binary paths
+and spaced service names.
 WiX `WixQuietExec` copies those diagnostics into the verbose MSI log. Missing
 or empty EXE/`data/app.so` and unusable service creation/configuration/start
 remain fatal; process cleanup, recovery-policy setup, and tray-task setup are

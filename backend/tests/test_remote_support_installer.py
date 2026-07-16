@@ -92,13 +92,15 @@ def test_remote_support_configure_action_logs_helper_output_to_msi():
 def test_remote_support_helper_handles_clean_and_existing_service():
     helper = _helper_text()
     assert "if ($status -eq 'missing')" in helper
-    assert "@('create', $serviceName" in helper
-    assert "@('config', $serviceName" in helper
+    assert "New-Service -Name $serviceName -BinaryPathName $binPath" in helper
+    assert "Get-CimInstance Win32_Service" in helper
+    assert "Invoke-CimMethod -InputObject $service -MethodName Change" in helper
+    assert "Win32_Service.Change return_code=" in helper
     assert "@('delete', $serviceName" not in helper
     assert "Wait-RSServiceRunning -TimeoutSeconds 30" in helper
     assert "AllowedExitCodes @(0, 1056) -Fatal" in helper
-    assert "'binPath=', $binPath, 'start=', 'auto'" in helper
-    assert "('binPath= ' + $binPath)" not in helper
+    assert "-Step 'create_service' -FilePath $scExe" not in helper
+    assert "-Step 'configure_service' -FilePath $scExe" not in helper
 
 
 def test_remote_support_helper_reports_exact_fatal_step_and_native_output():

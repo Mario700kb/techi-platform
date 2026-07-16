@@ -153,9 +153,21 @@ try {
 
     $binPath = '"' + $ExePath + '" --service'
     if ($status -eq 'missing') {
-        $null = Invoke-LoggedNative -Step 'create_service' -FilePath $scExe -Arguments @('create', $serviceName, 'binPath=', $binPath, 'start=', 'auto', 'DisplayName=', 'TECHI Remote Support') -Fatal
+        $script:currentStep = 'create_service'
+        New-Service -Name $serviceName -BinaryPathName $binPath -DisplayName $serviceName -StartupType Automatic -ErrorAction Stop | Out-Null
+        Write-InstallLog "step=create_service result=created"
     } else {
-        $null = Invoke-LoggedNative -Step 'configure_service' -FilePath $scExe -Arguments @('config', $serviceName, 'binPath=', $binPath, 'start=', 'auto', 'DisplayName=', 'TECHI Remote Support') -Fatal
+        $script:currentStep = 'configure_service'
+        $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop
+        $changeResult = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{
+            DisplayName = $serviceName
+            PathName = $binPath
+            StartMode = 'Automatic'
+        } -ErrorAction Stop
+        if ($changeResult.ReturnValue -ne 0) {
+            throw "Win32_Service.Change return_code=$($changeResult.ReturnValue)"
+        }
+        Write-InstallLog "step=configure_service result=updated"
     }
 
     $null = Invoke-LoggedNative -Step 'configure_service_recovery' -FilePath $scExe -Arguments @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/15000/restart/15000/restart/60000')

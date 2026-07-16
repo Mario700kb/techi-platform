@@ -30,8 +30,11 @@ setup are warnings.
 The first Windows run then made the hidden configure failure concrete:
 `create_service exit_code=1639` with `sc.exe` usage on stdout. The helper had
 combined each SCM option name and value into one argv entry. Service create and
-config now pass `binPath=`, `start=`, and `DisplayName=` separately from their
-values, as required by `sc.exe`.
+config were first changed to separate option/value entries, but a second real
+Windows PowerShell 5.1 run proved its native array serialization still produced
+invalid `sc.exe` syntax. Missing services now use `New-Service`, while existing
+services use `Win32_Service.Change`; neither path depends on native quoting of
+the binary path or spaced service/display name.
 
 **Verification gate:** focused source tests plus a Windows CI harness cover a
 clean SYSTEM install, repair after deleting `data/app.so`, and uninstall/reinstall.
