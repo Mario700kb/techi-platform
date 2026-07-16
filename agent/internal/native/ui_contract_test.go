@@ -6,8 +6,14 @@ func TestRemoteSupportMainWindowRejectsTrayHelper(t *testing.T) {
 	if remoteSupportMainWindowSizeUsable(16, 16) {
 		t.Fatal("16x16 tray helper must not satisfy UI validation")
 	}
+	if got := remoteSupportMainWindowRejectionReason(16, 16); got != "width 16 < 200; height 16 < 120" {
+		t.Fatalf("tray rejection reason = %q", got)
+	}
 	if !remoteSupportMainWindowSizeUsable(800, 600) {
 		t.Fatal("normal main window must satisfy UI validation")
+	}
+	if got := remoteSupportMainWindowRejectionReason(800, 600); got != "" {
+		t.Fatalf("usable window rejection reason = %q", got)
 	}
 }
 

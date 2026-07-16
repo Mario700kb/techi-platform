@@ -40,9 +40,10 @@ type corruptConfigBackup struct {
 }
 
 type windowsExecutor struct {
-	preserved   []configBackup
-	quarantined []corruptConfigBackup
-	uiStatus    string
+	preserved    []configBackup
+	quarantined  []corruptConfigBackup
+	uiStatus     string
+	uiDiagnostic string
 }
 
 // NewWindowsExecutor returns the live Windows Executor.

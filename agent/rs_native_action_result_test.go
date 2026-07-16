@@ -48,3 +48,19 @@ func TestParseNativeRemoteSupportRepairResultSuccess(t *testing.T) {
 		t.Fatalf("message changed: got %q want %q", got.Message, result.Message)
 	}
 }
+
+func TestNativeRemoteSupportUILaunchFailureUsesFullDiagnosticStderr(t *testing.T) {
+	diagnostic := `ui_launch_failed: start_ui diagnostics: agent_session_id=0; active_interactive_session_id=7; created_process_pid=41; visible_windows=[handle=0x101 width=16 height=16 visible=true result="width 16 < 200"]`
+	result := native.OperationResult{Message: diagnostic, Code: native.ExitValidationError}
+	failure := nativeRemoteSupportActionFailure(result, errors.New("native Remote Support repair failed: "+diagnostic))
+
+	if got := failure.err.Error(); got != "native Remote Support repair failed: ui_launch_failed (see start_ui diagnostics)" {
+		t.Fatalf("summary error = %q", got)
+	}
+	if failure.stderr != diagnostic {
+		t.Fatalf("diagnostic stderr was lost: %q", failure.stderr)
+	}
+	if !strings.Contains(failure.output, `"message":"ui_launch_failed: start_ui diagnostics:`) {
+		t.Fatalf("native JSON output lost diagnostic: %q", failure.output)
+	}
+}

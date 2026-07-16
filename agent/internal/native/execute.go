@@ -397,14 +397,21 @@ func ExecutePlan(plan RecoveryPlan, p ExecuteParams, exec Executor, execute bool
 
 	r.OK = plan.FinalCode == ExitOK
 	if provider, ok := exec.(interface{ CompletionStatus() string }); ok {
-		switch provider.CompletionStatus() {
+		status := provider.CompletionStatus()
+		message := status
+		if detailProvider, ok := exec.(interface{ CompletionDetail() string }); ok {
+			if detail := strings.TrimSpace(detailProvider.CompletionDetail()); detail != "" {
+				message += ": " + detail
+			}
+		}
+		switch status {
 		case remoteSupportUIPendingLoginStatus:
-			r.Message = remoteSupportUIPendingLoginStatus
+			r.Message = message
 		case remoteSupportUILaunchFailedStatus:
 			r.Code = ExitValidationError
 			r.CodeName = ExitValidationError.String()
 			r.OK = false
-			r.Message = remoteSupportUILaunchFailedStatus
+			r.Message = message
 		}
 	}
 	return r

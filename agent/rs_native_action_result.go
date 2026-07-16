@@ -36,3 +36,12 @@ func parseNativeRemoteSupportRepairResult(output []byte, runErr error) (native.O
 	}
 	return result, fmt.Errorf("native Remote Support repair failed: %s", detail)
 }
+
+func nativeRemoteSupportActionFailure(result native.OperationResult, resultErr error) actionResult {
+	failure := actionResult{err: resultErr, output: result.JSON()}
+	if strings.HasPrefix(strings.TrimSpace(result.Message), "ui_launch_failed:") {
+		failure.err = fmt.Errorf("native Remote Support repair failed: ui_launch_failed (see start_ui diagnostics)")
+		failure.stderr = result.Message
+	}
+	return failure
+}

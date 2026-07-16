@@ -363,11 +363,14 @@ class RemoteActionService:
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         failure_detail = error_message or "no detail"
         audit_summary = f"Action failed: {action.action_type} — {failure_detail}"
+        audit_failure_detail = failure_detail
+        if action.action_type == ActionType.REINSTALL_RUSTDESK.value and stderr_output:
+            audit_failure_detail = f"{failure_detail}\nstderr={stderr_output}"
         _record_audit(
             self.repo.db,
             action,
             audit_summary[:255],
-            detail=f"action_id={action.id} type={action.action_type} error={failure_detail}",
+            detail=f"action_id={action.id} type={action.action_type} error={audit_failure_detail}",
         )
         _notify_action_result(self.repo.db, action, failed=True, message=error_message or "no detail")
         return action

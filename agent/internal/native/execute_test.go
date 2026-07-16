@@ -18,6 +18,7 @@ type fakeExecutor struct {
 	failOn           map[string]error
 	killExe          string // records the exact path passed to StopProcessExact
 	completionStatus string
+	completionDetail string
 }
 
 type malformedConfigExecutor struct {
@@ -105,6 +106,7 @@ func (f *fakeExecutor) ValidateFinal(ExecuteParams, *BundleManifest) error {
 }
 func (f *fakeExecutor) Health(ExecuteParams) string { return "fake-health" }
 func (f *fakeExecutor) CompletionStatus() string    { return f.completionStatus }
+func (f *fakeExecutor) CompletionDetail() string    { return f.completionDetail }
 
 func (f *fakeExecutor) called(name string) bool {
 	for _, c := range f.calls {
@@ -371,6 +373,23 @@ func TestExecute_UILaunchFailureDoesNotRollbackValidReinstall(t *testing.T) {
 	}
 	if r.Rollback != nil || f.called("Undo:PromoteFiles") {
 		t.Fatalf("UI-only failure rolled back valid runtime: result=%+v calls=%v", r, f.calls)
+	}
+}
+
+func TestExecute_UILaunchFailureIncludesDiagnosticWithoutRollback(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	f := newFake()
+	f.completionStatus = remoteSupportUILaunchFailedStatus
+	f.completionDetail = `agent_session_id=0 active_interactive_session_id=7 failure_reason="no usable main window"`
+	r := ExecutePlan(plan, safeParams(t), f, true)
+	if r.OK || r.Code != ExitValidationError {
+		t.Fatalf("UI launch failure status is incorrect: %+v", r)
+	}
+	if !strings.Contains(r.Message, f.completionDetail) {
+		t.Fatalf("UI launch diagnostic was lost: %q", r.Message)
+	}
+	if r.Rollback != nil || f.called("Undo:PromoteFiles") {
+		t.Fatalf("diagnostic-only change triggered rollback: result=%+v calls=%v", r, f.calls)
 	}
 }
 

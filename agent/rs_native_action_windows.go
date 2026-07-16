@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,10 +85,11 @@ func handleNativeRemoteSupportRepair(ctx context.Context, cfg *Config, values ma
 	output, runErr := cmd.CombinedOutput()
 	result, resultErr := parseNativeRemoteSupportRepairResult(output, runErr)
 	if resultErr != nil {
-		return actionResult{
-			err:    resultErr,
-			output: result.JSON(),
+		failure := nativeRemoteSupportActionFailure(result, resultErr)
+		if failure.stderr != "" {
+			log.Printf("native Remote Support start_ui diagnostics: %s", failure.stderr)
 		}
+		return failure
 	}
 	return actionResult{message: result.Message, output: result.JSON()}
 }

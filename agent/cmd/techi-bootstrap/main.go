@@ -48,10 +48,14 @@ func runRemoteSupportUISession(args []string) int {
 	exe := fs.String("exe", "", "Remote Support executable")
 	sessionID := fs.Uint("session-id", 0, "expected interactive Windows session")
 	launch := fs.Bool("launch", false, "launch the normal desktop application if needed")
+	diagnosticsFile := fs.String("diagnostics-file", "", "internal UI diagnostics output")
 	if err := fs.Parse(args); err != nil || *exe == "" || *sessionID == 0 {
 		return int(native.ExitBadArgs)
 	}
 	if err := native.RunRemoteSupportUISessionProbe(*exe, uint32(*sessionID), *launch); err != nil {
+		if *diagnosticsFile != "" {
+			_ = os.WriteFile(*diagnosticsFile, []byte(err.Error()), 0o600)
+		}
 		fmt.Fprintf(os.Stderr, "remote-support-ui-session: %v\n", err)
 		return int(native.ExitError)
 	}

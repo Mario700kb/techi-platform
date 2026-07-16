@@ -129,6 +129,35 @@ def test_remote_action_fail_preserves_complete_error_in_action_and_audit(spy):
     assert root_cause in audit.detail
 
 
+def test_remote_support_ui_failure_preserves_diagnostics_in_action_and_audit(spy):
+    db = _db()
+    device = _device(db)
+    action = _queue(db, device, ActionType.REINSTALL_RUSTDESK)
+    summary = "native Remote Support repair failed: ui_launch_failed (see start_ui diagnostics)"
+    diagnostics = (
+        "ui_launch_failed: start_ui diagnostics: agent_session_id=0; "
+        "active_interactive_session_id=7; created_process_pid=41; "
+        'visible_windows=[handle=0x101 width=16 height=16 result="width 16 < 200"]'
+    )
+
+    failed = RemoteActionService(db).fail(
+        action.id,
+        error_message=summary,
+        stderr_output=diagnostics,
+    )
+
+    assert failed.error_message == summary
+    assert failed.stderr_output == diagnostics
+    audit = (
+        db.query(DeviceActivityEvent)
+        .filter_by(device_id=device.id, event_type="remote_action")
+        .order_by(DeviceActivityEvent.id.desc())
+        .first()
+    )
+    assert audit is not None
+    assert diagnostics in audit.detail
+
+
 def test_self_update_complete_fires_agent_update_completed(spy):
     db = _db()
     # Device hasn't reported the new version yet, so `complete()` takes the
