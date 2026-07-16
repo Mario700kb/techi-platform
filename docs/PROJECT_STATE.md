@@ -126,6 +126,23 @@ uninstall/reinstall while retaining the complete runtime and running service.
 This remains unresolved until CI passes and Device 11 is retested; Agent,
 Package Manager, GPO, NETLOGON, and rollout are unchanged.
 
+**2026-07-16 Remote Support identity synchronization candidate:** Device 11
+proved that the active user's valid encrypted identity and LocalService's
+MSI-generated plaintext identity could diverge. `repair_config_rustdesk` only
+patched options, while reinstall restored profile snapshots independently; no
+post-start check compared the UI identity with the running service ID. Both
+actions now choose the verified active-user identity as canonical, stop the
+service and all owned processes before writing, and atomically synchronize the
+minimal identity plus required options to active-user and LocalService config
+paths. systemprofile is included only when SCM reports LocalSystem. Existing
+root mirrors and required `TECHI Remote Support2.toml` files are synchronized
+where applicable. A valid password+salt credential is protected from the
+legacy plaintext setter. After restart, required files must match semantically
+and the service-reported ID must exactly equal the canonical UI ID or the action
+fails with `identity_mismatch`. MSI 1.4.8 packaging of binary 1.4.6+64 is
+unchanged and expected. Source/CI validation and Device 11 retest remain
+pending; no package activation or rollout is enabled.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

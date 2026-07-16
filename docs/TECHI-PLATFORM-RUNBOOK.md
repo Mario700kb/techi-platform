@@ -93,3 +93,29 @@ non-empty plus the service Running:
 The CI artifact `TECHI-Remote-Support-MSI-validation-logs` contains the verbose
 logs for these cases. Do not activate a package or retest an endpoint when this
 gate fails.
+
+### Identity synchronization
+
+For `Repair TECHI Remote Support Config` and `Reinstall TECHI Remote Support`,
+the canonical identity is the valid active-interactive-user
+`config\TECHI Remote Support.toml`. It must contain a usable numeric `id`, plus
+the permanent password and salt, or a non-empty `enc_id` with those credential
+fields; key pair and key confirmation are preserved when present. Never use an MSI-generated LocalService plaintext
+password as the canonical source.
+
+Before either action writes config, the Remote Support service and all exact
+owned tray/server/UI processes must be stopped. The action atomically
+synchronizes the canonical identity and managed `TECHI Remote Support2.toml` to:
+
+- the active interactive user's Roaming profile;
+- `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming`;
+- LocalSystem's systemprofile only when SCM reports that account;
+- an existing root-level mirror for any required profile.
+
+After restarting the service and UI, the identity fields in every required
+profile must match and the service's `--get-id` result must exactly equal the
+canonical user ID. When TOML stores only `enc_id`, use the Agent's existing
+verified Remote ID for that numeric comparison. `identity_mismatch` is a failed repair; preserve the action
+result and do not overwrite the user config with a newly generated password.
+Remote Support binary `1.4.6+64` displayed from MSI 1.4.8 is expected and is not
+an identity-repair issue.

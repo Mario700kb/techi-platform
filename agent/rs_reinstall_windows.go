@@ -26,9 +26,6 @@ const remoteSupportMSIDisplayName = "TECHI Remote Support"
 
 type remoteSupportConfigSnapshot struct {
 	path          string
-	content       []byte
-	mode          os.FileMode
-	isIdentity    bool
 	originalValid bool
 }
 
@@ -38,6 +35,7 @@ type windowsRemoteSupportReinstallOps struct {
 	version        string
 	packagePath    string
 	configs        []remoteSupportConfigSnapshot
+	canonical      rustDeskCanonicalIdentity
 	configsRemoved bool
 }
 
@@ -82,13 +80,13 @@ func (o *windowsRemoteSupportReinstallOps) ResolvePackage(_ context.Context) (st
 
 func (o *windowsRemoteSupportReinstallOps) PreserveIdentity(_ context.Context) error {
 	o.configs = nil
-	seenIdentity := ""
+	canonical, err := loadCanonicalRustDeskIdentity()
+	if err != nil {
+		return err
+	}
+	o.canonical = canonical
 	paths := append([]string(nil), rustDeskIdentityPaths()...)
 	paths = append(paths, rustDeskOptionsPaths()...)
-	identityPaths := make(map[string]bool)
-	for _, path := range rustDeskIdentityPaths() {
-		identityPaths[strings.ToLower(filepath.Clean(path))] = true
-	}
 	for _, path := range paths {
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
@@ -108,16 +106,8 @@ func (o *windowsRemoteSupportReinstallOps) PreserveIdentity(_ context.Context) e
 		if err != nil {
 			return fmt.Errorf("validate config %s: %w", path, err)
 		}
-		isIdentity := identityPaths[strings.ToLower(filepath.Clean(path))]
-		if isIdentity && minimal.Identity != "" {
-			if seenIdentity != "" && seenIdentity != minimal.Identity {
-				return fmt.Errorf("conflicting Remote Support IDs across config profiles")
-			}
-			seenIdentity = minimal.Identity
-		}
 		o.configs = append(o.configs, remoteSupportConfigSnapshot{
-			path: path, content: minimal.Content, mode: info.Mode().Perm(),
-			isIdentity: isIdentity, originalValid: minimal.OriginalValid,
+			path: path, originalValid: minimal.OriginalValid,
 		})
 	}
 	return nil
@@ -200,61 +190,8 @@ func (o *windowsRemoteSupportReinstallOps) RestoreIdentity(_ context.Context) er
 	if !o.configsRemoved {
 		return nil
 	}
-	updates := make([]rustDeskFileUpdate, 0, len(o.configs))
-	for _, config := range o.configs {
-		if !config.isIdentity {
-			continue
-		}
-		before, readErr := os.ReadFile(config.path)
-		existed := readErr == nil
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return fmt.Errorf("read replacement config %s: %w", config.path, readErr)
-		}
-		mode := config.mode
-		if mode == 0 {
-			mode = 0o600
-		}
-		updates = append(updates, rustDeskFileUpdate{
-			path: config.path, before: before, after: config.content, mode: mode, existed: existed, protect: true,
-		})
-	}
-	freshOptions := []byte(buildRustDeskTOML(o.cfg))
-	preparedOptions, err := native.PrepareMinimalRemoteSupportConfig(rustDeskOptionsFile, freshOptions)
-	if err != nil {
-		return fmt.Errorf("generate fresh managed options config: %w", err)
-	}
-	if !preparedOptions.OriginalValid {
-		return fmt.Errorf("generated managed options config failed TOML validation")
-	}
-	authoritative := authoritativeRustDeskOptionsPath()
-	if authoritative == "" {
-		return fmt.Errorf("authoritative LocalSystem options path unavailable")
-	}
-	seenOptions := map[string]bool{}
-	for _, path := range append(rustDeskOptionsPaths(), authoritative) {
-		key := strings.ToLower(filepath.Clean(path))
-		if seenOptions[key] {
-			continue
-		}
-		seenOptions[key] = true
-		before, readErr := os.ReadFile(path)
-		existed := readErr == nil
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return fmt.Errorf("read replacement options %s: %w", path, readErr)
-		}
-		if !existed && !strings.EqualFold(filepath.Clean(path), filepath.Clean(authoritative)) {
-			continue
-		}
-		mode := os.FileMode(0o644)
-		if info, statErr := os.Stat(path); statErr == nil {
-			mode = info.Mode().Perm()
-		}
-		updates = append(updates, rustDeskFileUpdate{
-			path: path, before: before, after: freshOptions, mode: mode, existed: existed, protect: true,
-		})
-	}
-	if err := applyRustDeskFileUpdates(updates); err != nil {
-		return fmt.Errorf("restore minimal identity and fresh options config: %w", err)
+	if _, err := synchronizeCanonicalRustDeskConfig(o.cfg, o.canonical, true); err != nil {
+		return fmt.Errorf("restore canonical identity and fresh options config: %w", err)
 	}
 	return nil
 }
@@ -271,31 +208,8 @@ func (o *windowsRemoteSupportReinstallOps) ValidateInstallation(_ context.Contex
 	if err := native.ValidateRequiredRuntimeLayout(installDir); err != nil {
 		return err
 	}
-	expectedIdentity := map[string][]byte{}
-	for _, config := range o.configs {
-		if config.isIdentity {
-			expectedIdentity[strings.ToLower(filepath.Clean(config.path))] = config.content
-		}
-	}
-	for _, path := range rustDeskIdentityPaths() {
-		content, err := os.ReadFile(path)
-		want, expected := expectedIdentity[strings.ToLower(filepath.Clean(path))]
-		if os.IsNotExist(err) && !expected {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("read restored identity config %s: %w", path, err)
-		}
-		prepared, err := native.PrepareMinimalRemoteSupportConfig(path, content)
-		if err != nil {
-			return fmt.Errorf("validate restored identity config %s: %w", path, err)
-		}
-		if !prepared.OriginalValid {
-			return fmt.Errorf("restored identity config is invalid TOML: %s: %v", path, prepared.OriginalError)
-		}
-		if expected && !bytes.Equal(content, want) {
-			return fmt.Errorf("restored identity config changed after service start: %s", path)
-		}
+	if err := validateCanonicalRustDeskIdentity(o.cfg, o.canonical); err != nil {
+		return err
 	}
 	optionsPath := authoritativeRustDeskOptionsPath()
 	options, err := os.ReadFile(optionsPath)
@@ -361,6 +275,9 @@ func (o *windowsRemoteSupportReinstallOps) StartUI(ctx context.Context) (string,
 	}
 	switch status {
 	case "healthy":
+		if err := validateCanonicalRustDeskIdentity(o.cfg, o.canonical); err != nil {
+			return "", err
+		}
 		return remoteSupportReinstalledStatus, nil
 	case "repaired_ui_pending_login":
 		return remoteSupportReinstalledPendingLogin, nil

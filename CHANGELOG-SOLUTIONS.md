@@ -4,6 +4,40 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Synchronize one Remote Support identity across UI and service profiles
+
+**Confirmed failure:** Device 11's interactive-user config contained the valid
+`id`/`enc_id`, encrypted permanent password, salt, and keys, while the
+LocalService config contained a different identity and a generated plaintext
+password. The UI and service therefore loaded different endpoint identities.
+
+**Root cause:** `repair_config_rustdesk` patched only managed options and did so
+before stopping the runtime. Clean reinstall preserved and restored each
+profile independently, so the MSI-created service profile could retain a new
+identity instead of receiving the verified user identity. Validation checked
+config syntax and service state, not equality between the user ID and the ID
+reported by the running service.
+
+**Fix:** both actions now select the valid active-user
+`config\TECHI Remote Support.toml` as the canonical source, requiring a usable
+`id` or non-empty `enc_id` plus password and salt. After stopping the service and all owned
+Remote Support processes, they atomically write the same minimal identity to
+the active user and LocalService config paths, plus systemprofile only when the
+SCM service actually runs as LocalSystem. Existing root-level mirrors are
+updated when present, and managed `TECHI Remote Support2.toml` files are created
+or patched in the same profiles. A valid password+salt credential is not
+replaced by the legacy plaintext-password setter.
+
+After service/UI restart, every required profile is compared with the
+canonical identity and the service's `--get-id` result must exactly equal the
+canonical user ID, using the Agent's existing verified Remote ID when the TOML
+stores only `enc_id`. Any difference fails the action with `identity_mismatch`.
+MSI/package versioning is unchanged: binary `1.4.6+64` inside MSI 1.4.8 remains
+expected. Device 11 is unresolved until the updated Agent passes CI and the
+RS-only endpoint retest.
+
+---
+
 ## 2026-07-16 — Fix Remote Support MSI SYSTEM custom actions
 
 **Confirmed failure:** `StopRemoteSupportRuntimeBeforeInstall` reached Windows

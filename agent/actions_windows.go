@@ -184,20 +184,32 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 	done := make(chan actionResult, 1)
 	go func() {
 		defer release()
-		log.Printf("[action] repair_config_rustdesk: writing config")
-		changed, err := writeRustDeskConfig(cfg)
+		log.Printf("[action] repair_config_rustdesk: stopping service and all owned processes before config synchronization")
+		stopRustDeskServiceFn()
+		stopRustDeskTray()
+		time.Sleep(2 * time.Second)
+
+		canonical, err := loadCanonicalRustDeskIdentity()
 		if err != nil {
+			_ = startRustDeskServiceFn()
+			_ = startRustDeskTray()
 			done <- actionResult{
-				err:    fmt.Errorf("config write failed: %w", err),
+				err:    fmt.Errorf("canonical identity selection failed: %w", err),
 				stderr: err.Error(),
 			}
 			return
 		}
-
-		log.Printf("[action] repair_config_rustdesk: stopping service+tray for restart")
-		stopRustDeskServiceFn()
-		stopRustDeskTray()
-		time.Sleep(2 * time.Second)
+		log.Printf("[action] repair_config_rustdesk: atomically synchronizing canonical user identity")
+		changed, err := synchronizeCanonicalRustDeskConfig(cfg, canonical, false)
+		if err != nil {
+			_ = startRustDeskServiceFn()
+			_ = startRustDeskTray()
+			done <- actionResult{
+				err:    fmt.Errorf("config synchronization failed: %w", err),
+				stderr: err.Error(),
+			}
+			return
+		}
 
 		log.Printf("[action] repair_config_rustdesk: starting service+tray")
 		if err2 := startRustDeskServiceFn(); err2 != nil {
@@ -208,10 +220,18 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 		if err2 := startRustDeskTray(); err2 != nil {
-			log.Printf("[action] repair_config_rustdesk: tray start failed (non-fatal): %v", err2)
+			done <- actionResult{
+				err:    fmt.Errorf("UI restart failed after config repair: %w", err2),
+				stderr: err2.Error(),
+			}
+			return
 		}
 
 		time.Sleep(2 * time.Second)
+		if err := validateCanonicalRustDeskIdentity(cfg, canonical); err != nil {
+			done <- actionResult{err: err, stderr: err.Error()}
+			return
+		}
 		rd := discoverRustDesk(cfg)
 		action := "verified"
 		if changed {

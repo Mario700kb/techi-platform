@@ -270,7 +270,7 @@ func installRustDeskMSI(cfg *Config) error {
 
 // writeRustDeskConfig ensures managed [options] keys are correct in every
 // known options location. Existing files are patched transactionally, identity
-// fields are never touched, and a missing LocalSystem authority is initialized.
+// fields are never touched, and a missing LocalService authority is initialized.
 func writeRustDeskConfig(cfg *Config) (bool, error) {
 	managed := managedRustDeskOptions(cfg)
 	if len(managed) == 0 {
@@ -307,7 +307,7 @@ func writeRustDeskConfig(cfg *Config) (bool, error) {
 
 	if !authoritativeFound {
 		if authoritative == "" {
-			return false, fmt.Errorf("authoritative LocalSystem options path unavailable")
+			return false, fmt.Errorf("authoritative LocalService options path unavailable")
 		}
 		updates = append(updates, rustDeskFileUpdate{
 			path: authoritative, after: []byte(buildRustDeskTOML(cfg)),
@@ -510,6 +510,9 @@ func setRustDeskPassword(password string) error {
 			return fmt.Errorf("read identity %s: %w", path, readErr)
 		}
 		found = true
+		if hasProtectedRustDeskCredential(string(existing)) {
+			continue
+		}
 		patched, changed := applyTOMLTopLevelPatch(string(existing), "password", password)
 		if !changed {
 			continue

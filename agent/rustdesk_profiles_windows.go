@@ -16,11 +16,13 @@ const (
 type rustDeskProfile struct {
 	root    string
 	service bool
+	role    string
+	active  bool
 }
 
-// LocalSystem's systemprofile is authoritative for the SCM service. Existing
-// ProgramData and interactive-user profiles are synchronized as mirrors so the
-// service and every tray session resolve the same endpoint and credential.
+// LocalService is always synchronized because the Remote Support runtime uses
+// that profile for daemon identity. The active interactive profile is the
+// canonical source; systemprofile is synchronized only when SCM uses it.
 func rustDeskProfiles() []rustDeskProfile {
 	systemDrive := strings.TrimSpace(os.Getenv("SystemDrive"))
 	if systemDrive == "" {
@@ -30,10 +32,11 @@ func rustDeskProfiles() []rustDeskProfile {
 	if programData == "" {
 		programData = systemDrive + `\ProgramData`
 	}
+	activeUser := activeInteractiveRustDeskUsername()
 	profiles := []rustDeskProfile{
-		{root: filepath.Join(systemDrive+`\Windows\System32\config\systemprofile\AppData\Roaming`, "TECHI Remote Support"), service: true},
+		{root: filepath.Join(systemDrive+`\Windows\System32\config\systemprofile\AppData\Roaming`, "TECHI Remote Support"), role: rustDeskProfileSystem},
 		{root: filepath.Join(programData, "TECHI Remote Support")},
-		{root: filepath.Join(systemDrive+`\Windows\ServiceProfiles\LocalService\AppData\Roaming`, "TECHI Remote Support")},
+		{root: filepath.Join(systemDrive+`\Windows\ServiceProfiles\LocalService\AppData\Roaming`, "TECHI Remote Support"), service: true, role: rustDeskProfileLocalService},
 		{root: filepath.Join(systemDrive+`\Windows\ServiceProfiles\NetworkService\AppData\Roaming`, "TECHI Remote Support")},
 	}
 	usersRoot := filepath.Join(systemDrive+`\`, "Users")
@@ -44,12 +47,27 @@ func rustDeskProfiles() []rustDeskProfile {
 			}
 			base := filepath.Join(usersRoot, entry.Name(), "AppData")
 			profiles = append(profiles,
-				rustDeskProfile{root: filepath.Join(base, "Roaming", "TECHI Remote Support")},
-				rustDeskProfile{root: filepath.Join(base, "Local", "TECHI Remote Support")},
+				rustDeskProfile{root: filepath.Join(base, "Roaming", "TECHI Remote Support"), role: rustDeskProfileUser, active: strings.EqualFold(entry.Name(), activeUser)},
+				rustDeskProfile{root: filepath.Join(base, "Local", "TECHI Remote Support"), role: rustDeskProfileUser, active: strings.EqualFold(entry.Name(), activeUser)},
 			)
 		}
 	}
 	return profiles
+}
+
+func activeInteractiveRustDeskUsername() string {
+	session := buildUserSession()
+	if session.UserSource != "interactive_console" && session.UserSource != "rdp_session" {
+		return ""
+	}
+	name := strings.TrimSpace(session.CurrentUser)
+	if index := strings.LastIndex(name, `\`); index >= 0 {
+		name = name[index+1:]
+	}
+	if index := strings.IndexByte(name, '@'); index >= 0 {
+		name = name[:index]
+	}
+	return strings.TrimSpace(name)
 }
 
 func isSkippedWindowsProfile(name string) bool {
