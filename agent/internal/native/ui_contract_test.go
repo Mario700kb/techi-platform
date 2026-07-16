@@ -1,9 +1,6 @@
 package native
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestRemoteSupportMainWindowRejectsTrayHelper(t *testing.T) {
 	if remoteSupportMainWindowSizeUsable(16, 16) {
@@ -14,14 +11,21 @@ func TestRemoteSupportMainWindowRejectsTrayHelper(t *testing.T) {
 	}
 }
 
-func TestRemoteSupportUILaunchTaskRunsNormalExecutableOnce(t *testing.T) {
-	xml := remoteSupportUITaskXML(`C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`)
-	for _, required := range []string{"TECHI Remote Support.exe", "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>", "S-1-5-32-545"} {
-		if !strings.Contains(xml, required) {
-			t.Fatalf("UI task XML missing %q", required)
-		}
+func TestSelectInteractiveSessionRejectsSessionZero(t *testing.T) {
+	session, ok := selectInteractiveSession([]uiSessionCandidate{
+		{id: 0, active: true, hasUser: true},
+		{id: 4, active: true, hasUser: true},
+	}, 0)
+	if !ok || session != 4 {
+		t.Fatalf("session = %d ok=%t", session, ok)
 	}
-	if strings.Contains(xml, "--tray") || strings.Contains(xml, "--service") {
-		t.Fatal("UI launch task must run the normal desktop executable without background-role arguments")
+}
+
+func TestSelectInteractiveSessionNoLoggedInUser(t *testing.T) {
+	if session, ok := selectInteractiveSession([]uiSessionCandidate{
+		{id: 1, active: true, hasUser: false},
+		{id: 2, active: false, hasUser: true},
+	}, 1); ok || session != 0 {
+		t.Fatalf("session = %d ok=%t", session, ok)
 	}
 }

@@ -58,6 +58,8 @@ func (stubExecutor) ScheduleBootRetry(ExecuteParams) (UndoFunc, error)  { return
 func (stubExecutor) ValidateFinal(ExecuteParams, *BundleManifest) error { return ErrNotWindows }
 func (stubExecutor) Health(ExecuteParams) string                        { return "unknown (non-windows)" }
 
+func RunRemoteSupportUISessionProbe(string, uint32, bool) error { return ErrNotWindows }
+
 // ObserveRemoteSupport cannot probe a real device off Windows; the caller must
 // supply an observation fixture instead.
 func ObserveRemoteSupport(ExecuteParams) (RSObservation, error) {

@@ -3,6 +3,7 @@
 package native
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,83 @@ import (
 )
 
 const testConfigSecurityDescriptor = "O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)"
+
+func withRemoteSupportUISessionTest(
+	t *testing.T,
+	session func() (uint32, bool, error),
+	probe func(uint32, string, bool) error,
+) {
+	t.Helper()
+	oldSession := interactiveUserSession
+	oldProbe := runUIProbeInSession
+	interactiveUserSession = session
+	runUIProbeInSession = probe
+	t.Cleanup(func() {
+		interactiveUserSession = oldSession
+		runUIProbeInSession = oldProbe
+	})
+}
+
+func TestNativeStartUIUsesActiveInteractiveSession(t *testing.T) {
+	var gotSession uint32
+	var gotLaunch bool
+	withRemoteSupportUISessionTest(t,
+		func() (uint32, bool, error) { return 7, true, nil },
+		func(session uint32, _ string, launch bool) error {
+			gotSession, gotLaunch = session, launch
+			return nil
+		},
+	)
+	exec := &windowsExecutor{}
+	if _, err := exec.StartUI(ExecuteParams{ExpectedExePath: `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`}); err != nil {
+		t.Fatal(err)
+	}
+	if gotSession != 7 || !gotLaunch || exec.uiStatus != remoteSupportUIHealthyStatus {
+		t.Fatalf("session=%d launch=%t status=%q", gotSession, gotLaunch, exec.uiStatus)
+	}
+}
+
+func TestNativeStartUISessionZeroBecomesPendingLogin(t *testing.T) {
+	withRemoteSupportUISessionTest(t,
+		func() (uint32, bool, error) { return 0, true, nil },
+		func(uint32, string, bool) error { return errors.New("Session 0 probe must not run") },
+	)
+	exec := &windowsExecutor{}
+	if _, err := exec.StartUI(ExecuteParams{ExpectedExePath: `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.uiStatus != remoteSupportUIPendingLoginStatus {
+		t.Fatalf("status=%q", exec.uiStatus)
+	}
+}
+
+func TestNativeStartUINoLoggedInUserBecomesPendingLogin(t *testing.T) {
+	withRemoteSupportUISessionTest(t,
+		func() (uint32, bool, error) { return 0, false, nil },
+		func(uint32, string, bool) error { return errors.New("UI probe must not run") },
+	)
+	exec := &windowsExecutor{}
+	if _, err := exec.StartUI(ExecuteParams{ExpectedExePath: `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.uiStatus != remoteSupportUIPendingLoginStatus {
+		t.Fatalf("status=%q", exec.uiStatus)
+	}
+}
+
+func TestNativeStartUIActiveSessionFailureIsNonfatal(t *testing.T) {
+	withRemoteSupportUISessionTest(t,
+		func() (uint32, bool, error) { return 9, true, nil },
+		func(uint32, string, bool) error { return errors.New("no usable main window") },
+	)
+	exec := &windowsExecutor{}
+	if _, err := exec.StartUI(ExecuteParams{ExpectedExePath: `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.uiStatus != remoteSupportUILaunchFailedStatus {
+		t.Fatalf("status=%q", exec.uiStatus)
+	}
+}
 
 func withNativeSetNamedSecurityInfo(t *testing.T, fn func(string, windows.SE_OBJECT_TYPE, windows.SECURITY_INFORMATION, *windows.SID, *windows.SID, *windows.ACL, *windows.ACL) error) {
 	t.Helper()

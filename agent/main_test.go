@@ -53,6 +53,7 @@ func TestUtilityCommandSetIncludesInstallerHelpers(t *testing.T) {
 		"bootstrap-config",
 		"bootstrap-config-contract",
 		"rs-tray-task",
+		"remote-support-ui-session",
 		"installer-marker",
 		"installer-ensure-service",
 		"installer-start-service",

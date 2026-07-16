@@ -42,6 +42,7 @@ type corruptConfigBackup struct {
 type windowsExecutor struct {
 	preserved   []configBackup
 	quarantined []corruptConfigBackup
+	uiStatus    string
 }
 
 // NewWindowsExecutor returns the live Windows Executor.
@@ -826,8 +827,8 @@ func (e *windowsExecutor) ValidateFinal(p ExecuteParams, m *BundleManifest) erro
 	if !remoteSupportConfigsReadable(p) {
 		return fmt.Errorf("no readable Remote Support TOML config after recovery")
 	}
-	if !restoreRemoteSupportMainWindow(p.ExpectedExePath) {
-		return fmt.Errorf("Remote Support main UI is not available after launch")
+	if e.uiStatus == "" {
+		return fmt.Errorf("Remote Support UI validation was not attempted")
 	}
 	return nil
 }

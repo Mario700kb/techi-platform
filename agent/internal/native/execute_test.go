@@ -14,9 +14,10 @@ import (
 // told to fail a specific step, so the orchestrator's ordering, dry-run gating,
 // rollback, and refusal behaviour are all testable off Windows.
 type fakeExecutor struct {
-	calls   []string
-	failOn  map[string]error
-	killExe string // records the exact path passed to StopProcessExact
+	calls            []string
+	failOn           map[string]error
+	killExe          string // records the exact path passed to StopProcessExact
+	completionStatus string
 }
 
 type malformedConfigExecutor struct {
@@ -103,6 +104,7 @@ func (f *fakeExecutor) ValidateFinal(ExecuteParams, *BundleManifest) error {
 	return f.note("ValidateFinal")
 }
 func (f *fakeExecutor) Health(ExecuteParams) string { return "fake-health" }
+func (f *fakeExecutor) CompletionStatus() string    { return f.completionStatus }
 
 func (f *fakeExecutor) called(name string) bool {
 	for _, c := range f.calls {
@@ -340,6 +342,35 @@ func TestExecute_InvalidConfigQuarantineContinuesFullReinstall(t *testing.T) {
 	}
 	if string(f.fresh) == string(f.corrupt) || strings.Contains(string(f.fresh), "invalid assignment") {
 		t.Fatalf("corrupt config was restored: %q", f.fresh)
+	}
+}
+
+func TestExecute_NoLoggedInUserKeepsValidReinstall(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	f := newFake()
+	f.completionStatus = remoteSupportUIPendingLoginStatus
+	r := ExecutePlan(plan, safeParams(t), f, true)
+	if !r.OK || r.Message != remoteSupportUIPendingLoginStatus {
+		t.Fatalf("pending-login repair must succeed: %+v", r)
+	}
+	if r.Rollback != nil || f.called("Undo:PromoteFiles") {
+		t.Fatalf("valid reinstall rolled back without a desktop session: result=%+v calls=%v", r, f.calls)
+	}
+	if !f.called("ValidateFinal") {
+		t.Fatalf("runtime/service/config validation did not finish: %v", f.calls)
+	}
+}
+
+func TestExecute_UILaunchFailureDoesNotRollbackValidReinstall(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	f := newFake()
+	f.completionStatus = remoteSupportUILaunchFailedStatus
+	r := ExecutePlan(plan, safeParams(t), f, true)
+	if r.OK || r.Code != ExitValidationError || r.Message != remoteSupportUILaunchFailedStatus {
+		t.Fatalf("UI launch failure status is incorrect: %+v", r)
+	}
+	if r.Rollback != nil || f.called("Undo:PromoteFiles") {
+		t.Fatalf("UI-only failure rolled back valid runtime: result=%+v calls=%v", r, f.calls)
 	}
 }
 

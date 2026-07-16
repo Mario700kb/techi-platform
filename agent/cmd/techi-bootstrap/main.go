@@ -35,10 +35,27 @@ func main() {
 		os.Exit(runApplyPolicy(args))
 	case "repair-remote-support":
 		os.Exit(runRepairRemoteSupport(args))
+	case "remote-support-ui-session":
+		os.Exit(runRemoteSupportUISession(args))
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(int(native.ExitBadArgs))
 	}
+}
+
+func runRemoteSupportUISession(args []string) int {
+	fs := flag.NewFlagSet("remote-support-ui-session", flag.ContinueOnError)
+	exe := fs.String("exe", "", "Remote Support executable")
+	sessionID := fs.Uint("session-id", 0, "expected interactive Windows session")
+	launch := fs.Bool("launch", false, "launch the normal desktop application if needed")
+	if err := fs.Parse(args); err != nil || *exe == "" || *sessionID == 0 {
+		return int(native.ExitBadArgs)
+	}
+	if err := native.RunRemoteSupportUISessionProbe(*exe, uint32(*sessionID), *launch); err != nil {
+		fmt.Fprintf(os.Stderr, "remote-support-ui-session: %v\n", err)
+		return int(native.ExitError)
+	}
+	return int(native.ExitOK)
 }
 
 // rsFlags are the deployment facts about Remote Support. Defaults match the WiX
