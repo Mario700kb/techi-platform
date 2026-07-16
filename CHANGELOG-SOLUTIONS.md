@@ -4,6 +4,37 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Fix Remote Support MSI SYSTEM custom actions
+
+**Confirmed failure:** `StopRemoteSupportRuntimeBeforeInstall` reached Windows
+as `Where-Object  | ForEach-Object ...`, and
+`ConfigureRemoteSupportRuntime` exited 1 with MSI Error 1722. Rollback then
+removed the newly copied Remote Support runtime.
+
+**Root cause:** WiX formatted PowerShell's `[IO.Path]` as an MSI property and
+removed it from the inline stop command. Separately, the configure helper
+discarded all `sc.exe` stdout, stderr, and exit codes, deleted/recreated an
+existing service with fixed sleeps, and immediately required `Running`; a
+normal `StartPending` state or a service still marked for deletion therefore
+became an unexplained fatal exit 1.
+
+**Fix:** the stop actions use an MSI-safe `Where-Object -Property
+ExecutablePath -In -Value` filter. Configure now runs through deferred SYSTEM
+`WixQuietExec`, so helper stdout/stderr reaches the verbose MSI log. The helper
+validates the EXE and `data/app.so`, creates a missing service or updates an
+existing service in place, captures every native result with its step, and
+waits for SCM `Running`. Only missing/empty required runtime or an unusable
+service is fatal; process cleanup, service recovery-policy setup, and tray-task
+setup are warnings.
+
+**Verification gate:** focused source tests plus a Windows CI harness cover a
+clean SYSTEM install, repair after deleting `data/app.so`, and uninstall/reinstall.
+Every install must return 0 and retain the EXE, Flutter runtime, `app.so`, and
+running service. MSI logs are uploaded even on failure. Device 11 remains
+unresolved until CI and the endpoint retest pass.
+
+---
+
 ## 2026-07-16 — Correct production binding for clean Remote Support reinstall
 
 **Observed:** Device 11 appeared to repeat the legacy native

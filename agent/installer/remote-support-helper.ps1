@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$ExePath
 )
 
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 
 $serviceName = 'TECHI Remote Support'
 $taskName = 'TECHI Remote Support Tray'
@@ -11,11 +11,23 @@ $logPath = Join-Path $logDir 'remote-support-install.log'
 $system32 = Join-Path $env:SystemRoot 'System32'
 $scExe = Join-Path $system32 'sc.exe'
 $schtasksExe = Join-Path $system32 'schtasks.exe'
+$script:currentStep = 'initialize'
 
 function Write-InstallLog([string]$Message) {
-    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Add-Content -Path $logPath -Value "$stamp [remote-support-msi] $Message"
+    $line = "$stamp [remote-support-msi] $Message"
+    [Console]::Out.WriteLine($line)
+    try {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        Add-Content -LiteralPath $logPath -Value $line -ErrorAction Stop
+    } catch {
+        [Console]::Error.WriteLine("$line; log_file_error=$($_.Exception.Message)")
+    }
+}
+
+function Set-InstallStep([string]$Step) {
+    $script:currentStep = $Step
+    Write-InstallLog "step=$Step begin"
 }
 
 function Get-RSServiceStatus {
@@ -24,54 +36,145 @@ function Get-RSServiceStatus {
     return [string]$svc.Status
 }
 
-function Stop-OwnedRSProcesses {
-    $approved = @(
-        [IO.Path]::GetFullPath($ExePath),
-        [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($ExePath)) 'rustdesk.exe'))
+function Format-NativeOutput([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '<empty>' }
+    return (($Value -replace '[\r\n]+', ' ') -replace '\s{2,}', ' ').Trim()
+}
+
+function Invoke-LoggedNative {
+    param(
+        [Parameter(Mandatory=$true)][string]$Step,
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory=$true)][string[]]$Arguments,
+        [int[]]$AllowedExitCodes = @(0),
+        [switch]$Fatal
     )
-    foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
-        if ($process.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($process.ExecutablePath)) {
-            $null = Invoke-CimMethod -InputObject $process -MethodName Terminate -ErrorAction SilentlyContinue
+
+    $script:currentStep = $Step
+    $stdoutPath = [IO.Path]::GetTempFileName()
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        & $FilePath @Arguments 1> $stdoutPath 2> $stderrPath
+        $exitCode = $LASTEXITCODE
+        $stdout = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+        $stderr = Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
+        $stdoutText = Format-NativeOutput $stdout
+        $stderrText = Format-NativeOutput $stderr
+        Write-InstallLog "step=$Step exit_code=$exitCode stdout=$stdoutText stderr=$stderrText"
+
+        if ($AllowedExitCodes -notcontains $exitCode) {
+            $message = "step=$Step exit_code=$exitCode stdout=$stdoutText stderr=$stderrText"
+            if ($Fatal) { throw $message }
+            Write-InstallLog "warning $message"
         }
+        return $exitCode
+    } catch {
+        if ($Fatal) { throw }
+        Write-InstallLog "warning step=$Step launch_error=$($_.Exception.Message)"
+        return -1
+    } finally {
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-OwnedRSProcesses {
+    $script:currentStep = 'stop_owned_processes'
+    try {
+        $approved = @(
+            [IO.Path]::GetFullPath($ExePath),
+            [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($ExePath)) 'rustdesk.exe'))
+        )
+        foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
+            if (!$process.ExecutablePath) { continue }
+            try {
+                $processPath = [IO.Path]::GetFullPath($process.ExecutablePath)
+                if ($approved -contains $processPath) {
+                    $null = Invoke-CimMethod -InputObject $process -MethodName Terminate -ErrorAction Stop
+                    Write-InstallLog "step=stop_owned_processes terminated_pid=$($process.ProcessId) path=$processPath"
+                }
+            } catch {
+                Write-InstallLog "warning step=stop_owned_processes pid=$($process.ProcessId) error=$($_.Exception.Message)"
+            }
+        }
+    } catch {
+        Write-InstallLog "warning step=stop_owned_processes query_error=$($_.Exception.Message)"
+    }
+}
+
+function Wait-RSServiceRunning([int]$TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        $status = Get-RSServiceStatus
+        Write-InstallLog "step=wait_service status=$status"
+        if ($status -eq 'Running') { return $true }
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return $false
+}
+
+function Configure-TrayTask {
+    $script:currentStep = 'configure_tray_task'
+    try {
+        $action = New-ScheduledTaskAction -Execute $ExePath -Argument '--tray'
+        $trigger = New-ScheduledTaskTrigger -AtLogOn
+        $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+        $null = Invoke-LoggedNative -Step 'start_tray_task' -FilePath $schtasksExe -Arguments @('/run', '/tn', $taskName)
+        Write-InstallLog "step=configure_tray_task result=registered"
+    } catch {
+        Write-InstallLog "warning step=configure_tray_task error=$($_.Exception.Message)"
     }
 }
 
 try {
-    Write-InstallLog "begin exe=$ExePath"
-    if (!(Test-Path -LiteralPath $ExePath)) {
-        throw "remote support exe not found: $ExePath"
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    Write-InstallLog "begin identity=$identity exe=$ExePath"
+
+    Set-InstallStep 'validate_runtime'
+    $appSoPath = Join-Path ([IO.Path]::GetDirectoryName($ExePath)) 'data\app.so'
+    foreach ($requiredFile in @($ExePath, $appSoPath)) {
+        if (!(Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+            throw "required runtime file not found: $requiredFile"
+        }
+        if ((Get-Item -LiteralPath $requiredFile).Length -le 0) {
+            throw "required runtime file is empty: $requiredFile"
+        }
     }
 
     Stop-OwnedRSProcesses
 
+    Set-InstallStep 'configure_service'
     $status = Get-RSServiceStatus
-    Write-InstallLog "service status before=$status"
+    Write-InstallLog "step=configure_service status_before=$status"
     if ($status -ne 'missing') {
-        Start-Process -FilePath $scExe -ArgumentList @('stop', $serviceName) -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
-        Start-Process -FilePath $scExe -ArgumentList @('delete', $serviceName) -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
+        $null = Invoke-LoggedNative -Step 'stop_service' -FilePath $scExe -Arguments @('stop', $serviceName) -AllowedExitCodes @(0, 1062)
     }
 
     $binPath = '"' + $ExePath + '" --service'
-    Start-Process -FilePath $scExe -ArgumentList @('create', $serviceName, ('binPath= ' + $binPath), 'start= auto', 'DisplayName= TECHI Remote Support') -WindowStyle Hidden -Wait
-    Start-Process -FilePath $scExe -ArgumentList @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/15000/restart/15000/restart/60000') -WindowStyle Hidden -Wait
-    Start-Process -FilePath $scExe -ArgumentList @('start', $serviceName) -WindowStyle Hidden -Wait
+    if ($status -eq 'missing') {
+        $null = Invoke-LoggedNative -Step 'create_service' -FilePath $scExe -Arguments @('create', $serviceName, ('binPath= ' + $binPath), 'start= auto', 'DisplayName= TECHI Remote Support') -Fatal
+    } else {
+        $null = Invoke-LoggedNative -Step 'configure_service' -FilePath $scExe -Arguments @('config', $serviceName, ('binPath= ' + $binPath), 'start= auto', 'DisplayName= TECHI Remote Support') -Fatal
+    }
 
-    $action = New-ScheduledTaskAction -Execute $ExePath -Argument '--tray'
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    & $schtasksExe /run /tn $taskName | Out-Null
+    $null = Invoke-LoggedNative -Step 'configure_service_recovery' -FilePath $scExe -Arguments @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/15000/restart/15000/restart/60000')
+    $null = Invoke-LoggedNative -Step 'start_service' -FilePath $scExe -Arguments @('start', $serviceName) -AllowedExitCodes @(0, 1056) -Fatal
+
+    Set-InstallStep 'wait_service'
+    if (!(Wait-RSServiceRunning -TimeoutSeconds 30)) {
+        $finalStatus = Get-RSServiceStatus
+        throw "service did not reach Running within 30 seconds; status=$finalStatus"
+    }
+
+    Configure-TrayTask
 
     $final = Get-RSServiceStatus
-    Write-InstallLog "service final=$final task=registered"
-    if ($final -ne 'Running') {
-        throw "service not running after install; status=$final"
-    }
+    Write-InstallLog "success service_status=$final runtime_exe=true app_so=true"
     exit 0
 } catch {
-    Write-InstallLog ("error: " + $_.Exception.Message)
+    $message = $_.Exception.Message
+    Write-InstallLog "fatal step=$script:currentStep error=$message"
+    [Console]::Error.WriteLine("ConfigureRemoteSupportRuntime failed: step=$script:currentStep error=$message")
     exit 1
 }

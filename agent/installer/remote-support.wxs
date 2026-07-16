@@ -121,30 +121,33 @@
                   Impersonate="no"
                   Return="ignore"/>
 
+    <CustomAction Id="ConfigureRemoteSupportRuntime.SetParam"
+                  Property="ConfigureRemoteSupportRuntime"
+                  Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REMOTESUPPORTFOLDER]remote-support-helper.ps1&quot; -ExePath &quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot;"/>
     <CustomAction Id="ConfigureRemoteSupportRuntime"
-                  Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[REMOTESUPPORTFOLDER]remote-support-helper.ps1&quot; -ExePath &quot;[REMOTESUPPORTFOLDER]TECHI Remote Support.exe&quot;"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check"/>
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeInstall"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@([IO.Path]::GetFullPath((Join-Path $root 'TECHI Remote Support.exe')),[IO.Path]::GetFullPath((Join-Path $root 'rustdesk.exe'))); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($_.ExecutablePath) } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@((Join-Path $root 'TECHI Remote Support.exe'),(Join-Path $root 'rustdesk.exe')); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object -Property ExecutablePath -In -Value $approved | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
     <CustomAction Id="StopRemoteSupportRuntimeBeforeRemove"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@([IO.Path]::GetFullPath((Join-Path $root 'TECHI Remote Support.exe')),[IO.Path]::GetFullPath((Join-Path $root 'rustdesk.exe'))); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $approved -contains [IO.Path]::GetFullPath($_.ExecutablePath) } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Stop-Service -Name 'TECHI Remote Support' -Force -ErrorAction SilentlyContinue; $root='[REMOTESUPPORTFOLDER]'; $approved=@((Join-Path $root 'TECHI Remote Support.exe'),(Join-Path $root 'rustdesk.exe')); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object -Property ExecutablePath -In -Value $approved | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
     <CustomAction Id="RemoveRemoteSupportRuntime"
                   Directory="REMOTESUPPORTFOLDER"
-                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; $s=Join-Path $env:SystemRoot 'System32'; Start-Process -FilePath (Join-Path $s 'sc.exe') -ArgumentList @('delete','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+                  ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray' -Confirm:$$false -ErrorAction SilentlyContinue; $s=Join-Path $env:SystemRoot 'System32'; &amp; (Join-Path $s 'sc.exe') delete 'TECHI Remote Support' | Out-Null"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -155,7 +158,8 @@
       <Custom Action="WriteTechiConfigs" After="WriteTechiConfigs.SetParam" Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs" Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal" After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
-      <Custom Action="ConfigureRemoteSupportRuntime" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <Custom Action="ConfigureRemoteSupportRuntime.SetParam" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <Custom Action="ConfigureRemoteSupportRuntime" After="ConfigureRemoteSupportRuntime.SetParam" Condition="NOT REMOVE"/>
       <Custom Action="StopRemoteSupportRuntimeBeforeRemove" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;"/>
       <Custom Action="RemoveRemoteSupportRuntime" After="StopRemoteSupportRuntimeBeforeRemove" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>
     </InstallExecuteSequence>

@@ -63,3 +63,33 @@ returns `reinstall phase=<phase>` with the underlying OS/MSI error. MSI failures
 also include the verbose log path under
 `C:\ProgramData\TechiAgent\recovery\remote-support-msi\logs`. Do not run Agent
 repair, reinstall, GPO, or rollout procedures as part of this action.
+
+### MSI custom-action validation
+
+The Remote Support MSI configures its service through a deferred SYSTEM custom
+action. Its verbose MSI log must contain `WixQuietExec` output with:
+
+- `identity=NT AUTHORITY\SYSTEM`;
+- each `step=...`, native `exit_code`, `stdout`, and `stderr`;
+- `success service_status=Running runtime_exe=true app_so=true`.
+
+Warnings from exact-process cleanup, service recovery-policy configuration, or
+tray-task setup do not make the MSI fatal. A fatal Error 1722 is valid only when
+the log identifies a missing/empty required runtime file or a service
+create/config/start failure that prevents SCM from reaching `Running` within 30
+seconds. Preserve the full verbose MSI log when either occurs.
+
+Before publishing a Remote Support MSI, the Windows validation job must pass
+all three cases: clean install, reinstall after deleting `data\app.so`, and
+uninstall/reinstall. Each install must return exit code 0 and leave these files
+non-empty plus the service Running:
+
+- `TECHI Remote Support.exe`;
+- `flutter_windows.dll`;
+- `librustdesk.dll`;
+- `data\app.so`;
+- `data\icudtl.dat`.
+
+The CI artifact `TECHI-Remote-Support-MSI-validation-logs` contains the verbose
+logs for these cases. Do not activate a package or retest an endpoint when this
+gate fails.

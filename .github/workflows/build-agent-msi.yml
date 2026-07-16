@@ -52,12 +52,13 @@ jobs:
       #    -- https://docs.firegiant.com/wix/osmf/ -- "wix eula accept"     #
       #    e pranon nje here per-user/per-computer per kete runner.         #
       # ------------------------------------------------------------------ #
-      - name: Install WiX v7 + UI extension
+      - name: Install WiX v7 + UI and Util extensions
         shell: pwsh
         run: |
           dotnet tool install --global wix --version 7.0.0
           wix eula accept wix7
           wix extension add --global WixToolset.UI.wixext/7.0.0
+          wix extension add --global WixToolset.Util.wixext/7.0.0
 
       # ------------------------------------------------------------------ #
       # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
@@ -215,6 +216,7 @@ jobs:
           $buildCommit = "${{ github.sha }}"
           wix build remote-support.wxs `
             -arch x64 `
+            -ext WixToolset.Util.wixext `
             -d SourceDir=. `
             -d Version=1.4.8.0 `
             -d BuildCommit=$buildCommit `
@@ -250,6 +252,23 @@ jobs:
         if: always()
         shell: pwsh
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx') -Force -ErrorAction SilentlyContinue
+
+      - name: Validate Remote Support MSI under SYSTEM
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          .\test-remote-support-msi.ps1 `
+            -MsiPath .\TECHI-Remote-Support-1.4.8.msi `
+            -LogDirectory (Join-Path $env:RUNNER_TEMP 'techi-rs-msi-tests')
+
+      - name: Upload Remote Support MSI validation logs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: TECHI-Remote-Support-MSI-validation-logs
+          path: ${{ runner.temp }}/techi-rs-msi-tests/*.log
+          retention-days: 30
+          if-no-files-found: warn
 
       # Standalone techi-agent.exe — the SAME binary embedded in the Agent MSI
       # (built once at step 7). Upload it as the Agent Binary package so a

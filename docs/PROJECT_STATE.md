@@ -99,6 +99,26 @@ and the active Remote Support MSI download endpoint all passed. No reinstall
 action was executed during this binding audit. Device 11 remains unresolved
 until the operator performs the RS-only endpoint retest.
 
+**2026-07-16 Remote Support MSI custom-action correction:** the generated
+`StopRemoteSupportRuntimeBeforeInstall` command used the PowerShell type token
+`[IO.Path]` inside an MSI-formatted command. Windows Installer treated the
+bracketed token as an MSI property and removed it, producing an empty invalid
+`Where-Object` filter. The stop actions now use PowerShell's property comparison
+form and contain no bracketed type token or filter script block. The SYSTEM
+runtime helper also discarded every `sc.exe` exit code/output, deleted and
+immediately recreated an existing service, and performed a one-shot `Running`
+check that made a normal `StartPending` state fatal. It now creates a missing
+service or reconfigures an existing one, captures each native command's stdout,
+stderr, exit code, and failing step, and waits up to 30 seconds for `Running`.
+WiX `WixQuietExec` copies those diagnostics into the verbose MSI log. Missing
+or empty EXE/`data/app.so` and unusable service creation/configuration/start
+remain fatal; process cleanup, recovery-policy setup, and tray-task setup are
+warning-only. Windows CI installs the final MSI as a deferred SYSTEM action and
+requires exit code 0 for clean install, damaged-runtime repair, and
+uninstall/reinstall while retaining the complete runtime and running service.
+This remains unresolved until CI passes and Device 11 is retested; Agent,
+Package Manager, GPO, NETLOGON, and rollout are unchanged.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

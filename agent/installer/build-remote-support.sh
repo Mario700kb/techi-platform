@@ -10,6 +10,7 @@ OUTPUT="TECHI-Remote-Support-${VERSION}.msi"
 cd "$SCRIPT_DIR"
 wix build remote-support.wxs \
   -arch x64 \
+  -ext WixToolset.Util.wixext \
   -d "SourceDir=$SCRIPT_DIR" \
   -d "Version=$VERSION4" \
   -o "$OUTPUT"
