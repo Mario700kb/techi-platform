@@ -30,6 +30,27 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Detect Remote Support package inputs
+        id: package-scope
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "remote_support=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $changed = @(git diff --name-only HEAD^ HEAD)
+          $remoteSupport = @($changed | Where-Object {
+            $_ -like 'remote-support-bridge/*' -or
+            $_ -eq 'scripts/verify_remote_support_connect_security.py' -or
+            $_ -like 'agent/installer/TECHI-Remote-Support/*' -or
+            $_ -in @(
+              'agent/installer/remote-support.wxs',
+              'agent/installer/remote-support-helper.ps1',
+              'agent/installer/test-remote-support-msi.ps1'
+            )
+          }).Count -gt 0
+          "remote_support=$($remoteSupport.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
       # ------------------------------------------------------------------ #
       # 2. Go 1.21                                                           #
       # ------------------------------------------------------------------ #
@@ -130,6 +151,7 @@ jobs:
         run: go build -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" -trimpath -o installer/techi-agent.exe .
 
       - name: Test and build Remote Support Connect Bridge
+        if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         working-directory: remote-support-bridge
         run: |
@@ -155,10 +177,13 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_PFX_BASE64))
           $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          foreach ($item in @(
-            @{ Path = "agent/installer/techi-agent.exe"; Description = "TECHI Platform Endpoint Agent" },
-            @{ Path = "agent/installer/techi-remote-support-bridge.exe"; Description = "TECHI Remote Support Connect Bridge" }
-          )) {
+          $items = @(
+            @{ Path = "agent/installer/techi-agent.exe"; Description = "TECHI Platform Endpoint Agent" }
+          )
+          if (Test-Path -LiteralPath "agent/installer/techi-remote-support-bridge.exe") {
+            $items += @{ Path = "agent/installer/techi-remote-support-bridge.exe"; Description = "TECHI Remote Support Connect Bridge" }
+          }
+          foreach ($item in $items) {
             & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
               /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
               /d $item.Description $item.Path
@@ -210,6 +235,7 @@ jobs:
             -o TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi
 
       - name: Build Remote Support MSI
+        if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         working-directory: agent/installer
         run: |
@@ -237,11 +263,14 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx'
           if (-not (Test-Path -LiteralPath $pfx)) { throw "Temporary signing certificate is missing" }
           $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          foreach ($path in @(
+          $paths = @(
             "TECHI-Agent-${{ steps.version.outputs.version }}.msi",
-            "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi",
-            "TECHI-Remote-Support-1.4.8.msi"
-          )) {
+            "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi"
+          )
+          if (Test-Path -LiteralPath "TECHI-Remote-Support-1.4.8.msi") {
+            $paths += "TECHI-Remote-Support-1.4.8.msi"
+          }
+          foreach ($path in $paths) {
             & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
               /f $pfx /p $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD `
               /d "TECHI Windows Package" $path
@@ -254,6 +283,7 @@ jobs:
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'techi-release-signing.pfx') -Force -ErrorAction SilentlyContinue
 
       - name: Validate Remote Support MSI under SYSTEM
+        if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         working-directory: agent/installer
         run: |
@@ -262,7 +292,7 @@ jobs:
             -LogDirectory (Join-Path $env:RUNNER_TEMP 'techi-rs-msi-tests')
 
       - name: Upload Remote Support MSI validation logs
-        if: always()
+        if: always() && steps.package-scope.outputs.remote_support == 'true'
         uses: actions/upload-artifact@v4.6.2
         with:
           name: TECHI-Remote-Support-MSI-validation-logs
@@ -303,9 +333,11 @@ jobs:
           "$agentHash  $agent" | Out-File "$agent.sha256" -Encoding utf8NoBOM
           Write-Host "Agent EXE SHA256: $agentHash"
           $remoteSupport = "TECHI-Remote-Support-1.4.8.msi"
-          $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
-          "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
-          Write-Host "Remote Support SHA256: $remoteSupportHash"
+          if (Test-Path -LiteralPath $remoteSupport) {
+            $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
+            "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
+            Write-Host "Remote Support SHA256: $remoteSupportHash"
+          }
 
       - name: Validate MSI embedded agent lineage
         shell: pwsh
@@ -423,6 +455,7 @@ jobs:
           Write-Host "MSI embedded agent matches standalone: $embeddedHash"
 
       - name: Generate Remote Support MSI identity
+        if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         working-directory: agent/installer
         run: |
@@ -508,6 +541,7 @@ jobs:
           $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-1.4.8.identity.json" -Encoding utf8NoBOM
 
       - name: Verify secure Remote Support Connect contract
+        if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         run: python scripts/verify_remote_support_connect_security.py
 
@@ -536,6 +570,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Remote Support MSI artifact
+        if: steps.package-scope.outputs.remote_support == 'true'
         uses: actions/upload-artifact@v4.6.2
         with:
           name: TECHI-Remote-Support-1.4.8

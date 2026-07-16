@@ -143,6 +143,21 @@ fails with `identity_mismatch`. MSI 1.4.8 packaging of binary 1.4.6+64 is
 unchanged and expected. Source/CI validation and Device 11 retest remain
 pending; no package activation or rollout is enabled.
 
+**2026-07-16 `repair_config` optional-path correction candidate:** The identity
+synchronization contract treated both active-user Roaming and Local AppData
+roots as required because both profile entries carried the active-user marker.
+`repair_config_rustdesk` could therefore create and verify
+`AppData\Local\TECHI Remote Support\config\TECHI Remote Support2.toml` even
+though the running UI does not use that optional path, and a missing file
+failed an otherwise valid repair. The repair action now has its own narrow
+profile contract: only active-user Roaming and LocalService Roaming config
+files are written and verified. Local AppData, ProgramData, root mirrors, and
+unused systemprofile paths are not created or checked. Required-file failures
+name the exact path; semantic failures name the exact identity or managed
+option field. UI/service ID equality remains mandatory. Reinstall behavior,
+Remote Support MSI/native packages, backend, and rollout are unchanged. Agent
+CI and Device 11 retest remain pending.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

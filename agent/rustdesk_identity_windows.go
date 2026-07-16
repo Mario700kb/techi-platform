@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/sys/windows"
@@ -48,6 +49,195 @@ func loadCanonicalRustDeskIdentity() (rustDeskCanonicalIdentity, error) {
 		return rustDeskCanonicalIdentity{}, err
 	}
 	return canonical, nil
+}
+
+func loadCanonicalRustDeskRepairIdentity() (rustDeskCanonicalIdentity, error) {
+	var candidates []rustDeskIdentityCandidate
+	foundProfile := false
+	for _, profile := range rustDeskProfiles() {
+		if profile.role != rustDeskProfileUser || !profile.active || !isRustDeskRoamingProfileRoot(profile.root) {
+			continue
+		}
+		foundProfile = true
+		path := filepath.Join(profile.root, "config", rustDeskIdentityFile)
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required config missing: path=%s", path)
+		}
+		if err != nil {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required config read failed: path=%s: %w", path, err)
+		}
+		prepared, err := native.PrepareMinimalRemoteSupportConfig(path, data)
+		if err != nil {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required config invalid: path=%s: %w", path, err)
+		}
+		if !prepared.OriginalValid {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required config invalid: path=%s: %v", path, prepared.OriginalError)
+		}
+		fields := parseTOMLTopLevel(string(prepared.Content))
+		if !isNumericRustDeskID(normalizeRustDeskID(fields["id"])) && strings.TrimSpace(fields["enc_id"]) == "" {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity field mismatch: path=%s field=id/enc_id", path)
+		}
+		for _, field := range []string{"password", "salt"} {
+			if strings.TrimSpace(fields[field]) == "" {
+				return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity field mismatch: path=%s field=%s", path, field)
+			}
+		}
+		candidates = append(candidates, rustDeskIdentityCandidate{
+			path: path, profileRoot: profile.root, content: prepared.Content,
+			valid: true, userProfile: true, activeUser: true,
+		})
+	}
+	if !foundProfile {
+		return rustDeskCanonicalIdentity{}, fmt.Errorf("required profile missing: active-user Roaming")
+	}
+	canonical, err := selectCanonicalRustDeskIdentity(candidates)
+	if err != nil {
+		return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity selection failed: %w", err)
+	}
+	return canonical, nil
+}
+
+func requiredRepairRustDeskProfiles() ([]rustDeskProfile, error) {
+	profiles := rustDeskProfiles()
+	contracts := make([]rustDeskSyncProfile, 0, len(profiles))
+	byRoot := make(map[string]rustDeskProfile, len(profiles))
+	for _, profile := range profiles {
+		contracts = append(contracts, rustDeskSyncProfile{root: profile.root, role: profile.role, active: profile.active})
+		byRoot[strings.ToLower(filepath.Clean(profile.root))] = profile
+	}
+	roots, err := requiredRustDeskRepairSyncRoots(contracts)
+	if err != nil {
+		return nil, err
+	}
+	required := make([]rustDeskProfile, 0, len(roots))
+	for _, root := range roots {
+		profile, exists := byRoot[strings.ToLower(filepath.Clean(root))]
+		if !exists {
+			return nil, fmt.Errorf("required Remote Support profile disappeared: %s", root)
+		}
+		required = append(required, profile)
+	}
+	return required, nil
+}
+
+func repairRustDeskConfigPath(profile rustDeskProfile, name string) string {
+	return filepath.Join(profile.root, "config", name)
+}
+
+func synchronizeRepairRustDeskConfig(cfg *Config, canonical rustDeskCanonicalIdentity) (bool, error) {
+	profiles, err := requiredRepairRustDeskProfiles()
+	if err != nil {
+		return false, err
+	}
+	updates := []rustDeskFileUpdate{}
+	appendUpdate := func(path string, content []byte, defaultMode os.FileMode) error {
+		before, readErr := os.ReadFile(path)
+		existed := readErr == nil
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return fmt.Errorf("read config %s: %w", path, readErr)
+		}
+		if existed && bytes.Equal(before, content) {
+			return nil
+		}
+		mode := defaultMode
+		if info, statErr := os.Stat(path); statErr == nil {
+			mode = info.Mode().Perm()
+		}
+		updates = append(updates, rustDeskFileUpdate{
+			path: path, before: before, after: bytes.Clone(content), mode: mode, existed: existed, protect: true,
+		})
+		return nil
+	}
+
+	for _, profile := range profiles {
+		if err := appendUpdate(repairRustDeskConfigPath(profile, rustDeskIdentityFile), canonical.content, 0o600); err != nil {
+			return false, err
+		}
+		optionsPath := repairRustDeskConfigPath(profile, rustDeskOptionsFile)
+		options := []byte(buildRustDeskTOML(cfg))
+		if existing, readErr := os.ReadFile(optionsPath); readErr == nil {
+			patched, _ := applyTOMLOptionPatch(string(existing), managedRustDeskOptions(cfg))
+			options = []byte(patched)
+		} else if !os.IsNotExist(readErr) {
+			return false, fmt.Errorf("read options %s: %w", optionsPath, readErr)
+		}
+		if err := appendUpdate(optionsPath, options, 0o644); err != nil {
+			return false, err
+		}
+	}
+	if len(updates) > 0 {
+		if err := applyRustDeskFileUpdates(updates); err != nil {
+			return false, err
+		}
+	}
+	if err := validateRequiredRepairRustDeskFiles(cfg, canonical, profiles); err != nil {
+		if len(updates) > 0 {
+			rollbackRustDeskFileUpdates(updates)
+		}
+		return false, err
+	}
+	return len(updates) > 0, nil
+}
+
+func validateRequiredRepairRustDeskFiles(cfg *Config, canonical rustDeskCanonicalIdentity, profiles []rustDeskProfile) error {
+	for _, profile := range profiles {
+		identityPath := repairRustDeskConfigPath(profile, rustDeskIdentityFile)
+		identity, err := os.ReadFile(identityPath)
+		if os.IsNotExist(err) {
+			return fmt.Errorf("required config missing: path=%s", identityPath)
+		}
+		if err != nil {
+			return fmt.Errorf("required config read failed: path=%s: %w", identityPath, err)
+		}
+		if field := rustDeskIdentityMismatchField(identity, canonical); field != "" {
+			return fmt.Errorf("required identity field mismatch: path=%s field=%s", identityPath, field)
+		}
+
+		optionsPath := repairRustDeskConfigPath(profile, rustDeskOptionsFile)
+		options, err := os.ReadFile(optionsPath)
+		if os.IsNotExist(err) {
+			return fmt.Errorf("required config missing: path=%s", optionsPath)
+		}
+		if err != nil {
+			return fmt.Errorf("required config read failed: path=%s: %w", optionsPath, err)
+		}
+		if field := rustDeskOptionsMismatchField(string(options), cfg); field != "" {
+			return fmt.Errorf("required options field mismatch: path=%s field=%s", optionsPath, field)
+		}
+	}
+	return nil
+}
+
+func rustDeskOptionsMismatchField(content string, cfg *Config) string {
+	want := managedRustDeskOptions(cfg)
+	keys := make([]string, 0, len(want))
+	for key := range want {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	got := parseTOMLOptions(content)
+	for _, key := range keys {
+		if got[key] != want[key] {
+			return key
+		}
+	}
+	return ""
+}
+
+func validateRepairRustDeskIdentity(cfg *Config, canonical rustDeskCanonicalIdentity) error {
+	profiles, err := requiredRepairRustDeskProfiles()
+	if err != nil {
+		return err
+	}
+	if err := validateRequiredRepairRustDeskFiles(cfg, canonical, profiles); err != nil {
+		return err
+	}
+	uiID := canonical.id
+	if uiID == "" {
+		uiID = configuredRustDeskID(cfg)
+	}
+	return validateRustDeskIdentityIDs(uiID, localRustDeskIDFromCLI(rustdeskDefaultInstallPath))
 }
 
 func remoteSupportUsesSystemProfile() (bool, error) {

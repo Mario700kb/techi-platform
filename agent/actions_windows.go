@@ -189,7 +189,7 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		canonical, err := loadCanonicalRustDeskIdentity()
+		canonical, err := loadCanonicalRustDeskRepairIdentity()
 		if err != nil {
 			_ = startRustDeskServiceFn()
 			_ = startRustDeskTray()
@@ -200,7 +200,7 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 		log.Printf("[action] repair_config_rustdesk: atomically synchronizing canonical user identity")
-		changed, err := synchronizeCanonicalRustDeskConfig(cfg, canonical, false)
+		changed, err := synchronizeRepairRustDeskConfig(cfg, canonical)
 		if err != nil {
 			_ = startRustDeskServiceFn()
 			_ = startRustDeskTray()
@@ -228,7 +228,7 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 		}
 
 		time.Sleep(2 * time.Second)
-		if err := validateCanonicalRustDeskIdentity(cfg, canonical); err != nil {
+		if err := validateRepairRustDeskIdentity(cfg, canonical); err != nil {
 			done <- actionResult{err: err, stderr: err.Error()}
 			return
 		}

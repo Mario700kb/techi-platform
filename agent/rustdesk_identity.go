@@ -113,16 +113,58 @@ func requiredRustDeskSyncRoots(profiles []rustDeskSyncProfile, sourceRoot string
 	return roots
 }
 
+func requiredRustDeskRepairSyncRoots(profiles []rustDeskSyncProfile) ([]string, error) {
+	seen := map[string]bool{}
+	var roots []string
+	hasActiveUserRoaming := false
+	hasLocalServiceRoaming := false
+	for _, profile := range profiles {
+		required := false
+		switch {
+		case profile.role == rustDeskProfileUser && profile.active && isRustDeskRoamingProfileRoot(profile.root):
+			hasActiveUserRoaming = true
+			required = true
+		case profile.role == rustDeskProfileLocalService && isRustDeskRoamingProfileRoot(profile.root):
+			hasLocalServiceRoaming = true
+			required = true
+		}
+		if !required {
+			continue
+		}
+		key := strings.ToLower(filepath.Clean(profile.root))
+		if !seen[key] {
+			seen[key] = true
+			roots = append(roots, profile.root)
+		}
+	}
+	if !hasActiveUserRoaming {
+		return nil, fmt.Errorf("required profile missing: active-user Roaming")
+	}
+	if !hasLocalServiceRoaming {
+		return nil, fmt.Errorf("required profile missing: LocalService Roaming")
+	}
+	return roots, nil
+}
+
+func isRustDeskRoamingProfileRoot(root string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(filepath.ToSlash(strings.TrimSpace(root)), `\`, "/"))
+	return strings.Contains(normalized, "/appdata/roaming/")
+}
+
 func rustDeskIdentityMatches(content []byte, canonical rustDeskCanonicalIdentity) bool {
+	return rustDeskIdentityMismatchField(content, canonical) == ""
+}
+
+func rustDeskIdentityMismatchField(content []byte, canonical rustDeskCanonicalIdentity) string {
 	want := parseTOMLTopLevel(string(canonical.content))
 	got := parseTOMLTopLevel(string(content))
 	for _, key := range []string{"id", "enc_id", "password", "salt", "key_pair", "key_confirmed"} {
 		expected := strings.TrimSpace(want[key])
 		if expected != "" && strings.TrimSpace(got[key]) != expected {
-			return false
+			return key
 		}
 	}
-	return true
+	return ""
 }
 
 func validateRustDeskIdentityIDs(uiID, serviceID string) error {

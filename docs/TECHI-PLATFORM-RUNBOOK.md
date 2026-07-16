@@ -119,3 +119,18 @@ verified Remote ID for that numeric comparison. `identity_mismatch` is a failed 
 result and do not overwrite the user config with a newly generated password.
 Remote Support binary `1.4.6+64` displayed from MSI 1.4.8 is expected and is not
 an identity-repair issue.
+
+For `Repair TECHI Remote Support Config` specifically, the required files are
+`config\TECHI Remote Support.toml` and
+`config\TECHI Remote Support2.toml` under exactly these two profiles:
+
+- the active interactive user's `AppData\Roaming\TECHI Remote Support`;
+- `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support`.
+
+The active user's `AppData\Local` tree is optional. The repair action must not
+create or verify it merely because the user is active. ProgramData, root-level
+mirrors, and unused systemprofile paths are likewise outside this repair
+contract. Verify both required files and every file actually written. A
+failure must report the exact required path and field; do not replace it with a
+generic config mismatch. The final UI/service ID equality check is still
+required. These repair-only rules do not alter reinstall profile handling.

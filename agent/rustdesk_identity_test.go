@@ -68,19 +68,33 @@ func TestCanonicalIdentityAcceptsVerifiedEncryptedID(t *testing.T) {
 	}
 }
 
-func TestRequiredIdentityProfilesIncludeUserAndLocalService(t *testing.T) {
+func TestRequiredRepairProfilesIncludeOnlyUserRoamingAndLocalService(t *testing.T) {
 	profiles := []rustDeskSyncProfile{
 		{root: `C:\Users\USER\AppData\Roaming\TECHI Remote Support`, role: rustDeskProfileUser, active: true},
+		{root: `C:\Users\USER\AppData\Local\TECHI Remote Support`, role: rustDeskProfileUser, active: true},
 		{root: `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support`, role: rustDeskProfileLocalService},
 		{root: `C:\Windows\System32\config\systemprofile\AppData\Roaming\TECHI Remote Support`, role: rustDeskProfileSystem},
 	}
-	roots := requiredRustDeskSyncRoots(profiles, profiles[0].root, false)
+	roots, err := requiredRustDeskRepairSyncRoots(profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(roots, "|")
 	if !strings.Contains(joined, `C:\Users\USER`) || !strings.Contains(joined, `ServiceProfiles\LocalService`) {
 		t.Fatalf("repair_config targets missing: %v", roots)
 	}
-	if strings.Contains(joined, `systemprofile`) {
-		t.Fatalf("unused system profile included: %v", roots)
+	if len(roots) != 2 || strings.Contains(joined, `AppData\Local`) || strings.Contains(joined, `systemprofile`) {
+		t.Fatalf("optional profile included: %v", roots)
+	}
+}
+
+func TestRequiredRepairProfilesReportMissingRequiredProfile(t *testing.T) {
+	_, err := requiredRustDeskRepairSyncRoots([]rustDeskSyncProfile{
+		{root: `C:\Users\USER\AppData\Local\TECHI Remote Support`, role: rustDeskProfileUser, active: true},
+		{root: `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support`, role: rustDeskProfileLocalService},
+	})
+	if err == nil || !strings.Contains(err.Error(), "active-user Roaming") {
+		t.Fatalf("missing required profile was not identified exactly: %v", err)
 	}
 }
 
@@ -120,6 +134,14 @@ func TestIdentityMismatchDetected(t *testing.T) {
 	}
 }
 
+func TestIdentityMismatchReportsExactField(t *testing.T) {
+	canonical := rustDeskCanonicalIdentity{content: testRustDeskIdentity("123456789", "encrypted-password")}
+	changed := []byte(strings.Replace(string(canonical.content), "verified-salt", "different-salt", 1))
+	if field := rustDeskIdentityMismatchField(changed, canonical); field != "salt" {
+		t.Fatalf("mismatch field = %q, want salt", field)
+	}
+}
+
 func TestEncryptedCredentialIsNotReplacedByPlainPassword(t *testing.T) {
 	if !hasProtectedRustDeskCredential(string(testRustDeskIdentity("123456789", "encrypted-password"))) {
 		t.Fatal("valid password+salt identity was not protected")
@@ -145,9 +167,20 @@ func TestRepairConfigStopsRuntimeBeforeSynchronizingProfiles(t *testing.T) {
 	}
 	handler := source[start : start+end]
 	stop := strings.Index(handler, "stopRustDeskServiceFn()")
-	sync := strings.Index(handler, "synchronizeCanonicalRustDeskConfig(cfg, canonical, false)")
+	sync := strings.Index(handler, "synchronizeRepairRustDeskConfig(cfg, canonical)")
 	if stop < 0 || sync < 0 || stop > sync {
 		t.Fatal("repair_config must stop Remote Support before writing synchronized configs")
+	}
+	for _, required := range []string{
+		"loadCanonicalRustDeskRepairIdentity()",
+		"validateRepairRustDeskIdentity(cfg, canonical)",
+	} {
+		if !strings.Contains(handler, required) {
+			t.Fatalf("repair_config required-profile contract missing %q", required)
+		}
+	}
+	if strings.Contains(handler, "synchronizeCanonicalRustDeskConfig") || strings.Contains(handler, "validateCanonicalRustDeskIdentity") {
+		t.Fatal("repair_config must not use the reinstall profile contract")
 	}
 }
 

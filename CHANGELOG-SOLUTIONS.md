@@ -4,6 +4,31 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Exclude optional Local AppData from `repair_config` validation
+
+**Confirmed failure:** `repair_config_rustdesk` failed while verifying the
+missing optional file
+`AppData\Local\TECHI Remote Support\config\TECHI Remote Support2.toml`.
+
+**Root cause:** the shared profile selector considered every active-user root
+required. Windows profile discovery marks both Roaming and Local roots active,
+so the repair action inherited reinstall-oriented synchronization targets and
+treated optional Local AppData as mandatory.
+
+**Fix:** `repair_config_rustdesk` now selects its canonical identity only from
+the active user's Roaming `config` directory and atomically synchronizes and
+verifies only that required profile plus LocalService Roaming. It does not
+create or verify Local AppData, ProgramData, root mirrors, or unused
+systemprofile files. Required failures include the exact path and mismatched
+identity/options field. The existing post-start comparison between canonical
+UI ID and service-reported ID remains mandatory. Reinstall logic, Remote
+Support MSI/native bundles, backend, and package activation are unchanged.
+
+Device 11 remains unresolved until Agent CI passes and the endpoint repair-only
+retest succeeds.
+
+---
+
 ## 2026-07-16 — Synchronize one Remote Support identity across UI and service profiles
 
 **Confirmed failure:** Device 11's interactive-user config contained the valid
