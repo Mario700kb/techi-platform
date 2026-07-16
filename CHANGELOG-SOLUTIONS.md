@@ -4,6 +4,31 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Correct production binding for clean Remote Support reinstall
+
+**Observed:** Device 11 appeared to repeat the legacy native
+`ui_launch_failed` path after the deterministic clean-MSI commit.
+
+**Root cause:** the endpoint Agent was current, but the production backend was
+not. Device 11 reported the SHA256 of the active `2a26c77` Agent binary, and
+that binary produced the new handler's exact `reinstall phase=resolve_package`
+error. Production backend still ran ancestor commit `502f2bd`, so newly queued
+actions carried `native_bundle_*` instead of `remote_support_msi_*`.
+
+**Fix:** fast-forwarded `/opt/techi/techi-platform` and rebuilt/recreated only
+the backend container at `2a26c77`. The live queue code now binds the active
+Remote Support 1.4.8 MSI version, filename, and SHA256 and has no native-bundle
+binding for `reinstall_rustdesk`. No Agent package, feature flag, Package
+Manager record, frontend, database, GPO, NETLOGON, or repair implementation was
+changed.
+
+**Verification:** backend healthy, deploy guard passed, `/health` 200, active
+Remote Support MSI endpoint 200, authenticated heartbeat traffic remained 204,
+and all routing flags stayed disabled. No reinstall action was run during the
+audit. Device 11 endpoint retest remains pending.
+
+---
+
 ## 2026-07-16 — Deterministic clean MSI reinstall for Remote Support
 
 **Confirmed failure:** the manual `Reinstall TECHI Remote Support` action used

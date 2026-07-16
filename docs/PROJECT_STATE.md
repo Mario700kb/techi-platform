@@ -77,6 +77,28 @@ enrollment/auth/heartbeat, and rollout gates are unchanged. Source tests and
 CI are required, followed by a Device 11 endpoint retest. **Not resolved and
 not approved for fleet rollout until that endpoint retest passes.**
 
+**2026-07-16 deployment/binding verification:** Device 11 was already running
+the Agent built from `2a26c77` (`agent_sha256=3d52ca13...`; the active Agent MSI
+embeds `BuildCommit=2a26c77efec9525e9fcc232bbe5f88b8b17e47cf`). The apparent
+legacy retry was deployment skew: production backend commit `502f2bd` still
+bound `reinstall_rustdesk` actions to `native_bundle_*`. Actions 2256-2262
+therefore reached the legacy native repair path. Action 2264, after the new
+Agent reached Device 11 but before the backend deployment, proved the new
+handler was active by stopping at
+`reinstall phase=resolve_package: active Remote Support MSI metadata is
+incomplete`; its stored payload still contained only `native_bundle_*`.
+
+Production backend was fast-forwarded and rebuilt at `2a26c77` only. The live
+container now binds `remote_support_msi_version`, filename, and SHA256 from the
+active `remote_support_msi` package (`TECHI-Remote-Support-1.4.8.msi`, SHA256
+`55c1a4db...`) and contains no legacy native-bundle binding in
+`RemoteActionService.queue_action`. `NATIVE_BOOTSTRAP_ENABLED=false`,
+`AGENT_ROLLOUT_MODE=disabled`, and `REMOTE_SUPPORT_AUTO_REPAIR_MODE=disabled`;
+none routes Device 11. Backend health, deploy guard, heartbeat traffic, `/health`,
+and the active Remote Support MSI download endpoint all passed. No reinstall
+action was executed during this binding audit. Device 11 remains unresolved
+until the operator performs the RS-only endpoint retest.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**
