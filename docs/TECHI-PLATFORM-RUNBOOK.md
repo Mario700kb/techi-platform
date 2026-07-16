@@ -134,3 +134,28 @@ contract. Verify both required files and every file actually written. A
 failure must report the exact required path and field; do not replace it with a
 generic config mismatch. The final UI/service ID equality check is still
 required. These repair-only rules do not alter reinstall profile handling.
+
+RustDesk 1.4.6 derives its local device ID only from the suffixless
+`config\TECHI Remote Support.toml` file. Treat these fields as one identity:
+`id`/`enc_id`, `password`, `salt`, `key_pair`, and `key_confirmed`; preserve
+`keys_confirmed` when present. `TECHI Remote Support2.toml` is the separate
+options store. `TECHI Remote Support_local.toml` stores UI-local state such as
+the most recently used remote peer and is not a local identity source.
+
+For config repair, do not copy an encrypted `enc_id` alone between the user and
+LocalService profiles. Stop the service and every owned server/tray/UI process,
+then atomically write the complete canonical material to both required
+suffixless files with the verified existing UI ID in plaintext `id` and an
+empty `enc_id`. On first load, each RustDesk profile will encrypt that same ID
+for its runtime context. Missing key pair or key confirmation is a failed
+repair; never allow RustDesk to generate replacement identity material.
+
+Restart and validate in this order:
+
+1. Start the Remote Support service.
+2. Require the live service ID to equal the canonical UI ID.
+3. Launch the normal UI in the active interactive session and require a usable main window.
+4. Require the live ID to still equal the canonical UI ID before reporting success.
+
+Do not launch the UI after a service identity mismatch, and do not report a
+file-only semantic match as a successful identity repair.

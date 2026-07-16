@@ -4,6 +4,35 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Preserve one decryptable Remote Support identity during config repair
+
+**Confirmed failure:** after `repair_config_rustdesk`, Device 11's UI retained
+ID `90498408` while the service reported generated ID `1967664801`.
+
+**Root cause:** RustDesk loads its device identity from the suffixless
+`config\TECHI Remote Support.toml`. The repair copied the active user's
+encrypted `enc_id` into LocalService and required only ID/encoded ID, password,
+and salt. It could therefore proceed without the key pair and key-confirmation
+material needed to retain and decrypt the identity. RustDesk generates a new
+ID when `enc_id` cannot be decrypted and remains non-empty. The `2.toml` file
+contains options, and `_local.toml` contains local UI state; neither derives
+the device ID.
+
+**Fix:** repair now requires and preserves password, salt, key pair, and key
+confirmation, retaining host key confirmations when present. With all Remote
+Support processes stopped, it materializes the existing canonical UI ID as
+plaintext `id` and clears `enc_id` in both required suffixless identity files.
+This lets active-user and LocalService runtimes encrypt the same existing ID in
+their own context without generating a replacement. All required files are
+written through the existing atomic transaction. Service startup and exact ID
+validation complete before the interactive UI is launched; a usable UI and
+the same live ID are required before success.
+
+Reinstall logic, Remote Support MSI, backend, Package Manager, and rollout are
+unchanged. Device 11 remains unresolved until Agent CI and endpoint retest pass.
+
+---
+
 ## 2026-07-16 — Exclude optional Local AppData from `repair_config` validation
 
 **Confirmed failure:** `repair_config_rustdesk` failed while verifying the

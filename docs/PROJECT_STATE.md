@@ -158,6 +158,25 @@ option field. UI/service ID equality remains mandatory. Reinstall behavior,
 Remote Support MSI/native packages, backend, and rollout are unchanged. Agent
 CI and Device 11 retest remain pending.
 
+**2026-07-16 Remote Support encrypted-identity synchronization candidate:**
+Device 11 correctly exposed a post-repair mismatch: UI ID `90498408`, service
+ID `1967664801`. RustDesk 1.4.6 derives the local device identity from the
+suffixless `config\TECHI Remote Support.toml` `Config` object. Its required
+identity material is `id`/`enc_id`, password, salt, key pair, and key
+confirmation; host key confirmations are retained when present.
+`TECHI Remote Support2.toml` is options-only, while
+`TECHI Remote Support_local.toml` stores UI state and does not provide the
+local device identity. The prior repair copied encrypted `enc_id` bytes and
+accepted identity files without a key pair or key confirmation. If LocalService
+could not decrypt that `enc_id`, RustDesk rejected the ID and generated a new
+one. Repair now preserves the canonical active-user identity material, writes
+the known UI ID as plaintext `id` with an empty `enc_id` while all runtimes are
+stopped, and lets each profile re-encrypt the same ID in its own runtime
+context. The service must report the canonical ID before interactive UI launch;
+the usable UI and live ID are then verified again before success. Reinstall,
+MSI, backend, Package Manager, and rollout remain unchanged. Agent CI and the
+Device 11 endpoint retest are pending.
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

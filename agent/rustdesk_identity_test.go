@@ -142,6 +142,54 @@ func TestIdentityMismatchReportsExactField(t *testing.T) {
 	}
 }
 
+func TestRepairIdentityMaterializesCanonicalUIIDAndCompleteMaterial(t *testing.T) {
+	original := []byte("enc_id = 'profile-encrypted-id'\n" +
+		"password = 'encrypted-password'\n" +
+		"salt = 'verified-salt'\n" +
+		"key_pair = [[1, 2], [3, 4]]\n" +
+		"key_confirmed = true\n" +
+		"keys_confirmed = { 'server' = true }\n")
+	materialized, id, err := materializeRustDeskRepairIdentity(original, "90498408")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := parseTOMLTopLevel(string(materialized))
+	if id != "90498408" || fields["id"] != "90498408" || fields["enc_id"] != "" {
+		t.Fatalf("canonical ID was not materialized safely: id=%q fields=%v", id, fields)
+	}
+	for _, field := range []string{"password", "salt", "key_pair", "key_confirmed", "keys_confirmed"} {
+		if fields[field] != parseTOMLTopLevel(string(original))[field] {
+			t.Fatalf("identity field %s changed", field)
+		}
+	}
+}
+
+func TestRepairIdentityRejectsMissingKeyPairInsteadOfGeneratingIdentity(t *testing.T) {
+	content := []byte("enc_id = 'profile-encrypted-id'\npassword = 'encrypted-password'\nsalt = 'verified-salt'\nkey_confirmed = true\n")
+	_, _, err := materializeRustDeskRepairIdentity(content, "90498408")
+	if err == nil || !strings.Contains(err.Error(), "field=key_pair") {
+		t.Fatalf("missing key pair was not rejected exactly: %v", err)
+	}
+}
+
+func TestRepairRuntimeIdentityAcceptsProfileReencryptedCanonicalID(t *testing.T) {
+	materialized, id, err := materializeRustDeskRepairIdentity(testRustDeskIdentity("90498408", "encrypted-password"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := rustDeskCanonicalIdentity{content: materialized, id: id}
+	reencryptedContent, _ := applyTOMLTopLevelPatch(string(materialized), "id", "")
+	reencryptedContent, _ = applyTOMLTopLevelPatch(reencryptedContent, "enc_id", "service-encrypted-90498408")
+	reencrypted := []byte(reencryptedContent)
+	if field := rustDeskRepairRuntimeIdentityMismatchField(reencrypted, canonical); field != "" {
+		t.Fatalf("profile re-encryption rejected at field %q", field)
+	}
+	changedKey := []byte(strings.Replace(string(reencrypted), "['public', 'private']", "['other', 'key']", 1))
+	if field := rustDeskRepairRuntimeIdentityMismatchField(changedKey, canonical); field != "key_pair" {
+		t.Fatalf("changed key pair mismatch field = %q", field)
+	}
+}
+
 func TestEncryptedCredentialIsNotReplacedByPlainPassword(t *testing.T) {
 	if !hasProtectedRustDeskCredential(string(testRustDeskIdentity("123456789", "encrypted-password"))) {
 		t.Fatal("valid password+salt identity was not protected")
@@ -172,8 +220,9 @@ func TestRepairConfigStopsRuntimeBeforeSynchronizingProfiles(t *testing.T) {
 		t.Fatal("repair_config must stop Remote Support before writing synchronized configs")
 	}
 	for _, required := range []string{
-		"loadCanonicalRustDeskRepairIdentity()",
+		"loadCanonicalRustDeskRepairIdentity(cfg)",
 		"validateRepairRustDeskIdentity(cfg, canonical)",
+		"native.LaunchRemoteSupportUI(rustdeskDefaultInstallPath)",
 	} {
 		if !strings.Contains(handler, required) {
 			t.Fatalf("repair_config required-profile contract missing %q", required)
@@ -181,6 +230,13 @@ func TestRepairConfigStopsRuntimeBeforeSynchronizingProfiles(t *testing.T) {
 	}
 	if strings.Contains(handler, "synchronizeCanonicalRustDeskConfig") || strings.Contains(handler, "validateCanonicalRustDeskIdentity") {
 		t.Fatal("repair_config must not use the reinstall profile contract")
+	}
+	serviceStart := strings.Index(handler, "startRustDeskServiceFn()")
+	serviceValidation := strings.Index(handler, "service identity verification failed")
+	uiStart := strings.Index(handler, "native.LaunchRemoteSupportUI(rustdeskDefaultInstallPath)")
+	uiValidation := strings.Index(handler, "UI identity verification failed")
+	if serviceStart < 0 || serviceValidation < serviceStart || uiStart < serviceValidation || uiValidation < uiStart {
+		t.Fatal("repair_config must verify service identity before starting and verifying UI")
 	}
 }
 

@@ -94,6 +94,49 @@ func hasProtectedRustDeskCredential(content string) bool {
 	return strings.TrimSpace(fields["password"]) != "" && strings.TrimSpace(fields["salt"]) != ""
 }
 
+func materializeRustDeskRepairIdentity(content []byte, configuredID string) ([]byte, string, error) {
+	fields := parseTOMLTopLevel(string(content))
+	id := normalizeRustDeskID(fields["id"])
+	if !isNumericRustDeskID(id) {
+		if strings.TrimSpace(fields["enc_id"]) == "" {
+			return nil, "", fmt.Errorf("required identity field mismatch: field=id/enc_id")
+		}
+		id = normalizeRustDeskID(configuredID)
+		if !isNumericRustDeskID(id) {
+			return nil, "", fmt.Errorf("canonical UI ID unavailable for encrypted identity")
+		}
+	}
+	for _, field := range []string{"password", "salt", "key_pair", "key_confirmed"} {
+		if strings.TrimSpace(fields[field]) == "" {
+			return nil, "", fmt.Errorf("required identity field mismatch: field=%s", field)
+		}
+	}
+	patched, _ := applyTOMLTopLevelPatch(string(content), "id", id)
+	patched, _ = applyTOMLTopLevelPatch(patched, "enc_id", "")
+	return []byte(patched), id, nil
+}
+
+func rustDeskRepairRuntimeIdentityMismatchField(content []byte, canonical rustDeskCanonicalIdentity) string {
+	want := parseTOMLTopLevel(string(canonical.content))
+	got := parseTOMLTopLevel(string(content))
+	for _, key := range []string{"password", "salt", "key_pair", "key_confirmed", "keys_confirmed"} {
+		expected := strings.TrimSpace(want[key])
+		if expected != "" && strings.TrimSpace(got[key]) != expected {
+			return key
+		}
+	}
+	if id := normalizeRustDeskID(got["id"]); isNumericRustDeskID(id) {
+		if id != canonical.id {
+			return "id"
+		}
+		return ""
+	}
+	if strings.TrimSpace(got["enc_id"]) == "" {
+		return "id/enc_id"
+	}
+	return ""
+}
+
 func requiredRustDeskSyncRoots(profiles []rustDeskSyncProfile, sourceRoot string, systemUsed bool) []string {
 	seen := map[string]bool{}
 	var roots []string

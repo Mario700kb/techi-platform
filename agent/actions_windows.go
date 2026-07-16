@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"techi-platform/agent/internal/native"
 )
 
 // Windows process-creation flags used to detach the restart-helper process so
@@ -189,7 +191,7 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 		stopRustDeskTray()
 		time.Sleep(2 * time.Second)
 
-		canonical, err := loadCanonicalRustDeskRepairIdentity()
+		canonical, err := loadCanonicalRustDeskRepairIdentity(cfg)
 		if err != nil {
 			_ = startRustDeskServiceFn()
 			_ = startRustDeskTray()
@@ -211,7 +213,7 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			return
 		}
 
-		log.Printf("[action] repair_config_rustdesk: starting service+tray")
+		log.Printf("[action] repair_config_rustdesk: starting service and verifying canonical ID")
 		if err2 := startRustDeskServiceFn(); err2 != nil {
 			done <- actionResult{
 				err:    fmt.Errorf("service restart failed after config repair: %w", err2),
@@ -219,17 +221,28 @@ func handleRepairConfigRustDesk(ctx context.Context, cfg *Config) actionResult {
 			}
 			return
 		}
-		if err2 := startRustDeskTray(); err2 != nil {
+		time.Sleep(2 * time.Second)
+		if err := validateRepairRustDeskIdentity(cfg, canonical); err != nil {
 			done <- actionResult{
-				err:    fmt.Errorf("UI restart failed after config repair: %w", err2),
-				stderr: err2.Error(),
+				err:    fmt.Errorf("service identity verification failed: %w", err),
+				stderr: err.Error(),
 			}
 			return
 		}
 
-		time.Sleep(2 * time.Second)
-		if err := validateRepairRustDeskIdentity(cfg, canonical); err != nil {
+		log.Printf("[action] repair_config_rustdesk: launching interactive UI after service identity verification")
+		uiStatus, uiDetail, err := native.LaunchRemoteSupportUI(rustdeskDefaultInstallPath)
+		if err != nil {
+			done <- actionResult{err: fmt.Errorf("UI launch verification failed: %w", err), stderr: err.Error()}
+			return
+		}
+		if uiStatus != "healthy" {
+			err := fmt.Errorf("UI identity verification unavailable: status=%s detail=%s", uiStatus, uiDetail)
 			done <- actionResult{err: err, stderr: err.Error()}
+			return
+		}
+		if err := validateRepairRustDeskIdentity(cfg, canonical); err != nil {
+			done <- actionResult{err: fmt.Errorf("UI identity verification failed: %w", err), stderr: err.Error()}
 			return
 		}
 		rd := discoverRustDesk(cfg)

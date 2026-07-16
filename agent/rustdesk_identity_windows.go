@@ -51,7 +51,7 @@ func loadCanonicalRustDeskIdentity() (rustDeskCanonicalIdentity, error) {
 	return canonical, nil
 }
 
-func loadCanonicalRustDeskRepairIdentity() (rustDeskCanonicalIdentity, error) {
+func loadCanonicalRustDeskRepairIdentity(cfg *Config) (rustDeskCanonicalIdentity, error) {
 	var candidates []rustDeskIdentityCandidate
 	foundProfile := false
 	for _, profile := range rustDeskProfiles() {
@@ -74,17 +74,12 @@ func loadCanonicalRustDeskRepairIdentity() (rustDeskCanonicalIdentity, error) {
 		if !prepared.OriginalValid {
 			return rustDeskCanonicalIdentity{}, fmt.Errorf("required config invalid: path=%s: %v", path, prepared.OriginalError)
 		}
-		fields := parseTOMLTopLevel(string(prepared.Content))
-		if !isNumericRustDeskID(normalizeRustDeskID(fields["id"])) && strings.TrimSpace(fields["enc_id"]) == "" {
-			return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity field mismatch: path=%s field=id/enc_id", path)
-		}
-		for _, field := range []string{"password", "salt"} {
-			if strings.TrimSpace(fields[field]) == "" {
-				return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity field mismatch: path=%s field=%s", path, field)
-			}
+		content, _, err := materializeRustDeskRepairIdentity(data, configuredRustDeskID(cfg))
+		if err != nil {
+			return rustDeskCanonicalIdentity{}, fmt.Errorf("required identity material invalid: path=%s: %w", path, err)
 		}
 		candidates = append(candidates, rustDeskIdentityCandidate{
-			path: path, profileRoot: profile.root, content: prepared.Content,
+			path: path, profileRoot: profile.root, content: content,
 			valid: true, userProfile: true, activeUser: true,
 		})
 	}
@@ -190,7 +185,7 @@ func validateRequiredRepairRustDeskFiles(cfg *Config, canonical rustDeskCanonica
 		if err != nil {
 			return fmt.Errorf("required config read failed: path=%s: %w", identityPath, err)
 		}
-		if field := rustDeskIdentityMismatchField(identity, canonical); field != "" {
+		if field := rustDeskRepairRuntimeIdentityMismatchField(identity, canonical); field != "" {
 			return fmt.Errorf("required identity field mismatch: path=%s field=%s", identityPath, field)
 		}
 
