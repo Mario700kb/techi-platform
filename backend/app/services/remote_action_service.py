@@ -80,14 +80,20 @@ def _publish_action_status(action: RemoteAction, event_type: RealtimeEventType) 
     )
 
 
-def _record_audit(db: Session, action: RemoteAction, summary: str, actor: Optional[str] = None) -> None:
+def _record_audit(
+    db: Session,
+    action: RemoteAction,
+    summary: str,
+    actor: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> None:
     try:
         from app.services.device_activity_event_service import DeviceActivityEventService
         DeviceActivityEventService(db).record(
             device_id=action.device_id,
             event_type="remote_action",
             summary=summary,
-            detail=f"action_id={action.id} type={action.action_type}",
+            detail=detail or f"action_id={action.id} type={action.action_type}",
             actor=actor or action.created_by,
             fail_silently=True,
         )
@@ -355,9 +361,13 @@ class RemoteActionService:
         action = self.repo.mark_failed(action, error_message=error_message, stderr_output=stderr_output)
         logger.info("[action] failed #%d error=%r", action_id, error_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+        failure_detail = error_message or "no detail"
+        audit_summary = f"Action failed: {action.action_type} — {failure_detail}"
         _record_audit(
-            self.repo.db, action,
-            f"Action failed: {action.action_type} — {error_message or 'no detail'}",
+            self.repo.db,
+            action,
+            audit_summary[:255],
+            detail=f"action_id={action.id} type={action.action_type} error={failure_detail}",
         )
         _notify_action_result(self.repo.db, action, failed=True, message=error_message or "no detail")
         return action

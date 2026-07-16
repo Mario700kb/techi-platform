@@ -82,13 +82,10 @@ func handleNativeRemoteSupportRepair(ctx context.Context, cfg *Config, values ma
 		"--execute", "--json",
 	)
 	output, runErr := cmd.CombinedOutput()
-	var result native.OperationResult
-	if err := json.Unmarshal(output, &result); err != nil {
-		return actionResult{err: fmt.Errorf("native Remote Support repair returned invalid result: %w", runErr)}
-	}
-	if runErr != nil || !result.OK {
+	result, resultErr := parseNativeRemoteSupportRepairResult(output, runErr)
+	if resultErr != nil {
 		return actionResult{
-			err:    fmt.Errorf("native Remote Support repair failed: %s", result.CodeName),
+			err:    resultErr,
 			output: result.JSON(),
 		}
 	}

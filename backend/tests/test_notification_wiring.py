@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.db.base import Base
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.device_activity_event import DeviceActivityEvent
 from app.models.remote_action import ActionStatus
 from app.schemas.agent import AgentEnrollmentRequest
 from app.schemas.remote_action import ActionType, RemoteActionCreate
@@ -106,6 +107,26 @@ def test_remote_action_fail_fires_remote_action_failed(spy):
     action = _queue(db, device)
     RemoteActionService(db).fail(action.id, error_message="boom")
     assert any(c["event_type"] == "remote_action_failed" for c in spy)
+
+
+def test_remote_action_fail_preserves_complete_error_in_action_and_audit(spy):
+    db = _db()
+    device = _device(db)
+    action = _queue(db, device, ActionType.REINSTALL_RUSTDESK)
+    root_cause = "native Remote Support repair failed: failed to replace app.so: " + "Access is denied; " * 20
+
+    failed = RemoteActionService(db).fail(action.id, error_message=root_cause)
+
+    assert failed.error_message == root_cause
+    audit = (
+        db.query(DeviceActivityEvent)
+        .filter_by(device_id=device.id, event_type="remote_action")
+        .order_by(DeviceActivityEvent.id.desc())
+        .first()
+    )
+    assert audit is not None
+    assert len(audit.summary) <= 255
+    assert root_cause in audit.detail
 
 
 def test_self_update_complete_fires_agent_update_completed(spy):
