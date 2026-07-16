@@ -23,6 +23,43 @@ func TestValidTOMLIsPreserved(t *testing.T) {
 	}
 }
 
+func TestPrepareMinimalRemoteSupportConfigRetainsOnlyIdentity(t *testing.T) {
+	path := `C:\Users\USER\AppData\Roaming\TECHI Remote Support\config\TECHI Remote Support.toml`
+	data := []byte("id = '123456789'\npassword = 'opaque'\nsalt = 'salt'\nkey_pair = ['pub', 'private']\nkey_confirmed = true\nunrelated = 'discard me'\n[options]\ncustom-rendezvous-server = 'old'\n")
+	result, err := PrepareMinimalRemoteSupportConfig(path, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OriginalValid || result.Identity != "123456789" {
+		t.Fatalf("valid=%t identity=%q", result.OriginalValid, result.Identity)
+	}
+	got := string(result.Content)
+	for _, want := range []string{"id = '123456789'", "password = 'opaque'", "salt = 'salt'", "key_pair = ['pub', 'private']", "key_confirmed = true", "serial = 0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("minimal config missing %q: %q", want, got)
+		}
+	}
+	for _, rejected := range []string{"unrelated", "custom-rendezvous-server", "[options]"} {
+		if strings.Contains(got, rejected) {
+			t.Fatalf("minimal config retained %q: %q", rejected, got)
+		}
+	}
+}
+
+func TestPrepareMinimalRemoteSupportConfigRecoversSafeIdentityFromCorruptTOML(t *testing.T) {
+	path := `C:\Users\USER\AppData\Roaming\TECHI Remote Support\config\TECHI Remote Support.toml`
+	result, err := PrepareMinimalRemoteSupportConfig(path, []byte("id = '123456789'\npassword = 'opaque'\nbroken assignment\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OriginalValid {
+		t.Fatal("corrupt TOML must not be marked valid")
+	}
+	if got := string(result.Content); !strings.Contains(got, "id = '123456789'") || strings.Contains(got, "broken assignment") {
+		t.Fatalf("unsafe recovery result: %q", got)
+	}
+}
+
 func TestInvalidAssignmentIsQuarantinedAndIdentityRecovered(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "TECHI Remote Support.toml")
@@ -123,5 +160,34 @@ func TestRemoteSupportConfigScopeExcludesAgentState(t *testing.T) {
 	}
 	if !isRemoteSupportConfigPath(`C:\Users\USER\AppData\Roaming\TECHI Remote Support\config\TECHI Remote Support2.toml`) {
 		t.Fatal("Remote Support TOML must remain in the preservation scope")
+	}
+}
+
+func TestValidateRequiredRuntimeLayoutRequiresCompleteFlutterRuntime(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range requiredRuntimeFiles {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("runtime"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asset := filepath.Join(root, "data", "flutter_assets", "AssetManifest.json")
+	if err := os.MkdirAll(filepath.Dir(asset), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(asset, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRequiredRuntimeLayout(root); err != nil {
+		t.Fatalf("complete runtime rejected: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, "librustdesk.dll")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRequiredRuntimeLayout(root); err == nil || !strings.Contains(err.Error(), "librustdesk.dll") {
+		t.Fatalf("missing librustdesk.dll error=%v", err)
 	}
 }

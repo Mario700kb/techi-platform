@@ -4,6 +4,36 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Deterministic clean MSI reinstall for Remote Support
+
+**Confirmed failure:** the manual `Reinstall TECHI Remote Support` action used
+two state-dependent recovery implementations. A damaged install could enter
+native ZIP promotion, while a missing install used an in-place MSI install with
+non-fatal config/service/tray errors. This left no single sequence proving that
+the final MSI runtime existed before service and UI startup.
+
+**Fix:** this action now downloads and SHA256-verifies the latest active Windows
+`remote_support_msi` before mutation, preserves only safe identity assignments,
+stops the exact Remote Support service and processes, uninstalls registered
+Remote Support MSI ProductCodes, deletes the exact Remote Support install
+directory, installs the verified MSI, restores minimal identity and fresh
+managed options, recreates/starts the service, and validates the EXE, Flutter
+DLLs, `data/app.so`, `data/icudtl.dat`, non-empty `flutter_assets`, exact
+restored identity bytes, valid options TOML, and SCM Running state before UI
+launch. Malformed TOML is quarantined as a timestamped `.corrupt` backup. With
+no interactive user, installation remains successful as
+`reinstalled_ui_pending_login`.
+
+Every failure now carries `reinstall phase=<phase>` plus the underlying
+filesystem, SCM, UI, or MSI exit error and MSI log path. The action touches no
+Agent executable, service, enrollment/auth state, package activation, GPO, or
+rollout setting. Native bootstrap recovery remains separate and unchanged.
+
+**Status:** source/CI candidate only. Device 11 remains unresolved until the
+RS-only endpoint retest passes; no fleet rollout is enabled.
+
+---
+
 ## 2026-07-16 — Verify promoted Remote Support runtime before service/UI start
 
 **Confirmed failure:** Device 11 completed staging and reached `start_ui`, but

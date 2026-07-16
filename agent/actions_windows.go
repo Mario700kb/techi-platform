@@ -111,62 +111,21 @@ func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 }
 
 func handleReinstallRustDesk(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
-	state := discoverRustDesk(cfg)
-	if state.InstallStatus == "installed" && state.Status == "running" {
-		return actionResult{message: "TECHI Remote Support unchanged: already healthy"}
-	}
-	if state.InstallStatus == "damaged" || state.InstallStatus == "installed" {
-		return handleNativeRemoteSupportRepair(ctx, cfg, params)
-	}
-	if cfg.RustDeskMSIUrl == "" {
-		return actionResult{err: fmt.Errorf("reinstall_rustdesk: no MSI URL configured")}
-	}
 	release, lockErr := acquireRemoteSupportRepairLock()
 	if lockErr != nil {
-		return actionResult{err: lockErr}
+		err := fmt.Errorf("reinstall phase=acquire_lock: %w", lockErr)
+		return actionResult{err: err, stderr: err.Error()}
 	}
-	done := make(chan actionResult, 1)
-	go func() {
-		defer release()
-		log.Printf("[action] reinstall_rustdesk: stopping service+tray")
-		stopRustDeskServiceFn()
-		stopRustDeskTray()
-		time.Sleep(2 * time.Second)
+	defer release()
 
-		log.Printf("[action] reinstall_rustdesk: running MSI install")
-		if err := installRustDeskMSI(cfg); err != nil {
-			done <- actionResult{
-				err:    fmt.Errorf("MSI install failed: %w", err),
-				stderr: err.Error(),
-			}
-			return
-		}
-
-		// Re-apply config and relaunch service+tray after install.
-		if _, err := writeRustDeskConfig(cfg); err != nil {
-			log.Printf("[action] reinstall_rustdesk: config write failed (non-fatal): %v", err)
-		}
-		if _, err := ensureRustDeskService(); err != nil {
-			log.Printf("[action] reinstall_rustdesk: service start failed (non-fatal): %v", err)
-		}
-		if _, err := ensureRustDeskTrayRunning(); err != nil {
-			log.Printf("[action] reinstall_rustdesk: tray start failed (non-fatal): %v", err)
-		}
-
-		rd := discoverRustDesk(cfg)
-		done <- actionResult{
-			message: fmt.Sprintf(
-				"TECHI Remote Support reinstalled — install_status=%s status=%s version=%s id=%s",
-				rd.InstallStatus, rd.Status, rd.Version, rd.ID,
-			),
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		return actionResult{err: fmt.Errorf("reinstall_rustdesk timed out")}
-	case r := <-done:
-		return r
+	result, err := executeRemoteSupportReinstall(ctx, newWindowsRemoteSupportReinstallOps(cfg, params))
+	if err != nil {
+		return actionResult{err: err, stderr: err.Error()}
 	}
+	rd := discoverRustDesk(cfg)
+	return actionResult{message: fmt.Sprintf(
+		"TECHI Remote Support %s: version=%s id=%s", result.status, result.version, rd.ID,
+	)}
 }
 
 func handleReopenRustDesk(ctx context.Context, cfg *Config) actionResult {

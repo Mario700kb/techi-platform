@@ -171,21 +171,14 @@ class RemoteActionService:
         parameters = dict(create_in.parameters or {})
         if create_in.action_type == ActionType.REINSTALL_RUSTDESK:
             package = AgentPackageService().latest_active(
-                "windows-amd64", file_type="remote_support_bundle"
+                "windows-amd64", file_type="remote_support_msi"
             )
-            if (
-                package is not None
-                and package.sha256
-                and package.manifest_filename
-                and package.manifest_sha256
-            ):
+            if package is not None and package.sha256:
                 parameters.update(
                     {
-                        "native_bundle_version": package.version,
-                        "native_bundle_filename": package.filename,
-                        "native_bundle_sha256": package.sha256,
-                        "native_manifest_filename": package.manifest_filename,
-                        "native_manifest_sha256": package.manifest_sha256,
+                        "remote_support_msi_version": package.version,
+                        "remote_support_msi_filename": package.filename,
+                        "remote_support_msi_sha256": package.sha256,
                     }
                 )
 

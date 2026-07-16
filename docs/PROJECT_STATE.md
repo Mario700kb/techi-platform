@@ -56,6 +56,27 @@ back through the existing transaction. This is source/CI validated only; Device
 11 requires an updated Agent package before the RS-only retest. Fleet rollout
 remains disabled.
 
+**2026-07-16 deterministic manual reinstall candidate:** the operator action
+`Reinstall TECHI Remote Support` no longer chooses between the old in-place MSI
+install and native ZIP promotion according to discovered runtime state. The
+backend binds this action to the latest active Windows `remote_support_msi`
+artifact (version, filename, SHA256), and the Agent downloads and verifies that
+MSI before changing the endpoint. The action then preserves only approved
+identity assignments (`id`, `enc_id`, password/salt, key pair/confirmation),
+stops the exact Remote Support service/processes, uninstalls every registered
+MSI whose display name is exactly `TECHI Remote Support`, removes only the
+Remote Support install directory and config files, installs the active MSI,
+restores minimal identity plus fresh managed options, starts the service, and
+validates the full Flutter runtime and restored config before launching UI in
+the active user session. Invalid TOML is retained only as a timestamped
+`.corrupt` file. No logged-in user is a successful
+`reinstalled_ui_pending_login` result; a real UI failure includes its native
+diagnostic under `reinstall phase=start_ui`. This changes only the manual
+reinstall action; native bootstrap/GPO recovery, Package Manager design, Agent
+enrollment/auth/heartbeat, and rollout gates are unchanged. Source tests and
+CI are required, followed by a Device 11 endpoint retest. **Not resolved and
+not approved for fleet rollout until that endpoint retest passes.**
+
 ## WINDOWS AGENT CANARY STATUS
 
 **Current status: CANARY FAILED — LIFECYCLE READER FIX REQUIRED / FLEET ROLLOUT ENABLED = NO.**

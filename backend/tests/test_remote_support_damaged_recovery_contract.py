@@ -24,15 +24,15 @@ def test_agent_and_native_recovery_share_one_machine_lock():
     assert "C:\\ProgramData\\TechiAgent" in execute
 
 
-def test_manual_retry_uses_bound_native_bundle_for_damage_and_never_agent_repair():
+def test_manual_reinstall_uses_bound_remote_support_msi_and_never_agent_repair():
     actions = (ROOT / "agent/actions_windows.go").read_text()
-    native_action = (ROOT / "agent/rs_native_action_windows.go").read_text()
+    reinstall = (ROOT / "agent/rs_reinstall_windows.go").read_text()
     action_service = (ROOT / "backend/app/services/remote_action_service.py").read_text()
-    assert 'state.InstallStatus == "damaged"' in actions
-    assert "handleNativeRemoteSupportRepair" in actions
-    assert "native_bundle_sha256" in action_service
-    assert "native_manifest_sha256" in action_service
-    assert "/remote-support-bundle/download" in native_action
-    assert "/remote-support-bundle/manifest" in native_action
-    assert 'self, "repair-remote-support"' in native_action
-    assert "restart_agent" not in native_action
+    assert "executeRemoteSupportReinstall" in actions
+    assert "handleNativeRemoteSupportRepair" not in actions.split("func handleReinstallRustDesk", 1)[1].split("func handleReopenRustDesk", 1)[0]
+    assert 'file_type="remote_support_msi"' in action_service
+    assert "remote_support_msi_sha256" in action_service
+    assert "native_bundle_sha256" not in action_service
+    assert "/remote-support-msi/download" in reinstall
+    assert 'remoteSupportMSIDisplayName = "TECHI Remote Support"' in reinstall
+    assert "TechiAgent" not in reinstall

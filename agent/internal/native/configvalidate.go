@@ -17,6 +17,35 @@ type configRecoveryDecision struct {
 	fresh    []byte
 }
 
+// MinimalRemoteSupportConfig is the only config state retained by a clean
+// Remote Support reinstall. Content contains approved identity assignments
+// plus a valid serial assignment; all other settings are discarded.
+type MinimalRemoteSupportConfig struct {
+	Content       []byte
+	Identity      string
+	OriginalValid bool
+	OriginalError error
+}
+
+func PrepareMinimalRemoteSupportConfig(path string, data []byte) (MinimalRemoteSupportConfig, error) {
+	_, originalErr := validatePreservableConfig(path, data)
+	content := freshRemoteSupportConfig(path, data)
+	identity, err := validatePreservableConfig(path, content)
+	if err != nil {
+		return MinimalRemoteSupportConfig{}, fmt.Errorf("build minimal Remote Support config: %w", err)
+	}
+	return MinimalRemoteSupportConfig{
+		Content:       content,
+		Identity:      identity,
+		OriginalValid: originalErr == nil,
+		OriginalError: originalErr,
+	}, nil
+}
+
+func QuarantineCorruptRemoteSupportConfig(path string, now time.Time) (string, error) {
+	return quarantineCorruptConfig(path, now)
+}
+
 func validatePreservableConfig(path string, data []byte) (string, error) {
 	if strings.EqualFold(filepathBase(path), "agent.config.json") {
 		return "", validateAgentConfigJSON(data)

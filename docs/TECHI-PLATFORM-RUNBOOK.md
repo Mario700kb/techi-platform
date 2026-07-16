@@ -32,3 +32,34 @@ inference, performance, and security behavior.
 
 Use this guide to reconcile token uses with unique devices, duplicate
 enrollments, failures, archived devices, and orphaned uses.
+
+## Remote Support Clean Reinstall
+
+Use the device action `Reinstall TECHI Remote Support` only when Remote Support
+itself must be replaced. The action is independent from Agent repair and uses
+the latest active Windows package whose Package Manager type is
+`remote_support_msi`.
+
+Expected phase order in the action result/log is:
+
+1. `resolve_package`: bind, download, and SHA256-verify the active MSI.
+2. `preserve_identity`: retain only verified Remote ID and credential/key fields.
+3. `stop_runtime`: stop the Remote Support service and exact owned processes.
+4. `uninstall_msi`: uninstall registered `TECHI Remote Support` MSI products.
+5. `remove_application_files`: remove the exact install directory; malformed
+   TOML is renamed with a timestamp and `.corrupt` suffix.
+6. `install_msi`: install the verified active MSI and stop its initial runtime
+   before restoring identity.
+7. `restore_identity`: write minimal identity TOML and fresh managed options.
+8. `start_service`: recreate/start the Remote Support service.
+9. `validate_installation`: require the full Flutter runtime, exact restored
+   identity, valid options TOML, and SCM Running state.
+10. `start_ui`: launch and validate a usable main window in the active user
+    session. A 16x16 tray/helper window is rejected.
+
+`reinstalled_ui_pending_login` is successful when no interactive user is
+logged in; the service and complete runtime remain installed. Any other failure
+returns `reinstall phase=<phase>` with the underlying OS/MSI error. MSI failures
+also include the verbose log path under
+`C:\ProgramData\TechiAgent\recovery\remote-support-msi\logs`. Do not run Agent
+repair, reinstall, GPO, or rollout procedures as part of this action.
