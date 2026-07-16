@@ -97,6 +97,8 @@ def test_remote_support_helper_handles_clean_and_existing_service():
     assert "@('delete', $serviceName" not in helper
     assert "Wait-RSServiceRunning -TimeoutSeconds 30" in helper
     assert "AllowedExitCodes @(0, 1056) -Fatal" in helper
+    assert "'binPath=', $binPath, 'start=', 'auto'" in helper
+    assert "('binPath= ' + $binPath)" not in helper
 
 
 def test_remote_support_helper_reports_exact_fatal_step_and_native_output():

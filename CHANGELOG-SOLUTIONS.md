@@ -27,6 +27,12 @@ waits for SCM `Running`. Only missing/empty required runtime or an unusable
 service is fatal; process cleanup, service recovery-policy setup, and tray-task
 setup are warnings.
 
+The first Windows run then made the hidden configure failure concrete:
+`create_service exit_code=1639` with `sc.exe` usage on stdout. The helper had
+combined each SCM option name and value into one argv entry. Service create and
+config now pass `binPath=`, `start=`, and `DisplayName=` separately from their
+values, as required by `sc.exe`.
+
 **Verification gate:** focused source tests plus a Windows CI harness cover a
 clean SYSTEM install, repair after deleting `data/app.so`, and uninstall/reinstall.
 Every install must return 0 and retain the EXE, Flutter runtime, `app.so`, and

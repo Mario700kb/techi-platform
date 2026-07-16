@@ -153,9 +153,9 @@ try {
 
     $binPath = '"' + $ExePath + '" --service'
     if ($status -eq 'missing') {
-        $null = Invoke-LoggedNative -Step 'create_service' -FilePath $scExe -Arguments @('create', $serviceName, ('binPath= ' + $binPath), 'start= auto', 'DisplayName= TECHI Remote Support') -Fatal
+        $null = Invoke-LoggedNative -Step 'create_service' -FilePath $scExe -Arguments @('create', $serviceName, 'binPath=', $binPath, 'start=', 'auto', 'DisplayName=', 'TECHI Remote Support') -Fatal
     } else {
-        $null = Invoke-LoggedNative -Step 'configure_service' -FilePath $scExe -Arguments @('config', $serviceName, ('binPath= ' + $binPath), 'start= auto', 'DisplayName= TECHI Remote Support') -Fatal
+        $null = Invoke-LoggedNative -Step 'configure_service' -FilePath $scExe -Arguments @('config', $serviceName, 'binPath=', $binPath, 'start=', 'auto', 'DisplayName=', 'TECHI Remote Support') -Fatal
     }
 
     $null = Invoke-LoggedNative -Step 'configure_service_recovery' -FilePath $scExe -Arguments @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/15000/restart/15000/restart/60000')

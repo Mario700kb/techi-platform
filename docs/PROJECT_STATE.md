@@ -110,6 +110,10 @@ immediately recreated an existing service, and performed a one-shot `Running`
 check that made a normal `StartPending` state fatal. It now creates a missing
 service or reconfigures an existing one, captures each native command's stdout,
 stderr, exit code, and failing step, and waits up to 30 seconds for `Running`.
+The first Windows CI execution exposed the formerly hidden clean-install error:
+`sc.exe create` returned 1639 because SCM option names and values were combined
+into single arguments. They are now passed as distinct `binPath=`/value,
+`start=`/value, and `DisplayName=`/value arguments.
 WiX `WixQuietExec` copies those diagnostics into the verbose MSI log. Missing
 or empty EXE/`data/app.so` and unusable service creation/configuration/start
 remain fatal; process cleanup, recovery-policy setup, and tray-task setup are
