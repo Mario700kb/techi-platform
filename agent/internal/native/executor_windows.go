@@ -649,6 +649,9 @@ func (*windowsExecutor) PromoteFiles(p ExecuteParams, stagingDir string, m *Bund
 		}
 		return nil
 	}
+	if err := VerifyInstallDirAgainstManifest(p.InstallDir, m); err != nil {
+		return undo, fmt.Errorf("verify promoted runtime: %w", err)
+	}
 	return undo, nil
 }
 

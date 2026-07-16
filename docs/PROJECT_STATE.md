@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Last Updated** | 2026-07-14 |
+| **Last Updated** | 2026-07-16 |
 | **Production Verified** | 2026-07-11 (Connect V3-mockup alignment deployed `92a521c`: no schema step needed, backend+frontend rebuilt, all containers healthy, smoke 8/8 against `https://api-rdp.techi.com.al`, zero real errors, ~1262 heartbeat log lines/2min, new `GET /connect-status` + `client_os` param confirmed live 401-not-500. **NOT dark** — the Catalog Connect split button + categorized menu changed live for every operator (no flag). Live browser click-through still owner's step — same constraint as the previous two deploys (no browser tool; bootstrap credentials don't match the live `owner` account); see the 2026-07-11 Connect-mockup CHANGELOG entry's validation checklist) |
 | **Current Production Branch** | `stable/phase-2-heartbeat` (prod runs the pushed tip, commit `92a521c`) |
 | **Current Development Branch** | `stable/phase-2-heartbeat`; credential/native remediation is a local source-only candidate (7 inherited commits plus 6 new local remediation commits) plus a new source-only heartbeat-auth migration mode candidate, not pushed, deployed, or activated; rollout remains disabled |
@@ -41,6 +41,20 @@ payload is a **native bundle/ZIP**, never MSI repair. Design:
 [docs/architecture/native-bootstrap.md](architecture/native-bootstrap.md).
 **Still requires a disposable Windows lab before any one-device canary.** Fleet
 rollout stays disabled; Windows packages stay pinned to the current active set.
+
+**2026-07-16 Device 11 recovery follow-up:** the interactive-session diagnostics
+confirmed that `start_ui` reached Session 1 correctly, but
+`C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe` did not exist.
+The recovery transaction validated the extracted staging tree, then treated a
+successful directory rename as a successful promotion without validating the
+new final install before config restore, service startup, and UI launch. The
+Windows promoter now verifies the complete installed manifest immediately after
+the rename, including `TECHI Remote Support.exe`, `flutter_windows.dll`,
+`data/app.so`, and Flutter assets. Any missing or changed runtime file returns
+the underlying error, stops the sequence before config/service/UI, and rolls
+back through the existing transaction. This is source/CI validated only; Device
+11 requires an updated Agent package before the RS-only retest. Fleet rollout
+remains disabled.
 
 ## WINDOWS AGENT CANARY STATUS
 

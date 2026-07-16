@@ -152,6 +152,26 @@ func TestBundle_RoundTripVerify(t *testing.T) {
 	}
 }
 
+func TestVerifyInstallDirRejectsMissingLaunchRuntime(t *testing.T) {
+	for _, missing := range []string{
+		"TECHI Remote Support.exe",
+		"flutter_windows.dll",
+		filepath.Join("data", "app.so"),
+	} {
+		t.Run(missing, func(t *testing.T) {
+			installDir := makeSource(t)
+			_, manifest := buildTestBundle(t, installDir)
+			if err := os.Remove(filepath.Join(installDir, missing)); err != nil {
+				t.Fatal(err)
+			}
+			err := VerifyInstallDirAgainstManifest(installDir, manifest)
+			if err == nil || !strings.Contains(err.Error(), filepath.ToSlash(missing)) {
+				t.Fatalf("missing runtime %q was not rejected: %v", missing, err)
+			}
+		})
+	}
+}
+
 func TestBundle_VerifyRejects(t *testing.T) {
 	src := makeSource(t)
 	zb, m := buildTestBundle(t, src)

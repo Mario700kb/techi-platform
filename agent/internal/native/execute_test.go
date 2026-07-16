@@ -275,6 +275,26 @@ func TestExecute_RollbackOnValidationFailure(t *testing.T) {
 	}
 }
 
+func TestExecute_PromotedRuntimeFailureStopsBeforeConfigServiceAndUI(t *testing.T) {
+	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
+	f := newFake()
+	want := `verify promoted runtime: required runtime file "TECHI Remote Support.exe": file does not exist`
+	f.failOn["PromoteFiles"] = fmt.Errorf("%s", want)
+	r := ExecutePlan(plan, safeParams(t), f, true)
+
+	if r.OK || !strings.Contains(r.Message, want) {
+		t.Fatalf("promotion verification error was not preserved: %+v", r)
+	}
+	if r.Rollback == nil || !r.Rollback.Attempted || !f.called("Undo:PromoteFiles") {
+		t.Fatalf("failed promoted runtime must roll back: result=%+v calls=%v", r, f.calls)
+	}
+	for _, forbidden := range []string{"RestoreConfig", "CreateService", "StartService", "StartUI", "ValidateFinal"} {
+		if f.called(forbidden) {
+			t.Fatalf("%s ran after promoted runtime verification failed: %v", forbidden, f.calls)
+		}
+	}
+}
+
 func TestExecute_BadSHARefusesEarly(t *testing.T) {
 	plan := PlanRemoteSupportRecovery(RolloutCanary, "1.4.6", staleServiceObs())
 	f := newFake()

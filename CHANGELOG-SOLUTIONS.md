@@ -4,6 +4,35 @@ Regjistër i ndryshimeve të konfirmuara me teste para deploy-it.
 
 ---
 
+## 2026-07-16 — Verify promoted Remote Support runtime before service/UI start
+
+**Confirmed failure:** Device 11 completed staging and reached `start_ui`, but
+the Session 1 launch failed because
+`C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe` did not exist.
+
+**Root cause:** `StagePayload` verified the extracted bundle, but
+`PromoteFiles` considered the directory rename sufficient proof of promotion.
+The full installed-manifest/runtime validation ran only in `ValidateFinal`,
+after config restore, service startup, and UI launch. A missing promoted EXE or
+Flutter runtime could therefore reach `start_ui`.
+
+**Fix:** after the atomic rename, `PromoteFiles` now runs the existing exact
+installed-manifest verifier before returning success. It requires the EXE,
+`flutter_windows.dll`, `librustdesk.dll`, `data/icudtl.dat`, `data/app.so`, and
+non-empty Flutter assets with the expected sizes and hashes. A verification
+failure returns the promotion undo and exact underlying error; the orchestrator
+rolls back and does not restore config, create/start the service, or launch UI.
+
+**Regression coverage:** verifies rejection of a missing EXE,
+`flutter_windows.dll`, or `data/app.so`, plus orchestration coverage proving a
+failed promoted-runtime check preserves the root cause, rolls back, and blocks
+all later recovery steps.
+
+**Deployment:** source and CI candidate only. No GPO, NETLOGON, package
+activation, or fleet rollout change.
+
+---
+
 ## 2026-06-26 — Command Center: komanda "self_update" (backend + frontend)
 
 **Qëllimi:** Të mund të dërgohet nga Command Center komanda `self_update`
