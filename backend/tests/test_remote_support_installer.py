@@ -105,6 +105,8 @@ def test_remote_support_helper_handles_clean_and_existing_service():
 
 def test_remote_support_helper_reports_exact_fatal_step_and_native_output():
     helper = _helper_text()
+    assert '$line = "$stamp remote-support-msi $Message"' in helper
+    assert "[remote-support-msi]" not in helper
     assert "stdout=$stdoutText stderr=$stderrText" in helper
     assert "fatal step=$script:currentStep error=$message" in helper
     assert "ConfigureRemoteSupportRuntime failed: step=$script:currentStep" in helper

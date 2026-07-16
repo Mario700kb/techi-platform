@@ -15,7 +15,7 @@ $script:currentStep = 'initialize'
 
 function Write-InstallLog([string]$Message) {
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $line = "$stamp [remote-support-msi] $Message"
+    $line = "$stamp remote-support-msi $Message"
     [Console]::Out.WriteLine($line)
     try {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
