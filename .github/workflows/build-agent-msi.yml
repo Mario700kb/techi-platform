@@ -234,6 +234,28 @@ jobs:
             -d BuildCommit=$buildCommit `
             -o TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi
 
+      - name: Assert Remote Support GUI payload version matches release (block stale binary)
+        if: steps.package-scope.outputs.remote_support == 'true'
+        shell: pwsh
+        run: |
+          # Guard against the 2026-07-17 class of defect: the vendored Windows GUI
+          # payload (agent/installer/TECHI-Remote-Support/) drifting from the release
+          # version, producing a mislabeled MSI (e.g. 1.4.8 MSI containing a 1.4.6 exe).
+          # remote-support-macos/VERSION is the single source of truth for the RS release.
+          $rsVersion = (Get-Content -Raw remote-support-macos/VERSION).Trim()
+          $rsNorm = [regex]::Match($rsVersion, '\d+\.\d+\.\d+').Value
+          if ([string]::IsNullOrWhiteSpace($rsNorm)) { throw "Cannot parse RS release version from remote-support-macos/VERSION ('$rsVersion')" }
+          $exe = 'agent/installer/TECHI-Remote-Support/TECHI Remote Support.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Remote Support GUI payload missing: $exe" }
+          $raw = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+          $exeNorm = [regex]::Match([string]$raw, '\d+\.\d+\.\d+').Value
+          if ([string]::IsNullOrWhiteSpace($exeNorm)) { throw "Cannot parse GUI exe version from '$raw'" }
+          Write-Host "RS release = $rsVersion (norm $rsNorm); embedded GUI exe = $raw (norm $exeNorm)"
+          if ($exeNorm -ne $rsNorm) {
+            throw "Remote Support GUI payload is STALE: embedded exe $exeNorm != release $rsNorm. Replace agent/installer/TECHI-Remote-Support/ with the matching GUI build from the fork before packaging (refusing to ship a mislabeled MSI)."
+          }
+          Write-Host "OK: embedded GUI exe version matches the RS release version."
+
       - name: Build Remote Support MSI
         if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
