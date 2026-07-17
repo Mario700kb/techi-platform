@@ -80,6 +80,38 @@ current CI-built artifact (CI probes `bootstrap-config-contract` and runs
 MSI cannot ship a mismatched contract), and always deploy the backend contract
 bump **together with** activating the matching MSI — never backend first.
 
+## Remote Support Version Mismatch / Connect Opens Home Screen
+
+Symptom: installed `C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe`
+reports an older version than the package label (e.g. package "1.4.8" but exe
+"1.4.6+64"), and/or clicking Connect opens the GUI on its home screen instead of
+the device session.
+
+Verify the artifact — never trust the package label:
+1. Download the active MSI:
+   `curl -fsSL https://api-rdp.techi.com.al/api/v1/agent-packages/remote-support-msi/download -o rs.msi`
+   and confirm its sha256 == the DB active `remote_support_msi` row.
+2. `msiextract rs.msi`; read the embedded GUI exe version (`pefile` StringFileInfo,
+   or Windows Explorer → Properties → Details). `msiinfo export rs.msi Property`
+   gives the MSI `ProductVersion`.
+3. If the embedded `TECHI Remote Support.exe` version < MSI ProductVersion, the
+   MSI shipped a **stale GUI**. The Windows GUI is a vendored prebuilt at
+   `agent/installer/TECHI-Remote-Support/` (git-tracked) harvested verbatim by
+   `build-agent-msi.yml`; bumping wxs/filename without replacing that payload
+   produces a mislabeled MSI. Fix = rebuild the GUI to the target version,
+   replace the vendored payload, align all version stamps, rebuild+activate.
+
+Connect flow (for triage): `techiremotesupport://connect?token=<opaque>` →
+`techi-remote-support-bridge.exe "%1"` → `POST /remote-support/connect-tokens/redeem`
+→ `{remote_id, password, receipt}` → bridge writes the one-time password into
+`%APPDATA%\TECHI Remote Support\config\peers\<id>.toml` (ACL'd) and launches
+`--connect <id>`. The **secure auto-connect GUI contract is macOS-only**
+(`secure_connect.rs.txt`, `#[cfg(target_os="macos")]`, stdin→IPC). Windows has no
+GUI-side connect customization, so a stale/plain RustDesk GUI ignores the bare
+`--connect` when the tray/service instance is already running. Fixing Connect on
+Windows requires a GUI build that implements the Windows connect contract — not a
+bridge-only or MSI-repackage change.
+
 ## Remote Support Clean Reinstall
 
 Use the device action `Reinstall TECHI Remote Support` only when Remote Support

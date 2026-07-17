@@ -27,6 +27,99 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-17] Remote Support 1.4.8 ships stale 1.4.6 GUI + Windows auto-connect never implemented (VERIFIED; fix pending Windows GUI rebuild)
+
+### Problemi
+Two field failures: (1) active RS package is labeled/versioned **1.4.8** but the
+installed `TECHI Remote Support.exe` reports **1.4.6+64**; (2) clicking Connect
+opens the GUI on its **home screen** — it does not consume the target ID /
+credential and does not enter the connection tab.
+
+### Analiza (live evidence, not inference)
+- Downloaded the active RS MSI from prod (`/api/v1/agent-packages/remote-support-msi/download`)
+  → `TECHI-Remote-Support-1.4.8.msi`, sha256 `7ecbb363…` (== DB active
+  `remote_support_msi` row, id `549fcd52`). So the correct package IS activated.
+- `msiinfo`: MSI `ProductVersion=1.4.8.0`. `techi-remote-support-bridge.exe`
+  (Go) = `1.4.8` (ldflag). But the embedded Flutter GUI `TECHI Remote Support.exe`
+  (via `pefile`) = **FileVersion/ProductVersion `1.4.6+64`**; `librustdesk.dll`
+  version strings cap at 1.4.6.
+- The Windows GUI payload is a **vendored, git-tracked prebuilt directory**
+  `agent/installer/TECHI-Remote-Support/` (97 files; exe = 1.4.6+64; last touched
+  2026-06-27 `9a11626`). `build-agent-msi.yml` harvests it verbatim
+  (`remote-support.wxs` `<Files Include="$(var.SourceDir)\TECHI-Remote-Support\**"/>`)
+  and hardcodes the output name `TECHI-Remote-Support-1.4.8.msi`.
+- Connect flow (source): browser → `techiremotesupport://connect?token=<opaque>`
+  → Windows protocol handler runs `techi-remote-support-bridge.exe "%1"` → bridge
+  `parseProtocolURI` → `POST /api/v1/remote-support/connect-tokens/redeem` →
+  `{remote_id, password (one-time), receipt}` (rate-limited, audited; device
+  gated by `device_in_scope` at token mint) → **Windows** bridge
+  (`platform_windows.go`) pre-seeds the password into the RustDesk peer TOML
+  (`%APPDATA%\TECHI Remote Support\config\peers\<id>.toml`, ACL-restricted) and
+  launches **bare** `"TECHI Remote Support.exe" --connect <id>`, then waits for
+  the config to be consumed. No plaintext credential in URL/cmdline/logs.
+- **The auto-connect feature is macOS-only.** `remote-support-macos/client-overlay/secure_connect.rs.txt`
+  (contract `techi-secure-connect-stdin-v1`) is gated
+  `#[cfg(all(target_os = "macos", feature = "flutter"))]` and uses
+  `--connect <id> --techi-connect-stdin` + password on **stdin** → `ipc::send_techi_connect`.
+  There is **no Windows equivalent** compiled into the GUI. The vendored Windows
+  GUI is plain RustDesk 1.4.6 with no TECHI connect customization, so a bare
+  `--connect <id>` handed to the already-running tray/service instance does not
+  drive it into the session — it surfaces the home screen.
+
+### Shkaku (root cause, verified)
+1. **Version mismatch:** the 1.4.8 release bumped only the packaging (wxs Version,
+   bridge ldflag, MSI filename, `remote-support-macos/VERSION`) but **never
+   replaced the vendored Windows GUI binaries** at `agent/installer/TECHI-Remote-Support/`,
+   which remain a 1.4.6+64 external build. MSI 1.4.8 was assembled with a stale
+   1.4.6 GUI — **not** a wrong-artifact activation.
+2. **Connect flow:** the Windows auto-connect path was never implemented in the
+   GUI. The bridge's bare `--connect` + peer-TOML preseed does not reliably enter
+   the session on the stale 1.4.6 GUI; the secure stdin/IPC contract exists only
+   for macOS. Rebuilding alone does not fix Connect unless the new Windows GUI
+   also implements the Windows connect contract (Windows-gated `secure_connect`
+   or an equivalent the bridge drives).
+
+### Zgjidhja (required — NOT yet applied; needs Windows GUI build)
+Deliberately **not** bumping wxs/workflow to 1.4.9 in isolation: without new GUI
+binaries that would ship a 1.4.9 MSI still containing the 1.4.6 GUI — the same
+mislabeled-artifact anti-pattern. The fix must be done together:
+1. Rebuild the Windows RustDesk/Flutter GUI from the intended fork source, with a
+   **Windows** secure-connect contract the bridge drives (port the macOS
+   `secure_connect.rs.txt` gate to `target_os = "windows"` + a Windows `ipc::send_techi_connect`,
+   or equivalent), version **1.4.9** (next semver — do not reuse 1.4.8).
+2. Replace `agent/installer/TECHI-Remote-Support/` with the 1.4.9 payload; bump
+   `remote-support.wxs` Version, `remote-support-bridge` ldflag, MSI filename, and
+   `remote-support-macos/VERSION` to 1.4.9 so MSI ProductVersion, exe
+   FileVersion/ProductVersion, bridge, package metadata, filename, and UI inventory
+   all agree.
+3. Build MSI in CI (`build-agent-msi.yml`), verify embedded exe version ==
+   package version, upload, SHA256-verify, activate the new `remote_support_msi`
+   package.
+4. Verify on Windows: clean install + upgrade from the 1.4.8/1.4.6 package; exe
+   version, MSI inventory, service/tray/process health, Remote ID + permanent
+   credential sync, Agent version/health, UI version, and **Connect launches the
+   exact device session automatically** (not home screen). Preserve device-assigned
+   gate and no-plaintext-credential controls (already in the redeem/handoff design).
+
+The GUI fork source is not in this repo (only overlays) and the build needs a
+Windows + Flutter + Rust pipeline; it cannot be produced or tested from the
+maintainer's macOS host. This entry records the verified diagnosis; the build/
+deploy/Windows-test remain open.
+
+### Ndryshimet
+- None applied to source yet (would create a mislabeled artifact without the GUI
+  rebuild). Docs only: this entry, PROJECT_STATE known-issue row, runbook triage.
+
+### Mësimet
+- Vendored prebuilt binaries (`agent/installer/TECHI-Remote-Support/`) drift
+  silently from the packaging version. CI must **fail** when the embedded GUI exe
+  version ≠ the MSI/package version (add an embedded-exe-version assertion to
+  `build-agent-msi.yml`, like the Agent already has for its bootstrap contract).
+- Platform-gated features (`#[cfg(target_os = "macos")]`) silently leave the other
+  OS without the capability. A Connect feature must be verified per-OS end-to-end.
+- Prove artifact contents by extracting + reading the embedded exe, not by trusting
+  the package label.
+
 ## [2026-07-17] Bootstrap-config "refusing unsupported flags" — VERIFIED: deployed backend behind the MSI (contract 1 vs 2)
 
 > Correction: an earlier draft of this entry guessed the skew ran the other way
