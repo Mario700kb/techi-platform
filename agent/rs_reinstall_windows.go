@@ -80,7 +80,7 @@ func (o *windowsRemoteSupportReinstallOps) ResolvePackage(_ context.Context) (st
 
 func (o *windowsRemoteSupportReinstallOps) PreserveIdentity(_ context.Context) error {
 	o.configs = nil
-	canonical, err := loadCanonicalRustDeskIdentity()
+	canonical, err := loadCanonicalRustDeskRepairIdentity(o.cfg)
 	if err != nil {
 		return err
 	}

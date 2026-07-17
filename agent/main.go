@@ -73,6 +73,8 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 		return true, runApplyPolicyCommand(args)
 	case "repair-remote-support":
 		return true, runRepairRemoteSupportCommand(args)
+	case "bootstrap-remote-support":
+		return true, runBootstrapRemoteSupportCommand(args)
 	case "remote-support-ui-session":
 		return true, runRemoteSupportUISessionCommand(args)
 	case "netlogon-self-update":
@@ -124,6 +126,7 @@ func isUtilityCommand(command string) bool {
 	case "swap-binary",
 		"apply-policy",
 		"repair-remote-support",
+		"bootstrap-remote-support",
 		"remote-support-ui-session",
 		"netlogon-self-update",
 		"watchdog-check",

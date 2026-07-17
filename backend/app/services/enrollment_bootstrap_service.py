@@ -2473,7 +2473,6 @@ function Install-OrRepairRemoteSupport {
     $before = Get-RemoteSupportObservation
     Write-Log "remote_support_state=$($before.State)"
     if ($before.State -eq 'healthy') { return 'unchanged' }
-    if ($before.State -eq 'config_conflict') { throw 'Remote Support configuration identities conflict; automatic repair refused.' }
     if ($before.State -eq 'missing') {
         if ([string]::IsNullOrWhiteSpace($RemoteSupportMsiUrl) -or [string]::IsNullOrWhiteSpace($RemoteSupportExpectedSha256)) {
             throw 'No verified active Remote Support MSI is available for clean install.'
@@ -2496,34 +2495,23 @@ function Install-OrRepairRemoteSupport {
         }
     }
 
-    if (@($RemoteSupportBundleUrl, $RemoteSupportBundleSha256, $RemoteSupportManifestUrl, $RemoteSupportManifestSha256) | Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
-        throw 'Verified native Remote Support recovery bundle is unavailable; MSI repair is refused for damaged state.'
+    if ([string]::IsNullOrWhiteSpace($RemoteSupportTargetVersion) -or [string]::IsNullOrWhiteSpace($RemoteSupportExpectedSha256)) {
+        throw 'Active Remote Support MSI metadata is unavailable for Agent recovery.'
     }
-    $artifactDir = 'C:\ProgramData\TechiAgent\recovery\remote-support'
-    New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
-    $bundlePath = Join-Path $artifactDir $RemoteSupportBundleFilename
-    $manifestPath = Join-Path $artifactDir $RemoteSupportManifestFilename
-    foreach ($item in @(
-        @($RemoteSupportBundleUrl, $bundlePath, $RemoteSupportBundleSha256),
-        @($RemoteSupportManifestUrl, $manifestPath, $RemoteSupportManifestSha256)
-    )) {
-        $tmp = $item[1] + '.download'
-        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-        Invoke-WebRequest -Uri $item[0] -OutFile $tmp -UseBasicParsing -ErrorAction Stop
-        $actual = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
-        if ($actual -ne $item[2].ToLower()) { Remove-Item -LiteralPath $tmp -Force; throw 'Native Remote Support recovery artifact SHA256 mismatch.' }
-        Move-Item -LiteralPath $tmp -Destination $item[1] -Force
+    $agentOutput = @(& $AgentExe bootstrap-remote-support `
+        --config 'C:\ProgramData\TechiAgent\agent.config.json' `
+        --observed-state $before.State `
+        --msi-version $RemoteSupportTargetVersion `
+        --msi-sha256 $RemoteSupportExpectedSha256 2>&1)
+    $agentExitCode = $LASTEXITCODE
+    $agentDetail = ($agentOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+    foreach ($line in $agentOutput) { Write-Log "remote_support_agent: $line" }
+    if ($agentExitCode -ne 0) {
+        if ([string]::IsNullOrWhiteSpace($agentDetail)) {
+            throw "Agent reinstall_rustdesk handler failed with exit $agentExitCode and no output."
+        }
+        throw $agentDetail
     }
-    $agentConfig = Get-Content -LiteralPath 'C:\ProgramData\TechiAgent\agent.config.json' -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    if ([int]$agentConfig.device_id -le 0) { throw 'Agent device identity unavailable for native RS canary policy.' }
-    $policy = $RemoteSupportNativePolicyJson | ConvertFrom-Json -ErrorAction Stop
-    $policy.remote_support.recovery_mode = 'canary'
-    $policy.remote_support.eligible_device_ids = @([string]$agentConfig.device_id)
-    $policyPath = Join-Path $artifactDir 'techi-policy.json'
-    [IO.File]::WriteAllText($policyPath, ($policy | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
-    & $AgentExe repair-remote-support --policy $policyPath --artifact-dir $artifactDir --device-id ([string]$agentConfig.device_id) --execute --json
-    if ($LASTEXITCODE -ne 0) { throw "Native Remote Support recovery failed with exit $LASTEXITCODE." }
-    if ((Get-RemoteSupportObservation).State -ne 'healthy') { throw 'Native Remote Support recovery did not reach healthy state.' }
     return 'repaired'
 }
 '''
@@ -2538,8 +2526,6 @@ function Install-OrRepairRemoteSupport {
     ) -> tuple[str, str]:
         msi_url, sha256, agent_version = self._windows_msi_package_info(backend_url)
         rs_msi_url, rs_sha256, rs_version = self._remote_support_msi_package_info(backend_url)
-        rs_bundle = self._remote_support_bundle_package_info(backend_url)
-        native_policy_json = json.dumps(self.build_native_policy(backend_url), separators=(",", ":"))
         safe_token = enrollment_token.replace("'", "''")
         safe_url = backend_url.replace("'", "''")
         safe_msi_url = msi_url.replace("'", "''")
@@ -2548,13 +2534,6 @@ function Install-OrRepairRemoteSupport {
         safe_rs_msi_url = rs_msi_url.replace("'", "''")
         safe_rs_sha256 = rs_sha256.replace("'", "''")
         safe_rs_version = rs_version.replace("'", "''")
-        safe_rs_bundle_url = rs_bundle.get("url", "").replace("'", "''")
-        safe_rs_bundle_sha = rs_bundle.get("sha256", "").replace("'", "''")
-        safe_rs_bundle_filename = rs_bundle.get("filename", "").replace("'", "''")
-        safe_rs_manifest_url = rs_bundle.get("manifest_url", "").replace("'", "''")
-        safe_rs_manifest_sha = rs_bundle.get("manifest_sha256", "").replace("'", "''")
-        safe_rs_manifest_filename = rs_bundle.get("manifest_filename", "").replace("'", "''")
-        safe_native_policy_json = native_policy_json.replace("'", "''")
         bootstrap_config_invocation = build_windows_bootstrap_config_invocation(
             remote_support_auto_repair_mode=settings.REMOTE_SUPPORT_AUTO_REPAIR_MODE,
             remote_support_auto_repair_device_ids=(
@@ -2588,13 +2567,6 @@ function Install-OrRepairRemoteSupport {
             f"$RemoteSupportMsiUrl = '{safe_rs_msi_url}'",
             f"$RemoteSupportExpectedSha256 = '{safe_rs_sha256}'",
             f"$RemoteSupportTargetVersion = '{safe_rs_version}'",
-            f"$RemoteSupportBundleUrl = '{safe_rs_bundle_url}'",
-            f"$RemoteSupportBundleSha256 = '{safe_rs_bundle_sha}'",
-            f"$RemoteSupportBundleFilename = '{safe_rs_bundle_filename}'",
-            f"$RemoteSupportManifestUrl = '{safe_rs_manifest_url}'",
-            f"$RemoteSupportManifestSha256 = '{safe_rs_manifest_sha}'",
-            f"$RemoteSupportManifestFilename = '{safe_rs_manifest_filename}'",
-            f"$RemoteSupportNativePolicyJson = '{safe_native_policy_json}'",
             f"$Token         = '{safe_token}'",
             "$MsiPath       = Join-Path $env:TEMP 'techi-endpoint-setup.msi'",
             "$LogFile       = 'C:\\Windows\\Temp\\techi-bootstrap.log'",

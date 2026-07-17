@@ -118,7 +118,7 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypa
     assert "-remote-support-auto-repair-mode disabled" in bootstrap_config_invocation
     assert "-remote-support-auto-repair-device-ids" not in bootstrap_config_invocation
     assert "$AgentTargetVersion = '2.1.10'" in script
-    assert "$BootstrapConfigContractVersion = '1'" in script
+    assert "$BootstrapConfigContractVersion = '2'" in script
     assert "bootstrap-config-contract" in script
     assert "$agentContractCompatible" in script
     assert "refusing unsupported flags" in script
@@ -127,13 +127,30 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypa
     )
     assert "'pending_reboot'" in script
     assert "'executable_missing'" in script
-    assert "MSI repair is refused for damaged state" in script
-    assert "repair-remote-support --policy $policyPath" in script
-    assert "$policy.remote_support.recovery_mode = 'canary'" in script
-    assert "Native Remote Support recovery did not reach healthy state" in script
+    assert "bootstrap-remote-support" in script
+    assert "repair-remote-support --policy $policyPath" not in script
+    assert "Native Remote Support recovery did not reach healthy state" not in script
     assert "agent_result=$AgentResult remote_support_result=$RemoteSupportResult" in script
     assert script.index("AgentCurrentHealthy") < script.index("Downloading TECHI Endpoint package")
     assert script.index("service exists but lifecycle did not reach operational") < script.index("$RemoteSupportResult = Install-OrRepairRemoteSupport")
+
+
+def test_healthy_agent_locked_runtime_uses_current_agent_reinstall_handler():
+    _, script = _OneTimePackageStub()._windows_msi_bootstrap(
+        "https://api-rdp.techi.com.al",
+        "token-value-that-is-long-enough",
+        "Device 11",
+        _make_req(),
+    )
+
+    assert "agent_result=unchanged reason=healthy_current" in script
+    assert "if ($state -ne 'healthy' -and $ownedProcesses.Count -gt 0) { $state = 'locked_runtime' }" in script
+    assert "& $AgentExe bootstrap-remote-support" in script
+    assert "--observed-state $before.State" in script
+    assert "--msi-version $RemoteSupportTargetVersion" in script
+    assert "--msi-sha256 $RemoteSupportExpectedSha256" in script
+    assert "return 'repaired'" in script
+    assert "repair-remote-support" not in script
 
 
 def _bootstrap_config_invocation(script: str) -> str:

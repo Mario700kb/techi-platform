@@ -52,6 +52,7 @@ func TestUtilityCommandSetIncludesInstallerHelpers(t *testing.T) {
 		"watchdog-check",
 		"bootstrap-config",
 		"bootstrap-config-contract",
+		"bootstrap-remote-support",
 		"rs-tray-task",
 		"remote-support-ui-session",
 		"installer-marker",

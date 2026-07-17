@@ -3,13 +3,13 @@
         "FileVersion": {
             "Major": 2,
             "Minor": 1,
-            "Patch": 13,
+            "Patch": 14,
             "Build": 0
         },
         "ProductVersion": {
             "Major": 2,
             "Minor": 1,
-            "Patch": 13,
+            "Patch": 14,
             "Build": 0
         },
         "FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
         "Comments": "TECHI Platform endpoint management and monitoring agent. Includes safe detached self-update support.",
         "CompanyName": "TECHI Solutions SH.P.K.",
         "FileDescription": "TECHI Platform Endpoint Agent",
-        "FileVersion": "2.1.13.0",
+        "FileVersion": "2.1.14.0",
         "InternalName": "techi-agent",
         "LegalCopyright": "Copyright (c) 2026 TECHI Solutions SH.P.K. All rights reserved.",
         "LegalTrademarks": "TECHI Solutions",
         "OriginalFilename": "techi-agent.exe",
         "PrivateBuild": "",
         "ProductName": "TECHI Platform Endpoint Agent",
-        "ProductVersion": "2.1.13.0",
+        "ProductVersion": "2.1.14.0",
         "SpecialBuild": ""
     },
     "VarFileInfo": {

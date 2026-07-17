@@ -278,7 +278,7 @@ func TestReinstallRestoresAndValidatesCanonicalIdentity(t *testing.T) {
 	}
 	source := string(data)
 	for _, required := range []string{
-		"loadCanonicalRustDeskIdentity()",
+		"loadCanonicalRustDeskRepairIdentity(o.cfg)",
 		"synchronizeCanonicalRustDeskConfig(o.cfg, o.canonical, true)",
 		"validateCanonicalRustDeskIdentity(o.cfg, o.canonical)",
 	} {

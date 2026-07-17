@@ -4,14 +4,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_one_time_bootstrap_uses_msi_only_for_missing_and_native_bundle_for_damage():
+def test_one_time_bootstrap_uses_current_agent_reinstall_for_damage():
     source = (ROOT / "backend/app/services/enrollment_bootstrap_service.py").read_text()
     assert "if ($before.State -eq 'missing')" in source
     assert "Remote Support clean-install MSI failed" in source
-    assert "MSI repair is refused for damaged state" in source
-    assert "repair-remote-support --policy $policyPath" in source
-    assert "--execute --json" in source
-    assert "$policy.remote_support.recovery_mode = 'canary'" in source
+    assert "& $AgentExe bootstrap-remote-support" in source
+    assert "--observed-state $before.State" in source
+    bootstrap = source.split("def _remote_support_one_time_ps_lines", 1)[1].split("def _windows_msi_bootstrap", 1)[0]
+    assert "repair-remote-support" not in bootstrap
+    assert "Native Remote Support recovery did not reach healthy state" not in bootstrap
+    agent_command = (ROOT / "agent/bootstrap_remote_support.go").read_text()
+    assert "handleReinstallRustDesk" in agent_command
 
 
 def test_agent_and_native_recovery_share_one_machine_lock():

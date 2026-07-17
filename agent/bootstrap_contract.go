@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-const bootstrapConfigContractVersion = "1"
+const bootstrapConfigContractVersion = "2"
 
 const (
 	bootstrapFlagAPIURL                  = "api-url"
