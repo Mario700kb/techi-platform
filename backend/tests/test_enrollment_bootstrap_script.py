@@ -122,6 +122,15 @@ def test_one_time_install_separates_agent_and_remote_support_lifecycles(monkeypa
     assert "bootstrap-config-contract" in script
     assert "$agentContractCompatible" in script
     assert "refusing unsupported flags" in script
+    # Fail-closed gate must be observable: the exact failing check is logged
+    # before the generic refusal so a stale/skewed package is diagnosable.
+    assert "contract_check=fail reason=no_contract" in script
+    assert "contract_check=fail reason=agent_version_mismatch" in script
+    assert "contract_check=fail reason=contract_version_mismatch" in script
+    assert "contract_check=fail reason=unsupported_flag" in script
+    assert "contract_received agent_version=$receivedVersion" in script
+    assert "contract_expected agent_version=$expectedVersion" in script
+    assert "contract_check=ok" in script
     assert script.index("if (-not (Test-AgentBootstrapConfigContract $AgentExe))") < script.index(
         "& $AgentExe bootstrap-config "
     )

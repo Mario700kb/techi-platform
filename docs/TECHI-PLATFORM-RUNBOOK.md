@@ -33,6 +33,41 @@ inference, performance, and security behavior.
 Use this guide to reconcile token uses with unique devices, duplicate
 enrollments, failures, archived devices, and orphaned uses.
 
+## Bootstrap-config Contract Mismatch ("refusing unsupported flags")
+
+Symptom: after `Agent MSI complete (exit 0)`, the bootstrap log shows
+`ERROR: Agent bootstrap-config contract does not match the active bootstrap
+package; refusing unsupported flags.` and enrollment never completes.
+
+This gate is **fail-closed by design** — do not weaken or bypass it. It rejects
+any agent binary whose emitted `bootstrap-config-contract` payload does not
+exactly match the deployed backend (agent version, `contract_version`, required
+flags). The near-universal cause is a **deploy skew**: the active downloadable
+Windows agent MSI was built before the current backend's contract bump, so its
+binary reports an older `contract_version`, while the version *number* may still
+read the same (e.g. both 2.1.14).
+
+Diagnose from `C:\Windows\Temp\techi-bootstrap.log` — the gate now logs the
+exact failing check just before the ERROR:
+
+- `contract_check=fail reason=no_contract` — the installed agent does not
+  implement `bootstrap-config-contract` (predates the feature) or exited
+  nonzero / emitted non-JSON. Rebuild+publish a current agent MSI.
+- `contract_check=fail reason=contract_version_mismatch expected=<X> received=<Y>`
+  — served MSI is stale/out-of-band. Republish and **activate** the CI-verified
+  MSI whose contract matches the deployed backend.
+- `contract_check=fail reason=agent_version_mismatch expected=<X> received=<Y>`
+  — the active package metadata version and the installed binary disagree.
+- `contract_check=fail reason=unsupported_flag missing_flag=<flag>` — a genuine
+  flag-level contract gap; the agent build lacks a required flag.
+
+Also compare the logged `contract_received` vs `contract_expected` lines
+directly. Resolution: ensure the active `windows-amd64` `msi` package is the
+current CI-built artifact (CI probes `bootstrap-config-contract` and runs
+`scripts/verify_bootstrap_config_contract.py` post-build, so a correctly built
+MSI cannot ship a mismatched contract), and always deploy the backend contract
+bump **together with** activating the matching MSI — never backend first.
+
 ## Remote Support Clean Reinstall
 
 Use the device action `Reinstall TECHI Remote Support` only when Remote Support

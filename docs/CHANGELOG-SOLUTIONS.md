@@ -27,6 +27,76 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-17] Bootstrap-config contract "refusing unsupported flags" on every install — deploy skew + unobservable gate
+
+### Problemi
+Every Windows install failed after `Agent MSI complete (exit 0)` with:
+`ERROR: Agent bootstrap-config contract does not match the active bootstrap
+package; refusing unsupported flags.` Reproduced on clean and existing
+machines, old and new tokens. MSI FileVersion/ProductVersion = 2.1.14, agent
+heartbeat healthy when started manually, UI later reports 2.1.14 — so the agent
+binary is valid and the failure is the enrollment contract gate, not the token.
+
+### Analiza (evidence)
+The message is emitted by the generated PowerShell (`Install-OrRepair` gate in
+`enrollment_bootstrap_service.py`) whenever `Test-AgentBootstrapConfigContract`
+returns `$false`. That function has three fail-closed checks:
+1. normalized `agent_version` == `$AgentTargetVersion`
+2. `contract_version` == `$BootstrapConfigContractVersion` (backend = "2")
+3. every `$RequiredBootstrapConfigFlags` present in `supported_flags`
+
+Git evidence: HEAD `94e6699` atomically bumped `agent/VERSION` 2.1.13→2.1.14
+**and** the contract "1"→"2" (both agent `bootstrap_contract.go` and backend
+`bootstrap_config_contract.py`). `Get-NormalizedVersion` reduces "2.1.14.0" and
+"2.1.14" to the same value, so the version check is robust. Building the agent
+from HEAD (`-X main.AgentVersion=2.1.14`) and running `bootstrap-config-contract`
+emits `contract_version=2` with all 5 required flags, and
+`scripts/verify_bootstrap_config_contract.py` accepts it. CI
+(`build-agent-msi.yml:193`) already probes and verifies this post-build.
+Therefore a correctly-built HEAD MSI **passes** the gate — the failing install
+is running a binary that reports `contract_version="1"`.
+
+### Shkaku (root cause)
+Deployment version skew made observable only by inference: the active
+downloadable Windows agent MSI in production emits `contract_version="1"`, while
+the deployed backend (HEAD, contract "2") requires `"2"`. The agent *version*
+number (2.1.14) matches, so the true failing check was #2 (contract_version),
+not #3 (flags). The gate logged a single generic "refusing unsupported flags"
+message and **zero diagnostics** (no received vs expected contract, no failing
+check), which misdirected the investigation toward flags and hid a pure
+package/backend deploy skew. The served MSI is a stale or out-of-band artifact
+that was never gated by the current CI contract probe.
+
+### Zgjidhja
+Keep the gate strictly fail-closed, but make it **observable**.
+`Test-AgentBootstrapConfigContract` now logs, before each `return $false`:
+`contract_check=fail reason=no_contract | agent_version_mismatch |
+contract_version_mismatch | unsupported_flag missing_flag=<flag>`, plus
+`contract_received ...` / `contract_expected ...` lines and a `contract_check=ok`
+on success. No validation weakened, nothing silently accepted. Operationally the
+install passes once the CI-verified HEAD 2.1.14 MSI is the **active** download
+and backend + MSI are deployed together (never backend-ahead-of-package).
+
+### Ndryshimet
+- `backend/app/services/enrollment_bootstrap_service.py` — diagnostic logging in
+  `Test-AgentBootstrapConfigContract`; ERROR line points to `contract_check=fail`.
+- `backend/tests/test_enrollment_bootstrap_script.py` — assert the new
+  diagnostic lines are emitted.
+
+### Rezultati
+Backend suite `test_enrollment_bootstrap_script.py` + `test_bootstrap_config_contract.py`
+green (140 passed, 1 skipped). Agent `go build`/`go vet` clean. Host build emits
+`agent_version=2.1.14 contract_version=2`; verifier: `bootstrap contract
+verified`. Production deploy of the active 2.1.14 MSI + backend and clean-Windows
+end-to-end verification are the remaining operational steps (require prod/Windows
+access — see runbook).
+
+### Mësimet
+A fail-closed gate MUST log received vs expected and which check tripped, or a
+routine package/backend deploy skew becomes an un-triageable field outage. Never
+deploy the backend contract bump ahead of activating the matching CI-verified
+MSI.
+
 ## [2026-07-14] Canary remediation: current health truth, Agent-independent Connect, and Windows release trust
 
 ### Problem
