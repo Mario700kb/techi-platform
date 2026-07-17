@@ -42,10 +42,22 @@ package; refusing unsupported flags.` and enrollment never completes.
 This gate is **fail-closed by design** — do not weaken or bypass it. It rejects
 any agent binary whose emitted `bootstrap-config-contract` payload does not
 exactly match the deployed backend (agent version, `contract_version`, required
-flags). The near-universal cause is a **deploy skew**: the active downloadable
-Windows agent MSI was built before the current backend's contract bump, so its
-binary reports an older `contract_version`, while the version *number* may still
-read the same (e.g. both 2.1.14).
+flags). The cause is a **deploy skew that can run in either direction** — the
+backend and the shipped agent/MSI declare different `contract_version`s. Prove
+the direction, don't assume it (the 2026-07-17 incident's first guess was
+backwards):
+
+1. Download the active MSI and run its agent:
+   `msiextract TECHI-Agent-<v>.msi` → `wine techi-agent.exe bootstrap-config-contract`
+   (or run on a Windows box). Note its `contract_version`.
+2. Read the **deployed** backend's expectation:
+   `ssh techi-server "grep BOOTSTRAP_CONFIG_CONTRACT_VERSION /opt/techi/techi-platform/backend/app/services/bootstrap_config_contract.py"`
+   and confirm the running container:
+   `docker exec techi-platform-backend-1 python -c "from app.services.bootstrap_config_contract import BOOTSTRAP_CONFIG_CONTRACT_VERSION as v; print(v)"`.
+3. They must be equal. In the 2026-07-17 incident the **backend was behind**
+   (backend "1", MSI "2"); the fix was to advance the backend, never to downgrade
+   the MSI. Backend code is baked into the image — apply the change on disk then
+   `docker compose build backend && docker compose up -d backend`.
 
 Diagnose from `C:\Windows\Temp\techi-bootstrap.log` — the gate now logs the
 exact failing check just before the ERROR:
