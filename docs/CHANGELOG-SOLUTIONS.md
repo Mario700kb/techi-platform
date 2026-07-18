@@ -27,6 +27,66 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-18] TOTAL ROLLBACK EXECUTED — code→92a521c + DB→07-11 (owner-ordered, risk accepted); storm did NOT recur
+
+### Problemi
+After the targeted-fix branch was built (see entry below), the owner (Mario)
+issued a FINAL ORDER for a **total rollback of code AND database to 2026-07-11**,
+explicitly accepting the known risk that this is the same state that failed on
+07-17 (RS-password storm, load 12+). Structured order: mandatory backup →
+prepare instant-revert BEFORE deploy → execute → 20-min active monitoring with
+auto-revert if load>4.
+
+### Zgjidhja / Ekzekutimi
+- **HAPI 1 (backup):** fresh `pg_dumpall` → `postgres-MANUAL-pre-total-rollback-2026-07-18_17-24-16.sql.gz`
+  (131M, `gunzip -t` OK, sha256 `9b85ed5d…`); safety branch/tag confirmed intact;
+  current images tagged `techi-{backend,frontend}:pre-total-rollback-2026-07-18`
+  (`bb0426e9`/`fb2db3a9`); deployed code `070bdfe` recorded; vault master key
+  verified identical 07-11↔07-18↔live (`e7bcd67f…`, no rotation) + copied aside.
+- **HAPI 2 (instant-revert ready BEFORE deploy):** `/opt/backups/techi/INSTANT_REVERT.sh`
+  (fast rename-swap of preserved 07-18 DB; dump fallback), `bash -n` OK, all inputs verified.
+- **HAPI 3 (execute):** `git -C /opt checkout 92a521c` (target = "Production Verified 2026-07-11",
+  before that day's broken 2.1.7 work); DB: renamed current `techi`→`techi_pre_total_rollback_20260718`
+  (preserved, NOT dropped) then restored `postgres-2026-07-11_03-00.sql.gz`; rebuilt backend+frontend
+  images from 92a521c; `up -d`. Restore verified against the dump: 728 devices + alembic heads
+  `e6f7a8b9c0d1`+`b2c3d4e5f8a9` match exactly → clean 07-11.
+- **HAPI 4 (20-min watch):** server-side watchdog (`ROLLBACK_WATCHDOG.sh`, 10s cadence, auto-fire
+  revert on 2×load>4 or 1×load>8). **Result: CLEAN — the storm did NOT recur.** Peak load1 across
+  the whole window = **3.62** (a normal fleet-reconnection surge at minute 3), settled to ~0.8;
+  heartbeats returned 204 throughout; watchdog never fired, exited CLEAN at el=1260s.
+
+### Shkaku i një çështjeje të mbetur (package catalog)
+`/api/v1/devices/overview` + `/agent-packages` returned 500 (`ValueError:
+'remote_support_dmg' is not a valid AgentFileType`). Root cause: **`AgentPackageService`
+reads packages from a filesystem `manifest.json` in `AGENT_PACKAGE_STORAGE_DIR` (persistent
+volume), NOT the DB** — so the DB rollback did not roll back the package catalog. The 07-18
+manifest held 9 post-07-11 RS entries (`remote_support_dmg×3, _pkg×3, _msi×2, _bundle×1`) whose
+file_types the 92a521c enum (only `msi/agent_binary/agent_update_msi`) rejects. No 07-11 manifest
+backup exists (earliest is 07-17). **Fix (owner-approved):** backed up `manifest.json` →
+`manifest.json.pre-total-rollback-2026-07-18`, quarantined the 9 RS entries →
+`manifest.quarantined-rs-2026-07-18.json`, kept the 21 valid. Endpoints recovered to 200, tracebacks→0.
+
+### Rezultati — CURRENT DEPLOYED STATE (2026-07-18 ~17:57 UTC)
+Prod `/opt/techi/techi-platform` at **detached `92a521c`**; DB = **07-11** (alembic
+`e6f7a8b9c0d1`+`b2c3d4e5f8a9`); images rebuilt from 92a521c; manifest = 21 pkgs (RS quarantined).
+All containers healthy, load ~1, no storm, operator endpoints 200. **A week of production data
+(07-11→07-18) is NOT live** — it is preserved intact in DB `techi_pre_total_rollback_20260718`.
+
+### Instant-revert (still armed)
+`ssh techi-server 'bash /opt/backups/techi/INSTANT_REVERT.sh'` → restores code `070bdfe` +
+preserved images + swaps `techi_pre_total_rollback_20260718` back. Manifest revert (if needed):
+restore `manifest.json.pre-total-rollback-2026-07-18`. Safety refs on origin:
+`backup/pre-remote-support-rollback-2026-07-18` + tag.
+
+### Mësimet
+- **Package catalog is filesystem state, not DB** — a DB-only rollback leaves the manifest
+  ahead of the code; any total rollback must roll back `AGENT_PACKAGE_STORAGE_DIR` too (or
+  quarantine incompatible entries). Add manifest to the nightly backup.
+- The "07-17 storm" did NOT reproduce from a clean 07-11 code+DB pair — the earlier failure may
+  have been a code/schema MISMATCH (old code on newer schema), not old code per se. A *matched*
+  old-code+old-DB pair reconnected the fleet with only a normal surge (peak 3.62).
+- Rename-don't-drop DB preservation made the rollback fully + instantly reversible.
+
 ## [2026-07-18] Remote Support categorical rollback — Phase 1–3 forensics + target selection (PREP ONLY, not deployed)
 
 ### Problemi
