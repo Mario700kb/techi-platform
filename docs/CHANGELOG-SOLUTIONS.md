@@ -100,9 +100,32 @@ regression being fixed.
 - **No source reverted yet** — Phase-4 branch construction is the next step.
 
 ### Rezultati
-Phase 1–3 complete and reported to owner; target + approach **approved by owner
-2026-07-18**. Prod untouched beyond read-only inspection + two additive backup
-refs. BUILD/TEST pending Phase-4 branch.
+Phase 1–3 complete and reported; target + approach **approved by owner 2026-07-18**.
+Prod untouched beyond read-only inspection + two additive backup refs.
+
+**Phase-4 built (NOT deployed) — scope re-decided after inspecting deployed reality.**
+Deployed prod already had the heavier RS regression flag-disabled
+(`REMOTE_SUPPORT_DIRECT_CONNECT_ENABLED=false`, `REMOTE_SUPPORT_AUTO_REPAIR_MODE=disabled`,
+`NATIVE_BOOTSTRAP_ENABLED=false`, `AGENT_HEARTBEAT_AUTH_MODE=observe`); the sole live
+regression was the always-on **frontend launch-token** flow (`launchRemoteSupportConnect`
+→ token-only URL → RS home screen). A full 276-file revert (incl. deleting the 98-file
+agent native subsystem + symbol-surgery on interleaved auth) was **rejected** by owner in
+favor of a **targeted ~5-file Connect revert** (near-zero fleet-compat risk — never touches
+agent-auth/heartbeat/credential code, the thing that stormed on 07-17).
+
+Unforeseen conflict handled (owner Option A): `f7207a7`'s connect used deleted APIs
+(`get_or_create`, `RUSTDESK_DEFAULT_PASSWORD`, managed-password policy key) → adapted to
+source the password from the **kept** `RemoteSupportPasswordService.get_confirmed_active_plaintext`.
+Frontend consolidated on the `837488f` coordinator variant (keeps the rapid-re-click
+stale-response guard) wired to direct `getConnectUrl → launchConnect`.
+
+Branch `rollback/remote-support-2026-07-18` @ `58b9534`, built on a baseline whose tree is
+**byte-exact** to deployed `070bdfe`. Files: `remote_support.py` (managed-password URL +
+accurate audit), `remoteSupportConnect.ts`/`.test.ts`, `rustdeskLaunch.ts` (→ f7207a7),
+`test_remote_support_connect_url.py`. Dormant launch-token endpoint + all agent/auth code left intact.
+**BUILD/TEST green:** frontend 83/83 + tsc + vite build; backend 961 pass (2 failures pre-exist
+on baseline, unrelated agent-installer tests — zero regressions from this change).
+**Not deployed; awaiting owner review + device-11 runtime validation (checklist prepared).**
 
 ### Mësimet
 - A "rollback" here is **two independent axes**: (a) RS/Connect launch behavior
