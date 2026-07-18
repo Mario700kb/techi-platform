@@ -3,13 +3,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
+	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -36,52 +39,81 @@ func cleanupPlatformHandoffs() error {
 }
 
 func securePlatformHandoff(ctx context.Context, remoteID string, password []byte) error {
+	if !remoteIDPattern.MatchString(remoteID) {
+		return errors.New("invalid_remote_id")
+	}
+	if len(password) == 0 || len(password) > 512 {
+		return errors.New("invalid_credential")
+	}
 	release, err := acquireBridgeMutex()
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		return errors.New("appdata_unavailable")
-	}
-	target, err := peerConfigPath(filepath.Join(appData, "TECHI Remote Support", "config"), remoteID)
+	bridgePath, err := os.Executable()
 	if err != nil {
-		return err
+		return errors.New("bridge_path_unavailable")
 	}
-	return performPeerConfigHandoff(ctx, target, password, restrictFileACL, func(_ string) error {
-		bridgePath, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		clientPath := filepath.Join(filepath.Dir(bridgePath), "TECHI Remote Support.exe")
-		if _, err := os.Stat(clientPath); err != nil {
-			return err
-		}
-		cmd := exec.Command(clientPath, "--connect", remoteID)
-		cmd.Dir = filepath.Dir(clientPath)
-		return cmd.Start()
-	})
+	clientPath := filepath.Join(filepath.Dir(bridgePath), "TECHI Remote Support.exe")
+	if info, statErr := os.Stat(clientPath); statErr != nil || info.IsDir() {
+		return errors.New("client_missing")
+	}
+	return launchClientWithCredential(ctx, clientPath, remoteID, password)
 }
 
-func restrictFileACL(path string) error {
-	token := windows.GetCurrentProcessToken()
-	user, err := token.GetTokenUser()
+// launchClientWithCredential mirrors the macOS secure handoff: launch the client
+// with `--connect <id> --techi-connect-stdin`, deliver the one-time credential on
+// stdin (never on the command line or in a URI), and wait for the client's
+// TECHI_CONNECT_ACCEPTED_V1 acknowledgement. The client's baked-in secure-connect
+// path (techi-remote-support: techi_secure_connect_from_stdin) forwards it over
+// IPC to the running instance, which opens the session directly.
+func launchClientWithCredential(ctx context.Context, clientPath, remoteID string, password []byte) error {
+	cmd := exec.Command(clientPath, "--connect", remoteID, "--techi-connect-stdin")
+	cmd.Dir = filepath.Dir(clientPath)
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return err
+		return errors.New("client_stdin_failed")
 	}
-	sid := user.User.Sid.String()
-	cmd := exec.Command(
-		filepath.Join(os.Getenv("SystemRoot"), "System32", "icacls.exe"),
-		path,
-		"/inheritance:r",
-		"/grant:r",
-		"*"+sid+":(F)",
-		"*S-1-5-18:(F)",
-	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	return cmd.Run()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return errors.New("client_ack_failed")
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return errors.New("client_launch_failed")
+	}
+	if _, err := stdin.Write(password); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		return errors.New("client_stdin_failed")
+	}
+	if err := stdin.Close(); err != nil {
+		_ = cmd.Process.Kill()
+		return errors.New("client_stdin_failed")
+	}
+
+	ack := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(io.LimitReader(stdout, 65)).ReadString('\n')
+		ack <- strings.TrimSpace(line)
+	}()
+	timer := time.NewTimer(8 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		return errors.New("handoff_cancelled")
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		return errors.New("client_ack_timeout")
+	case value := <-ack:
+		if value != "TECHI_CONNECT_ACCEPTED_V1" {
+			_ = cmd.Process.Kill()
+			return errors.New("client_ack_failed")
+		}
+		return nil
+	}
 }
 
 func acquireBridgeMutex() (func(), error) {

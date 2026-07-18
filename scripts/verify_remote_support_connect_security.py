@@ -27,8 +27,8 @@ if re.search(r"techiremotesupport://[^\s\"']*[?&]password=", combined, re.IGNORE
     fail("password-bearing custom protocol URI found")
 
 bridge = (ROOT / "remote-support-bridge/platform_windows.go").read_text(encoding="utf-8")
-if 'exec.Command(clientPath, "--connect", remoteID)' not in bridge:
-    fail("bridge client command is not the expected ID-only invocation")
+if 'exec.Command(clientPath, "--connect", remoteID, "--techi-connect-stdin")' not in bridge:
+    fail("bridge client command is not the expected stdin handoff invocation")
 if '"--password"' in bridge:
     fail("bridge constructs a password command-line argument")
 
