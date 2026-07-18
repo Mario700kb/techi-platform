@@ -112,6 +112,49 @@ function Wait-RSServiceRunning([int]$TimeoutSeconds) {
     return $false
 }
 
+function Set-RemoteConfigModificationDefault {
+    # Seed `allow-remote-config-modification = 'Y'` ONLY IF the key is absent, so a
+    # fresh install lets administrators change Remote Support config remotely without
+    # local activation, while any pre-existing manual value (Y or N) is preserved.
+    # Runs after the config writer, so RustDesk2.toml already exists with [options].
+    $script:currentStep = 'seed_remote_config_default'
+    $key = 'allow-remote-config-modification'
+    $candidateDirs = @(
+        (Join-Path $env:ProgramData 'TECHI Remote Support\config'),
+        (Join-Path $env:SystemRoot 'ServiceProfiles\LocalService\AppData\Roaming\TECHI Remote Support\config'),
+        (Join-Path $env:SystemRoot 'System32\config\systemprofile\AppData\Roaming\TECHI Remote Support\config')
+    )
+    foreach ($dir in $candidateDirs) {
+        $path = Join-Path $dir 'RustDesk2.toml'
+        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        try {
+            $lines = @(Get-Content -LiteralPath $path -ErrorAction Stop)
+            if ($lines -match "^\s*$([regex]::Escape($key))\s*=") {
+                Write-InstallLog "step=seed_remote_config_default path=$path result=already_present"
+                continue
+            }
+            $out = New-Object System.Collections.Generic.List[string]
+            $inserted = $false
+            foreach ($line in $lines) {
+                $out.Add($line)
+                if (-not $inserted -and $line.Trim() -eq '[options]') {
+                    $out.Add("$key = 'Y'")
+                    $inserted = $true
+                }
+            }
+            if (-not $inserted) {
+                if ($out.Count -gt 0 -and $out[$out.Count - 1].Trim() -ne '') { $out.Add('') }
+                $out.Add('[options]')
+                $out.Add("$key = 'Y'")
+            }
+            Set-Content -LiteralPath $path -Value $out -Encoding UTF8 -ErrorAction Stop
+            Write-InstallLog "step=seed_remote_config_default path=$path result=seeded"
+        } catch {
+            Write-InstallLog "warning step=seed_remote_config_default path=$path error=$($_.Exception.Message)"
+        }
+    }
+}
+
 function Configure-TrayTask {
     $script:currentStep = 'configure_tray_task'
     try {
@@ -143,6 +186,10 @@ try {
     }
 
     Stop-OwnedRSProcesses
+
+    # Seed the remote-config-modification default before (re)starting the service so
+    # it is read on first start. No-op if already present (preserves manual choice).
+    Set-RemoteConfigModificationDefault
 
     Set-InstallStep 'configure_service'
     $status = Get-RSServiceStatus
