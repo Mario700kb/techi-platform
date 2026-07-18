@@ -89,7 +89,7 @@ jobs:
       - name: Upload tested launcher components
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: TECHI-Remote-Support-macOS-components-1.4.8
+          name: TECHI-Remote-Support-macOS-components-1.4.9
           retention-days: 30
           if-no-files-found: error
           path: |
