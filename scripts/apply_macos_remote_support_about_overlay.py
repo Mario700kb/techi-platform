@@ -76,6 +76,7 @@ def apply(source_root: Path) -> None:
         raise RuntimeError("secure connect source overlay requires Rust core/IPC/server and Flutter common/model")
     core_text = core.read_text(encoding="utf-8-sig")
     if SECURE_CONNECT_MARKER not in core_text:
+        # Fresh RustDesk source: inject the dispatch and the implementation body.
         core_text = replace_once(
             core_text,
             "    crate::load_custom_client();\n",
@@ -88,19 +89,22 @@ def apply(source_root: Path) -> None:
             "    }\n",
             "secure connect dispatch anchor",
         )
+        core_text = core_text.replace(
+            '    if std::env::args().any(|arg| arg == "--techi-connect-stdin" || arg == "--techi-connect-self-test") {\n',
+            '    if std::env::args()\n'
+            '        .any(|arg| arg == "--techi-connect-stdin" || arg == "--techi-connect-self-test")\n'
+            '    {\n',
+        )
+        anchor = "/// invoke a new connection\n"
+        implementation = (OVERLAY / "secure_connect.rs.txt").read_text(encoding="utf-8").rstrip()
+        marker_start = core_text.index("// " + SECURE_CONNECT_MARKER)
+        marker_end = core_text.index(anchor, marker_start)
+        core_text = core_text[:marker_start] + implementation + "\n\n" + core_text[marker_end:]
     elif "--techi-connect-stdin" not in core_text or "TECHI_CONNECT_ACCEPTED_V1" not in core_text:
         raise RuntimeError("secure connect overlay is only partially applied")
-    core_text = core_text.replace(
-        '    if std::env::args().any(|arg| arg == "--techi-connect-stdin" || arg == "--techi-connect-self-test") {\n',
-        '    if std::env::args()\n'
-        '        .any(|arg| arg == "--techi-connect-stdin" || arg == "--techi-connect-self-test")\n'
-        '    {\n',
-    )
-    anchor = "/// invoke a new connection\n"
-    implementation = (OVERLAY / "secure_connect.rs.txt").read_text(encoding="utf-8").rstrip()
-    marker_start = core_text.index("// " + SECURE_CONNECT_MARKER)
-    marker_end = core_text.index(anchor, marker_start)
-    core_text = core_text[:marker_start] + implementation + "\n\n" + core_text[marker_end:]
+    # Idempotent: when the source already carries the secure-connect contract
+    # (e.g. the techi-remote-support fork bakes it in for macOS+Windows), leave
+    # core_main.rs untouched so the applier never reverts it to a macOS-only body.
     core.write_text(core_text, encoding="utf-8")
 
     ipc_text = ipc.read_text(encoding="utf-8-sig")
