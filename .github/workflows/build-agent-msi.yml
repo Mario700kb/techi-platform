@@ -14,6 +14,8 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REQUIRE_SIGNED_WINDOWS_ARTIFACTS: ${{ vars.REQUIRE_SIGNED_WINDOWS_ARTIFACTS || '0' }}
+  REMOTE_SUPPORT_VERSION: '1.4.6'
+  REMOTE_SUPPORT_VERSION4: '1.4.6.0'
 
 jobs:
   build-msi:
@@ -80,6 +82,7 @@ jobs:
           wix eula accept wix7
           wix extension add --global WixToolset.UI.wixext/7.0.0
           wix extension add --global WixToolset.Util.wixext/7.0.0
+          wix extension add --global WixToolset.Bal.wixext/7.0.0
 
       # ------------------------------------------------------------------ #
       # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
@@ -156,7 +159,7 @@ jobs:
         working-directory: remote-support-bridge
         run: |
           go test ./...
-          go build -ldflags="-s -w -X main.version=1.4.8" -trimpath -o ../agent/installer/techi-remote-support-bridge.exe .
+          go build -ldflags="-s -w -X main.version=$env:REMOTE_SUPPORT_VERSION" -trimpath -o ../agent/installer/techi-remote-support-bridge.exe .
 
       - name: Sign Agent EXE when release certificate is configured
         shell: pwsh
@@ -241,10 +244,9 @@ jobs:
           # Guard against the 2026-07-17 class of defect: the vendored Windows GUI
           # payload (agent/installer/TECHI-Remote-Support/) drifting from the release
           # version, producing a mislabeled MSI (e.g. 1.4.8 MSI containing a 1.4.6 exe).
-          # remote-support-macos/VERSION is the single source of truth for the RS release.
-          $rsVersion = (Get-Content -Raw remote-support-macos/VERSION).Trim()
+          $rsVersion = $env:REMOTE_SUPPORT_VERSION
           $rsNorm = [regex]::Match($rsVersion, '\d+\.\d+\.\d+').Value
-          if ([string]::IsNullOrWhiteSpace($rsNorm)) { throw "Cannot parse RS release version from remote-support-macos/VERSION ('$rsVersion')" }
+          if ([string]::IsNullOrWhiteSpace($rsNorm)) { throw "Cannot parse RS release version from REMOTE_SUPPORT_VERSION ('$rsVersion')" }
           $exe = 'agent/installer/TECHI-Remote-Support/TECHI Remote Support.exe'
           if (-not (Test-Path -LiteralPath $exe)) { throw "Remote Support GUI payload missing: $exe" }
           $raw = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
@@ -266,9 +268,21 @@ jobs:
             -arch x64 `
             -ext WixToolset.Util.wixext `
             -d SourceDir=. `
-            -d Version=1.4.8.0 `
+            -d Version=$env:REMOTE_SUPPORT_VERSION4 `
             -d BuildCommit=$buildCommit `
-            -o TECHI-Remote-Support-1.4.8.msi
+            -o "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi"
+
+      - name: Build Remote Support standalone EXE
+        if: steps.package-scope.outputs.remote_support == 'true'
+        shell: pwsh
+        working-directory: agent/installer
+        run: |
+          wix build remote-support-bundle.wxs `
+            -arch x64 `
+            -ext WixToolset.Bal.wixext `
+            -d Version=$env:REMOTE_SUPPORT_VERSION4 `
+            -d MsiPath="TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi" `
+            -o "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.exe"
 
       - name: Sign Agent MSI packages when release certificate is configured
         shell: pwsh
@@ -289,8 +303,13 @@ jobs:
             "TECHI-Agent-${{ steps.version.outputs.version }}.msi",
             "TECHI-Agent-Update-${{ steps.version.outputs.version }}.msi"
           )
-          if (Test-Path -LiteralPath "TECHI-Remote-Support-1.4.8.msi") {
-            $paths += "TECHI-Remote-Support-1.4.8.msi"
+          $remoteSupportMsi = "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi"
+          $remoteSupportExe = "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.exe"
+          if (Test-Path -LiteralPath $remoteSupportMsi) {
+            $paths += $remoteSupportMsi
+          }
+          if (Test-Path -LiteralPath $remoteSupportExe) {
+            $paths += $remoteSupportExe
           }
           foreach ($path in $paths) {
             & $signtool sign /fd SHA256 /td SHA256 /tr $env:WINDOWS_CODE_SIGNING_TIMESTAMP_URL `
@@ -310,7 +329,7 @@ jobs:
         working-directory: agent/installer
         run: |
           .\test-remote-support-msi.ps1 `
-            -MsiPath .\TECHI-Remote-Support-1.4.8.msi `
+            -MsiPath ".\TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi" `
             -LogDirectory (Join-Path $env:RUNNER_TEMP 'techi-rs-msi-tests')
 
       - name: Upload Remote Support MSI validation logs
@@ -354,11 +373,17 @@ jobs:
           $agentHash = (Get-FileHash $agent -Algorithm SHA256).Hash.ToLower()
           "$agentHash  $agent" | Out-File "$agent.sha256" -Encoding utf8NoBOM
           Write-Host "Agent EXE SHA256: $agentHash"
-          $remoteSupport = "TECHI-Remote-Support-1.4.8.msi"
+          $remoteSupport = "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi"
           if (Test-Path -LiteralPath $remoteSupport) {
             $remoteSupportHash = (Get-FileHash $remoteSupport -Algorithm SHA256).Hash.ToLower()
             "$remoteSupportHash  $remoteSupport" | Out-File "$remoteSupport.sha256" -Encoding utf8NoBOM
             Write-Host "Remote Support SHA256: $remoteSupportHash"
+          }
+          $remoteSupportExe = "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.exe"
+          if (Test-Path -LiteralPath $remoteSupportExe) {
+            $remoteSupportExeHash = (Get-FileHash $remoteSupportExe -Algorithm SHA256).Hash.ToLower()
+            "$remoteSupportExeHash  $remoteSupportExe" | Out-File "$remoteSupportExe.sha256" -Encoding utf8NoBOM
+            Write-Host "Remote Support EXE SHA256: $remoteSupportExeHash"
           }
 
       - name: Validate MSI embedded agent lineage
@@ -481,7 +506,7 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          $msi = "TECHI-Remote-Support-1.4.8.msi"
+          $msi = "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi"
           $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
           $installer = New-Object -ComObject WindowsInstaller.Installer
           $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @((Resolve-Path $msi).Path, 0))
@@ -543,7 +568,7 @@ jobs:
           $identity = [ordered]@{
             product = "TECHI Remote Support"
             source_commit = "${{ github.sha }}"
-            version = "1.4.8"
+            version = $env:REMOTE_SUPPORT_VERSION
             msi_sha256 = $hash
             executable_sha256 = $(if ($rsExe) { (Get-FileHash $rsExe.FullName -Algorithm SHA256).Hash.ToLower() } else { $null })
             executable_size = $(if ($rsExe) { $rsExe.Length } else { $null })
@@ -560,12 +585,16 @@ jobs:
             msi_package_code = $summary.Property(9)
             msi_build_commit = Read-MsiValue "SELECT Value FROM Registry WHERE Name='BuildCommit'"
           }
-          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-1.4.8.identity.json" -Encoding utf8NoBOM
+          $identity | ConvertTo-Json -Depth 5 | Set-Content "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.identity.json" -Encoding utf8NoBOM
 
       - name: Verify secure Remote Support Connect contract
         if: steps.package-scope.outputs.remote_support == 'true'
         shell: pwsh
         run: python scripts/verify_remote_support_connect_security.py
+
+      - name: Verify Windows package split source contract
+        shell: pwsh
+        run: python scripts/verify_windows_package_split.py
 
       # ------------------------------------------------------------------ #
       # 10. Upload artifact (30 ditë)                                        #
@@ -595,11 +624,13 @@ jobs:
         if: steps.package-scope.outputs.remote_support == 'true'
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: TECHI-Remote-Support-1.4.8
+          name: TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}
           path: |
-            agent/installer/TECHI-Remote-Support-1.4.8.msi
-            agent/installer/TECHI-Remote-Support-1.4.8.msi.sha256
-            agent/installer/TECHI-Remote-Support-1.4.8.identity.json
+            agent/installer/TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}.msi
+            agent/installer/TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}.msi.sha256
+            agent/installer/TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}.exe
+            agent/installer/TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}.exe.sha256
+            agent/installer/TECHI-Remote-Support-${{ env.REMOTE_SUPPORT_VERSION }}.identity.json
           retention-days: 30
           if-no-files-found: error
 

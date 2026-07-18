@@ -11,28 +11,21 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func classifyRustDeskWindowsState(installStatus, runtimeStatus, installPath string) (string, string) {
+func classifyRustDeskWindowsState(installStatus, runtimeStatus, installPath, exeVersion string) (string, string) {
 	serviceExists, servicePath := rustDeskServiceDefinition()
-	exeExists := installPath != ""
 	root := filepath.Dir(rustdeskDefaultInstallPath)
 	staleTmp := hasRustDeskTBDTemp(root)
 
-	switch {
-	case staleTmp && rustDeskPendingReboot():
-		return "damaged", "pending_reboot"
-	case staleTmp:
-		return "damaged", "partial_install"
-	case !exeExists && serviceExists:
-		return "damaged", "executable_missing"
-	case exeExists && !serviceExists:
-		return "damaged", "service_missing"
-	case exeExists && serviceExists && !sameWindowsExecutable(servicePath, installPath):
-		return "damaged", "stale_service"
-	case !exeExists:
-		return "not_installed", "not_installed"
-	default:
-		return installStatus, runtimeStatus
-	}
+	return classifyRustDeskObservedState(
+		installStatus,
+		runtimeStatus,
+		installPath,
+		exeVersion,
+		serviceExists,
+		servicePath,
+		staleTmp,
+		rustDeskPendingReboot(),
+	)
 }
 
 func rustDeskServiceDefinition() (bool, string) {

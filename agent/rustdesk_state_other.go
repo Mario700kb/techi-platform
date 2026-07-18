@@ -2,6 +2,12 @@
 
 package main
 
-func classifyRustDeskWindowsState(installStatus, runtimeStatus, _ string) (string, string) {
+import "strings"
+
+func classifyRustDeskWindowsState(installStatus, runtimeStatus, _, _ string) (string, string) {
 	return installStatus, runtimeStatus
+}
+
+func sameWindowsExecutable(left, right string) bool {
+	return strings.TrimSpace(left) == strings.TrimSpace(right)
 }

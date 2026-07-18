@@ -218,6 +218,7 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 		info.InstallStatus,
 		info.Status,
 		installPath,
+		info.Version,
 	)
 
 	// Prefer CLI: rustdesk.exe --get-id gives the exact ID shown in the UI.
