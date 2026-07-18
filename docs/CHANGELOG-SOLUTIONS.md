@@ -27,6 +27,90 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-18] Remote Support categorical rollback — Phase 1–3 forensics + target selection (PREP ONLY, not deployed)
+
+### Problemi
+After ~5 days of partial RS/Connect fixes (launch-token, Vault-driven runtime
+launch, native bootstrap, repair/reinstall/service-recreation) the stack was
+still regressed in the field and a whole-line rollback to 07-11 had already
+**failed** on 07-17. Owner directive: STOP new RS development; do a **categorical
+rollback of the entire Remote Support/Connect stack** to the last known-good
+state; future development continues only on TECHI Agent; **prove the exact target
+before any deploy** — no partial fixes, no preserving current Connect/Vault/
+bootstrap runtime behavior.
+
+### Analiza (evidence, read-only prod inspection + local git archaeology)
+- **Current state:** local branch `stable/phase-2-heartbeat` @ `837488f`
+  ("Restore legacy remote support connect launch" — a **frontend-only partial**,
+  today, NOT deployed). Working tree clean except 4 untracked build assets.
+- **Local ≠ prod divergence:** deployed `070bdfe` (07-17 15:26, contract 1→2
+  hotfix) is **server-only** — absent from local clone and origin. Prod =
+  `2a26c77` + 1 hotfix; local = `2a26c77` + 18 dev commits. Deploy dir confirmed
+  `/opt/techi/techi-platform` via container compose label; `/root` git is stale
+  (`862b1bf`). Backend img `bb0426e9` (07-17 15:21), frontend img `fb2db3a9`
+  (07-15 12:51). DB alembic `c8d9e0f1a2b3 (head)`. Load 0.27 (calm).
+- **Regression boundary is datable and clean:** the Connect launch path is
+  byte-identical from `92a521c` (07-11 12:01) through end of 07-12 — every 07-12
+  commit is deploy/packaging, none touch the launch path. First regressions land
+  **2026-07-13**: `b90456b` (native bootstrap + RS recovery planner) and
+  `3b55cb2` (remove password-bearing launcher URLs); launch-token redemption +
+  Vault-driven runtime launch arrive at `3d76a14` (07-15). All are ancestors of
+  the deployed line → the deployed prod code **contains the full regression**.
+- **Interleaving:** diff `f7207a7..2a26c77` over `backend/app`+`frontend/src` =
+  67 files, +3403/−714. RS/Connect-launch regression and 07-14+ agent-auth/
+  credential hardening are interleaved inside shared files
+  (`remote_support_password_service.py`, `enrollment_bootstrap_service.py` +766,
+  models `device.py`/`config.py`) → pure `git revert` impossible.
+- **Backups (cron `0 3 * * * /root/techi-backup.sh` → `/opt/backups/techi/`):**
+  daily `pg_dumpall` for every day 07-03→07-18 (07-11 113M, 07-12 104M) + special
+  `postgres-pre-vault-upgrade-2026-07-10_19-12.sql.gz`; daily vault-master-key
+  (+sha256) and config/rustdesk tarballs. `/opt/techi/backups/pre-rollback-
+  2026-07-17/` = complete forensic snapshot (source.gitbundle 118M, DB dump,
+  alembic head, vault key, agent packages, SHA256SUMS); `PREROLLBACK_HEAD.txt` =
+  `2a26c77`. No deploy/backup systemd timers; no scheduled GitHub workflows.
+
+### Shkaku (why the 07-17 rollback failed, and how this differs)
+The 07-17 attempt rolled the whole line back to 07-11, removing the 07-14+
+authenticated-agent-heartbeat / RS-credential-generation backend that the current
+fleet (agents 2.1.x) now depends on → agents hammered a backend that no longer
+spoke their auth protocol → RS-password storm, load 12+. Root compat risk =
+**old code cannot serve the current fleet's auth**, independent of the RS launch
+regression being fixed.
+
+### Zgjidhja (decision — not yet built/deployed)
+- **TARGET_COMMIT = `f7207a7`** (rollback ceiling; Connect-flow anchor `92a521c`).
+- **Surgical RS/Connect revert + KEEP FILES_TO_KEEP_CURRENT** (07-14+
+  `agent_auth*`, `agent_auth_migration_service`, `schema_compat_service`,
+  `device_heartbeat_service`, credential-lifecycle parts of
+  `remote_support_password_service`, agent package/command/enrollment services,
+  DB schema + alembic `c8d9e0f1a2b3`). Do NOT downgrade schema; harmless unused
+  new tables (e.g. `remote_support_connect_token`) may remain.
+- **DB:** preserve all prod data + Vault tables/credentials; no destructive
+  migration; compat plan instead of schema downgrade.
+- **Validation gates:** local build only (no staging exists); device-11 runtime
+  test is owner-executed; **no deploy/canary without explicit owner approval
+  after BUILD/TEST review.**
+
+### Ndryshimet (this entry's scope — safety artifacts only)
+- Pushed safety branch `backup/pre-remote-support-rollback-2026-07-18` + tag
+  `pre-remote-support-rollback-2026-07-18` (@ `837488f`) to origin.
+- Exported: untracked worktree archive, deployed `070bdfe` patch, prod deploy
+  identity file (scratchpad `rollback-safety/`).
+- Docs: this entry + PROJECT_STATE "Remote Support Categorical Rollback" row.
+- **No source reverted yet** — Phase-4 branch construction is the next step.
+
+### Rezultati
+Phase 1–3 complete and reported to owner; target + approach **approved by owner
+2026-07-18**. Prod untouched beyond read-only inspection + two additive backup
+refs. BUILD/TEST pending Phase-4 branch.
+
+### Mësimet
+- A "rollback" here is **two independent axes**: (a) RS/Connect launch behavior
+  (safe to revert to 07-12) and (b) fleet agent-auth backend (must NOT revert).
+  Conflating them is exactly what melted prod on 07-17.
+- Deployed truth ≠ any pushed ref: `070bdfe` lives only in `/opt`. Always read
+  the live deploy dir, never assume origin == prod.
+
 ## [2026-07-17] Remote Support 1.4.8 ships stale 1.4.6 GUI + Windows auto-connect never implemented (VERIFIED; fix pending Windows GUI rebuild)
 
 ### Problemi
