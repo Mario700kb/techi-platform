@@ -1307,7 +1307,10 @@ const DevicesTable = memo(function DevicesTable({
                     isWindowsDevice
                       ? async () => {
                           try {
-                            await launchRemoteSupportConnect(device.id);
+                            await launchRemoteSupportConnect(
+                              device.id,
+                              () => showBulkToast("Opening with RustDesk instead", true),
+                            );
                           } catch (err) {
                             showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
                           }
@@ -1724,7 +1727,10 @@ const DevicesTable = memo(function DevicesTable({
                                 isWindowsDevice
                                   ? async () => {
                                       try {
-                                        await launchRemoteSupportConnect(device.id);
+                                        await launchRemoteSupportConnect(
+                                          device.id,
+                                          () => showBulkToast("Opening with RustDesk instead", true),
+                                        );
                                       } catch (err) {
                                         showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
                                       }

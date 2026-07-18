@@ -1,11 +1,11 @@
 import {
-  createConnectLaunchToken,
-  type ConnectLaunchTokenResponse,
+  getConnectUrl,
+  type ConnectUrlResponse,
 } from "../api/remoteSupport";
-import { clickProtocolUrl, validateTokenOnlyConnectUrl } from "./rustdeskLaunch";
+import { buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "./rustdeskLaunch";
 
-type TokenFactory = (deviceId: number) => Promise<ConnectLaunchTokenResponse>;
-type ProtocolLauncher = (url: string) => void;
+type ConnectUrlFactory = (deviceId: number) => Promise<ConnectUrlResponse>;
+type ProtocolLauncher = (techiUrl: string, rustdeskUrl: string, onFallback?: () => void) => void;
 
 export class RemoteSupportLaunchCoordinator {
   private generation = 0;
@@ -16,21 +16,29 @@ export class RemoteSupportLaunchCoordinator {
 
   async launch(
     deviceId: number,
-    createToken: TokenFactory = createConnectLaunchToken,
-    openProtocol: ProtocolLauncher = clickProtocolUrl,
+    getUrl: ConnectUrlFactory = getConnectUrl,
+    openProtocol: ProtocolLauncher = launchConnect,
+    onFallback?: () => void,
   ): Promise<boolean> {
     const generation = ++this.generation;
-    const response = await createToken(deviceId);
+    const response = await getUrl(deviceId);
     if (generation !== this.generation || response.device_id !== deviceId) {
       return false;
     }
-    openProtocol(validateTokenOnlyConnectUrl(response.connect_url));
+    openProtocol(
+      response.connect_url,
+      buildRustDeskFallbackUrlFromTechiUrl(response.connect_url),
+      onFallback,
+    );
     return true;
   }
 }
 
 export const remoteSupportLaunchCoordinator = new RemoteSupportLaunchCoordinator();
 
-export async function launchRemoteSupportConnect(deviceId: number): Promise<boolean> {
-  return remoteSupportLaunchCoordinator.launch(deviceId);
+export async function launchRemoteSupportConnect(
+  deviceId: number,
+  onFallback?: () => void,
+): Promise<boolean> {
+  return remoteSupportLaunchCoordinator.launch(deviceId, getConnectUrl, launchConnect, onFallback);
 }
