@@ -47,6 +47,9 @@ jobs:
             $_ -like 'agent/installer/TECHI-Remote-Support/*' -or
             $_ -in @(
               'agent/installer/remote-support.wxs',
+              'agent/installer/build-remote-support.sh',
+              'agent/installer/build-remote-support-exe.ps1',
+              'agent/installer/build-remote-support-exe.sh',
               'agent/installer/remote-support-helper.ps1',
               'agent/installer/test-remote-support-msi.ps1'
             )
@@ -82,7 +85,6 @@ jobs:
           wix eula accept wix7
           wix extension add --global WixToolset.UI.wixext/7.0.0
           wix extension add --global WixToolset.Util.wixext/7.0.0
-          wix extension add --global WixToolset.Bal.wixext/7.0.0
 
       # ------------------------------------------------------------------ #
       # 4. Lexo versionin nga agent/VERSION (burimi i vetem i se vertetes)   #
@@ -277,12 +279,10 @@ jobs:
         shell: pwsh
         working-directory: agent/installer
         run: |
-          wix build remote-support-bundle.wxs `
-            -arch x64 `
-            -ext WixToolset.Bal.wixext `
-            -d Version=$env:REMOTE_SUPPORT_VERSION4 `
-            -d MsiPath="TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi" `
-            -o "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.exe"
+          .\build-remote-support-exe.ps1 `
+            -Version $env:REMOTE_SUPPORT_VERSION `
+            -MsiPath "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.msi" `
+            -OutputPath "TECHI-Remote-Support-$env:REMOTE_SUPPORT_VERSION.exe"
 
       - name: Sign Agent MSI packages when release certificate is configured
         shell: pwsh

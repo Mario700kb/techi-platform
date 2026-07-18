@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AGENT_WXS = ROOT / "agent" / "installer" / "installer.wxs"
 REMOTE_WXS = ROOT / "agent" / "installer" / "remote-support.wxs"
-REMOTE_BUNDLE_WXS = ROOT / "agent" / "installer" / "remote-support-bundle.wxs"
+REMOTE_EXE_PS1 = ROOT / "agent" / "installer" / "build-remote-support-exe.ps1"
 
 
 def fail(message: str) -> None:
@@ -66,8 +66,8 @@ def main() -> None:
     )
     require_absent(REMOTE_WXS, ["techi-agent.exe", "TechiAgent"])
 
-    require_present(REMOTE_BUNDLE_WXS, ["TECHI Remote Support", "MsiPackage"])
-    require_absent(REMOTE_BUNDLE_WXS, ["techi-agent.exe", "TechiAgent"])
+    require_present(REMOTE_EXE_PS1, ["TECHI Remote Support", "msiexec.exe /i"])
+    require_absent(REMOTE_EXE_PS1, ["techi-agent.exe", "TechiAgent"])
 
     print("package split verification passed")
 
