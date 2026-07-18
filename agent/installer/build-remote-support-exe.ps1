@@ -39,7 +39,7 @@ PackagePurpose=InstallApp
 ShowInstallProgramWindow=0
 HideExtractAnimation=1
 UseLongFileName=1
-InsideCompressed=0
+InsideCompressed=1
 CAB_FixedSize=0
 CAB_ResvCodeSigning=0
 RebootMode=N
@@ -61,12 +61,12 @@ SourceFiles0=$sourceDir
 FILE0="$msiName"
 "@
     Set-Content -LiteralPath $sed -Value $sedText -Encoding ASCII
-    & $iexpress /N /Q $sed
-    if ($LASTEXITCODE -ne 0) {
-        throw "IExpress failed with exit code $LASTEXITCODE"
-    }
+    $process = Start-Process -FilePath $iexpress -ArgumentList @("/N", "/Q", $sed) -Wait -PassThru
     if (-not (Test-Path -LiteralPath $target)) {
-        throw "IExpress did not produce $target"
+        throw "IExpress did not produce $target; exit code $($process.ExitCode)"
+    }
+    if ($null -ne $process.ExitCode -and $process.ExitCode -ne 0) {
+        throw "IExpress produced $target but returned exit code $($process.ExitCode)"
     }
     $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $(Split-Path -Leaf $target)" | Set-Content -LiteralPath "$target.sha256" -Encoding utf8NoBOM
