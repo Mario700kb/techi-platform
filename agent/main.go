@@ -60,6 +60,11 @@ func main() {
 	}
 }
 
+var (
+	applyRemoteSupportCredentialFn = applyRemoteSupportCredential
+	applyRemoteSupportPasswordFn   = applyRemoteSupportPassword
+)
+
 func dispatchUtilityCommand(argv []string) (bool, int) {
 	idx, command := findUtilityCommand(argv)
 	if idx < 0 {
@@ -85,8 +90,6 @@ func dispatchUtilityCommand(argv []string) (bool, int) {
 		return true, runBootstrapConfigCommand(args)
 	case "bootstrap-config-contract":
 		return true, runBootstrapConfigContractCommand(args)
-	case "auth-migration-fingerprint":
-		return true, runAuthMigrationFingerprintCommand(args)
 	case "rs-tray-task":
 		return true, runRSTrayTaskCommand()
 	case "installer-marker":
@@ -132,7 +135,6 @@ func isUtilityCommand(command string) bool {
 		"watchdog-check",
 		"bootstrap-config",
 		"bootstrap-config-contract",
-		"auth-migration-fingerprint",
 		"rs-tray-task",
 		"installer-marker",
 		"installer-ensure-service",
@@ -224,29 +226,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)
-	if desired := hbResp.RemoteSupportCredential; desired != nil && desired.Generation > cfg.RustDeskCredentialGen {
-		applyErr := applyRemoteSupportCredential(desired.Password)
-		cfg.RustDeskAckGeneration = desired.Generation
-		cfg.RustDeskAckFingerprint = ""
-		cfg.RustDeskAckError = ""
-		if applyErr != nil {
-			cfg.RustDeskAckStatus = credentialApplyFailureStatus(applyErr)
-			cfg.RustDeskAckError = sanitizeCredentialApplyError(applyErr)
-		} else if fingerprint, fpErr := remoteSupportCredentialFingerprint(
-			desired.VerificationKey, cfg.DeviceID, desired.Generation, desired.Password,
-		); fpErr != nil {
-			cfg.RustDeskAckStatus = "failed"
-			cfg.RustDeskAckError = "credential fingerprint failed"
-		} else {
-			cfg.RustDeskDefaultPassword = desired.Password
-			cfg.RustDeskCredentialGen = desired.Generation
-			cfg.RustDeskAckStatus = "applied"
-			cfg.RustDeskAckFingerprint = fingerprint
-		}
-		if err := saveConfig(configPath, cfg); err != nil {
-			log.Printf("[rustdesk_manage] persist credential acknowledgement failed: %v", err)
-		}
-	}
+	handleRemoteSupportDelivery(cfg, configPath, hbResp)
 
 	// Apply dynamic interval from server response (change_heartbeat_interval action
 	// may also have written pendingIntervalChange; this only overrides if the server
@@ -272,4 +252,48 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	}
 
 	return nil
+}
+
+func handleRemoteSupportDelivery(cfg *Config, configPath string, hbResp *HeartbeatResponse) {
+	if hbResp == nil {
+		return
+	}
+	if desired := hbResp.RemoteSupportCredential; desired != nil {
+		if desired.Generation <= cfg.RustDeskCredentialGen {
+			return
+		}
+		applyErr := applyRemoteSupportCredentialFn(desired.Password)
+		cfg.RustDeskAckGeneration = desired.Generation
+		cfg.RustDeskAckFingerprint = ""
+		cfg.RustDeskAckError = ""
+		if applyErr != nil {
+			cfg.RustDeskAckStatus = credentialApplyFailureStatus(applyErr)
+			cfg.RustDeskAckError = sanitizeCredentialApplyError(applyErr)
+		} else if fingerprint, fpErr := remoteSupportCredentialFingerprint(
+			desired.VerificationKey, cfg.DeviceID, desired.Generation, desired.Password,
+		); fpErr != nil {
+			cfg.RustDeskAckStatus = "failed"
+			cfg.RustDeskAckError = "credential fingerprint failed"
+		} else {
+			cfg.RustDeskDefaultPassword = desired.Password
+			cfg.RustDeskCredentialGen = desired.Generation
+			cfg.RustDeskAckStatus = "applied"
+			cfg.RustDeskAckFingerprint = fingerprint
+		}
+		if err := saveConfig(configPath, cfg); err != nil {
+			log.Printf("[rustdesk_manage] persist credential acknowledgement failed: %v", err)
+		}
+		return
+	}
+
+	// Backward compatibility with production backend 92a521c. Agent 2.1.6
+	// received a plaintext per-device Remote Support password in the heartbeat
+	// response, persisted it, and applied it immediately.
+	if pw := strings.TrimSpace(hbResp.RemoteSupportPassword); pw != "" && pw != cfg.RustDeskDefaultPassword {
+		cfg.RustDeskDefaultPassword = pw
+		if err := saveConfig(configPath, cfg); err != nil {
+			log.Printf("[rustdesk_manage] persist per-device password failed: %v", err)
+		}
+		applyRemoteSupportPasswordFn(pw)
+	}
 }

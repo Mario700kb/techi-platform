@@ -831,6 +831,27 @@ existing GPO Scheduled Task upgrades the fleet — no GPO/script changes. After
 100%: 2.1.7+ distribute primarily via TECHI self_update; NETLOGON/GPO stays
 bootstrap + recovery. Full entry: CHANGELOG-SOLUTIONS 2026-07-09.
 
+## 🛠 Agent 2.1.16 — Rollback-Compatible Communication Hotfix (2026-07-20)
+
+Status: **implementation complete; local validation passed; production canary
+pending. Not production-approved yet.**
+
+Agent 2.1.16 restores the Agent 2.1.6 communication contract for production
+backend `92a521c`: existing devices with `agent_id` + `device_id` continue
+without re-enrollment; `agent_credential` is optional/not required; no auth
+migration runs; no signed heartbeat/HMAC `X-Techi-Agent-*` headers are sent;
+there is no dependency on `/auth-migration/challenge` or `/auth-migration/prove`.
+
+Keep in 2.1.16: self-update, command execution, pending actions, Command
+Center, One-Time Script, lifecycle fixes, watchdog improvements, RustDesk
+management, Remote Support integration, atomic config writes, and non-auth bug
+fixes after 2.1.6.
+
+Remaining live validation before approval: heartbeat against backend `92a521c`,
+Operational state, Command Center action execution, One-Time Script execution,
+self-update from older Agent to 2.1.16, GPO/MSI deployment behavior, and
+deployment-script detection of registry/live-binary version drift.
+
 ## PROJECT HEALTH
 
 | Area | Status | Note |

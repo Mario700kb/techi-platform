@@ -4,6 +4,15 @@
 > `set_remote_password` me fjalëkalim në payload është hequr dhe refuzohet nga
 > backend-i. Mos e ri-implementoni. Kontrata aktuale autoritative është
 > `docs/architecture/remote-support-credentials.md`.
+>
+> **Agent 2.1.16 status (2026-07-20):** implementation complete, local
+> validation passed, production canary pending. For the rollback production
+> backend `92a521c`, Agent 2.1.16 deliberately communicates like Agent 2.1.6:
+> `agent_id` + `device_id` are enough, no `agent_credential` is required, no
+> auth migration endpoints are called, and heartbeats are unsigned legacy JSON.
+> Self-update, pending actions, Command Center, One-Time Script, lifecycle,
+> watchdog, RustDesk/Remote Support, atomic config writes, and non-auth fixes
+> after 2.1.6 are preserved.
 
 ## Filozofia
 "MSI instalohet 1 herë — pas kësaj, gjithçka kontrollohet nga UI."

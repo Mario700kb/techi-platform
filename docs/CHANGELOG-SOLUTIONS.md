@@ -27,6 +27,138 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-20] Agent 2.1.16 rollback-compatible communication hotfix — implementation complete, local validation passed, production canary pending
+
+### Problemi
+After production was restored to backend commit `92a521c`, Command Center
+remote actions were created, delivered, acknowledged, and started correctly,
+but affected devices stopped heartbeating after Agent self-update began.
+The concrete failure pattern was an older Agent 2.1.5/2.1.6 device that had:
+
+- `agent_id`
+- `device_id`
+- no `agent_credential`
+
+After self-update installed Agent 2.1.15, startup entered `first_heartbeat` /
+`Agent Initializing` and failed with:
+
+```text
+heartbeat failed: agent identity is missing heartbeat credential:
+authentication migration rejected: {"detail":"Not Found"}
+```
+
+Agent 2.1.15 attempted the auth migration endpoints:
+
+- `/auth-migration/challenge`
+- `/auth-migration/prove`
+
+Production backend `92a521c` does not contain those endpoints.
+
+### Analiza
+The failure was not queue creation, backend delivery, WebSocket signaling, or
+action callback. Production evidence showed self-update actions reaching
+`STARTED`; the agent then stopped returning heartbeat after the binary swap.
+
+The breaking behavior was agent-side startup gating:
+
+- Agent 2.1.6 required only `AgentID` + `DeviceID`.
+- Agent 2.1.15 required `AgentID` + `DeviceID` + `AgentCredential`.
+
+A second operational hazard was version drift: the MSI/registry could still
+report Agent 2.1.5 while the live executable had been replaced by self-update
+with Agent 2.1.15. The current deployment script checks MSI/registry version,
+not the live executable hash/version, so it could incorrectly report:
+
+```text
+result=uptodate
+```
+
+and skip automatic rollback/repair even though the running binary was newer and
+incompatible with the rollback backend.
+
+### Shkaku
+Agent 2.1.15 introduced mandatory heartbeat credential migration for already
+enrolled devices. That migration depends on backend routes and database/auth
+material that are absent from production commit `92a521c`. Existing 2.1.5/2.1.6
+configs therefore became invalid after a successful self-update, even though
+they were valid under Agent 2.1.6 and under the rollback backend contract.
+
+### Zgjidhja
+Agent 2.1.16 restores Agent 2.1.6 communication behavior while preserving
+non-auth improvements added after 2.1.6:
+
+- `AgentID + DeviceID` are sufficient.
+- `AgentCredential` is not required.
+- Existing devices do not require re-enrollment.
+- No authentication migration runs.
+- No signed heartbeat is sent.
+- No HMAC `X-Techi-Agent-*` heartbeat headers are sent.
+- There is no auth-migration backend dependency.
+
+Preserved functionality:
+
+- self-update
+- command execution
+- pending actions
+- Command Center
+- One-Time Script
+- lifecycle fixes
+- watchdog improvements
+- RustDesk management
+- Remote Support integration
+- atomic config writes
+- non-auth bug fixes introduced after 2.1.6
+
+### Ndryshimet
+Agent-only files changed:
+
+- `agent/enrollment.go` — restored 2.1.6 enrollment gate; identity is enough;
+  backend `agent_credential` response is optional/not required.
+- `agent/heartbeat.go` — removed heartbeat signatures, nonce generation, HMAC
+  signing, and `X-Techi-Agent-*` auth headers.
+- `agent/config.go` — removed heartbeat auth/migration config fields.
+- `agent/main.go` — removed auth-migration utility dispatch.
+- `agent/auth_migration.go` — deleted.
+- `agent/auth_migration_test.go` — deleted.
+- `agent/enrollment_test.go` — updated compatibility tests for 2.1.5/2.1.6
+  configs, optional credential enrollment, and unsigned legacy heartbeat.
+- `agent/config_windows.go` — removed stale `agent_credential` comment.
+- `agent/VERSION` — bumped to `2.1.16`.
+- `agent/versioninfo.json` — bumped to `2.1.16.0`.
+- `agent/techi-agent.manifest` — bumped to `2.1.16.0`.
+
+No backend code, API endpoint, database migration, production configuration,
+deployment, commit, push, or merge was performed.
+
+### Rezultati
+Local validation passed:
+
+- `go test ./...` passed from `agent/`.
+- Focused enrollment/heartbeat/lifecycle/action tests passed.
+- Windows amd64 package build passed.
+- `git diff --check` passed.
+- No backend changes.
+- No database changes.
+- No auth migration runtime references remain in agent runtime code.
+- No `AgentCredential` runtime dependency remains in agent runtime code.
+- No `X-Techi-Agent-*` heartbeat headers remain in agent runtime code.
+
+Remaining production validation is explicitly pending:
+
+- heartbeat against production backend `92a521c`
+- device reaches `Operational`
+- Command Center action execution
+- One-Time Script execution
+- self-update from an older Agent to 2.1.16
+- GPO/MSI deployment behavior
+- version drift detection in the deployment script
+
+### Mësimet
+The deployment/GPO script must not trust MSI/registry version alone. A separate
+future fix should compare the live `techi-agent.exe` hash or embedded version
+with the approved artifact, detect registry/live-binary version drift, and
+force repair/reinstall when drift is detected.
+
 ## [2026-07-18] TOTAL ROLLBACK EXECUTED — code→92a521c + DB→07-11 (owner-ordered, risk accepted); storm did NOT recur
 
 ### Problemi

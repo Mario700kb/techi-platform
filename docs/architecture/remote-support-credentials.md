@@ -1,6 +1,12 @@
 # Remote Support credential lifecycle
 
-Status: source contract implemented; rollout disabled; disposable Windows lab validation still required.
+Status: historical/source security contract; rollout disabled; disposable
+Windows lab validation still required. **Current production-recovery exception
+(2026-07-20): Agent 2.1.16 deliberately restores Agent 2.1.6 communication
+behavior for rollback backend `92a521c`. Existing devices with `agent_id` +
+`device_id` do not require `agent_credential`, auth migration, or signed
+heartbeat. Do not use this document to require AgentCredential for Agent 2.1.16
+production canary.**
 
 ## Sources of truth
 
@@ -18,7 +24,13 @@ The Agent stores the currently applied password in its ACL-restricted local JSON
 4. The acknowledgement contains generation, `applied`/`failed`, keyed fingerprint, and a sanitized error. It never contains the password.
 5. The backend promotes desired to active only when generation and HMAC match. It then deletes the encrypted verification key. Failed application retains the previous active credential; stale acknowledgements are ignored.
 
-Existing Agents have no derivable authentication secret. They are `unsupported_legacy` and require explicit re-enrollment; unauthenticated migration heartbeats receive no credential or privileged action.
+Historical signed-heartbeat design note: existing Agents have no derivable
+authentication secret. In the staged-auth design they were classified
+`unsupported_legacy` and required explicit re-enrollment; unauthenticated
+migration heartbeats received no credential or privileged action. That design is
+not active for the Agent 2.1.16 rollback-compatible path: Agent 2.1.16 keeps
+legacy heartbeat semantics and does not require re-enrollment solely because
+`agent_credential` is absent.
 
 ## Connect transport
 
@@ -32,7 +44,13 @@ Only existing identity files are credential-patched. Options are patched in all 
 
 ## Sync and repair semantics
 
-`remote_support_sync_state` values are `unknown`, `pending`, `applied`, `failed`, `conflicted`, and `unsupported_legacy`. `applied` requires a matching authenticated credential acknowledgement, expected generation, conflict-free profiles, matching managed server/relay/key options, a Remote ID, and healthy service runtime as reported by the Agent.
+In the historical signed-heartbeat design, `remote_support_sync_state` values
+are `unknown`, `pending`, `applied`, `failed`, `conflicted`, and
+`unsupported_legacy`; `applied` requires a matching authenticated credential
+acknowledgement, expected generation, conflict-free profiles, matching managed
+server/relay/key options, a Remote ID, and healthy service runtime as reported
+by the Agent. For Agent 2.1.16 rollback compatibility, do not infer heartbeat
+auth or `agent_credential` requirements from this state model.
 
 Repair telemetry distinguishes attempts, successes, consecutive failures, last reason, and last time. A harmless check does not increment counters. The Agent's 30-minute reconciliation cooldown bounds repeated writes; failures remain alertable without being labeled synced.
 
@@ -53,6 +71,9 @@ Run `backend/scripts/redact_remote_password_payloads.py` in the intended mainten
 - `pending`: wait for an authenticated heartbeat; confirm service/tray can read approved profiles.
 - `failed`: inspect the sanitized reason and consecutive failure counter; the previous active password remains valid.
 - `conflicted`: do not overwrite. Compare Remote IDs and profile ownership in a disposable Windows lab.
-- `unsupported_legacy`: explicitly re-enroll; there is no global fallback.
+- `unsupported_legacy`: applies only to the historical signed-heartbeat
+  migration design. Do not apply this label to Agent 2.1.16 rollback-compatible
+  communication; 2.1.16 intentionally accepts existing `agent_id` + `device_id`
+  configs without `agent_credential`.
 
 Source validation does not prove Windows session/profile behavior. Before any canary, use a disposable domain-joined Windows VM to verify service authority, multiple interactive users, RustDesk password hashing after restart, ACL behavior after atomic rename, rollback, and exact native preservation. Production push/deploy/activation remains outside this work.

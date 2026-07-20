@@ -3,6 +3,13 @@
 > **SHËNIM SIGURIE (2026-07):** Ky dokument përshkruan historikun e v2.0.
 > `set_remote_password` me plaintext është hequr dhe refuzohet; kontrata
 > aktuale është `docs/architecture/remote-support-credentials.md`.
+>
+> **Agent 2.1.16 compatibility note (2026-07-20):** the current
+> rollback-compatible agent release candidate restores Agent 2.1.6 communication
+> behavior for backend `92a521c`: existing `agent_id` + `device_id` identities
+> work without re-enrollment, `agent_credential` is not required, auth migration
+> is disabled/removed from runtime, and heartbeat sends no HMAC
+> `X-Techi-Agent-*` headers. Production canary is pending.
 
 ## Versioni: 1.0.0 → 2.0.0 | Data: Qershor 2026
 

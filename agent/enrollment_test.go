@@ -1,10 +1,6 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +10,37 @@ import (
 	"testing"
 )
 
-func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T) {
+func TestEnsureEnrollmentAcceptsExistingIdentityWithoutCredential(t *testing.T) {
+	cfg := &Config{AgentID: "existing-agent", DeviceID: 11}
+	inv := &Inventory{Hostname: "DESKTOP-IM4V3G4", Domain: "WORKGROUP", Platform: "windows"}
+
+	if err := ensureEnrollment(cfg, filepath.Join(t.TempDir(), "agent.config.json"), inv, RustDeskInfo{}); err != nil {
+		t.Fatalf("existing identity should not require a heartbeat credential: %v", err)
+	}
+}
+
+func TestEnsureEnrollmentAcceptsExistingLegacy216Config(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "agent.config.json")
+	cfg := &Config{
+		BackendURL:       "https://techi.example/api/v1/agent/heartbeat",
+		APIURL:           "https://techi.example",
+		WebSocketURL:     "wss://techi.example/ws",
+		AgentID:          "agent-216",
+		DeviceID:         216,
+		RustDeskID:       "90498408",
+		TimeoutSeconds:   30,
+		HeartbeatSeconds: 60,
+		Retries:          3,
+		RetryDelaySecond: 5,
+	}
+	inv := &Inventory{Hostname: "DESKTOP-216", Domain: "WORKGROUP", Platform: "windows"}
+
+	if err := ensureEnrollment(cfg, configPath, inv, RustDeskInfo{}); err != nil {
+		t.Fatalf("2.1.6-style config should start without re-enrollment: %v", err)
+	}
+}
+
+func TestEnsureEnrollmentEnrollsWithoutCredentialFromBackend(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "agent.config.json")
 	var enrollCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,9 +53,6 @@ func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T
 			t.Fatal(err)
 		}
 		text := string(body)
-		if !strings.Contains(text, `"agent_id":"old-agent"`) {
-			t.Fatalf("expected old agent identity in reenrollment payload: %s", text)
-		}
 		if !strings.Contains(text, `"enrollment_token":"reenroll-token"`) {
 			t.Fatalf("expected enrollment token in reenrollment payload: %s", text)
 		}
@@ -39,8 +62,7 @@ func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T
 			"device_id":11,
 			"heartbeat_url":"` + serverURLForTest(r) + `/api/v1/agent/heartbeat",
 			"websocket_url":"wss://example.test/ws",
-			"enrollment_status":"enrolled",
-			"agent_credential":"credential-after-reenroll"
+			"enrollment_status":"enrolled"
 		}`))
 	}))
 	defer server.Close()
@@ -48,8 +70,6 @@ func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T
 	cfg := &Config{
 		APIURL:           server.URL,
 		BackendURL:       server.URL + heartbeatPath,
-		AgentID:          "old-agent",
-		DeviceID:         11,
 		EnrollmentToken:  "reenroll-token",
 		TimeoutSeconds:   5,
 		HeartbeatSeconds: 60,
@@ -74,9 +94,6 @@ func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T
 	if cfg.AgentID != "new-agent" || cfg.DeviceID != 11 {
 		t.Fatalf("identity = (%q,%d), want (new-agent,11)", cfg.AgentID, cfg.DeviceID)
 	}
-	if cfg.AgentCredential != "credential-after-reenroll" {
-		t.Fatalf("credential was not persisted in memory")
-	}
 	if cfg.EnrollmentToken != "" {
 		t.Fatalf("enrollment token was not scrubbed")
 	}
@@ -85,75 +102,45 @@ func TestEnsureEnrollmentReenrollsExistingIdentityMissingCredential(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.AgentCredential != "credential-after-reenroll" {
-		t.Fatalf("saved credential missing")
-	}
 	if saved.EnrollmentToken != "" {
 		t.Fatalf("saved enrollment token was not scrubbed")
 	}
 }
 
-func TestEnsureEnrollmentRejectsCredentiallessIdentityWithoutReenrollmentPath(t *testing.T) {
-	cfg := &Config{AgentID: "old-agent", DeviceID: 11}
-	inv := &Inventory{Hostname: "DESKTOP-IM4V3G4", Domain: "WORKGROUP", Platform: "windows"}
-
-	err := ensureEnrollment(cfg, filepath.Join(t.TempDir(), "agent.config.json"), inv, RustDeskInfo{})
-	if err == nil {
-		t.Fatal("expected credentialless identity to require re-enrollment")
-	}
-	if !strings.Contains(err.Error(), "missing heartbeat credential") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestSendHeartbeatSignsWithPersistedEnrollmentCredential(t *testing.T) {
-	const credential = "credential-after-reenroll"
+func TestSendHeartbeatUsesLegacyUnsignedRequest(t *testing.T) {
 	const agentID = "new-agent"
-	var sawSigned bool
+	var sawHeartbeat bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
+		for _, name := range []string{"X-Techi-Agent-ID", "X-Techi-Agent-Timestamp", "X-Techi-Agent-Nonce", "X-Techi-Agent-Signature"} {
+			if value := r.Header.Get(name); value != "" {
+				t.Fatalf("legacy heartbeat must not send %s header, got %q", name, value)
+			}
 		}
-		timestamp := r.Header.Get("X-Techi-Agent-Timestamp")
-		nonce := r.Header.Get("X-Techi-Agent-Nonce")
-		signature := r.Header.Get("X-Techi-Agent-Signature")
-		if r.Header.Get("X-Techi-Agent-ID") != agentID || timestamp == "" || nonce == "" || signature == "" {
-			t.Fatalf("heartbeat missing auth headers: %#v", r.Header)
-		}
-		bodyHash := sha256.Sum256(body)
-		message := fmt.Sprintf("v1\n%s\n%s\n%s\n%s", agentID, timestamp, nonce, hex.EncodeToString(bodyHash[:]))
-		mac := hmac.New(sha256.New, []byte(credential))
-		_, _ = mac.Write([]byte(message))
-		if signature != hex.EncodeToString(mac.Sum(nil)) {
-			t.Fatalf("invalid heartbeat signature")
-		}
-		sawSigned = true
+		sawHeartbeat = true
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"pending_actions":[]}`))
 	}))
 	defer server.Close()
 
 	cfg := &Config{
-		BackendURL:      server.URL,
-		AgentID:         agentID,
-		AgentCredential: credential,
-		DeviceID:        11,
-		TimeoutSeconds:  5,
-		Retries:         1,
+		BackendURL:     server.URL,
+		AgentID:        agentID,
+		DeviceID:       11,
+		TimeoutSeconds: 5,
+		Retries:        1,
 	}
 	payload := &HeartbeatPayload{AgentID: agentID, DeviceID: 11, Hostname: "DESKTOP-IM4V3G4", Platform: "windows"}
 	if _, err := sendHeartbeat(cfg, payload); err != nil {
 		t.Fatal(err)
 	}
-	if !sawSigned {
-		t.Fatal("server did not observe signed heartbeat")
+	if !sawHeartbeat {
+		t.Fatal("server did not observe heartbeat")
 	}
 }
 
-func TestSaveConfigWritesCredentialAtomicallyAndRestrictsMode(t *testing.T) {
+func TestSaveConfigWritesAtomicallyAndRestrictsMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.config.json")
-	cfg := &Config{BackendURL: "https://example.test/api/v1/agent/heartbeat", AgentID: "agent-a", DeviceID: 11, AgentCredential: "credential"}
+	cfg := &Config{BackendURL: "https://example.test/api/v1/agent/heartbeat", AgentID: "agent-a", DeviceID: 11}
 
 	if err := saveConfig(path, cfg); err != nil {
 		t.Fatal(err)
@@ -162,8 +149,8 @@ func TestSaveConfigWritesCredentialAtomicallyAndRestrictsMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.AgentCredential != "credential" {
-		t.Fatal("saved config lost credential")
+	if saved.AgentID != "agent-a" || saved.DeviceID != 11 {
+		t.Fatal("saved config lost identity")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
