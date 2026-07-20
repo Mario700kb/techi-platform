@@ -10,8 +10,7 @@ import (
 
 // lockdownConfigACL restricts path to SYSTEM + Administrators only (by SID,
 // locale-independent), since the config file contains plaintext secrets
-// (agent_credential, enrollment_token, rustdesk_key,
-// rustdesk_default_password) and Go's
+// (enrollment_token, rustdesk_key, rustdesk_default_password) and Go's
 // os.WriteFile permission bits are ignored entirely on Windows.
 func lockdownConfigACL(path string) {
 	out, err := runWithTimeout(10*time.Second, "icacls.exe", path,

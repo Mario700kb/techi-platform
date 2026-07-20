@@ -3,6 +3,23 @@
 Ky manual përshkruan si të testosh agjentin e ri **pa e prekur prodhimin
 ekzistues** dhe pa u kapur nga AV/AMSI (Symantec, CybeeAI). Data: 2026-07-03.
 
+> **Current Agent 2.1.16 note (2026-07-20):** Agent 2.1.16 is
+> implementation-complete and locally validated, but production canary is
+> pending. For rollback production backend `92a521c`, the expected communication
+> contract is Agent 2.1.6-compatible: existing devices with `agent_id` +
+> `device_id` must work without re-enrollment, no `agent_credential` is required,
+> no auth migration endpoints are called, and no signed heartbeat /
+> `X-Techi-Agent-*` headers are sent. Before any fleet rollout, canary an older
+> 2.1.5/2.1.6 device through self_update to 2.1.16 and verify heartbeat,
+> Operational state, Command Center action execution, One-Time Script execution,
+> and self-update completion.
+>
+> **Deployment-script warning:** the current GPO/MSI deployment path can report
+> `result=uptodate` from MSI/registry version even when the live executable was
+> replaced by self_update. Add a future drift fix that compares the live
+> `techi-agent.exe` hash or embedded version with the approved artifact, detects
+> registry/live-binary mismatch, and forces repair/reinstall when drift exists.
+
 ## Konteksti i paketave
 
 Tri lloje paketash, të gjitha aktive njëkohësisht në UI → Agent Packages:

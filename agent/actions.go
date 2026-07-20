@@ -41,6 +41,7 @@ type HeartbeatResponse struct {
 	HeartbeatIntervalSecs   int                              `json:"heartbeat_interval_seconds,omitempty"`
 	AgentUpdate             *AgentUpdate                     `json:"agent_update,omitempty"`
 	RemoteSupportCredential *RemoteSupportCredentialDelivery `json:"remote_support_credential,omitempty"`
+	RemoteSupportPassword   string                           `json:"remote_support_password,omitempty"`
 }
 
 type RemoteSupportCredentialDelivery struct {

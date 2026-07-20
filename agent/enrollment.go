@@ -39,33 +39,17 @@ type EnrollmentResponse struct {
 	EnrollmentStatus string `json:"enrollment_status"`
 	AssignedClientID *int   `json:"assigned_client_id"`
 	AssignedGroupID  *int   `json:"assigned_group_id"`
-	AgentCredential  string `json:"agent_credential"`
 }
 
 func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk RustDeskInfo) error {
-	hasIdentity := strings.TrimSpace(cfg.AgentID) != "" && cfg.DeviceID > 0
-	hasCredential := strings.TrimSpace(cfg.AgentCredential) != ""
-	if hasIdentity && hasCredential {
+	if strings.TrimSpace(cfg.AgentID) != "" && cfg.DeviceID > 0 {
 		return nil
-	}
-	if hasIdentity && !hasCredential && strings.TrimSpace(cfg.EnrollmentToken) == "" {
-		handled, err := tryAgentAuthMigration(cfg, configPath)
-		if err != nil {
-			return fmt.Errorf("agent identity is missing heartbeat credential: %w", err)
-		}
-		if handled {
-			return nil
-		}
-		return fmt.Errorf("agent identity is missing heartbeat credential; controlled authentication migration is required")
 	}
 	// Allow enrollment without a token when a non-workgroup domain is present
 	// and the backend has TRUSTED_DOMAIN_AUTO_ENROLLMENT enabled.
 	hasDomain := strings.TrimSpace(inv.Domain) != "" &&
 		strings.ToLower(strings.TrimSpace(inv.Domain)) != "workgroup"
 	if strings.TrimSpace(cfg.EnrollmentToken) == "" && !hasDomain {
-		if hasIdentity {
-			return fmt.Errorf("agent identity is missing heartbeat credential; re-enrollment token is required")
-		}
 		return fmt.Errorf("agent is not enrolled and no enrollment token was provided")
 	}
 
@@ -76,7 +60,6 @@ func ensureEnrollment(cfg *Config, configPath string, inv *Inventory, rustdesk R
 
 	cfg.AgentID = resp.AgentID
 	cfg.DeviceID = resp.DeviceID
-	cfg.AgentCredential = resp.AgentCredential
 	if resp.HeartbeatURL != "" {
 		cfg.BackendURL = resp.HeartbeatURL
 	}
@@ -143,7 +126,7 @@ func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*Enrollmen
 	if err := json.Unmarshal(body, &enrollment); err != nil {
 		return nil, err
 	}
-	if enrollment.AgentID == "" || enrollment.DeviceID <= 0 || enrollment.AgentCredential == "" {
+	if enrollment.AgentID == "" || enrollment.DeviceID <= 0 {
 		return nil, fmt.Errorf("enrollment failed: backend returned incomplete identity")
 	}
 	return &enrollment, nil

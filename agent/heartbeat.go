@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -183,22 +181,6 @@ func sendHeartbeat(cfg *Config, payload *HeartbeatPayload) (*HeartbeatResponse, 
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if strings.TrimSpace(cfg.AgentCredential) != "" {
-			timestampMS := time.Now().UnixMilli()
-			nonceBytes := make([]byte, 16)
-			if _, err := rand.Read(nonceBytes); err != nil {
-				return nil, fmt.Errorf("heartbeat nonce: %w", err)
-			}
-			nonce := hex.EncodeToString(nonceBytes)
-			bodyHash := sha256.Sum256(data)
-			message := fmt.Sprintf("v1\n%s\n%d\n%s\n%s", cfg.AgentID, timestampMS, nonce, hex.EncodeToString(bodyHash[:]))
-			mac := hmac.New(sha256.New, []byte(cfg.AgentCredential))
-			_, _ = mac.Write([]byte(message))
-			req.Header.Set("X-Techi-Agent-ID", cfg.AgentID)
-			req.Header.Set("X-Techi-Agent-Timestamp", fmt.Sprintf("%d", timestampMS))
-			req.Header.Set("X-Techi-Agent-Nonce", nonce)
-			req.Header.Set("X-Techi-Agent-Signature", hex.EncodeToString(mac.Sum(nil)))
-		}
 
 		log.Printf("sending heartbeat attempt %d/%d to %s", attempt, cfg.Retries, cfg.BackendURL)
 		resp, err := client.Do(req)
