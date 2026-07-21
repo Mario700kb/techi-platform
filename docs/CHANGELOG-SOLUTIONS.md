@@ -27,6 +27,251 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-21] Platform Components — Device Drawer integration (first real feature on the foundation; deploy BLOCKED by branch↔prod divergence)
+
+### Problemi
+The foundation (Component Registry, Desired-State, Lifecycle Registry, Policy) was
+built but had almost no per-device UI consumer. The milestone asked for real features
+ON the foundation: Device Drawer (Installed/Desired/Health/Lifecycle), Component Health
+(reporting), and registry-aware Command Center / Remote Support flow / Batch — without
+auto-update, scheduler, rollout, canary, or enforcement, and without new abstractions.
+
+### Analiza
+Everything needed already exists: `GET /devices/{id}/component-states` (Phase 3) returns
+Installed/Desired/Health/Status; `GET /platform/components` (Phase 2/4) returns lifecycle
+metadata (label/kind). So the drawer feature is pure read-only consumption — no new
+endpoint, no backend logic. Command Center / RS deploy / Batch already execute through
+the existing Action Queue with existing ActionTypes that the Lifecycle Registry maps;
+refactoring their execution paths to be "registry-driven" would be modest value on
+production-critical, July-incident-adjacent flows and would drift toward orchestration.
+
+### Zgjidhja
+- `frontend/src/api/platform.ts`: added `DeviceComponentState` + `getDeviceComponentStates`
+  (consumer for the Phase 3 endpoint — resolving its earlier "foundation not yet
+  consumed" note); added `label`/`kind` to `ComponentLifecycle` and a `policy` field to
+  `PlatformComponent` (now consumed).
+- `frontend/src/components/ComponentStatesPanel.tsx` (new): read-only panel showing per
+  component Installed/Desired version, a Health **Status** badge (Current/Outdated/
+  Missing/Unknown), and supported lifecycle operation labels as metadata. Triggers
+  nothing; renders nothing on failure or for devices with no managed components.
+- Mounted in `GenericDeviceDrawer.tsx` (Overview) and the Windows classic
+  `DeviceDrawer.tsx` (Overview tab) via minimal additive insertions (import + one JSX
+  block each). The Windows drawer's byte-identical invariant is intentionally lifted for
+  this deliberate, reviewed feature — the addition is a single read-only panel, no flow
+  or existing markup changed.
+- `usePlatformComponents.ts` fallback + tests updated for the new required `policy` field.
+- **Command Center / Remote Support deployment flow / Batch: assessed, intentionally
+  NOT refactored** (see Analiza) — the registry is consumed at the metadata level; the
+  execution paths remain exactly as-is (existing Action Queue, existing ActionTypes, no
+  new types, no duplication).
+
+### Ndryshimet
+New: `frontend/src/components/ComponentStatesPanel.tsx`,
+`frontend/src/components/__tests__/ComponentStatesPanel.test.tsx`. Modified:
+`frontend/src/api/platform.ts`, `frontend/src/components/GenericDeviceDrawer.tsx`,
+`frontend/src/components/DeviceDrawer.tsx`, `frontend/src/hooks/usePlatformComponents.ts`
+(+ its test). Docs: `architecture/PLATFORM-COMPONENTS.md`, `PROJECT_STATE.md`. **NOT
+touched:** any backend contract, heartbeat, enrollment, agent (Go), manifest, Package
+Registry, download URLs, bootstrap, NETLOGON, GPO, DB schema. **No migration, no new
+ActionType, no execution/orchestration logic.**
+
+### Rezultati
+- New tests: `ComponentStatesPanel.test.tsx` (3 cases). Frontend vitest **90/90**,
+  `tsc --noEmit` clean, `npm run build` OK.
+- **Full backend suite: 1015 passed, 1 skipped, 0 failed.** Agent: `GOOS=windows` build,
+  `go vet`, `go test ./...` all clean.
+- **Pipeline 100% GREEN.**
+
+### Deploy status — BLOCKED (not performed)
+`stable/phase-2-heartbeat` is **99 commits ahead** of the deployed production commit
+`92a521c` (the 2026-07-18 owner-ordered TOTAL ROLLBACK). The standard `git pull` deploy
+would fast-forward prod to the branch tip, **reintroducing all rolled-back code** (the
+post-07-11 changes whose deployment caused the RS-password storm). Deploying Platform
+Components therefore requires a deliberate owner decision — e.g. cherry-picking only the
+Platform Components commits onto a branch based on `92a521c` — NOT a branch deploy. No
+deploy was performed; this is flagged for the owner.
+
+### Mësimet
+- The foundation paid off: a real per-device feature was added with zero backend change
+  and zero new abstraction — pure read-only consumption of existing endpoints.
+- Not every "integrate X with the registry" is worth doing: for production-critical
+  execution flows already correctly wired to the Action Queue, a registry-driven refactor
+  is risk without proportional value — surfacing metadata is the right depth.
+- Branch↔prod divergence under an emergency rollback makes "deploy if green" unsafe; green
+  tests do not equal safe-to-ship when the deploy would carry rolled-back code.
+
+## [2026-07-21] Platform Components — Deployment Policy model (declarative Desired Source / Policy / Strategy; model only, NOT deployed)
+
+### Problemi
+Phase 3 already resolves each component's desired version from the active package,
+but that governance choice was implicit. The foundation needs to NAME it — per
+component: where the desired version comes from (Desired Source), the governance mode
+(Policy), and how it would be reached (Strategy) — as a declarative model, with no
+automation of any kind.
+
+### Analiza
+This is a naming/model layer, not behavior. Auto-update, scheduler, rollout, canary,
+and enforcement are explicitly out of scope, so nothing may consult the policy. The
+cleanest fit is a separate `platform_core` registry (mirroring `lifecycle.py`),
+declaring the three concepts and validating 1:1 coverage against the Component
+Registry at import.
+
+### Zgjidhja
+- `app/platform_core/policy.py` (new): enums `DesiredSource` (active_package | manual |
+  none), `ComponentPolicy` (active_package | manual | future), `DeploymentStrategy`
+  (manual | future); frozen `ComponentPolicyDescriptor{component_id, desired_source,
+  policy, strategy}`; `COMPONENT_POLICY_REGISTRY` + `policy_for()` + `list_policies()`;
+  `validate_policy_registry()` runs at import (fail-closed 1:1 coverage guard). Both
+  current components declare `active_package`/`active_package`/`manual` — an honest name
+  for today's behavior. `manual`/`future` values are declared placeholders assigned to
+  no component. **No logic; nothing consults the policy; the Phase 3 resolver is
+  unchanged.**
+- `app/schemas/platform_component.py` + `app/api/v1/endpoints/platform.py`:
+  `/platform/components` gained an additive `policy` object per component
+  (desired_source/policy/strategy — stable strings).
+- No frontend change: policy is metadata only; no button, no UX change (extra JSON
+  field ignored by the existing typed client).
+
+### Ndryshimet
+New: `platform_core/policy.py`, `tests/test_component_policy.py`. Modified:
+`platform_core/__init__.py`, `schemas/platform_component.py`,
+`api/v1/endpoints/platform.py`, `tests/test_platform_components_endpoint.py`. Docs:
+`architecture/PLATFORM-COMPONENTS.md`, `PROJECT_STATE.md`. **NOT touched:** Action
+Queue, agent (Go), heartbeat, enrollment, manifest, Package Registry, DeviceDrawer.tsx,
+the Phase 3 desired-state resolver. **No auto-update / scheduler / rollout / canary /
+enforcement / migration.**
+
+### Rezultati
+- New tests: `test_component_policy.py` (6 cases) + policy metadata assertion in the
+  endpoint test.
+- **Full backend suite: 1015 passed, 1 skipped, 0 failed** (100% green).
+- Frontend: vitest 87/87, `tsc --noEmit` clean, `npm run build` OK (no frontend change).
+  Agent (unchanged): `GOOS=windows` build + `go vet` clean.
+
+### Mësimet
+- A policy model can be declared and exposed without any engine consuming it — naming
+  the seam now keeps a future policy engine from having to retrofit the concept.
+- Placeholder enum values (`manual`/`future`) document intended future modes without
+  implying they are implemented; a test asserts they are assigned to no component yet.
+
+## [2026-07-21] Platform Components — Lifecycle Registry (metadata / mapping / validation over declared lifecycles; NOT deployed)
+
+### Problemi
+Each component already DECLARES its lifecycle (Phase 2: `ComponentDescriptor.lifecycle`
+maps a `LifecycleOperation` to an existing `ActionType` or None). What was missing is
+a registry-driven layer that treats those declarations as first-class metadata —
+labels, an action-vs-out-of-band kind, forward/reverse mapping, and validation — so
+consumers stop reasoning about lifecycle ad hoc. No execution, no new ActionType.
+
+### Analiza
+The declarations are the source of truth and must not be duplicated. The Action
+Registry (`platform_core/actions.py`) already holds every executable action; the
+Lifecycle Registry only needs to read both and expose metadata/mapping/validation.
+`reinstall_rustdesk` is an existing action that Phase 2 had deliberately left out of
+the lifecycle model; the Phase 4 lifecycle example includes reinstall, so it is
+promoted to a declared operation (still an EXISTING ActionType — nothing new created).
+
+### Zgjidhja
+- `app/platform_core/components.py`: added `LifecycleOperation.REINSTALL` and mapped
+  Remote Support `reinstall → ActionType.REINSTALL_RUSTDESK` (existing action). Agent
+  lifecycle unchanged (its `discover` is the heartbeat; no separate `heartbeat` op).
+- `app/platform_core/lifecycle.py` (new): `LifecycleKind` (action | out_of_band),
+  `LIFECYCLE_LABELS`, frozen `LifecycleEntry{operation,label,action_type,kind}`;
+  helpers `lifecycle_for` / `operations_for` / `action_for`; reverse index
+  `ACTION_TO_LIFECYCLE` + `component_operation_for_action`; `validate_lifecycle_registry()`
+  run at import (fail-closed: mapped handler must be a real registered action whose id
+  matches its ActionType; every supported op has a label; cross-component action
+  collision raises). Registry-driven — no `if component ==`.
+- `app/schemas/platform_component.py` + `app/api/v1/endpoints/platform.py`:
+  `/platform/components` lifecycle entries now carry `label` + `kind` (additive,
+  backward-compatible); the endpoint builds them via `lifecycle_for()`.
+- No frontend change: lifecycle is exposed as metadata only; the UI renders no
+  lifecycle surface, adds no button, and its UX is unchanged. (The extra `label`/`kind`
+  fields are ignored by the existing typed client.)
+
+### Ndryshimet
+New: `platform_core/lifecycle.py`, `tests/test_lifecycle_registry.py`. Modified:
+`platform_core/components.py`, `platform_core/__init__.py`, `schemas/platform_component.py`,
+`api/v1/endpoints/platform.py`, `tests/test_component_registry.py`,
+`tests/test_platform_components_endpoint.py`. Docs: `architecture/PLATFORM-COMPONENTS.md`,
+`PROJECT_STATE.md`. **NOT touched:** Action Queue, agent (Go), heartbeat, enrollment,
+manifest, Package Registry, download URLs, device protocol, DeviceDrawer.tsx. **No new
+ActionType, no execution endpoint, no DB migration.**
+
+### Rezultati
+- New tests: `test_lifecycle_registry.py` (11 cases) + label/kind + reinstall coverage
+  in the existing registry/endpoint tests.
+- **Full backend suite: 1009 passed, 1 skipped, 0 failed** (100% green).
+- Frontend: vitest 87/87, `tsc --noEmit` clean, `npm run build` OK (no frontend change).
+  Agent (unchanged): `GOOS=windows` build + `go vet` clean.
+
+### Mësimet
+- The Lifecycle Registry reads the descriptors; it never becomes a second source of
+  truth. Promoting reinstall reused an existing action — the "no new ActionType" rule
+  held.
+- Import-time validation keeps the mapping honest as descriptors evolve, the same
+  fail-closed pattern the other platform_core registries use.
+
+## [2026-07-21] Platform Components — Desired-State foundation (per-device Installed/Desired/Health/Status; model + reporting only, NOT deployed)
+
+### Problemi
+Phase 2 shipped the Component Registry (classification). The next foundation piece
+is Desired-State: per device, per component, what version is Installed, what is
+Desired, and the derived Health/Status — WITHOUT building any enforcement (no
+auto-update, policy engine, rollout, canary, deployment rules, scheduler).
+
+### Analiza
+Everything needed already exists: installed versions live on the device row the
+heartbeat fills (`agent_version`, `rustdesk_version`); desired versions are the
+active package versions in the file-based manifest (`AgentPackageService`); the
+pure registry already has `derive_health`. So no migration and no contract change
+are required — resolution is a read-time computation.
+
+### Zgjidhja
+- `app/platform_core/components.py`: added `STATUS_LABELS` + pure `status_label()`
+  (Current/Outdated/Missing/Unknown display labels for the health enum).
+- `app/services/component_state_service.py` (new): read-only resolver. Per device →
+  per component `ComponentDeviceState{installed, desired, health, status}`. Installed
+  from `_INSTALLED_VERSION_ATTR` (agent→agent_version, remote_support→rustdesk_version);
+  desired from `AgentPackageService.latest_active` in a preference order
+  (agent: agent_binary→msi; remote_support: msi→pkg→dmg — platform filter no-ops the
+  rest). Platform normalization maps device platform → registry id and package
+  platform. Connector platforms (MikroTik) resolve to [].
+- `app/schemas/platform_component.py`: `DeviceComponentStateOut` +
+  `DeviceComponentStatesResponse` (versioned, stable strings).
+- `app/api/v1/endpoints/devices.py`: `GET /{device_id}/component-states` (read-only,
+  auth + operator scope via the existing `get_scoped_device`).
+- `tests/test_platform_core.py`: added `component_state_service.py` to the reviewed
+  `platform_core` wiring-boundary allowlist (deliberate new seam — the boundary test
+  is designed to force exactly this review).
+- Frontend `AgentPackages.tsx`: each component group header shows its Desired (active)
+  version — **information only**, computed from already-loaded packages in the same
+  preference order; no new endpoint client, no new button, no UX change.
+
+### Ndryshimet
+New: `services/component_state_service.py`, `tests/test_component_state.py`. Modified:
+`platform_core/components.py`, `platform_core/__init__.py`, `schemas/platform_component.py`,
+`api/v1/endpoints/devices.py`, `tests/test_platform_core.py` (allowlist),
+`frontend/src/pages/AgentPackages.tsx`. Docs: `architecture/PLATFORM-COMPONENTS.md`,
+`PROJECT_STATE.md`. **NOT touched:** heartbeat, enrollment, Action Queue, agent (Go),
+bootstrap, NETLOGON, manifest, download URLs, DeviceDrawer.tsx. **No DB migration.**
+
+### Rezultati
+- New tests: `test_component_state.py` (resolver + endpoint, 9 cases) — pass.
+- **Full backend suite: 997 passed, 1 skipped, 0 failed** (100% green). The
+  wiring-boundary test initially flagged the new service (as designed) and passed
+  once the allowlist entry was added.
+- Frontend: vitest 87/87, `tsc --noEmit` clean, `npm run build` OK. Agent (unchanged):
+  `GOOS=windows` build + `go vet` clean.
+
+### Mësimet
+- Desired-State is a read-time computation over data that already exists — no new
+  storage or migration is warranted for the foundation.
+- `platform_core` has a deliberate import allowlist; every new consumer is a reviewed
+  decision, not an incidental import — the boundary test enforces it.
+- Kept enforcement out entirely: the model reports, it does not act. Auto-update /
+  policy / rollout remain explicitly unbuilt.
+
 ## [2026-07-21] Platform Components foundation — registry-driven classification layer over existing packages/actions (backend + UI grouping; local validation only, NOT deployed)
 
 ### Problemi

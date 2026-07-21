@@ -40,6 +40,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { Alert, AlertSeverity } from "../types/alert";
 import ActivityTimeline from "./ActivityTimeline";
+import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
@@ -1332,6 +1333,10 @@ export default function DeviceDrawer({
             </div>
           </section>
 
+          {/* Platform Components — Installed/Desired/Health + lifecycle metadata (read-only) */}
+          <div className="mb-4">
+            <ComponentStatesPanel deviceId={device.id} />
+          </div>
 
           </div>
 

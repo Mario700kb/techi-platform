@@ -67,6 +67,7 @@ describe("usePlatformComponents", () => {
         file_types: ["msi"],
         lifecycle: [],
         capabilities: [],
+        policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
       },
     ];
     getPlatformComponentsMock.mockResolvedValue({ schema_version: 1, components: live });

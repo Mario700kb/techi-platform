@@ -57,6 +57,7 @@ class LifecycleOperation(str, Enum):
 
     INSTALL = "install"
     UPDATE = "update"
+    REINSTALL = "reinstall"
     REPAIR = "repair"
     RESTART = "restart"
     DISCOVER = "discover"
@@ -71,6 +72,23 @@ class ComponentHealth(str, Enum):
     OUTDATED = "outdated"    # installed older than desired
     MISSING = "missing"      # component not installed / no version reported
     UNKNOWN = "unknown"      # desired unknown, or versions unparseable
+
+
+# Display labels for the 4-state status (the UI-facing capitalized form of the
+# health enum). Pure presentation — no behavior attached.
+STATUS_LABELS: Mapping[ComponentHealth, str] = MappingProxyType(
+    {
+        ComponentHealth.CURRENT: "Current",
+        ComponentHealth.OUTDATED: "Outdated",
+        ComponentHealth.MISSING: "Missing",
+        ComponentHealth.UNKNOWN: "Unknown",
+    }
+)
+
+
+def status_label(health: ComponentHealth) -> str:
+    """The capitalized status label for a health value (Current/Outdated/…)."""
+    return STATUS_LABELS[health]
 
 
 @dataclass(frozen=True)
@@ -163,6 +181,7 @@ _COMPONENTS: Tuple[ComponentDescriptor, ...] = (
         lifecycle={
             LifecycleOperation.INSTALL: ActionType.DEPLOY_REMOTE_SUPPORT,
             LifecycleOperation.UPDATE: ActionType.DEPLOY_REMOTE_SUPPORT,
+            LifecycleOperation.REINSTALL: ActionType.REINSTALL_RUSTDESK,
             LifecycleOperation.REPAIR: ActionType.REPAIR_CONFIG_RUSTDESK,
             LifecycleOperation.RESTART: ActionType.RESTART_RUSTDESK,
             LifecycleOperation.SYNC: ActionType.SYNC_RUSTDESK,

@@ -15,10 +15,13 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import get_current_operator
 from app.models.operator import Operator
-from app.platform_core.components import LifecycleOperation, list_components
+from app.platform_core.components import list_components
+from app.platform_core.lifecycle import lifecycle_for
+from app.platform_core.policy import policy_for
 from app.platform_core.flags import FEATURE_DEPENDENCIES, feature_enabled
 from app.schemas.platform_component import (
     ComponentLifecycleOut,
+    ComponentPolicyOut,
     PlatformComponentOut,
     PlatformComponentsResponse,
 )
@@ -37,19 +40,22 @@ def platform_components(
 ) -> PlatformComponentsResponse:
     """Platform Components registry metadata. Read-only, deterministic, no DB.
 
-    Lifecycle operations are emitted in the canonical LifecycleOperation order for
-    every component so the response is stable regardless of declaration order."""
+    Lifecycle operations are emitted via the Lifecycle Registry in canonical
+    operation order, each with a display label, its existing ActionType (or null),
+    and its kind (action vs out-of-band) — so the response is stable and
+    self-describing regardless of declaration order."""
     components = []
     for descriptor in list_components():
         lifecycle = [
             ComponentLifecycleOut(
-                operation=op.value,
-                action_type=(handler.value if handler is not None else None),
+                operation=entry.operation.value,
+                label=entry.label,
+                action_type=(entry.action_type.value if entry.action_type is not None else None),
+                kind=entry.kind.value,
             )
-            for op in LifecycleOperation
-            if descriptor.supports(op)
-            for handler in (descriptor.handler_for(op),)
+            for entry in lifecycle_for(descriptor.id)
         ]
+        policy = policy_for(descriptor.id)
         components.append(
             PlatformComponentOut(
                 id=descriptor.id,
@@ -60,6 +66,11 @@ def platform_components(
                 file_types=list(descriptor.file_type_values),
                 lifecycle=lifecycle,
                 capabilities=sorted(descriptor.capabilities),
+                policy=ComponentPolicyOut(
+                    desired_source=policy.desired_source.value,
+                    policy=policy.policy.value,
+                    strategy=policy.strategy.value,
+                ),
             )
         )
     return PlatformComponentsResponse(schema_version=1, components=components)

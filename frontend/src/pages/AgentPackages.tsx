@@ -60,6 +60,14 @@ const WINDOWS_TABS: PackageTab[] = [
   },
 ];
 
+// Preferred active-package order used to surface each component's "Desired"
+// (active) version — mirrors the backend ComponentStateService resolution order.
+// Informational only; no enforcement.
+const DESIRED_FILE_TYPE_ORDER: Record<string, AgentFileType[]> = {
+  agent: ["agent_binary", "msi"],
+  remote_support: ["remote_support_msi", "remote_support_pkg", "remote_support_dmg"],
+};
+
 const MACOS_TABS: PackageTab[] = [
   {
     id: "remote_support_pkg",
@@ -233,18 +241,36 @@ export default function AgentPackages() {
     </button>
   );
 
+  // Desired-state (informational): the active/"desired" version for a component,
+  // resolved from the already-loaded packages in the backend's preference order.
+  const desiredVersionFor = (compId: string): string | null => {
+    for (const fileType of DESIRED_FILE_TYPE_ORDER[compId] ?? []) {
+      const active = packages.find((pkg) => pkg.file_type === fileType && pkg.is_active);
+      if (active) return active.version;
+    }
+    return null;
+  };
+
   const renderGroupedTabs = (tabs: PackageTab[], iconFor: (t: PackageTab) => JSX.Element) => (
     <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-white/[0.08]">
-      {groupsFor(tabs).map((group) => (
-        <div key={group.compId} className="flex flex-col">
-          <span className="px-4 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            {group.label}
-          </span>
-          <div className="flex gap-1">
-            {group.tabs.map((t) => renderTab(t, iconFor(t)))}
+      {groupsFor(tabs).map((group) => {
+        const desired = desiredVersionFor(group.compId);
+        return (
+          <div key={group.compId} className="flex flex-col">
+            <span className="px-4 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              {group.label}
+              {desired && (
+                <span className="ml-1.5 font-medium normal-case text-slate-600">
+                  · Desired v{desired}
+                </span>
+              )}
+            </span>
+            <div className="flex gap-1">
+              {group.tabs.map((t) => renderTab(t, iconFor(t)))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 

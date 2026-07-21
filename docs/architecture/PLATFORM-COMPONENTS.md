@@ -70,22 +70,44 @@ exactly one component (contract-tested; a duplicate claim raises at import).
 
 ## 5. Lifecycle operations
 
-`LifecycleOperation` = `install | update | repair | restart | discover | sync`.
-None is mandatory; each component declares which it supports and maps each to an
-**existing** action (or `None`):
+`LifecycleOperation` = `install | update | reinstall | repair | restart | discover
+| sync`. None is mandatory; each component declares which it supports and maps each
+to an **existing** action (or `None`):
 
 | Operation | Agent | Remote Support |
 |---|---|---|
 | `install` | — (GPO/NETLOGON, no queued action) | `deploy_remote_support` |
 | `update` | `self_update` | `deploy_remote_support` |
+| `reinstall` | — | `reinstall_rustdesk` |
 | `repair` | — | `repair_config_rustdesk` |
 | `restart` | `restart_agent` | `restart_rustdesk` |
 | `sync` | — | `sync_rustdesk` |
 | `discover` | — (heartbeat `agent_version`) | — (heartbeat `rustdesk_*`) |
 
-Reinstall stays its own Action-Registry action (`reinstall_rustdesk`); it is **not**
-folded into a lifecycle operation to keep the model honest. No new action type is
-created to make the model symmetric.
+The Agent's `discover` is the heartbeat itself (it reports `agent_version`); there
+is no separate `heartbeat` operation. No new `ActionType` is created — every mapping
+reuses an existing one (Phase 4 promoted `reinstall_rustdesk` from an Action-Registry
+action to a declared lifecycle operation; superseding the Phase 2 note that had left
+reinstall out).
+
+### Lifecycle Registry (Phase 4 — metadata / mapping / validation)
+
+`app/platform_core/lifecycle.py` is a thin, registry-driven layer over the
+declarations above. It does **not** duplicate them or execute anything:
+
+- **Metadata** — `LifecycleEntry{operation, label, action_type, kind}` per supported
+  operation. `LIFECYCLE_LABELS` gives display labels; `kind` is `action` (backed by a
+  queued `ActionType`) or `out_of_band` (handler `None` — GPO/heartbeat).
+- **Mapping** — `lifecycle_for(component_id)`, `operations_for(component_id)`,
+  `action_for(component_id, operation)`, and the reverse
+  `component_operation_for_action(action_type)` (`ACTION_TO_LIFECYCLE`).
+- **Validation** — `validate_lifecycle_registry()` runs at import (fail-closed):
+  every mapped handler is a real, registered action whose id matches its `ActionType`;
+  every supported operation has a label; a cross-component action collision raises.
+
+Consumers query these helpers — never `if component == "agent"`. The `GET
+/platform/components` lifecycle entries now carry `label` + `kind` (additive,
+backward-compatible). No endpoint executes lifecycle in this phase.
 
 ## 6. `ComponentHealth` and `derive_health` rules
 
@@ -106,6 +128,52 @@ Desired-state is **model only** — no policy engine, no auto-update, not wired.
 **`installed > desired` decision:** deliberately folded to `current` — a device
 running a newer build is not "behind"; there is no `ahead` state at this
 foundation phase. This is documented, not accidental.
+
+### Per-device Desired-State resolution (Phase 3 foundation, read-only)
+
+`ComponentStateService` (`app/services/component_state_service.py`) resolves, for a
+device, the per-component **Installed / Desired / Health / Status** — purely
+observational, no writes, no migration, no enforcement:
+
+- **Installed Version** — read from the heartbeat-filled device columns
+  (`agent_version` for the Agent, `rustdesk_version` for Remote Support). Nothing
+  is written; heartbeat/enrollment/action-queue/agent are untouched.
+- **Desired Version** — the active package version for the component on the
+  device's platform, resolved via the existing `AgentPackageService.latest_active`
+  in a preference order (Agent: `agent_binary` → `msi`; Remote Support:
+  `remote_support_msi` → `remote_support_pkg` → `remote_support_dmg`; the platform
+  filter makes the non-matching file_types no-ops).
+- **Health** — the registry's pure `derive_health`. **Status** — its capitalized
+  display label (`Current` / `Outdated` / `Missing` / `Unknown`) via `status_label`.
+
+Devices on platforms with no managed components (e.g. MikroTik connectors) resolve
+to an empty list. Exposed read-only at `GET /devices/{id}/component-states`
+(auth + operator scope, versioned `schema_version`, stable strings). The service
+imports `platform_core` through the reviewed wiring-boundary allowlist.
+
+### Deployment Policy (Phase 5 — declarative model only)
+
+`app/platform_core/policy.py` NAMES how each component's desired state is governed.
+It is model only — **no** auto-update, scheduler, rollout, canary, enforcement,
+Action-Queue change, agent change, or migration; nothing consults it, so behavior is
+unchanged. Three declared concepts per component:
+
+- **Desired Source** (`DesiredSource`) — where the desired version is read from:
+  `active_package` (today) · `manual` · `none` (placeholders).
+- **Policy** (`ComponentPolicy`) — governance mode: `active_package` (track the active
+  package, today) · `manual` (operator-pinned, future) · `future` (policy-engine
+  placeholder).
+- **Strategy** (`DeploymentStrategy`) — how it would be reached: `manual` (operator
+  triggers the existing lifecycle actions, today) · `future` (rollout/canary/scheduler
+  placeholder — NOT built).
+
+Both current components declare `active_package` / `active_package` / `manual` — an
+honest name for today's behavior (Phase 3 resolves desired from the active package;
+deployment is an operator manually triggering lifecycle actions). `manual`/`future`
+enum values are declared placeholders assigned to no component yet.
+`COMPONENT_POLICY_REGISTRY` + `policy_for()` expose it; a 1:1 coverage guard runs at
+import. `/platform/components` now includes a `policy` object per component (additive,
+backward-compatible). No UI surface, no button.
 
 ## 7. What the registry does NOT do
 
@@ -157,6 +225,42 @@ reuse the actions that exist, or expose the operation as metadata only.
 - **Backend foundation:** implemented (`components.py`, read API `GET
   /platform/components`, contract tests). Dark — not wired into package/action
   execution behavior.
-- **UI wiring:** in progress (registry-driven grouping of the Agent Packages
-  page; existing upload/activate/download/delete/confirm flows unchanged).
-- **Production:** not deployed. No claim of production-readiness.
+- **Desired-State foundation (Phase 3):** per-device resolver
+  (`component_state_service.py`) + read API `GET /devices/{id}/component-states`
+  (Installed/Desired/Health/Status). Model + reporting only — NO auto-update,
+  policy engine, rollout, canary, deployment rules, scheduler, or enforcement.
+- **Lifecycle Registry (Phase 4):** `lifecycle.py` — metadata (label + kind),
+  mapping (operation↔existing ActionType, both directions), and import-time
+  validation over the declared lifecycles. No new ActionType, no execution
+  endpoint, no migration. `/platform/components` lifecycle entries gained
+  `label` + `kind`.
+- **Deployment Policy (Phase 5):** `policy.py` — declarative Desired
+  Source / Policy / Strategy per component (model only, no logic, nothing
+  consults it). `/platform/components` gained an additive `policy` object.
+  No auto-update / scheduler / rollout / canary / enforcement / migration.
+- **UI:** registry-driven grouping of the Agent Packages page (existing
+  upload/activate/download/delete/confirm flows unchanged); each component group
+  shows its Desired (active) version as **information only** — no new buttons, no
+  UX change.
+- **Device Drawer integration (feature):** `ComponentStatesPanel.tsx` — a read-only
+  panel in BOTH drawers (Windows classic `DeviceDrawer` and `GenericDeviceDrawer`)
+  showing per component: Installed version, Desired version, Health **Status** badge,
+  and supported **lifecycle operations** (labels) as metadata. Consumes the foundation
+  endpoints (`GET /devices/{id}/component-states` + `GET /platform/components`); renders
+  nothing on failure or for devices with no managed components. No buttons, triggers
+  nothing. This is the first per-device UI consumer of the desired-state + lifecycle
+  foundation.
+- **Features assessed, intentionally not refactored:** Command Center, the Remote
+  Support deployment flow, and Batch operations already execute through the existing
+  Action Queue using existing ActionTypes that the Lifecycle Registry maps — no
+  duplication. Their execution paths were NOT refactored to be "registry-driven":
+  the value is modest and they are production-critical / July-incident-adjacent, and
+  deeper integration would drift toward orchestration (rollout/enforcement), which is
+  out of scope. The registry is consumed at the read-only metadata level (the drawer
+  panel).
+- **Production:** not deployed. No claim of production-readiness. **Deploy of the
+  branch tip is BLOCKED** — `stable/phase-2-heartbeat` is 99 commits ahead of the
+  production commit `92a521c` (the 2026-07-18 total rollback); a `git pull` deploy
+  would reintroduce the rolled-back code and risk re-triggering the storm. Shipping
+  Platform Components to prod requires a deliberate owner decision (e.g. cherry-pick
+  onto `92a521c`), not a branch deploy.

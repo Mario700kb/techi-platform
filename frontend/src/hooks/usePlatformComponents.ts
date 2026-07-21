@@ -17,6 +17,7 @@ export const FALLBACK_COMPONENTS: PlatformComponent[] = [
     file_types: ["msi", "agent_binary", "agent_update_msi"],
     lifecycle: [],
     capabilities: [],
+    policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
   },
   {
     id: "remote_support",
@@ -32,6 +33,7 @@ export const FALLBACK_COMPONENTS: PlatformComponent[] = [
     ],
     lifecycle: [],
     capabilities: ["remote_support"],
+    policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
   },
 ];
 

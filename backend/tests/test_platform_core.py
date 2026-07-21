@@ -163,6 +163,7 @@ class TestWiringBoundary:
             "app/api/v1/endpoints/reports.py",  # reporting flag gate
             "app/main.py",  # also gates ReportWorker startup
             "app/services/vault_service.py",  # credential-type field registry (Enterprise Vault)
+            "app/services/component_state_service.py",  # Component Registry desired-state resolver (Platform Components Phase 3)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

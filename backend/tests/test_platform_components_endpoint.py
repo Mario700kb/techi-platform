@@ -51,6 +51,13 @@ def test_returns_versioned_component_metadata():
     }
     assert rs["capabilities"] == ["remote_support"]
 
+    # Deployment policy metadata (Phase 5) — present, stable strings.
+    for component in (agent, rs):
+        pol = component["policy"]
+        assert pol["desired_source"] == "active_package"
+        assert pol["policy"] == "active_package"
+        assert pol["strategy"] == "manual"
+
 
 def test_every_file_type_present_across_components():
     body = _client().get("/platform/components").json()
@@ -63,6 +70,7 @@ def test_lifecycle_exposes_stable_strings_and_real_actions():
     rs = next(c for c in body["components"] if c["id"] == "remote_support")
     ops = {item["operation"]: item["action_type"] for item in rs["lifecycle"]}
     assert ops["install"] == "deploy_remote_support"
+    assert ops["reinstall"] == "reinstall_rustdesk"
     assert ops["repair"] == "repair_config_rustdesk"
     assert ops["sync"] == "sync_rustdesk"
     # discover is a supported operation with no queued action (heartbeat).
@@ -72,6 +80,21 @@ def test_lifecycle_exposes_stable_strings_and_real_actions():
         for item in c["lifecycle"]:
             if item["action_type"] is not None:
                 assert item["action_type"] in ACTION_REGISTRY
+
+
+def test_lifecycle_entries_carry_label_and_kind():
+    body = _client().get("/platform/components").json()
+    for c in body["components"]:
+        for item in c["lifecycle"]:
+            assert item["label"] and isinstance(item["label"], str)
+            # kind reflects whether a queued action backs the operation.
+            expected = "action" if item["action_type"] is not None else "out_of_band"
+            assert item["kind"] == expected
+    rs = next(c for c in body["components"] if c["id"] == "remote_support")
+    labels = {item["operation"]: item["label"] for item in rs["lifecycle"]}
+    assert labels["reinstall"] == "Reinstall"
+    kinds = {item["operation"]: item["kind"] for item in rs["lifecycle"]}
+    assert kinds["install"] == "action" and kinds["discover"] == "out_of_band"
 
 
 def test_agent_lifecycle_shape():

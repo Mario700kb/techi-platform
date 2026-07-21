@@ -78,6 +78,7 @@ def test_remote_support_lifecycle_maps_to_known_handlers():
     rs = C.get_component("remote_support")
     assert rs.handler_for(C.LifecycleOperation.INSTALL).value == "deploy_remote_support"
     assert rs.handler_for(C.LifecycleOperation.UPDATE).value == "deploy_remote_support"
+    assert rs.handler_for(C.LifecycleOperation.REINSTALL).value == "reinstall_rustdesk"
     assert rs.handler_for(C.LifecycleOperation.REPAIR).value == "repair_config_rustdesk"
     assert rs.handler_for(C.LifecycleOperation.RESTART).value == "restart_rustdesk"
     assert rs.handler_for(C.LifecycleOperation.SYNC).value == "sync_rustdesk"
