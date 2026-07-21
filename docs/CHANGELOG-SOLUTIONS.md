@@ -27,6 +27,104 @@ never record history there.
 
 Older entries predate this template; they remain valid as written.
 
+## [2026-07-21] Platform Components foundation — registry-driven classification layer over existing packages/actions (backend + UI grouping; local validation only, NOT deployed)
+
+### Problemi
+TECHI already manages more than one deployable component per device (the Agent and
+TECHI Remote Support), each with its own `file_type`s, download URLs, lifecycle
+actions, and discovery — but nothing declared *which packages/actions belong to the
+same component*. Adding future components (VPN, Printer Helper, …) on the current
+flat `file_type` model would multiply `if agent` / `if remote_support` branching.
+Goal: a Platform Components abstraction that **classifies** what already exists,
+with 100% backward compatibility and zero production-contract change.
+
+### Analiza
+Reviewed the established registry patterns in `app/platform_core/` — `ActionDescriptor`
+(actions.py), `PlatformDescriptor` (registry.py), `capabilities.py` — and the package
+system (`agent_package_service.py`, file-based `manifest.json`, 7 `AgentFileType`
+values), the Action Queue contract (`remote_action.py`), and version/health
+(`version_service.py`). Confirmed the manifest is a free-form dict (additive fields
+are backward-compatible) and every lifecycle handler needed already exists as a
+queued `ActionType`.
+
+### Shkaku
+Not a bug — a structural gap. The fix is a new declarative registry layer, mirroring
+how this codebase already solved the same problem three times (Platform / Action /
+Capability registries).
+
+### Zgjidhja
+A **Component Registry** built strictly ON TOP of the existing systems — it classifies,
+never replaces. Principle: *existing production contracts are classified, not replaced.*
+- `ComponentDescriptor` (frozen, pure-domain: imports only sibling registries + schema
+  enums — no FastAPI/DB/session/services/repositories). Fields: id, display_name,
+  description, icon_key, platforms, file_types (existing `AgentFileType` values,
+  unchanged), lifecycle (`LifecycleOperation` → existing `ActionType` or None for
+  GPO/heartbeat), capabilities (from `KNOWN_CAPABILITIES`). Lifecycle mapping frozen
+  via `MappingProxyType` (no mutable shared state).
+- Two real components declared (Agent: msi/agent_binary/agent_update_msi; Remote
+  Support: remote_support_msi/bundle/dmg/pkg). VPN/Printer Helper deliberately NOT
+  added — structure only. Import-time guards: every `file_type` owned by exactly one
+  component (no duplicate/overlap), every declared capability known.
+- Desired-state is MODEL ONLY: `ComponentHealth` (current/outdated/missing/unknown) +
+  pure `derive_health` — no policy engine, no auto-update, not wired. `installed >
+  desired` folds to `current` (documented); `installed=None & desired=None` → unknown;
+  `installed=None & desired set` → missing.
+- Read-only endpoint `GET /platform/components` (auth-required, no DB, deterministic,
+  tenant-neutral, versioned `schema_version`, stable strings only — no enum reprs).
+- UI (progressive enhancement): the Agent Packages page groups its existing tabs under
+  their owning component. Every upload form, package table, activate/deactivate,
+  download, delete, status, and confirmation dialog is byte-unchanged. A **local
+  fallback** (`FALLBACK_COMPONENTS`) mirrors the 7-`file_type` mapping so an older prod
+  backend (e.g. `92a521c`, which lacks the endpoint) never breaks the page — the
+  registry is enhancement, not a dependency.
+
+### Ndryshimet
+- New backend: `app/platform_core/components.py`, `app/schemas/platform_component.py`,
+  `tests/test_component_registry.py`, `tests/test_platform_components_endpoint.py`.
+- Modified backend: `app/platform_core/__init__.py` (exports), `app/api/v1/endpoints/platform.py`
+  (+`GET /components`).
+- New frontend: `src/hooks/usePlatformComponents.ts`, `src/hooks/__tests__/usePlatformComponents.test.tsx`.
+- Modified frontend: `src/api/platform.ts` (+types/client), `src/pages/AgentPackages.tsx`
+  (registry-driven grouping + fallback).
+- New docs: `docs/architecture/PLATFORM-COMPONENTS.md` (canonical design). PROJECT_STATE
+  gets the status row.
+- Test-only reconciliation (NOT agent logic): `tests/test_windows_installer_reliability.py`
+  — see Rezultati.
+- **NOT touched:** `agent_package_service.py`, `manifest.json`, download URLs, Action
+  Queue, agent (Go), heartbeat, enrollment, bootstrap, NETLOGON, DeviceDrawer.tsx. No
+  DB migration.
+
+### Rezultati
+- New tests: 15 backend (registry) + endpoint suite, 4 frontend (fallback/grouping) — all pass.
+- **Full backend suite: 989 passed, 1 skipped, 0 failed** (100% green).
+- **Pre-existing failure reconciled (test-only, no agent-logic change).** The initial full
+  run surfaced ONE failure, `test_windows_installer_reliability::test_rustdesk_manage_uses_absolute_system32_tools`,
+  proven independent of this work (reproduced identically with the Platform Components
+  changes stashed). Root cause: an outdated assertion — the test required
+  `"scPath()" in agent/rustdesk.go`, but discovery stopped shelling out to `sc` when
+  service-state querying moved to `rustdesk_state_windows.go` (agent commit `7d85a00`,
+  07-16, landed after the test `0ed68a5`, 07-15). **The agent is NOT a regression — it
+  got safer:** rustdesk.go has 0 `sc`/`schtasks` invocations and uses
+  `windowsSystemExe("taskkill.exe")`; every `sc` call agent-wide goes through
+  `scPath()` (`rustdesk_manage.go`, `rustdesk_state_windows.go`), and `swap_windows.go`
+  uses `system32ExePath(...)`. Minimal fix: the stale positive assertion was replaced
+  by the real invariant (rustdesk.go free of any bare-name `sc`/`schtasks` invocation)
+  and the safe-path assertion was followed to the file that now owns the sc call
+  (`rustdesk_state_windows.go`). Security invariant unchanged; backward compatible; no
+  agent code touched.
+- Full frontend: vitest 87/87, `tsc --noEmit` clean. Agent: `go vet` clean, `GOOS=windows`
+  build clean, `go test ./...` all ok (agent unchanged — sanity only).
+
+### Mësimet
+- In this codebase, old contracts are **covered, not replaced** — every July incident
+  (contract gate, stale GUI, rollback melt) came from layers evolving separately; a
+  declarative registry is the proven mitigation.
+- A registry-endpoint-driven UI must ship with a local fallback given the live
+  code↔prod skew (prod on `92a521c`); the endpoint is enhancement, never a hard
+  dependency.
+- Surfaced a pre-existing agent test/source drift (`scPath()` in rustdesk.go) worth a
+  separate reconciliation once agent changes are permitted again.
+
 ## [2026-07-20] Agent 2.1.16 rollback-compatible communication hotfix — implementation complete, local validation passed, production canary pending
 
 ### Problemi

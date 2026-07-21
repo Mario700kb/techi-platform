@@ -116,13 +116,23 @@ def test_operational_lifecycle_is_service_runtime_only_on_windows():
 def test_rustdesk_manage_uses_absolute_system32_tools():
     rustdesk_source = (ROOT / "agent/rustdesk_manage.go").read_text(encoding="utf-8")
     rustdesk_discovery_source = (ROOT / "agent/rustdesk.go").read_text(encoding="utf-8")
+    rustdesk_state_source = (ROOT / "agent/rustdesk_state_windows.go").read_text(encoding="utf-8")
     swap_source = (ROOT / "agent/swap_windows.go").read_text(encoding="utf-8")
     assert '"sc"' not in rustdesk_source
     assert '"schtasks"' not in rustdesk_source
-    assert 'exec.Command("sc"' not in rustdesk_discovery_source
     assert "scPath()" in rustdesk_source
-    assert "scPath()" in rustdesk_discovery_source
     assert "schtasksPath()" in rustdesk_source
+    # rustdesk.go (discovery) no longer shells out to `sc` at all — service-state
+    # querying moved to rustdesk_state_windows.go — so it need only stay free of
+    # any bare-name `sc`/`schtasks` invocation (PATH-hijack hardening). The
+    # positive safe-path assertion follows the sc call to the file that now owns
+    # it. (Previously this asserted scPath() in rustdesk.go, which went stale when
+    # the sc-based discovery was removed; the security invariant is unchanged.)
+    assert 'exec.Command("sc"' not in rustdesk_discovery_source
+    assert 'exec.Command("schtasks"' not in rustdesk_discovery_source
+    assert '"sc"' not in rustdesk_discovery_source
+    assert '"schtasks"' not in rustdesk_discovery_source
+    assert "scPath()" in rustdesk_state_source
     assert 'system32ExePath("sc.exe")' in swap_source
     assert 'system32ExePath("schtasks.exe")' in swap_source
 

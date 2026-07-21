@@ -15,6 +15,7 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
 import { parseUTC } from "../utils/time";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import { componentForFileType, usePlatformComponents } from "../hooks/usePlatformComponents";
 import PlatformIcon from "../components/PlatformIcon";
 import LinuxPackagesPanel from "./LinuxPackagesPanel";
 
@@ -82,6 +83,10 @@ export default function AgentPackages() {
   // Linux remains feature-gated; macOS is an operator package surface and is
   // independent of endpoint Agent rollout.
   const showLinux = usePlatformFeatures().FEATURE_LINUX;
+  // Registry-driven grouping (progressive enhancement). Falls back to a local
+  // component map when the registry endpoint is unavailable — the tabs and every
+  // package action keep working regardless.
+  const { components } = usePlatformComponents();
   const [platformScope, setPlatformScope] = useState<"windows" | "linux" | "macos">("windows");
   const [tab, setTab] = useState<TabId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
@@ -192,6 +197,57 @@ export default function AgentPackages() {
     }
   };
 
+  // Group the existing tabs under their owning component (registry-driven, order
+  // preserved). Behavior of each tab is unchanged — this only adds a component
+  // label above the same buttons.
+  const groupsFor = (tabs: PackageTab[]) => {
+    const out: { compId: string; label: string; tabs: PackageTab[] }[] = [];
+    for (const t of tabs) {
+      const comp = componentForFileType(components, t.fileType);
+      const compId = comp?.id ?? "other";
+      const label = comp?.display_name ?? "Other";
+      let group = out.find((g) => g.compId === compId);
+      if (!group) {
+        group = { compId, label, tabs: [] };
+        out.push(group);
+      }
+      group.tabs.push(t);
+    }
+    return out;
+  };
+
+  const renderTab = (t: PackageTab, icon: JSX.Element) => (
+    <button
+      key={t.id}
+      type="button"
+      onClick={() => { setTab(t.id); setError(null); }}
+      className={[
+        "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
+        tab === t.id
+          ? "border-b-2 border-techi-orange text-techi-orange"
+          : "text-slate-400 hover:text-slate-200",
+      ].join(" ")}
+    >
+      {icon}
+      {t.label}
+    </button>
+  );
+
+  const renderGroupedTabs = (tabs: PackageTab[], iconFor: (t: PackageTab) => JSX.Element) => (
+    <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-white/[0.08]">
+      {groupsFor(tabs).map((group) => (
+        <div key={group.compId} className="flex flex-col">
+          <span className="px-4 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {group.label}
+          </span>
+          <div className="flex gap-1">
+            {group.tabs.map((t) => renderTab(t, iconFor(t)))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <section className="premium-page space-y-5">
       <div className="premium-card overflow-hidden p-5 md:p-6">
@@ -233,51 +289,19 @@ export default function AgentPackages() {
             ))}
         </div>
 
-        {/* Windows tabs (unchanged) — only in the Windows scope */}
+        {/* Windows tabs — grouped by component (registry-driven), buttons unchanged */}
         {platformScope === "windows" && (
           <>
-            <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
-              {WINDOWS_TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => { setTab(t.id); setError(null); }}
-                  className={[
-                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
-                    tab === t.id
-                      ? "border-b-2 border-techi-orange text-techi-orange"
-                      : "text-slate-400 hover:text-slate-200",
-                  ].join(" ")}
-                >
-                  {t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />}
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            {renderGroupedTabs(WINDOWS_TABS, (t) =>
+              t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />,
+            )}
             <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
           </>
         )}
 
         {platformScope === "macos" && (
           <>
-            <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
-              {MACOS_TABS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => { setTab(item.id); setError(null); }}
-                  className={[
-                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
-                    tab === item.id
-                      ? "border-b-2 border-techi-orange text-techi-orange"
-                      : "text-slate-400 hover:text-slate-200",
-                  ].join(" ")}
-                >
-                  <Package className="h-3.5 w-3.5" />
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            {renderGroupedTabs(MACOS_TABS, () => <Package className="h-3.5 w-3.5" />)}
             <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
           </>
         )}

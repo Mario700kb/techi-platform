@@ -18,6 +18,36 @@ export async function getPlatformFeatures(): Promise<PlatformFeatures> {
   return fetchJson<PlatformFeatures>("/api/v1/platform/features");
 }
 
+// Platform Components registry metadata (GET /api/v1/platform/components).
+// Read-only classification of the EXISTING packages/actions — it changes no
+// file_type, URL, or manifest. Additive + versioned (schema_version). The
+// frontend has a local fallback (see usePlatformComponents) so an older backend
+// that lacks this endpoint never breaks the Agent Packages page.
+export interface ComponentLifecycle {
+  operation: string;           // install | update | repair | restart | discover | sync
+  action_type: string | null;  // existing ActionType value, or null (GPO/heartbeat)
+}
+
+export interface PlatformComponent {
+  id: string;
+  display_name: string;
+  description: string;
+  icon_key: string;
+  platforms: string[];
+  file_types: string[];        // existing AgentFileType string values
+  lifecycle: ComponentLifecycle[];
+  capabilities: string[];
+}
+
+export interface PlatformComponentsResponse {
+  schema_version: number;
+  components: PlatformComponent[];
+}
+
+export async function getPlatformComponents(): Promise<PlatformComponentsResponse> {
+  return fetchJson<PlatformComponentsResponse>("/api/v1/platform/components");
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).
