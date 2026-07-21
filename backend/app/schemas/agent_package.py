@@ -26,6 +26,15 @@ class AgentFileType(str, Enum):
     # legacy msiexec-based agents (< 2.1.1) for UI self_update, so routine
     # agent upgrades never reinstall Remote Support.
     AGENT_UPDATE_MSI = "agent_update_msi"
+    # --- Platform Components classification values (declarations only) ---
+    # Added by the Platform Components backport so the Component Registry can
+    # classify Remote Support packages. These are inert enum members: this
+    # backport ports NO Remote Support / installer / packaging behavior — only
+    # the identifiers the registry references.
+    REMOTE_SUPPORT_MSI = "remote_support_msi"
+    REMOTE_SUPPORT_DMG = "remote_support_dmg"
+    REMOTE_SUPPORT_PKG = "remote_support_pkg"
+    REMOTE_SUPPORT_BUNDLE = "remote_support_bundle"
 
 
 class AgentPackageOut(BaseModel):

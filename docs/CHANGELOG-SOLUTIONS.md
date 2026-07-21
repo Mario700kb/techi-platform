@@ -5,6 +5,41 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-21] Platform Components — backport onto production base 92a521c (additive, read-only; NOT deployed)
+
+Backported the Platform Components layer onto the production commit `92a521c` WITHOUT
+carrying any of the 97 other commits on `stable/phase-2-heartbeat`. Purpose: allow
+shipping Platform Components to prod without undoing the 2026-07-18 total rollback.
+
+**Ported (allowed set):** 4 inert `AgentFileType` enum declarations
+(`remote_support_msi/dmg/pkg/bundle` — identifiers only, no behavior); Component
+Registry (`platform_core/components.py`); Lifecycle Registry (`lifecycle.py`);
+Deployment Policy model (`policy.py`); Desired-State resolver
+(`services/component_state_service.py`); schemas (`schemas/platform_component.py`);
+read-only endpoints (`GET /platform/components`, `GET /devices/{id}/component-states`);
+`platform_core/__init__.py` exports; wiring-boundary allowlist entry; frontend API
+(`api/platform.ts`), the read-only `ComponentStatesPanel` mounted in both Device
+Drawers; canonical design doc `architecture/PLATFORM-COMPONENTS.md`; tests.
+
+**Deliberately EXCLUDED (not ported):** the installer/agent split, all Remote Support
+behavior, macOS changes, Package Registry changes, the Agent Packages page grouping +
+`usePlatformComponents` hook (Package-Registry UI), the `agent-auth-migration` endpoint
+(enrollment), `agentPackages.ts` type change, and the unrelated
+`test_windows_installer_reliability` fix. No heartbeat, enrollment, manifest, Action
+Queue, or DB change. **No migration.**
+
+**Method:** no cherry-pick. Files whose 92a521c→branch diff was purely additive
+(`__init__.py`, `platform.py`, `api/platform.ts`, `GenericDeviceDrawer.tsx`) were taken
+verbatim from the branch; diverged/behaviour-carrying files (`agent_package.py`,
+`devices.py`, `DeviceDrawer.tsx`) were edited by hand to add ONLY the Platform Components
+lines. Branch: `backport/platform-components-92a521c` (based on `92a521c`).
+
+**Validation:** backend full suite **827 passed + 4 known pre-existing baseline failures**
+(`test_enrollment_audit_diagnostics`, missing `trusted_domains` table — unrelated, present
+at 92a521c). Frontend `tsc` clean, vitest **72/72**, `npm run build` OK. Local runtime
+smoke: `/health` 200, both new routes registered in OpenAPI, `/platform/components`
+returns 401 (not 500) unauthenticated. **Not deployed.**
+
 **This file is the project's HISTORY — and only the history.** Every bug,
 incident, deploy, optimization, migration, technical decision, hotfix,
 analysis, root cause, and workaround is recorded here, newest first. The

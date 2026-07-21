@@ -28,6 +28,10 @@ from app.schemas.device import (
 )
 from app.schemas.device_inventory import DeviceInventoryResponse, PatchStatusSnapshot
 from app.schemas.device_note import DeviceNoteCreate, DeviceNoteResponse, DeviceNoteUpdate
+from app.schemas.platform_component import (
+    DeviceComponentStateOut,
+    DeviceComponentStatesResponse,
+)
 from app.schemas.telemetry import DeviceHealth, DeviceHealthSummary, TelemetrySnapshot
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import MAINTENANCE_MODE
@@ -39,6 +43,7 @@ from app.services.device_overview_service import DeviceOverviewService
 from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
+from app.services.component_state_service import ComponentStateService
 from app.services.rustdesk_service import RustDeskIdentityService
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
@@ -64,6 +69,35 @@ def get_scoped_device(
     if not device_in_scope(device.client_id, device.group_id, device.id, scope):
         raise HTTPException(status_code=404, detail="Device not found")
     return device
+
+
+@router.get("/{device_id}/component-states", response_model=DeviceComponentStatesResponse)
+def get_device_component_states(
+    device: Device = Depends(get_scoped_device),
+    db: Session = Depends(get_db),
+) -> DeviceComponentStatesResponse:
+    """Per-component Desired-State for a device (foundation, read-only,
+    informational). Installed = the heartbeat-filled device fields; Desired = the
+    active package version; Health/Status derived by the Component Registry. No
+    enforcement, no auto-update. Devices on platforms with no managed components
+    (e.g. MikroTik connectors) return an empty list."""
+    states = ComponentStateService(db).resolve_for_device(device)
+    return DeviceComponentStatesResponse(
+        schema_version=1,
+        device_id=device.id,
+        components=[
+            DeviceComponentStateOut(
+                component_id=state.component_id,
+                display_name=state.display_name,
+                icon_key=state.icon_key,
+                installed_version=state.installed_version,
+                desired_version=state.desired_version,
+                health=state.health.value,
+                status=state.status,
+            )
+            for state in states
+        ],
+    )
 
 
 # ------------------------------------------------------------------ #

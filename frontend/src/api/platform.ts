@@ -18,6 +18,71 @@ export async function getPlatformFeatures(): Promise<PlatformFeatures> {
   return fetchJson<PlatformFeatures>("/api/v1/platform/features");
 }
 
+// Platform Components registry metadata (GET /api/v1/platform/components).
+// Read-only classification of the EXISTING packages/actions — it changes no
+// file_type, URL, or manifest. Additive + versioned (schema_version). The
+// frontend has a local fallback (see usePlatformComponents) so an older backend
+// that lacks this endpoint never breaks the Agent Packages page.
+export interface ComponentLifecycle {
+  operation: string;           // install | update | reinstall | repair | restart | discover | sync
+  label: string;               // display label (Install/Update/…)
+  action_type: string | null;  // existing ActionType value, or null (GPO/heartbeat)
+  kind: string;                // "action" | "out_of_band"
+}
+
+export interface ComponentPolicy {
+  desired_source: string;      // active_package | manual | none
+  policy: string;              // active_package | manual | future
+  strategy: string;            // manual | future
+}
+
+export interface PlatformComponent {
+  id: string;
+  display_name: string;
+  description: string;
+  icon_key: string;
+  platforms: string[];
+  file_types: string[];        // existing AgentFileType string values
+  lifecycle: ComponentLifecycle[];
+  capabilities: string[];
+  policy: ComponentPolicy;
+}
+
+export interface PlatformComponentsResponse {
+  schema_version: number;
+  components: PlatformComponent[];
+}
+
+export async function getPlatformComponents(): Promise<PlatformComponentsResponse> {
+  return fetchJson<PlatformComponentsResponse>("/api/v1/platform/components");
+}
+
+// Per-device Desired-State (GET /devices/{id}/component-states). Read-only,
+// informational — Installed/Desired/Health/Status per managed component.
+export interface DeviceComponentState {
+  component_id: string;
+  display_name: string;
+  icon_key: string;
+  installed_version: string | null;
+  desired_version: string | null;
+  health: string;   // current | outdated | missing | unknown
+  status: string;   // Current | Outdated | Missing | Unknown
+}
+
+export interface DeviceComponentStatesResponse {
+  schema_version: number;
+  device_id: number;
+  components: DeviceComponentState[];
+}
+
+export async function getDeviceComponentStates(
+  deviceId: number,
+): Promise<DeviceComponentStatesResponse> {
+  return fetchJson<DeviceComponentStatesResponse>(
+    `/api/v1/devices/${deviceId}/component-states`,
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

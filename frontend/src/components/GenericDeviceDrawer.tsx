@@ -17,6 +17,7 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
+import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
 import HealthBadge from "./HealthBadge";
@@ -463,6 +464,8 @@ function Overview({
           </div>
         )}
       </Section>
+
+      <ComponentStatesPanel deviceId={device.id} />
     </div>
   );
 }
