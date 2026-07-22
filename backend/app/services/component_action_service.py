@@ -21,13 +21,14 @@ driven by the same ``ACTION_PERMISSION_MAP``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.models.device import Device
 from app.models.remote_action import RemoteAction
 from app.platform_core.action_resolver import ResolvedComponentAction
+from app.platform_core.lifecycle import component_operation_for_action
 from app.schemas.remote_action import RemoteActionCreate
 from app.services.component_action_validator import ComponentActionValidator
 from app.services.remote_action_service import RemoteActionService
@@ -83,3 +84,21 @@ class ComponentActionService:
         )
         action = self._actions.queue_action(device.id, create_in)
         return ComponentActionResult(resolved=resolved, action=action)
+
+    @staticmethod
+    def attribute(action_type: Optional[str]) -> Optional[Tuple[str, str]]:
+        """Reverse seam (Milestone 4): map an EXISTING queued action back to the
+        ``(component_id, operation)`` it implements, via the Lifecycle Registry's
+        reverse index — so any ``RemoteAction`` (however it was queued: this
+        endpoint, Command Center, the RS flow) can be attributed to a component
+        for history/telemetry. Reuses the existing index; introduces no new store.
+
+        Returns ``None`` for actions not owned by any component (e.g. ``ping``).
+        A shared action resolves to its first declared operation (documented fold
+        in the Lifecycle Registry).
+        """
+        result = component_operation_for_action(action_type)
+        if result is None:
+            return None
+        component_id, operation = result
+        return component_id, operation.value

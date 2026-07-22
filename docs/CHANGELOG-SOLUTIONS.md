@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 4: Execution Layer (NOT deployed)
+
+Resolver-i i lidhur me mekanizmin **ekzistues** të device actions — asnjë sistem paralel,
+Action Queue nuk ridizajnohet. Një veprim komponenti i radhitur nga `execute()` bëhet një
+`RemoteAction` i zakonshëm në të njëjtën tabelë `remote_actions` dhe kalon të njëjtin
+pipeline: `collect_pending_for_delivery` (dorëzim me heartbeat) → `acknowledge` →
+`mark_running` → `complete`/`fail`, të gjitha nga `RemoteActionService` i paprekur.
+Rojtari ekzistues i konfliktit/dublikatës zbatohet i pandryshuar.
+
+**Shtuar:** `ComponentActionService.attribute(action_type)` — seam-i i kundërt që mapon çdo
+`RemoteAction` mbrapsht te `(component_id, operation)` përmes indeksit të kundërt ekzistues
+të Lifecycle Registry (`component_operation_for_action`); pa store të ri, veprim i përbashkët
+palohet te operacioni i parë i deklaruar. Kjo shërben History (M7) + Telemetry (M13).
+
+**Tests:** `tests/test_component_action_execution.py` (5 raste: veprim komponenti = `RemoteAction`
+i thjeshtë; rrjedhë e plotë deri në COMPLETED përmes pipeline-it ekzistues; rojtari i konfliktit;
+atribuim i kundërt). Suite i lidhur: **57 passed**. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 3: Validation Layer (NOT deployed)
 
 Shtresë e vetme validimi, e renditur — çdo vendim "a lejohet të radhitet ky veprim"

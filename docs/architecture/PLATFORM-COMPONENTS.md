@@ -320,6 +320,26 @@ desired-version resolution / outdated detection → **M11**; policy *enforcement
 beyond "a policy exists" (rollout/canary/override) → **M10**. Those milestones
 extend this validator — they add checks, never a parallel gate.
 
+### Milestone 4 — Execution Layer
+
+The resolver is wired to the **existing** device-action mechanism — there is no
+parallel system and the Action Queue is not redesigned. A component action queued
+via `ComponentActionService.execute()` becomes an ordinary `RemoteAction` of an
+existing `ActionType` in the one `remote_actions` table, and flows through the
+**same** pipeline as every other action: `collect_pending_for_delivery` (heartbeat
+delivery) → `acknowledge` → `mark_running` → `complete`/`fail`, all driven by the
+unchanged `RemoteActionService`. The existing conflict/duplicate guard applies
+unchanged.
+
+`ComponentActionService.attribute(action_type)` is the reverse seam: it maps any
+queued `RemoteAction` back to the `(component_id, operation)` it implements, via
+the Lifecycle Registry's existing reverse index (`component_operation_for_action`)
+— so History (M7) and Telemetry (M13) can attribute *any* action to a component
+regardless of how it was queued (this endpoint, Command Center, the RS flow). No
+new store; a shared action folds to its first declared operation. An integration
+test drives a component action through the full lifecycle to prove the single
+pipeline.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET
