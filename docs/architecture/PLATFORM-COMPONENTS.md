@@ -504,6 +504,38 @@ operation and derives, per component **and** per operation:
 `GET /devices/{id}/components/telemetry` (scope-checked, `limit ≤ 2000`). Frontend
 gets `getComponentTelemetry()`.
 
+### Milestone 14 — Production Hardening (review)
+
+A review + hardening pass over the whole Operational surface. Posture:
+
+* **Audit** — every state-changing path writes `audit_log`: single action
+  (`action_queued` + component/operation), retry (`action_retried` + `retried_from`),
+  bulk (one `action_queued` summary with devices/targets/succeeded/failed),
+  remediation-that-acted. Read endpoints (history/package/telemetry) are not
+  audited (no state change).
+* **Logging** — `ComponentActionService` logs every queued component action
+  (id/component/operation/action_type/device/by/override) and a bulk summary;
+  remediation logs auto-skips. Layered on the existing `RemoteActionService` logs.
+* **Validation** — one ordered validator (M3) is the single gate:
+  component→operation→executability→capability→policy-present→version→timeout→
+  policy-enforcement. Every rejection carries a stable `code`.
+* **Race conditions / concurrency** — no duplicate actions: the existing queue
+  conflict/duplicate guard (checked in `RemoteActionService.queue_action`) is the
+  single serialization point; component/retry/bulk all funnel through it. Tests
+  assert a duplicate is 409 and never double-queued. (A hard DB-unique constraint
+  would need a schema change — deliberately out of scope; the queue guard is the
+  contract, unchanged.)
+* **Security** — every write endpoint requires ≥ OPERATOR role **and** device
+  scope **and** the same per-action permission as the generic action endpoint;
+  reads require authentication + scope. Policy **override** is honored only for
+  owner/admin (`is_unrestricted`), never a plain operator. Out-of-scope / missing
+  devices return **404** (never distinguished/leaked). Bulk is capped at 1000
+  device×target items.
+* **Performance** — history/telemetry read a bounded recent window and aggregate
+  in memory; bulk is capped; package/desired-state reuse the existing manifest
+  read. No N+1 beyond the existing per-device queries; no new hot path on the
+  heartbeat.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

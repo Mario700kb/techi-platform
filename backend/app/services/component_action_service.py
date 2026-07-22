@@ -20,6 +20,7 @@ driven by the same ``ACTION_PERMISSION_MAP``.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
 
@@ -37,6 +38,8 @@ from app.platform_core.lifecycle import LIFECYCLE_LABELS, component_operation_fo
 from app.schemas.remote_action import RemoteActionCreate
 from app.services.component_action_validator import ComponentActionValidator
 from app.services.remote_action_service import RemoteActionService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -139,6 +142,11 @@ class ComponentActionService:
             execution_timeout_seconds=timeout_seconds,
         )
         action = self._actions.queue_action(device.id, create_in)
+        logger.info(
+            "[component-action] queued #%d component=%s operation=%s action_type=%s device=%d by=%s override=%s",
+            action.id, resolved.component_id, resolved.operation.value,
+            resolved.action_type.value, device.id, created_by, override,
+        )
         return ComponentActionResult(resolved=resolved, action=action)
 
     def bulk_execute(
@@ -216,6 +224,11 @@ class ComponentActionService:
                     device_id=device_id, component_id=resolved.component_id,
                     operation=resolved.operation.value, ok=True, action=action,
                 ))
+        succeeded = sum(1 for r in results if r.ok)
+        logger.info(
+            "[component-action] bulk by=%s devices=%d targets=%d items=%d succeeded=%d failed=%d",
+            created_by, len(device_ids), len(targets), len(results), succeeded, len(results) - succeeded,
+        )
         return results
 
     def retry(

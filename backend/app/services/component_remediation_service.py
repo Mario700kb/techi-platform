@@ -33,6 +33,7 @@ Repair/Restart is a later extension of this same detector — not a new system.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -44,6 +45,8 @@ from app.platform_core.action_resolver import ComponentActionError, can_resolve
 from app.platform_core.components import LifecycleOperation, get_component
 from app.services.component_action_service import ComponentActionService
 from app.services.component_package_service import ComponentPackageService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,10 @@ class ComponentRemediationService:
         if plan.operation is None:
             return RemediationResult(plan=plan, acted=False, reason=plan.reason)
         if auto and not auto_remediation_allowed(component_id):
+            logger.info(
+                "[remediation] auto SKIPPED (policy disabled) component=%s operation=%s device=%s",
+                component_id, plan.operation, getattr(device, "id", "?"),
+            )
             return RemediationResult(plan=plan, acted=False, reason="auto_remediation_disabled")
         if dry_run:
             return RemediationResult(plan=plan, acted=False, reason="dry_run")

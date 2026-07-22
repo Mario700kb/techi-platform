@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 14: Production Hardening (NOT deployed)
+
+Kalim rishikimi + hardening mbi tërë sipërfaqen Operational. Posture:
+
+- **Audit:** çdo path që ndryshon gjendjen shkruan `audit_log` (single `action_queued` +
+  component/operation; retry `action_retried` + `retried_from`; bulk një summary; remediation që
+  vepron). Read-endpoints s'auditohen.
+- **Logging:** shtuar te `ComponentActionService` (log për çdo veprim të radhitur + summary bulk)
+  dhe `ComponentRemediationService` (auto-skip). Mbi log-et ekzistuese të `RemoteActionService`.
+- **Validation:** një validator i vetëm i renditur (M3) me kode stabël gabimi.
+- **Race/concurrency:** pa dublikate — rojtari ekzistues i konfliktit te `queue_action` është pika
+  e vetme e serializimit; single/retry/bulk kalojnë përmes tij (test: dublikatë→409, s'dyfishohet).
+- **Security:** çdo write kërkon ≥OPERATOR + scope + permission per-action; read kërkon auth+scope;
+  override vetëm owner/admin (`is_unrestricted`); pajisje jashtë scope/që mungon → 404 (s'rrjedhin);
+  bulk i kufizuar 1000.
+- **Performance:** history/telemetry lexojnë dritare të kufizuar + agregim në memorie; bulk i kufizuar;
+  package ripërdor leximin ekzistues të manifestit; pa hot-path të ri në heartbeat.
+
+**Tests:** `tests/test_component_action_hardening.py` (7 raste: auth i detyruar në read/write/bulk,
+audit single + bulk, idempotency s'dyfishon, override kërkon operator elevated). Backend full suite:
+**924 passed** (4 baseline pre-ekzistuese, të palidhura); frontend tsc clean + vitest 80 + build green.
+NOT deployed.
+
+**Përfundim:** të 14 milestone-t e Platform Components — Operational të plota. Themeli
+(Registry/Lifecycle/Policy/Desired-State) i paprekur. Deployment vendoset vetëm nga owner-i.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 13: Telemetry (NOT deployed)
 
 Agregim read-only mbi store-in **ekzistues** `remote_actions` — pa storage të ri, pa counter-a
