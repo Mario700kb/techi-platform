@@ -3,7 +3,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 from datetime import datetime
 from app.core.time import utcnow
 from pathlib import Path
@@ -201,23 +200,10 @@ class AgentPackageService:
         if not path.name.lower().endswith(".msi"):
             return {"metadata_status": "not_applicable", "metadata_error": None}
         try:
-            proc = subprocess.run(
-                ["msiinfo", "export", str(path), "Property"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-        except FileNotFoundError:
-            return {"metadata_status": "error", "metadata_error": "msiinfo not installed"}
-        except subprocess.TimeoutExpired:
-            return {"metadata_status": "error", "metadata_error": "msiinfo timed out"}
+            props = AgentPackageService._parse_msi_property_bytes(path.read_bytes())
+        except OSError as exc:
+            return {"metadata_status": "error", "metadata_error": f"failed to read MSI: {exc}"}
 
-        if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout or "msiinfo failed").strip()
-            return {"metadata_status": "error", "metadata_error": detail[:500]}
-
-        props = AgentPackageService._parse_msi_property_table(proc.stdout)
         metadata = {
             "product_name": props.get("ProductName"),
             "product_version": props.get("ProductVersion"),
@@ -233,17 +219,41 @@ class AgentPackageService:
         return metadata
 
     @staticmethod
-    def _parse_msi_property_table(text: str) -> dict:
-        props = {}
-        for raw_line in text.splitlines():
-            line = raw_line.rstrip("\r\n")
-            if not line or "\t" not in line:
-                continue
-            key, value = line.split("\t", 1)
-            if key in {"Property", "s72"}:
-                continue
-            props[key] = value
-        return props
+    def _parse_msi_property_bytes(data: bytes) -> dict:
+        text = data.decode("latin-1", errors="ignore")
+        return {
+            "ProductName": AgentPackageService._extract_msi_property_value(
+                text, "ProductName", ("ProductVersion", "ProductCode", "UpgradeCode", "Manufacturer")
+            ),
+            "ProductVersion": AgentPackageService._extract_msi_property_value(
+                text, "ProductVersion", ("UpgradeCode", "ProductCode", "ProductLanguage", "Manufacturer")
+            ),
+            "ProductCode": AgentPackageService._extract_msi_guid_property(text, "ProductCode"),
+            "UpgradeCode": AgentPackageService._extract_msi_guid_property(text, "UpgradeCode"),
+        }
+
+    @staticmethod
+    def _extract_msi_guid_property(text: str, key: str) -> Optional[str]:
+        match = re.search(rf"{re.escape(key)}(\{{[0-9A-Fa-f]{{8}}(?:-[0-9A-Fa-f]{{4}}){{3}}-[0-9A-Fa-f]{{12}}\}})", text)
+        return match.group(1).upper() if match else None
+
+    @staticmethod
+    def _extract_msi_property_value(text: str, key: str, next_keys: tuple[str, ...]) -> Optional[str]:
+        start = text.find(key)
+        while start != -1:
+            value_start = start + len(key)
+            end_candidates = [text.find(next_key, value_start) for next_key in next_keys]
+            end_candidates = [candidate for candidate in end_candidates if candidate != -1]
+            if end_candidates:
+                value = text[value_start:min(end_candidates)].strip("\x00\r\n\t ")
+                if value and AgentPackageService._is_printable_msi_value(value):
+                    return value
+            start = text.find(key, value_start)
+        return None
+
+    @staticmethod
+    def _is_printable_msi_value(value: str) -> bool:
+        return all(char == " " or 32 <= ord(char) <= 126 for char in value)
 
     @staticmethod
     def _validate_activation_metadata(item: dict) -> None:
