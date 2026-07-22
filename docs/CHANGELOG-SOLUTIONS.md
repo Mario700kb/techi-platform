@@ -5,7 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-07-22] Platform Components — Operational · Milestone 14: Production Hardening (NOT deployed)
+## [2026-07-22] Platform Components — Operational · PRODUCTION DEPLOY (v2.2.1-platform-components-operational)
+
+Deploy i të gjitha 14 milestone-ve Operational në prodhim. **Rollback NUK u përdor.**
+
+**Release:**
+- Branch `backport/platform-components-92a521c`, **FINAL_SHA `2918855b93e451658f4f75e5732bb9b5554665cd`** (14 commit-e Operational mbi `cf59590`).
+- Push në origin via HTTPS (osxkeychain; çelësi SSH `github_techi` ka passphrase e s'ngarkohej — HTTPS funksionoi si më parë).
+- Annotated tag **`v2.2.1-platform-components-operational`** → `2918855` (origin).
+
+**Preflight lokal:** `scripts/preflight.sh` → PASSED (single-engine guard; contract 15/0; backend flags OFF/ON **924 passed / 4 baseline**; tsc; frontend build; agent go build). 4 dështimet = saktësisht baseline `test_enrollment_audit_diagnostics`, identike me `cf59590`.
+
+**Preflight prod (`/opt/techi/techi-platform`):** live HEAD `cf59590` (PRE_DEPLOY_SHA), working tree clean, containers healthy, `/health` 200, 0 HTTP-500. Rollback anchors të krijuar (aditive, s'prekën runtime-in): git tag **`pre-v2.2.1-operational` → `cf59590`** + image snapshots **`techi-platform-backend:pre-v2.2.1-operational`** (`bcb238`) / **`frontend:pre-v2.2.1-operational`** (`13f6ae`). (Ekzistonin edhe `pre-backport-deploy` = build `92a521c` si fallback më i thellë.)
+
+**Deploy:** `git fetch --tags origin` → `git checkout --detach 2918855` (HEAD==FINAL_SHA, tree clean) → `docker compose build` (backend+frontend) → `docker compose up -d`. Postgres **Running/i paprekur** (i njëjti volume, **pa migration**). Images të reja: backend `0cb72f17`, frontend `bd7617c7` (të dyja healthy). PRE-deploy images: backend `bcb238`, frontend `13f6ae`.
+
+**Health & smoke:** `/health` 200, frontend 200, login 401, `scripts/smoke.sh` **8/8 PASSED**. Endpoint-et e reja Component-Action (actions/telemetry/package/bulk/component-states/platform-components) të gjitha **401 (jo 500)** → rutat e regjistruara e të mbrojtura si duhet. (`openapi.json` 404 — sjellje ekzistuese e prodhimit, e pandryshuar; s'preka konfig-un e docs.)
+
+**Monitorim ~10 min:** 0 HTTP-500, 0 Traceback, 0 ERROR/CRITICAL, 0 auth-failures; heartbeat të gjithë **204** (~2000/min) — **pa storm, firma e incidentit të korrikut mungon**; containers healthy, 0 restarts; load stable/në rënie (5-min 3.97→2.58, tail i build-it). Rollback NUK u aktivizua (asnjë kriter dështimi).
+
+**Verifikim i mbetur (owner):** click-through i autentikuar në UI (drawer/panel/history/telemetry) — s'ka token operatori/browser në sesionin e deploy-it; **asnjë veprim real mbi pajisje s'u ekzekutua** (asnjë target test i aprovuar).
+
+**Rollback (nëse duhet ndonjëherë):** `cd /opt/techi/techi-platform && git checkout --detach pre-v2.2.1-operational` + rikthe images `techi-platform-backend:pre-v2.2.1-operational` / `frontend:pre-v2.2.1-operational` (ose `docker tag ... :latest`) + `docker compose up -d`.
+
+---
+
+## [2026-07-22] Platform Components — Operational · Milestone 14: Production Hardening (deployed)
 
 Kalim rishikimi + hardening mbi tërë sipërfaqen Operational. Posture:
 
