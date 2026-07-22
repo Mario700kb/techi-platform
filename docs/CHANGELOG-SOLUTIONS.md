@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 8: Retry & Idempotency (NOT deployed)
+
+**Idempotency:** dublikatat bllokohen tashmë nga rojtari ekzistues i konfliktit të radhës (409) —
+asnjë mekanizëm i ri; testet e vërtetojnë.
+
+**Shtuar:**
+- Retry: `POST /devices/{id}/components/actions/{action_id}/retry` — ri-validon `(component,
+  operation)` kundër gjendjes **aktuale** të pajisjes (capability/policy mund të kenë ndryshuar),
+  i njëjti gate lejesh, ri-radhitet përmes `retry_action` ekzistues. Refuzohet: 409 nëse jo-terminal,
+  422 (`not_a_component_action`) nëse s'është veprim komponenti, 404 nëse mungon/jashtë scope. Audit
+  `action_retried`. `ComponentActionService.retry()`.
+- Timeout: `ComponentActionRequest.timeout_seconds` (opsional) validohet në `[1, 3600]`
+  (`invalid_timeout` → 400) dhe kalon te `execution_timeout_seconds`; mungesa = default (300s).
+  `bool` refuzohet shprehimisht. Kode të reja: `invalid_timeout`, `not_a_component_action`.
+- FE: `retryComponentAction()` + `timeoutSeconds` te `queueComponentAction`.
+
+**Tests:** 8 raste të reja (timeout valid/invalid, retry i suksesshëm i një veprimi terminal,
+retry jo-terminal→409, jo-komponent→422, mungon→404; + timeout te validatori incl. bool). Backend
+i lidhur: **69 passed**; frontend tsc clean. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 7: History (NOT deployed)
 
 Historia e veprimeve të komponentit **ripërdor store-in ekzistues `remote_actions`** — asnjë

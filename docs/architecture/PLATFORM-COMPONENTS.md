@@ -390,6 +390,22 @@ scope-checked. `ComponentActionHistoryItem` extends `RemoteActionResponse` with
 `getComponentActionHistory()` client; the drawer's existing ActivityTimeline
 already renders the underlying actions, so no duplicate history UI is introduced.
 
+### Milestone 8 — Retry & Idempotency
+
+* **Idempotency (no duplicate actions):** already enforced by the existing queue
+  conflict/duplicate guard — a second identical component action while one is
+  non-terminal returns **409**. No new mechanism; tests assert it.
+* **Retry (only when allowed):** `POST /devices/{id}/components/actions/{action_id}/retry`
+  re-validates the action's `(component, operation)` against **current** device
+  state (capabilities/policy may have changed), enforces the same permission gate,
+  then re-queues via the existing `retry_action` path. Refused with **409** if the
+  action is not terminal, **422** (`not_a_component_action`) if it isn't a component
+  action, **404** if missing/out of scope. Audited as `action_retried`.
+* **Timeout handling:** `ComponentActionRequest.timeout_seconds` (optional) is
+  validated to `[1, 3600]` (`invalid_timeout` → 400) and threaded to the queued
+  action's `execution_timeout_seconds`; absent = the queue default (300s). A
+  `bool` is explicitly rejected (int subclass). Frontend gains `retryComponentAction`.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

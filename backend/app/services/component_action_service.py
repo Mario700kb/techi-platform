@@ -27,7 +27,11 @@ from sqlalchemy.orm import Session
 
 from app.models.device import Device
 from app.models.remote_action import RemoteAction
-from app.platform_core.action_resolver import ResolvedComponentAction
+from app.platform_core.action_resolver import (
+    ComponentActionError,
+    ComponentActionErrorCode,
+    ResolvedComponentAction,
+)
 from app.platform_core.components import LifecycleOperation
 from app.platform_core.lifecycle import LIFECYCLE_LABELS, component_operation_for_action
 from app.schemas.remote_action import RemoteActionCreate
@@ -69,11 +73,13 @@ class ComponentActionService:
         operation: Any,
         *,
         parameters: Optional[Mapping[str, Any]] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> ResolvedComponentAction:
         """Run the full validation layer (Milestone 3) without queuing. Raises
         :class:`ComponentActionError` (stable code) on the first failure."""
         return self._validator.validate(
-            device, component_id, operation, parameters=parameters
+            device, component_id, operation,
+            parameters=parameters, timeout_seconds=timeout_seconds,
         )
 
     def execute(
@@ -84,20 +90,52 @@ class ComponentActionService:
         *,
         created_by: Optional[str],
         parameters: Optional[Mapping[str, Any]] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> ComponentActionResult:
         """Resolve, validate device availability, and queue the action through
         the existing pipeline. Raises :class:`ComponentActionError` on resolution/
-        availability failure and ``ValueError`` on a queue conflict/duplicate."""
+        availability failure and ``ValueError`` on a queue conflict/duplicate
+        (the existing idempotency guard — no duplicate component actions)."""
         resolved = self.resolve_for_device(
-            device, component_id, operation, parameters=parameters
+            device, component_id, operation,
+            parameters=parameters, timeout_seconds=timeout_seconds,
         )
         create_in = RemoteActionCreate(
             action_type=resolved.action_type,
             parameters=dict(resolved.payload) or None,
             created_by=created_by,
+            execution_timeout_seconds=timeout_seconds,
         )
         action = self._actions.queue_action(device.id, create_in)
         return ComponentActionResult(resolved=resolved, action=action)
+
+    def retry(
+        self,
+        device: Device,
+        action: RemoteAction,
+        *,
+        created_by: Optional[str],
+    ) -> ComponentActionResult:
+        """Retry a terminal component action (Milestone 8), re-validating that the
+        operation is STILL allowed for the device before re-queuing through the
+        existing retry path. Raises :class:`ComponentActionError` if the action is
+        not a component action or is no longer allowed, and ``ValueError`` if it is
+        not in a terminal status (retry only when permitted) or would duplicate an
+        active action (idempotency)."""
+        attributed = self.attribute(action.action_type)
+        if attributed is None:
+            raise ComponentActionError(
+                ComponentActionErrorCode.NOT_A_COMPONENT_ACTION,
+                f"Action '{action.action_type}' is not a component action and cannot be retried here.",
+            )
+        component_id, operation = attributed
+        # Re-validate against CURRENT device state (capabilities/policy may have
+        # changed since the original was queued).
+        resolved = self._validator.validate(
+            device, component_id, operation, parameters=action.payload_dict or None
+        )
+        new_action = self._actions.retry_action(action.id, caller_username=created_by)
+        return ComponentActionResult(resolved=resolved, action=new_action)
 
     def history(
         self,

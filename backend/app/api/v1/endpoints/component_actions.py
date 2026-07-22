@@ -53,6 +53,8 @@ _ERROR_STATUS = {
     ComponentActionErrorCode.UNAVAILABLE_FOR_DEVICE: 422,
     ComponentActionErrorCode.NO_POLICY: 422,
     ComponentActionErrorCode.INVALID_VERSION: 400,
+    ComponentActionErrorCode.INVALID_TIMEOUT: 400,
+    ComponentActionErrorCode.NOT_A_COMPONENT_ACTION: 422,
 }
 
 
@@ -95,7 +97,8 @@ def queue_component_action(
     # the generic device-action endpoint uses, keyed on the resolved ActionType.
     try:
         resolved = svc.resolve_for_device(
-            device, component_id, payload.operation, parameters=payload.parameters
+            device, component_id, payload.operation,
+            parameters=payload.parameters, timeout_seconds=payload.timeout_seconds,
         )
     except ComponentActionError as exc:
         _raise_component_error(exc)
@@ -113,6 +116,7 @@ def queue_component_action(
             payload.operation,
             created_by=operator.username,
             parameters=payload.parameters,
+            timeout_seconds=payload.timeout_seconds,
         )
     except ComponentActionError as exc:
         _raise_component_error(exc)
@@ -178,3 +182,64 @@ def component_action_history(
             )
         )
     return ComponentActionHistoryResponse(device_id=device_id, items=items)
+
+
+@router.post(
+    "/devices/{device_id}/components/actions/{action_id}/retry",
+    response_model=ComponentActionAccepted,
+)
+def retry_component_action(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    action_id: int,
+):
+    """Retry a terminal component action (Milestone 8). Re-validates that the
+    operation is still allowed for the device, enforces the same permission gate,
+    and re-queues through the existing retry path (idempotency guard applies)."""
+    device = _get_device_scoped(device_id, db, scope)
+    from app.repositories.remote_action_repository import RemoteActionRepository
+
+    action = RemoteActionRepository(db).get(action_id)
+    if not action or action.device_id != device_id:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    required_perm = ACTION_PERMISSION_MAP.get(action.action_type)
+    if required_perm:
+        effective = get_operator_permissions(operator, db)
+        if effective is not None and required_perm not in effective:
+            raise HTTPException(status_code=403, detail=f"Permission denied: {required_perm}")
+
+    svc = ComponentActionService(db)
+    try:
+        result = svc.retry(device, action, created_by=operator.username)
+    except ComponentActionError as exc:
+        _raise_component_error(exc)
+    except ValueError as exc:
+        # Non-terminal status (retry not allowed) or duplicate/conflict.
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    new_action = result.action
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.ACTION_RETRIED,
+        entity_type="remote_action",
+        entity_id=new_action.id,
+        details={
+            "device_id": device_id,
+            "component_id": result.resolved.component_id,
+            "operation": result.resolved.operation.value,
+            "action_type": new_action.action_type,
+            "retried_from": action_id,
+        },
+    )
+    return ComponentActionAccepted(
+        component_id=result.resolved.component_id,
+        operation=result.resolved.operation.value,
+        action_type=result.resolved.action_type.value,
+        label=result.resolved.label,
+        action=RemoteActionResponse.model_validate(new_action),
+    )

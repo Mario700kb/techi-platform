@@ -111,14 +111,27 @@ export async function queueComponentAction(
   componentId: string,
   operation: string,
   parameters?: Record<string, unknown>,
+  timeoutSeconds?: number,
 ): Promise<ComponentActionAccepted> {
   return fetchJson<ComponentActionAccepted>(
     `/api/v1/devices/${deviceId}/components/${componentId}/actions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation, parameters }),
+      body: JSON.stringify({ operation, parameters, timeout_seconds: timeoutSeconds }),
     },
+  );
+}
+
+// Retry a terminal component action (Operational M8). Re-validates the operation
+// is still allowed for the device, then re-queues via the existing retry path.
+export async function retryComponentAction(
+  deviceId: number,
+  actionId: number,
+): Promise<ComponentActionAccepted> {
+  return fetchJson<ComponentActionAccepted>(
+    `/api/v1/devices/${deviceId}/components/actions/${actionId}/retry`,
+    { method: "POST" },
   );
 }
 

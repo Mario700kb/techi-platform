@@ -54,6 +54,9 @@ class ComponentActionErrorCode(str, Enum):
     # Validation-layer (Milestone 3) codes — raised by ComponentActionValidator.
     NO_POLICY = "no_policy"                # component has no deployment policy
     INVALID_VERSION = "invalid_version"    # a supplied version parameter is malformed
+    INVALID_TIMEOUT = "invalid_timeout"    # a supplied execution timeout is out of range
+    # Retry (Milestone 8): the action being retried is not owned by any component.
+    NOT_A_COMPONENT_ACTION = "not_a_component_action"
 
 
 class ComponentActionError(Exception):

@@ -70,6 +70,9 @@ class ComponentActionRequest(BaseModel):
     # | restart | discover | sync. Validated by the resolver (stable error codes).
     operation: str
     parameters: Optional[Dict[str, Any]] = None
+    # Optional execution timeout (seconds); validated to a sane range. Absent =
+    # the queue's default (300s). Milestone 8 — timeout handling.
+    timeout_seconds: Optional[int] = None
 
 
 class ComponentActionAccepted(BaseModel):

@@ -17,9 +17,10 @@ def _device(platform="windows", capabilities=None):
     return SimpleNamespace(platform=platform, capabilities=capabilities)
 
 
-def _validate(device, component, operation, parameters=None):
+def _validate(device, component, operation, parameters=None, timeout_seconds=None):
     return ComponentActionValidator(db=None).validate(
-        device, component, operation, parameters=parameters
+        device, component, operation,
+        parameters=parameters, timeout_seconds=timeout_seconds,
     )
 
 
@@ -75,6 +76,24 @@ def test_invalid_version_parameter_rejected():
     with pytest.raises(ComponentActionError) as exc:
         _validate(_device(), "agent", "update", parameters={"version": "not-a-version"})
     assert exc.value.code is ComponentActionErrorCode.INVALID_VERSION
+
+
+def test_valid_timeout_passes():
+    assert _validate(_device(), "agent", "update", timeout_seconds=120)
+
+
+def test_out_of_range_timeout_rejected():
+    for bad in (0, -5, 3601, 10 ** 9):
+        with pytest.raises(ComponentActionError) as exc:
+            _validate(_device(), "agent", "update", timeout_seconds=bad)
+        assert exc.value.code is ComponentActionErrorCode.INVALID_TIMEOUT, bad
+
+
+def test_boolean_timeout_rejected():
+    # bool is an int subclass — must not be accepted as a timeout.
+    with pytest.raises(ComponentActionError) as exc:
+        _validate(_device(), "agent", "update", timeout_seconds=True)
+    assert exc.value.code is ComponentActionErrorCode.INVALID_TIMEOUT
 
 
 def test_empty_version_parameter_is_ignored():

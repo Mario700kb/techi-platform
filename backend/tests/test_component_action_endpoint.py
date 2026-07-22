@@ -22,6 +22,8 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.operator import OperatorRole
 from app.models.remote_action import RemoteAction
+from app.schemas.remote_action import ActionType, RemoteActionCreate
+from app.services.remote_action_service import RemoteActionService
 
 
 def _client(platform="windows", capabilities=None):
@@ -180,3 +182,69 @@ def test_history_empty_when_no_component_actions():
     r = client.get("/devices/7/components/actions")
     assert r.status_code == 200
     assert r.json()["items"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Timeout handling (Milestone 8)                                              #
+# --------------------------------------------------------------------------- #
+def test_valid_timeout_is_applied_to_queued_action():
+    client, _ = _client()
+    r = client.post(
+        "/devices/7/components/agent/actions",
+        json={"operation": "update", "timeout_seconds": 120},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["action"]["execution_timeout_seconds"] == 120
+
+
+def test_out_of_range_timeout_rejected_400():
+    client, _ = _client()
+    r = client.post(
+        "/devices/7/components/agent/actions",
+        json={"operation": "update", "timeout_seconds": 99999},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "invalid_timeout"
+
+
+# --------------------------------------------------------------------------- #
+# Retry & idempotency (Milestone 8)                                           #
+# --------------------------------------------------------------------------- #
+def test_retry_terminal_component_action_requeues():
+    client, db = _client()
+    first = _post(client, "agent", "update")
+    action_id = first.json()["action"]["id"]
+    # Drive it to a terminal (failed) state via the existing service.
+    RemoteActionService(db).fail(action_id, error_message="boom")
+
+    r = client.post(f"/devices/7/components/actions/{action_id}/retry")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["component_id"] == "agent"
+    assert body["operation"] == "update"
+    assert body["action"]["id"] != action_id  # a fresh action
+
+
+def test_retry_non_terminal_action_conflicts_409():
+    client, _ = _client()
+    first = _post(client, "agent", "update")  # status queued (non-terminal)
+    action_id = first.json()["action"]["id"]
+    r = client.post(f"/devices/7/components/actions/{action_id}/retry")
+    assert r.status_code == 409
+
+
+def test_retry_non_component_action_422():
+    client, db = _client()
+    # A non-component action (ping) queued directly; not retryable here.
+    ping = RemoteActionService(db).queue_action(
+        7, RemoteActionCreate(action_type=ActionType.PING, created_by="mario")
+    )
+    r = client.post(f"/devices/7/components/actions/{ping.id}/retry")
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "not_a_component_action"
+
+
+def test_retry_missing_action_404():
+    client, _ = _client()
+    r = client.post("/devices/7/components/actions/9999/retry")
+    assert r.status_code == 404

@@ -46,6 +46,12 @@ from app.platform_core.actions import actions_for
 from app.platform_core.policy import policy_for
 
 
+# Execution-timeout bounds for a component action (seconds). Mirrors the queue's
+# default (300) while allowing operators to widen/narrow within a sane range.
+MIN_TIMEOUT_SECONDS = 1
+MAX_TIMEOUT_SECONDS = 3600
+
+
 def _parse_version(value: str) -> Optional[tuple]:
     """Parse a dotted-numeric version to a tuple, or None if unparseable (mirrors
     the pure derivation in components.py — kept local, no import of a private)."""
@@ -69,6 +75,7 @@ class ComponentActionValidator:
         operation: Any,
         *,
         parameters: Optional[Mapping[str, Any]] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> ResolvedComponentAction:
         """Validate and return the resolved action, or raise
         :class:`ComponentActionError` with a stable code on the first failure."""
@@ -85,6 +92,9 @@ class ComponentActionValidator:
 
         # 4. supplied version format.
         self._check_version_parameter(resolved, parameters)
+
+        # 5. supplied execution timeout (Milestone 8 — timeout handling).
+        self._check_timeout(resolved, timeout_seconds)
 
         return resolved
 
@@ -133,6 +143,27 @@ class ComponentActionValidator:
             raise ComponentActionError(
                 ComponentActionErrorCode.INVALID_VERSION,
                 f"Version '{version}' is not a valid dotted-numeric version.",
+                component_id=resolved.component_id,
+                operation=resolved.operation.value,
+            )
+
+    def _check_timeout(
+        self, resolved: ResolvedComponentAction, timeout_seconds: Optional[int]
+    ) -> None:
+        if timeout_seconds is None:
+            return
+        if (
+            not isinstance(timeout_seconds, int)
+            or isinstance(timeout_seconds, bool)
+            or timeout_seconds < MIN_TIMEOUT_SECONDS
+            or timeout_seconds > MAX_TIMEOUT_SECONDS
+        ):
+            raise ComponentActionError(
+                ComponentActionErrorCode.INVALID_TIMEOUT,
+                (
+                    f"Timeout '{timeout_seconds}' is out of range "
+                    f"({MIN_TIMEOUT_SECONDS}-{MAX_TIMEOUT_SECONDS} seconds)."
+                ),
                 component_id=resolved.component_id,
                 operation=resolved.operation.value,
             )
