@@ -59,6 +59,10 @@ class ComponentActionErrorCode(str, Enum):
     NOT_A_COMPONENT_ACTION = "not_a_component_action"
     # Policy enforcement (Milestone 10): denied by global/tenant/component policy.
     POLICY_DENIED = "policy_denied"
+    # Package resolution (Milestone 11): required component package is missing or
+    # cannot safely produce the action payload.
+    PACKAGE_UNAVAILABLE = "package_unavailable"
+    PACKAGE_METADATA_INCOMPLETE = "package_metadata_incomplete"
 
 
 class ComponentActionError(Exception):

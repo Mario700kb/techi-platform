@@ -114,10 +114,49 @@ def test_remote_support_enrichment_injects_msi_metadata(monkeypatch):
         _pkg("1.4.9", file_type="remote_support_msi", sha256="cafebabe", active=True),
     ])
 
-    enrich = svc.enrichment_for("remote_support", "windows", LifecycleOperation.UPDATE)
+    enrich = svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
 
     assert enrich["version"] == "1.4.9"
     assert enrich["msi_version"] == "1.4.9"
     assert enrich["msi_url"] == "https://api.example.test/api/v1/agent-packages/remote-support-msi/download"
+    assert enrich["sha256"] == "cafebabe"
     assert enrich["target_sha256"] == "cafebabe"
     assert enrich["product_guid"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
+    assert enrich["product_code"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
+    assert enrich["upgrade_code"] == "60D9FA89-6F6C-5C7C-A74E-027363D83921"
+
+
+def test_remote_support_repair_requires_active_msi_package():
+    from app.platform_core.action_resolver import ComponentActionError
+
+    svc = _svc([])
+
+    try:
+        svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
+        assert False, "expected no active package error"
+    except ComponentActionError as exc:
+        assert exc.message == "no active Remote Support MSI package"
+
+
+def test_remote_support_repair_requires_complete_msi_metadata(monkeypatch):
+    from app.platform_core.action_resolver import ComponentActionError
+
+    monkeypatch.setattr(
+        "app.services.component_package_service.settings.PUBLIC_BACKEND_URL",
+        "https://api.example.test",
+    )
+    svc = _svc([_pkg("1.4.9", file_type="remote_support_msi", sha256=None, active=True)])
+
+    try:
+        svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
+        assert False, "expected incomplete metadata error"
+    except ComponentActionError as exc:
+        assert exc.message == "active Remote Support MSI metadata is incomplete"
+
+
+def test_remote_support_discover_sync_restart_do_not_resolve_msi():
+    svc = _svc([])
+
+    assert svc.enrichment_for("remote_support", "windows", LifecycleOperation.RESTART) == {}
+    assert svc.enrichment_for("remote_support", "windows", LifecycleOperation.SYNC) == {}
+    assert svc.enrichment_for("remote_support", "windows", LifecycleOperation.DISCOVER) == {}

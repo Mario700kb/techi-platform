@@ -66,6 +66,8 @@ _ERROR_STATUS = {
     ComponentActionErrorCode.INVALID_TIMEOUT: 400,
     ComponentActionErrorCode.NOT_A_COMPONENT_ACTION: 422,
     ComponentActionErrorCode.POLICY_DENIED: 403,
+    ComponentActionErrorCode.PACKAGE_UNAVAILABLE: 422,
+    ComponentActionErrorCode.PACKAGE_METADATA_INCOMPLETE: 422,
 }
 
 

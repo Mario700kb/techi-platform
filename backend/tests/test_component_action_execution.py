@@ -106,6 +106,32 @@ def test_enriched_payload_merges_package_and_operator_params():
     assert payload2["target_sha256"] == "abc"       # enrichment fills the gap
 
 
+def test_remote_support_repair_queues_with_resolved_msi_package(monkeypatch):
+    db = _db()
+    svc = ComponentActionService(db)
+    svc._packages.enrichment_for = lambda cid, plat, op: {
+        "msi_url": "https://api.example.test/api/v1/agent-packages/remote-support-msi/download",
+        "msi_version": "1.4.9",
+        "sha256": "cafebabe",
+        "target_sha256": "cafebabe",
+        "product_guid": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
+        "product_code": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
+        "upgrade_code": "60D9FA89-6F6C-5C7C-A74E-027363D83921",
+        "rendezvous_server": "139.162.158.208",
+        "key": "public-key",
+    }
+
+    result = svc.execute(_device(db), "remote_support", "repair", created_by="mario")
+
+    payload = result.action.payload_dict
+    assert result.action.action_type == "repair_config_rustdesk"
+    assert payload["msi_url"].endswith("/remote-support-msi/download")
+    assert payload["msi_version"] == "1.4.9"
+    assert payload["sha256"] == "cafebabe"
+    assert payload["product_guid"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
+    assert payload["upgrade_code"] == "60D9FA89-6F6C-5C7C-A74E-027363D83921"
+
+
 def test_attribute_maps_action_back_to_component_operation():
     assert ComponentActionService.attribute("self_update") == ("agent", "update")
     assert ComponentActionService.attribute("reinstall_rustdesk") == (

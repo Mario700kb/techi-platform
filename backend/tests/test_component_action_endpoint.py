@@ -23,6 +23,8 @@ from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.operator import OperatorRole
 from app.models.remote_action import RemoteAction
 from app.schemas.remote_action import ActionType, RemoteActionCreate
+from app.platform_core.action_resolver import ComponentActionError, ComponentActionErrorCode
+from app.services.component_action_service import ComponentActionService
 from app.services.remote_action_service import RemoteActionService
 
 
@@ -73,9 +75,58 @@ def test_agent_update_queues_self_update():
 
 def test_remote_support_repair_queues_repair_action():
     client, _ = _client(capabilities={"remote_support": ""})
-    r = _post(client, "remote_support", "repair")
+    original = ComponentActionService._enriched_payload
+    ComponentActionService._enriched_payload = lambda self, device, resolved: {}
+    try:
+        r = _post(client, "remote_support", "repair")
+    finally:
+        ComponentActionService._enriched_payload = original
     assert r.status_code == 200, r.text
     assert r.json()["action_type"] == "repair_config_rustdesk"
+
+
+def test_remote_support_repair_missing_package_returns_clear_error():
+    client, _ = _client(capabilities={"remote_support": ""})
+    original = ComponentActionService._enriched_payload
+
+    def boom(self, device, resolved):
+        raise ComponentActionError(
+            ComponentActionErrorCode.PACKAGE_UNAVAILABLE,
+            "no active Remote Support MSI package",
+            component_id="remote_support",
+            operation="repair",
+        )
+
+    ComponentActionService._enriched_payload = boom
+    try:
+        r = _post(client, "remote_support", "repair")
+    finally:
+        ComponentActionService._enriched_payload = original
+
+    assert r.status_code == 422
+    assert r.json()["detail"]["detail"] == "no active Remote Support MSI package"
+
+
+def test_remote_support_repair_incomplete_metadata_returns_clear_error():
+    client, _ = _client(capabilities={"remote_support": ""})
+    original = ComponentActionService._enriched_payload
+
+    def boom(self, device, resolved):
+        raise ComponentActionError(
+            ComponentActionErrorCode.PACKAGE_METADATA_INCOMPLETE,
+            "active Remote Support MSI metadata is incomplete",
+            component_id="remote_support",
+            operation="repair",
+        )
+
+    ComponentActionService._enriched_payload = boom
+    try:
+        r = _post(client, "remote_support", "repair")
+    finally:
+        ComponentActionService._enriched_payload = original
+
+    assert r.status_code == 422
+    assert r.json()["detail"]["detail"] == "active Remote Support MSI metadata is incomplete"
 
 
 def test_parameters_pass_through_to_queued_action():

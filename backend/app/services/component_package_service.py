@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.device import Device
+from app.platform_core.action_resolver import ComponentActionError, ComponentActionErrorCode
 from app.platform_core.components import ComponentHealth, LifecycleOperation
 from app.schemas.agent_package import AgentFileType, AgentPackageOut
 from app.services.agent_package_service import AgentPackageService
@@ -46,6 +47,16 @@ from app.services.component_state_service import (
 VERSION_CHANGING_OPERATIONS = frozenset(
     {LifecycleOperation.INSTALL, LifecycleOperation.UPDATE, LifecycleOperation.REINSTALL}
 )
+REMOTE_SUPPORT_PACKAGE_OPERATIONS = frozenset(
+    {
+        LifecycleOperation.INSTALL,
+        LifecycleOperation.UPDATE,
+        LifecycleOperation.REPAIR,
+        LifecycleOperation.REINSTALL,
+    }
+)
+REMOTE_SUPPORT_PRODUCT_GUID = "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
+REMOTE_SUPPORT_UPGRADE_CODE = "60D9FA89-6F6C-5C7C-A74E-027363D83921"
 
 
 def _version_key(value: str):
@@ -128,6 +139,8 @@ class ComponentPackageService:
         """Payload fields to inject for a version-changing operation: the active
         package's ``version`` (+ ``target_sha256`` when known). Empty dict for
         non-version-changing ops or when no active package exists (inert)."""
+        if component_id == "remote_support" and operation in REMOTE_SUPPORT_PACKAGE_OPERATIONS:
+            return self._remote_support_msi_enrichment(device_platform, operation)
         if operation not in VERSION_CHANGING_OPERATIONS:
             return {}
         package = self.active_package(component_id, device_platform)
@@ -136,15 +149,49 @@ class ComponentPackageService:
         enrichment: Dict[str, Any] = {"version": package.version}
         if package.sha256:
             enrichment["target_sha256"] = package.sha256
-        if component_id == "remote_support" and package.file_type.value == AgentFileType.REMOTE_SUPPORT_MSI.value:
-            base_url = (settings.PUBLIC_BACKEND_URL or "").rstrip("/")
-            enrichment.update(
-                {
-                    "msi_url": f"{base_url}{self._packages.remote_support_msi_download_url()}",
-                    "msi_version": package.version,
-                    "product_guid": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
-                    "rendezvous_server": settings.RUSTDESK_SERVER_HOST,
-                    "key": settings.RUSTDESK_PUBLIC_KEY,
-                }
-            )
         return enrichment
+
+    def _remote_support_msi_enrichment(
+        self, device_platform: Optional[str], operation: LifecycleOperation
+    ) -> Dict[str, Any]:
+        package = self.active_package("remote_support", device_platform)
+        if package is None or package.file_type.value != AgentFileType.REMOTE_SUPPORT_MSI.value:
+            raise ComponentActionError(
+                ComponentActionErrorCode.PACKAGE_UNAVAILABLE,
+                "no active Remote Support MSI package",
+                component_id="remote_support",
+                operation=operation.value,
+            )
+
+        base_url = (settings.PUBLIC_BACKEND_URL or "").rstrip("/")
+        missing = []
+        if not package.version:
+            missing.append("version")
+        if not package.sha256:
+            missing.append("sha256")
+        if not base_url:
+            missing.append("PUBLIC_BACKEND_URL")
+        if not settings.RUSTDESK_SERVER_HOST:
+            missing.append("RUSTDESK_SERVER_HOST")
+        if not settings.RUSTDESK_PUBLIC_KEY:
+            missing.append("RUSTDESK_PUBLIC_KEY")
+        if missing:
+            raise ComponentActionError(
+                ComponentActionErrorCode.PACKAGE_METADATA_INCOMPLETE,
+                "active Remote Support MSI metadata is incomplete",
+                component_id="remote_support",
+                operation=operation.value,
+            )
+
+        return {
+            "version": package.version,
+            "sha256": package.sha256,
+            "target_sha256": package.sha256,
+            "msi_url": f"{base_url}{self._packages.remote_support_msi_download_url()}",
+            "msi_version": package.version,
+            "product_guid": REMOTE_SUPPORT_PRODUCT_GUID,
+            "product_code": REMOTE_SUPPORT_PRODUCT_GUID,
+            "upgrade_code": REMOTE_SUPPORT_UPGRADE_CODE,
+            "rendezvous_server": settings.RUSTDESK_SERVER_HOST,
+            "key": settings.RUSTDESK_PUBLIC_KEY,
+        }
