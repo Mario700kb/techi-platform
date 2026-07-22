@@ -138,3 +138,45 @@ def test_duplicate_action_conflicts_409():
     assert _post(client, "agent", "update").status_code == 200
     r = _post(client, "agent", "update")
     assert r.status_code == 409
+
+
+# --------------------------------------------------------------------------- #
+# History (Milestone 7)                                                        #
+# --------------------------------------------------------------------------- #
+def test_history_lists_component_actions_with_attribution():
+    client, _ = _client(capabilities={"remote_support": ""})
+    _post(client, "agent", "update")
+    _post(client, "remote_support", "restart")
+
+    r = client.get("/devices/7/components/actions")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["device_id"] == 7
+    items = body["items"]
+    assert len(items) == 2
+    # Newest first; each item carries operation/component/user/timestamp/result.
+    by_component = {it["component_id"]: it for it in items}
+    assert by_component["agent"]["operation"] == "update"
+    assert by_component["agent"]["action_type"] == "self_update"
+    assert by_component["agent"]["label"] == "Update"
+    assert by_component["agent"]["created_by"] == "mario"
+    assert by_component["agent"]["created_at"]
+    assert by_component["remote_support"]["operation"] == "restart"
+
+
+def test_history_filters_by_component():
+    client, _ = _client(capabilities={"remote_support": ""})
+    _post(client, "agent", "update")
+    _post(client, "remote_support", "restart")
+
+    r = client.get("/devices/7/components/actions", params={"component_id": "agent"})
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 1 and items[0]["component_id"] == "agent"
+
+
+def test_history_empty_when_no_component_actions():
+    client, _ = _client()
+    r = client.get("/devices/7/components/actions")
+    assert r.status_code == 200
+    assert r.json()["items"] == []

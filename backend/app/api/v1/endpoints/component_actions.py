@@ -13,10 +13,11 @@ pipeline (Milestone 4). Failures surface a stable ``code`` (from
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
+    get_current_operator,
     get_operator_permissions,
     get_operator_scope,
     require_min_role,
@@ -30,6 +31,8 @@ from app.platform_core.action_resolver import (
 )
 from app.schemas.platform_component import (
     ComponentActionAccepted,
+    ComponentActionHistoryItem,
+    ComponentActionHistoryResponse,
     ComponentActionRequest,
 )
 from app.schemas.remote_action import RemoteActionResponse
@@ -138,3 +141,40 @@ def queue_component_action(
         label=result.resolved.label,
         action=RemoteActionResponse.model_validate(action),
     )
+
+
+@router.get(
+    "/devices/{device_id}/components/actions",
+    response_model=ComponentActionHistoryResponse,
+)
+def component_action_history(
+    *,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    component_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=30, le=100),
+):
+    """History of component actions for a device (Milestone 7), newest first.
+
+    Reuses the EXISTING remote_actions store — every queued RemoteAction that maps
+    to a component (via the Lifecycle reverse index) is returned with its
+    operation/user/timestamp/result/duration/component. Optional ``component_id``
+    filter."""
+    _get_device_scoped(device_id, db, scope)
+    entries = ComponentActionService(db).history(
+        device_id, component_id=component_id, limit=limit
+    )
+    items = []
+    for entry in entries:
+        base = RemoteActionResponse.model_validate(entry.action).model_dump()
+        items.append(
+            ComponentActionHistoryItem(
+                **base,
+                component_id=entry.component_id,
+                operation=entry.operation,
+                label=entry.label,
+            )
+        )
+    return ComponentActionHistoryResponse(device_id=device_id, items=items)

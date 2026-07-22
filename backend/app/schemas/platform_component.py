@@ -89,3 +89,21 @@ class ComponentActionErrorOut(BaseModel):
     detail: str
     component_id: Optional[str] = None
     operation: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Component Action History (Operational — M7). Reuses the EXISTING remote_actions #
+# store (no new table): each queued RemoteAction attributable to a component via  #
+# the Lifecycle reverse index is surfaced with operation/user/timestamp/result/   #
+# duration/device/component.                                                      #
+# --------------------------------------------------------------------------- #
+class ComponentActionHistoryItem(RemoteActionResponse):
+    component_id: str   # attributed via the Lifecycle reverse index
+    operation: str      # lifecycle operation the action implements
+    label: str          # display label for the operation
+
+
+class ComponentActionHistoryResponse(BaseModel):
+    schema_version: int = 1
+    device_id: int
+    items: List[ComponentActionHistoryItem]

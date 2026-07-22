@@ -28,7 +28,8 @@ from sqlalchemy.orm import Session
 from app.models.device import Device
 from app.models.remote_action import RemoteAction
 from app.platform_core.action_resolver import ResolvedComponentAction
-from app.platform_core.lifecycle import component_operation_for_action
+from app.platform_core.components import LifecycleOperation
+from app.platform_core.lifecycle import LIFECYCLE_LABELS, component_operation_for_action
 from app.schemas.remote_action import RemoteActionCreate
 from app.services.component_action_validator import ComponentActionValidator
 from app.services.remote_action_service import RemoteActionService
@@ -40,6 +41,19 @@ class ComponentActionResult:
 
     resolved: ResolvedComponentAction
     action: RemoteAction
+
+
+@dataclass(frozen=True)
+class ComponentActionHistoryEntry:
+    """One historical component action: the existing RemoteAction plus its
+    attributed component/operation/label. No new storage — the RemoteAction IS
+    the record (operation via attribution, user=created_by, timestamp=created_at,
+    result=result/error, duration derived, device=device_id)."""
+
+    action: RemoteAction
+    component_id: str
+    operation: str
+    label: str
 
 
 class ComponentActionService:
@@ -84,6 +98,44 @@ class ComponentActionService:
         )
         action = self._actions.queue_action(device.id, create_in)
         return ComponentActionResult(resolved=resolved, action=action)
+
+    def history(
+        self,
+        device_id: int,
+        *,
+        component_id: Optional[str] = None,
+        limit: int = 30,
+    ) -> list:
+        """Recent component actions for a device, newest first (Milestone 7).
+
+        Reuses the EXISTING remote_actions store: fetches recent RemoteActions and
+        keeps only those attributable to a component (via the reverse index),
+        optionally filtered to one component. No new table, no migration.
+        """
+        wanted = component_id.strip().lower() if component_id else None
+        # Fetch a wider window than `limit` because the recent list is mixed with
+        # non-component actions (ping, terminal, …) that we filter out.
+        recent = self._actions.get_recent(device_id, limit=max(limit * 3, limit))
+        entries = []
+        for action in recent:
+            attributed = self.attribute(action.action_type)
+            if attributed is None:
+                continue
+            attr_component, operation = attributed
+            if wanted is not None and attr_component != wanted:
+                continue
+            label = LIFECYCLE_LABELS.get(LifecycleOperation(operation), operation)
+            entries.append(
+                ComponentActionHistoryEntry(
+                    action=action,
+                    component_id=attr_component,
+                    operation=operation,
+                    label=label,
+                )
+            )
+            if len(entries) >= limit:
+                break
+        return entries
 
     @staticmethod
     def attribute(action_type: Optional[str]) -> Optional[Tuple[str, str]]:

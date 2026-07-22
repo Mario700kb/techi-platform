@@ -122,6 +122,44 @@ export async function queueComponentAction(
   );
 }
 
+// Component Action History (GET /devices/{id}/components/actions). Reuses the
+// EXISTING remote_actions store; each item is a queued action attributed to a
+// component (operation/user/timestamp/result/duration/component). Optional
+// component_id filter. Newest first.
+export interface ComponentActionHistoryItem {
+  id: number;
+  device_id: number;
+  component_id: string;
+  operation: string;
+  label: string;
+  action_type: string;
+  status: string;
+  created_by?: string | null;
+  created_at: string;
+  result_message?: string | null;
+  error_message?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface ComponentActionHistoryResponse {
+  schema_version: number;
+  device_id: number;
+  items: ComponentActionHistoryItem[];
+}
+
+export async function getComponentActionHistory(
+  deviceId: number,
+  opts?: { componentId?: string; limit?: number },
+): Promise<ComponentActionHistoryResponse> {
+  const params = new URLSearchParams();
+  if (opts?.componentId) params.set("component_id", opts.componentId);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return fetchJson<ComponentActionHistoryResponse>(
+    `/api/v1/devices/${deviceId}/components/actions${qs ? `?${qs}` : ""}`,
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

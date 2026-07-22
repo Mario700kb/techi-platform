@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 7: History (NOT deployed)
+
+Historia e veprimeve të komponentit **ripërdor store-in ekzistues `remote_actions`** — asnjë
+tabelë e re, asnjë migrim (rregulli i DB-schema).
+
+**Shtuar:**
+- `GET /devices/{id}/components/actions` (opsionale `component_id`, `limit`) — kthen çdo
+  `RemoteAction` të radhitur që i atribuohet një komponenti (përmes indeksit të kundërt të
+  Lifecycle / `attribute()`) me: operation, user (`created_by`), timestamp (`created_at`),
+  result (`result_message`/`error_message`/`status`), duration (`duration_seconds`), device,
+  component. Më i riu i pari; scope-checked.
+- `ComponentActionService.history()` + `ComponentActionHistoryEntry`.
+- Schemas `ComponentActionHistoryItem` (zgjeron `RemoteActionResponse`) + `...Response`.
+- FE: `getComponentActionHistory()` + tipat në `api/platform.ts` (pa UI të re — ActivityTimeline
+  ekzistuese e drawer-it e shfaq tashmë; s'krijohet histori e dyfishtë).
+
+**Tests:** 3 raste të reja endpoint (atribuim + fusha, filter sipas komponentit, bosh). Backend i
+lidhur: **34 passed**; frontend tsc clean. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 6: Realtime Status (NOT deployed)
 
 Statusi i ekzekutimit i drejtpërdrejtë në panel, **pa refresh manual**. Meqë veprimet e

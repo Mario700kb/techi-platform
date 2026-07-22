@@ -377,6 +377,19 @@ changed). The status→phase mapping is a pure, exported helper (`phaseForStatus
 unit-tested. The shared realtime client gained a defensive guard: where
 `WebSocket` is absent (jsdom/tests) it degrades to `fallback` instead of throwing.
 
+### Milestone 7 — History (`GET /devices/{id}/components/actions`)
+
+Component-action history **reuses the existing `remote_actions` store** — no new
+table, no migration (the DB-schema rule). Every queued `RemoteAction` that maps to
+a component (via the Lifecycle reverse index / `attribute()`) is surfaced with the
+required fields: **operation, user (`created_by`), timestamp (`created_at`),
+result (`result_message`/`error_message`/`status`), duration (`duration_seconds`),
+device (`device_id`), component**. Newest first; optional `component_id` filter;
+scope-checked. `ComponentActionHistoryItem` extends `RemoteActionResponse` with
+`component_id` / `operation` / `label`. Frontend gets a typed
+`getComponentActionHistory()` client; the drawer's existing ActivityTimeline
+already renders the underlying actions, so no duplicate history UI is introduced.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET
