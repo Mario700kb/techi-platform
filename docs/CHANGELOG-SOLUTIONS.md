@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 6: Realtime Status (NOT deployed)
+
+Statusi i ekzekutimit i drejtpërdrejtë në panel, **pa refresh manual**. Meqë veprimet e
+komponentit janë `RemoteAction` të zakonshëm, ato emetojnë tashmë event-et ekzistuese
+realtime (`action_queued`/`action_status_changed`) — asnjë event i ri, asnjë ndryshim backend.
+
+**Shtuar:**
+- `ComponentStatesPanel.tsx`: abonim përmes `useDeviceRealtime`; badge live për komponent —
+  Pending (queued/sent/acknowledged), Running (running, me spinner), Success (completed),
+  Failed (failed/expired/cancelled). Atribuim event→komponent me hartë `action_type→component_id`
+  të ndërtuar nga metadata e lifecycle (pasqyrë client-side e indeksit të kundërt të backend-it).
+  Në fazë terminale → refetch i desired-state. Helper i pastër i eksportuar `phaseForStatus`.
+- `services/deviceRealtime.ts`: guard mbrojtës — kur `WebSocket` mungon (jsdom/tests) degradon
+  te `fallback` në vend që të hedhë exception (i padëmshëm në prod).
+
+**Tests:** `phaseForStatus.test.tsx` (5 raste, mapping i pastër); panel-tests mbeten green me
+realtime të aktivizuar (guard-i parandalon crash). Frontend gate: **tsc clean, vitest 80 passed
+(12 files), build green**. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 5: Frontend Wiring (NOT deployed)
 
 Paneli ekzistues read-only (`ComponentStatesPanel.tsx`) i lidhur me endpoint-in e ri

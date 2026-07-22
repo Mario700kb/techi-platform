@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Boxes, Loader2 } from "lucide-react";
 
 import {
@@ -8,6 +8,45 @@ import {
   getPlatformComponents,
   queueComponentAction,
 } from "../api/platform";
+import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
+import type { DeviceRealtimeEvent } from "../services/deviceRealtime";
+
+// Live execution phase of a component action, derived from the realtime action
+// status (Operational M6). Pure + exported for direct unit testing.
+export type ActionPhase = "pending" | "running" | "success" | "failed";
+
+export function phaseForStatus(status?: string | null): ActionPhase | null {
+  switch (status) {
+    case "queued":
+    case "sent":
+    case "acknowledged":
+      return "pending";
+    case "running":
+      return "running";
+    case "completed":
+      return "success";
+    case "failed":
+    case "expired":
+    case "cancelled":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+const PHASE_LABEL: Record<ActionPhase, string> = {
+  pending: "Pending",
+  running: "Running",
+  success: "Success",
+  failed: "Failed",
+};
+
+const PHASE_STYLES: Record<ActionPhase, string> = {
+  pending: "border-sky-400/25 bg-sky-400/10 text-sky-300",
+  running: "border-indigo-400/25 bg-indigo-400/10 text-indigo-300",
+  success: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+  failed: "border-red-400/25 bg-red-400/10 text-red-300",
+};
 
 // Platform Components panel for the Device Drawer. It reports, per managed
 // component, the Installed and Desired versions, the derived Health Status, and
@@ -44,12 +83,46 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
   // success feedback per component.
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Record<string, { error: boolean; text: string }>>({});
+  // Live execution phase per component, driven by realtime action-status events —
+  // no manual refresh needed (Operational M6).
+  const [livePhase, setLivePhase] = useState<Record<string, ActionPhase>>({});
 
-  function refreshStates() {
+  const refreshStates = useCallback(() => {
     getDeviceComponentStates(deviceId)
       .then((resp) => setStates(resp.components))
       .catch(() => { /* keep prior states on a transient refresh failure */ });
-  }
+  }, [deviceId]);
+
+  // action_type → component_id, from the fetched lifecycle metadata. Lets a
+  // realtime RemoteAction event be attributed to the component it belongs to
+  // (client-side mirror of the backend reverse index).
+  const actionToComponent = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [componentId, entries] of Object.entries(lifecycles)) {
+      for (const entry of entries) {
+        if (entry.action_type) map[entry.action_type] = componentId;
+      }
+    }
+    return map;
+  }, [lifecycles]);
+
+  const onRealtimeEvent = useCallback(
+    (event: DeviceRealtimeEvent) => {
+      if (event.type !== "action_status_changed" && event.type !== "action_queued") return;
+      const data = event.data;
+      if (!data || data.device_id !== deviceId || !data.action_type) return;
+      const componentId = actionToComponent[data.action_type];
+      if (!componentId) return;
+      const phase = phaseForStatus(data.status);
+      if (!phase) return;
+      setLivePhase((prev) => ({ ...prev, [componentId]: phase }));
+      // On a terminal phase, the installed version may have changed — refetch.
+      if (phase === "success" || phase === "failed") refreshStates();
+    },
+    [deviceId, actionToComponent, refreshStates],
+  );
+
+  useDeviceRealtime({ onEvent: onRealtimeEvent });
 
   useEffect(() => {
     let alive = true;
@@ -119,7 +192,19 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                 <span className="text-[12.5px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
                   {state.display_name}
                 </span>
-                <StatusBadge health={state.health} status={state.status} />
+                <div className="flex items-center gap-1.5">
+                  {livePhase[state.component_id] && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PHASE_STYLES[livePhase[state.component_id]]}`}
+                    >
+                      {livePhase[state.component_id] === "running" && (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      )}
+                      {PHASE_LABEL[livePhase[state.component_id]]}
+                    </span>
+                  )}
+                  <StatusBadge health={state.health} status={state.status} />
+                </div>
               </div>
               <div className="mt-1 grid grid-cols-2 gap-x-3 text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>
                 <span>

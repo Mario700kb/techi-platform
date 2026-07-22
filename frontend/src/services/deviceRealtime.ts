@@ -190,6 +190,15 @@ export class DeviceRealtimeClient {
       return;
     }
 
+    // Defensive: environments without a WebSocket implementation (e.g. jsdom
+    // under test) must not throw — degrade to fallback instead of crashing any
+    // component that subscribes to realtime.
+    if (typeof WebSocket === "undefined") {
+      this.lastError = "WebSocket unavailable";
+      this.emitStatus("fallback");
+      return;
+    }
+
     this.emitStatus("connecting");
     this.socket = new WebSocket(buildDeviceRealtimeUrl(this.tenantId));
 

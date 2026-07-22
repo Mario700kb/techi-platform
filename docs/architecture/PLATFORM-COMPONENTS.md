@@ -358,6 +358,25 @@ No new page, no layout change, no new dependency (uses `fireEvent`-testable plai
 buttons). Frontend gate: tsc clean, vitest 75 passed (6 for this panel incl.
 trigger / error / out-of-band-not-a-button), production build green.
 
+### Milestone 6 — Realtime Status
+
+Component actions are ordinary `RemoteAction`s, so they already emit the existing
+realtime events (`action_queued` / `action_status_changed`) — no new event, no
+backend change. The panel subscribes via `useDeviceRealtime` and shows a live
+execution badge per component with **no manual refresh**:
+
+* **Pending** ← queued / sent / acknowledged
+* **Running** ← running (spinner)
+* **Success** ← completed
+* **Failed** ← failed / expired / cancelled
+
+An event is attributed to a component by a client-side `action_type → component_id`
+map built from the fetched lifecycle metadata (mirrors the backend reverse index).
+On a terminal phase the desired-state row is refetched (installed version may have
+changed). The status→phase mapping is a pure, exported helper (`phaseForStatus`),
+unit-tested. The shared realtime client gained a defensive guard: where
+`WebSocket` is absent (jsdom/tests) it degrades to `fallback` instead of throwing.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET
