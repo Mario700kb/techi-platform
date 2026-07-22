@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 2: Component Action API (NOT deployed)
+
+Endpoint i vetëm, registry-driven, për çdo operacion lifecycle të një komponenti —
+pa route per-operacion, pa degëzim per-komponent.
+
+**Shtuar:**
+- `POST /devices/{id}/components/{component}/actions` (`endpoints/component_actions.py`)
+  me body `{operation, parameters?}`. Rrjedha: scope-check → resolve (M1) + kontroll
+  disponueshmërie për pajisjen (`actions_for` mbi platform+capabilities) → i njëjti gate
+  lejesh si endpoint-i gjenerik (`ACTION_PERMISSION_MAP`) → radhitje përmes
+  `RemoteActionService.queue_action` **ekzistues** (asnjë queue paralel).
+- `services/component_action_service.py` — shtresa e hollë resolver→queue
+  (`ComponentActionService.execute/resolve_for_device`), kthen `ComponentActionResult`.
+- Schemas: `ComponentActionRequest/Accepted/ErrorOut` në `schemas/platform_component.py`.
+- Kod i ri gabimi `unavailable_for_device` te `ComponentActionErrorCode`.
+- Regjistruar te `api/v1/api.py`; shtuar te allowlist-i i kufirit të wiring-ut
+  (`test_platform_core.py`) si dy seam-e të miratuara.
+
+**Mapping gabimesh → HTTP:** `unknown_component`→404, `unknown_operation`→400,
+`unsupported_operation`/`not_executable`/`unavailable_for_device`→422, konflikt radhe→409.
+Sukses → `ComponentActionAccepted` (component/operation/action_type/label + `RemoteAction`).
+Audit `action_queued` me kontekstin component/operation.
+
+**S'u prek:** asnjë `ActionType` i ri, asnjë queue paralel, asnjë kontratë agent/heartbeat,
+asnjë migrim DB. Foundation-i mbetet i ngrirë.
+
+**Tests:** `tests/test_component_action_endpoint.py` (10 raste kundër sqlite-it real:
+happy-path, pass-through parametrash, të 5 kodet e gabimit, dhe rojtari i konfliktit).
+Backend full suite: **852 passed**, 4 dështime baseline pre-ekzistuese
+(`test_enrollment_audit_diagnostics`, të padokumentuara si rezultat i kësaj pune). NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 1: Component Action Resolver (NOT deployed)
 
 Nisi puna *Operational* mbi themelin STABLE (Registry/Lifecycle/Policy/Desired State

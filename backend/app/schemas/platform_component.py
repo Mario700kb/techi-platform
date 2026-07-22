@@ -4,9 +4,11 @@ Exposes ONLY stable strings (never a Python enum repr). Additive + versioned:
 `schema_version` lets the frontend evolve backward-compatibly, and new optional
 fields can be added without breaking older clients.
 """
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
+
+from app.schemas.remote_action import RemoteActionResponse
 
 
 class ComponentLifecycleOut(BaseModel):
@@ -56,3 +58,34 @@ class DeviceComponentStatesResponse(BaseModel):
     schema_version: int = 1
     device_id: int
     components: List[DeviceComponentStateOut]
+
+
+# --------------------------------------------------------------------------- #
+# Component Action API (Operational — Milestones 2/4). A component lifecycle    #
+# operation is triggered here and queued through the EXISTING action pipeline;  #
+# the response carries the resolution metadata + the queued RemoteAction.       #
+# --------------------------------------------------------------------------- #
+class ComponentActionRequest(BaseModel):
+    # The lifecycle operation to trigger: install | update | reinstall | repair
+    # | restart | discover | sync. Validated by the resolver (stable error codes).
+    operation: str
+    parameters: Optional[Dict[str, Any]] = None
+
+
+class ComponentActionAccepted(BaseModel):
+    """A successfully queued component action + how it was resolved."""
+
+    component_id: str
+    operation: str
+    action_type: str   # the existing ActionType the operation mapped to
+    label: str
+    action: RemoteActionResponse
+
+
+class ComponentActionErrorOut(BaseModel):
+    """Structured error body for a rejected component action (stable ``code``)."""
+
+    code: str          # ComponentActionErrorCode value
+    detail: str
+    component_id: Optional[str] = None
+    operation: Optional[str] = None

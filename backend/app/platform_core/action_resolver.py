@@ -48,6 +48,9 @@ class ComponentActionErrorCode(str, Enum):
     UNKNOWN_OPERATION = "unknown_operation"      # not a LifecycleOperation value
     UNSUPPORTED_OPERATION = "unsupported_operation"  # component doesn't declare it
     NOT_EXECUTABLE = "not_executable"            # supported, but out-of-band (no queued action)
+    # Resolvable in the abstract, but not available for THIS device's platform /
+    # effective capabilities. Raised by the service layer, not the pure resolver.
+    UNAVAILABLE_FOR_DEVICE = "unavailable_for_device"
 
 
 class ComponentActionError(Exception):

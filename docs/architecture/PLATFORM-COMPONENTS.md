@@ -259,6 +259,46 @@ precise HTTP status + machine-readable `code`). `can_resolve()` is the
 never-raising yes/no convenience for UI availability. Fails **closed**: an
 out-of-band operation is never silently turned into a fabricated action.
 
+### Milestone 2 — Component Action API (`component_actions.py` + `component_action_service.py`)
+
+One registry-driven endpoint for **every** component lifecycle operation:
+
+```
+POST /devices/{device_id}/components/{component_id}/actions
+body: { "operation": "install|update|reinstall|repair|restart|discover|sync",
+        "parameters": { ... optional ... } }
+```
+
+No per-operation route, no per-component branching. Flow:
+
+1. scope-check the device (404 out of scope, same as the generic action endpoint);
+2. `ComponentActionService.resolve_for_device()` — resolves via Milestone 1 **and**
+   verifies the resolved `ActionType` is actually available for this device's
+   platform + effective capabilities (reusing `actions_for()`, the same source the
+   Device Drawer uses) → `UNAVAILABLE_FOR_DEVICE` otherwise;
+3. enforce the **same** permission gate as `queue_device_action`
+   (`ACTION_PERMISSION_MAP[action_type]`);
+4. queue through the **unchanged** `RemoteActionService.queue_action` — an ordinary
+   `RemoteAction` of an existing `ActionType`, delivered on the next heartbeat.
+   No parallel queue, no new execution path.
+
+Errors carry a stable machine-readable `code` in the JSON body, mapped to HTTP
+status:
+
+| code | HTTP |
+|---|---|
+| `unknown_component` | 404 |
+| `unknown_operation` | 400 |
+| `unsupported_operation` | 422 |
+| `not_executable` (out-of-band) | 422 |
+| `unavailable_for_device` | 422 |
+| queue conflict / duplicate | 409 |
+
+Success returns `ComponentActionAccepted` (component_id, operation, action_type,
+label, and the queued `RemoteActionResponse`). Audited as `action_queued` with the
+component/operation context. Deeper validation (policy, desired-state, package/
+version) is layered on in Milestone 3; execution formalized in Milestone 4.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET
