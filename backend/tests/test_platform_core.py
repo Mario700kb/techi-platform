@@ -165,6 +165,7 @@ class TestWiringBoundary:
             "app/services/vault_service.py",  # credential-type field registry (Enterprise Vault)
             "app/services/component_state_service.py",  # Component Registry desired-state resolver (Platform Components backport)
             "app/services/component_action_service.py",  # Component Action Resolver → existing queue (Operational M2)
+            "app/services/component_action_validator.py",  # Component Action validation layer (Operational M3)
             "app/api/v1/endpoints/component_actions.py",  # Component Action API endpoint (Operational M2)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"

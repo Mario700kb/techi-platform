@@ -299,6 +299,27 @@ label, and the queued `RemoteActionResponse`). Audited as `action_queued` with t
 component/operation context. Deeper validation (policy, desired-state, package/
 version) is layered on in Milestone 3; execution formalized in Milestone 4.
 
+### Milestone 3 — Validation Layer (`component_action_validator.py`)
+
+Every decision of *whether a component action may be queued* lives in one ordered
+validator — no `if component == …` / `if operation == …` scattered across the
+endpoint and service. `ComponentActionService.resolve_for_device()` delegates to
+it. Checks, in order, each raising a `ComponentActionError` with a stable `code`:
+
+1. **component / operation / executability** — the pure resolver (M1);
+2. **device capability** — resolved `ActionType` available for the device's
+   platform + effective capabilities (`actions_for`), else `unavailable_for_device`;
+3. **policy present** — the component must have a declared deployment policy
+   (`policy_for`), else `no_policy`;
+4. **version format** — a supplied `version` parameter must be dotted-numeric,
+   else `invalid_version` (400).
+
+Deliberately **not** here (own milestones; would couple this layer to the
+file-based package manifest and make it non-deterministic): package availability /
+desired-version resolution / outdated detection → **M11**; policy *enforcement*
+beyond "a policy exists" (rollout/canary/override) → **M10**. Those milestones
+extend this validator — they add checks, never a parallel gate.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

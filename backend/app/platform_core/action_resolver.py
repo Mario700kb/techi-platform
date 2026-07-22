@@ -51,6 +51,9 @@ class ComponentActionErrorCode(str, Enum):
     # Resolvable in the abstract, but not available for THIS device's platform /
     # effective capabilities. Raised by the service layer, not the pure resolver.
     UNAVAILABLE_FOR_DEVICE = "unavailable_for_device"
+    # Validation-layer (Milestone 3) codes — raised by ComponentActionValidator.
+    NO_POLICY = "no_policy"                # component has no deployment policy
+    INVALID_VERSION = "invalid_version"    # a supplied version parameter is malformed
 
 
 class ComponentActionError(Exception):

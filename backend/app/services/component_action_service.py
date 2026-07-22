@@ -27,14 +27,9 @@ from sqlalchemy.orm import Session
 
 from app.models.device import Device
 from app.models.remote_action import RemoteAction
-from app.platform_core.action_resolver import (
-    ComponentActionError,
-    ComponentActionErrorCode,
-    ResolvedComponentAction,
-    resolve_component_action,
-)
-from app.platform_core.actions import actions_for
+from app.platform_core.action_resolver import ResolvedComponentAction
 from app.schemas.remote_action import RemoteActionCreate
+from app.services.component_action_validator import ComponentActionValidator
 from app.services.remote_action_service import RemoteActionService
 
 
@@ -46,20 +41,11 @@ class ComponentActionResult:
     action: RemoteAction
 
 
-def _available_action_ids(device: Device) -> frozenset:
-    """The action ids available for a device given its platform + capabilities.
-    Reuses the Action Registry's capability-driven availability (the same source
-    the Device Drawer uses) — no separate gating logic."""
-    return frozenset(
-        descriptor.id
-        for descriptor in actions_for(device.platform, device.capabilities)
-    )
-
-
 class ComponentActionService:
     def __init__(self, db: Session):
         self.db = db
         self._actions = RemoteActionService(db)
+        self._validator = ComponentActionValidator(db)
 
     def resolve_for_device(
         self,
@@ -69,23 +55,11 @@ class ComponentActionService:
         *,
         parameters: Optional[Mapping[str, Any]] = None,
     ) -> ResolvedComponentAction:
-        """Resolve + device-availability check, without queuing. Raises
-        :class:`ComponentActionError` (stable code) on any failure."""
-        resolved = resolve_component_action(
-            component_id, operation, parameters=parameters
+        """Run the full validation layer (Milestone 3) without queuing. Raises
+        :class:`ComponentActionError` (stable code) on the first failure."""
+        return self._validator.validate(
+            device, component_id, operation, parameters=parameters
         )
-        if resolved.action_type.value not in _available_action_ids(device):
-            raise ComponentActionError(
-                ComponentActionErrorCode.UNAVAILABLE_FOR_DEVICE,
-                (
-                    f"Operation '{resolved.operation.value}' on component "
-                    f"'{resolved.component_id}' is not available for this device "
-                    "(platform/capabilities do not support it)."
-                ),
-                component_id=resolved.component_id,
-                operation=resolved.operation.value,
-            )
-        return resolved
 
     def execute(
         self,

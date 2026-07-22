@@ -48,6 +48,8 @@ _ERROR_STATUS = {
     ComponentActionErrorCode.UNSUPPORTED_OPERATION: 422,
     ComponentActionErrorCode.NOT_EXECUTABLE: 422,
     ComponentActionErrorCode.UNAVAILABLE_FOR_DEVICE: 422,
+    ComponentActionErrorCode.NO_POLICY: 422,
+    ComponentActionErrorCode.INVALID_VERSION: 400,
 }
 
 

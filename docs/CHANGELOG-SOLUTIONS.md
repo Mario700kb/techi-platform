@@ -5,6 +5,30 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 3: Validation Layer (NOT deployed)
+
+Shtresë e vetme validimi, e renditur — çdo vendim "a lejohet të radhitet ky veprim"
+te një vend i vetëm, pa degëzim të shpërndarë.
+
+**Shtuar:** `services/component_action_validator.py` (`ComponentActionValidator.validate`)
+me kontrolle të renditura, secili ngre `ComponentActionError` me `code` stabël:
+(1) component/operation/executability → resolver-i i pastër (M1); (2) capability e
+pajisjes (`actions_for`) → `unavailable_for_device`; (3) prania e policy-t (`policy_for`)
+→ `no_policy`; (4) formati i `version`-it të dhënë → `invalid_version` (400).
+`ComponentActionService.resolve_for_device` tani delegon te validatori (hoqa kontrollin
+inline të capability-t — validimi rron në një vend). Kode të reja gabimi: `no_policy`,
+`invalid_version`. Shtuar te allowlist-i i wiring-ut.
+
+**Jashtë qëllimit me vetëdije** (milestone të veta; do e lidhnin këtë shtresë me manifestin
+file-based dhe do e bënin jo-deterministe): disponueshmëria e paketës / zgjidhja e desired-version
+/ outdated → **M11**; *zbatimi* i policy-t përtej "ekziston një policy" → **M10**. Ato milestone
+e zgjerojnë këtë validator, s'krijojnë gate paralel.
+
+**Tests:** `tests/test_component_action_validator.py` (11 raste: kalime, të gjitha kodet
+e gabimit, renditja e kontrolleve, version bosh injorohet, agjenti Windows pa capability
+ruan sipërfaqen e plotë). M2 endpoint tests mbeten green (asnjë gate i ri që i prish).
+Suite i lidhur: **53 passed**. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 2: Component Action API (NOT deployed)
 
 Endpoint i vetëm, registry-driven, për çdo operacion lifecycle të një komponenti —
