@@ -277,3 +277,20 @@ def test_elevated_operator_override_bypasses_policy(monkeypatch):
         json={"operation": "update", "override": True},
     )
     assert r.status_code == 200, r.text
+
+
+# --------------------------------------------------------------------------- #
+# Package status (Milestone 11)                                               #
+# --------------------------------------------------------------------------- #
+def test_package_status_endpoint_shape():
+    client, _ = _client()
+    r = client.get("/devices/7/components/agent/package")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["device_id"] == 7
+    assert body["component_id"] == "agent"
+    # No manifest in tests → versions None, not outdated (inert but well-formed).
+    assert body["outdated"] is False
+    assert set(body) >= {
+        "installed_version", "desired_version", "available_version", "outdated",
+    }

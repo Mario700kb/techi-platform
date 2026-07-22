@@ -38,6 +38,7 @@ from app.schemas.platform_component import (
     ComponentActionHistoryItem,
     ComponentActionHistoryResponse,
     ComponentActionRequest,
+    ComponentPackageStatusOut,
 )
 from app.schemas.remote_action import RemoteActionResponse
 from app.services.audit_service import AuditAction, audit_log
@@ -280,6 +281,35 @@ def component_action_history(
             )
         )
     return ComponentActionHistoryResponse(device_id=device_id, items=items)
+
+
+@router.get(
+    "/devices/{device_id}/components/{component_id}/package",
+    response_model=ComponentPackageStatusOut,
+)
+def component_package_status(
+    *,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    component_id: str,
+):
+    """Package status for a component on a device (Milestone 11): Installed /
+    Desired / Available versions + Outdated detection. Read-only; reuses the STABLE
+    Desired-State resolver and the Package Registry (no new storage)."""
+    device = _get_device_scoped(device_id, db, scope)
+    from app.services.component_package_service import ComponentPackageService
+
+    status = ComponentPackageService(db).status_for(device, component_id)
+    return ComponentPackageStatusOut(
+        device_id=device_id,
+        component_id=status.component_id,
+        installed_version=status.installed_version,
+        desired_version=status.desired_version,
+        available_version=status.available_version,
+        outdated=status.outdated,
+    )
 
 
 @router.post(

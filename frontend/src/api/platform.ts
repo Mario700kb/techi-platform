@@ -218,6 +218,27 @@ export async function bulkComponentActions(
   });
 }
 
+// Component package status (GET /devices/{id}/components/{component}/package).
+// Read-only: Installed / Desired / Available versions + Outdated detection.
+export interface ComponentPackageStatus {
+  schema_version: number;
+  device_id: number;
+  component_id: string;
+  installed_version: string | null;
+  desired_version: string | null;
+  available_version: string | null;
+  outdated: boolean;
+}
+
+export async function getComponentPackageStatus(
+  deviceId: number,
+  componentId: string,
+): Promise<ComponentPackageStatus> {
+  return fetchJson<ComponentPackageStatus>(
+    `/api/v1/devices/${deviceId}/components/${componentId}/package`,
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

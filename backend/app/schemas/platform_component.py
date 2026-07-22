@@ -152,3 +152,17 @@ class BulkComponentActionResponse(BaseModel):
     succeeded: int
     failed: int
     items: List[BulkComponentActionItem]
+
+
+# --------------------------------------------------------------------------- #
+# Package Integration (Operational — M11). Read-only status: Installed / Desired #
+# / Available versions + Outdated detection, per component on a device.          #
+# --------------------------------------------------------------------------- #
+class ComponentPackageStatusOut(BaseModel):
+    schema_version: int = 1
+    device_id: int
+    component_id: str
+    installed_version: Optional[str] = None
+    desired_version: Optional[str] = None
+    available_version: Optional[str] = None
+    outdated: bool = False

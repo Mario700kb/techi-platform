@@ -78,6 +78,23 @@ class ComponentActionService:
         self.db = db
         self._actions = RemoteActionService(db)
         self._validator = ComponentActionValidator(db)
+        from app.services.component_package_service import ComponentPackageService
+        self._packages = ComponentPackageService(db)
+
+    def _enriched_payload(
+        self, device: Device, resolved: ResolvedComponentAction
+    ) -> dict:
+        """Merge Package-Integration enrichment (Milestone 11) under the operator's
+        payload for version-changing ops — the active package's version/sha fills
+        gaps so self_update/deploy target the Desired package; operator params win.
+        Inert (returns the operator payload) when no active package exists."""
+        enrichment = self._packages.enrichment_for(
+            resolved.component_id, device.platform, resolved.operation
+        )
+        base = dict(resolved.payload)
+        if not enrichment:
+            return base
+        return {**enrichment, **base}
 
     def resolve_for_device(
         self,
@@ -117,7 +134,7 @@ class ComponentActionService:
         )
         create_in = RemoteActionCreate(
             action_type=resolved.action_type,
-            parameters=dict(resolved.payload) or None,
+            parameters=self._enriched_payload(device, resolved) or None,
             created_by=created_by,
             execution_timeout_seconds=timeout_seconds,
         )
@@ -183,7 +200,7 @@ class ComponentActionService:
                         device.id,
                         RemoteActionCreate(
                             action_type=resolved.action_type,
-                            parameters=dict(resolved.payload) or None,
+                            parameters=self._enriched_payload(device, resolved) or None,
                             created_by=created_by,
                             execution_timeout_seconds=timeout_seconds,
                         ),

@@ -91,6 +91,21 @@ def test_no_duplicate_via_existing_conflict_guard():
 # --------------------------------------------------------------------------- #
 # Reverse attribution seam                                                     #
 # --------------------------------------------------------------------------- #
+def test_enriched_payload_merges_package_and_operator_params():
+    db = _db()
+    svc = ComponentActionService(db)
+    resolved = svc.resolve_for_device(_device(db), "agent", "update")
+    # Inject a fake package enrichment; operator params must win over it.
+    svc._packages.enrichment_for = lambda cid, plat, op: {"version": "2.1.14", "target_sha256": "abc"}
+    payload = svc._enriched_payload(_device(db), resolved)
+    assert payload == {"version": "2.1.14", "target_sha256": "abc"}
+
+    resolved2 = svc.resolve_for_device(_device(db), "agent", "update", parameters={"version": "9.9.9"})
+    payload2 = svc._enriched_payload(_device(db), resolved2)
+    assert payload2["version"] == "9.9.9"          # operator wins
+    assert payload2["target_sha256"] == "abc"       # enrichment fills the gap
+
+
 def test_attribute_maps_action_back_to_component_operation():
     assert ComponentActionService.attribute("self_update") == ("agent", "update")
     assert ComponentActionService.attribute("reinstall_rustdesk") == (

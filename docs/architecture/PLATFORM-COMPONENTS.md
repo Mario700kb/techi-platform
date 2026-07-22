@@ -445,6 +445,27 @@ the validation layer (M3 explicitly deferred enforcement here).
 Denial → `ComponentActionError(POLICY_DENIED)` → **403** with the scope in the
 message. Threaded through single, retry-revalidation, and bulk paths.
 
+### Milestone 11 — Package Integration (`component_package_service.py`)
+
+Ties the action layer to the Package Registry, read-only, reusing existing sources
+(no new storage; the STABLE Desired-State resolver and `policy.py` are untouched —
+only read):
+
+* **Status** `GET /devices/{id}/components/{component}/package` → Installed /
+  Desired / Available versions + Outdated. Installed/Desired/Outdated come from the
+  STABLE `ComponentStateService` as-is; **Available** is the highest version in the
+  manifest (active OR inactive) for the component's file-types on the platform — so
+  an uploaded-but-not-activated newer package shows as "available beyond desired".
+* **Payload enrichment:** for version-changing operations (install/update/reinstall)
+  `ComponentActionService` injects the active package's `version` (and
+  `target_sha256` when known) into the queued payload — so `self_update` /
+  `deploy_remote_support` actually target the Desired package and heartbeat
+  verification can confirm it. **Operator-supplied parameters always win**;
+  enrichment only fills gaps and is inert when no active package exists (safe for
+  the manifest-less test environment). Applied on single and bulk paths.
+
+Frontend gets `getComponentPackageStatus()`.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

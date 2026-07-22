@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 11: Package Integration (NOT deployed)
+
+Lidh shtresën e veprimeve me Package Registry, read-only, duke ripërdorur burimet ekzistuese
+(pa storage të ri; resolver-i STABLE i Desired-State dhe `policy.py` s'preken — vetëm lexohen).
+
+**Shtuar:**
+- `services/component_package_service.py` (`ComponentPackageService`, `ComponentPackageStatus`).
+  Ripërdor privatët e `component_state_service` (`_package_platform`, `_DESIRED_FILE_TYPE_ORDER`)
+  pa i modifikuar.
+- `GET /devices/{id}/components/{component}/package` → Installed/Desired/Available + Outdated.
+  Available = versioni më i lartë në manifest (aktiv OSE joaktiv) për file-types e komponentit.
+- Enrichment i payload-it për operacionet version-changing (install/update/reinstall):
+  injekton `version` (+ `target_sha256`) të paketës aktive te payload-i i radhitur, që
+  `self_update`/`deploy_remote_support` të synojnë paketën Desired dhe verifikimi me heartbeat
+  të konfirmojë. **Parametrat e operatorit fitojnë gjithmonë**; enrichment mbush vetëm boshllëqet;
+  inert kur s'ka paketë aktive (i sigurt për testet pa manifest). Në path-et single + bulk.
+- FE: `getComponentPackageStatus()` + tipi.
+
+**Tests:** `tests/test_component_package_service.py` (7 raste me fakes: available active/inactive,
+status i kombinuar, enrichment version+sha, jo për restart, bosh pa aktive) + enrichment-merge te
+execution + endpoint shape. Backend full suite: **902 passed** (4 baseline); frontend tsc clean.
+NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 10: Policy Enforcement (NOT deployed)
 
 Shtresë e re *zbatimi* policy-je (pa prekur `policy.py` STABLE — vetëm e lexon), e kompozuar
