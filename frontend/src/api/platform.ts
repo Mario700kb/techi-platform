@@ -239,6 +239,39 @@ export async function getComponentPackageStatus(
   );
 }
 
+// Auto-remediation (POST /devices/{id}/components/{component}/remediate). Detects
+// an unhealthy component and, unless dry_run, queues the recommended remediation
+// through the existing action path. Manual (operator) trigger.
+export interface ComponentRemediationResult {
+  schema_version: number;
+  device_id: number;
+  component_id: string;
+  operation: string | null;
+  acted: boolean;
+  reason: string;
+  installed_version: string | null;
+  desired_version: string | null;
+  available_version: string | null;
+  outdated: boolean;
+  action?: QueuedRemoteAction | null;
+  error?: string | null;
+}
+
+export async function remediateComponent(
+  deviceId: number,
+  componentId: string,
+  opts?: { dryRun?: boolean },
+): Promise<ComponentRemediationResult> {
+  return fetchJson<ComponentRemediationResult>(
+    `/api/v1/devices/${deviceId}/components/${componentId}/remediate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: opts?.dryRun ?? false }),
+    },
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

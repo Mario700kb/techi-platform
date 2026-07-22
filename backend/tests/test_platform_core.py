@@ -168,6 +168,7 @@ class TestWiringBoundary:
             "app/services/component_action_validator.py",  # Component Action validation layer (Operational M3)
             "app/services/component_policy_enforcement.py",  # Component policy enforcement layer (Operational M10)
             "app/services/component_package_service.py",  # Component package integration (Operational M11)
+            "app/services/component_remediation_service.py",  # Component auto-remediation (Operational M12)
             "app/api/v1/endpoints/component_actions.py",  # Component Action API endpoint (Operational M2)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"

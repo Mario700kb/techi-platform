@@ -166,3 +166,26 @@ class ComponentPackageStatusOut(BaseModel):
     desired_version: Optional[str] = None
     available_version: Optional[str] = None
     outdated: bool = False
+
+
+# --------------------------------------------------------------------------- #
+# Auto Remediation (Operational — M12). Detect an unhealthy component and, if     #
+# policy allows, queue the recommended remediation via the existing action path. #
+# --------------------------------------------------------------------------- #
+class ComponentRemediationRequest(BaseModel):
+    dry_run: bool = False   # detect + recommend only, never queue
+
+
+class ComponentRemediationResponse(BaseModel):
+    schema_version: int = 1
+    device_id: int
+    component_id: str
+    operation: Optional[str] = None    # recommended remediation op, or null
+    acted: bool = False                # whether an action was queued
+    reason: str                        # queued | healthy | dry_run | <error/gate code>
+    installed_version: Optional[str] = None
+    desired_version: Optional[str] = None
+    available_version: Optional[str] = None
+    outdated: bool = False
+    action: Optional[RemoteActionResponse] = None
+    error: Optional[str] = None

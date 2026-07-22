@@ -466,6 +466,28 @@ only read):
 
 Frontend gets `getComponentPackageStatus()`.
 
+### Milestone 12 — Auto Remediation (`component_remediation_service.py`)
+
+Detects an unhealthy component and, **if policy allows**, remediates it by queuing
+the recommended operation through the **existing** action path
+(`ComponentActionService.execute`). No parallel automation, **no scheduler** —
+rollout/scheduling stays "future" in the STABLE Policy model; this is only the
+detect + guarded-remediate mechanism (an operator button today; a future scheduler
+plugs into the same call).
+
+Detection (reusing M11 package status): **outdated → update**; **missing → install**
+(or **reinstall** when install is out-of-band, e.g. the Agent's GPO install);
+healthy/unknown → nothing. The chosen op must be supported **and** executable — a
+missing Agent yields *no* action (never fabricated).
+
+Two gates: **auto** (unattended) runs require the `AUTO_REMEDIATION` policy
+(`GLOBAL_AUTO_REMEDIATION`, per-component override), defaulting **off** — nothing
+self-heals silently until enabled; **manual** runs go through the normal
+validation + policy-enforcement (M10) + permission gates. Endpoint
+`POST /devices/{id}/components/{component}/remediate` (`dry_run` → detect-only).
+Result carries the plan (operation/reason/versions) and the queued action when it
+acted. Frontend gets `remediateComponent()`.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

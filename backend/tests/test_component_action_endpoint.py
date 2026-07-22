@@ -294,3 +294,17 @@ def test_package_status_endpoint_shape():
     assert set(body) >= {
         "installed_version", "desired_version", "available_version", "outdated",
     }
+
+
+# --------------------------------------------------------------------------- #
+# Remediation endpoint (Milestone 12)                                         #
+# --------------------------------------------------------------------------- #
+def test_remediate_endpoint_healthy_shape():
+    # No manifest → no desired version → nothing to remediate (well-formed).
+    client, _ = _client()
+    r = client.post("/devices/7/components/agent/remediate", json={"dry_run": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["device_id"] == 7 and body["component_id"] == "agent"
+    assert body["acted"] is False
+    assert body["reason"] in {"healthy", "dry_run", "no_executable_remediation"}

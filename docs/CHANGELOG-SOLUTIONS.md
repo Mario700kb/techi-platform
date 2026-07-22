@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 12: Auto Remediation (NOT deployed)
+
+Zbulon një komponent të pashëndetshëm dhe, **nëse policy e lejon**, e riparon duke radhitur
+operacionin e rekomanduar përmes path-it **ekzistues** të veprimeve. Pa automatizim paralel,
+**pa scheduler** — rollout/scheduling mbetet "future" te Policy-ja STABLE.
+
+**Shtuar:** `services/component_remediation_service.py`:
+- `detect()` (read i pastër, ripërdor statusin e M11): outdated→update; missing→install (ose
+  reinstall kur install është out-of-band, p.sh. Agent GPO); healthy/unknown→asgjë. Operacioni
+  duhet të jetë i mbështetur **dhe** i ekzekutueshëm — Agent missing → asnjë veprim (s'trillohet).
+- `remediate(dry_run, auto)`: radhit përmes `ComponentActionService.execute` ekzistues.
+- Dy porta: **auto** (unattended) kërkon policy `AUTO_REMEDIATION` (`GLOBAL_AUTO_REMEDIATION` +
+  override per-komponent), default **OFF**; **manual** kalon nëpër validim+policy(M10)+permission.
+- `POST /devices/{id}/components/{component}/remediate` (`dry_run`→detect-only) + schema.
+- FE: `remediateComponent()`.
+
+**Tests:** `tests/test_component_remediation.py` (11 raste me status të patched: detect
+outdated/missing-agent/missing-RS/healthy; remediate queues/dry_run/noop; auto disabled default,
+runs kur enabled, allowed default False) + endpoint shape. Backend full suite: **913 passed**
+(4 baseline); frontend tsc clean. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 11: Package Integration (NOT deployed)
 
 Lidh shtresën e veprimeve me Package Registry, read-only, duke ripërdorur burimet ekzistuese

@@ -39,6 +39,8 @@ from app.schemas.platform_component import (
     ComponentActionHistoryResponse,
     ComponentActionRequest,
     ComponentPackageStatusOut,
+    ComponentRemediationRequest,
+    ComponentRemediationResponse,
 )
 from app.schemas.remote_action import RemoteActionResponse
 from app.services.audit_service import AuditAction, audit_log
@@ -309,6 +311,77 @@ def component_package_status(
         desired_version=status.desired_version,
         available_version=status.available_version,
         outdated=status.outdated,
+    )
+
+
+@router.post(
+    "/devices/{device_id}/components/{component_id}/remediate",
+    response_model=ComponentRemediationResponse,
+)
+def remediate_component(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    component_id: str,
+    payload: ComponentRemediationRequest = ComponentRemediationRequest(),
+):
+    """Detect and (unless dry_run) remediate an unhealthy component (Milestone 12).
+
+    Operator-triggered (manual) remediation: subject to the normal validation +
+    policy-enforcement + permission gates inside the action path. Returns the
+    detection plan and, when it queued one, the resulting action."""
+    device = _get_device_scoped(device_id, db, scope)
+    from app.services.component_remediation_service import ComponentRemediationService
+
+    # Permission: keyed on what the recommended remediation would queue.
+    detect = ComponentRemediationService(db)
+    plan = detect.detect(device, component_id)
+    if plan.operation and not payload.dry_run:
+        try:
+            resolved = ComponentActionService(db).resolve_for_device(
+                device, component_id, plan.operation
+            )
+        except ComponentActionError:
+            resolved = None
+        if resolved is not None:
+            required_perm = ACTION_PERMISSION_MAP.get(resolved.action_type.value)
+            if required_perm:
+                effective = get_operator_permissions(operator, db)
+                if effective is not None and required_perm not in effective:
+                    raise HTTPException(status_code=403, detail=f"Permission denied: {required_perm}")
+
+    result = detect.remediate(
+        device, component_id, created_by=operator.username, dry_run=payload.dry_run
+    )
+    if result.acted and result.action is not None:
+        audit_log(
+            db,
+            operator=operator,
+            action=AuditAction.ACTION_QUEUED,
+            entity_type="remote_action",
+            entity_id=result.action.id,
+            details={
+                "device_id": device_id,
+                "component_id": component_id,
+                "operation": result.plan.operation,
+                "remediation": True,
+            },
+        )
+    p = result.plan
+    return ComponentRemediationResponse(
+        device_id=device_id,
+        component_id=component_id,
+        operation=p.operation,
+        acted=result.acted,
+        reason=result.reason,
+        installed_version=p.installed_version,
+        desired_version=p.desired_version,
+        available_version=p.available_version,
+        outdated=p.outdated,
+        action=RemoteActionResponse.model_validate(result.action) if result.action else None,
+        error=result.error,
     )
 
 
