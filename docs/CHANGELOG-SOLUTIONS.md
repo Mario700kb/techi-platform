@@ -5,6 +5,28 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 5: Frontend Wiring (NOT deployed)
+
+Paneli ekzistues read-only (`ComponentStatesPanel.tsx`) i lidhur me endpoint-in e ri
+**pa ridizajn UI**. Çdo chip operacioni me `kind === "action"` bëhet buton i klikueshëm
+(pamje e njëjtë); operacionet out-of-band (GPO install, heartbeat discover) mbeten etiketa
+statike të zbehta.
+
+**Shtuar:**
+- `api/platform.ts`: `queueComponentAction(deviceId, componentId, operation, parameters?)`
+  + tipat `ComponentActionAccepted`/`QueuedRemoteAction` (POST te endpoint-i i ri).
+- `ComponentStatesPanel.tsx`: klik → POST, spinner mbi operacionin që ekzekutohet,
+  **disable i të gjitha operacioneve të atij komponenti** gjatë ekzekutimit (`busy` key
+  `component:operation`), sukses → "<Label> queued" + refetch i desired-state, dështim →
+  mesazhi i strukturuar i backend-it në një rresht të kuq.
+- `api/client.ts`: përmirësim aditiv — nxjerr `detail.detail` nga trupi i gabimit të
+  strukturuar (pa prishur sjelljen ekzistuese për `detail` string).
+
+**Tests:** `ComponentStatesPanel.test.tsx` zgjeruar në 6 raste (trigger + feedback, gabim i
+strukturuar, out-of-band s'është buton, + 3 ekzistueset). Frontend gate: **tsc clean,
+vitest 75 passed (11 files), build green**. Pa varësi të re (përdor butona të thjeshtë).
+NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 4: Execution Layer (NOT deployed)
 
 Resolver-i i lidhur me mekanizmin **ekzistues** të device actions — asnjë sistem paralel,

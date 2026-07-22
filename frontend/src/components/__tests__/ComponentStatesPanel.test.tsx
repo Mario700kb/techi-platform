@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ComponentStatesPanel from "../ComponentStatesPanel";
@@ -9,10 +9,12 @@ import type {
 
 const getStates = vi.fn();
 const getComponents = vi.fn();
+const queueAction = vi.fn();
 
 vi.mock("../../api/platform", () => ({
   getDeviceComponentStates: (...a: unknown[]) => getStates(...a),
   getPlatformComponents: (...a: unknown[]) => getComponents(...a),
+  queueComponentAction: (...a: unknown[]) => queueAction(...a),
 }));
 
 const STATES: DeviceComponentStatesResponse = {
@@ -49,6 +51,7 @@ const COMPONENTS: PlatformComponentsResponse = {
       lifecycle: [
         { operation: "update", label: "Update", action_type: "self_update", kind: "action" },
         { operation: "restart", label: "Restart", action_type: "restart_agent", kind: "action" },
+        { operation: "install", label: "Install", action_type: null, kind: "out_of_band" },
       ],
       policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
     },
@@ -79,6 +82,47 @@ describe("ComponentStatesPanel", () => {
     // Lifecycle metadata chips (labels).
     await waitFor(() => expect(screen.getByText("Update")).toBeInTheDocument());
     expect(screen.getByText("Reinstall")).toBeInTheDocument();
+  });
+
+  it("triggers a component action for an executable operation and shows feedback", async () => {
+    getStates.mockResolvedValue(STATES);
+    getComponents.mockResolvedValue(COMPONENTS);
+    queueAction.mockResolvedValue({
+      component_id: "agent", operation: "update", action_type: "self_update",
+      label: "Update", action: { id: 1, device_id: 7, action_type: "self_update", status: "queued", created_at: "" },
+    });
+    render(<ComponentStatesPanel deviceId={7} />);
+
+    const updateBtn = await screen.findByRole("button", { name: /Update/ });
+    fireEvent.click(updateBtn);
+
+    await waitFor(() => expect(queueAction).toHaveBeenCalledWith(7, "agent", "update"));
+    await waitFor(() => expect(screen.getByText("Update queued")).toBeInTheDocument());
+  });
+
+  it("surfaces a structured error when the action is rejected", async () => {
+    getStates.mockResolvedValue(STATES);
+    getComponents.mockResolvedValue(COMPONENTS);
+    queueAction.mockRejectedValue(new Error("Permission denied: deployment"));
+    render(<ComponentStatesPanel deviceId={7} />);
+
+    const restartBtn = await screen.findByRole("button", { name: /Restart/ });
+    fireEvent.click(restartBtn);
+
+    await waitFor(() =>
+      expect(screen.getByText("Permission denied: deployment")).toBeInTheDocument(),
+    );
+  });
+
+  it("renders out-of-band operations as non-interactive labels", async () => {
+    getStates.mockResolvedValue(STATES);
+    getComponents.mockResolvedValue(COMPONENTS);
+    render(<ComponentStatesPanel deviceId={7} />);
+
+    await waitFor(() => expect(screen.getByText("Install")).toBeInTheDocument());
+    // "Install" is out_of_band → not a button; "Update" is.
+    expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Update/ })).toBeInTheDocument();
   });
 
   it("renders nothing for a device with no managed components", async () => {

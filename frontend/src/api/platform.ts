@@ -83,6 +83,45 @@ export async function getDeviceComponentStates(
   );
 }
 
+// Component Action API (POST /devices/{id}/components/{component}/actions).
+// Triggers a component lifecycle operation, queued through the EXISTING device-
+// action pipeline. `operation` is one of the ComponentLifecycle.operation values
+// whose kind is "action" (out-of-band operations are not triggerable). The
+// backend returns stable machine-readable error codes; fetchJson surfaces the
+// human message (detail.detail) — see ComponentActionErrorCode on the backend.
+export interface QueuedRemoteAction {
+  id: number;
+  device_id: number;
+  action_type: string;
+  status: string;   // queued | sent | acknowledged | running | completed | failed | ...
+  created_at: string;
+  created_by?: string | null;
+}
+
+export interface ComponentActionAccepted {
+  component_id: string;
+  operation: string;
+  action_type: string;
+  label: string;
+  action: QueuedRemoteAction;
+}
+
+export async function queueComponentAction(
+  deviceId: number,
+  componentId: string,
+  operation: string,
+  parameters?: Record<string, unknown>,
+): Promise<ComponentActionAccepted> {
+  return fetchJson<ComponentActionAccepted>(
+    `/api/v1/devices/${deviceId}/components/${componentId}/actions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operation, parameters }),
+    },
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

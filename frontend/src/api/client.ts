@@ -89,6 +89,10 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
         const body = await response.json();
         if (typeof body.detail === "string") {
           message = body.detail;
+        } else if (body?.detail && typeof body.detail.detail === "string") {
+          // Structured error bodies (e.g. Component Actions) nest a human
+          // message under detail.detail alongside a machine-readable code.
+          message = body.detail.detail;
         }
       } catch {
         // Keep the HTTP status message when the response is not JSON.

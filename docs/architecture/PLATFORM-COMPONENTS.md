@@ -340,6 +340,24 @@ new store; a shared action folds to its first declared operation. An integration
 test drives a component action through the full lifecycle to prove the single
 pipeline.
 
+### Milestone 5 — Frontend Wiring (`ComponentStatesPanel.tsx`)
+
+The existing read-only panel is wired to the new endpoint **without a UI redesign**.
+Each lifecycle operation chip whose `kind === "action"` becomes a triggerable
+button (same chip look); out-of-band operations (`kind === "out_of_band"` — GPO
+install, heartbeat discover) stay as static, dimmed labels. On click the panel:
+
+* POSTs via `queueComponentAction(deviceId, componentId, operation)`;
+* shows a spinner on the running op and **disables every op on that component**
+  while one is in flight (`busy` key `component:operation`);
+* on success shows "<Label> queued" and refetches the desired-state row;
+* on failure surfaces the structured backend message (`client.ts` now reads
+  `detail.detail` from the structured error body) in a red note.
+
+No new page, no layout change, no new dependency (uses `fireEvent`-testable plain
+buttons). Frontend gate: tsc clean, vitest 75 passed (6 for this panel incl.
+trigger / error / out-of-band-not-a-button), production build green.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET
