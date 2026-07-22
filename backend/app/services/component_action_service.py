@@ -48,6 +48,19 @@ class ComponentActionResult:
 
 
 @dataclass(frozen=True)
+class BulkComponentActionItemResult:
+    """Outcome of one (device, component, operation) in a bulk request."""
+
+    device_id: int
+    component_id: str
+    operation: str
+    ok: bool
+    action: Optional[RemoteAction] = None
+    error_code: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ComponentActionHistoryEntry:
     """One historical component action: the existing RemoteAction plus its
     attributed component/operation/label. No new storage — the RemoteAction IS
@@ -108,6 +121,81 @@ class ComponentActionService:
         )
         action = self._actions.queue_action(device.id, create_in)
         return ComponentActionResult(resolved=resolved, action=action)
+
+    def bulk_execute(
+        self,
+        *,
+        device_ids: list,
+        device_by_id: Mapping[int, Device],
+        targets: list,
+        created_by: Optional[str],
+        effective_permissions,
+        parameters: Optional[Mapping[str, Any]] = None,
+        timeout_seconds: Optional[int] = None,
+    ) -> list:
+        """Apply each (device, component, operation) independently through the
+        EXISTING pipeline (Milestone 9). Never raises for a single item's failure
+        — every item yields a :class:`BulkComponentActionItemResult` (ok or a
+        stable error_code), so callers get partial-failure reporting. `targets`
+        is a list of ``(component_id, operation)`` tuples. `device_by_id` holds
+        the scope-checked devices; an id absent from it fails as ``device_not_found``.
+        `effective_permissions` is None (owner/admin bypass) or the operator's
+        permission frozenset."""
+        # Import here to avoid a module-level service→service dependency for the
+        # single-item paths that don't need it.
+        from app.services.permission_service import ACTION_PERMISSION_MAP
+
+        results = []
+        for device_id in device_ids:
+            device = device_by_id.get(device_id)
+            for component_id, operation in targets:
+                if device is None:
+                    results.append(BulkComponentActionItemResult(
+                        device_id=device_id, component_id=component_id, operation=str(operation),
+                        ok=False, error_code="device_not_found", error="Device not found",
+                    ))
+                    continue
+                try:
+                    resolved = self.resolve_for_device(
+                        device, component_id, operation,
+                        parameters=parameters, timeout_seconds=timeout_seconds,
+                    )
+                except ComponentActionError as exc:
+                    results.append(BulkComponentActionItemResult(
+                        device_id=device_id, component_id=component_id, operation=str(operation),
+                        ok=False, error_code=exc.code.value, error=exc.message,
+                    ))
+                    continue
+                perm = ACTION_PERMISSION_MAP.get(resolved.action_type.value)
+                if perm and effective_permissions is not None and perm not in effective_permissions:
+                    results.append(BulkComponentActionItemResult(
+                        device_id=device_id, component_id=resolved.component_id,
+                        operation=resolved.operation.value, ok=False,
+                        error_code="permission_denied", error=f"Permission denied: {perm}",
+                    ))
+                    continue
+                try:
+                    action = self._actions.queue_action(
+                        device.id,
+                        RemoteActionCreate(
+                            action_type=resolved.action_type,
+                            parameters=dict(resolved.payload) or None,
+                            created_by=created_by,
+                            execution_timeout_seconds=timeout_seconds,
+                        ),
+                    )
+                except ValueError as exc:
+                    results.append(BulkComponentActionItemResult(
+                        device_id=device_id, component_id=resolved.component_id,
+                        operation=resolved.operation.value, ok=False,
+                        error_code="conflict", error=str(exc),
+                    ))
+                    continue
+                results.append(BulkComponentActionItemResult(
+                    device_id=device_id, component_id=resolved.component_id,
+                    operation=resolved.operation.value, ok=True, action=action,
+                ))
+        return results
 
     def retry(
         self,

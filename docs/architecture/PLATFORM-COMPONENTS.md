@@ -406,6 +406,24 @@ already renders the underlying actions, so no duplicate history UI is introduced
   action's `execution_timeout_seconds`; absent = the queue default (300s). A
   `bool` is explicitly rejected (int subclass). Frontend gains `retryComponentAction`.
 
+### Milestone 9 — Bulk Operations (`POST /components/actions/bulk`)
+
+Apply operations across **multiple devices × multiple components** in one request.
+Body: `device_ids[]` + `targets[]` (`{component_id, operation}`) + optional
+`parameters` / `timeout_seconds`. Each (device, component, operation) is queued
+**independently** through the existing single-item path (`bulk_execute` loops
+`resolve_for_device` → permission check → `queue_action`), so:
+
+* **Per-item validation + partial failures:** one bad item never fails the batch —
+  every item returns `ok` or a stable `error_code` (`unsupported_operation`,
+  `unavailable_for_device`, `device_not_found`, `permission_denied`, `conflict`, …).
+* **Scope safety:** out-of-scope / missing devices are reported as
+  `device_not_found`, never leaked; device_ids are deduped.
+* **Progress:** the response carries `total`/`succeeded`/`failed`; live progress is
+  observable through the existing realtime action events (M6) per queued item.
+* **Guardrail:** `device_ids × targets ≤ 1000` (400 otherwise). Frontend gets a
+  typed `bulkComponentActions()` client.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

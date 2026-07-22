@@ -173,6 +173,51 @@ export async function getComponentActionHistory(
   );
 }
 
+// Bulk component actions (POST /components/actions/bulk). Multiple devices ×
+// multiple components, each queued independently with per-item partial-failure
+// reporting. Live progress is observable via the existing realtime action events.
+export interface BulkComponentActionTarget {
+  component_id: string;
+  operation: string;
+}
+
+export interface BulkComponentActionItem {
+  device_id: number;
+  component_id: string;
+  operation: string;
+  ok: boolean;
+  action_id?: number | null;
+  action_type?: string | null;
+  status?: string | null;
+  error_code?: string | null;
+  error?: string | null;
+}
+
+export interface BulkComponentActionResponse {
+  schema_version: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: BulkComponentActionItem[];
+}
+
+export async function bulkComponentActions(
+  deviceIds: number[],
+  targets: BulkComponentActionTarget[],
+  opts?: { parameters?: Record<string, unknown>; timeoutSeconds?: number },
+): Promise<BulkComponentActionResponse> {
+  return fetchJson<BulkComponentActionResponse>("/api/v1/components/actions/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      device_ids: deviceIds,
+      targets,
+      parameters: opts?.parameters,
+      timeout_seconds: opts?.timeoutSeconds,
+    }),
+  });
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).

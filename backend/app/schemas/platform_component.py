@@ -110,3 +110,40 @@ class ComponentActionHistoryResponse(BaseModel):
     schema_version: int = 1
     device_id: int
     items: List[ComponentActionHistoryItem]
+
+
+# --------------------------------------------------------------------------- #
+# Bulk Component Actions (Operational — M9). Apply operations across multiple    #
+# devices × multiple components; each item is queued independently through the   #
+# existing pipeline, with per-item validation and partial-failure reporting.     #
+# --------------------------------------------------------------------------- #
+class BulkComponentActionTarget(BaseModel):
+    component_id: str
+    operation: str
+
+
+class BulkComponentActionRequest(BaseModel):
+    device_ids: List[int]
+    targets: List[BulkComponentActionTarget]
+    parameters: Optional[Dict[str, Any]] = None
+    timeout_seconds: Optional[int] = None
+
+
+class BulkComponentActionItem(BaseModel):
+    device_id: int
+    component_id: str
+    operation: str
+    ok: bool
+    action_id: Optional[int] = None
+    action_type: Optional[str] = None
+    status: Optional[str] = None
+    error_code: Optional[str] = None   # stable code when ok is False
+    error: Optional[str] = None
+
+
+class BulkComponentActionResponse(BaseModel):
+    schema_version: int = 1
+    total: int
+    succeeded: int
+    failed: int
+    items: List[BulkComponentActionItem]

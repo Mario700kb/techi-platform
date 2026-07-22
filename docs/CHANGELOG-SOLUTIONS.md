@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 9: Bulk Operations (NOT deployed)
+
+Veprime në masë mbi **shumë pajisje × shumë komponentë** në një kërkesë të vetme, secili i
+radhitur **në mënyrë të pavarur** përmes path-it ekzistues single-item.
+
+**Shtuar:**
+- `POST /components/actions/bulk` — body `device_ids[]` + `targets[]` (`{component_id, operation}`)
+  + `parameters`/`timeout_seconds` opsionale. Validim per-item + partial failures: çdo item kthen
+  `ok` ose `error_code` stabël (`unsupported_operation`/`unavailable_for_device`/`device_not_found`/
+  `permission_denied`/`conflict`/…). Pajisjet jashtë scope/që mungojnë → `device_not_found` (s'rrjedhin).
+  device_ids dedup. Guardrail `device_ids × targets ≤ 1000` (400). Përmbledhje `total/succeeded/failed`.
+  Progres live përmes event-eve realtime ekzistuese (M6).
+- `ComponentActionService.bulk_execute()` + `BulkComponentActionItemResult`.
+- Schemas `BulkComponentAction{Target,Request,Item,Response}`.
+- FE: `bulkComponentActions()` + tipat.
+
+**Tests:** `tests/test_component_action_bulk.py` (6 raste: sukses i plotë multi-device/multi-komponent,
+partial failure per-item, konflikt dublikate në batch, kërkesa boshe→400, limit madhësie→400, timeout).
+Backend full suite: **885 passed** (4 baseline pre-ekzistuese); frontend tsc clean. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 8: Retry & Idempotency (NOT deployed)
 
 **Idempotency:** dublikatat bllokohen tashmë nga rojtari ekzistues i konfliktit të radhës (409) —

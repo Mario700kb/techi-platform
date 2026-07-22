@@ -30,6 +30,9 @@ from app.platform_core.action_resolver import (
     ComponentActionErrorCode,
 )
 from app.schemas.platform_component import (
+    BulkComponentActionItem,
+    BulkComponentActionRequest,
+    BulkComponentActionResponse,
     ComponentActionAccepted,
     ComponentActionHistoryItem,
     ComponentActionHistoryResponse,
@@ -144,6 +147,93 @@ def queue_component_action(
         action_type=result.resolved.action_type.value,
         label=result.resolved.label,
         action=RemoteActionResponse.model_validate(action),
+    )
+
+
+_BULK_MAX_ITEMS = 1000  # device_ids × targets ceiling — guards against abuse.
+
+
+@router.post(
+    "/components/actions/bulk",
+    response_model=BulkComponentActionResponse,
+)
+def bulk_component_actions(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    payload: BulkComponentActionRequest,
+):
+    """Apply operations across multiple devices × multiple components (Milestone 9).
+
+    Each (device, component, operation) is queued independently through the
+    existing pipeline; per-item validation + partial-failure reporting means one
+    bad item never fails the batch. Progress is observable live via the existing
+    realtime action events (M6). Devices out of scope / missing are reported as
+    ``device_not_found`` items, never leaked."""
+    device_ids = list(dict.fromkeys(payload.device_ids))  # dedupe, preserve order
+    targets = [(t.component_id, t.operation) for t in payload.targets]
+    if not device_ids or not targets:
+        raise HTTPException(status_code=400, detail="device_ids and targets are required")
+    if len(device_ids) * len(targets) > _BULK_MAX_ITEMS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bulk request too large (> {_BULK_MAX_ITEMS} device×target items)",
+        )
+
+    # Scope-check every device up front; only in-scope devices enter the map.
+    device_by_id = {}
+    device_service = DeviceService(db)
+    for device_id in device_ids:
+        device = device_service.get_device(device_id)
+        if device and device_in_scope(device.client_id, device.group_id, device.id, scope):
+            device_by_id[device_id] = device
+
+    effective = get_operator_permissions(operator, db)
+    results = ComponentActionService(db).bulk_execute(
+        device_ids=device_ids,
+        device_by_id=device_by_id,
+        targets=targets,
+        created_by=operator.username,
+        effective_permissions=effective,
+        parameters=payload.parameters,
+        timeout_seconds=payload.timeout_seconds,
+    )
+
+    items = [
+        BulkComponentActionItem(
+            device_id=r.device_id,
+            component_id=r.component_id,
+            operation=r.operation,
+            ok=r.ok,
+            action_id=r.action.id if r.action else None,
+            action_type=r.action.action_type if r.action else None,
+            status=r.action.status.value if r.action else None,
+            error_code=r.error_code,
+            error=r.error,
+        )
+        for r in results
+    ]
+    succeeded = sum(1 for r in results if r.ok)
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.ACTION_QUEUED,
+        entity_type="remote_action",
+        entity_id=0,
+        details={
+            "bulk": True,
+            "devices": len(device_ids),
+            "targets": len(targets),
+            "succeeded": succeeded,
+            "failed": len(items) - succeeded,
+        },
+    )
+    return BulkComponentActionResponse(
+        total=len(items),
+        succeeded=succeeded,
+        failed=len(items) - succeeded,
+        items=items,
     )
 
 
