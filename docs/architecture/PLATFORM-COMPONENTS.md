@@ -220,6 +220,45 @@ reuse the actions that exist, or expose the operation as metadata only.
    (manifest.json)    (pending_actions contract)      with local fallback)
 ```
 
+## 10a. Operational layer (Platform Components — Operational)
+
+The foundation above (Registry / Lifecycle / Policy / Desired State) is **STABLE
+and frozen**. The *Operational* work builds strictly on top of it to make the
+declared operations actually triggerable — reusing the existing Action Queue, not
+replacing it.
+
+### Milestone 1 — Component Action Resolver (`action_resolver.py`)
+
+The single seam that turns a `(component, lifecycle operation)` request into a
+concrete queueable device action:
+
+```
+Component  →  LifecycleOperation  →  ActionType  →  payload  →  Device Action
+```
+
+Pure domain layer (like the rest of `platform_core`): imports only sibling
+registries + schema enums — never FastAPI, a DB session, services, or the queue.
+It creates **no** new `ActionType`, **no** parallel queue, **no** source of
+truth. It consults the existing Component + Lifecycle registries and returns the
+**existing** `ActionType` plus a base payload (the operator-supplied parameters,
+copied). Component branching lives **only** here — consumers call
+`resolve_component_action(component, operation)`.
+
+Outcomes are explicit and structured (no `if component == ...` at call sites):
+
+| Outcome | Result |
+|---|---|
+| resolvable operation | `ResolvedComponentAction(component_id, operation, action_type, label, payload)` |
+| no such component | `ComponentActionError(UNKNOWN_COMPONENT)` |
+| not a lifecycle operation | `ComponentActionError(UNKNOWN_OPERATION)` |
+| component doesn't declare it | `ComponentActionError(UNSUPPORTED_OPERATION)` |
+| supported but out-of-band (GPO install, heartbeat discover — `action_type is None`) | `ComponentActionError(NOT_EXECUTABLE)` |
+
+`ComponentActionErrorCode` values are contract (the API layer maps each to a
+precise HTTP status + machine-readable `code`). `can_resolve()` is the
+never-raising yes/no convenience for UI availability. Fails **closed**: an
+out-of-band operation is never silently turned into a fabricated action.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

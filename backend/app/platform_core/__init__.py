@@ -28,6 +28,14 @@ from app.platform_core.components import (
     list_file_types_for_component,
     status_label,
 )
+from app.platform_core.action_resolver import (
+    ComponentActionError,
+    ComponentActionErrorCode,
+    ResolvedComponentAction,
+    can_resolve,
+    parse_operation,
+    resolve_component_action,
+)
 from app.platform_core.flags import FEATURE_DEPENDENCIES, feature_enabled
 from app.platform_core.lifecycle import (
     ACTION_TO_LIFECYCLE,
@@ -93,6 +101,12 @@ __all__ = [
     "list_policies",
     "policy_for",
     "validate_policy_registry",
+    "ComponentActionError",
+    "ComponentActionErrorCode",
+    "ResolvedComponentAction",
+    "can_resolve",
+    "parse_operation",
+    "resolve_component_action",
     "FEATURE_DEPENDENCIES",
     "feature_enabled",
     "DEFAULT_PLATFORM_ID",

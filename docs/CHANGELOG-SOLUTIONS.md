@@ -5,6 +5,30 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 1: Component Action Resolver (NOT deployed)
+
+Nisi puna *Operational* mbi themelin STABLE (Registry/Lifecycle/Policy/Desired State
+nuk u prekën). Milestone 1 shton **vetëm** resolver-in — asnjë endpoint, asnjë ekzekutim.
+
+**Shtuar:** `backend/app/platform_core/action_resolver.py` — një shtresë e pastër domain
+(si pjesa tjetër e `platform_core`: importon vetëm registrat motra + enum-et e schema-ve;
+kurrë FastAPI/DB/services/queue). Kthen `(component, operation)` → `ActionType` ekzistues
++ payload bazë, ose një `ComponentActionError` të strukturuar me `code` stabël
+(`unknown_component` / `unknown_operation` / `unsupported_operation` / `not_executable`).
+Degëzimi sipas komponentit rron **vetëm** këtu (`resolve_component_action`); `can_resolve()`
+është varianti që s'ngre kurrë exception. Fail-closed: operacionet out-of-band (Agent install
+via GPO, discover via heartbeat — `action_type is None`) nuk shndërrohen kurrë në veprim të
+trilluar. Re-exportuar nga `platform_core/__init__.py`.
+
+**S'u prek:** asnjë `ActionType` i ri, asnjë queue paralel, asnjë kontratë prodhimi, asnjë
+migrim DB, asnjë agent/heartbeat/enrollment.
+
+**Tests:** `tests/test_action_resolver.py` (16 raste: happy-path për të gjitha operacionet e
+`agent`/`remote_support`, gabimet e strukturuara, normalizim, immutability, dhe një kontroll
+shterues që çdo `(component, operation)` e zgjidhshme jep një `ActionType` real). Backend suite
+i lidhur: **88 passed** (resolver + lifecycle + component + policy + state + endpoint + action
+registry). `py_compile` + import OK. NOT deployed.
+
 ## [2026-07-21] Platform Components — backport onto production base 92a521c (additive, read-only; NOT deployed)
 
 Backported the Platform Components layer onto the production commit `92a521c` WITHOUT
