@@ -14,6 +14,13 @@ export interface AgentPackage {
   is_active: boolean;
   download_url: string;
   sha256?: string | null;
+  product_name?: string | null;
+  product_version?: string | null;
+  product_code?: string | null;
+  upgrade_code?: string | null;
+  file_size?: number | null;
+  metadata_status?: string | null;
+  metadata_error?: string | null;
 }
 
 export async function getAgentPackages(): Promise<AgentPackage[]> {

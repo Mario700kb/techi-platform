@@ -55,10 +55,6 @@ REMOTE_SUPPORT_PACKAGE_OPERATIONS = frozenset(
         LifecycleOperation.REINSTALL,
     }
 )
-REMOTE_SUPPORT_PRODUCT_GUID = "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
-REMOTE_SUPPORT_UPGRADE_CODE = "60D9FA89-6F6C-5C7C-A74E-027363D83921"
-
-
 def _version_key(value: str):
     """Sortable key for a dotted-numeric version; unparseable → lowest."""
     try:
@@ -165,10 +161,15 @@ class ComponentPackageService:
 
         base_url = (settings.PUBLIC_BACKEND_URL or "").rstrip("/")
         missing = []
-        if not package.version:
-            missing.append("version")
+        product_version = package.product_version or package.version
+        if not product_version:
+            missing.append("product_version")
         if not package.sha256:
             missing.append("sha256")
+        if not package.product_code:
+            missing.append("product_code")
+        if not package.upgrade_code:
+            missing.append("upgrade_code")
         if not base_url:
             missing.append("PUBLIC_BACKEND_URL")
         if not settings.RUSTDESK_SERVER_HOST:
@@ -184,14 +185,15 @@ class ComponentPackageService:
             )
 
         return {
-            "version": package.version,
+            "version": product_version,
             "sha256": package.sha256,
             "target_sha256": package.sha256,
             "msi_url": f"{base_url}{self._packages.remote_support_msi_download_url()}",
-            "msi_version": package.version,
-            "product_guid": REMOTE_SUPPORT_PRODUCT_GUID,
-            "product_code": REMOTE_SUPPORT_PRODUCT_GUID,
-            "upgrade_code": REMOTE_SUPPORT_UPGRADE_CODE,
+            "msi_version": product_version,
+            "product_guid": package.product_code,
+            "product_code": package.product_code,
+            "upgrade_code": package.upgrade_code,
+            "product_name": package.product_name,
             "rendezvous_server": settings.RUSTDESK_SERVER_HOST,
             "key": settings.RUSTDESK_PUBLIC_KEY,
         }

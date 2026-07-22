@@ -48,6 +48,13 @@ class AgentPackageOut(BaseModel):
     is_active: bool = False
     download_url: str
     sha256: Optional[str] = None
+    product_name: Optional[str] = None
+    product_version: Optional[str] = None
+    product_code: Optional[str] = None
+    upgrade_code: Optional[str] = None
+    file_size: Optional[int] = None
+    metadata_status: Optional[str] = None
+    metadata_error: Optional[str] = None
 
 
 class AgentPackageUploadResponse(BaseModel):

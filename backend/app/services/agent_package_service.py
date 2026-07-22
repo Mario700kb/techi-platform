@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from datetime import datetime
 from app.core.time import utcnow
 from pathlib import Path
@@ -18,6 +19,7 @@ ALLOWED_PLATFORMS = {platform.value for platform in AgentPackagePlatform}
 # Windows artifacts keep their existing extensions unchanged.
 ALLOWED_EXTENSIONS = (".msi", ".exe", ".zip", ".tar.gz", ".tgz", ".bin")
 ALLOWED_FILE_TYPES = {ft.value for ft in AgentFileType}
+MSI_METADATA_FIELDS = ("product_name", "product_version", "product_code", "upgrade_code")
 
 
 class AgentPackageService:
@@ -78,10 +80,13 @@ class AgentPackageService:
         package_path = package_dir / safe_filename
 
         sha256 = self._write_and_hash(stream, package_path)
+        file_size = package_path.stat().st_size
+        metadata = self._extract_package_metadata(package_path, file_type)
+        stored_version = metadata.get("product_version") or version
 
         item = {
             "id": package_id,
-            "version": version,
+            "version": stored_version,
             "platform": platform,
             "file_type": file_type,
             "filename": safe_filename,
@@ -89,6 +94,8 @@ class AgentPackageService:
             "uploaded_by": uploaded_by,
             "is_active": False,
             "sha256": sha256,
+            "file_size": file_size,
+            **metadata,
         }
         manifest = self._read_manifest()
         manifest.append(item)
@@ -106,6 +113,7 @@ class AgentPackageService:
             raise ValueError("Package not found")
 
         if is_active:
+            self._validate_activation_metadata(target)
             target_ft = target.get("file_type", "msi")
             for item in manifest:
                 if item.get("platform") == target.get("platform") and item.get("file_type", "msi") == target_ft:
@@ -179,7 +187,71 @@ class AgentPackageService:
             is_active=bool(item.get("is_active", False)),
             download_url=self.download_url(item["id"]),
             sha256=item.get("sha256"),
+            product_name=item.get("product_name"),
+            product_version=item.get("product_version"),
+            product_code=item.get("product_code"),
+            upgrade_code=item.get("upgrade_code"),
+            file_size=item.get("file_size"),
+            metadata_status=item.get("metadata_status"),
+            metadata_error=item.get("metadata_error"),
         )
+
+    @staticmethod
+    def _extract_package_metadata(path: Path, file_type: str) -> dict:
+        if not path.name.lower().endswith(".msi"):
+            return {"metadata_status": "not_applicable", "metadata_error": None}
+        try:
+            proc = subprocess.run(
+                ["msiinfo", "export", str(path), "Property"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except FileNotFoundError:
+            return {"metadata_status": "error", "metadata_error": "msiinfo not installed"}
+        except subprocess.TimeoutExpired:
+            return {"metadata_status": "error", "metadata_error": "msiinfo timed out"}
+
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "msiinfo failed").strip()
+            return {"metadata_status": "error", "metadata_error": detail[:500]}
+
+        props = AgentPackageService._parse_msi_property_table(proc.stdout)
+        metadata = {
+            "product_name": props.get("ProductName"),
+            "product_version": props.get("ProductVersion"),
+            "product_code": props.get("ProductCode"),
+            "upgrade_code": props.get("UpgradeCode"),
+            "metadata_status": "ok",
+            "metadata_error": None,
+        }
+        missing = [key for key in MSI_METADATA_FIELDS if not metadata.get(key)]
+        if missing:
+            metadata["metadata_status"] = "error"
+            metadata["metadata_error"] = f"missing MSI metadata: {', '.join(missing)}"
+        return metadata
+
+    @staticmethod
+    def _parse_msi_property_table(text: str) -> dict:
+        props = {}
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip("\r\n")
+            if not line or "\t" not in line:
+                continue
+            key, value = line.split("\t", 1)
+            if key in {"Property", "s72"}:
+                continue
+            props[key] = value
+        return props
+
+    @staticmethod
+    def _validate_activation_metadata(item: dict) -> None:
+        if item.get("file_type", "msi") != AgentFileType.REMOTE_SUPPORT_MSI.value:
+            return
+        required = ("product_name", "product_version", "product_code", "upgrade_code", "file_size", "sha256")
+        if item.get("metadata_status") != "ok" or any(not item.get(field) for field in required):
+            raise ValueError("active Remote Support MSI metadata is incomplete")
 
     @staticmethod
     def _write_and_hash(stream: BinaryIO, dest: Path) -> str:

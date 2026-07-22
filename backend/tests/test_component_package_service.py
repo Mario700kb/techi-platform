@@ -4,18 +4,27 @@ Reuses the STABLE Desired-State resolver + Package Registry (no new storage).
 """
 from types import SimpleNamespace
 
+import pytest
+
 from app.platform_core.components import ComponentHealth, LifecycleOperation
 from app.services.component_package_service import ComponentPackageService
 from app.services.component_state_service import ComponentDeviceState
 
 
-def _pkg(version, file_type="agent_binary", platform="windows-amd64", sha256=None, active=True):
+def _pkg(version, file_type="agent_binary", platform="windows-amd64", sha256=None, active=True, **metadata):
     return SimpleNamespace(
         version=version,
         sha256=sha256,
         is_active=active,
         platform=SimpleNamespace(value=platform),
         file_type=SimpleNamespace(value=file_type),
+        product_name=metadata.get("product_name"),
+        product_version=metadata.get("product_version"),
+        product_code=metadata.get("product_code"),
+        upgrade_code=metadata.get("upgrade_code"),
+        file_size=metadata.get("file_size"),
+        metadata_status=metadata.get("metadata_status"),
+        metadata_error=metadata.get("metadata_error"),
     )
 
 
@@ -111,44 +120,83 @@ def test_remote_support_enrichment_injects_msi_metadata(monkeypatch):
         "https://api.example.test",
     )
     svc = _svc([
-        _pkg("1.4.9", file_type="remote_support_msi", sha256="cafebabe", active=True),
+        _pkg(
+            "1.4.9",
+            file_type="remote_support_msi",
+            sha256="cafebabe",
+            active=True,
+            product_name="TECHI Remote Support",
+            product_version="1.4.9.0",
+            product_code="{PRODUCT-CODE}",
+            upgrade_code="{UPGRADE-CODE}",
+        ),
     ])
 
     enrich = svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
 
-    assert enrich["version"] == "1.4.9"
-    assert enrich["msi_version"] == "1.4.9"
+    assert enrich["version"] == "1.4.9.0"
+    assert enrich["msi_version"] == "1.4.9.0"
     assert enrich["msi_url"] == "https://api.example.test/api/v1/agent-packages/remote-support-msi/download"
     assert enrich["sha256"] == "cafebabe"
     assert enrich["target_sha256"] == "cafebabe"
-    assert enrich["product_guid"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
-    assert enrich["product_code"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
-    assert enrich["upgrade_code"] == "60D9FA89-6F6C-5C7C-A74E-027363D83921"
+    assert enrich["product_name"] == "TECHI Remote Support"
+    assert enrich["product_guid"] == "{PRODUCT-CODE}"
+    assert enrich["product_code"] == "{PRODUCT-CODE}"
+    assert enrich["upgrade_code"] == "{UPGRADE-CODE}"
 
 
-def test_remote_support_repair_requires_active_msi_package():
+@pytest.mark.parametrize(
+    "operation",
+    [
+        LifecycleOperation.INSTALL,
+        LifecycleOperation.UPDATE,
+        LifecycleOperation.REPAIR,
+        LifecycleOperation.REINSTALL,
+    ],
+)
+def test_remote_support_package_operations_require_active_msi_package(operation):
     from app.platform_core.action_resolver import ComponentActionError
 
     svc = _svc([])
 
     try:
-        svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
+        svc.enrichment_for("remote_support", "windows", operation)
         assert False, "expected no active package error"
     except ComponentActionError as exc:
         assert exc.message == "no active Remote Support MSI package"
 
 
-def test_remote_support_repair_requires_complete_msi_metadata(monkeypatch):
+@pytest.mark.parametrize(
+    "operation",
+    [
+        LifecycleOperation.INSTALL,
+        LifecycleOperation.UPDATE,
+        LifecycleOperation.REPAIR,
+        LifecycleOperation.REINSTALL,
+    ],
+)
+def test_remote_support_package_operations_require_complete_msi_metadata(monkeypatch, operation):
     from app.platform_core.action_resolver import ComponentActionError
 
     monkeypatch.setattr(
         "app.services.component_package_service.settings.PUBLIC_BACKEND_URL",
         "https://api.example.test",
     )
-    svc = _svc([_pkg("1.4.9", file_type="remote_support_msi", sha256=None, active=True)])
+    svc = _svc([
+        _pkg(
+            "1.4.9",
+            file_type="remote_support_msi",
+            sha256=None,
+            active=True,
+            product_name="TECHI Remote Support",
+            product_version="1.4.9.0",
+            product_code="{PRODUCT-CODE}",
+            upgrade_code="{UPGRADE-CODE}",
+        )
+    ])
 
     try:
-        svc.enrichment_for("remote_support", "windows", LifecycleOperation.REPAIR)
+        svc.enrichment_for("remote_support", "windows", operation)
         assert False, "expected incomplete metadata error"
     except ComponentActionError as exc:
         assert exc.message == "active Remote Support MSI metadata is incomplete"
