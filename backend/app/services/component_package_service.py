@@ -29,9 +29,10 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.device import Device
 from app.platform_core.components import ComponentHealth, LifecycleOperation
-from app.schemas.agent_package import AgentPackageOut
+from app.schemas.agent_package import AgentFileType, AgentPackageOut
 from app.services.agent_package_service import AgentPackageService
 from app.services.component_state_service import (
     ComponentStateService,
@@ -135,4 +136,15 @@ class ComponentPackageService:
         enrichment: Dict[str, Any] = {"version": package.version}
         if package.sha256:
             enrichment["target_sha256"] = package.sha256
+        if component_id == "remote_support" and package.file_type.value == AgentFileType.REMOTE_SUPPORT_MSI.value:
+            base_url = (settings.PUBLIC_BACKEND_URL or "").rstrip("/")
+            enrichment.update(
+                {
+                    "msi_url": f"{base_url}{self._packages.remote_support_msi_download_url()}",
+                    "msi_version": package.version,
+                    "product_guid": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
+                    "rendezvous_server": settings.RUSTDESK_SERVER_HOST,
+                    "key": settings.RUSTDESK_PUBLIC_KEY,
+                }
+            )
         return enrichment

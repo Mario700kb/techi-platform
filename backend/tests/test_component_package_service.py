@@ -36,6 +36,9 @@ class _FakePackages:
             return list(self._packages)
         return [p for p in self._packages if p.is_active]
 
+    def remote_support_msi_download_url(self):
+        return "/api/v1/agent-packages/remote-support-msi/download"
+
 
 def _svc(packages):
     svc = ComponentPackageService(db=None)
@@ -100,3 +103,21 @@ def test_enrichment_empty_for_non_version_changing_op():
 def test_enrichment_empty_when_no_active_package():
     svc = _svc([_pkg("2.1.14", active=False)])
     assert svc.enrichment_for("agent", "windows", LifecycleOperation.UPDATE) == {}
+
+
+def test_remote_support_enrichment_injects_msi_metadata(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.component_package_service.settings.PUBLIC_BACKEND_URL",
+        "https://api.example.test",
+    )
+    svc = _svc([
+        _pkg("1.4.9", file_type="remote_support_msi", sha256="cafebabe", active=True),
+    ])
+
+    enrich = svc.enrichment_for("remote_support", "windows", LifecycleOperation.UPDATE)
+
+    assert enrich["version"] == "1.4.9"
+    assert enrich["msi_version"] == "1.4.9"
+    assert enrich["msi_url"] == "https://api.example.test/api/v1/agent-packages/remote-support-msi/download"
+    assert enrich["target_sha256"] == "cafebabe"
+    assert enrich["product_guid"] == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"

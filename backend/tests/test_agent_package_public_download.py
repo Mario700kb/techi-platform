@@ -172,6 +172,35 @@ def test_public_active_windows_version_returns_404_when_missing(monkeypatch):
     assert response.json()["detail"] == "No active package for platform"
 
 
+def test_public_active_remote_support_msi_download(monkeypatch, tmp_path):
+    package_file = tmp_path / "TECHI-Remote-Support-1.4.9.msi"
+    package_file.write_bytes(b"remote-support-msi")
+    package = SimpleNamespace(
+        id="pkg-rs",
+        platform=SimpleNamespace(value="windows-amd64"),
+        filename="TECHI-Remote-Support-1.4.9.msi",
+        version="1.4.9",
+    )
+
+    class FakeAgentPackageService:
+        def latest_active(self, platform: str, *, file_type=None):
+            assert platform == "windows-amd64"
+            assert file_type == "remote_support_msi"
+            return package
+
+        def package_path(self, selected_package):
+            assert selected_package is package
+            return package_file
+
+    monkeypatch.setattr(agent_packages, "AgentPackageService", FakeAgentPackageService)
+
+    response = _client().get("/api/v1/agent-packages/remote-support-msi/download")
+
+    assert response.status_code == 200
+    assert response.content == b"remote-support-msi"
+    assert "TECHI-Remote-Support-1.4.9.msi" in response.headers["content-disposition"]
+
+
 def test_public_inactive_package_returns_404(monkeypatch):
     class FakeAgentPackageService:
         def latest_active(self, platform: str, *, file_type=None):

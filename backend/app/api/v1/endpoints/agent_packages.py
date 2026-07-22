@@ -166,6 +166,27 @@ def download_active_agent_update_msi():
     )
 
 
+@router.get("/remote-support-msi/download")
+def download_active_remote_support_msi():
+    """Public endpoint for the active Windows TECHI Remote Support MSI."""
+    service = AgentPackageService()
+    package = service.latest_active("windows-amd64", file_type="remote_support_msi")
+    if package is None:
+        raise HTTPException(status_code=404, detail="No active remote support MSI package for windows-amd64")
+    path = service.package_path(package)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Package file not found")
+    logger.info(
+        "Remote Support MSI download package_id=%s version=%s", package.id, package.version
+    )
+    return FileResponse(
+        path,
+        filename=package.filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/{package_id}/download")
 def download_agent_package(package_id: str, operator: Operator = Depends(get_current_operator)):
     service = AgentPackageService()
