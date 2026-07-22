@@ -16,10 +16,13 @@ depends_on = None
 def upgrade() -> None:
     # Partial index covers get_pending_for_device() which filters status=QUEUED.
     # status is a PostgreSQL enum (actionstatus) so the literal requires a cast.
-    op.execute("""
+    status_literal = "'queued'::actionstatus"
+    if op.get_bind().dialect.name != "postgresql":
+        status_literal = "'queued'"
+    op.execute(f"""
         CREATE INDEX IF NOT EXISTS ix_remote_actions_device_queued
         ON remote_actions (device_id, status)
-        WHERE status = 'queued'::actionstatus
+        WHERE status = {status_literal}
     """)
 
 

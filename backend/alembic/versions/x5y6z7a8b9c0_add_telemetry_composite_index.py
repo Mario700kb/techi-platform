@@ -18,6 +18,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        op.create_index(
+            "ix_device_telemetry_device_id_created_at",
+            "device_telemetry",
+            ["device_id", "created_at"],
+            if_not_exists=True,
+        )
+        return
+
     # CONCURRENTLY must run outside any transaction block.
     # autocommit_block() is the Alembic-native way to achieve this.
     with op.get_context().autocommit_block():

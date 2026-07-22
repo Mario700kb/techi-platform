@@ -14,6 +14,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        op.create_index(
+            "ix_audit_logs_operator_id",
+            "audit_logs",
+            ["operator_id"],
+            if_not_exists=True,
+        )
+        return
+
     with op.get_context().autocommit_block():
         op.execute(text(
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS "

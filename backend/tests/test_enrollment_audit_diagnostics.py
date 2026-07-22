@@ -14,6 +14,7 @@ from app.models.device_group import DeviceGroup
 from app.models.enrollment_audit import EnrollmentAudit
 from app.models.enrollment_token import EnrollmentToken, EnrollmentTokenStatus
 from app.models.operator import Operator
+from app.models.trusted_domain import TrustedDomain
 from app.schemas.agent import AgentEnrollmentRequest
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.enrollment_audit_service import EnrollmentAuditService
@@ -24,6 +25,7 @@ TABLES = [
     Client.__table__,
     DeviceGroup.__table__,
     EnrollmentToken.__table__,
+    TrustedDomain.__table__,
     Device.__table__,
     EnrollmentAudit.__table__,
 ]

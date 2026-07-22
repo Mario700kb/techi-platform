@@ -7,6 +7,7 @@ Create Date: 2026-07-01
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision = "d5e6f7a8b9c0"
 down_revision = "c4d5e6f7a8b9"
@@ -15,7 +16,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("devices", sa.Column("display_name", sa.String(length=128), nullable=True))
+    columns = {column["name"] for column in inspect(op.get_bind()).get_columns("devices")}
+    if "display_name" not in columns:
+        op.add_column("devices", sa.Column("display_name", sa.String(length=128), nullable=True))
 
 
 def downgrade() -> None:

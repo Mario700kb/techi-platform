@@ -10,6 +10,7 @@ in the heartbeat response (Faza 2 self-update mechanism).
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision = "c4d5e6f7a8b9"
 down_revision = "b3c4d5e6f7a8"
@@ -18,7 +19,9 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("devices", sa.Column("agent_version", sa.String(20), nullable=True))
+    columns = {column["name"] for column in inspect(op.get_bind()).get_columns("devices")}
+    if "agent_version" not in columns:
+        op.add_column("devices", sa.Column("agent_version", sa.String(20), nullable=True))
 
 
 def downgrade():
