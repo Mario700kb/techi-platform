@@ -20,6 +20,7 @@ from app.core.auth import (
     get_current_operator,
     get_operator_permissions,
     get_operator_scope,
+    is_unrestricted,
     require_min_role,
 )
 from app.core.scope import AllowedScope, device_in_scope
@@ -58,6 +59,7 @@ _ERROR_STATUS = {
     ComponentActionErrorCode.INVALID_VERSION: 400,
     ComponentActionErrorCode.INVALID_TIMEOUT: 400,
     ComponentActionErrorCode.NOT_A_COMPONENT_ACTION: 422,
+    ComponentActionErrorCode.POLICY_DENIED: 403,
 }
 
 
@@ -95,6 +97,8 @@ def queue_component_action(
 ):
     device = _get_device_scoped(device_id, db, scope)
     svc = ComponentActionService(db)
+    # A policy override is honored only for an elevated operator (owner/admin).
+    override = bool(payload.override) and is_unrestricted(operator)
 
     # Resolve first (no side effects) so we can enforce the SAME permission gate
     # the generic device-action endpoint uses, keyed on the resolved ActionType.
@@ -102,6 +106,7 @@ def queue_component_action(
         resolved = svc.resolve_for_device(
             device, component_id, payload.operation,
             parameters=payload.parameters, timeout_seconds=payload.timeout_seconds,
+            override=override,
         )
     except ComponentActionError as exc:
         _raise_component_error(exc)
@@ -120,6 +125,7 @@ def queue_component_action(
             created_by=operator.username,
             parameters=payload.parameters,
             timeout_seconds=payload.timeout_seconds,
+            override=override,
         )
     except ComponentActionError as exc:
         _raise_component_error(exc)
@@ -190,6 +196,7 @@ def bulk_component_actions(
             device_by_id[device_id] = device
 
     effective = get_operator_permissions(operator, db)
+    override = bool(payload.override) and is_unrestricted(operator)
     results = ComponentActionService(db).bulk_execute(
         device_ids=device_ids,
         device_by_id=device_by_id,
@@ -198,6 +205,7 @@ def bulk_component_actions(
         effective_permissions=effective,
         parameters=payload.parameters,
         timeout_seconds=payload.timeout_seconds,
+        override=override,
     )
 
     items = [

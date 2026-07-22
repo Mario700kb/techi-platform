@@ -57,6 +57,8 @@ class ComponentActionErrorCode(str, Enum):
     INVALID_TIMEOUT = "invalid_timeout"    # a supplied execution timeout is out of range
     # Retry (Milestone 8): the action being retried is not owned by any component.
     NOT_A_COMPONENT_ACTION = "not_a_component_action"
+    # Policy enforcement (Milestone 10): denied by global/tenant/component policy.
+    POLICY_DENIED = "policy_denied"
 
 
 class ComponentActionError(Exception):

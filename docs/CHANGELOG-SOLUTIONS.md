@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 10: Policy Enforcement (NOT deployed)
+
+Shtresë e re *zbatimi* policy-je (pa prekur `policy.py` STABLE — vetëm e lexon), e kompozuar
+më e përgjithshmja e para, kthen mohimin e parë (fail-closed): **global → tenant → component →
+override**. E lidhur si hapi 6 i validatorit (M3 e shtyu enforcement-in këtu).
+
+**Shtuar:** `services/component_policy_enforcement.py` (`ComponentPolicyEnforcer`,
+`GLOBAL_COMPONENT_POLICY` kill-switch, `TENANT_COMPONENT_POLICIES` seam per-tenant, `EnforcementDecision`).
+- Global: ndalon të gjitha veprimet manuale pa deploy.
+- Tenant: override opsional sipas `client_id`; mungon ⇒ trashëgon global (pa tabelë DB).
+- Component: lexon `policy_for` — strategy jo-`MANUAL` ⇒ automation-governed, s'lejohet manualisht.
+- Override: vetëm owner/admin (`override: true`) kalon mbi policy-t soft; kurrë mbi validimin e fortë.
+Mohimi → `POLICY_DENIED` → **403** me scope-in në mesazh. I threaduar në path-et single/retry/bulk
+(kod i ri `policy_denied`; `override` te request-et, honored vetëm për operator elevated).
+
+**Tests:** `tests/test_component_policy_enforcement.py` (7 raste: default lejon, global kill-switch,
+tenant i izoluar, strategy jo-manuale mohon (monkeypatch pa prekur registrin), override bypass,
++ validator raises/override) + 2 endpoint (403 + admin override 200). Suite i lidhur: **65 passed**.
+NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 9: Bulk Operations (NOT deployed)
 
 Veprime në masë mbi **shumë pajisje × shumë komponentë** në një kërkesë të vetme, secili i

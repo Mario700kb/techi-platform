@@ -87,12 +87,13 @@ class ComponentActionService:
         *,
         parameters: Optional[Mapping[str, Any]] = None,
         timeout_seconds: Optional[int] = None,
+        override: bool = False,
     ) -> ResolvedComponentAction:
         """Run the full validation layer (Milestone 3) without queuing. Raises
         :class:`ComponentActionError` (stable code) on the first failure."""
         return self._validator.validate(
             device, component_id, operation,
-            parameters=parameters, timeout_seconds=timeout_seconds,
+            parameters=parameters, timeout_seconds=timeout_seconds, override=override,
         )
 
     def execute(
@@ -104,6 +105,7 @@ class ComponentActionService:
         created_by: Optional[str],
         parameters: Optional[Mapping[str, Any]] = None,
         timeout_seconds: Optional[int] = None,
+        override: bool = False,
     ) -> ComponentActionResult:
         """Resolve, validate device availability, and queue the action through
         the existing pipeline. Raises :class:`ComponentActionError` on resolution/
@@ -111,7 +113,7 @@ class ComponentActionService:
         (the existing idempotency guard — no duplicate component actions)."""
         resolved = self.resolve_for_device(
             device, component_id, operation,
-            parameters=parameters, timeout_seconds=timeout_seconds,
+            parameters=parameters, timeout_seconds=timeout_seconds, override=override,
         )
         create_in = RemoteActionCreate(
             action_type=resolved.action_type,
@@ -132,6 +134,7 @@ class ComponentActionService:
         effective_permissions,
         parameters: Optional[Mapping[str, Any]] = None,
         timeout_seconds: Optional[int] = None,
+        override: bool = False,
     ) -> list:
         """Apply each (device, component, operation) independently through the
         EXISTING pipeline (Milestone 9). Never raises for a single item's failure
@@ -159,6 +162,7 @@ class ComponentActionService:
                     resolved = self.resolve_for_device(
                         device, component_id, operation,
                         parameters=parameters, timeout_seconds=timeout_seconds,
+                        override=override,
                     )
                 except ComponentActionError as exc:
                     results.append(BulkComponentActionItemResult(

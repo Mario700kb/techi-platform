@@ -44,6 +44,7 @@ from app.platform_core.action_resolver import (
 )
 from app.platform_core.actions import actions_for
 from app.platform_core.policy import policy_for
+from app.services.component_policy_enforcement import ComponentPolicyEnforcer
 
 
 # Execution-timeout bounds for a component action (seconds). Mirrors the queue's
@@ -67,6 +68,7 @@ class ComponentActionValidator:
 
     def __init__(self, db: Session):
         self.db = db
+        self._enforcer = ComponentPolicyEnforcer()
 
     def validate(
         self,
@@ -76,6 +78,7 @@ class ComponentActionValidator:
         *,
         parameters: Optional[Mapping[str, Any]] = None,
         timeout_seconds: Optional[int] = None,
+        override: bool = False,
     ) -> ResolvedComponentAction:
         """Validate and return the resolved action, or raise
         :class:`ComponentActionError` with a stable code on the first failure."""
@@ -95,6 +98,9 @@ class ComponentActionValidator:
 
         # 5. supplied execution timeout (Milestone 8 — timeout handling).
         self._check_timeout(resolved, timeout_seconds)
+
+        # 6. policy enforcement — global/tenant/component/override (Milestone 10).
+        self._check_policy_enforcement(device, resolved, override)
 
         return resolved
 
@@ -143,6 +149,20 @@ class ComponentActionValidator:
             raise ComponentActionError(
                 ComponentActionErrorCode.INVALID_VERSION,
                 f"Version '{version}' is not a valid dotted-numeric version.",
+                component_id=resolved.component_id,
+                operation=resolved.operation.value,
+            )
+
+    def _check_policy_enforcement(
+        self, device: Device, resolved: ResolvedComponentAction, override: bool
+    ) -> None:
+        decision = self._enforcer.decide(
+            resolved.component_id, device, resolved.operation, override=override
+        )
+        if not decision.allowed:
+            raise ComponentActionError(
+                ComponentActionErrorCode.POLICY_DENIED,
+                decision.reason or "Denied by policy.",
                 component_id=resolved.component_id,
                 operation=resolved.operation.value,
             )

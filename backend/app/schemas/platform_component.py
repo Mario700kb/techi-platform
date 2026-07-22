@@ -73,6 +73,10 @@ class ComponentActionRequest(BaseModel):
     # Optional execution timeout (seconds); validated to a sane range. Absent =
     # the queue's default (300s). Milestone 8 — timeout handling.
     timeout_seconds: Optional[int] = None
+    # Request a policy override (Milestone 10). Only honored for an elevated
+    # operator (owner/admin); ignored otherwise. Bypasses soft policy scopes only,
+    # never the hard validation layer (capability/executability).
+    override: bool = False
 
 
 class ComponentActionAccepted(BaseModel):
@@ -127,6 +131,7 @@ class BulkComponentActionRequest(BaseModel):
     targets: List[BulkComponentActionTarget]
     parameters: Optional[Dict[str, Any]] = None
     timeout_seconds: Optional[int] = None
+    override: bool = False  # elevated-operator-only policy override (Milestone 10)
 
 
 class BulkComponentActionItem(BaseModel):

@@ -424,6 +424,27 @@ Body: `device_ids[]` + `targets[]` (`{component_id, operation}`) + optional
 * **Guardrail:** `device_ids × targets ≤ 1000` (400 otherwise). Frontend gets a
   typed `bulkComponentActions()` client.
 
+### Milestone 10 — Policy Enforcement (`component_policy_enforcement.py`)
+
+A new enforcement layer decides whether a component action is permitted by policy,
+composing four scopes most-general-first and returning the FIRST denial
+(fail-closed): **global → tenant → component → override**. It is wired as step 6 of
+the validation layer (M3 explicitly deferred enforcement here).
+
+* **Global** — `GLOBAL_COMPONENT_POLICY`, a kill-switch to freeze all
+  manually-triggered component actions without a deploy.
+* **Tenant** — optional `TENANT_COMPONENT_POLICIES[client_id]`; absent ⇒ inherit
+  global. The enforceable seam for per-tenant rules (no DB table).
+* **Component** — **reads** the STABLE declarative Policy (`policy_for`): a
+  component whose deployment `strategy` isn't `MANUAL` is automation-governed and
+  cannot be triggered by hand. `policy.py` is never modified — only read.
+* **Override** — an explicitly-authorized override (owner/admin only, per-request
+  `override: true`) bypasses the *soft* policy scopes; it never bypasses the hard
+  validation layer (capability/executability).
+
+Denial → `ComponentActionError(POLICY_DENIED)` → **403** with the scope in the
+message. Threaded through single, retry-revalidation, and bulk paths.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

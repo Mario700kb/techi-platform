@@ -248,3 +248,32 @@ def test_retry_missing_action_404():
     client, _ = _client()
     r = client.post("/devices/7/components/actions/9999/retry")
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Policy enforcement (Milestone 10)                                           #
+# --------------------------------------------------------------------------- #
+def test_policy_denied_when_globally_disabled(monkeypatch):
+    import app.services.component_policy_enforcement as pe
+    monkeypatch.setattr(
+        pe, "GLOBAL_COMPONENT_POLICY",
+        pe.ComponentEnforcementPolicy(manual_operations_allowed=False),
+    )
+    client, _ = _client()
+    r = _post(client, "agent", "update")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "policy_denied"
+
+
+def test_elevated_operator_override_bypasses_policy(monkeypatch):
+    import app.services.component_policy_enforcement as pe
+    monkeypatch.setattr(
+        pe, "GLOBAL_COMPONENT_POLICY",
+        pe.ComponentEnforcementPolicy(manual_operations_allowed=False),
+    )
+    client, _ = _client()  # admin operator → override honored
+    r = client.post(
+        "/devices/7/components/agent/actions",
+        json={"operation": "update", "override": True},
+    )
+    assert r.status_code == 200, r.text
