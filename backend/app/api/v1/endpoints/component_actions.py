@@ -38,9 +38,12 @@ from app.schemas.platform_component import (
     ComponentActionHistoryItem,
     ComponentActionHistoryResponse,
     ComponentActionRequest,
+    ComponentMetricsOut,
     ComponentPackageStatusOut,
     ComponentRemediationRequest,
     ComponentRemediationResponse,
+    ComponentTelemetryResponse,
+    OperationMetricsOut,
 )
 from app.schemas.remote_action import RemoteActionResponse
 from app.services.audit_service import AuditAction, audit_log
@@ -283,6 +286,45 @@ def component_action_history(
             )
         )
     return ComponentActionHistoryResponse(device_id=device_id, items=items)
+
+
+@router.get(
+    "/devices/{device_id}/components/telemetry",
+    response_model=ComponentTelemetryResponse,
+)
+def component_telemetry(
+    *,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+    limit: int = Query(default=500, le=2000),
+):
+    """Per-component action telemetry for a device (Milestone 13): metrics,
+    duration, failures, success rate, and per-operation statistics. Read-only
+    aggregation over the existing remote_actions store."""
+    _get_device_scoped(device_id, db, scope)
+    from app.services.component_telemetry_service import ComponentTelemetryService
+
+    metrics = ComponentTelemetryService(db).for_device(device_id, limit=limit)
+    components = [
+        ComponentMetricsOut(
+            component_id=m.component_id,
+            total=m.total, succeeded=m.succeeded, failed=m.failed,
+            in_progress=m.in_progress, cancelled=m.cancelled,
+            success_rate=m.success_rate, avg_duration_seconds=m.avg_duration_seconds,
+            operations=[
+                OperationMetricsOut(
+                    operation=o.operation, total=o.total, succeeded=o.succeeded,
+                    failed=o.failed, in_progress=o.in_progress, cancelled=o.cancelled,
+                    success_rate=o.success_rate, avg_duration_seconds=o.avg_duration_seconds,
+                )
+                for o in m.operations
+            ],
+        )
+        for m in metrics
+    ]
+    return ComponentTelemetryResponse(device_id=device_id, components=components)
 
 
 @router.get(

@@ -488,6 +488,22 @@ validation + policy-enforcement (M10) + permission gates. Endpoint
 Result carries the plan (operation/reason/versions) and the queued action when it
 acted. Frontend gets `remediateComponent()`.
 
+### Milestone 13 — Telemetry (`component_telemetry_service.py`)
+
+Read-only aggregation over the **existing** `remote_actions` store — no new
+storage, no counters to keep in sync. Reusing the same attribution seam as History
+(`ComponentActionService.attribute`), it groups a device's actions by component and
+operation and derives, per component **and** per operation:
+
+* **Metrics** — total / succeeded / failed / in-progress / cancelled counts
+* **Failures** — the failed count (failed + expired)
+* **Success rate** — succeeded / (succeeded + failed), `null` when neither
+* **Duration** — average wall-clock seconds over completed actions
+* **Operation statistics** — the same metrics broken down per lifecycle operation
+
+`GET /devices/{id}/components/telemetry` (scope-checked, `limit ≤ 2000`). Frontend
+gets `getComponentTelemetry()`.
+
 ## 11. Status
 
 - **Backend foundation:** implemented (`components.py`, read API `GET

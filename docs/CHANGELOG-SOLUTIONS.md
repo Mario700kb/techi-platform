@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-22] Platform Components — Operational · Milestone 13: Telemetry (NOT deployed)
+
+Agregim read-only mbi store-in **ekzistues** `remote_actions` — pa storage të ri, pa counter-a
+për të mbajtur në sinkron. Ripërdor të njëjtin seam atribuimi si History.
+
+**Shtuar:** `services/component_telemetry_service.py` — grupim i veprimeve sipas komponentit dhe
+operacionit, me metrics per-komponent **dhe** per-operacion: total/succeeded/failed/in_progress/
+cancelled, failures, success_rate (succeeded/(succeeded+failed), null kur asnjë), avg_duration_seconds
+(mbi veprimet completed), statistika per-operacion.
+- `GET /devices/{id}/components/telemetry` (scope-checked, `limit ≤ 2000`) + schema.
+- FE: `getComponentTelemetry()` + tipat.
+
+**Tests:** `tests/test_component_telemetry.py` (4 raste: agregim per-komponent/operacion me durim,
+injorim i veprimeve jo-komponent, success_rate=null kur in-progress, endpoint shape). Backend full
+suite: **917 passed** (4 baseline); frontend tsc clean. NOT deployed.
+
 ## [2026-07-22] Platform Components — Operational · Milestone 12: Auto Remediation (NOT deployed)
 
 Zbulon një komponent të pashëndetshëm dhe, **nëse policy e lejon**, e riparon duke radhitur

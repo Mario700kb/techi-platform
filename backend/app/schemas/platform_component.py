@@ -189,3 +189,36 @@ class ComponentRemediationResponse(BaseModel):
     outdated: bool = False
     action: Optional[RemoteActionResponse] = None
     error: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Telemetry (Operational — M13). Read-only aggregation over the existing         #
+# remote_actions store: metrics, duration, failures, success rate, per-operation.#
+# --------------------------------------------------------------------------- #
+class OperationMetricsOut(BaseModel):
+    operation: str
+    total: int
+    succeeded: int
+    failed: int
+    in_progress: int
+    cancelled: int
+    success_rate: Optional[float] = None       # succeeded / (succeeded + failed)
+    avg_duration_seconds: Optional[float] = None
+
+
+class ComponentMetricsOut(BaseModel):
+    component_id: str
+    total: int
+    succeeded: int
+    failed: int
+    in_progress: int
+    cancelled: int
+    success_rate: Optional[float] = None
+    avg_duration_seconds: Optional[float] = None
+    operations: List[OperationMetricsOut]
+
+
+class ComponentTelemetryResponse(BaseModel):
+    schema_version: int = 1
+    device_id: int
+    components: List[ComponentMetricsOut]

@@ -272,6 +272,48 @@ export async function remediateComponent(
   );
 }
 
+// Component action telemetry (GET /devices/{id}/components/telemetry). Read-only
+// aggregation over the existing actions: metrics, duration, failures, success
+// rate, per-operation statistics.
+export interface OperationMetrics {
+  operation: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  in_progress: number;
+  cancelled: number;
+  success_rate: number | null;
+  avg_duration_seconds: number | null;
+}
+
+export interface ComponentMetrics {
+  component_id: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  in_progress: number;
+  cancelled: number;
+  success_rate: number | null;
+  avg_duration_seconds: number | null;
+  operations: OperationMetrics[];
+}
+
+export interface ComponentTelemetryResponse {
+  schema_version: number;
+  device_id: number;
+  components: ComponentMetrics[];
+}
+
+export async function getComponentTelemetry(
+  deviceId: number,
+  limit?: number,
+): Promise<ComponentTelemetryResponse> {
+  const qs = limit ? `?limit=${limit}` : "";
+  return fetchJson<ComponentTelemetryResponse>(
+    `/api/v1/devices/${deviceId}/components/telemetry${qs}`,
+  );
+}
+
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
 // generic renderer needs comes from the Platform / Capability / Action / Connect
 // registries — no per-platform UI. CORE-gated (404 when off).
