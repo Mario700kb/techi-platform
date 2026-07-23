@@ -173,9 +173,10 @@ def test_installers_stop_the_runtime_by_pid():
         assert "$_.ExecutablePath -like '*\\RustDesk\\*'" in text
 
 
-def test_bootstrap_msi_can_stop_the_runtime_on_a_fresh_install():
-    """On a fresh install techi-agent.exe does not exist before InstallFiles, so
-    the pre-install stop needs a fallback -- still PID-targeted, never /IM."""
+def test_pre_install_stop_is_self_contained_and_pid_targeted():
+    """KillTechiRSBeforeInstall must stop RS without invoking the agent binary
+    (the old-binary fall-through hang), PID-targeted and path-validated, never
+    /IM, and bounded — so it can run on any pre-existing agent version safely."""
     import xml.etree.ElementTree as ET
 
     ns = {"w": "http://wixtoolset.org/schemas/v4/wxs"}
@@ -186,8 +187,61 @@ def test_bootstrap_msi_can_stop_the_runtime_on_a_fresh_install():
     ]
     assert actions, "KillTechiRSBeforeInstall custom action must exist"
     command = actions[0].get("ExeCommand", "")
-    assert "stop-remote-support-runtime" in command
-    assert "if exist" in command
+    assert "techi-agent.exe" not in command          # no agent-binary dependency
+    assert "if exist" not in command                 # no old-binary branch
     assert "Stop-Process -Id $_.ProcessId" in command
     assert "$_.ExecutablePath -like '*\\TECHI Remote Support\\*'" in command
+    assert "Start-Job" in command and "-Timeout" in command
     assert "/IM" not in command
+
+
+# --------------------------------------------------------------------------- #
+# MSI custom-action hang fix (stop-remote-support-runtime)                     #
+# --------------------------------------------------------------------------- #
+
+MAIN_GO = ROOT / "agent" / "main.go"
+
+
+def _installer_wxs() -> str:
+    return INSTALLER_WXS.read_text(encoding="utf-8")
+
+
+def test_kill_rs_custom_actions_do_not_invoke_the_agent_binary():
+    """Root cause of the >1h msiexec hang: the KillTechiRS* custom actions invoked
+    'techi-agent.exe stop-remote-support-runtime' on the PRE-EXISTING binary; an
+    agent older than the subcommand fell through into the normal agent loop and
+    never exited, blocking the synchronous custom action. The stop must be
+    self-contained (no agent binary)."""
+    import xml.etree.ElementTree as ET
+
+    ns = {"w": "http://wixtoolset.org/schemas/v4/wxs"}
+    root = ET.parse(INSTALLER_WXS).getroot()
+    actions = {
+        ca.get("Id"): ca.get("ExeCommand", "")
+        for ca in root.findall(".//w:CustomAction", ns)
+        if ca.get("Id") in ("KillTechiRS", "KillTechiRSBeforeInstall")
+    }
+    assert set(actions) == {"KillTechiRS", "KillTechiRSBeforeInstall"}
+    for cmd in actions.values():
+        assert "techi-agent.exe" not in cmd, "kill action must not invoke the agent binary"
+        # Bounded: Start-Job + Wait-Job -Timeout, and logs to deploy.log.
+        assert "Start-Job" in cmd and "Wait-Job" in cmd and "-Timeout" in cmd
+        assert "deploy.log" in cmd
+        # Stops, never deletes, the managed service (don't disrupt healthy RS).
+        assert "'stop','TECHI Remote Support'" in cmd
+        assert "sc delete" not in cmd.lower()
+
+
+def test_dispatch_handles_stop_subcommand_before_the_agent_loop():
+    src = MAIN_GO.read_text(encoding="utf-8")
+    run_agent = src.index("runAgent(ctx")
+    for sub in ('case "stop-remote-support-runtime":', 'case "remove-tray-artifacts", "rs-tray-task":'):
+        assert sub in src
+        assert src.index(sub) < run_agent, f"{sub} must dispatch before the agent loop"
+
+
+def test_maintenance_subcommands_are_bounded():
+    boot = BOOTSTRAP_WINDOWS.read_text(encoding="utf-8")
+    assert "func boundedOneShot(" in (ROOT / "agent" / "boundedoneshot.go").read_text(encoding="utf-8")
+    assert 'runBoundedOneShot("[stop-remote-support-runtime]"' in boot
+    assert 'runBoundedOneShot("[remove-tray-artifacts]"' in boot

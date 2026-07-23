@@ -24,7 +24,31 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// maintenanceCommandBudget bounds every one-shot maintenance subcommand. These
+// run as SYNCHRONOUS MSI custom actions (msiexec waits for the process to exit),
+// so an unbounded command blocks the whole install and locks Windows Installer.
+// main() dispatches these via os.Exit(...), which terminates the process and any
+// goroutine still stuck in a syscall, so returning from runBoundedOneShot always
+// ends the process even if the work function never completes.
+const maintenanceCommandBudget = 60 * time.Second
+
+// runBoundedOneShot runs work under maintenanceCommandBudget (via the pure,
+// cross-platform boundedOneShot) and logs start / result / timeout to
+// deploy.log. Returns a deterministic exit code: work's own on completion, or 2
+// on timeout.
+func runBoundedOneShot(tag string, limit time.Duration, work func() int) int {
+	writeDeployLog(tag, "start")
+	code, timedOut := boundedOneShot(limit, 2, work)
+	if timedOut {
+		writeDeployLog(tag, fmt.Sprintf("TIMEOUT after %s — exiting 2", limit))
+	} else {
+		writeDeployLog(tag, fmt.Sprintf("done exit=%d", code))
+	}
+	return code
+}
 
 // runBootstrapConfigCommand mirrors the old WriteAgentConfig custom action:
 // create C:\ProgramData\TECHI\logs and agent.config.json, but only when the
@@ -101,9 +125,11 @@ func runBootstrapConfigCommand(args []string) int {
 // converges them onto the supported architecture instead of re-registering the
 // task. New callers must use `remove-tray-artifacts`.
 func runRemoveTrayArtifactsCommand() int {
-	removal := removeManagedTrayArtifacts()
-	writeDeployLog("[remove-tray-artifacts]", "deprecated tray startup removed: "+removal.Summary())
-	return 0
+	return runBoundedOneShot("[remove-tray-artifacts]", maintenanceCommandBudget, func() int {
+		removal := removeManagedTrayArtifacts()
+		writeDeployLog("[remove-tray-artifacts]", "deprecated tray startup removed: "+removal.Summary())
+		return 0
+	})
 }
 
 // runStopRemoteSupportRuntimeCommand implements `stop-remote-support-runtime`:
@@ -112,7 +138,9 @@ func runRemoveTrayArtifactsCommand() int {
 // `taskkill /F /IM "TECHI Remote Support.exe"` the MSI custom actions ran, which
 // killed every process sharing the executable name.
 func runStopRemoteSupportRuntimeCommand() int {
-	stopped := stopRemoteSupportRuntimeByPID()
-	writeDeployLog("[stop-remote-support-runtime]", fmt.Sprintf("service stopped, %d process(es) terminated by pid", stopped))
-	return 0
+	return runBoundedOneShot("[stop-remote-support-runtime]", maintenanceCommandBudget, func() int {
+		stopped := stopRemoteSupportRuntimeByPID()
+		writeDeployLog("[stop-remote-support-runtime]", fmt.Sprintf("service stopped, %d process(es) terminated by pid", stopped))
+		return 0
+	})
 }

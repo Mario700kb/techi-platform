@@ -386,36 +386,35 @@
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- KillTechiRS: ndal runtime-in para fshirjes (uninstall) ose para InstallFiles
-         (fresh install/upgrade — shih KillTechiRSBeforeInstall). Pa kete, InstallFiles
-         deshtonte te mbishkruante librustdesk.dll/flutter_windows.dll/data\* sepse RS
-         eshte gjithmone ne xhirim — kjo dyshohet te jete shkaku i PC-ve qe mbeten offline
-         pas dështimit te upgrade 2.0.0 -> 2.1.0 (deshtimi i InstallFiles mund te rrezoje
-         e gjithe transaksioni MSI, perfshire upgrade-in e vete agent-it).
-         NUK perdoret me "taskkill /IM": vriste cdo proces me te njejtin emer executable.
-         Tani ndalimi behet me PID nga vete agent-i (stop-remote-support-runtime):
-         ndal service-in me SCM, pastaj mbyll proceset e Remote Support nje e nga nje. -->
+    <!-- KillTechiRS: ndal runtime-in RS para RemoveFiles (uninstall). Pa kete, RemoveFiles
+         s'i heq dot librustdesk.dll/flutter_windows.dll/data\* sepse RS eshte ne xhirim.
+         NUK therr me techi-agent.exe: nje agent i VJETER (para 2.1.17, pa nen-komanden
+         stop-remote-support-runtime) do te binte ne loop-in normal (runAgent) dhe s'do
+         te dilte kurre, duke bllokuar msiexec-in (deferred CA eshte SINKRON). Tani ndalimi
+         behet me PowerShell i vetefaqësuar: mbyll proceset RS me PID (path-validated, jo
+         me emer executable te verber), pastaj 'sc stop' (JO fshirje — s'e prish service-in
+         e shendetshem). I kufizuar me Start-Job/Wait-Job -Timeout; logon start/done/timeout. -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="cmd.exe /d /c &quot;&quot;[INSTALLFOLDER]techi-agent.exe&quot; stop-remote-support-runtime&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' [KillTechiRS] '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- KillTechiRSBeforeInstall: njesoj si KillTechiRS, por para InstallFiles — mbulon
-         fresh install (no-op, asnje proces s'ekziston) dhe upgrade (kritike, shih komenti
-         siper). Dy CustomAction te ndara sepse i njejti Id s'mund te skedulohet dy here.
-         "sc delete" e service-it "TECHI Remote Support" eshte gjithashtu e qellimshme: agent-i
-         (rustdesk_manage.go: ensureRustDeskService) e rikrijon vete ne heartbeat-in e pare pas
-         instalimit, me binPath-in dhe argumentet aktuale; duke e fshire pare, evitojme nje
-         "sc create" me binPath te vjeter/gabuar te mbijetoje nje upgrade qe ndryshon shtegun. -->
-    <!-- Ndalimi behet me PID, jo me "taskkill /IM". Ne nje instalim FRESH, agent-i
-         ende s'ekziston ne kete pike (InstallFiles s'ka xhiruar), prandaj ka nje
-         fallback ne PowerShell qe ndalon po ashtu me PID (Stop-Process -Id) —
-         nevojitet kur nje makine me RS legacy ne xhirim instalohet per here te pare. -->
+    <!-- KillTechiRSBeforeInstall: para InstallFiles (fresh + upgrade), qe RS te mos i mbaje
+         te bllokuara file-t qe ky MSI shkruan ne REMOTESUPPORTFOLDER.
+         RREGULLIM KRITIK (bug-u i hang-ut te msiexec): me pare kjo therriste
+         techi-agent.exe stop-remote-support-runtime; nje agent i VJETER (2.1.6 ne pilot)
+         s'e njeh kete nen-komande, bie ne loop-in normal runAgent dhe s'del kurre — deferred
+         CA eshte sinkron, ndaj msiexec ngriu >1 ore dhe Windows Installer mbeti i kyçur.
+         Tani ndalimi eshte i PAVARUR nga binari i agent-it: PowerShell i vetefaqësuar qe
+         mbyll proceset RS me PID (path-validated) dhe ben vetem 'sc stop' (JO 'sc delete' —
+         s'e fshin service-in e shendetshem ne çdo upgrade). I kufizuar me Start-Job/Wait-Job
+         -Timeout dhe logohet ne C:\ProgramData\TechiAgent\deploy.log. Return='ignore': deshtimi
+         i ndalimit s'e ndal MSI-n (vazhdon i sigurt; InstallFiles ka FileInUse handling). -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="cmd.exe /d /c if exist &quot;[INSTALLFOLDER]techi-agent.exe&quot; (&quot;[INSTALLFOLDER]techi-agent.exe&quot; stop-remote-support-runtime) else (powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }&quot;) &amp; sc delete &quot;TECHI Remote Support&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' [KillTechiRSBeforeInstall] '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
