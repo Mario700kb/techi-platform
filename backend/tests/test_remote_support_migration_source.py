@@ -46,6 +46,39 @@ def test_discovery_prefers_msi_product_version_and_reports_conflict():
     assert '"tray_only"' in text
 
 
+def test_discovery_uses_the_current_product_code_and_keeps_the_old_one_as_legacy():
+    """Field fix: the agent searched for the obsolete ProductCode while the
+    installed MSI registered under a new one. The current ProductCode is now the
+    primary lookup; the obsolete one is retained only as a legacy fallback."""
+    text = _discovery()
+    assert 'managedRemoteSupportProductCode = "{528FACDB-7405-40F2-B8D5-F316F516FBB4}"' in text
+    assert "legacyRemoteSupportProductCodes" in text
+    # The obsolete ProductCode must survive ONLY inside the legacy list, never as
+    # the managed constant.
+    assert 'managedRemoteSupportProductCode = "{74CEDF4A' not in text
+    assert "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}" in text
+
+
+def test_discovery_logging_is_clean_and_non_misleading():
+    text = _discovery()
+    # The canonical success line.
+    assert "TECHI Remote Support MSI found ProductCode=" in text
+    # The informational-only executable fallback (not an error).
+    assert "MSI registration missing, using executable semantic version" in text
+    # The misleading warnings are gone.
+    assert "falling back to ARP name scan" not in text
+    assert "no managed Remote Support MSI registration found" not in text
+
+
+def test_discovery_has_an_in_process_registry_reader_on_windows():
+    """The reg.exe DisplayName scan proved unreliable in the field; Windows now
+    reads the uninstall registry in-process."""
+    reg = (ROOT / "agent" / "rustdesk_registry_windows.go").read_text(encoding="utf-8")
+    assert "winRegDisplayVersionForProductCode" in reg
+    assert "winRegScanRemoteSupportByDisplayName" in reg
+    assert "golang.org/x/sys/windows/registry" in reg
+
+
 # --------------------------------------------------------------------------- #
 # Tray deprecation (Phase 2): the agent may only REMOVE tray startup.          #
 # --------------------------------------------------------------------------- #

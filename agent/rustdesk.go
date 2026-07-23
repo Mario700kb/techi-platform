@@ -232,7 +232,9 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	version, source := remoteSupportReportedVersion(msi, fileVersion)
 	info.Version = version
 	if source == "file_version" {
-		log.Printf("[rustdesk] no managed MSI registration for %s — reporting executable --version %q (app semantic version, NOT MSI ProductVersion)", installPath, version)
+		// Informational only, NOT an error: the exe exists but no uninstall
+		// registration was found, so we report the app's semantic --version.
+		log.Printf("[rustdesk] MSI registration missing, using executable semantic version %q (informational)", version)
 	}
 
 	info.Status = rustDeskWindowsStatus(msi.Version != "")
@@ -636,10 +638,23 @@ type remoteSupportMSIRegistration struct {
 // successfully) instead of opening with a registry-wide text search, which was
 // silently returning nothing and degrading the reported version into the app's
 // semantic-version namespace.
-const managedRemoteSupportProductCode = "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}"
+const managedRemoteSupportProductCode = "{528FACDB-7405-40F2-B8D5-F316F516FBB4}"
 
-// Indirection points so the discovery ORDER (ProductCode first, ARP name scan
-// only as fallback) is testable without a Windows registry.
+// legacyRemoteSupportProductCodes are ProductCodes the branded MSI shipped under
+// in earlier builds. They are checked AFTER the current ProductCode so an
+// endpoint still carrying an older registration is discovered without a name
+// scan. The branded MSI regenerates its ProductCode on every build (no fixed
+// ProductCode in remote-support.wxs), so this list is best-effort compatibility
+// only -- the DisplayName scan below is the authoritative, code-independent path.
+var legacyRemoteSupportProductCodes = []string{
+	"{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
+}
+
+// Indirection points so the discovery ORDER (ProductCode first, then DisplayName
+// scan) is testable without a Windows registry. On Windows these are replaced at
+// init() with in-process registry reads (rustdesk_registry_windows.go); off
+// Windows they remain the reg.exe implementations below (which the unit tests
+// override directly).
 var (
 	uninstallDisplayVersionLookup    = queryUninstallDisplayVersion
 	arpRemoteSupportRegistrationScan = scanARPForRemoteSupportRegistration
@@ -652,31 +667,58 @@ func remoteSupportFullMSIPaths() []string {
 	}
 }
 
-// detectRemoteSupportMSIRegistration resolves the managed MSI registration,
-// ProductCode first. Every failure branch is logged: a lookup that finds nothing
-// must be visible, never silently absorbed into a semantic-version fallback.
+// detectRemoteSupportMSIRegistration resolves the managed MSI registration in a
+// ProductCode-independent way, so a rebuilt MSI (which regenerates its
+// ProductCode) is still discovered. Order:
+//
+//	1. an explicit ProductCode supplied by the caller (e.g. the deploy action);
+//	2. the current managed ProductCode, then any legacy ProductCodes;
+//	3. a DisplayName scan of the uninstall registry ("TECHI Remote Support"),
+//	   which reads back whatever ProductCode is actually registered;
+//	4. nothing found -> empty (the caller falls back to the executable
+//	   --version, an informational-only path).
+//
+// Only a genuine result or a genuine absence is logged -- there are no
+// "falling back" warnings for the normal case where an entry exists.
 func detectRemoteSupportMSIRegistration(productGUID string) remoteSupportMSIRegistration {
-	guid := strings.TrimSpace(productGUID)
-	if guid == "" {
-		guid = managedRemoteSupportProductCode
+	// 1. Caller-supplied ProductCode (honoured first when present).
+	candidates := []string{}
+	if guid := strings.TrimSpace(productGUID); guid != "" {
+		candidates = append(candidates, guid)
 	}
-	if version := uninstallDisplayVersionLookup(guid); version != "" {
-		return remoteSupportMSIRegistration{ProductCode: guid, Version: version}
-	}
-	log.Printf("[rustdesk] ProductCode %s has no DisplayVersion in the uninstall registry — falling back to ARP name scan", guid)
+	// 2. Current ProductCode, then legacy ProductCodes.
+	candidates = append(candidates, managedRemoteSupportProductCode)
+	candidates = append(candidates, legacyRemoteSupportProductCodes...)
 
+	for _, guid := range candidates {
+		if version := uninstallDisplayVersionLookup(guid); version != "" {
+			logRemoteSupportMSIFound(guid, version)
+			return remoteSupportMSIRegistration{ProductCode: guid, Version: version}
+		}
+	}
+
+	// 3. ProductCode-independent DisplayName scan. Reads back the ProductCode
+	//    actually registered and uses it as the managed registration.
 	registration := arpRemoteSupportRegistrationScan()
-	if registration.Version == "" {
-		log.Printf("[rustdesk] no managed Remote Support MSI registration found (ProductCode lookup and ARP name scan both failed)")
+	if registration.Version != "" {
+		logRemoteSupportMSIFound(registration.ProductCode, registration.Version)
 		return registration
 	}
-	log.Printf("[rustdesk] managed MSI found by ARP name scan: ProductCode=%s DisplayVersion=%s", registration.ProductCode, registration.Version)
-	return registration
+
+	// 4. Genuinely not registered.
+	log.Printf("[rustdesk] TECHI Remote Support MSI not registered in the uninstall registry (no ProductCode or DisplayName match)")
+	return remoteSupportMSIRegistration{}
 }
 
-// scanARPForRemoteSupportRegistration is the fallback: a registry-wide
-// Add/Remove-Programs search by DisplayName. Only used when the ProductCode
-// lookup above finds nothing (e.g. an MSI rebuilt with a new ProductCode).
+// logRemoteSupportMSIFound emits the single, canonical success line for a
+// resolved managed MSI registration.
+func logRemoteSupportMSIFound(productCode, version string) {
+	log.Printf("[rustdesk] TECHI Remote Support MSI found ProductCode=%s DisplayVersion=%s", productCode, version)
+}
+
+// scanARPForRemoteSupportRegistration is the cross-platform (reg.exe) DisplayName
+// scan, used off Windows and as the unit-test seam. On Windows the in-process
+// registry scan in rustdesk_registry_windows.go replaces it at init().
 func scanARPForRemoteSupportRegistration() remoteSupportMSIRegistration {
 	for _, root := range []string{
 		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`,

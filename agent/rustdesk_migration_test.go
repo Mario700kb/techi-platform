@@ -84,6 +84,97 @@ func TestDiscoveryLooksUpManagedProductCodeFirst(t *testing.T) {
 	}
 }
 
+// TestManagedProductCodeIsTheCurrentRegistration pins the current MSI's
+// ProductCode as the primary lookup, with the obsolete one demoted to the legacy
+// fallback list (the field bug: the agent searched for {74CEDF4A…} while the
+// installed MSI registered under {528FACDB…}).
+func TestManagedProductCodeIsTheCurrentRegistration(t *testing.T) {
+	if managedRemoteSupportProductCode != "{528FACDB-7405-40F2-B8D5-F316F516FBB4}" {
+		t.Fatalf("current ProductCode = %q, want {528FACDB-7405-40F2-B8D5-F316F516FBB4}", managedRemoteSupportProductCode)
+	}
+	found := false
+	for _, guid := range legacyRemoteSupportProductCodes {
+		if guid == "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}" {
+			found = true
+		}
+		if guid == managedRemoteSupportProductCode {
+			t.Fatalf("the current ProductCode must not also be in the legacy list")
+		}
+	}
+	if !found {
+		t.Fatal("the obsolete {74CEDF4A…} ProductCode must be retained as a legacy fallback")
+	}
+}
+
+// TestDiscoveryFallsBackToLegacyProductCode: the current ProductCode misses but a
+// legacy one is registered → discovered without a DisplayName scan.
+func TestDiscoveryFallsBackToLegacyProductCode(t *testing.T) {
+	restoreLookup := uninstallDisplayVersionLookup
+	restoreScan := arpRemoteSupportRegistrationScan
+	defer func() {
+		uninstallDisplayVersionLookup = restoreLookup
+		arpRemoteSupportRegistrationScan = restoreScan
+	}()
+
+	legacy := legacyRemoteSupportProductCodes[0]
+	var queried []string
+	uninstallDisplayVersionLookup = func(guid string) string {
+		queried = append(queried, guid)
+		if guid == legacy {
+			return "1.4.6.0"
+		}
+		return ""
+	}
+	arpRemoteSupportRegistrationScan = func() remoteSupportMSIRegistration {
+		t.Fatal("DisplayName scan must not run when a legacy ProductCode resolves")
+		return remoteSupportMSIRegistration{}
+	}
+
+	msi := detectRemoteSupportMSIRegistration("")
+
+	if msi.ProductCode != legacy || msi.Version != "1.4.6.0" {
+		t.Fatalf("registration = %+v, want ProductCode=%s Version=1.4.6.0", msi, legacy)
+	}
+	// The current ProductCode must have been tried BEFORE the legacy one.
+	if len(queried) < 2 || queried[0] != managedRemoteSupportProductCode || queried[1] != legacy {
+		t.Fatalf("query order = %v, want [current, legacy…]", queried)
+	}
+}
+
+// TestDiscoveryHonoursAnExplicitCallerProductCode: a ProductCode passed by the
+// caller (e.g. the deploy action) is tried first.
+func TestDiscoveryHonoursAnExplicitCallerProductCode(t *testing.T) {
+	restoreLookup := uninstallDisplayVersionLookup
+	restoreScan := arpRemoteSupportRegistrationScan
+	defer func() {
+		uninstallDisplayVersionLookup = restoreLookup
+		arpRemoteSupportRegistrationScan = restoreScan
+	}()
+
+	var first string
+	uninstallDisplayVersionLookup = func(guid string) string {
+		if first == "" {
+			first = guid
+		}
+		if guid == "{CALLER-GUID}" {
+			return "9.9.9.9"
+		}
+		return ""
+	}
+	arpRemoteSupportRegistrationScan = func() remoteSupportMSIRegistration {
+		return remoteSupportMSIRegistration{}
+	}
+
+	msi := detectRemoteSupportMSIRegistration("{CALLER-GUID}")
+
+	if first != "{CALLER-GUID}" {
+		t.Fatalf("first lookup = %q, want the caller-supplied ProductCode first", first)
+	}
+	if msi.Version != "9.9.9.9" {
+		t.Fatalf("Version = %q, want 9.9.9.9", msi.Version)
+	}
+}
+
 func TestDiscoveryFallsBackToARPScanOnlyWhenProductCodeMisses(t *testing.T) {
 	restoreLookup := uninstallDisplayVersionLookup
 	restoreScan := arpRemoteSupportRegistrationScan
