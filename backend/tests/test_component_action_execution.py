@@ -106,6 +106,36 @@ def test_enriched_payload_merges_package_and_operator_params():
     assert payload2["target_sha256"] == "abc"       # enrichment fills the gap
 
 
+def test_drawer_agent_self_update_queues_complete_payload_with_download_url(monkeypatch):
+    """Regression: the Device Drawer's Update queued a partial payload
+    ({version,target_sha256}) with no download_url, so the agent failed with
+    "self_update: missing 'download_url' parameter". It must now queue the SAME
+    complete payload Command Center does — via the one shared builder."""
+    db = _db()
+    svc = ComponentActionService(db)
+
+    def fake_builder(devices):
+        payload = {
+            "download_url": "https://api.example.test/api/v1/agent-packages/agent-binary/download",
+            "version": "2.1.18",
+            "sha256": "abc123",
+        }
+        return payload, {devices[0].id: dict(payload)}
+
+    monkeypatch.setattr(
+        "app.services.agent_command_service.AgentCommandService._build_self_update_payloads",
+        staticmethod(fake_builder),
+    )
+
+    result = svc.execute(_device(db), "agent", "update", created_by="mario")
+
+    payload = result.action.payload_dict
+    assert result.action.action_type == "self_update"
+    assert payload["download_url"].endswith("/agent-binary/download")
+    assert payload["version"] == "2.1.18"
+    assert payload["sha256"] == "abc123"
+
+
 def test_remote_support_repair_queues_with_resolved_msi_package(monkeypatch):
     db = _db()
     svc = ComponentActionService(db)

@@ -92,7 +92,7 @@ class ComponentActionService:
         gaps so self_update/deploy target the Desired package; operator params win.
         Inert (returns the operator payload) when no active package exists."""
         enrichment = self._packages.enrichment_for(
-            resolved.component_id, device.platform, resolved.operation
+            resolved.component_id, device, resolved.operation
         )
         base = dict(resolved.payload)
         if not enrichment:

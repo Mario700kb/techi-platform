@@ -130,15 +130,27 @@ class ComponentPackageService:
         )
 
     def enrichment_for(
-        self, component_id: str, device_platform: Optional[str], operation: LifecycleOperation
+        self, component_id: str, device: Any, operation: LifecycleOperation
     ) -> Dict[str, Any]:
-        """Payload fields to inject for a version-changing operation: the active
-        package's ``version`` (+ ``target_sha256`` when known). Empty dict for
-        non-version-changing ops or when no active package exists (inert)."""
+        """Payload fields to inject for a version-changing operation.
+
+        * agent + self_update -> the COMPLETE self_update payload
+          (download_url/version/sha256), built by the SINGLE source of truth
+          shared with Command Center (see :meth:`_agent_self_update_enrichment`).
+        * remote_support -> the full MSI deploy payload.
+        * anything else version-changing -> the active package's ``version``
+          (+ ``target_sha256`` when known).
+
+        Empty dict for non-version-changing ops or when no active package exists
+        (inert). Accepts either a ``Device`` (real callers) or a bare platform
+        string (the remote_support/generic unit-test seams)."""
+        device_platform = getattr(device, "platform", device)
         if component_id == "remote_support" and operation in REMOTE_SUPPORT_PACKAGE_OPERATIONS:
             return self._remote_support_msi_enrichment(device_platform, operation)
         if operation not in VERSION_CHANGING_OPERATIONS:
             return {}
+        if component_id == "agent":
+            return self._agent_self_update_enrichment(device)
         package = self.active_package(component_id, device_platform)
         if package is None:
             return {}
@@ -146,6 +158,29 @@ class ComponentPackageService:
         if package.sha256:
             enrichment["target_sha256"] = package.sha256
         return enrichment
+
+    @staticmethod
+    def _agent_self_update_enrichment(device: Any) -> Dict[str, Any]:
+        """Reuse the EXACT self_update payload builder Command Center uses, so the
+        Device Drawer's Update queues the same complete payload
+        (download_url/version/sha256) instead of the partial
+        ``{version, target_sha256}`` that made the agent fail with
+        ``self_update: missing 'download_url' parameter``.
+
+        Inert ({}) when the shared builder cannot produce a payload (e.g. no
+        active agent binary, or a bare platform string in a unit-test seam),
+        preserving this method's prior non-raising contract."""
+        if not hasattr(device, "id"):
+            return {}
+        # Lazy import avoids a module-level cycle (agent_command_service imports
+        # package/schema layers that ultimately reference this module's siblings).
+        from app.services.agent_command_service import AgentCommandService
+
+        try:
+            _default, per_device = AgentCommandService._build_self_update_payloads([device])
+        except ValueError:
+            return {}
+        return dict(per_device.get(device.id, {}))
 
     def _remote_support_msi_enrichment(
         self, device_platform: Optional[str], operation: LifecycleOperation

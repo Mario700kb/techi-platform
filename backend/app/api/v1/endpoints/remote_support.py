@@ -209,7 +209,7 @@ def build_remote_support_deploy_parameters(
     """
     service = packages or ComponentPackageService(db)
     enrichment = service.enrichment_for(
-        "remote_support", device.platform, LifecycleOperation.INSTALL
+        "remote_support", device, LifecycleOperation.INSTALL
     )
     return {
         "msi_url": enrichment["msi_url"],

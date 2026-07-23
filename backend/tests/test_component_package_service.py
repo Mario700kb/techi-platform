@@ -99,20 +99,56 @@ def test_status_combines_state_and_available(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Payload enrichment (version-changing ops only)                              #
 # --------------------------------------------------------------------------- #
-def test_enrichment_injects_version_and_sha_for_update():
-    svc = _svc([_pkg("2.1.14", sha256="deadbeef", active=True)])
-    enrich = svc.enrichment_for("agent", "windows", LifecycleOperation.UPDATE)
-    assert enrich == {"version": "2.1.14", "target_sha256": "deadbeef"}
+def test_agent_self_update_enrichment_reuses_command_center_builder(monkeypatch):
+    """The Drawer's agent self_update must produce the SAME complete payload as
+    Command Center — built by the ONE shared builder — so it includes
+    download_url (the field whose absence broke the Drawer)."""
+    captured = {}
+
+    def fake_builder(devices):
+        captured["devices"] = devices
+        payload = {
+            "download_url": "https://api.example.test/api/v1/agent-packages/agent-binary/download",
+            "version": "2.1.18",
+            "sha256": "abc123",
+        }
+        return payload, {devices[0].id: dict(payload)}
+
+    monkeypatch.setattr(
+        "app.services.agent_command_service.AgentCommandService._build_self_update_payloads",
+        staticmethod(fake_builder),
+    )
+    svc = _svc([_pkg("2.1.18", file_type="agent_binary", sha256="abc123", active=True)])
+    device = SimpleNamespace(id=42, platform="windows", agent_version="2.1.8")
+
+    enrich = svc.enrichment_for("agent", device, LifecycleOperation.UPDATE)
+
+    assert enrich["download_url"].endswith("/agent-binary/download")
+    assert enrich["version"] == "2.1.18"
+    assert enrich["sha256"] == "abc123"
+    # It genuinely delegated to the shared builder for THIS device.
+    assert captured["devices"][0].id == 42
+
+
+def test_agent_self_update_enrichment_inert_when_builder_cannot_build(monkeypatch):
+    """No active binary (or legacy bridge missing) -> shared builder raises;
+    enrichment stays inert ({}) rather than introducing a new failure path."""
+
+    def boom(devices):
+        raise ValueError("No active agent binary package")
+
+    monkeypatch.setattr(
+        "app.services.agent_command_service.AgentCommandService._build_self_update_payloads",
+        staticmethod(boom),
+    )
+    svc = _svc([])
+    device = SimpleNamespace(id=7, platform="windows", agent_version="2.1.18")
+    assert svc.enrichment_for("agent", device, LifecycleOperation.UPDATE) == {}
 
 
 def test_enrichment_empty_for_non_version_changing_op():
     svc = _svc([_pkg("2.1.14", active=True)])
     assert svc.enrichment_for("agent", "windows", LifecycleOperation.RESTART) == {}
-
-
-def test_enrichment_empty_when_no_active_package():
-    svc = _svc([_pkg("2.1.14", active=False)])
-    assert svc.enrichment_for("agent", "windows", LifecycleOperation.UPDATE) == {}
 
 
 def test_remote_support_enrichment_injects_msi_metadata(monkeypatch):
