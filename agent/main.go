@@ -21,8 +21,14 @@ func main() {
 			os.Exit(runWatchdogCheckCommand())
 		case "bootstrap-config":
 			os.Exit(runBootstrapConfigCommand(os.Args[2:]))
-		case "rs-tray-task":
-			os.Exit(runRSTrayTaskCommand())
+		// Removes the deprecated tray startup. "rs-tray-task" is a DEPRECATED
+		// alias kept only because MSIs already deployed in the field invoke that
+		// name -- dropping it would leave those custom actions falling through
+		// into a normal agent start. It performs removal too; it never creates.
+		case "remove-tray-artifacts", "rs-tray-task":
+			os.Exit(runRemoveTrayArtifactsCommand())
+		case "stop-remote-support-runtime":
+			os.Exit(runStopRemoteSupportRuntimeCommand())
 		}
 	}
 

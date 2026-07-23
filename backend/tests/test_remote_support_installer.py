@@ -46,15 +46,51 @@ def test_remote_support_installer_ships_remote_support_runtime():
     assert "ApplyTechiRemoteSupportConfigFinal" in text
 
 
-def test_remote_support_helper_manages_only_remote_support_service_and_tray():
+def test_remote_support_helper_installs_the_service_and_never_a_tray():
+    """Case A: a fresh managed install creates the service and NO tray task."""
     helper = _helper_text()
     assert "$serviceName = 'TECHI Remote Support'" in helper
-    assert "$taskName = 'TECHI Remote Support Tray'" in helper
     assert "--service" in helper
-    assert "--tray" in helper
     assert "sc.exe" in helper
-    assert "Register-ScheduledTask" in helper
     assert "techi-agent" not in helper.lower()
+
+    # Tray mode is deprecated: the helper must not register or launch one...
+    assert "Register-ScheduledTask" not in helper
+    assert "New-ScheduledTaskAction" not in helper
+    assert "--tray" not in helper
+    # ...and must remove a tray task left behind by an earlier install.
+    assert "Unregister-ScheduledTask -TaskName $taskName" in helper
+
+
+def test_remote_support_installer_keeps_the_on_demand_ui_shortcut():
+    """Case F: the user-facing shortcut survives and launches with NO arguments."""
+    root = ET.parse(WXS_PATH).getroot()
+    ns = {"w": "http://wixtoolset.org/schemas/v4/wxs"}
+    shortcuts = root.findall(".//w:Shortcut", ns)
+    assert shortcuts, "the Start Menu shortcut that opens the UI must exist"
+    for shortcut in shortcuts:
+        target = shortcut.get("Target", "")
+        assert "TECHI Remote Support.exe" in target
+        # No Arguments attribute at all => plain UI launch, not tray mode.
+        assert shortcut.get("Arguments") is None
+        assert "--tray" not in target
+
+
+def test_remote_support_installer_removes_tray_task_on_uninstall():
+    text = _wxs_text()
+    assert "Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in text
+
+
+def test_remote_support_installer_stops_processes_by_pid_not_by_image_name():
+    combined = _wxs_text() + "\n" + _helper_text()
+    assert "Stop-Process -Id $_.ProcessId -Force" in combined
+    # No executable line may run a blanket image-name kill (comments explaining
+    # why we do not are fine).
+    for line in combined.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("#", "<!--")):
+            continue
+        assert "taskkill" not in stripped.lower(), stripped
 
 
 def test_remote_support_build_script_outputs_distinct_msi_name():
@@ -63,3 +99,11 @@ def test_remote_support_build_script_outputs_distinct_msi_name():
     assert "remote-support.wxs" in build
     assert "installer.wxs" not in build
     assert "agent-update.wxs" not in build
+
+
+def test_all_wix_installers_are_well_formed():
+    """'--' is illegal inside an XML comment: a stray "--tray" in a comment makes
+    the whole MSI fail to build."""
+    installer_dir = ROOT / "agent" / "installer"
+    for wxs in sorted(installer_dir.glob("*.wxs")):
+        ET.parse(wxs)

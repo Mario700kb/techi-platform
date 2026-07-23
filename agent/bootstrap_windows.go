@@ -12,7 +12,8 @@ package main
 //   techi-agent.exe bootstrap-config -api-url ... -enrollment-token ...
 //                                    [-reenroll 1] [-rustdesk-server ...]
 //                                    [-rustdesk-relay ...] [-rustdesk-key ...]
-//   techi-agent.exe rs-tray-task
+//   techi-agent.exe remove-tray-artifacts
+//   techi-agent.exe stop-remote-support-runtime
 //
 // Only Microsoft-signed system binaries (schtasks.exe) are spawned.
 
@@ -21,10 +22,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"unicode/utf16"
 )
 
 // runBootstrapConfigCommand mirrors the old WriteAgentConfig custom action:
@@ -91,102 +90,29 @@ func runBootstrapConfigCommand(args []string) int {
 	return 0
 }
 
-// runRSTrayTaskCommand mirrors the old CreateRustDeskTrayTask custom action:
-// register the "TECHI Remote Support Tray" logon task for the local Users
-// group with no execution time limit, then trigger it once for the session
-// that is already logged on. Registration goes through `schtasks /XML` — the
-// task definition is data, not a script, so AV/AMSI has nothing to block.
-func runRSTrayTaskCommand() int {
-	programFiles := strings.TrimSpace(os.Getenv("ProgramFiles"))
-	if programFiles == "" {
-		programFiles = `C:\Program Files`
-	}
-	rsExe := filepath.Join(programFiles, "TECHI Remote Support", "TECHI Remote Support.exe")
-
-	xmlPath := filepath.Join(os.TempDir(), "techi-rs-tray-task.xml")
-	if err := os.WriteFile(xmlPath, encodeUTF16LEWithBOM(rsTrayTaskXML(rsExe)), 0600); err != nil {
-		writeDeployLog("[rs-tray-task]", "task xml write failed: "+err.Error())
-		return 1
-	}
-	defer os.Remove(xmlPath)
-
-	create := exec.Command(schtasksPath(), "/Create", "/TN", rustdeskTrayTaskName, "/XML", xmlPath, "/F")
-	if out, err := create.CombinedOutput(); err != nil {
-		writeDeployLog("[rs-tray-task]", fmt.Sprintf("task register failed: %v: %s", err, strings.TrimSpace(string(out))))
-		return 1
-	}
-	writeDeployLog("[rs-tray-task]", "task registered, exe="+rsExe)
-
-	// Best effort: the "At Logon" trigger does not fire for a session that is
-	// already active during a manual install; /Run starts it once now. On a
-	// /quiet install with no interactive user this simply does nothing.
-	run := exec.Command(schtasksPath(), "/Run", "/TN", rustdeskTrayTaskName)
-	if _, err := run.CombinedOutput(); err == nil {
-		writeDeployLog("[rs-tray-task]", "task run triggered")
-	}
+// runRemoveTrayArtifactsCommand implements the `remove-tray-artifacts`
+// subcommand: it deletes the deprecated "TECHI Remote Support Tray" logon task
+// and every other --tray startup path (autostart values, startup shortcuts,
+// stale --tray processes).
+//
+// The MSI custom action that used to CREATE that task is gone. The old
+// `rs-tray-task` name stays wired to this same removal in main.go, because MSIs
+// already deployed in the field still invoke it -- on those endpoints it now
+// converges them onto the supported architecture instead of re-registering the
+// task. New callers must use `remove-tray-artifacts`.
+func runRemoveTrayArtifactsCommand() int {
+	removal := removeManagedTrayArtifacts()
+	writeDeployLog("[remove-tray-artifacts]", "deprecated tray startup removed: "+removal.Summary())
 	return 0
 }
 
-// rsTrayTaskXML is the Task Scheduler definition previously built with
-// PowerShell ScheduledTasks cmdlets: logon trigger, BUILTIN\Users group
-// principal (SID, locale-safe), least privilege, battery-friendly, and
-// ExecutionTimeLimit PT0S (no limit — the schtasks CLI cannot express that,
-// which is why the definition ships as XML).
-func rsTrayTaskXML(rsExe string) string {
-	return `<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-    </LogonTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <AllowStartOnDemand>true</AllowStartOnDemand>
-    <Enabled>true</Enabled>
-    <Hidden>false</Hidden>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>7</Priority>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>` + xmlEscape(rsExe) + `</Command>
-      <Arguments>--tray</Arguments>
-    </Exec>
-  </Actions>
-</Task>
-`
-}
-
-func xmlEscape(s string) string {
-	replacer := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		`"`, "&quot;",
-		"'", "&apos;",
-	)
-	return replacer.Replace(s)
-}
-
-// encodeUTF16LEWithBOM converts s to UTF-16LE with a byte-order mark, the
-// canonical encoding Task Scheduler uses for exported task definitions.
-func encodeUTF16LEWithBOM(s string) []byte {
-	codes := utf16.Encode([]rune(s))
-	buf := make([]byte, 0, 2+len(codes)*2)
-	buf = append(buf, 0xFF, 0xFE)
-	for _, c := range codes {
-		buf = append(buf, byte(c), byte(c>>8))
-	}
-	return buf
+// runStopRemoteSupportRuntimeCommand implements `stop-remote-support-runtime`:
+// stop the managed service and terminate the Remote Support processes BY PID so
+// an installer can replace files. Replaces the blanket
+// `taskkill /F /IM "TECHI Remote Support.exe"` the MSI custom actions ran, which
+// killed every process sharing the executable name.
+func runStopRemoteSupportRuntimeCommand() int {
+	stopped := stopRemoteSupportRuntimeByPID()
+	writeDeployLog("[stop-remote-support-runtime]", fmt.Sprintf("service stopped, %d process(es) terminated by pid", stopped))
+	return 0
 }

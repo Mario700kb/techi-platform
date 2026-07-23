@@ -14,8 +14,11 @@ from app.core.time import utcnow
 from app.db.session import get_db
 from app.models.device import Device, DeviceType
 from app.models.operator import Operator, OperatorRole
+from app.platform_core.action_resolver import ComponentActionError
+from app.platform_core.components import LifecycleOperation
 from app.schemas.remote_action import ActionType, RemoteActionCreate, RemoteActionResponse
 from app.services import agent_config_service
+from app.services.component_package_service import ComponentPackageService
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
@@ -178,6 +181,45 @@ def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlR
         techi_remote_id=remote_id,
         connect_url=_build_connect_url(remote_id, password),
     )
+
+
+# ------------------------------------------------------------------ #
+# Deploy parameters                                                    #
+# ------------------------------------------------------------------ #
+
+def build_remote_support_deploy_parameters(
+    db: Session,
+    device: Device,
+    *,
+    force_reinstall: bool,
+    packages: Optional["ComponentPackageService"] = None,
+) -> Dict[str, Any]:
+    """Deploy parameters resolved from the ACTIVE Remote Support MSI package.
+
+    Every version-bearing value comes from the package manifest metadata
+    (ProductVersion / ProductCode / sha256) via the same enrichment the component
+    actions use — never a hardcoded literal. The agent's install guard compares
+    the registry DisplayVersion against ``msi_version``; a hardcoded semantic
+    version ("1.4.6") could never equal the MSI ProductVersion the registry
+    actually holds ("1.4.6.29665273"), so the guard never matched and every
+    invocation reinstalled a current MSI.
+
+    Raises ComponentActionError when no active package (or complete metadata)
+    exists — deploying an unverifiable MSI is worse than refusing.
+    """
+    service = packages or ComponentPackageService(db)
+    enrichment = service.enrichment_for(
+        "remote_support", device.platform, LifecycleOperation.INSTALL
+    )
+    return {
+        "msi_url": enrichment["msi_url"],
+        "msi_version": enrichment["msi_version"],
+        "product_guid": enrichment["product_guid"],
+        "sha256": enrichment["sha256"],
+        "rendezvous_server": enrichment["rendezvous_server"],
+        "key": enrichment["key"],
+        "force_reinstall": force_reinstall,
+    }
 
 
 # ------------------------------------------------------------------ #
@@ -446,22 +488,25 @@ def deploy_remote_support(
     device_id: int,
     force_reinstall: bool = False,
 ):
-    """Queue a deploy / upgrade of TECHI Remote Support on the device."""
-    _get_device(device_id, db, scope)
+    """Queue a deploy / upgrade of TECHI Remote Support on the device.
+
+    The managed MSI is the only supported installation: this always deploys the
+    complete active package (service + runtime config), never a tray-only runtime."""
+    device = _get_device(device_id, db, scope)
+
+    try:
+        parameters = build_remote_support_deploy_parameters(
+            db, device, force_reinstall=force_reinstall
+        )
+    except ComponentActionError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code.value, "message": str(exc)})
 
     try:
         action = RemoteActionService(db).queue_action(
             device_id,
             RemoteActionCreate(
                 action_type=ActionType.DEPLOY_REMOTE_SUPPORT,
-                parameters={
-                    "msi_url": "https://rdp.techi.com.al/downloads/TECHI-Remote-Support-1.4.6.msi",
-                    "msi_version": "1.4.6",
-                    "product_guid": "{74CEDF4A-E226-4151-BC7A-5154F0BC9E79}",
-                    "rendezvous_server": "139.162.158.208",
-                    "key": "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw=",
-                    "force_reinstall": force_reinstall,
-                },
+                parameters=parameters,
                 created_by=operator.username,
                 execution_timeout_seconds=600,
             ),

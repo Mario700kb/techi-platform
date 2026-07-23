@@ -386,17 +386,18 @@
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- KillTechiRS: vret proceset para fshirjes (uninstall) ose para InstallFiles
-         (fresh install/upgrade — shih KillTechiRSBeforeInstall). Mbyll te dy emrat e
-         mundshem: "TECHI Remote Support.exe" (branded) dhe "rustdesk.exe" (emri qe
-         perdor installer-i real i vjeter, Inno Setup, ende ne flote). Pa kete, InstallFiles
+    <!-- KillTechiRS: ndal runtime-in para fshirjes (uninstall) ose para InstallFiles
+         (fresh install/upgrade — shih KillTechiRSBeforeInstall). Pa kete, InstallFiles
          deshtonte te mbishkruante librustdesk.dll/flutter_windows.dll/data\* sepse RS
          eshte gjithmone ne xhirim — kjo dyshohet te jete shkaku i PC-ve qe mbeten offline
          pas dështimit te upgrade 2.0.0 -> 2.1.0 (deshtimi i InstallFiles mund te rrezoje
-         e gjithe transaksioni MSI, perfshire upgrade-in e vete agent-it). -->
+         e gjithe transaksioni MSI, perfshire upgrade-in e vete agent-it).
+         NUK perdoret me "taskkill /IM": vriste cdo proces me te njejtin emer executable.
+         Tani ndalimi behet me PID nga vete agent-i (stop-remote-support-runtime):
+         ndal service-in me SCM, pastaj mbyll proceset e Remote Support nje e nga nje. -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="cmd.exe /d /c taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe"
+                  ExeCommand="cmd.exe /d /c &quot;&quot;[INSTALLFOLDER]techi-agent.exe&quot; stop-remote-support-runtime&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -408,9 +409,13 @@
          (rustdesk_manage.go: ensureRustDeskService) e rikrijon vete ne heartbeat-in e pare pas
          instalimit, me binPath-in dhe argumentet aktuale; duke e fshire pare, evitojme nje
          "sc create" me binPath te vjeter/gabuar te mbijetoje nje upgrade qe ndryshon shtegun. -->
+    <!-- Ndalimi behet me PID, jo me "taskkill /IM". Ne nje instalim FRESH, agent-i
+         ende s'ekziston ne kete pike (InstallFiles s'ka xhiruar), prandaj ka nje
+         fallback ne PowerShell qe ndalon po ashtu me PID (Stop-Process -Id) —
+         nevojitet kur nje makine me RS legacy ne xhirim instalohet per here te pare. -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="cmd.exe /d /c taskkill /F /IM &quot;TECHI Remote Support.exe&quot; &amp; taskkill /F /IM rustdesk.exe &amp; sc delete &quot;TECHI Remote Support&quot;"
+                  ExeCommand="cmd.exe /d /c if exist &quot;[INSTALLFOLDER]techi-agent.exe&quot; (&quot;[INSTALLFOLDER]techi-agent.exe&quot; stop-remote-support-runtime) else (powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }&quot;) &amp; sc delete &quot;TECHI Remote Support&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -426,21 +431,19 @@
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- CreateRustDeskTrayTask: regjistron Scheduled Task "At Logon" qe nis RS me argumentin
-         tray ne sesionin e perdoruesit interaktiv; ikona shoqeruese, JO daemon-i. Daemon-i real
-         eshte Windows Service "TECHI Remote Support" (argumenti service), krijuar ne runtime nga
-         agent-i (rustdesk_manage.go: ensureRustDeskService), jo nga kjo MSI. schtasks /run nga
-         agent-i (rustdeskTrayTaskName) e rinis kete task po te mbyllet aksidentalisht.
-         Ekzekutohet nga vete techi-agent.exe (rs-tray-task, kod natif Go, bootstrap_windows.go):
-         shkruan XML-in e task-ut (grupi Users sipas SID S-1-5-32-545, ExecutionTimeLimit PT0S =
-         pa limit kohor — default-i 72h do te mbyllte RS ne PC qe rrine ndezur gjate; schtasks CLI
-         s'e shpreh dot, prandaj XML) dhe e regjistron me schtasks /Create /XML, pastaj /Run
-         njehere per sesionin aktual (ne /quiet pa user te kyqur /Run s'ben asgje, pa dem).
-         Pa PowerShell — AV/AMSI strikte (Symantec, CybeeAI) s'ka cfare te bllokoje; cdo hap
-         logohet ne C:\ProgramData\TechiAgent\deploy.log me [rs-tray-task]. -->
-    <CustomAction Id="CreateRustDeskTrayTask"
+    <!-- RemoveRustDeskTrayTask: modaliteti "tray" eshte DEPRECATED. Arkitektura e
+         mbeshtetur eshte: service-i TECHI Agent + service-i "TECHI Remote Support"
+         (argumenti service, daemon-i real, krijuar/mbajtur ne runtime nga agent-i,
+         rustdesk_manage.go: ensureRustDeskService) + nje shortcut ne Start Menu/Desktop
+         qe hap UI-ne kur e do perdoruesi. Asnje proces tray ne background.
+         Ky custom action HEQ cdo startup tray te trasheguar (Scheduled Task, hyrje Run,
+         shortcut ne Startup, procese tray te mbetura). Nuk prek kurre shortcut-in
+         normal te UI-se (pa argumente) as service-in/identitetin/konfigurimin.
+         Kod natif Go (bootstrap_windows.go), pa PowerShell; logohet ne
+         C:\ProgramData\TechiAgent\deploy.log me [rs-tray-task]. -->
+    <CustomAction Id="RemoveRustDeskTrayTask"
                   Directory="SystemFolder"
-                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; rs-tray-task"
+                  ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; remove-tray-artifacts"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -502,9 +505,9 @@
       <Custom Action="WriteTechiConfigs"                        After="WriteTechiConfigs.SetParam"          Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal.SetParam" After="WriteTechiConfigs"               Condition="NOT REMOVE"/>
       <Custom Action="ApplyTechiRemoteSupportConfigFinal"       After="ApplyTechiRemoteSupportConfigFinal.SetParam" Condition="NOT REMOVE"/>
-      <!-- CreateRustDeskTrayTask: pasi RS eshte instaluar dhe konfiguruar, regjistro
-           Scheduled Task-in "At Logon" qe e nis ne sesionin e perdoruesit. -->
-      <Custom Action="CreateRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
+      <!-- RemoveRustDeskTrayTask: pasi RS eshte instaluar dhe konfiguruar, HIQ cdo
+           startup tray te trasheguar. Instalimet e reja s'krijojne kurre tray. -->
+      <Custom Action="RemoveRustDeskTrayTask" After="ApplyTechiRemoteSupportConfigFinal" Condition="NOT REMOVE"/>
       <!-- Uninstall -->
       <Custom Action="KillTechiRS"                Before="RemoveFiles"     Condition="REMOVE~=&quot;ALL&quot;"/>
       <Custom Action="RemoveRustDeskTrayArtifacts" After="KillTechiRS"      Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"/>

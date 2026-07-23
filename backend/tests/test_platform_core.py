@@ -170,6 +170,7 @@ class TestWiringBoundary:
             "app/services/component_package_service.py",  # Component package integration (Operational M11)
             "app/services/component_remediation_service.py",  # Component auto-remediation (Operational M12)
             "app/api/v1/endpoints/component_actions.py",  # Component Action API endpoint (Operational M2)
+            "app/api/v1/endpoints/remote_support.py",  # legacy deploy endpoint resolves MSI params via the component package seam (no hardcoded version)
         }
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
         offenders = []

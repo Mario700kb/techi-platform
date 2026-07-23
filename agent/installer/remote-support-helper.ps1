@@ -27,8 +27,18 @@ try {
         throw "remote support exe not found: $ExePath"
     }
 
-    Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','TECHI Remote Support.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-    Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/F','/IM','rustdesk.exe') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
+    # Targeted termination by PID, restricted to executables that actually live
+    # in a Remote Support install directory. A blanket 'taskkill /IM' would kill
+    # every process sharing the executable name -- including an unrelated program
+    # that happens to be called the same thing somewhere else on disk.
+    Get-CimInstance Win32_Process |
+        Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and
+                       $_.ExecutablePath -and
+                       ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } |
+        ForEach-Object {
+            Write-InstallLog "stopping pid=$($_.ProcessId) cmd=$($_.CommandLine)"
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
 
     $status = Get-RSServiceStatus
     Write-InstallLog "service status before=$status"
@@ -44,15 +54,17 @@ try {
     Start-Process -FilePath 'sc.exe' -ArgumentList @('failure', $serviceName, 'reset=', '86400', 'actions=', 'restart/15000/restart/15000/restart/60000') -WindowStyle Hidden -Wait
     Start-Process -FilePath 'sc.exe' -ArgumentList @('start', $serviceName) -WindowStyle Hidden -Wait
 
-    $action = New-ScheduledTaskAction -Execute $ExePath -Argument '--tray'
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    schtasks /run /tn $taskName | Out-Null
+    # Tray mode is DEPRECATED: this installer never registers a tray task. It
+    # removes one if an earlier install left it behind, so the endpoint converges
+    # onto service + on-demand UI shortcut. The Start Menu shortcut (no
+    # arguments) is untouched -- that is how the user opens the UI.
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        Write-InstallLog "removed deprecated tray scheduled task '$taskName'"
+    }
 
     $final = Get-RSServiceStatus
-    Write-InstallLog "service final=$final task=registered"
+    Write-InstallLog "service final=$final tray=removed"
     if ($final -ne 'Running') {
         throw "service not running after install; status=$final"
     }

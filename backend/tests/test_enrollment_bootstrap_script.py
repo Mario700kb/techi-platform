@@ -307,22 +307,29 @@ class TestRustDeskForceMigrationScript:
         assert "$Written.Contains($TechiRendezvous)" in self.script
         assert "TECHI Remote Support TECHI config verified" in self.script
 
-    def test_restarts_rustdesk_and_logs_migration(self):
-        # TECHI Remote Support no longer runs as a Windows Service (Session 0
-        # can't do interactive screen capture) -- it's relaunched via the
-        # "TECHI Remote Support Tray" Scheduled Task installer.wxs creates.
-        assert "Starting TECHI Remote Support via Scheduled Task" in self.script
-        assert "Get-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
-        assert "Start-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
-        assert "TECHI Remote Support Tray task triggered." in self.script
+    def test_restarts_the_managed_service_not_a_tray_task(self):
+        # Tray mode is DEPRECATED. Migration converges onto the managed Windows
+        # service; it must never start (or re-register) a --tray process.
+        assert "Starting TECHI Remote Support Windows service" in self.script
+        assert "Start-Service -Name 'TECHI Remote Support'" in self.script
+        assert "TECHI Remote Support service started." in self.script
         assert "TECHI Remote Support forced migration complete" in self.script
+        assert "Start-ScheduledTask -TaskName 'TECHI Remote Support Tray'" not in self.script
+        assert "--tray" not in self.script
 
-    def test_removes_orphaned_service_instead_of_restarting_it(self):
-        # Any "TECHI Remote Support"/"RustDesk"/"rustdesk" service found is an
-        # orphan from before the Scheduled-Task model -- delete it, don't
-        # restart it back into the broken Session 0 state.
-        assert "Removing orphaned TECHI Remote Support service registration" in self.script
-        assert "Start-Process -FilePath 'sc.exe' -ArgumentList @('delete', $ServiceName)" in self.script
+    def test_migration_removes_an_existing_tray_scheduled_task(self):
+        # Case D: a legacy endpoint carrying the tray task must lose it.
+        assert "Get-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
+        assert "Unregister-ScheduledTask -TaskName 'TECHI Remote Support Tray'" in self.script
+        assert "Removed deprecated TECHI Remote Support Tray scheduled task." in self.script
+
+    def test_removes_only_legacy_services_and_preserves_the_managed_one(self):
+        # The managed "TECHI Remote Support" service is the supported runtime and
+        # must survive migration; only upstream RustDesk services are orphans.
+        assert "$LegacyServices = @('RustDesk', 'rustdesk')" in self.script
+        assert "$LegacyServices -contains $ServiceName" in self.script
+        assert "Removing orphaned legacy RustDesk service registration" in self.script
+        assert "Removing orphaned TECHI Remote Support service registration" not in self.script
 
     def test_sets_unattended_password_by_writing_identity_toml(self):
         # --password (CLI/IPC) silently no-ops when no daemon is running --
@@ -342,13 +349,13 @@ class TestRustDeskForceMigrationScript:
         assert 'Write-Log "Durres.12' not in self.script
         assert "Write-Log 'Durres.12" not in self.script
 
-    def test_tray_restarts_before_password_write(self):
+    def test_service_restarts_before_password_write(self):
         # The cleanup loop earlier in this script deletes config\ entirely,
-        # so the identity TOML doesn't exist on disk again until RustDesk
-        # itself runs and recreates it -- the Scheduled Task must be started
+        # so the identity TOML doesn't exist on disk again until Remote Support
+        # itself runs and recreates it -- the managed SERVICE must be started
         # (and given time to do so) before any write attempt, or every
         # candidate path is missing and nothing gets patched.
-        restart_index = self.script.index("Starting TECHI Remote Support via Scheduled Task")
+        restart_index = self.script.index("Starting TECHI Remote Support Windows service")
         password_index = self.script.index("function Set-TechiPermanentPasswordSafe")
 
         assert restart_index < password_index
