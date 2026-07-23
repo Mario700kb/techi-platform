@@ -14,6 +14,7 @@ from app.services.component_state_service import ComponentDeviceState
 def _pkg(version, file_type="agent_binary", platform="windows-amd64", sha256=None, active=True, **metadata):
     return SimpleNamespace(
         version=version,
+        filename=metadata.get("filename", "pkg.msi"),
         sha256=sha256,
         is_active=active,
         platform=SimpleNamespace(value=platform),
@@ -136,6 +137,9 @@ def test_remote_support_enrichment_injects_msi_metadata(monkeypatch):
 
     assert enrich["version"] == "1.4.9.0"
     assert enrich["msi_version"] == "1.4.9.0"
+    assert enrich["remote_support_msi_version"] == "1.4.9.0"
+    assert enrich["remote_support_msi_filename"] == "pkg.msi"
+    assert enrich["remote_support_msi_sha256"] == "cafebabe"
     assert enrich["msi_url"] == "https://api.example.test/api/v1/agent-packages/remote-support-msi/download"
     assert enrich["sha256"] == "cafebabe"
     assert enrich["target_sha256"] == "cafebabe"

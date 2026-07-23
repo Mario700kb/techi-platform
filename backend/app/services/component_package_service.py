@@ -190,6 +190,13 @@ class ComponentPackageService:
             "target_sha256": package.sha256,
             "msi_url": f"{base_url}{self._packages.remote_support_msi_download_url()}",
             "msi_version": product_version,
+            # Compatibility with Windows agents that run the dedicated
+            # reinstall recovery pipeline. They resolve the active package from
+            # these explicit Remote Support MSI keys before any destructive
+            # reinstall phase starts.
+            "remote_support_msi_version": product_version,
+            "remote_support_msi_filename": package.filename,
+            "remote_support_msi_sha256": package.sha256,
             "product_guid": package.product_code,
             "product_code": package.product_code,
             "upgrade_code": package.upgrade_code,
