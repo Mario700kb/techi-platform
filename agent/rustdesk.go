@@ -189,6 +189,7 @@ func killProcessTree(pid int) {
 }
 
 func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
+	msi := detectRemoteSupportMSIRegistration("")
 	installPath := firstExistingPath([]string{
 		// Program Files is primary -- matches the proven TECHI-Remote-Support.iss
 		// reference installer and the existing fleet's install location.
@@ -207,9 +208,16 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 	if installPath != "" {
 		info.InstallStatus = "installed"
 		info.InstallPath = installPath
-		info.Version = cachedRustDeskVersion(installPath)
+		info.Version = selectRemoteSupportVersion(cachedRustDeskVersion(installPath), msi)
 	} else {
 		info.InstallStatus = "not_installed"
+	}
+	if msi.Version != "" {
+		if fullPath := firstExistingPath(remoteSupportFullMSIPaths()); fullPath != "" {
+			info.InstallStatus = "installed"
+			info.InstallPath = fullPath
+		}
+		info.Version = selectRemoteSupportVersion(info.Version, msi)
 	}
 
 	info.Status = rustDeskWindowsStatus()
@@ -294,36 +302,149 @@ func rustDeskVersion(path string) string {
 }
 
 func rustDeskWindowsStatus() string {
-	// Primary process: branded TECHI exe.
-	output, err := exec.Command("tasklist", "/FI", "IMAGENAME eq TECHI Remote Support.exe").Output()
-	if err == nil && strings.Contains(string(output), "TECHI Remote Support.exe") {
-		return "running"
-	}
-	// Fallback process: legacy upstream binary name.
-	output, err = exec.Command("tasklist", "/FI", "IMAGENAME eq rustdesk.exe").Output()
-	if err == nil && strings.Contains(strings.ToLower(string(output)), "rustdesk.exe") {
-		return "running"
-	}
-
 	// Primary service: TECHI Remote Support.
-	output, err = exec.Command("sc", "query", "TECHI Remote Support").Output()
+	fullServiceState := ""
+	output, err := exec.Command("sc", "query", "TECHI Remote Support").Output()
 	if err == nil {
 		lower := strings.ToLower(string(output))
 		if strings.Contains(lower, "running") {
-			return "running"
+			fullServiceState = "running"
 		}
 		if strings.Contains(lower, "stopped") {
-			return "stopped"
+			fullServiceState = "stopped"
 		}
 	}
+
+	brandedProcess := false
+	output, err = exec.Command("tasklist", "/FI", "IMAGENAME eq TECHI Remote Support.exe").Output()
+	if err == nil && strings.Contains(string(output), "TECHI Remote Support.exe") {
+		brandedProcess = true
+	}
+	legacyProcess := false
+	output, err = exec.Command("tasklist", "/FI", "IMAGENAME eq rustdesk.exe").Output()
+	if err == nil && strings.Contains(strings.ToLower(string(output)), "rustdesk.exe") {
+		legacyProcess = true
+	}
+
 	// Fallback services: legacy RustDesk service names.
+	legacyServiceRunning := false
 	for _, svc := range []string{"RustDesk", "rustdesk"} {
 		output, err = exec.Command("sc", "query", svc).Output()
 		if err == nil && strings.Contains(strings.ToLower(string(output)), "running") {
-			return "running"
+			legacyServiceRunning = true
+			break
 		}
 	}
+	return classifyRustDeskWindowsRuntime(fullServiceState, brandedProcess, legacyProcess, legacyServiceRunning)
+}
+
+func selectRemoteSupportVersion(fileVersion string, msi remoteSupportMSIRegistration) string {
+	if strings.TrimSpace(msi.Version) != "" {
+		return strings.TrimSpace(msi.Version)
+	}
+	return strings.TrimSpace(fileVersion)
+}
+
+func classifyRustDeskWindowsRuntime(fullServiceState string, brandedProcess bool, legacyProcess bool, legacyServiceRunning bool) string {
+	switch strings.ToLower(strings.TrimSpace(fullServiceState)) {
+	case "running":
+		if legacyProcess || legacyServiceRunning {
+			return "conflicting_dual_install"
+		}
+		return "running"
+	case "stopped":
+		if brandedProcess || legacyProcess {
+			return "tray_only"
+		}
+		return "stopped"
+	}
+	if brandedProcess || legacyProcess {
+		return "tray_only"
+	}
+	if legacyServiceRunning {
+		return "legacy_service_running"
+	}
 	return "not_running"
+}
+
+type remoteSupportMSIRegistration struct {
+	ProductCode string
+	Version     string
+}
+
+func remoteSupportFullMSIPaths() []string {
+	return []string{
+		filepath.Join(os.Getenv("ProgramFiles"), "TECHI Remote Support", "TECHI Remote Support.exe"),
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "TECHI Remote Support", "TECHI Remote Support.exe"),
+	}
+}
+
+func detectRemoteSupportMSIRegistration(productGUID string) remoteSupportMSIRegistration {
+	if strings.TrimSpace(productGUID) != "" {
+		if version := queryUninstallDisplayVersion(productGUID); version != "" {
+			return remoteSupportMSIRegistration{ProductCode: productGUID, Version: version}
+		}
+	}
+
+	for _, root := range []string{
+		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`,
+		`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall`,
+	} {
+		out, err := runWithTimeout(10*time.Second, "reg", "query", root, "/s", "/f", "TECHI Remote Support", "/d")
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			key := strings.TrimSpace(line)
+			if !strings.HasPrefix(strings.ToUpper(key), "HKEY_LOCAL_MACHINE\\") {
+				continue
+			}
+			name := queryRegistryStringValue(key, "DisplayName")
+			if !strings.EqualFold(strings.TrimSpace(name), "TECHI Remote Support") {
+				continue
+			}
+			version := queryRegistryStringValue(key, "DisplayVersion")
+			if version == "" {
+				continue
+			}
+			productCode := filepath.Base(key)
+			return remoteSupportMSIRegistration{ProductCode: productCode, Version: version}
+		}
+	}
+	return remoteSupportMSIRegistration{}
+}
+
+func queryUninstallDisplayVersion(guid string) string {
+	if guid == "" {
+		return ""
+	}
+	for _, root := range []string{
+		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
+		`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
+	} {
+		if version := queryRegistryStringValue(root, "DisplayVersion"); version != "" {
+			return version
+		}
+	}
+	return ""
+}
+
+func queryRegistryStringValue(root string, valueName string) string {
+	out, err := runWithTimeout(5*time.Second, "reg", "query", root, "/v", valueName)
+	if err != nil {
+		return ""
+	}
+	valueName = strings.ToLower(valueName)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(strings.ToLower(line), valueName) {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				return strings.Join(parts[2:], " ")
+			}
+		}
+	}
+	return ""
 }
 
 func readRustDeskFromKnownFiles() (id, encID string) {

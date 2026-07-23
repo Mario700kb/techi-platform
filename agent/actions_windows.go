@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -105,44 +107,16 @@ func handleRestartRustDesk(ctx context.Context, cfg *Config) actionResult {
 	}
 }
 
-func handleReinstallRustDesk(ctx context.Context, cfg *Config) actionResult {
-	if cfg.RustDeskMSIUrl == "" {
-		return actionResult{err: fmt.Errorf("reinstall_rustdesk: no MSI URL configured")}
-	}
+func handleReinstallRustDesk(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
 	done := make(chan actionResult, 1)
 	go func() {
-		log.Printf("[action] reinstall_rustdesk: stopping service+tray")
-		stopRustDeskServiceFn()
-		stopRustDeskTray()
-		time.Sleep(2 * time.Second)
-
-		log.Printf("[action] reinstall_rustdesk: running MSI install")
-		if err := installRustDeskMSI(cfg); err != nil {
-			done <- actionResult{
-				err:    fmt.Errorf("MSI install failed: %w", err),
-				stderr: err.Error(),
-			}
-			return
+		reinstallParams := copyActionParams(params)
+		reinstallParams["force_reinstall"] = true
+		result := executeDeployRemoteSupport(cfg, reinstallParams)
+		if result.err == nil {
+			result.message = "reinstall_rustdesk: " + result.message
 		}
-
-		// Re-apply config and relaunch service+tray after install.
-		if _, err := writeRustDeskConfig(cfg); err != nil {
-			log.Printf("[action] reinstall_rustdesk: config write failed (non-fatal): %v", err)
-		}
-		if _, err := ensureRustDeskService(); err != nil {
-			log.Printf("[action] reinstall_rustdesk: service start failed (non-fatal): %v", err)
-		}
-		if _, err := ensureRustDeskTrayRunning(); err != nil {
-			log.Printf("[action] reinstall_rustdesk: tray start failed (non-fatal): %v", err)
-		}
-
-		rd := discoverRustDesk(cfg)
-		done <- actionResult{
-			message: fmt.Sprintf(
-				"TECHI Remote Support reinstalled — install_status=%s status=%s version=%s id=%s",
-				rd.InstallStatus, rd.Status, rd.Version, rd.ID,
-			),
-		}
+		done <- result
 	}()
 	select {
 	case <-ctx.Done():
@@ -267,6 +241,7 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 	msiURL := stringParam(params, "msi_url")
 	msiVersion := stringParam(params, "msi_version")
 	productGUID := stringParam(params, "product_guid")
+	sha256 := stringParam(params, "sha256")
 	rendezvousServer := stringParam(params, "rendezvous_server")
 	key := stringParam(params, "key")
 	forceReinstall := boolParam(params, "force_reinstall")
@@ -281,40 +256,54 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 	if key == "" {
 		key = cfg.RustDeskKey
 	}
+	if sha256 == "" {
+		sha256 = cfg.RustDeskMSIChecksumSHA256
+	}
 
 	st := deployRemoteSupportResult{}
 
 	// Phase 1 & 2: version check via registry GUID.
 	installedVersion := getInstalledVersionByGUID(productGUID)
 	st.InstalledVersion = installedVersion
+	legacyBefore := detectLegacyRemoteSupportArtifacts(productGUID)
 	needsInstall := installedVersion == "" ||
 		(msiVersion != "" && installedVersion != msiVersion) ||
 		forceReinstall
 
-	if !needsInstall {
-		log.Printf("[deploy_remote_support] version %s already installed — skipping MSI install", installedVersion)
-		st.InstallStatus = "already_current"
-	} else {
-		// Phase 3: download + install.
+	var cachePath string
+	if needsInstall || legacyBefore.HasAny {
 		if msiURL == "" {
 			return actionResult{err: fmt.Errorf("deploy_remote_support: no msi_url provided")}
 		}
 
-		// Build a temporary config copy for the download helpers.
+		// Download and verify the active MSI before stopping/removing any legacy
+		// tray-only runtime, so a failed download never leaves the device without
+		// its prior remote-access path.
 		dlCfg := *cfg
 		dlCfg.RustDeskMSIUrl = msiURL
 		dlCfg.RustDeskPackageVersion = msiVersion
-		dlCfg.RustDeskMSIChecksumSHA256 = ""
+		dlCfg.RustDeskMSIChecksumSHA256 = sha256
 
-		cachePath, err := cachedMSIPath(&dlCfg)
+		var err error
+		cachePath, err = cachedMSIPath(&dlCfg)
 		if err != nil {
 			return actionResult{err: fmt.Errorf("deploy_remote_support: cache path: %w", err)}
 		}
 		if err := ensureCachedMSI(&dlCfg, cachePath); err != nil {
 			return actionResult{err: fmt.Errorf("deploy_remote_support: download failed: %w", err)}
 		}
+	}
 
-		log.Printf("[deploy_remote_support] installing %s", cachePath)
+	if legacyBefore.HasAny {
+		log.Printf("[deploy_remote_support] legacy tray-only artifacts detected: %s", legacyBefore.Summary())
+		stopLegacyRemoteSupportRuntime()
+	}
+
+	if !needsInstall {
+		log.Printf("[deploy_remote_support] version %s already installed — skipping MSI install", installedVersion)
+		st.InstallStatus = "already_current"
+	} else {
+		log.Printf("[deploy_remote_support] installing verified MSI %s", cachePath)
 		var rebootReq bool
 		var installErr error
 		for attempt := 1; attempt <= 3; attempt++ {
@@ -347,6 +336,12 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 			}
 		}
 		st.InstallStatus = "installed"
+	}
+
+	if legacyBefore.HasAny {
+		if err := cleanupLegacyRemoteSupportArtifacts(legacyBefore); err != nil {
+			return actionResult{err: fmt.Errorf("deploy_remote_support: legacy cleanup failed after MSI install: %w", err)}
+		}
 	}
 
 	// Phase 5: write TOML config using params (force=true for deploy action).
@@ -386,6 +381,14 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 	if rd.Status == "running" {
 		st.ServiceStatus = "running"
 	}
+	if rd.Status == "conflicting_dual_install" || legacyRemoteSupportArtifactsRemain(productGUID) {
+		st.ServiceStatus = "conflict"
+		outputJSON := marshalDeployResult(st)
+		return actionResult{
+			err:    fmt.Errorf("deploy_remote_support: legacy tray-only runtime still present after full MSI install"),
+			output: outputJSON,
+		}
+	}
 
 	outputJSON := marshalDeployResult(st)
 	return actionResult{
@@ -400,29 +403,135 @@ func executeDeployRemoteSupport(cfg *Config, params map[string]interface{}) acti
 // getInstalledVersionByGUID queries the uninstall registry for a product GUID
 // and returns its DisplayVersion, or "" if not found.
 func getInstalledVersionByGUID(guid string) string {
-	if guid == "" {
-		return ""
+	return queryUninstallDisplayVersion(guid)
+}
+
+func copyActionParams(params map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(params)+1)
+	for k, v := range params {
+		out[k] = v
 	}
-	roots := []string{
-		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
-		`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\` + guid,
+	return out
+}
+
+type legacyRemoteSupportArtifacts struct {
+	HasAny bool
+}
+
+func (a legacyRemoteSupportArtifacts) Summary() string {
+	if !a.HasAny {
+		return "none"
 	}
-	for _, root := range roots {
-		out, err := runWithTimeout(5*time.Second, "reg", "query", root, "/v", "DisplayVersion")
-		if err != nil {
-			continue
+	return "legacy processes/services/tasks/autostart/uninstall entries"
+}
+
+func detectLegacyRemoteSupportArtifacts(productGUID string) legacyRemoteSupportArtifacts {
+	if isLegacyRemoteSupportProcessRunning() {
+		return legacyRemoteSupportArtifacts{HasAny: true}
+	}
+	for _, svc := range []string{"RustDesk", "rustdesk"} {
+		if serviceExists(svc) {
+			return legacyRemoteSupportArtifacts{HasAny: true}
 		}
-		for _, line := range strings.Split(string(out), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.Contains(strings.ToLower(line), "displayversion") {
-				parts := strings.Fields(line)
-				if len(parts) >= 3 {
-					return parts[len(parts)-1]
-				}
-			}
+	}
+	for _, task := range []string{"RustDesk", "RustDesk Tray", `\RustDesk`, `\RustDesk Tray`} {
+		if scheduledTaskExists(task) {
+			return legacyRemoteSupportArtifacts{HasAny: true}
 		}
 	}
-	return ""
+	for _, path := range legacyRemoteSupportRuntimePaths() {
+		if fileExists(path) {
+			return legacyRemoteSupportArtifacts{HasAny: true}
+		}
+	}
+	if legacyUninstallEntryExists(productGUID) {
+		return legacyRemoteSupportArtifacts{HasAny: true}
+	}
+	return legacyRemoteSupportArtifacts{}
+}
+
+func legacyRemoteSupportArtifactsRemain(productGUID string) bool {
+	return detectLegacyRemoteSupportArtifacts(productGUID).HasAny
+}
+
+func isLegacyRemoteSupportProcessRunning() bool {
+	out, err := runWithTimeout(10*time.Second, "tasklist", "/FI", "IMAGENAME eq rustdesk.exe")
+	return err == nil && strings.Contains(strings.ToLower(string(out)), "rustdesk.exe")
+}
+
+func serviceExists(name string) bool {
+	out, err := runWithTimeout(10*time.Second, "sc", "query", name)
+	return err == nil && strings.Contains(strings.ToLower(string(out)), strings.ToLower(name))
+}
+
+func scheduledTaskExists(name string) bool {
+	out, err := runWithTimeout(10*time.Second, "schtasks", "/Query", "/TN", name)
+	return err == nil && strings.Contains(strings.ToLower(string(out)), strings.ToLower(strings.TrimLeft(name, `\`)))
+}
+
+func legacyRemoteSupportRuntimePaths() []string {
+	return []string{
+		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramData"), "TECHI Remote Support", "TECHI Remote Support.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "TECHI Remote Support", "rustdesk.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "TECHI Remote Support", "TECHI Remote Support.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "RustDesk", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramFiles"), "RustDesk", "rustdesk.exe"),
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "RustDesk", "rustdesk.exe"),
+	}
+}
+
+func legacyUninstallEntryExists(productGUID string) bool {
+	script := legacyRemoteSupportCleanupScript(productGUID, true)
+	out, err := runWithTimeout(20*time.Second, "powershell",
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	return err == nil && strings.Contains(string(out), "legacy_uninstall_found")
+}
+
+func cleanupLegacyRemoteSupportArtifacts(artifacts legacyRemoteSupportArtifacts) error {
+	if !artifacts.HasAny {
+		return nil
+	}
+	stopLegacyRemoteSupportRuntime()
+	script := legacyRemoteSupportCleanupScript("", false)
+	if _, err := runWithTimeout(2*time.Minute, "powershell",
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script); err != nil {
+		return err
+	}
+	return nil
+}
+
+func stopLegacyRemoteSupportRuntime() {
+	_, _ = runWithTimeout(15*time.Second, "taskkill", "/F", "/IM", "rustdesk.exe")
+	for _, svc := range []string{"RustDesk", "rustdesk"} {
+		_, _ = runWithTimeout(15*time.Second, "sc", "stop", svc)
+	}
+	for _, task := range []string{"RustDesk", "RustDesk Tray"} {
+		_, _ = runWithTimeout(15*time.Second, "schtasks", "/End", "/TN", task)
+	}
+}
+
+func legacyRemoteSupportCleanupScript(productGUID string, detectOnly bool) string {
+	productGUID = strings.TrimSpace(strings.ToUpper(productGUID))
+	mode := "$DetectOnly = $" + map[bool]string{true: "true", false: "false"}[detectOnly] + "; "
+	return mode +
+		"$TargetProductCode = " + psSingleQuote(productGUID) + "; " +
+		`$ErrorActionPreference = 'SilentlyContinue'; ` +
+		`$legacyTasks = @('RustDesk','RustDesk Tray','\RustDesk','\RustDesk Tray'); ` +
+		`foreach ($t in $legacyTasks) { if (Get-ScheduledTask -TaskName ($t.TrimStart('\')) -ErrorAction SilentlyContinue) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; Unregister-ScheduledTask -TaskName ($t.TrimStart('\')) -Confirm:$false } }; ` +
+		`$runRoots = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'); ` +
+		`foreach ($r in $runRoots) { if (Test-Path $r) { foreach ($p in (Get-ItemProperty -Path $r).PSObject.Properties) { $v = [string]$p.Value; if ($v -match 'rustdesk\.exe' -or ($v -match 'TECHI Remote Support\.exe' -and $v -notmatch '\\Program Files\\TECHI Remote Support\\')) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; Remove-ItemProperty -Path $r -Name $p.Name -Force } } } }; ` +
+		`$startupRoots = @("$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp","$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"); ` +
+		`$userStartup = Get-ChildItem "$env:SystemDrive\Users" -Directory | ForEach-Object { Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup' }; $startupRoots += $userStartup; ` +
+		`foreach ($root in $startupRoots) { if (Test-Path $root) { Get-ChildItem $root -Filter '*.lnk' | Where-Object { $_.Name -match 'RustDesk|TECHI Remote Support' } | ForEach-Object { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; Remove-Item $_.FullName -Force } } }; ` +
+		`foreach ($svc in @('RustDesk','rustdesk')) { if (Get-Service -Name $svc -ErrorAction SilentlyContinue) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; sc.exe stop $svc | Out-Null; sc.exe delete $svc | Out-Null } }; ` +
+		`$uninstallRoots = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'); ` +
+		`foreach ($root in $uninstallRoots) { if (-not (Test-Path $root)) { continue }; foreach ($k in Get-ChildItem $root) { $p = Get-ItemProperty $k.PSPath; $name = [string]$p.DisplayName; $code = ($k.PSChildName).ToUpperInvariant(); if (($name -match '^RustDesk$|RustDesk tray|RustDesk Server') -and ($TargetProductCode -eq '' -or $code -ne $TargetProductCode)) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; $cmd = [string]$p.QuietUninstallString; if (-not $cmd) { $cmd = [string]$p.UninstallString }; if ($cmd) { Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/c',$cmd) -WindowStyle Hidden -Wait } } } }; ` +
+		`$legacyFiles = @("$env:ProgramData\TECHI Remote Support\rustdesk.exe","$env:ProgramData\TECHI Remote Support\TECHI Remote Support.exe","$env:LOCALAPPDATA\Programs\TECHI Remote Support\rustdesk.exe","$env:LOCALAPPDATA\Programs\TECHI Remote Support\TECHI Remote Support.exe","$env:LOCALAPPDATA\RustDesk\rustdesk.exe","$env:ProgramFiles\RustDesk\rustdesk.exe","${env:ProgramFiles(x86)}\RustDesk\rustdesk.exe"); ` +
+		`foreach ($f in $legacyFiles) { if (Test-Path $f) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; Remove-Item $f -Force } }; ` +
+		`$legacyDirs = @("$env:LOCALAPPDATA\Programs\TECHI Remote Support","$env:LOCALAPPDATA\RustDesk","$env:ProgramFiles\RustDesk","${env:ProgramFiles(x86)}\RustDesk"); ` +
+		`foreach ($d in $legacyDirs) { if (Test-Path $d) { if ($DetectOnly) { 'legacy_uninstall_found'; exit 0 }; Remove-Item $d -Recurse -Force } }; ` +
+		`exit 0`
 }
 
 // runMSIInstall runs msiexec /i /qn /norestart and treats exit code 3010
@@ -453,31 +562,46 @@ func runMSIInstall(msiPath string) (rebootRequired bool, err error) {
 	}
 }
 
-// ensureRustDeskProtocolHandler checks that HKCR\rustdesk\shell\open\command
+// ensureRustDeskProtocolHandler checks that the machine-wide protocol command
 // points to TECHI Remote Support.exe. If absent it writes it via PowerShell.
 func ensureRustDeskProtocolHandler() string {
-	const regKey = `HKCR\rustdesk\shell\open\command`
+	const regKey = `HKLM\SOFTWARE\Classes\rustdesk\shell\open\command`
 	out, err := runWithTimeout(5*time.Second, "reg", "query", regKey, "/ve")
 	if err == nil && strings.Contains(strings.ToLower(string(out)), "techi remote support") {
 		return "ok"
 	}
 
-	// Write the protocol handler entries via PowerShell (handles quoting cleanly).
-	script := `$p = 'HKCR:\rustdesk'; ` +
-		`if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }; ` +
-		`New-ItemProperty -Path $p -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null; ` +
-		`$p2 = 'HKCR:\rustdesk\shell\open\command'; ` +
-		`New-Item -Path $p2 -Force | Out-Null; ` +
-		`Set-ItemProperty -Path $p2 -Name '(Default)' ` +
-		`-Value '"C:\Program Files\TECHI Remote Support\TECHI Remote Support.exe" "%1"' -Force`
+	script := remoteSupportProtocolHandlerScript()
 
 	if _, writeErr := runWithTimeout(15*time.Second, "powershell",
-		"-NoProfile", "-NonInteractive", "-Command", script); writeErr != nil {
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script); writeErr != nil {
 		log.Printf("[deploy_remote_support] protocol handler write failed: %v", writeErr)
 		return "write_failed"
 	}
 	log.Printf("[deploy_remote_support] protocol handler written")
 	return "written"
+}
+
+func remoteSupportProtocolHandlerScript() string {
+	command := `"` + rustdeskDefaultInstallPath + `" "%1"`
+	return `$cmd = ` + psSingleQuote(command) + `; ` +
+		`$p = 'HKLM:\SOFTWARE\Classes\rustdesk'; ` +
+		`if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }; ` +
+		`New-ItemProperty -Path $p -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null; ` +
+		`$p2 = 'HKLM:\SOFTWARE\Classes\rustdesk\shell\open\command'; ` +
+		`New-Item -Path $p2 -Force | Out-Null; ` +
+		`Set-ItemProperty -Path $p2 -Name '(Default)' -Value $cmd -Force; ` +
+		`$tp = 'HKLM:\SOFTWARE\Classes\techiremotesupport'; ` +
+		`if (-not (Test-Path $tp)) { New-Item -Path $tp -Force | Out-Null }; ` +
+		`Set-ItemProperty -Path $tp -Name '(Default)' -Value 'URL:TECHI Remote Support Protocol' -Force; ` +
+		`New-ItemProperty -Path $tp -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null; ` +
+		`$tp2 = 'HKLM:\SOFTWARE\Classes\techiremotesupport\shell\open\command'; ` +
+		`New-Item -Path $tp2 -Force | Out-Null; ` +
+		`Set-ItemProperty -Path $tp2 -Name '(Default)' -Value $cmd -Force`
+}
+
+func psSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // ------------------------------------------------------------------ //

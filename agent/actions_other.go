@@ -19,7 +19,7 @@ func handleRestartRustDesk(_ context.Context, _ *Config) actionResult {
 	return actionResult{err: fmt.Errorf("restart_rustdesk: Windows-only action")}
 }
 
-func handleReinstallRustDesk(_ context.Context, _ *Config) actionResult {
+func handleReinstallRustDesk(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
 	return actionResult{err: fmt.Errorf("reinstall_rustdesk: Windows-only action")}
 }
 
