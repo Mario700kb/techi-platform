@@ -5,6 +5,73 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-24] Agent MSI hang on GPO upgrade — msiexec blocked >1h by stop-remote-support-runtime (FIXED, pilot-validated · Agent 2.1.19 · commit `de5aaaa`)
+
+**Status: PILOT-VALIDATED / FIXED.** Priority-1 blocker. NOT rolled fleet-wide.
+
+**Symptom (GPO pilot, upgrading an old agent):** `msiexec /i TECHI-Agent-2.1.18.0.msi` never
+exited; `techi-deploy.cmd` (`\\...\NETLOGON`) stayed running; Windows Installer stayed locked
+("Another installation is in progress"); a `techi-agent.exe stop-remote-support-runtime` child
+process stayed alive >1h and kept heartbeating.
+
+**Root cause.** The agent MSI custom action **`KillTechiRSBeforeInstall`** runs `Before InstallFiles`
+as a **synchronous deferred** action and invoked `[INSTALLFOLDER]techi-agent.exe stop-remote-support-runtime`
+on the **pre-existing** binary. On any agent older than 2.1.17 (the pilot ran **2.1.6**), that binary
+has no `stop-remote-support-runtime` case in `main()`: `os.Args[1]` matches no dispatch case →
+`isServiceCommand` is false → `flag.Parse` leaves it as a positional → `main()` reaches
+`runAgent(ctx, …)` — the normal heartbeat loop, which never exits. Because a deferred CA is
+synchronous, msiexec waits on it forever → Installer locked. The >1h "stop" process was in fact a
+full 2.1.6 agent loop (hence the heartbeats). Compounding: the same CA ran `sc delete "TECHI Remote
+Support"` on **every** agent upgrade, needlessly disrupting a healthy managed RS service.
+
+**Fix (Windows agent + MSI only; no GPO/deployment change; no fleet trigger). Commit `de5aaaa`, Agent 2.1.19.**
+- `installer.wxs` — `KillTechiRS` + `KillTechiRSBeforeInstall` **no longer invoke the agent binary**.
+  They run a self-contained, PID-targeted, path-validated PowerShell stop (`Get-CimInstance` →
+  `Stop-Process -Id`, only exes under a Remote Support install dir), **bounded** by
+  `Start-Job`/`Wait-Job -Timeout 45`, logging start/done/timeout to `deploy.log`. The old-binary
+  fall-through is eliminated; the CA cannot hang.
+- `sc delete "TECHI Remote Support"` on upgrade → `sc stop` (stop to release file locks for
+  `InstallFiles`, never delete the healthy service). Full-uninstall deletion unchanged.
+- Agent subcommands hardened (`boundedoneshot.go`, `bootstrap_windows.go`):
+  `stop-remote-support-runtime` / `remove-tray-artifacts` run under a hard 60 s wall-clock bound
+  (deterministic exit 0/2); `main()` dispatches them via `os.Exit` **before** `runAgent`.
+- Failure policy: `Return="ignore"` — a stop hiccup does not fail the MSI (InstallFiles has
+  FileInUse handling); documented in the CA comment.
+
+**Changed files:** `agent/installer/installer.wxs`, `agent/boundedoneshot.go` (new),
+`agent/boundedoneshot_test.go` (new), `agent/bootstrap_windows.go`, `agent/VERSION` (→2.1.19),
+`backend/tests/test_remote_support_migration_source.py`.
+
+**Preflight (off-prod, `de5aaaa`):** PASSED — contract 15/0, backend **975/975** flags OFF & ON,
+tsc, frontend build, agent go build+test (windows+linux); all 3 WiX installers well-formed.
+
+**Canary (CI run 30053953120, success):** `TECHI-Endpoint-Deployment-2.1.19.msi`
+sha256 `2a75803ead4ad56a5185c000adf801ecd398ddbce08e52fbc5b300fb6c10b286`;
+`techi-agent-2.1.19.exe` sha256 `c36bc9774b9bd4f5a57a7af6c2a60faed2997d76cdec27a142435ece599bc902`
+(AgentVersion 2.1.19). Verified in-MSI: fixed CA present, `stop-remote-support-runtime` agent-binary
+call absent, `sc stop` (not delete).
+
+**Pilot evidence (GPO machine, PASSED):** GPO installed **2.1.19.0**; dashboard Installed 2.1.19 /
+Desired 2.1.19 / **Current**; TechiAgent **Running**; **`msi_exit_code=0`**; scheduled task
+"TECHI Agent Deploy" **Ready**, Last Result **0**; **no** `stop-remote-support-runtime` process left;
+**no** stuck msiexec; `deploy.cmd` completed; `registry_version_after_install=2.1.19.0`,
+`installed_product_code_after_install={12F2C383-3E83-4BEB-B6E1-080A991E9F40}`,
+`service_state_after_install=RUNNING`, `version_state=equal`, `result=0`, `service_after=RUNNING`.
+**Existing Remote Support preserved** (no RS disruption from the agent-only upgrade).
+
+**Decisions / not-done (owner-directed):** 2.1.19 packages **not** activated fleet-wide (no
+self-update trigger); **no** fleet rollout; auto-remediation stays **OFF**. Phase-2 Remote Support
+migration/discovery work (legacy `RustDesk`-DisplayName classification, migration-condition
+correction in `isRustDeskInstalled`/`ensureRustDesk`, deploy-hazard hardening) is **queued, not
+started** — see the RCA in this session; migration will be operator-triggered per device (option a).
+
+**Branch context (this session, `backport/platform-components-92a521c`):** backend deployed to prod
+`/opt/techi/techi-platform` at `75b5761` then `dc67334` (drawer self_update payload fix); agent
+builds `3b1fa51` (2.1.18, ProductCode-first discovery), `de5aaaa` (2.1.19, this fix). RS package
+1.4.6.0 active (windows-amd64). No DB migration in any of these.
+
+---
+
 ## [2026-07-22] Platform Components — Operational · PRODUCTION DEPLOY (v2.2.1-platform-components-operational)
 
 Deploy i të gjitha 14 milestone-ve Operational në prodhim. **Rollback NUK u përdor.**
