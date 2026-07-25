@@ -48,7 +48,18 @@ jobs:
       #     workflow before an MSI is produced.                             #
       - name: Test agent
         working-directory: agent
-        run: go test ./...
+        shell: pwsh
+        run: |
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw "go test ./... failed" }
+          # Prove the Windows-only ACL repair test actually RAN and PASSED —
+          # a green go test exit alone cannot distinguish PASS from SKIP.
+          $o = (go test -v -run '^TestApplyConfigACL_RepairsEmptyDaclFile$' ./... 2>&1 | Out-String)
+          Write-Host $o
+          if ($o -notmatch '--- PASS: TestApplyConfigACL_RepairsEmptyDaclFile') {
+            throw "Windows ACL repair test did not PASS (skipped or failed) — see output above"
+          }
+          Write-Host "VERIFIED: TestApplyConfigACL_RepairsEmptyDaclFile PASSED on windows-latest"
 
       # ------------------------------------------------------------------ #
       # 3. WiX v7 + UI extension (per WixUI_Common dialogs)                 #
