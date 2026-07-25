@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - stable/phase-2-heartbeat
+      # TEMPORARY (Agent 2.1.20 release): build the coherent 2.1.17→2.1.20
+      # agent lineage from this branch. To be removed after 2.1.20 artifacts
+      # are verified — see "ci(agent): remove temporary backport build trigger".
+      - backport/platform-components-92a521c
     paths:
       - 'agent/**'
       - '.github/workflows/build-agent-msi.yml'
@@ -35,6 +39,16 @@ jobs:
         with:
           go-version: '1.21'
           cache-dependency-path: agent/go.sum
+
+      # ------------------------------------------------------------------ #
+      # 2b. Run the Go test suite on the real Windows runner BEFORE any     #
+      #     build/MSI step. Compiles+executes *_windows_test.go, including  #
+      #     TestApplyConfigACL_RepairsEmptyDaclFile (the empty-DACL repair  #
+      #     round-trip that can only run on Windows). Any failure stops the #
+      #     workflow before an MSI is produced.                             #
+      - name: Test agent
+        working-directory: agent
+        run: go test ./...
 
       # ------------------------------------------------------------------ #
       # 3. WiX v7 + UI extension (per WixUI_Common dialogs)                 #
