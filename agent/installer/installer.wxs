@@ -303,10 +303,18 @@
     <!-- LockdownTechiDataDir: agent.config.json ka enrollment_token, rustdesk_key, rustdesk_default_password
          në plaintext. ProgramData trashëgon ACL që lë "Users" me Read, kështu që çdo llogari lokale e PC-së
          mund ta lexonte; icacls heq trashëgimine dhe lë vetëm SYSTEM + Administrators (sipas SID, jo emrit,
-         që funksionon në çdo locale Windows). /T/(OI)(CI) e zbatojnë te skedarët ekzistues dhe te ata të rinj. -->
+         që funksionon në çdo locale Windows).
+         RREGULLIM KRITIK (2.1.20, RCA fresh-install "Access is denied"): flamujt (OI)(CI) janë
+         VETËM për kontejnerë (dosje). Kur zbatoheshin me /T edhe mbi skedarin e gjethes
+         agent.config.json, icacls (me /C /Q) e kalonte grant-in mbi skedarin dhe linte VETËM
+         heqjen e trashëgimisë → DACL bosh (O:SYG:SYD:PAI, pa asnjë ACE) → as SYSTEM s'e lexonte
+         dot. Instalimet fresh mbeteshin përgjithmonë te migrimi (paths.go os.Open i file-it legacy);
+         upgrade-t s'prekeshin sepse lexojnë canonical-in TechiAgent, jo këtë file. Forma e saktë:
+         grant `F` pa flamuj — icacls i vë vetë (OI)(CI) te dosjet dhe `F` i thjeshtë te skedarët.
+         Identike me lockdownConfigACL (config_windows.go) që ka funksionuar gjithmonë për file. -->
     <CustomAction Id="LockdownTechiDataDir"
                   Directory="TECHIDATADIR"
-                  ExeCommand="icacls.exe &quot;[TECHIDATADIR].&quot; /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q"
+                  ExeCommand="icacls.exe &quot;[TECHIDATADIR].&quot; /inheritance:r /grant:r *S-1-5-18:F *S-1-5-32-544:F /T /C /Q"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>

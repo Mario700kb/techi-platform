@@ -5,7 +5,43 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-07-24] Agent MSI hang on GPO upgrade — msiexec blocked >1h by stop-remote-support-runtime (FIXED, pilot-validated · Agent 2.1.19 · commit `de5aaaa`)
+## [2026-07-25] Fresh MSI installs never register — legacy config gets an empty deny-all DACL from the installer's icacls (FIXED in code · Agent 2.1.20 · NOT yet built/canaried)
+
+**Status: ROOT CAUSE PROVEN + FIX IMPLEMENTED (host-validated). MSI NOT yet built (Windows CI) and NOT canaried. Do not deploy without the canary below.**
+
+**Symptom.** Fresh MSI 2.1.19 installs via GPO on two unrelated domains (ADPASCUCCI.COM, GFFA.LOCAL): MSI exit 0, `TechiAgent` service RUNNING, `techi-agent.exe` running, correct version — but **no heartbeat, no registration, no RustDesk, no `TECHI Remote Support2.toml`**. `agent.log` repeats forever: `open C:\ProgramData\TECHI\agent.config.json: Access is denied` / retry in 5 min. **Upgrades of existing agents are unaffected.**
+
+**Root cause (proven).** The MSI custom action `LockdownTechiDataDir` ran:
+`icacls "C:\ProgramData\TECHI\." /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C /Q`.
+`(OI)(CI)` are **container-only inheritance flags**; applied to the leaf file `agent.config.json` via `/T`, icacls (with `/C /Q`) **skips the grant on the file** while still stripping inheritance → the file ends up with an **empty, protected, deny-all DACL** (`O:SYG:SYD:PAI`, zero ACEs). An empty DACL denies data reads to *everyone*, including the SYSTEM owner (owner keeps only implicit `READ_CONTROL`/`WRITE_DAC`, not `FILE_READ_DATA` — which is why `Get-Acl` still works and shows "Access: empty," and why even an elevated admin gets Access Denied). This action runs on **every** install, so the legacy file ends up empty-DACL on **both** fresh and upgraded machines — hence the identical displayed SDDL.
+
+**Why upgraded machines stayed operational.** The service loads the **canonical** `C:\ProgramData\TechiAgent\agent.config.json`. On upgrades that file already exists, so `migrateConfigIfNeeded` takes the `refreshEnrollmentTokenIfNeeded` branch and **never opens** the crippled legacy `TECHI\` file. Its healthy DACL comes from the agent's own per-file `lockdownConfigACL` (`*S-1-5-18:F`, no `(OI)(CI)`, no `/T`) — which always worked.
+
+**Why fresh installs failed.** On a fresh install the canonical file does not exist yet, so `migrateConfigIfNeeded` must `os.Open(C:\ProgramData\TECHI\agent.config.json)` (paths.go) to bootstrap it — the exact call that returns "Access is denied," matching the log verbatim. `LockdownTechiDataDir` is sequenced **before** `StartServices`, so the DACL is already empty the first time the service reads it: deterministic, permanent failure.
+
+**The missing RustDesk TOML is a downstream symptom, not a cause.** `ensureRustDesk` runs only inside the heartbeat cycle, after config load succeeds; config load never succeeds, so the TOML is never generated.
+
+**CORRECTION to the [2026-07-09] entry below** ("PC i sapo-formatuar … Access is denied"). That investigation **wrongly exonerated our ACL code and blamed AV/EDR**, on the assumption that `*S-1-5-18:F` guarantees SYSTEM access. The on-disk DACL is **empty** (no `(A;;FA;;;SY)` ACE), proving the SYSTEM grant never landed — it was our installer, not AV. The 2026-07-09 change only added the lifecycle retry loop, which converted a silent death into an infinite retry (the "retry in 5 min forever" seen now). The elevated-admin "cannot repair" evidence is consistent with this and does **not** contradict SYSTEM being able to repair: Administrators is not the file owner and `icacls /grant` does not engage take-ownership/restore privileges.
+
+**Windows security semantics (why ACL repair from the running service works).** A file with an empty (non-NULL) DACL and no OWNER RIGHTS (S-1-3-4) ACE still grants the object **owner** implicit `WRITE_DAC`; the LocalSystem service owns the file (`O:SY`), so it can re-grant itself `F` and read. The field observation that an *elevated administrator* cannot repair the ACL does **not** contradict this: Administrators is not the file owner, and a plain `icacls /grant` does not engage `SeTakeOwnership`/`SeRestore`. (A `SeBackupPrivilege` backup-semantics read was considered as a fallback that never modifies the file, but **deliberately not shipped** — it is unnecessary for the proven root cause, adds a DACL-bypass code path and privilege manipulation that can't be unit-tested off Windows, and cuts against the smallest-safe-change principle. If a canary ever shows owner-implicit `WRITE_DAC` failing, add it then, with evidence.)
+
+**Fix (two parts, code only; no deploy).**
+- **Installer (removes the cause):** `LockdownTechiDataDir` now grants `*S-1-5-18:F *S-1-5-32-544:F` (no `(OI)(CI)`) — icacls applies `(OI)(CI)` to directories and plain `F` to files on its own, identical to the proven per-file `lockdownConfigACL`. Still SYSTEM+Administrators only, inheritance still removed, idempotent. Requires MSI 2.1.20.
+- **Agent self-heal (recovers the already-stuck fielded fleet without a new MSI):** on the migration read path, an access-denied on the legacy file triggers a scoped, file-only, idempotent ACL repair (grant SYSTEM+Administrators, retry exactly once). Non-permission errors (missing file, malformed JSON) never trigger ACL work. On failure the wrapped error preserves `os.ErrPermission` and the existing lifecycle retry loop continues. Secrets are never logged.
+
+**Security scope.** No broad principals (no Users/Everyone/Authenticated Users). Secrets still restricted to SYSTEM + Administrators. Self-heal touches only the exact legacy config file, never recurses, never recreates/overwrites it, never replaces a valid canonical config.
+
+**Files changed.** `agent/installer/installer.wxs` (icacls fix + comment), `agent/config_windows.go` (extract `applyConfigACL`; wire the repair seam via `init`), `agent/paths.go` (scoped ACL-repair recovery in migration + seam), `agent/config_recovery_test.go` (new), `agent/config_acl_repair_windows_test.go` (new; Windows integration test — real icacls empty-DACL repro → `applyConfigACL` → `os.ReadFile` succeeds), `agent/installer_wxs_test.go` (new), `agent/VERSION` → 2.1.20.
+
+**Test evidence (macOS host).** `gofmt` clean; `go vet ./...` clean; `go test ./...` PASS. New recovery tests **ran, not skipped** (host enforces mode bits → real EACCES exercised): fast-path, missing-file-no-repair, malformed-JSON-not-ACL, permission→exactly-one-repair→retry, repair-fails→actionable wrapped error preserving `os.ErrPermission` (file left untouched), repair-reports-success-but-still-unreadable→actionable error, idempotency, and no-secret-in-logs. Installer assertion test confirms the command has no `(OI)(CI)` and no broad principals. `GOOS=windows GOARCH=amd64 go build` PASS. **Not runnable on macOS:** the MSI build (`wix` on macOS errors on unrelated `Directory/@Name` lines — "WiX only supports Windows"); build the MSI on the Windows CI runner. The real icacls repair is compile-validated only and needs a Windows canary.
+
+**Canary procedure.** Build MSI 2.1.20 on Windows CI (single-source version = `agent/VERSION`). On a throwaway fresh VM joined to a test domain: GPO/`msiexec /i TECHI-Endpoint-Deployment-2.1.20.msi /qn ENROLLMENT_TOKEN=…`; confirm `(Get-Acl 'C:\ProgramData\TECHI\agent.config.json').Sddl` now contains an `(A;;FA;;;SY)` ACE, the device registers, heartbeats, and `TECHI Remote Support2.toml` is generated. Separately, on an *already-stuck* 2.1.5–2.1.19 fresh install, deploy the 2.1.20 agent binary (or `sc stop/start TechiAgent` after dropping the new exe) and confirm the self-heal log lines and successful migration **without** reinstalling the MSI.
+
+**Rollback procedure.** Code is unshipped; revert is `git revert`/reset of the listed files. If 2.1.20 MSI is published and regresses, the MajorUpgrade/UpgradeCode is unchanged, so redeploying the prior signed 2.1.19 MSI is a standard downgrade-by-reinstall; existing `device_id`/enrollment are preserved (config untouched by rollback).
+
+**Remaining risks.** MSI build + the Windows-only ACL repair are unproven on a live Windows host (canary required). If owner-implicit `WRITE_DAC` ever fails on a real machine, the agent stays in its (harmless) retry loop and the 2.1.20 MSI reinstall still fixes it — no regression vs. today. Edge case: if a machine has both a broken legacy file *and* a broken canonical file, the canonical path is out of scope of this fix (not observed).
+
+
 
 **Status: PILOT-VALIDATED / FIXED.** Priority-1 blocker. NOT rolled fleet-wide.
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -63,28 +65,82 @@ func migrateConfigIfNeeded(configPath string, legacyConfigPath string, logPath s
 		}
 	}
 
-	src, err := os.Open(legacyConfigPath)
+	data, err := readLegacyConfigForMigration(legacyConfigPath)
 	if err != nil {
 		return err
 	}
-	defer src.Close()
 
 	dst, err := os.OpenFile(configPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(dst, src)
+	_, writeErr := dst.Write(data)
 	closeErr := dst.Close()
-	if copyErr != nil {
+	if writeErr != nil {
 		_ = os.Remove(configPath)
-		return copyErr
+		return writeErr
 	}
 	if closeErr != nil {
 		_ = os.Remove(configPath)
 		return closeErr
 	}
+	// Secure the freshly-created canonical copy with the same per-file ACL the
+	// agent applies on every rewrite (SYSTEM + Administrators only). Idempotent;
+	// a no-op outside Windows.
+	lockdownConfigACL(configPath)
 	log.Printf("migrated legacy agent config from %s to %s", legacyConfigPath, configPath)
 	return nil
+}
+
+// repairConfigACL is a config-recovery seam. On Windows it is replaced (via an
+// init in config_windows.go) with applyConfigACL, which re-grants SYSTEM +
+// Administrators Full Control on a single config file (no recursion, no broad
+// principals). The LocalSystem service owns the legacy file, so it retains
+// implicit WRITE_DAC even on an empty deny-all DACL (no OWNER RIGHTS ACE
+// suppresses it) and can restore its own read access. Elsewhere it stays inert
+// so non-Windows builds are unaffected. It is a var so tests can inject
+// behaviour without a Windows host.
+var errACLRecoveryUnsupported = errors.New("config ACL recovery is only supported on Windows")
+
+var repairConfigACL = func(_ string) error { return errACLRecoveryUnsupported }
+
+// readLegacyConfigForMigration reads the legacy config during first-run
+// migration. A fresh install's ONLY route to a working canonical config is
+// copying this file, so a broken DACL here (empty deny-all — the 2.1.20 RCA:
+// the MSI applied container-only (OI)(CI) flags to this leaf file) strands the
+// device forever. Recovery is scoped and Windows-only:
+//
+//  1. normal read;
+//  2. on access-denied ONLY: a scoped, file-only, idempotent ACL repair (grant
+//     SYSTEM + Administrators F), then exactly one retry.
+//
+// Any non-permission error (missing file, I/O, etc.) is returned unchanged and
+// never triggers ACL work; malformed JSON reads fine here and is handled later
+// by loadConfig, so it is never mistaken for a permission problem. On failure
+// the wrapped error preserves os.ErrPermission and the existing lifecycle retry
+// loop continues. File contents are never logged.
+func readLegacyConfigForMigration(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return data, nil
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		return nil, err
+	}
+
+	log.Printf("lifecycle: legacy config %s unreadable (access denied); attempting scoped ACL repair (SYSTEM + Administrators, this file only)", path)
+	if repairErr := repairConfigACL(path); repairErr != nil {
+		log.Printf("lifecycle: legacy config ACL repair could not run: %v", repairErr)
+		return nil, fmt.Errorf("legacy config %s unreadable (access denied) and scoped ACL repair failed: %w", path, err)
+	}
+
+	repaired, retryErr := os.ReadFile(path)
+	if retryErr != nil {
+		log.Printf("lifecycle: legacy config still unreadable after ACL repair: %v", retryErr)
+		return nil, fmt.Errorf("legacy config %s still unreadable after scoped ACL repair: %w", path, retryErr)
+	}
+	log.Printf("lifecycle: legacy config ACL repair succeeded; file readable")
+	return repaired, nil
 }
 
 // refreshEnrollmentTokenIfNeeded covers a device whose canonical config
