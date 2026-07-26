@@ -22,6 +22,17 @@ class TestCompareVersions:
         # Same fallback the prior string-equality check used: not equal -> mismatch.
         assert vs.compare_versions("dev-build", "1.0.0") == "outdated"
 
+    def test_trailing_zero_segments_are_current(self):
+        # Missing trailing segments are zero: 1.4.6 == 1.4.6.0 (RS regression).
+        assert vs.compare_versions("1.4.6", "1.4.6.0") == "current"
+        assert vs.compare_versions("2.1.19", "2.1.19.0") == "current"
+        assert vs.compare_versions("1.4", "1.4.0.0") == "current"
+
+    def test_cross_width_older_and_newer(self):
+        assert vs.compare_versions("1.4.5", "1.4.6.0") == "outdated"
+        assert vs.compare_versions("2.0", "1.9.9") == "ahead"
+        assert vs.compare_versions("2.1.20", "2.1.19.9") == "ahead"
+
 
 class TestGetActiveVersion:
     def test_mikrotik_reads_from_platform_registry(self):

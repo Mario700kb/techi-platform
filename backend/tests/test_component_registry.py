@@ -129,6 +129,29 @@ def test_health_unknown_when_desired_missing_or_unparseable():
     assert C.derive_health("1.4.6+64", "abc") == C.ComponentHealth.UNKNOWN
 
 
+def test_health_trailing_zero_segments_are_equal():
+    """1.4.6 and 1.4.6.0 are the same semantic version — missing trailing
+    segments are treated as zero, so health must be CURRENT, not OUTDATED
+    (production regression: RS installed 1.4.6 vs desired 1.4.6.0)."""
+    assert C.derive_health("1.4.6", "1.4.6.0") == C.ComponentHealth.CURRENT
+    assert C.derive_health("1.4.6.0", "1.4.6") == C.ComponentHealth.CURRENT
+    assert C.derive_health("1.4", "1.4.0.0") == C.ComponentHealth.CURRENT
+    # A genuinely older/newer version still resolves correctly across widths.
+    assert C.derive_health("1.4.5", "1.4.6.0") == C.ComponentHealth.OUTDATED
+    assert C.derive_health("1.4.6", "1.5.0") == C.ComponentHealth.OUTDATED
+    assert C.derive_health("1.4.6.1", "1.4.6.0") == C.ComponentHealth.CURRENT
+
+
+def test_health_prerelease_installed_is_unknown():
+    # Prerelease / build-metadata strings are unparseable here → fail-closed.
+    assert C.derive_health("1.4.6-beta", "1.4.6.0") == C.ComponentHealth.UNKNOWN
+
+
+def test_health_missing_and_no_desired_edges():
+    assert C.derive_health("", "1.4.6") == C.ComponentHealth.MISSING
+    assert C.derive_health("1.4.6", "") == C.ComponentHealth.UNKNOWN
+
+
 def test_list_file_types_for_component():
     assert set(C.list_file_types_for_component("agent")) == {
         "msi", "agent_binary", "agent_update_msi"

@@ -79,6 +79,22 @@ def test_available_none_when_no_packages():
 # --------------------------------------------------------------------------- #
 # Status (reuses Desired-State resolver)                                       #
 # --------------------------------------------------------------------------- #
+def test_remote_support_trailing_zero_is_not_outdated():
+    """End-to-end through the real Desired-State resolver: RS installed 1.4.6
+    against desired 1.4.6.0 must report outdated=False (production regression)."""
+    packages = [_pkg("1.4.6.0", file_type="remote_support_msi", active=True)]
+    svc = ComponentPackageService(db=None)
+    svc._packages = _FakePackages(packages)
+    svc._states._packages = _FakePackages(packages)  # real resolver, faked pkg source
+    device = SimpleNamespace(platform="windows", agent_version=None, rustdesk_version="1.4.6")
+
+    status = svc.status_for(device, "remote_support")
+
+    assert status.installed_version == "1.4.6"
+    assert status.desired_version == "1.4.6.0"
+    assert status.outdated is False
+
+
 def test_status_combines_state_and_available(monkeypatch):
     svc = _svc([_pkg("2.1.14", active=True), _pkg("2.1.20", active=False)])
     monkeypatch.setattr(

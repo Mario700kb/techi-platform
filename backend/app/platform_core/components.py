@@ -42,13 +42,15 @@ from types import MappingProxyType
 from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from app.platform_core.capabilities import KNOWN_CAPABILITIES
+from app.platform_core.versioning import compare_numeric
 from app.schemas.agent_package import AgentFileType
 from app.schemas.remote_action import ActionType
 
-# Pure domain layer: this module imports ONLY sibling registries and schema
-# enums — never FastAPI, a DB session, settings I/O, services, or repositories.
-# The version comparison used by desired-state health is therefore inlined below
-# (a self-contained pure helper) rather than importing services.version_service.
+# Pure domain layer: this module imports ONLY sibling registries/helpers and
+# schema enums — never FastAPI, a DB session, settings I/O, services, or
+# repositories. Desired-state health delegates its numeric comparison to the
+# sibling pure helper platform_core.versioning (one definition shared with
+# services.version_service), never importing services.version_service itself.
 
 
 class LifecycleOperation(str, Enum):
@@ -266,16 +268,6 @@ class ComponentState:
     health: ComponentHealth
 
 
-def _parse_version(value: str) -> Optional[tuple]:
-    """Parse a dotted numeric version to a tuple, or None if unparseable.
-    Mirrors the semantics of services.version_service._parse without importing it
-    (keeps this module a pure domain layer)."""
-    try:
-        return tuple(int(p) for p in value.strip().lstrip("vV").split("."))
-    except (ValueError, AttributeError):
-        return None
-
-
 def derive_health(
     installed_version: Optional[str], desired_version: Optional[str]
 ) -> ComponentHealth:
@@ -286,7 +278,8 @@ def derive_health(
       * installed present, no desired        -> UNKNOWN (nothing to compare against)
       * either version unparseable           -> UNKNOWN (fail-closed, never guess)
       * installed older than desired         -> OUTDATED
-      * installed equal to desired           -> CURRENT
+      * installed equal to desired           -> CURRENT (numeric, missing trailing
+        segments treated as zero: 1.4.6 == 1.4.6.0)
       * installed newer than desired ("ahead") -> CURRENT (a device is not "behind";
         a documented, deliberate fold at this foundation phase — no AHEAD state)
     """
@@ -298,12 +291,10 @@ def derive_health(
         return ComponentHealth.UNKNOWN
     if installed == desired:
         return ComponentHealth.CURRENT
-    iv, dv = _parse_version(installed), _parse_version(desired)
-    if iv is None or dv is None:
+    cmp = compare_numeric(installed, desired)
+    if cmp is None:
         return ComponentHealth.UNKNOWN
-    if iv == dv:
-        return ComponentHealth.CURRENT
-    return ComponentHealth.OUTDATED if iv < dv else ComponentHealth.CURRENT
+    return ComponentHealth.OUTDATED if cmp < 0 else ComponentHealth.CURRENT
 
 
 def build_component_state(

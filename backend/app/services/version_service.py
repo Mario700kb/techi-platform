@@ -16,6 +16,7 @@ callers ask this module "what's the status" and render accordingly.
 from typing import Literal, Optional
 
 from app.platform_core.registry import resolve_platform
+from app.platform_core.versioning import compare_numeric
 from app.services.agent_package_service import AgentPackageService
 
 VersionStatus = Literal["current", "outdated", "ahead", "unknown"]
@@ -33,24 +34,23 @@ def get_active_version(platform_id: Optional[str]) -> Optional[str]:
     return None
 
 
-def _parse(version: str) -> Optional[tuple]:
-    try:
-        return tuple(int(p) for p in version.strip().lstrip("vV").split("."))
-    except (ValueError, AttributeError):
-        return None
-
-
 def compare_versions(reported: Optional[str], latest: Optional[str]) -> VersionStatus:
     """reported == latest -> "current"; reported older -> "outdated";
-    reported newer -> "ahead"; either side missing/unparseable -> "unknown"
-    unless the raw strings are exactly equal (still "current")."""
+    reported newer -> "ahead". Numeric comparison treats missing trailing
+    segments as zero, so ``1.4.6`` == ``1.4.6.0`` -> "current" and
+    ``2.1.20`` > ``2.1.19.9`` -> "ahead". Both sides missing/empty -> "unknown";
+    a single unparseable, non-equal side folds to "outdated" (unchanged
+    fail-closed behaviour — a device reporting a version we can't parse against a
+    known latest is treated as needing attention, not silently current)."""
     reported = (reported or "").strip()
     latest = (latest or "").strip()
     if not reported or not latest:
         return "unknown"
     if reported == latest:
         return "current"
-    r, l = _parse(reported), _parse(latest)
-    if r is None or l is None or r == l:
-        return "current" if r == l else "outdated"
-    return "ahead" if r > l else "outdated"
+    cmp = compare_numeric(reported, latest)
+    if cmp is None:
+        return "outdated"
+    if cmp == 0:
+        return "current"
+    return "ahead" if cmp > 0 else "outdated"
