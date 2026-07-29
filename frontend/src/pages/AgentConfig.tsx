@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, ClipboardCopy, Info, RotateCcw, Save } from "lucide-react";
+import { Check, ClipboardCopy, Info, RotateCcw, Save } from "lucide-react";
 import {
   AgentConfig,
   getAgentConfig,
@@ -151,7 +151,12 @@ export default function AgentConfigPage() {
         </p>
       </div>
 
-      {/* Agent capability notice */}
+      {/* How each column reaches the fleet.
+          Heartbeat is served on every heartbeat response (agent.py get_heartbeat_interval →
+          heartbeat_interval_seconds) and applied by the agent on the next cycle
+          (main.go pendingIntervalChange → agent.go ticker.Reset), so it needs no push channel.
+          Inventory is read only via get_inventory_interval("mikrotik") — the agent has no
+          inventory-interval code at all, so the other rows are stored but never applied. */}
       <div
         className="flex gap-3 rounded-lg p-4 text-sm"
         style={{
@@ -159,16 +164,19 @@ export default function AgentConfigPage() {
           border: "1px solid var(--th-border-drawer-section)",
         }}
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
         <div style={{ color: "var(--th-text-muted)" }}>
-          <p className="mb-1 font-semibold text-amber-400">
-            Automatic rollout not supported by current agent
-          </p>
+          <p className="mb-1 font-semibold text-sky-400">How these settings reach the fleet</p>
           <p>
-            The installed TechiAgent MSI binary does not support the{" "}
-            <code className="rounded bg-white/10 px-1 text-xs">apply_agent_config</code> remote
-            action. Interval changes must be propagated manually via the PowerShell scripts below
-            or through a GPO Scheduled Task.
+            <span style={{ color: "var(--th-text-primary)" }}>Heartbeat</span> applies
+            automatically — the new interval is returned on the next heartbeat and takes effect
+            within one cycle. No GPO or PowerShell needed; the scripts below are only for devices
+            that are not checking in.
+          </p>
+          <p className="mt-2">
+            <span style={{ color: "var(--th-text-primary)" }}>Inventory</span> is currently
+            applied for RouterOS only. Values saved for the other platforms are stored but not yet
+            honoured by the agent.
           </p>
         </div>
       </div>
