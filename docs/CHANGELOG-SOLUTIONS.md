@@ -5,6 +5,67 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-29] SEC-002-GATE-2026-07-29 — Remote Support password gated on agent_id
+
+**Partial remediation of RISK-SEC-002** (see PROD-AUDIT-2026-07-29 below for the
+finding). `/api/v1/agent/heartbeat` must stay public for agents to function, and
+it resolves the device from a caller-supplied sequential `device_id`, so
+`POST {"device_id": N}` returned that device's Remote Support password in
+plaintext for any N across 773 devices.
+
+**Change.** Device resolution is untouched. Exactly one response field is now
+conditional:
+
+```python
+rs_password = (
+    RemoteSupportPasswordService(db).get_or_create(device)
+    if _agent_id_matches(payload.agent_id, getattr(device, "agent_id", None))
+    else None
+)
+```
+
+`_agent_id_matches` requires both sides non-empty and compares with
+`secrets.compare_digest`. A heartbeat from an unauthenticated caller is still
+processed in full — telemetry, inventory, alerts, pending actions and interval
+are unchanged — it simply receives `remote_support_password: null`.
+
+**Why this was chosen over the nginx rate limit as the first step.** With
+sequential IDs a 30 req/min limit still enumerates the fleet in ~26 minutes, and
+a targeted attack on one known `device_id` needs a single request, which no rate
+limit affects. It also charges a real availability risk: a client office of 40
+PCs behind one NAT address emits ~8 heartbeats/minute from a single source.
+The gate charges nothing and closes the enumeration path.
+
+**Blast radius: zero, measured not assumed.** All 774 devices already carry an
+`agent_id` (`f"agent_{secrets.token_urlsafe(18)}"`, 144 bits,
+`agent_enrollment_service.py:341`); the agent sends it on every heartbeat; and
+`remote_support_password` was already `Optional[str] = None` in
+`AgentHeartbeatResponse`, so no schema change was required. Agents below 2.1.5
+do not apply the per-device password at all
+(`remote_support.py:150-161`), so withholding it from a caller that cannot prove
+identity costs them nothing either.
+
+**Accepted limitation.** Three MikroTik devices use `mikrotik-<serial>` as their
+`agent_id` rather than 144 bits of entropy, so those three are guessable by
+anyone who knows the serial. Impact is negligible — the routers do not run
+Remote Support — but it is a real hole and is covered by an explicit test.
+
+**This is a knowledge barrier, not authentication.** `agent_id` is a
+non-expiring bearer secret readable by a local administrator from
+`agent.config.json` (MSI ACLs restrict it to SYSTEM + Administrators,
+`installer.wxs:307`). It offers no replay protection and no freshness proof. It
+is the bridge to the RSA-PSS challenge/response in `AgentAuthMigrationService`
+on `rollback/remote-support-2026-07-18`, not a replacement for it. RISK-SEC-002
+stays open at reduced severity until observe-mode trust measurement and
+enforcement land.
+
+**Verification.** `tests/test_heartbeat_password_gate.py` — 18 cases covering the
+matching path, four enumeration variants (omitted/empty/wrong/truncated
+`agent_id`), a device with no `agent_id` on record, whitespace and
+case-sensitivity, and the MikroTik format. The enumeration tests assert that the
+password is not merely withheld but never generated, so probing cannot seed a
+password for a device that has none. Full backend suite: 1004 passed.
+
 ## [2026-07-29] PROD-AUDIT-2026-07-29 — Production-verified read-only audit: four fixes shipped, three findings retracted
 
 **Scope.** A full read-only audit (backup/storage, performance/database, agent

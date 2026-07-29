@@ -1,4 +1,6 @@
 import logging
+import secrets
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -23,6 +25,20 @@ from app.services.remote_support_password_service import RemoteSupportPasswordSe
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _agent_id_matches(provided: Optional[str], stored: Optional[str]) -> bool:
+    """True when the heartbeat carries this device's own agent_id.
+
+    compare_digest so the comparison does not leak the stored value through
+    timing. Both sides must be non-empty: a device with no agent_id on record
+    must never be unlocked by a caller that also omits it.
+    """
+    provided = (provided or "").strip()
+    stored = (stored or "").strip()
+    if not provided or not stored:
+        return False
+    return secrets.compare_digest(provided, stored)
 
 
 def _normalize_public_backend_url(request: Request) -> str:
@@ -117,7 +133,25 @@ def agent_heartbeat(
 
     # Server-authoritative per-device RS password. Generated on first use and
     # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it.
-    rs_password = RemoteSupportPasswordService(db).get_or_create(device)
+    #
+    # Gated on the caller proving it knows this device's agent_id. Device
+    # resolution above is deliberately left untouched — a heartbeat is still
+    # processed in full whether or not the caller authenticates; only this one
+    # response field is withheld. Without the gate the endpoint is public,
+    # unauthenticated, and resolves the device from a caller-supplied sequential
+    # device_id, so the whole fleet's remote-support credentials are enumerable
+    # (RISK-SEC-002). agent_id is secrets.token_urlsafe(18) — 144 bits — so the
+    # gate turns enumeration into an infeasible guess.
+    #
+    # This is a knowledge barrier, not authentication: agent_id is a
+    # non-expiring bearer secret readable by a local administrator. It is the
+    # bridge to the RSA challenge/response in AgentAuthMigrationService, not a
+    # replacement for it.
+    rs_password = (
+        RemoteSupportPasswordService(db).get_or_create(device)
+        if _agent_id_matches(payload.agent_id, getattr(device, "agent_id", None))
+        else None
+    )
 
     return {
         "device_id": device.id,
