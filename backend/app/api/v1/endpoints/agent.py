@@ -128,29 +128,38 @@ def agent_heartbeat(
 
     background_tasks.add_task(_heartbeat_side_effects, payload, device.id, heartbeat.id, ctx)
 
-    pending_actions = RemoteActionService(db).collect_pending_for_delivery(device.id)
+    # Does the caller prove it knows this device's agent_id? Device resolution
+    # above is deliberately left untouched — a heartbeat is still processed in
+    # full whether or not the caller authenticates — but the two pieces of the
+    # response that are attacker-usable are withheld unless this holds. Without
+    # it the endpoint is public, unauthenticated, and resolves the device from a
+    # caller-supplied sequential device_id (RISK-SEC-002). agent_id is
+    # secrets.token_urlsafe(18) — 144 bits — so this turns enumeration into an
+    # infeasible guess. It is a knowledge barrier, not authentication: agent_id
+    # is a non-expiring bearer secret readable by a local administrator, and is
+    # the bridge to the RSA challenge/response in AgentAuthMigrationService, not
+    # a replacement for it.
+    authenticated = _agent_id_matches(payload.agent_id, getattr(device, "agent_id", None))
+
+    # Pending remote-action delivery is destructive: collect_pending_for_delivery
+    # marks each returned action SENT so it is never re-delivered. An
+    # unauthenticated caller could therefore not only read every pending action's
+    # payload and callback_secret (set_remote_password, run_powershell, …) but
+    # also mark them SENT, starving the real device while reporting them complete
+    # via the leaked callback token. So it only runs for an authenticated caller;
+    # everyone else gets an empty list and nothing is marked SENT.
+    pending_actions = (
+        RemoteActionService(db).collect_pending_for_delivery(device.id)
+        if authenticated
+        else []
+    )
     interval = _cfg_svc.get_heartbeat_interval(payload.platform)
 
     # Server-authoritative per-device RS password. Generated on first use and
-    # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it.
-    #
-    # Gated on the caller proving it knows this device's agent_id. Device
-    # resolution above is deliberately left untouched — a heartbeat is still
-    # processed in full whether or not the caller authenticates; only this one
-    # response field is withheld. Without the gate the endpoint is public,
-    # unauthenticated, and resolves the device from a caller-supplied sequential
-    # device_id, so the whole fleet's remote-support credentials are enumerable
-    # (RISK-SEC-002). agent_id is secrets.token_urlsafe(18) — 144 bits — so the
-    # gate turns enumeration into an infeasible guess.
-    #
-    # This is a knowledge barrier, not authentication: agent_id is a
-    # non-expiring bearer secret readable by a local administrator. It is the
-    # bridge to the RSA challenge/response in AgentAuthMigrationService, not a
-    # replacement for it.
+    # returned every heartbeat so a >= 2.1.5 agent applies/self-heals it. Same
+    # gate as pending actions above.
     rs_password = (
-        RemoteSupportPasswordService(db).get_or_create(device)
-        if _agent_id_matches(payload.agent_id, getattr(device, "agent_id", None))
-        else None
+        RemoteSupportPasswordService(db).get_or_create(device) if authenticated else None
     )
 
     return {

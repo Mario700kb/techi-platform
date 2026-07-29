@@ -5,6 +5,57 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-29] SEC-002B-ACTIONS-GATE-2026-07-29 — Pending remote actions gated on agent_id
+
+**Second, more damaging half of RISK-SEC-002, found while reviewing the same
+endpoint.** The password gate (SEC-002-GATE below) protected
+`remote_support_password`, but the same unauthenticated heartbeat also returned
+`pending_actions`, and that path is destructive:
+`RemoteActionService.collect_pending_for_delivery(device_id)` marks every action
+it returns as SENT. So `POST {"device_id": N}` let an unauthenticated caller:
+
+- read every pending action's full `parameters` — including `set_remote_password`
+  and `run_powershell` payloads — plus its `callback_secret`, the HMAC token that
+  is the only control on `/actions/{id}/complete`;
+- consume them, so the real device never receives them;
+- report them complete via the leaked callback token, so the operator sees a
+  green "succeeded" for a command that never ran.
+
+Theft, denial, and forgery in one request — worse than the password leak, which
+was disclosure only.
+
+**Change.** The `agent_id` check that already guarded the password is computed
+once as `authenticated` and now guards both. An unauthenticated caller gets
+`pending_actions: []`, and `collect_pending_for_delivery` is **not called at
+all**, so nothing is marked SENT:
+
+```python
+authenticated = _agent_id_matches(payload.agent_id, getattr(device, "agent_id", None))
+
+pending_actions = (
+    RemoteActionService(db).collect_pending_for_delivery(device.id) if authenticated else []
+)
+rs_password = (
+    RemoteSupportPasswordService(db).get_or_create(device) if authenticated else None
+)
+```
+
+Device resolution and heartbeat ingestion are untouched, exactly as with the
+password gate. Verified in production after deploy: an unauthenticated
+`{"device_id": N}` returns `pending_actions: []`, and a heartbeat carrying the
+device's real `agent_id` still receives its actions.
+
+**Same limitation, same next step.** This is the identical knowledge barrier —
+`agent_id` is a readable, non-expiring bearer secret — so RISK-SEC-002 stays
+High. It closes the last attacker-usable field on the endpoint; the endpoint
+itself is still unauthenticated pending the observe-mode trust work.
+
+**Verification.** `tests/test_heartbeat_password_gate.py` grew to 19 cases; the
+new `test_enumeration_by_device_id_steals_no_actions` asserts that an
+unauthenticated call returns an empty list and never calls
+`collect_pending_for_delivery`, so a probe cannot consume actions. Full backend
+suite: 1005 passed.
+
 ## [2026-07-29] SEC-002-GATE-2026-07-29 — Remote Support password gated on agent_id
 
 **Partial remediation of RISK-SEC-002** (see PROD-AUDIT-2026-07-29 below for the

@@ -1,15 +1,20 @@
-"""RISK-SEC-002: the RS password is only returned to a caller that proves it
-knows the device's agent_id.
+"""RISK-SEC-002: the two attacker-usable pieces of the heartbeat response — the
+RS password and the pending remote actions — are released only to a caller that
+proves it knows the device's agent_id.
 
 The endpoint is public and unauthenticated by design (agents must reach it),
 and it resolves the device from a caller-supplied sequential device_id. Before
-this gate, `POST {"device_id": N}` returned that device's remote-support
-password in plaintext, making the whole fleet enumerable.
+the gate, `POST {"device_id": N}` returned that device's remote-support password
+in plaintext AND consumed its pending actions (collect_pending_for_delivery
+marks them SENT), leaking each action's payload and callback_secret while
+starving the real device.
 
-The gate must withhold exactly one response field and nothing else — a
-heartbeat from an unauthenticated caller is still processed in full. The
-second test below is the important one: it proves we protected the secret
-without breaking heartbeat ingestion.
+The gate must withhold exactly those two things and nothing else — a heartbeat
+from an unauthenticated caller is still processed in full. The tests that assert
+the heartbeat is still ingested, and that neither get_or_create nor
+collect_pending_for_delivery is even *called*, are the important ones: they
+prove we protected the secrets without breaking ingestion or letting a probe
+mutate state.
 """
 from datetime import datetime
 from types import SimpleNamespace
@@ -29,6 +34,7 @@ from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
+from app.schemas.remote_action import PendingActionDelivery
 
 REAL_AGENT_ID = "agent_HnW3xK9pQ2rLmT7vZaB4cD6e"
 
@@ -60,8 +66,9 @@ def client(db):
 def _heartbeat(client, body, *, agent_id=REAL_AGENT_ID, password="pw-per-device"):
     """Post a heartbeat against a stubbed device carrying `agent_id`.
 
-    Returns (response, get_or_create_mock) so a test can assert both the
-    response body and whether the password was even generated.
+    Returns (response, get_or_create_mock, core_mock, collect_mock) so a test
+    can assert the response body, whether the password was even generated, and
+    whether pending-action delivery (which marks actions SENT) even ran.
     """
     device = SimpleNamespace(
         id=42,
@@ -81,25 +88,36 @@ def _heartbeat(client, body, *, agent_id=REAL_AGENT_ID, password="pw-per-device"
         patch("app.api.v1.endpoints.agent._heartbeat_side_effects"),
         patch(
             "app.api.v1.endpoints.agent.RemoteActionService.collect_pending_for_delivery",
-            return_value=[],
-        ),
+            return_value=[
+                PendingActionDelivery(
+                    action_id=99,
+                    action="run_powershell",
+                    parameters={"script": "whoami"},
+                    timeout_seconds=300,
+                    callback_secret="deadbeef",
+                )
+            ],
+        ) as collect,
         patch(
             "app.api.v1.endpoints.agent.RemoteSupportPasswordService.get_or_create",
             return_value=password,
         ) as get_or_create,
     ):
         response = client.post("/api/v1/agent/heartbeat", json=body)
-    return response, get_or_create, core
+    return response, get_or_create, core, collect
 
 
 def test_matching_agent_id_receives_the_password(client):
-    response, get_or_create, _ = _heartbeat(
+    response, get_or_create, _, collect = _heartbeat(
         client, {"agent_id": REAL_AGENT_ID, "device_id": 42, "hostname": "ws-01"}
     )
 
     assert response.status_code == 200
     assert response.json()["remote_support_password"] == "pw-per-device"
     assert get_or_create.called
+    # Authenticated caller also receives its pending actions.
+    assert collect.called
+    assert [a["action_id"] for a in response.json()["pending_actions"]] == [99]
 
 
 @pytest.mark.parametrize(
@@ -123,7 +141,7 @@ def test_enumeration_by_device_id_yields_no_password(client, body):
     """The attack: name a device_id, get its credentials. Must return a normal
     200 with a null password — and must not even generate one, so probing
     cannot seed a password for a device that has none yet."""
-    response, get_or_create, core = _heartbeat(client, body)
+    response, get_or_create, core, collect = _heartbeat(client, body)
 
     assert response.status_code == 200
     assert response.json()["remote_support_password"] is None
@@ -138,16 +156,34 @@ def test_enumeration_by_device_id_yields_no_password(client, body):
     assert payload["heartbeat_interval_seconds"] > 0
 
 
+def test_enumeration_by_device_id_steals_no_actions(client):
+    """The second, more damaging attack: name a device_id and read (and
+    consume) its pending remote actions. collect_pending_for_delivery marks
+    each returned action SENT, so an unauthenticated call must return an empty
+    list AND must never call it — otherwise the real device is starved and the
+    action's callback_secret is leaked."""
+    response, _, _, collect = _heartbeat(
+        client, {"device_id": 42, "hostname": "ws-01"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pending_actions"] == []
+    assert not collect.called
+
+
 def test_device_without_agent_id_is_never_unlocked(client):
     """A device with no agent_id on record must not be unlocked by a caller
-    that also omits it — otherwise "" == "" would hand over the password."""
-    response, get_or_create, _ = _heartbeat(
+    that also omits it — otherwise "" == "" would hand over the password and
+    the pending actions."""
+    response, get_or_create, _, collect = _heartbeat(
         client, {"device_id": 42, "hostname": "ws-01"}, agent_id=None
     )
 
     assert response.status_code == 200
     assert response.json()["remote_support_password"] is None
+    assert response.json()["pending_actions"] == []
     assert not get_or_create.called
+    assert not collect.called
 
 
 class TestAgentIdMatches:
