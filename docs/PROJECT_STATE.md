@@ -17,7 +17,7 @@
 | Field | Verified value |
 |---|---|
 | Documentation revision | `DOC-2026-07-28-PC3A` |
-| Production baseline SHA | `ce56fd4d401319a84437a047012d01caf4630247` |
+| Production baseline SHA | `4aad118` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Production audit dated 2026-07-26 |
 | Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `15c0a9c22f82e3ee1df0a21c39f5667e9f99221e` |
+| Production SHA | `4aad11873b3ebc9006dad1316e4dcbbd1683f98d` |
 | Working tree | Clean at audit time |
 | Origin alignment | Origin branch matched the production SHA at audit time |
 | Nearest release anchor | No immutable release tag exists at this SHA |
@@ -52,8 +52,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `ce56fd4…0247`; backend source hash matches | Running backend image; image hash is the secondary runtime identity | Service healthy | Verified baseline |
-| Frontend | `0.1.0` metadata | Git SHA `ce56fd4…0247`; build has no embedded Git SHA | Running frontend build | Service healthy | Verified baseline; build provenance gap remains |
+| Backend | `1.0.0` metadata | Git SHA `4aad118…`; backend source hash matches | Running backend image; image hash is the secondary runtime identity | Service healthy | Verified baseline |
+| Frontend | `0.1.0` metadata | Git SHA `4aad118…`; build has no embedded Git SHA | Running frontend build | Service healthy | Verified baseline; build provenance gap remains |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
@@ -117,7 +117,7 @@ Detailed migration history and SQL procedures are historical/reference material,
 
 | Control | Verified state |
 |---|---|
-| Heartbeat auth | `observe` |
+| Heartbeat auth | **none** — the endpoint is unauthenticated. The Remote Support password is gated on a matching `agent_id` (SEC-002-GATE-2026-07-29), which is a knowledge barrier, not authentication. `observe` mode does not exist in production; that code is on the unmerged `rollback/remote-support-2026-07-18` branch |
 | Agent rollout | disabled |
 | Agent auth migration | disabled |
 | Native bootstrap | OFF |
@@ -220,7 +220,7 @@ The verified production baseline includes:
 - smoke tests 8/8 passed;
 - protected endpoints returning HTTP 401 without authentication;
 - package-manifest verification for available Agent artifacts;
-- backend source hash matching Git SHA `15c0a9c22f82e3ee1df0a21c39f5667e9f99221e`;
+- backend source hash matching Git SHA `4aad11873b3ebc9006dad1316e4dcbbd1683f98d`;
 - pre-deployment verification of that SHA: `tsc --noEmit` clean, frontend 80/80,
   backend 986 passed, Alembic heads `d8e9f0a1b2c3` + `hb1x7k9n2q4d`;
 - production measurement of fleet agent versions, table sizes, index scan counts,
