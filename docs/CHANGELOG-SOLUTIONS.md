@@ -5,6 +5,254 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-07-29] PROD-AUDIT-2026-07-29 — Production-verified read-only audit: four fixes shipped, three findings retracted
+
+**Scope.** A full read-only audit (backup/storage, performance/database, agent
+reliability, security, feature gaps) was first performed against the repository
+and Git history alone, then re-run against live production. The second pass
+overturned three conclusions of the first. Both outcomes are recorded here
+because the retractions are the more useful half.
+
+### Findings retracted after production verification
+
+**The GPO agent-upgrade problem does not exist.** The audit was commissioned on
+the premise that only ~148 of 630+ devices had reached MSI v2.1.0 and ~480 were
+stuck on v2.0.0, suspected to be caused by missing `REINSTALL=ALL
+REINSTALLMODE=vomus` flags. Production says otherwise:
+
+| agent_version | total | seen in last hour |
+|---|---|---|
+| 2.1.20 | 687 | 647 |
+| 2.1.5 | 32 | 5 |
+| 2.1.0 | 21 | 2 |
+| (null) | 10 | 2 |
+| 2.1.6 | 9 | 2 |
+| 2.0.0 | **8** | 3 |
+| 1.0.0 | 3 | 2 |
+
+687 of 773 devices run 2.1.20; eight run 2.0.0. The MSI rollout worked. A
+proposed GPO remediation campaign was cancelled on this evidence.
+
+The code-level finding behind that campaign was real but not load-bearing: the
+MSI `UpgradeCode` did change between v2.0 (`A1B2C3D4-E5F6-7890-ABCD-EF1234567890`,
+commit `c40ccd3`) and 2.1.x (`E6AD0A88-5F26-5665-9B1F-70B8C5EE8363`, commit
+`9a11626`), and `installer.wxs` carries explicit legacy-removal custom actions
+for the 1.0.4 line but none for 2.0.0. `<MajorUpgrade>` only detects a matching
+`UpgradeCode`, and no `REINSTALL` flag can bridge two different products — that
+analysis stands. It simply did not stop the fleet in practice.
+
+**PostgreSQL is not exposed to the internet.** `ufw` allows 8000 from anywhere
+and `docker-proxy` listens on `0.0.0.0:5432`, which reads as an exposure from
+the compose file alone. A `TECHI-SEC1A` chain hooked into `DOCKER-USER` — the
+correct place, where Docker otherwise bypasses ufw — restricts 5432/8000/3000/81
+to a single administrative IP, with `-P INPUT DROP` as the default. No action
+required.
+
+**Connection-pool exhaustion is not a near-term risk.** `session.py` allows
+`pool_size=30 + max_overflow=50` = 80 connections per instance. The concern
+assumed the PostgreSQL default of 100; production runs `max_connections=200`
+(set explicitly in `docker-compose.yml`) with 36 connections in use. Downgraded
+from High to Low; no change made.
+
+### Finding confirmed and escalated
+
+**`/api/v1/agent/heartbeat` is public, unauthenticated, and returns the
+per-device Remote Support password in plaintext.** Verified in the code the
+container actually runs, not merely in the repository:
+
+- `/app/app/api/v1/endpoints/agent.py:25` — `router = APIRouter()` with no
+  `dependencies=`, unlike `devices.py:49`, `remote_support.py:28`, `teams.py:22`
+- `agent.py:143-145` — the device is selected from a caller-supplied `device_id`
+- `agent.py:120,133` — `RemoteSupportPasswordService.get_or_create()` result is
+  returned as plaintext `remote_support_password`
+
+`device_id` is a sequential integer across 773 devices, so fleet-wide remote-support
+credentials are enumerable. End-to-end probe from two separate networks:
+`POST https://api-rdp.techi.com.al/api/v1/agent/heartbeat` with `{}` returns
+**HTTP 400, not 401/403** — the request reaches the handler. 65-request bursts
+produced zero 429s; `grep -rl limit_req /data/nginx/` in nginx-proxy-manager is
+empty. The same secret via the operator route requires `require_min_role(ADMIN)`
+plus a scope check (`remote_support.py:357-362`).
+
+The firewall cannot mitigate this: the endpoint must stay public over 443 for
+agents to function.
+
+**Remediation is deliberately staged, not deferred by oversight.** This code
+path caused the 13–17 July crisis and the 18 July total rollback. The agreed
+sequence is (1) `limit_req` at nginx-proxy-manager as detection/availability
+mitigation only, (2) port `resolve_heartbeat_trust` and its limiters from
+`rollback/remote-support-2026-07-18` in **observe mode**, rejecting nothing,
+(3) enforce only once observation shows every agent would pass.
+
+An NPM constraint was found while attempting step 1: a rate limit entered in the
+NPM UI's Advanced tab is emitted inside `server{}`, but `limit_req_zone` is an
+`http`-level directive. The zone must go in `/data/nginx/custom/http_top.conf`
+(that directory did not exist) with `limit_req` in the Advanced tab. A first
+attempt left `/data/nginx/proxy_host/2.conf` untouched and had no effect.
+
+A stronger and cheaper mitigation was identified but not yet implemented: gate
+the `remote_support_password` field on a supplied `agent_id` matching the
+resolved device. `agent_id` is `f"agent_{secrets.token_urlsafe(18)}"`
+(`agent_enrollment_service.py:341`) — 144 bits — and **774 of 774 devices already
+have one**, so the blast radius is zero while enumeration of 773 sequential
+integers becomes a 144-bit guess. It does not change device resolution, only one
+response field.
+
+### Shipped in this deployment (`ce56fd4` → `15c0a9c`)
+
+`0a900dc` **perf(db)** — `device_heartbeats` (1,679,402 rows / 1023 MB) had no
+`(device_id, created_at)` composite, so `get_recent_by_device()` did a bitmap
+scan plus sort over ~2,170 rows per device; `device_telemetry` received the
+equivalent index in `x5y6z7a8b9c0` and heartbeats were left out. Migration
+`hb1x7k9n2q4d` adds it and drops three indexes measured at **zero scans**
+(`windows_product_type`, `rustdesk_install_status`, `rustdesk_id` — 67 MB,
+maintained on every one of ~181k daily inserts). All statements use
+`CONCURRENTLY` via `autocommit_block()`.
+
+`ix_device_heartbeats_id` was deliberately left in place. It duplicates
+`device_heartbeats_pkey`, but `pg_stat_user_indexes` shows the planner using it
+(2,366,196 scans against 3 for the pkey), so removing it moves live traffic
+rather than removing dead weight, and belongs in its own change.
+
+`3503abf` **fix(backup)** — the deployed `/root/techi-backup.sh` had drifted from
+the repository copy and was never brought back under review; the deployed version
+(name-scoped 7-day retention preserving manual rollback artifacts) is now the
+committed one. Both copies shared a failure mode: under `set -e` without
+`pipefail`, `gzip` in `pg_dumpall | gzip` exits 0 even when `pg_dumpall` dies, so
+a failed dump produced a small but apparently valid `.sql.gz` and the retention
+sweep then deleted the good backups behind it. The dump is now written to
+`.partial`, checked with `gzip -t` and a size floor, promoted only when verified;
+retention is gated on a verified dump; a dump failure no longer aborts the
+RustDesk-key and vault-key backups, which previously died with it.
+`scripts/test-techi-backup.sh` covers healthy/failed/truncated and asserts in both
+failure cases that an 8-day-old backup survives.
+
+`478fbf0` **fix(ui)** — the Agent Configuration banner claimed interval changes
+"must be propagated manually via the PowerShell scripts below or through a GPO
+Scheduled Task", citing an `apply_agent_config` remote action. Both halves were
+false: heartbeat intervals already propagate automatically (`agent.py:116,131` →
+`main.go:173` → `agent.go:83-85`), and `apply_agent_config` exists nowhere in the
+codebase. The banner was unconditional JSX warning about a missing capability on
+a fleet that is 687/773 on 2.1.20. Replaced with an accurate note that also
+records the real limitation: `get_inventory_interval()` is only ever called with
+a hardcoded `"mikrotik"` (`install.py:122`,
+`device_health_score_service.py:139`) and the agent has no inventory-interval
+code at all, so every Inventory row except RouterOS is saved but never applied.
+
+`3b04b56` **feat(drawer)** — the desktop drawer's inventory UI was not missing but
+switched off behind `className={false ? "" : "hidden"}`, while its data was
+fetched eagerly on every drawer open for every device regardless of active tab.
+Now a dedicated Software tab with an explicit, re-clickable Load/Refresh control,
+matching the mobile drawer's existing on-demand behaviour. Patch Status moved
+into the same tab because it is inventory-derived and would otherwise render
+"—". The mobile surface is deliberately untouched.
+
+### Deployment record
+
+Four `fix/*` branches were merged into `deploy/fixes-2026-07-29` on top of
+production `ce56fd4` with no conflicts, verified (`tsc --noEmit` clean, frontend
+80/80, backend **986 passed**, Alembic heads `d8e9f0a1b2c3` + `hb1x7k9n2q4d`),
+then fast-forwarded onto `backport/platform-components-92a521c` as `15c0a9c`.
+
+Branching from `92a521c` rather than the deployed `ce56fd4` was checked before
+merge: `ce56fd4` is 100 files and ~11,000 lines ahead, so deploying the fix
+branches directly would have reverted Agent 2.1.17–2.1.20 and the package-management
+work. Alembic heads were identical on both, and only `DeviceDrawer.tsx` differed
+(+5/-0), so the merge was clean.
+
+### Incidental observation
+
+The `techi_pre_total_rollback_20260718` database was present in the 03:00 backup
+and absent from a 14:44 manual dump taken the same day, which is why that dump
+was 140 MB against 278 MB. This was operator-initiated storage cleanup with an
+off-server copy retained, not data loss; recorded because the size delta is
+otherwise alarming and because every remaining on-server copy sits inside the
+7-day retention window.
+
+## [2026-07-28] PC-3A-MANUAL-OFFSITE-2026-07-28 — Verified manual off-site backup operation
+
+**Result: COMPLETE (Manual Operation).** The WD My Cloud off-site copy was
+verified from Linode source `/opt/backups/techi/` to the WD backup share. SSH-key
+authentication, rsync pull without `--delete`, the single-instance lock,
+incremental behavior, NAS-share logging/state, and `gzip -t` validation of the
+newest PostgreSQL dump all passed. The verified script is
+`/shares/Backup-TechiPlatform/scripts/pc3a-pull-linode-backups.sh`; its state is
+stored under `/shares/Backup-TechiPlatform/pc3a-state/`.
+
+**Scheduler decision.** Root crontab was proven non-persistent by a controlled
+reboot test. `schedulerAdd.sh` writes directly to `/etc/cron.d` and is not an
+approved production mechanism for this operation. WD's persistent Remote
+Backups scheduler is limited to its vendor workflow and does not meet the
+PC-3A controls (dedicated SSH key, strict host-key handling, lock, status/log
+contract, and gzip verification).
+
+**Architecture decision.** Automation is intentionally deferred. No inbound
+port is opened on WD, and no VPN/private transport or existing reverse tunnel
+connects Linode to WD. Linode therefore cannot currently reach the WD private
+SSH address. Local backups remain scheduled daily on Linode; WD stores verified
+off-site copies when the operator runs the pull manually. The manual procedure
+and limitations are recorded in
+[PC-3A Manual Off-site Backup Runbook](operations/pc3a-manual-offsite-backup-runbook.md).
+
+**Residual risk.** The off-site copy can become stale if the manual operation is
+not performed. A full restore rehearsal remains unperformed and is tracked as
+`INIT-BKP-002`. No production code, production script, retention policy,
+database, Docker, Git, firewall, or deployment was changed by PC-3A.
+
+## [2026-07-27] AGENT-2.1.20-PRODUCTION-ROLLOUT — Successful production rollout reconciliation
+
+**Result.** Windows Agent `2.1.20` is the active production version. Its production rollout is successful: **approximately 95%** of the fleet has updated successfully, and the fleet is operational.
+
+**Mixed-fleet posture.** Legacy versions remain during rollout convergence. They are expected residual versions and are not an open rollout incident or a production blocker.
+
+**Historical relationship.** This event supersedes the initial documentation that recorded the 2.1.20 rollout as incomplete. Existing historical entries remain unchanged; this is a new closure/reconciliation event based on later verified production evidence.
+
+## [2026-07-27] DOC-ARCH-2026-07-27 — Canonical documentation architecture reconciled
+
+**Decision.** TECHI documentation now uses three canonical time axes: `PROJECT_STATE.md` is the sole authority for verified current platform state; `CHANGELOG-SOLUTIONS.md` is the sole authority for technical history, incidents, decisions, deployments, rollbacks, and results; `IMPLEMENTATION-ROADMAP.md` is the sole authority for open, approved, or proposed future work.
+
+**Mobile boundary.** `MOBILE_PROJECT_STATE.md` remains conditional and is **not required** now. Mobile is a responsive/PWA surface of the primary frontend and has no independent release lifecycle, release cadence, owner, or distribution model.
+
+**Historical preservation.** This decision supersedes the 2026-07-04 two-document rule only as the current documentation architecture. The historical 2026-07-04 entry remains unchanged and historically valid for its date.
+
+**Result.** Current facts are recorded once in Project State; historical facts remain in this ledger; future work is represented only by initiative IDs in the roadmap. Cross-document references use links or IDs rather than copied status.
+
+## [2026-07-27] REL-BASELINE-2026-07-26 — Verified production baseline reconciliation
+
+**Verified production baseline.** Production runs repository `/opt/techi/techi-platform` on branch `backport/platform-components-92a521c` at Git SHA `ce56fd4d401319a84437a047012d01caf4630247`. The production working tree was clean, the origin branch matched the production SHA, and the backend source hash matched that SHA.
+
+**Runtime evidence.** Backend, frontend, and PostgreSQL containers were healthy with zero restarts at audit time. `/health` was OK, the frontend returned HTTP 200, smoke tests passed 8/8, and protected endpoints returned HTTP 401 without authentication.
+
+**Release/package evidence.** Backend metadata was `1.0.0` and frontend package metadata `0.1.0`; neither is the primary release identity. Verified package versions were Windows Agent `2.1.20`, Endpoint MSI `2.1.20.0`, Agent Update Bridge MSI `2.1.20.0`, Linux ARM64 Agent `2.1.6`, and Remote Support MSI `1.4.6.0`. Artifact hashes were verified against the package manifest where present.
+
+**Database evidence.** PostgreSQL was `15.18`, database `techi`, with production/repository Alembic heads `d8e9f0a1b2c3` and `e6f7a8b9c0d1`; `device_repair_count_reset_20260702` remained as schema residue.
+
+**Release posture.** This is a **verified production baseline**, not a clean immutable release baseline: HEAD has no immutable release tag. Rollback/recovery posture still requires release anchoring, off-host backup evidence, and a restore rehearsal. This entry does not promote the SHA to `main` and does not assert that a tag was created.
+
+## [2026-07-27] AGENT-2.1.20-RECONCILIATION — Active mixed-fleet lifecycle evidence
+
+**Reconciliation.** The source version is `2.1.20`. Agent MSI/EXE artifacts exist and their hashes match the package manifest evidence available to the audit. The fleet is mixed: 414 devices report Agent `2.1.20`, while devices also report `2.1.5` and `2.1.6`.
+
+**Status.** Agent `2.1.20` is the active fleet version, but it is not fleet-universal. This closes the documentary gap between the older entry that recorded the 2.1.20 code fix before Windows build/canary evidence was available and the later verified production snapshot.
+
+**Limit.** The historical record still does not prove the exact canary device, canary date, ProductCode, rollout percentage, or a single end-to-end build/canary event. Those details remain an evidence gap; none is inferred here.
+
+## [2026-07-27] PROD-VALIDATION-RECONCILIATION-2026-07-26 — Verification event without retroactive closure
+
+**Historical state.** The production validation window opened on 2026-07-08 without a formal recorded `PASSED` closure. That historical lifecycle state is preserved and is not retroactively rewritten.
+
+**New verification event.** On the 2026-07-26 production baseline audit, runtime health was verified: healthy backend/frontend/PostgreSQL containers, zero restarts at audit time, `/health` OK, frontend HTTP 200, smoke 8/8, and protected endpoints returning 401 without authentication.
+
+**Boundary.** This is a new production-baseline verification event. It does not claim that the 2026-07-08 validation window passed, and it does not replace any owner closure that may be required for that historical programme.
+
+## [2026-07-27] TERMINAL-729-EVIDENCE-GAP — Scoped-terminal historical evidence gap
+
+**Known historical evidence.** Limited Terminal enablement for device `#729` was documented during the 2026-07-10 rollout work. The final browser/operator PASS or FAIL result for that individual device was not found in the historical record.
+
+**Current verified state.** `FEATURE_TERMINAL` is ON in the verified production feature-flag snapshot.
+
+**Classification.** The individual device `#729` result remains **UNRESOLVED HISTORICAL EVIDENCE GAP**. This entry does not infer a successful session, a failed session, a revert, or a rollout scope from the current flag state.
+
 ## [2026-07-25] Fresh MSI installs never register — legacy config gets an empty deny-all DACL from the installer's icacls (FIXED in code · Agent 2.1.20 · NOT yet built/canaried)
 
 **Status: ROOT CAUSE PROVEN + FIX IMPLEMENTED (host-validated). MSI NOT yet built (Windows CI) and NOT canaried. Do not deploy without the canary below.**
