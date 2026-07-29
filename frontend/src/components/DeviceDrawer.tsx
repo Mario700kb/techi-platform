@@ -58,11 +58,12 @@ interface DeviceDrawerProps {
   onToggleFavorite?: (deviceId: number) => void;
 }
 
-type DrawerTab = "overview" | "remote_support" | "terminal" | "management" | "notes" | "timeline";
+type DrawerTab = "overview" | "remote_support" | "terminal" | "software" | "management" | "notes" | "timeline";
 
 const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
   { id: "overview",       label: "Overview" },
   { id: "remote_support", label: "Remote Support" },
+  { id: "software",       label: "Software" },
   { id: "management",     label: "Management" },
   { id: "notes",          label: "Notes" },
   { id: "timeline",       label: "Timeline" },
@@ -353,13 +354,21 @@ export default function DeviceDrawer({
     }
   }, [device.id]);
 
+  // Inventory is deliberately NOT auto-fetched. It used to load on every drawer
+  // open, for every device, whether or not anyone looked at it — one wasted
+  // GET /devices/{id}/inventory per open across a 770-device fleet. The mobile
+  // drawer already required an explicit tap; desktop now matches it, and the
+  // operator can re-pull whenever they want via the Refresh button.
   useEffect(() => {
     if (!isOpen) return;
     if (inventoryLoadedFor.current !== device.id) {
       inventoryLoadedFor.current = device.id;
-      void loadInventory();
+      setInventory(null);
+      setSoftwareSearch("");
+      setProcessSearch("");
+      setServiceSearch("");
     }
-  }, [isOpen, device.id, loadInventory]);
+  }, [isOpen, device.id]);
 
   const loadNotes = useCallback(async () => {
     setNotesLoading(true);
@@ -551,8 +560,6 @@ export default function DeviceDrawer({
     : device.rustdesk_conflict_detected
     ? "Conflict"
     : device.rustdesk_sync_state;
-  const hasInventoryDetails =
-    Boolean(inventory && (inventory.processes.length > 0 || inventory.services.length > 0 || (inventory.software ?? []).length > 0));
   // Capability-driven Terminal tab: only when FEATURE_TERMINAL is on AND the
   // device reports the terminal capability. Inserted after Remote Support so the
   // Connect-oriented tabs sit together; Windows (no terminal cap) never sees it.
@@ -1666,8 +1673,36 @@ export default function DeviceDrawer({
           </section>
           </div>
 
-          <div className={activeTab === "management" ? "" : "hidden"}>
+          <div className={activeTab === "software" ? "" : "hidden"}>
+          {/* Manual fetch control — see the loadInventory effect above for why
+              this is not automatic. */}
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="premium-kicker">Inventory</p>
+              <button
+                type="button"
+                onClick={() => void loadInventory()}
+                disabled={inventoryLoading}
+                className="rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-techi-orange/60 disabled:opacity-50"
+                style={{ background: "var(--th-bg-drawer-section)" }}
+              >
+                {inventoryLoading ? "Loading…" : inventory ? "Refresh" : "Load inventory"}
+              </button>
+            </div>
+            {!inventory && !inventoryLoading && (
+              <div
+                className="rounded-lg p-4 text-xs text-slate-400"
+                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
+              >
+                Not loaded automatically, to avoid an unnecessary server request on every drawer
+                open. Click <span className="font-semibold text-slate-200">Load inventory</span> to
+                fetch patch status, software, services and processes for this device.
+              </div>
+            )}
+          </section>
+
           {/* Patch status */}
+          {inventory && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Patch Status</p>
@@ -1699,10 +1734,8 @@ export default function DeviceDrawer({
               </div>
             </div>
           </section>
-          </div>
+          )}
 
-          {hasInventoryDetails && (
-          <div className={false ? "" : "hidden"}>
           {inventory && inventory.processes.length > 0 && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
@@ -1877,7 +1910,6 @@ export default function DeviceDrawer({
           </section>
           )}
           </div>
-          )}
 
           <div className={activeTab === "notes" ? "" : "hidden"}>
           <section className="mb-4">
