@@ -163,7 +163,7 @@ RCA, incidents, and historical remediation evidence are recorded in [CHANGELOG-S
 |---|---|
 | PC-3A status | **COMPLETE — Manual Operation** |
 | Schedule | Daily local backup at 03:00 UTC on Linode (`0 3 * * * /root/techi-backup.sh`) |
-| Retention | 7 days, name-scoped so manual rollback artifacts are preserved |
+| Retention | `find -mtime +7`, name-scoped so manual rollback artifacts are preserved. Effective retention is 8–9 daily sets, not exactly 7: the sweep runs at ~03:01 but dumps are written at ~03:02, so an 8-day-old set is one minute short of `-mtime +7` and is removed the following night instead. This errs toward keeping one extra set, never fewer — verified 2026-07-30 (the 07-22 set survived the 07-30 sweep by design) |
 | Script provenance | `/root/techi-backup.sh` is installed from `scripts/techi-backup.sh` as of 2026-07-29; the previous deployed copy had drifted from the repository and is retained as `/root/techi-backup.sh.pre-2026-07-29` |
 | Dump integrity controls | `set -euo pipefail`; dump written to `.partial`, validated with `gzip -t` and a 10 MB floor, promoted only when verified; retention gated on a verified dump; non-zero exit when no dump lands. Covered by `scripts/test-techi-backup.sh` (3/3) |
 | Latest audited backup | Gzip-valid; 2026-07-29 manual run produced a verified 140 MB dump |
