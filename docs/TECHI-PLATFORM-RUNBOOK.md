@@ -3,6 +3,15 @@
 This index links the primary operational and architecture notes for common
 platform administration tasks.
 
+## Production Backup
+
+- [PC-3A Manual Off-site Backup Runbook](operations/pc3a-manual-offsite-backup-runbook.md)
+
+Use this runbook for the verified manual WD My Cloud pull of Linode backups.
+It is the canonical operating procedure for off-site copies; automation is
+intentionally deferred and must not be added through WD cron or
+`schedulerAdd.sh`.
+
 ## Heartbeat Interval
 
 - [Heartbeat Interval Architecture](architecture/heartbeat-interval.md)

@@ -272,3 +272,11 @@ agent/installer/*.log
 
 # Static installers
 static/rustdesk/
+
+# Backend runtime data volume — holds the Vault master key (data/vault_master.key).
+# This key decrypts every vault secret and must NEVER be committed.
+backend/data/
+
+# MSI/WiX extraction debris (Binary/Icon tables from msiexec /a or msiinfo dumps)
+Binary/
+Icon/

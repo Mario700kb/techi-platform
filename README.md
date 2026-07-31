@@ -13,4 +13,6 @@ remote desktop support (branded RustDesk) for managed Windows devices.
 
 **Technical references:** [docs/reference/](docs/reference/)
 
+**Production backup operation:** [PC-3A Manual Off-site Backup Runbook](docs/operations/pc3a-manual-offsite-backup-runbook.md)
+
 **Archived documents:** [docs/archive/](docs/archive/)

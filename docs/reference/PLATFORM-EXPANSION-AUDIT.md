@@ -15,6 +15,13 @@ Implementation may continue without modifying this document.
 (Exceptions by design: the Progress Log and the Appendix C certification
 record are living registers and are updated as phases close.)
 
+> **Operational supersession, not an architecture amendment (2026-07-28).**
+> The dated DR statement below is superseded in part: PC-3A verified a manual
+> Linode-to-WD My Cloud off-site copy. Automation remains intentionally deferred
+> and a full restore rehearsal remains unperformed. Current operational facts
+> are in [PROJECT_STATE.md](../PROJECT_STATE.md); the manual procedure is in
+> [PC-3A Manual Off-site Backup Runbook](../operations/pc3a-manual-offsite-backup-runbook.md).
+
 ==========================================================
 
 | | |
@@ -288,7 +295,7 @@ CHANGELOG-SOLUTIONS entries in the same task → owner approval to close.
 | **Suitable for the next 5+ years?** | ✅ | The capability/adapter contract is platform-count-agnostic; new platforms are data + adapters, not redesigns. The two decisions that would age badly (per-platform UIs, `if platform ==` branching) are explicitly banned. |
 | **Suitable for 10,000+ devices?** | ⚠ not on today's infrastructure — but the architecture does not block it | 10k × 250 s ≈ 40 beats/s vs ~3 today. Required steps are infrastructure, not redesign: bigger host / managed Postgres, multiple workers (needs the publisher/scheduler to move out-of-process — a known, bounded change), heartbeat storage redesign (proposal already exists, unimplemented). Nothing in this expansion makes that harder; the adapter/capability model is unaffected by fleet size. |
 | **Suitable for many platforms?** | ✅ | §6 matrix + §7 isolation: native agents where justified (Windows, Linux, Mac), proxy adapters everywhere else, one shared contract. MikroTik pilot (Phase 7) is the proof gate before scaling the pattern. |
-| **Suitable for MSP enterprise?** | ✅ direction, with two honest gaps | Multi-client scoping, RBAC, audit, vault and per-client policies fit MSP needs. Gaps to state plainly: (a) single-tenant single-server topology (no per-MSP isolation) — acceptable for TECHI's own operation, a future decision if the platform is ever sold to other MSPs; (b) DR has never been rehearsed and backups have no offsite copy (pre-existing, documented in PROJECT_STATE) — worth fixing independently of this program. |
+| **Suitable for MSP enterprise?** | ✅ direction, with two honest gaps | Multi-client scoping, RBAC, audit, vault and per-client policies fit MSP needs. Gaps to state plainly: (a) single-tenant single-server topology (no per-MSP isolation) — acceptable for TECHI's own operation, a future decision if the platform is ever sold to other MSPs; (b) at this audit's date, DR had not been rehearsed and backups had no off-site copy. PC-3A later verified a manual off-site copy; restore proof remains open. |
 
 **Bottom line**: the architecture is ready. The platform is closer to
 multi-platform than it appears — `Device.platform`, the enrollment platform
