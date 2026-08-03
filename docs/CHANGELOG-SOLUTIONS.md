@@ -5,6 +5,97 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] DEPLOY-CONSOLIDATION-2026-08-03 — Seven compose files down to three, 1.5 GB reclaimed, and a private key found hiding in an "orphan"
+
+Prompted by two operator questions: *are there files we can delete so we do not
+accidentally start an old backend or frontend?* and *if we restart the server,
+does everything come back?*
+
+### The hazard was bigger than the known label drift
+
+RISK-DEPLOY-001 was recorded as a provenance annoyance — containers labelled
+against different compose files. The audit found something worse. `/root` is a
+**complete stale checkout** of the platform:
+
+```
+/root   branch stable/phase-2-heartbeat, commit 862b1bf
+        docker-compose.yml with  build: context: ./backend
+        /root/backend/ and /root/frontend/ present
+        /root/.env  differs from production
+```
+
+A `docker compose up -d --build` run from `/root` would have **built and
+deployed the backend from old source, on the wrong branch, with a different
+`.env`** — precisely the accident the question was about.
+
+Seven compose files existed. Three were byte-identical copies of the pre-fix
+platform stack (`145140d1…`, all missing `init: true`, so any of them would
+have reintroduced the healthcheck zombies), and one was a duplicate RustDesk
+stack binding the same ports:
+
+```
+/root/docker-compose.yml                                    145140d1…
+/docker-compose.yml                                         145140d1…
+/root/techi-canary-rollback-20260711T230221Z/…              145140d1…
+/opt/rustdesk/docker-compose.yml                            duplicate RustDesk
+/opt/techi/techi-platform/docker-compose.yml                e81bdee9…  ACTIVE
+```
+
+### Change: renamed, not deleted
+
+All four disabled as `*.DISABLED-20260803`, hashes recorded in
+`/root/backups/compose-consolidation/RENAMED-20260803.txt`, reversible with a
+single `mv`. Verified beforehand that nothing referenced them — not cron, not
+the nightly backup script (which already treats
+`/opt/techi/techi-platform/docker-compose.yml` as canonical), not systemd.
+
+Three compose files remain, one per running project.
+
+### Verified safe to run compose again
+
+`docker compose up -d --dry-run` from `/opt/techi/techi-platform` reports all
+three services *Running* with no recreate, including PostgreSQL despite its
+stale label. So the everyday command is now a safe no-op, which was the point
+of the exercise.
+
+### Restart safety, answered with evidence
+
+`docker.service` and `containerd` are `enabled`; all six containers are
+`restart=unless-stopped`; none are stopped. Every change made during the day's
+incident work lives in a named volume or a bind mount, not inside a container —
+`init: true` in compose, the nginx edge rule in the NPM bind mount, the
+heartbeat interval in `techi-platform_backend_data`, and the index/autovacuum/
+Alembic changes in the database volume. A host restart brings the stack back
+intact.
+
+### 1.5 GB reclaimed — and one volume deliberately kept
+
+An anonymous 2.0 GB volume turned out to be a **separate PostgreSQL cluster**,
+not a copy of production: different `Database system identifier`
+(`7656427481619533860` vs `7641693197796040741`), last checkpoint 2026-06-28
+12:49, abandoned since. No retained backup reaches that far back (the oldest is
+2026-07-26), so it was archived before removal:
+`/root/backups/abandoned-pg-cluster-20260628.tar.gz`, 403 MB, integrity checked
+with `tar tzf`, 1,575 files. Then removed, along with 36 empty 8 KB volumes left
+by `techi_verify_*` and `root_*` test runs.
+
+Filesystem **72% → 65%**, free space 6.6 GB → 8.1 GB.
+
+**One volume was explicitly not removed.** `rustdesk_rustdesk_data` is attached
+to no container and looked like the same class of junk, but it contains
+`id_ed25519` — and it is byte-identical to the live RustDesk private key, whose
+public half `8B5Z8Vp6…` is embedded in every agent config and in the MSI. It is
+a second copy of the credential the entire remote-support fleet depends on. A
+blanket `docker volume prune` would have destroyed it silently. Retained and
+documented in PROJECT_STATE §5 so it is never mistaken for an orphan again; the
+nightly backup covers the primary copy under
+`/opt/techi/rustdesk-server/data/`.
+
+### Correction to an earlier note
+
+`/opt/backups/techi/INSTANT_REVERT.sh`, recorded previously as an armed
+instant-revert path, **does not exist**. That note was stale.
+
 ## [2026-08-03] DB-HEAD-MERGE-2026-08-03 — Two Alembic heads collapsed into one, with the schema proven untouched
 
 RISK-DB-001, closed. Taken before any feature work because the next feature
