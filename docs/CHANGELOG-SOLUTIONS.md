@@ -5,6 +5,225 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] HB-INTERVAL-COLLAPSE-2026-08-03 — Heartbeat interval 300→180 tipped a single-vCPU host; healthcheck zombies had been eroding it for days
+
+**Outage.** An operator lowered the Windows heartbeat interval from 300s to 180s
+from the Agent Config page. Within minutes the UI returned *failed to fetch*,
+logins hung, and feature flags appeared to vanish.
+
+### What the box actually is
+
+`nproc` = **1**. One vCPU, 2 GB RAM, serving 790 endpoints.
+
+| | devices | interval | requests/s |
+|---|---|---|---|
+| Historic known-good | ~600 | 300s | 2.0 |
+| Same morning, healthy | 790 | 300s | 2.6 — load ~0.6 |
+| After the change | 790 | 180s | **4.4 — load 9.5, 0% idle** |
+
+The fleet had grown 32% *and* the interval dropped 40%: 2.2× the last known-good
+load. That is why it broke now and not before. Past the knee the failure is not
+linear — requests time out, agents retry (`retries: 3`), offered load multiplies,
+and the box stays pinned. Measured during the incident: `%Cpu(s) 64.3 us, 28.6
+sy, 0.0 id`, five consecutive `/api/v1/health` probes returning `000`, two of
+them after a 25s timeout. The backend container fell over and auto-restarted at
+13:40:42 (exit 0, `OOMKilled=false`).
+
+### The pre-existing defect that made it fragile
+
+`/proc/1/exe -> /usr/local/bin/python3.12`. **uvicorn ran as PID 1 and does not
+reap orphaned children.** Docker's healthcheck spawns a process inside the
+container that is re-parented to PID 1 when the exec helper exits, so every
+15s check left a `<defunct> python3` behind:
+
+- 17 zombies accumulated in the six minutes after the restart — one per interval;
+- ~5,760/day; ~23,000 across the four-day uptime that preceded the crash.
+
+This is independent of the operator's change, but it is very likely what turned
+a slow hour into a container failure.
+
+### Recovery
+
+1. `platform_heartbeat_intervals.windows` 180 → 300 in `/app/data/agent_policy.json`.
+   Note `_load()` caches the policy in a module global and re-reads the file only
+   when that global is `None` — **editing the file does nothing until the process
+   restarts**.
+2. `docker restart techi-platform-backend-1`.
+
+Load fell 9.5 → 0.6 within four minutes; health back to 200 in ~50ms.
+
+### Permanent fixes applied
+
+- **`init: true`** on the backend service — Docker injects `docker-init` (tini)
+  as PID 1, which reaps orphans. Verified after recreate: `/proc/1/exe ->
+  /usr/sbin/docker-init`, zombie count **0** across six consecutive healthcheck
+  cycles. Changing the healthcheck command alone would not have helped: without a
+  reaper, any spawned binary leaks a zombie.
+- **healthcheck `interval` 15s → 30s.** The image ships no `curl` or `wget`, so
+  each check pays a full Python interpreter start — not free on one vCPU.
+- **Three duplicate indexes dropped from `devices`.** `pg_stat_user_indexes`
+  showed the classic duplicate signature — the planner used one of each pair and
+  never the other:
+
+  | used | scans | unused twin | scans |
+  |---|---|---|---|
+  | `ix_devices_id` | 34,788,735 | `devices_pkey` | 0 |
+  | `ix_devices_rustdesk_id` | 3,078,795 | `devices_rustdesk_id_key` | 0 |
+  | `ix_devices_agent_id` | 349,240 | `devices_agent_id_key` | 0 |
+
+  The non-unique copies were dropped; the unique/PK indexes are identical in
+  structure, cannot be dropped (they carry the constraints the device-identity
+  split now depends on), and picked the traffic up immediately — `devices_pkey`
+  0 → 3,427 scans, `devices_rustdesk_id_key` 0 → 270. 14 indexes → 11. A small
+  win in absolute terms: the indexes were ~208 kB and cached. Recorded honestly
+  rather than overstated.
+
+### Corrections to claims made during the investigation
+
+- **"There is no retention, the tables grow forever, disk runs out in a month" —
+  wrong.** `cleanup_old_heartbeats` and `cleanup_old_telemetry` already run with
+  `days=7` (`app/tasks/cleanup.py:21-39`), and the data confirms it: the oldest
+  row in both tables is 2026-07-27, exactly seven days. `device_heartbeats`
+  (1,035 MB / 1.13M rows) and `device_telemetry` (437 MB / 1.14M rows) are a
+  seven-day steady state, not a runaway. Disk is stable at 73%.
+- **The feature flags were never touched.** They come from the container
+  environment and survive a restart untouched: `FEATURE_LINUX`,
+  `FEATURE_MIKROTIK`, `FEATURE_PLATFORM_CORE`, `FEATURE_REPORTING`,
+  `FEATURE_TERMINAL`, `FEATURE_VAULT` all `true` before and after. They looked
+  missing because `/api/v1/platform/features` was timing out and the UI falls
+  back to everything-off. They returned on their own once the backend recovered.
+
+### Still open
+
+- **`HEARTBEAT_INTERVAL_MIN = 60`** (`agent_config_service.py:25`) lets the UI
+  set a value that would mean ~13 requests/s on the current fleet — certain
+  collapse, with no warning shown. The bound has no relation to fleet size or
+  available CPU.
+- **No jitter.** Changing the interval re-synchronises the whole fleet; bursts of
+  29 requests/s were logged during the transition and again on every restart. A
+  per-agent ±10% spread would smooth both.
+- **One vCPU is the binding constraint.** Everything above is marginal next to it.
+  Do not lower the interval below 300s on this hardware.
+
+## [2026-08-03] DEVICE-SPLIT-774-2026-08-03 — Two cloned machines behind one NAT collapsed onto a single device row
+
+**Symptom.** A newly installed endpoint never appeared in the UI, and Connect on
+"Sabina -pc" opened the operator's laptop instead of the operator's PC.
+
+### Root cause
+
+Two physically distinct machines, cloned from one image, both reporting hostname
+`DESKTOP-UKPKR96`, both behind the office NAT `185.66.128.121`, with different
+RustDesk IDs (`439466287` and `441674927`).
+
+`DeviceRepository.find_reenrollment_match` tries four keys in order: `agent_id`,
+`rustdesk_id`, `hostname+local_ip`, `hostname+public_ip`. On 2026-08-01 13:09:55
+the second machine enrolled with a freshly written config (no `agent_id`) and
+fell through to the **fourth and weakest key**. Behind NAT that key identifies a
+*site*, not a machine. Device 774 — created 2026-07-27 for the first machine,
+named "Sabina -pc", manually assigned to TECHI shpk / Client PC — was taken over.
+
+Two amplifiers made it self-sustaining:
+
+- **The heartbeat overwrites the row's identity.** `update_data` excludes only
+  `device_id` and `rustdesk_id` (the latter re-added after a conflict check), so
+  `agent_id`, `hostname`, `local_ip` and `current_user` all belong to whichever
+  machine wrote last. `rustdesk_id` ping-ponged every ~5 minutes — which is why
+  Connect was a coin flip. The code comment asserting `agent_id is immutable
+  post-enroll` is not true on this path.
+- **The heartbeat trusts `payload.device_id` without verifying `agent_id`**
+  (resolution order: `agent_id` → `device_id` → `rustdesk_id`). The
+  `_RECENTLY_SEEN_HOURS = 24` guard, written precisely to prevent merging live
+  machines, sits in `_resolve_via_fingerprint` and therefore never runs.
+
+### Why client-side remediation kept failing
+
+Renaming the laptop to `LAPTOP-TECHI` closed key #4 — and key #2 fired instead.
+At 08:59:31 the enroll matched `rustdesk_id 441674927` because the laptop's *own*
+heartbeat, **two seconds earlier at 08:59:29**, had just written that ID onto row
+774. A full uninstall did not help either: RustDesk regenerates its ID
+deterministically from the machine UID, so wiping every identity TOML returns the
+same `441674927` on that hardware. Three reinstall attempts were absorbed
+(08:40:40, 08:59:31, and an earlier one), each raising `enrollment_count`.
+
+### Resolution — server-side, one transaction
+
+With `agent_id` and `rustdesk_id` both carrying UNIQUE constraints, the split is
+enforced by the schema:
+
+1. `UPDATE` pinned 774 to the first machine's identity (`DESKTOP-UKPKR96`,
+   `agent_2jkZJ…`, `439466287`, `192.168.183.1`), clearing
+   `reenrolled_from_agent_id`.
+2. `INSERT` created row **800** for the laptop (`LAPTOP-TECHI`,
+   `441674927`), copied from 774 so every NOT NULL column was satisfied, with
+   client/group `NULL` so it lands under "No client" and its own RS password
+   regenerated.
+
+No endpoint change was needed: heartbeat resolution tries `agent_id` first, so
+each machine now lands on its own row and rewrites only its own values.
+
+Backup taken first: `/root/backups/device-split/devices-before-split-20260803-090850.sql`
+(791 rows).
+
+### Verification
+
+- Two full heartbeat cycles with no cross-contamination: 774 receives only
+  `DESKTOP-UKPKR96 / 192.168.183.1`, 800 only `LAPTOP-TECHI / 10.5.50.84`.
+- A reinstall performed *after* the split landed correctly on 800
+  (`09:11:57 reenrollment_match → device_id 800`), matched by `rustdesk_id`.
+- Zero duplicate `rustdesk_id` fleet-wide; 800 generated its own RS password at
+  09:12:06.
+- The conflict guard now protects both rows: a stray heartbeat from the old
+  process could no longer steal the RustDesk ID, because 800 holds it.
+
+### Still open
+
+The two dedup keys `hostname+local_ip` and `hostname+public_ip` remain, both
+resolved with `.order_by(Device.id.desc()).first()` — a silent pick when several
+rows match. Cloned images behind NAT will collide again.
+
+## [2026-08-03] MSI-KILLRS-NOOP-2026-08-03 — `KillTechiRS*` custom actions have been no-ops since 2.1.19
+
+**Confirmed on two production machines with direct evidence.** The MSI verbose
+log records the custom action's command line *after* Windows Installer formats
+it:
+
+```
+Target=powershell.exe … -Command "$ErrorActionPreference='SilentlyContinue';
+$L=Join-Path $env:ProgramData 'TechiAgent\deploy.log';
+function W($m); W 'start'; $j=Start-Job { … }
+```
+
+The body of `function W` is **gone**. `CustomAction/@ExeCommand` is an MSI
+*Formatted* field, and the logging helper introduced in `de5aaaa` (2026-07-24,
+2.1.19) contains `[KillTechiRSBeforeInstall]` inside its `{ }` block. MSI reads
+that as an undefined property reference and drops the whole braced group.
+PowerShell then fails to parse (`Missing function body in function
+declaration`), the script never runs, and `Return="ignore"` hides it completely.
+
+Second, independent confirmation: `deploy.log` on both machines contains
+`[bootstrap-config]`, `[remove-tray-artifacts]` and `[watchdog-install]` lines —
+and **no `[KillTechiRSBeforeInstall]` line at all**. That action writes `start`
+as its first statement; it never wrote it.
+
+**Impact.** `KillTechiRSBeforeInstall` and `KillTechiRS` have not stopped Remote
+Support before `InstallFiles` on any machine since 2026-07-24. On the sampled
+installs no harm followed — but this is exactly the guard whose absence produces
+1603 on machines where RS holds `librustdesk.dll` / `flutter_windows.dll` locked.
+Three RS processes were running during one of the observed installs.
+
+**Related, same evidence set.** `BackupAgentConfigBeforeLegacyRemove` fails to
+launch with **1721** on every install, because its working directory
+`C:\ProgramData\TECHI\` does not yet exist at that point in the sequence.
+`Return="ignore"` downgrades it from Error to Info and the install continues with
+exit 0 — the action that is supposed to preserve `device_id` before removing
+v1.0.4 products never runs. Same signature was already present in the 2026-07-18
+CI logs for the Remote Support MSI's sibling action.
+
+**Not fixed.** Recorded for a dedicated change; both actions need the bracket
+removed from the log tag, and the whole pattern reviewed — any literal `[` in an
+`ExeCommand` is MSI syntax, not text.
+
 ## [2026-07-29] SEC-002B-ACTIONS-GATE-2026-07-29 — Pending remote actions gated on agent_id
 
 **Second, more damaging half of RISK-SEC-002, found while reviewing the same

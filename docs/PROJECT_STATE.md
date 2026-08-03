@@ -16,10 +16,10 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-07-28-PC3A` |
-| Production baseline SHA | `4aad118` (see §3) |
+| Documentation revision | `DOC-2026-08-03-HBCOLLAPSE` |
+| Production baseline SHA | `eb3c88a` (see §3) — last runtime-affecting head; documentation-only commits after it do not change the running system |
 | Production branch | `backport/platform-components-92a521c` |
-| Verified at | Production audit dated 2026-07-26 |
+| Verified at | Live production verification dated 2026-08-03 |
 | Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
 | Release classification | **PRODUCTION BASELINE VERIFIED** |
 | Clean immutable release baseline | **NO** |
@@ -40,9 +40,9 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `4aad11873b3ebc9006dad1316e4dcbbd1683f98d` |
-| Working tree | Clean at audit time |
-| Origin alignment | Origin branch matched the production SHA at audit time |
+| Production SHA | `eb3c88a` — `fix(infra): reap healthcheck zombies with init, halve the check interval` |
+| Working tree | Clean, verified 2026-08-03 after fast-forward |
+| Origin alignment | Origin branch matches the production SHA (verified 2026-08-03) |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
@@ -87,9 +87,9 @@ The compose-label provenance drift is an operational governance risk, not eviden
 | Schema residue | `device_repair_count_reset_20260702` |
 | Logical database size | `techi` 1623 MB (measured 2026-07-29) |
 | Volume size | Root filesystem 25 GB, 73% used, 6.4 GB free (measured 2026-07-29) |
-| Largest tables | `device_heartbeats` 1,732,154 rows / 1028 MB; `device_telemetry` 1,728,964 / 436 MB; `device_alerts` 290,592 / 58 MB; `enrollment_audit` 121,246 / 38 MB; `device_status_history` 201,873 / 31 MB (measured 2026-07-29) |
-| Heartbeat retention | 7 days, enforced by the nightly cleanup task; oldest row 2026-07-22 at measurement |
-| Index posture | `device_heartbeats` carries the `(device_id, created_at DESC)` composite as of `hb1x7k9n2q4d`; three zero-scan indexes removed. `ix_device_heartbeats_id` duplicates the primary key but is planner-preferred (2,366,196 scans vs 3) and is intentionally retained |
+| Largest tables | `device_heartbeats` 1,139,147 rows / 1035 MB; `device_telemetry` 1,138,897 / 437 MB; `device_alerts` 70 MB; `device_status_history` 46 MB; `enrollment_audit` 40 MB (measured 2026-08-03) |
+| Heartbeat retention | 7 days, enforced by `cleanup_old_heartbeats` / `cleanup_old_telemetry` (`app/tasks/cleanup.py`, `days=7`); oldest row in both tables 2026-07-27 at measurement — a seven-day steady state, not a growth curve |
+| Index posture | `device_heartbeats` carries the `(device_id, created_at DESC)` composite as of `hb1x7k9n2q4d`. On 2026-08-03 three duplicate indexes were dropped from `devices` (`ix_devices_id`, `ix_devices_agent_id`, `ix_devices_rustdesk_id`), each shadowing the PK or a UNIQUE constraint of identical structure; the planner moved to the surviving unique indexes immediately (`devices_pkey` 0 → 3,427 scans). 14 indexes → 11. **Note the inconsistency:** `ix_device_heartbeats_id` is the same pattern and was intentionally retained because it is planner-preferred — the two tables now follow opposite conventions and should be reconciled |
 | Restore posture | Restore test has not been performed |
 
 Detailed migration history and SQL procedures are historical/reference material, not current-state content.
@@ -131,6 +131,7 @@ Detailed migration history and SQL procedures are historical/reference material,
 | Field | Current verified state |
 |---|---|
 | Production Agent Version | `2.1.20` |
+| Registered devices | 791 active (non-archived), verified 2026-08-03 — includes device 800, created by the DEVICE-SPLIT-774 remediation; zero duplicate `rustdesk_id` fleet-wide |
 | Fleet Status | Production rollout successful |
 | Deployment Coverage | Approximately 95% |
 | Operational Status | Healthy |
@@ -182,6 +183,11 @@ Recovery procedures belong in their technical runbook; this section records only
 
 | ID | Title | Severity | Current impact | Evidence | Owner | Next review | Related roadmap ID |
 |---|---|---|---|---|---|---|---|
+| RISK-CAP-001 | Single-vCPU host is the binding capacity constraint | **High** | The production host has `nproc` = 1 and 2 GB RAM for 790 endpoints. At the 300s heartbeat interval this is ~2.6 requests/s and load ~0.6. On 2026-08-03 an interval change to 180s (~4.4 requests/s) produced total collapse: 0% idle, load 9.5, `/api/v1/health` returning `000`, and a backend container failure. There is no headroom for fleet growth and none for lowering the interval | HB-INTERVAL-COLLAPSE-2026-08-03 | Production/SRE Owner | Before any fleet growth or interval change | None yet |
+| RISK-CAP-002 | Heartbeat interval floor is not capacity-aware | High | `HEARTBEAT_INTERVAL_MIN = 60` (`agent_config_service.py:25`) lets an operator save a value meaning ~13 requests/s on the current fleet — certain collapse. The UI shows no projected load and no warning; a single save can take production down, as it did on 2026-08-03 at a far milder setting | HB-INTERVAL-COLLAPSE-2026-08-03 | Engineering Lead | Before the next Agent Config change | None yet |
+| RISK-AGENT-002 | No heartbeat jitter; interval changes re-synchronise the fleet | Medium | Every agent adopts a new interval on its next successful heartbeat, so the fleet converges into bursts. 29 requests/s spikes were logged during the 2026-08-03 transition and again on each restart. A per-agent ±10% spread would remove the amplifier that turns a config change into a thundering herd | HB-INTERVAL-COLLAPSE-2026-08-03 | Engineering Lead | With the next agent release | None yet |
+| RISK-IDENT-001 | Device de-duplication collapses cloned machines behind NAT | **High** | `find_reenrollment_match` falls back to `hostname+local_ip` and `hostname+public_ip`; behind NAT the latter identifies a site, not a machine. Two cloned endpoints sharing hostname `DESKTOP-UKPKR96` merged onto device 774 and fought over it, flipping `rustdesk_id` every ~5 minutes so Connect opened the wrong PC. Compounding: the heartbeat trusts `payload.device_id` without verifying `agent_id`, and overwrites `agent_id`/`hostname`/`local_ip` on the resolved row, so identity belongs to whichever machine wrote last. The `_RECENTLY_SEEN_HOURS = 24` guard written to prevent exactly this lives in `_resolve_via_fingerprint` and never runs. Resolved for this pair by a server-side split (device 800); the defect is untouched | DEVICE-SPLIT-774-2026-08-03; `.order_by(Device.id.desc()).first()` in `device_repository.py:53-69` | Engineering Lead | Before the next imaged/cloned deployment | None yet |
+| RISK-MSI-002 | `KillTechiRS*` MSI custom actions are no-ops since 2.1.19 | Medium | `[KillTechiRSBeforeInstall]` inside a `{ }` block of an MSI *Formatted* `ExeCommand` is read as an undefined property, so Windows Installer drops the whole braced group and PowerShell fails to parse. Confirmed on two machines from the post-format `CustomActionSchedule` line and from the total absence of the action's own log lines. Remote Support is therefore never stopped before `InstallFiles`, which is the guard whose absence produces 1603 when RS holds its DLLs locked. `Return="ignore"` hides it entirely. Separately `BackupAgentConfigBeforeLegacyRemove` fails to launch with 1721 on every install (working directory does not exist yet), so `device_id` preservation for v1.0.4 migrations never runs | MSI-KILLRS-NOOP-2026-08-03 | Engineering Lead | Before the next MSI build | None yet |
 | RISK-REL-001 | No immutable production tag | High | Production SHA cannot yet be referenced as a durable release object | Verified SHA has no immutable tag | Release Governance Lead | Before next release approval | INIT-REL-001 |
 | RISK-BKP-001 | Off-site copy depends on manual operation | Medium | A skipped manual WD pull can leave the off-site copy behind the daily local backup | PC-3A verified manual runbook; automation intentionally deferred | Production/SRE Owner | Before any backup-automation decision | None — PC-3A complete |
 | RISK-BKP-002 | Restore not tested | High | Recovery time and completeness are unproven | Verified audit posture | Production/SRE Owner | Before next release approval | INIT-BKP-002 |
