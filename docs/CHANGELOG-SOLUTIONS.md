@@ -5,6 +5,77 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] DB-WRITEPATH-TRIM-2026-08-03 — Redundant indexes, autovacuum thresholds, and edge log volume
+
+Three no-deploy changes taken after the edge absorption, chosen because they
+reduce the cost of the work the single-vCPU host actually does rather than
+adding capacity it does not have.
+
+### Redundant indexes on the two hot tables
+
+`pg_stat_user_indexes` showed the same duplicate signature already fixed on
+`devices` earlier the same day — the planner uses one index of a pair and never
+the other:
+
+| table | index | scans | size | verdict |
+|---|---|---|---|---|
+| `device_heartbeats` | `ix_device_heartbeats_id` | 3,105,812 | 48 MB | shadows the PK (3 scans) |
+| | `ix_device_heartbeats_device_id` | 295 | 22 MB | strict prefix of the composite |
+| | `ix_device_heartbeats_rustdesk_status` | 50 | 23 MB | column written, never filtered |
+| `device_telemetry` | `ix_device_telemetry_id` | 13,237,081 | 48 MB | shadows the PK (14 scans) |
+| | `ix_device_telemetry_device_id` | 423,724 | 23 MB | strict prefix of the composite |
+
+`rustdesk_status` was verified in code before dropping: it appears only in write
+paths, never in a `WHERE` clause.
+
+Dropped with `DROP INDEX CONCURRENTLY` (7–27 ms each, no lock taken while the
+fleet was heartbeating). Retained: both PKs, both `(device_id, created_at)`
+composites, and both `ix_*_created_at` — the last of which the retention DELETE
+depends on.
+
+**Result: 544 MB → 380 MB of index, and five fewer index writes per heartbeat
+cycle** — every heartbeat inserts one row into each table, so this lands
+directly on the burst path. The planner moved to the surviving indexes
+immediately (`device_telemetry_pkey` 14 → 20 scans, the composite absorbing the
+`device_id` lookups). Rollback script written first:
+`/root/backups/db-index/restore-dropped-indexes-20260803.sql`.
+
+### Autovacuum thresholds
+
+```
+device_heartbeats  144,662 dead (11.3%)   last autovacuum 2026-08-02 03:02
+device_telemetry   145,233 dead (11.2%)   last autovacuum 2026-08-02 03:02
+```
+
+Over 36 hours without a vacuum. The 0.2 default scale factor puts the threshold
+at ~228k dead tuples, while the 7-day retention deletes ~160k rows/day from each
+table — so dead tuples accumulate for two days and are then cleared in one large
+vacuum, an I/O spike this host cannot absorb comfortably.
+
+`autovacuum_vacuum_scale_factor = 0.02` (threshold ~23k) and
+`autovacuum_analyze_scale_factor = 0.05` on both tables. The change fired
+immediately and took both to **zero dead tuples**; database size 1623 MB →
+1496 MB.
+
+### Edge log volume
+
+The absorbed `/api/heartbeat` and `/api/sysinfo` locations were still writing
+~40 log lines/s — roughly 570 MB/day at ~165 bytes a line, on a filesystem at
+73%. `access_log off;` on those two locations only. Absorption remains
+verifiable from the backend side, which sees zero legacy requests. Filesystem
+73% → 72%.
+
+### Combined state after the day's work
+
+| | morning | after |
+|---|---|---|
+| requests reaching the backend | 1,462/min | ~1/min |
+| load | 2.07, peak 9.5 during the collapse | 0.61 |
+| healthcheck zombies | ~5,760/day | 0 |
+| index footprint, hot tables | 544 MB | 380 MB |
+| dead tuples | 290k | 0 |
+| database size | 1623 MB | 1496 MB |
+
 ## [2026-08-03] RS-APISERVER-FLOOD-2026-08-03 — 94% of backend traffic was RustDesk clients treating us as their api-server; absorbed at the edge
 
 **Follow-up investigation to HB-INTERVAL-COLLAPSE.** Asking "why does one vCPU
