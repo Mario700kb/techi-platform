@@ -5,6 +5,82 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] DB-HEAD-MERGE-2026-08-03 — Two Alembic heads collapsed into one, with the schema proven untouched
+
+RISK-DB-001, closed. Taken before any feature work because the next feature
+migration would have had to pick a parent, and picking wrong is a mistake that
+only surfaces when a deploy applies half a branch.
+
+### What the fork actually was
+
+```
+z1a2b3c4d5e6 (branchpoint)
+ |
+ +-- a1b2c3d4e5f7  device agent_sha256
+ |   b2c3d4e5f8a9  device_heartbeats.created_at index
+ |   c7d8e9f0a1b2  reporting engine tables
+ |   d8e9f0a1b2c3  enterprise vault                     <- head 1
+ |
+ +-- a2b3c4d5e6f7  enrollment audit
+     b3c4d5e6f7a8  agent_command_batches
+     c4d5e6f7a8b9  device agent_version
+     d5e6f7a8b9c0  device display name
+     e6f7a8b9c0d1  trusted domain client mapping
+     hb1x7k9n2q4d  device_heartbeats index hygiene      <- head 2
+```
+
+Production held **both** heads as two rows in `alembic_version`, so both
+branches were fully applied and nothing was pending on either side. The schema
+was never broken — the defect was purely that `alembic upgrade head` had no
+single answer.
+
+### Approach
+
+An empty mergepoint, `mrg8b3f1c2a9`, whose `down_revision` is the tuple of both
+heads. No DDL: no table, no column, no index. Its only effect is bookkeeping —
+two rows in `alembic_version` become one.
+
+Sequence, each step verified before the next:
+
+1. Read-only inspection of `alembic_version`, `alembic current` and `alembic
+   history` to establish that both branches were applied and to map the DAG.
+2. Confirmed migrations do **not** run at container start (the image `CMD` is
+   uvicorn only), so applying this is an explicit, controlled act rather than a
+   side effect of the next restart.
+3. The revision validated in a throwaway container built from the production
+   image, with the repository mounted, before going near the live database:
+   `alembic heads` returned a single `mrg8b3f1c2a9 (mergepoint)`.
+4. Schema-only `pg_dump` and an `alembic_version` dump captured as a before
+   snapshot, alongside the existing daily full backup (2026-08-03 03:01).
+5. Applied from a throwaway container with the repository mounted read-only —
+   the running backend was never restarted and never touched.
+
+### Verification
+
+The decisive check: because the revision is a no-op, the schema dumps taken
+before and after must be identical. Excluding the random `\restrict` nonces
+pg_dump emits per run, they are:
+
+```
+9800ace23a68f365b04c445d08918d2105baded29755869b576c384c09c4632c  BEFORE
+9800ace23a68f365b04c445d08918d2105baded29755869b576c384c09c4632c  AFTER
+3,313 lines of schema, zero differences
+```
+
+- `alembic_version`: two rows → one, `mrg8b3f1c2a9`
+- `alembic current`: `mrg8b3f1c2a9 (head) (mergepoint)`
+- a second `alembic upgrade head` runs zero migrations — idempotent
+- application health 200 in 98 ms, backend healthy, zero restarts, load 0.36,
+  514 devices reporting inside five minutes
+
+### Note on the running image
+
+The live backend image predates this commit, so its bundled `/app/alembic` still
+shows two heads. This is harmless and was verified rather than assumed:
+application code never reads Alembic state at runtime. The migration state lives
+in the database and is correct; the next image rebuild picks the file up
+naturally.
+
 ## [2026-08-03] GUARDRAILS-2026-08-03 — Capacity-aware heartbeat floor, access-log summaries, identity instrumentation
 
 Three backend guardrails closing out the day's incidents. None of them changes

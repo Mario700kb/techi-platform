@@ -16,8 +16,8 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-08-03-GUARDRAILS` |
-| Production baseline SHA | `d6be4ef` (see §3) — last runtime-affecting head; documentation-only commits after it do not change the running system |
+| Documentation revision | `DOC-2026-08-03-DBMERGE` |
+| Production baseline SHA | `152e06a` (see §3) — last runtime-affecting head; documentation-only commits after it do not change the running system |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Live production verification dated 2026-08-03 |
 | Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `d6be4ef` — `feat(backend): capacity-aware heartbeat floor, access-log summaries, identity instrumentation` |
+| Production SHA | `152e06a` — `fix(db): merge the vault and heartbeat-index branches into a single head` |
 | Working tree | Clean, verified 2026-08-03 after fast-forward |
 | Origin alignment | Origin branch matches the production SHA (verified 2026-08-03) |
 | Nearest release anchor | No immutable release tag exists at this SHA |
@@ -85,8 +85,8 @@ The edge absorption rule lives outside version control by necessity — nginx-pr
 |---|---|
 | Engine | PostgreSQL `15.18` |
 | Database | `techi` |
-| Production Alembic heads | `d8e9f0a1b2c3`, `hb1x7k9n2q4d` |
-| Repository heads | Match production heads |
+| Production Alembic heads | `mrg8b3f1c2a9` — single head since 2026-08-03 (mergepoint over `d8e9f0a1b2c3` and `hb1x7k9n2q4d`) |
+| Repository heads | Match production head |
 | Schema residue | `device_repair_count_reset_20260702` |
 | Logical database size | `techi` 1496 MB (measured 2026-08-03, after the index removal and vacuum below; was 1623 MB on 2026-07-29) |
 | Volume size | Root filesystem 25 GB, 72% used, 6.6 GB free (measured 2026-08-03) |
@@ -200,7 +200,7 @@ Recovery procedures belong in their technical runbook; this section records only
 | RISK-SEC-002 | Heartbeat endpoint has no authentication | **High** (reduced from Critical) | Both attacker-usable fields are now closed: the Remote Support password and the pending remote actions are released only to a caller proving knowledge of the device's 144-bit `agent_id`, and pending-action delivery (which marks actions SENT) does not run for an unauthenticated caller. The endpoint itself remains unauthenticated and rate-limit-free, and `agent_id` is a non-expiring bearer secret readable by a local administrator, so this is a knowledge barrier rather than authentication. Three MikroTik devices use guessable `mikrotik-<serial>` IDs (negligible impact — no Remote Support on routers) | SEC-002-GATE and SEC-002B-ACTIONS-GATE 2026-07-29; `tests/test_heartbeat_password_gate.py` 19 cases | Security Lead | Before observe-mode trust rollout | INIT-SEC-001 |
 | RISK-FLEET-002 | Inventory interval is inert for all platforms except RouterOS | Low | Operators can edit and save per-platform inventory intervals that are never applied; the agent has no inventory-interval code | `get_inventory_interval()` called only with a hardcoded `"mikrotik"` | Engineering Lead | With the next agent release | INIT-FLEET-001 |
 | RISK-SUPPLY-001 | Conflicting Remote Support MSI provenance | High | Multiple 1.4.6 artifacts with different hashes obstruct trusted package selection | Verified package audit | Release Governance Lead | Before package activation/change | INIT-SUPPLY-001 |
-| RISK-DB-001 | Two-head Alembic topology | High | Migration governance is ambiguous | Production/repository heads verified | Database Owner | Before any schema change | INIT-DB-001 |
+| RISK-DB-001 | Two-head Alembic topology | **Resolved** (was High) | Closed 2026-08-03. The fork at `z1a2b3c4d5e6` was collapsed by the empty mergepoint `mrg8b3f1c2a9`; `alembic_version` now holds a single row and `alembic upgrade head` has one unambiguous answer, so the next feature migration has exactly one place to attach. The schema was proven untouched: schema-only `pg_dump` before and after are byte-identical (SHA-256 `9800ace2…`, 3,313 lines). A second `alembic upgrade head` runs zero migrations, confirming idempotence | DB-HEAD-MERGE-2026-08-03; `/root/backups/alembic-merge/schema-{BEFORE,AFTER}.sql` | Database Owner | On the next schema change | INIT-DB-001 |
 | RISK-DB-002 | Unmanaged schema residue | Medium | Ownership and lifecycle of residual schema are unclear | `device_repair_count_reset_20260702` | Database Owner | Before schema-governance work | INIT-DB-002 |
 | RISK-STORAGE-001 | Production filesystem capacity posture | Medium | Exact current size evidence is stale/not in this baseline; capacity work must remeasure first | Baseline omits refreshed size metrics | Production/SRE Owner | Before cleanup or capacity action | INIT-STORAGE-001 |
 | RISK-DEPLOY-001 | Docker compose provenance drift | Medium | Container provenance is split across `/opt` and `/root` compose labels | Verified compose labels | Production/SRE Owner | Before next deployment | INIT-GIT-001 |
