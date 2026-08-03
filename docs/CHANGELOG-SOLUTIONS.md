@@ -5,6 +5,92 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] GUARDRAILS-2026-08-03 — Capacity-aware heartbeat floor, access-log summaries, identity instrumentation
+
+Three backend guardrails closing out the day's incidents. None of them changes
+device resolution or heartbeat processing; the third deliberately only measures.
+
+### 1. The interval floor now knows what the host can carry (RISK-CAP-002)
+
+`HEARTBEAT_INTERVAL_MIN = 60` was a constant with no relationship to fleet size
+or CPU. It permitted the 180s setting that took production down, and would have
+permitted ~13 req/s.
+
+The floor is now derived — `ceil(fleet / HEARTBEAT_RATE_BUDGET_PER_SEC)`,
+clamped to `[MIN, MAX]`, budget configurable via environment and defaulting to
+3.0 req/s. It tightens by itself as the fleet grows and relaxes only when the
+budget is raised deliberately alongside real capacity. Budget `0` restores the
+previous behaviour.
+
+Verified against live production numbers after deploy:
+
+```
+791 devices, budget 3.0 req/s  ->  floor 264s
+  600s ->  1.32 req/s  ALLOWED
+  300s ->  2.64 req/s  ALLOWED
+  264s ->  3.00 req/s  ALLOWED
+  180s ->  4.39 req/s  REJECTED   <- the change that caused the collapse
+   60s -> 13.18 req/s  REJECTED   <- what the old bound permitted
+```
+
+The rejection states the projected rate rather than only the verdict, and both
+entry points are guarded — the flat `heartbeat_interval_seconds` and the
+per-platform map, since either could carry the same mistake. `GET`/`PUT` now
+return `active_device_count`, `projected_requests_per_second` and
+`minimum_allowed_interval_seconds`, so the cost is visible before saving rather
+than discovered afterwards. Counting devices is best-effort: a guardrail that
+returns 500 is worse than one that degrades to the static floor.
+
+### 2. Suppressed access logs are now summarised
+
+`_DropNoisyAccessLogs` hid agent heartbeat traffic so thoroughly that the first
+reading of the logs during the incident concluded there was none at all — a
+wrong conclusion that cost real investigation time. Dropped lines are now
+counted and summarised once a minute on a separate `techi.access_summary`
+logger (separate so the summary cannot re-enter the filter). First line in
+production:
+
+```
+techi.access_summary suppressed access logs in 65s:
+  /api/v1/agent/heartbeat x6 (0.09/s), /health x3 (0.05/s)
+```
+
+Volume stays negligible; the rate stays observable.
+
+### 3. RISK-IDENT-001 instrumentation — observation only, no behaviour change
+
+Heartbeat resolution falls back to a caller-supplied `device_id` without
+checking `agent_id`. That is how two cloned machines came to fight over device
+774. The obvious fix — refuse `device_id` when `agent_id` disagrees — would
+silently stop resolving every device currently relying on that path, and **the
+size of that population is unknown**. Shipping it blind would trade a known
+defect for an unmeasured outage.
+
+So this release only measures it: a warning naming the device whenever a
+heartbeat resolves by `device_id` with a conflicting `agent_id`, throttled to
+one line per device per hour. Nothing branches on it. When the fix is made it
+will have a counted blast radius instead of a guessed one.
+
+At three minutes after deploy the count was **zero**, which is encouraging but
+far too short a window to conclude from.
+
+### Testing
+
+`tests/test_heartbeat_capacity_guard.py`, 24 cases: the exact 180s change that
+caused the incident, the per-platform map path, floor clamping at both ends,
+budget-0 disablement, database-failure degradation, filter counting and window
+reset, and mismatch / absence / throttling for the instrumentation.
+
+Full suite **34 failed, 995 passed** against **34 failed, 971 passed** on the
+unmodified baseline — the failures are pre-existing and environmental (those
+tests read `agent/` sources absent from a backend-only checkout), and the delta
+is exactly the 24 new tests. Run in a throwaway container built from the
+production image so nothing touched the running service.
+
+Deployed with `docker compose up -d --build backend`. After deploy: healthy,
+zero restarts, load 0.64, zombie count 0, 516 devices reporting inside five
+minutes.
+
 ## [2026-08-03] DB-WRITEPATH-TRIM-2026-08-03 — Redundant indexes, autovacuum thresholds, and edge log volume
 
 Three no-deploy changes taken after the edge absorption, chosen because they
