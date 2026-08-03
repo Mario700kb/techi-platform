@@ -13,6 +13,7 @@ Thread-safe: all reads and writes are serialised through a single RLock.
 
 import json
 import logging
+import math
 import os
 import threading
 from typing import Dict, Mapping, Optional
@@ -24,6 +25,39 @@ _POLICY_FILE: str = os.environ.get("AGENT_POLICY_FILE", "/app/data/agent_policy.
 HEARTBEAT_INTERVAL_DEFAULT: int = 300
 HEARTBEAT_INTERVAL_MIN: int = 60
 HEARTBEAT_INTERVAL_MAX: int = 600
+
+# Steady-state heartbeat requests per second this deployment is willing to
+# carry. The static MIN above says nothing about the host: on 2026-08-03 a
+# 300s -> 180s change (2.6 -> 4.4 req/s) took a single-vCPU production box
+# down, and MIN=60 would have allowed ~13 req/s with no warning at all.
+#
+# The floor is therefore derived: fleet size / budget. Raise the budget when
+# the host gets more CPU; the floor follows automatically, and it also tightens
+# on its own as the fleet grows. Set to 0 to disable the derived floor and fall
+# back to the static MIN.
+HEARTBEAT_RATE_BUDGET_PER_SEC: float = float(
+    os.environ.get("HEARTBEAT_RATE_BUDGET_PER_SEC", "3.0")
+)
+
+
+def capacity_floor_seconds(active_device_count: int) -> int:
+    """Smallest heartbeat interval whose steady-state rate stays within budget.
+
+    Never returns less than HEARTBEAT_INTERVAL_MIN, and never more than
+    HEARTBEAT_INTERVAL_MAX — a fleet large enough to push the floor past the
+    maximum is a capacity problem to solve with hardware, not a reason to make
+    the policy unsettable.
+    """
+    if active_device_count <= 0 or HEARTBEAT_RATE_BUDGET_PER_SEC <= 0:
+        return HEARTBEAT_INTERVAL_MIN
+    derived = math.ceil(active_device_count / HEARTBEAT_RATE_BUDGET_PER_SEC)
+    return max(HEARTBEAT_INTERVAL_MIN, min(derived, HEARTBEAT_INTERVAL_MAX))
+
+
+def projected_requests_per_second(active_device_count: int, interval_seconds: int) -> float:
+    if interval_seconds <= 0:
+        return 0.0
+    return round(active_device_count / interval_seconds, 2)
 INVENTORY_INTERVAL_DEFAULT: int = 1800
 INVENTORY_INTERVAL_MIN: int = 300
 INVENTORY_INTERVAL_MAX: int = 86400

@@ -46,6 +46,39 @@ _AGENT_ID_CACHE_EVICT_COUNT = 100
 RUSTDESK_REPAIR_EVENT_THROTTLE_HOURS = 24
 RUSTDESK_REPAIR_COUNTER_RETENTION_HOURS = 24
 
+# RISK-IDENT-001 instrumentation. device_id -> last time we logged it, so a
+# device stuck in this state produces one line an hour instead of one every
+# heartbeat. Observation only; nothing branches on this.
+_UNVERIFIED_DEVICE_ID_SEEN: dict = {}
+_UNVERIFIED_DEVICE_ID_THROTTLE_SECONDS = 3600.0
+
+
+def _note_unverified_device_id_resolution(payload, device) -> None:
+    """Log a heartbeat resolved from payload.device_id whose agent_id disagrees.
+
+    This is the exact population that would stop resolving if device_id
+    resolution were gated on a matching agent_id. Logging it now gives that
+    change a measured blast radius instead of a guessed one.
+    """
+    if device is None:
+        return
+    provided = (getattr(payload, "agent_id", None) or "").strip()
+    stored = (getattr(device, "agent_id", None) or "").strip()
+    if not provided or not stored or provided == stored:
+        return
+    now = time.monotonic()
+    last = _UNVERIFIED_DEVICE_ID_SEEN.get(device.id)
+    if last is not None and now - last < _UNVERIFIED_DEVICE_ID_THROTTLE_SECONDS:
+        return
+    _UNVERIFIED_DEVICE_ID_SEEN[device.id] = now
+    logger.warning(
+        "RISK-IDENT-001: heartbeat resolved via device_id=%s but agent_id disagrees "
+        "(hostname=%s); this device would stop resolving if device_id required a "
+        "matching agent_id",
+        device.id,
+        getattr(payload, "hostname", None),
+    )
+
 
 def _cache_agent_device(agent_id: str, device_id: int) -> None:
     _AGENT_ID_CACHE.pop(agent_id, None)
@@ -141,6 +174,13 @@ class DeviceHeartbeatService:
             device = self._create_from_stable_identity(payload, device_type, now)
         if device is None:
             device = self.device_repo.get(payload.device_id) if payload.device_id else None
+            # OBSERVE ONLY (RISK-IDENT-001). Resolving from a caller-supplied
+            # device_id without checking agent_id is how two cloned machines
+            # ended up fighting over device 774 on 2026-08-03. The fix is to
+            # stop trusting device_id when agent_id disagrees — but that would
+            # silently drop every device currently relying on this path, and
+            # the size of that set is unknown. Measure it before changing it.
+            _note_unverified_device_id_resolution(payload, device)
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
         if device is not None and payload.agent_id:
