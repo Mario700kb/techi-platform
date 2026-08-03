@@ -5,6 +5,113 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-03] RS-APISERVER-FLOOD-2026-08-03 — 94% of backend traffic was RustDesk clients treating us as their api-server; absorbed at the edge
+
+**Follow-up investigation to HB-INTERVAL-COLLAPSE.** Asking "why does one vCPU
+have no headroom at 2.6 req/s?" turned out to be the wrong question: the box was
+never carrying 2.6 req/s.
+
+### The causal chain, evidenced at every link
+
+1. The combined MSI passes our API URL to `EpCustomActDll` —
+   `CustomActionData=…|https://api-rdp.techi.com.al|…`, captured live in
+   `msi-install.log` on two machines. The DLL writes it as `api-server` into the
+   Remote Support TOML on **every install and upgrade**
+   (`installer.wxs:462-481`).
+2. A RustDesk 1.4.6 client with `api-server` set posts its own product telemetry
+   there every ~10-15s. Body captured on the wire:
+   `{"id":"195635003","uuid":"…","ver":1004060}` — no `hostname`, no `device_id`,
+   no `agent_id`.
+3. The backend cannot resolve that to a TECHI device, so `_resolves_existing_device`
+   returns false and it answers `204` (`legacy_compat.py:82-84`).
+4. Nothing ever removes it: the agent's RS repair loop only patches *managed*
+   keys, and `api-server` is not one when `rustdesk_api_server` is unset
+   (`rustdesk_toml.go:133`). The read-only bit the agent sets on the TOML then
+   protects the value from RustDesk itself.
+
+### Scale
+
+Across the full retained NPM log history:
+
+| path | requests | 204 | 502 | **2xx other than 204** |
+|---|---|---|---|---|
+| `/api/heartbeat` | 1,338,852 | 1,324,271 | 981 | **0** |
+| `/api/sysinfo` | 182,824 | 180,636 | 100 | **0** |
+
+Not one legacy request has ever been processed successfully. At ~40 req/s this
+was **~94% of all traffic** reaching the backend — each one paying JSON parse,
+pydantic validation and up to three device lookups in order to be discarded.
+
+### Fix applied — edge absorption
+
+`/data/nginx/custom/server_proxy.conf` in nginx-proxy-manager (the
+`server_proxy[.]conf` include already existed in both generated proxy hosts):
+
+```nginx
+location = /api/heartbeat { return 204; }
+location = /api/sysinfo   { return 204; }
+```
+
+Byte-identical from the client's point of view — 204 before, 204 now — but
+uvicorn never sees it. Applied with `nginx -s reload`, no downtime.
+
+Surgical by construction: TECHI agents post to `/api/v1/agent/heartbeat`, a
+different path. Verified immediately after reload:
+
+```
+/api/heartbeat          -> 204  (nginx)
+/api/sysinfo            -> 204  (nginx)
+/api/v1/agent/heartbeat -> 400  (reached the backend, rejected the empty body)
+/api/v1/health          -> 200
+```
+
+### Measured effect
+
+| | before | after |
+|---|---|---|
+| legacy requests reaching backend | 1,319/min | **0** |
+| total backend requests | 1,462/min | ~8/min |
+| load | 2.07, spiking to 9.5 under stress | 0.29–0.41 idle |
+| devices reporting in 5 min | 550 | 548 — unchanged |
+
+### Finding surfaced during verification: the fleet is fully synchronised
+
+375 heartbeats landed in one sampled minute where 548 devices at a 300s interval
+should produce ~110. The per-device rate was correct — mean 1.01 heartbeats per
+device per 5 minutes — so the interval works; the arrival pattern does not.
+Heartbeats per 30s bucket:
+
+```
+15:29:30 → 160     15:34:30 → 163
+15:30:00 → 223 ◄   15:35:00 → 216 ◄
+15:30:30 →  89     15:35:30 →  97
+15:31:30 →  11     15:36:00 →  23
+15:32:00 →   3     …trough 1–3 per 30s…
+```
+
+The whole fleet fires inside a ~90s window every 300s: **peak 7.4 req/s against
+a 1.8 req/s mean, and a ~150× peak-to-trough ratio.** This is RISK-AGENT-002
+quantified, and it is now the dominant remaining load. It also explains the
+original collapse: the same burst, 1.67× more often at 180s, on top of 40 req/s
+of legacy flood.
+
+### Correction
+
+An earlier reading of the packet capture suggested TECHI 2.1.20 agents were
+posting to the legacy path. That was a capture artefact — bodies and request
+lines arrive in different packets. After correlating URL to body per TCP
+connection, every TECHI agent was on v1 and every legacy request was a RustDesk
+client. The agent is not at fault.
+
+### Still open
+
+- **The edge rule is a containment, not a cure.** nginx still terminates ~40
+  TLS handshakes/s for traffic that should never leave the endpoints. The cure
+  is the agent/MSI change that stops writing `api-server`.
+- **The file lives outside Git** (`/root/nginx-proxy-manager/data/nginx/custom/`),
+  same class as RISK-DEPLOY-001. Recorded in PROJECT_STATE §5 so an NPM rebuild
+  does not silently drop it.
+
 ## [2026-08-03] HB-INTERVAL-COLLAPSE-2026-08-03 — Heartbeat interval 300→180 tipped a single-vCPU host; healthcheck zombies had been eroding it for days
 
 **Outage.** An operator lowered the Windows heartbeat interval from 300s to 180s
