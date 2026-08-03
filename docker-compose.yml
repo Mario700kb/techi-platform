@@ -26,6 +26,12 @@ services:
       start_period: 30s
 
   backend:
+    # uvicorn does not reap orphaned children. As PID 1 it inherits every
+    # healthcheck process Docker spawns inside the container, so each check
+    # left a <defunct> python3 behind — ~5,760/day at the old 15s interval,
+    # ~23,000 over a four-day uptime, until the container fell over
+    # (2026-08-03 incident). docker-init (tini) becomes PID 1 and reaps them.
+    init: true
     build:
       context: ./backend
     env_file:
@@ -50,7 +56,10 @@ services:
         max-file: "5"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
-      interval: 15s
+      # 30s, not 15s: the image ships no curl/wget, so every check pays a full
+      # Python interpreter start. On the single-vCPU production host that cost
+      # is not free.
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 40s
