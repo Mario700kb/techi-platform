@@ -88,19 +88,39 @@ def _with_capacity_context(policy: dict, device_count: int) -> dict:
     return enriched
 
 
-def _reject_below_capacity_floor(requested: Dict[str, int], device_count: int) -> None:
-    """Raise 422 if any requested heartbeat interval would exceed the rate budget."""
-    floor = _svc.capacity_floor_seconds(device_count)
+def _platform_device_count(db: Session, platform: str, total: int) -> int:
+    """How many devices this interval actually applies to.
+
+    An interval is per-platform, so the load it creates is that platform's
+    device count — not the fleet's. Charging the whole fleet to every platform
+    (the 2026-08-03 version of this guard) would have refused `linux: 60` on a
+    fleet with a single Linux endpoint, where the real cost is 0.02 req/s.
+    Falls back to the fleet total, which is the conservative direction.
+    """
+    try:
+        return DeviceRepository(db).count(platform=platform)
+    except Exception:
+        logger.exception("agent-config: platform device count failed for %s", platform)
+        return total
+
+
+def _reject_below_capacity_floor(requested: Dict[str, int], db: Session, total: int) -> None:
+    """Raise 422 if a requested interval would exceed the rate budget for the
+    devices that interval governs."""
     for platform, seconds in requested.items():
-        if seconds is None or seconds >= floor:
+        if seconds is None:
             continue
-        rate = _svc.projected_requests_per_second(device_count, seconds)
+        count = _platform_device_count(db, platform, total)
+        floor = _svc.capacity_floor_seconds(count)
+        if seconds >= floor:
+            continue
+        rate = _svc.projected_requests_per_second(count, seconds)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"heartbeat interval {seconds}s for '{platform}' is below the capacity floor "
-                f"of {floor}s for {device_count} devices: it projects {rate} requests/s against "
-                f"a budget of {_svc.HEARTBEAT_RATE_BUDGET_PER_SEC} req/s. "
+                f"of {floor}s for the {count} '{platform}' device(s) it governs: it projects "
+                f"{rate} requests/s against a budget of {_svc.HEARTBEAT_RATE_BUDGET_PER_SEC} req/s. "
                 f"Raise HEARTBEAT_RATE_BUDGET_PER_SEC only together with host capacity."
             ),
         )
@@ -127,7 +147,7 @@ def put_agent_config(
         requested["windows"] = body.heartbeat_interval_seconds
     if body.platform_heartbeat_intervals:
         requested.update(body.platform_heartbeat_intervals)
-    _reject_below_capacity_floor(requested, device_count)
+    _reject_below_capacity_floor(requested, db, device_count)
 
     try:
         policy = _svc.set_policy(

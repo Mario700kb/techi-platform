@@ -136,6 +136,63 @@ def test_per_platform_map_is_guarded_too(client, monkeypatch):
     assert "windows" in r.json()["detail"]
 
 
+def test_a_platform_is_charged_only_for_its_own_devices(monkeypatch, tmp_path):
+    """Regression in the guard itself (2026-08-04).
+
+    The first version charged the whole fleet to every platform, so on a fleet
+    of 791 devices with a single Linux endpoint it refused `linux: 60` — a
+    change whose real cost is 1/60 = 0.02 req/s. An interval is per-platform;
+    the load it creates is that platform's device count.
+    """
+    monkeypatch.setattr(svc, "_POLICY_FILE", str(tmp_path / "policy.json"))
+    monkeypatch.setattr(svc, "_policy", None, raising=False)
+    monkeypatch.setattr(svc, "HEARTBEAT_RATE_BUDGET_PER_SEC", 3.0)
+
+    class _CountByPlatform:
+        def count(self, platform=None):
+            return {"linux": 1, "mikrotik": 2}.get(platform, 791)
+
+    monkeypatch.setattr(ac, "_active_device_count", lambda db: 791)
+    monkeypatch.setattr(ac, "DeviceRepository", lambda db: _CountByPlatform())
+
+    app = FastAPI()
+    app.include_router(agent_config_router, prefix="/agent-config")
+    app.dependency_overrides[get_current_operator] = _operator
+    app.dependency_overrides[get_db] = lambda: None
+    c = TestClient(app)
+
+    # One Linux endpoint at 60s is 0.02 req/s — must be allowed.
+    assert c.put("/agent-config", json={"platform_heartbeat_intervals": {"linux": 60}}).status_code == 200
+    # Two MikroTik routers at 60s is 0.03 req/s — also fine.
+    assert c.put("/agent-config", json={"platform_heartbeat_intervals": {"mikrotik": 60}}).status_code == 200
+    # Windows still carries the whole fleet and must still be refused.
+    r = c.put("/agent-config", json={"platform_heartbeat_intervals": {"windows": 60}})
+    assert r.status_code == 422
+    assert "791" in r.json()["detail"]
+
+
+def test_platform_count_failure_falls_back_to_the_fleet_total(monkeypatch, tmp_path):
+    """Conservative direction: if the per-platform count cannot be read, charge
+    the whole fleet rather than waving the change through."""
+    monkeypatch.setattr(svc, "_POLICY_FILE", str(tmp_path / "policy.json"))
+    monkeypatch.setattr(svc, "_policy", None, raising=False)
+    monkeypatch.setattr(svc, "HEARTBEAT_RATE_BUDGET_PER_SEC", 3.0)
+
+    class _Boom:
+        def count(self, platform=None):
+            raise RuntimeError("db down")
+
+    monkeypatch.setattr(ac, "_active_device_count", lambda db: 791)
+    monkeypatch.setattr(ac, "DeviceRepository", lambda db: _Boom())
+
+    app = FastAPI()
+    app.include_router(agent_config_router, prefix="/agent-config")
+    app.dependency_overrides[get_current_operator] = _operator
+    app.dependency_overrides[get_db] = lambda: None
+    r = TestClient(app).put("/agent-config", json={"platform_heartbeat_intervals": {"linux": 60}})
+    assert r.status_code == 422
+
+
 def test_inventory_intervals_are_not_affected(client, monkeypatch):
     monkeypatch.setattr(svc, "HEARTBEAT_RATE_BUDGET_PER_SEC", 3.0)
     r = client.put("/agent-config", json={"platform_inventory_intervals": {"windows": 900}})
