@@ -192,6 +192,74 @@ The upgrade was completed instead by stopping the service, downloading to
 what the deploy script had been written to do, and the reason it stops the
 service first. Raised as RISK-INSTALL-001.
 
+### The Web Terminal had never worked, and the channel is what revealed it
+
+With delivery fixed, the terminal still failed — and the cause turned out to
+have nothing to do with the channel. `TerminalRelay.pump` treated a missing
+counterpart as a reason to stop:
+
+```python
+target = pair.agent if is_operator else pair.operator
+if target is None or pair.closed:
+    break
+```
+
+The operator always attaches first: the agent only learns a session exists
+when it receives `open_terminal` and dials back. xterm.js sends a resize frame
+the instant its socket opens. So the operator's **first frame** found
+`pair.agent is None`, broke the pump, and the route's `finally` closed the
+session. The agent then arrived, found a CLOSED session, and had its ticket
+rejected by `_valid_pending` as "invalid/expired". The browser saw the socket
+drop, showed "Connection lost", and retried — the ~2s cycle in the logs.
+
+This was invisible while delivery took minutes, because the operator had
+always given up long before the agent dialled; the failure read as latency.
+Fixing delivery is what made it reproducible in under a second.
+
+`pump` now buffers operator frames (bounded at 64) while the agent is missing
+and continues; `attach_agent` replays them, so the initial resize survives.
+Embedded Terminal (agent/bash) works in production as of 2026-08-05 01:45 CEST.
+
+### Two defects of my own, in the delivery path
+
+Both found because the terminal still failed after 2.1.21 shipped:
+
+**The push never ran.** `create_terminal_session` is a sync endpoint, so
+FastAPI executes it in a worker thread where `asyncio.get_running_loop()`
+raises `RuntimeError` — always, for every request. Fixed by capturing the loop
+at startup and scheduling with `run_coroutine_threadsafe`, bounded at 5s.
+
+**The action was marked SENT before the push.** `deliver_now()` ran first, so
+every `open_terminal` was recorded as delivered and then delivered to nobody —
+the heartbeat path collects only QUEUED work. The duplicate-action guard then
+blocked every retry ("already queued or running, action #2344, status=sent").
+`deliver_now` is now split into `build_delivery` (pure) and `mark_delivered`,
+and the mark happens only once the socket has accepted the frame.
+
+Worth recording plainly: between these two, the change intended to *accelerate*
+terminal delivery had instead broken it completely, and the earlier reading of
+`sent_at == created_at` as "the channel delivers instantly" was wrong — that
+timestamp was the premature SENT mark, not a delivery.
+
+### Embedded SSH cannot work for this fleet as designed
+
+Embedded Terminal works; Embedded SSH still fails with
+`ssh connect failed: device_id=729 reason=timeout`. This is not a bug in the
+above — it is the transport the feature was built on. `terminal.py:371` selects
+`host = device.local_ip or device.public_ip` and the **backend** dials SSH
+itself (the Connect menu labels it honestly: "Backend relay · Vault"). For
+device 729 that is `10.5.50.126`, private and behind the customer's NAT, so the
+platform host cannot reach it. The `public_ip` fallback would require port 22
+open to the internet on a customer server — explicitly ruled out by the owner
+("nuk dua te eksposoj porta apo mundesi per sulme pasi jane servera").
+
+So Embedded SSH is usable only for devices the platform can already reach
+directly, and no device in this fleet qualifies. Raised as RISK-SSH-001. The
+fix that respects the constraint is to carry SSH over the agent the way the
+terminal now is: a TCP-forward action where the agent bridges bytes to
+`host:22` and the backend keeps asyncssh and the vault credential server-side,
+so credentials never reach the endpoint and no port is exposed. Not built.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
