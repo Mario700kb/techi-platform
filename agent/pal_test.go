@@ -1,3 +1,11 @@
+//go:build !linux
+
+// Build-tagged !linux since 2026-08-05: every assertion here is about the
+// NON-Linux contract (the file's own comment says so), so running it on Linux
+// failed by construction and kept `go test ./...` red on that platform. That
+// went unnoticed because the agent was only ever tested from Windows/darwin;
+// it blocks a Linux CI job. No production code changes — the same assertions
+// still run on Windows and darwin exactly as before.
 package main
 
 import (
