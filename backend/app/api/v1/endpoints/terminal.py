@@ -11,6 +11,7 @@ app.platform_core.rollout, generic across future features). Operator-scoped
 secret.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -79,6 +80,29 @@ def _has_terminal_capability(device) -> bool:
     return isinstance(caps, dict) and "terminal" in caps
 
 
+def _push_action_if_connected(device_id: int, action, action_svc) -> bool:
+    """Deliver a queued action over the agent command channel, if one is open.
+
+    Best-effort by design. Any failure — no channel, a dead socket, an event
+    loop that will not schedule — leaves the action queued for the heartbeat
+    path, which is exactly the pre-2026-08-04 behaviour. Opening a terminal
+    must never fail because the accelerator did.
+    """
+    from app.websocket.agent_channel import agent_command_channel
+
+    if not agent_command_channel.is_connected(device_id):
+        return False
+    try:
+        delivery = action_svc.deliver_now(action)
+        payload = {"type": "action", "action": delivery.model_dump()}
+        loop = asyncio.get_running_loop()
+        loop.create_task(agent_command_channel.push(device_id, payload))
+        return True
+    except Exception:
+        logger.exception("terminal: command-channel push failed for device %s; heartbeat will deliver", device_id)
+        return False
+
+
 @router.post("/devices/{device_id}/terminal/sessions", response_model=TerminalSessionResponse)
 def create_terminal_session(
     device_id: int,
@@ -129,7 +153,8 @@ def create_terminal_session(
     # derivation as the ticket so the two can never drift apart.
     action_timeout = svc.ticket_ttl_for_device(device_id)
     try:
-        RemoteActionService(db).queue_action(
+        action_svc = RemoteActionService(db)
+        action = action_svc.queue_action(
             device_id,
             RemoteActionCreate(
                 action_type=ActionType.OPEN_TERMINAL,
@@ -142,6 +167,12 @@ def create_terminal_session(
                 execution_timeout_seconds=action_timeout,
             ),
         )
+        # Push it now if the agent is holding a command channel open, so the
+        # terminal opens in under a second instead of waiting out a heartbeat.
+        # Strictly an accelerator: the action is already persisted, and an
+        # agent that is not connected is served by the heartbeat path exactly
+        # as before.
+        _push_action_if_connected(device_id, action, action_svc)
     except ValueError as exc:
         # An open_terminal is already queued for this device. That is a
         # legitimate conflict, not a server fault: returning 500 with a raw

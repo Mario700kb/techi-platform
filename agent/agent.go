@@ -54,6 +54,16 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	startupState := startupHeartbeatState(cfg)
 	setLifecycleState(startupState, "")
 
+	// Hold one outbound WebSocket open so interactive actions (Web Terminal)
+	// arrive immediately instead of waiting out a heartbeat. Linux only —
+	// command_channel_other.go is a no-op, so Windows neither links the
+	// websocket client nor opens any connection. Detached and failure-tolerant:
+	// if the channel never establishes, actions are still delivered by the
+	// heartbeat path exactly as before.
+	if !once {
+		go runCommandChannel(ctx, cfg)
+	}
+
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 		log.Printf("heartbeat cycle failed: %v", err)
 		recordHeartbeatOutcome(startupState, err)

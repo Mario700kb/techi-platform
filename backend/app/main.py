@@ -179,6 +179,14 @@ app.include_router(websocket_router)
 # NPM already proxies this host's WS traffic.
 from app.websocket.terminal_routes import router as terminal_ws_router  # noqa: E402
 app.include_router(terminal_ws_router)
+
+# Agent command channel: a persistent outbound WS per agent so interactive
+# actions do not wait for the next heartbeat. Additive — actions are still
+# queued first and the heartbeat path still delivers them to any agent that is
+# not connected here. See app/websocket/agent_channel.py.
+from app.websocket.agent_channel_routes import router as agent_channel_ws_router  # noqa: E402
+app.include_router(agent_channel_ws_router)
+
 app.include_router(legacy_compat_router)
 
 

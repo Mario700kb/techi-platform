@@ -344,6 +344,28 @@ class RemoteActionService:
     # Heartbeat delivery                                                   #
     # ------------------------------------------------------------------ #
 
+    def deliver_now(self, action: RemoteAction) -> PendingActionDelivery:
+        """Mark one action SENT and build its delivery payload, for the agent
+        command channel (app/websocket/agent_channel.py).
+
+        Same bookkeeping as collect_pending_for_delivery does per heartbeat —
+        marking it here is what stops the next heartbeat from delivering the
+        same action a second time and opening two terminals.
+        """
+        action = self.repo.mark_sent(action)
+        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+        logger.info(
+            "[action] pushed #%d (type=%s) to device #%d over the command channel",
+            action.id, action.action_type, action.device_id,
+        )
+        return PendingActionDelivery(
+            action_id=action.id,
+            action=action.action_type,
+            parameters=action.payload_dict,
+            timeout_seconds=action.execution_timeout_seconds,
+            callback_secret=compute_callback_token(action.id),
+        )
+
     def collect_pending_for_delivery(self, device_id: int) -> List[PendingActionDelivery]:
         """
         Called on every agent heartbeat.
