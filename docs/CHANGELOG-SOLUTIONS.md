@@ -128,6 +128,15 @@ platform. Registering it exposed the hole — **no `linux-amd64` package existed
 at all**, so that endpoint had always returned 404 for x86-64 Linux. The only
 Linux entry in the manifest was `linux-arm64` 2.1.6.
 
+The blast radius was larger than one URL. The operator-facing install generator
+(`GET /api/v1/install/linux?token=…`, the "Deploy" screen) emits a script whose
+download line is `curl -fsSL …/platform/linux-${ARCH}/download`. On any x86-64
+host that resolved to the missing `linux-amd64` package, and `-f` makes curl
+exit 22 on a 404 — so **the entire Linux onboarding flow died at that line for
+every x86-64 machine**, before writing config or enrolling. Confirmed after the
+fix by comparing platforms: `linux-amd64` now returns 200, while `linux-armhf`
+(still unregistered) returns 404 and reproduces the exit-22 failure exactly.
+
 Registration was performed by calling `AgentPackageService.upload()` inside the
 container rather than hand-editing `manifest.json`, so the file was hashed,
 validated and recorded exactly as an operator upload would be. The manifest was
