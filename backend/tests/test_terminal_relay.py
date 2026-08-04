@@ -175,3 +175,95 @@ def test_pump_stops_when_target_side_never_attached():
         await relay.pump("s1", operator_ws, is_operator=True)  # must return, not hang
 
     asyncio.run(_body())
+
+
+# ── early operator frames (regression: Web Terminal never opened) ─────────── #
+
+def test_operator_frame_before_agent_attaches_does_not_end_the_session():
+    """The operator always attaches first, and xterm.js sends a resize frame
+    the instant its socket opens. Treating that frame as "counterpart missing,
+    stop" ended every session before the agent could dial back — the Web
+    Terminal was unusable on device 729 for exactly this reason (2026-08-05).
+    """
+    async def scenario():
+        r = TerminalRelay()
+        operator = _FakeWS([
+            {"type": "websocket.receive", "text": '{"t":"resize","cols":80,"rows":24}'},
+            {"type": "websocket.receive", "bytes": b"whoami\n"},
+        ])
+        await r.attach_operator("s1", operator)
+        # No agent yet. pump must drain the operator without tearing down.
+        await r.pump("s1", operator, is_operator=True)
+        pair = r._pairs["s1"]
+        return [
+            m.get("text") or m.get("bytes") for m in pair.pending_to_agent
+        ]
+
+    held = asyncio.run(scenario())
+    assert held == ['{"t":"resize","cols":80,"rows":24}', b"whoami\n"], (
+        "frames sent before the agent arrived must be held, not dropped"
+    )
+
+
+def test_buffered_frames_are_replayed_when_the_agent_attaches():
+    """Losing the initial resize leaves the remote PTY at default geometry."""
+    async def scenario():
+        r = TerminalRelay()
+        operator = _FakeWS([
+            {"type": "websocket.receive", "text": '{"t":"resize","cols":120,"rows":40}'},
+        ])
+        await r.attach_operator("s1", operator)
+        await r.pump("s1", operator, is_operator=True)
+
+        agent = _FakeWS()
+        await r.attach_agent("s1", agent)
+        return agent.sent_text, r._pairs["s1"].pending_to_agent
+
+    sent_text, remaining = asyncio.run(scenario())
+    assert sent_text == ['{"t":"resize","cols":120,"rows":40}']
+    assert remaining == [], "the buffer must be cleared once replayed"
+
+
+def test_pending_buffer_is_bounded():
+    """A client that keeps typing at a wall must not grow this without limit."""
+    async def scenario():
+        r = TerminalRelay()
+        messages = [
+            {"type": "websocket.receive", "bytes": bytes([i % 256])}
+            for i in range(relay_module._MAX_PENDING_FRAMES + 50)
+        ]
+        operator = _FakeWS(messages)
+        await r.attach_operator("s1", operator)
+        await r.pump("s1", operator, is_operator=True)
+        return len(r._pairs["s1"].pending_to_agent)
+
+    assert asyncio.run(scenario()) == relay_module._MAX_PENDING_FRAMES
+
+
+def test_a_closed_pair_still_stops_the_pump():
+    """Buffering must not defeat teardown: a closed session ends immediately."""
+    async def scenario():
+        r = TerminalRelay()
+        operator = _FakeWS([
+            {"type": "websocket.receive", "bytes": b"a"},
+            {"type": "websocket.receive", "bytes": b"b"},
+        ])
+        await r.attach_operator("s1", operator)
+        r._pairs["s1"].closed = True
+        await r.pump("s1", operator, is_operator=True)
+        return r._pairs["s1"].pending_to_agent
+
+    assert asyncio.run(scenario()) == [], "a closed pair must buffer nothing"
+
+
+def test_agent_frames_before_the_operator_are_not_buffered():
+    """Only the operator-first ordering is real; an agent that somehow arrives
+    alone must not accumulate output for a browser that may never come."""
+    async def scenario():
+        r = TerminalRelay()
+        agent = _FakeWS([{"type": "websocket.receive", "bytes": b"motd"}])
+        await r.attach_agent("s1", agent)
+        await r.pump("s1", agent, is_operator=False)
+        return r._pairs["s1"].pending_to_agent
+
+    assert asyncio.run(scenario()) == []
