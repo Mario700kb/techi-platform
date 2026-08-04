@@ -5,6 +5,135 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-05] TERMINAL-CHANNEL-2026-08-05 — The Web Terminal was unusable on Linux; fixed by pushing instead of waiting, without opening a single port
+
+Operator report (2026-08-04, device 729 `rustdesk-srv`): the Web Terminal never
+opened. Every attempt ended `reason=operator_closed` — the operator gave up
+before the session started. The instruction that shaped the whole fix was
+explicit: *"nuk dua te eksposoj porta apo mundesi per sulme pasi jane servera"*,
+and *"windows nuk preket"*.
+
+### Root cause: three 60-second deadlines racing a 250-second heartbeat
+
+Actions reach an agent only inside its heartbeat response. Linux heartbeats
+every 250s, but the terminal ticket, the action timeout and the advertised
+`expires_in_seconds` were all fixed at 60s. The ticket was therefore **always
+dead before the agent could learn the session existed** — not a race, a
+certainty. Measured after the fix: delivery at 202s succeeded where the old 60s
+ceiling had expired 142 seconds earlier.
+
+The fix derives the deadline instead of hardcoding it
+([terminal_service.py:59](../backend/app/services/terminal_service.py#L59)):
+
+```
+ticket TTL = heartbeat interval for that platform + 60s attach grace
+           = 310s on Linux, 360s on Windows, 310s on MikroTik
+```
+
+A second defect surfaced alongside it: a duplicate `open_terminal` returned a
+500. It now returns 409 and closes the orphaned session.
+
+### The real fix: an outbound channel, not an inbound port
+
+Raising the TTL makes the terminal *work*; it does not make it *usable* — four
+minutes to open a shell is not a product. Shortening the heartbeat interval was
+the other obvious lever, and it is the one that took production down on
+2026-07-31 (300→180). Neither was acceptable.
+
+The model that satisfies both constraints is the one RustDesk already uses in
+this same stack: **the agent dials out and holds the connection open, and the
+server pushes down it.** No listening port, no inbound firewall rule, no NAT
+traversal, no public IP — the property that makes the agent transport work at
+all is preserved exactly, which is what the operator asked for.
+
+- [`agent_channel.py`](../backend/app/websocket/agent_channel.py) — one
+  connection per device; a reconnect evicts the stale socket; a late teardown
+  cannot evict the connection that replaced it; `push()` never raises.
+- [`agent_channel_routes.py`](../backend/app/websocket/agent_channel_routes.py)
+  — `/ws/agent/commands`, gated on the device's own `agent_id` (144 bits,
+  `compare_digest`, both sides must be non-empty — the RISK-SEC-002 barrier).
+  Push-only: inbound frames are ignored.
+- `deliver_now()` marks the action SENT, so the next heartbeat cannot deliver
+  the same action twice and open a second shell.
+
+**Push is strictly an accelerator.** Every action is persisted first; an agent
+that is not connected is served by the heartbeat path exactly as before. This
+is what makes the rollback trivial — the channel is never a dependency.
+
+Scope held to Linux by build tag (`command_channel_linux.go` /
+`command_channel_other.go`, a no-op everywhere else). Windows was not touched:
+it is healthy on the heartbeat path, and a persistent connection from 799
+Windows endpoints to a single-vCPU host is not something to ship as a side
+effect. Four source-level tests pin that boundary so a build-tag mistake cannot
+widen it silently.
+
+### A defect I introduced, and how it was caught
+
+The capacity guardrail I had written charged the **entire fleet** (791 devices)
+against **every** platform. It would have refused `linux: 60` — a setting whose
+real cost is 0.02 req/s against a 3.0 req/s budget, roughly 150× under. The
+guard was protecting production from arithmetic that did not describe
+production. Fixed to count devices per platform
+([agent_config.py](../backend/app/api/v1/endpoints/agent_config.py)); recorded
+here because the guard would otherwise have looked like correct behaviour.
+
+Two test defects surfaced the same way: `pal_test.go` asserts non-Linux
+behaviour but carried no build tag, so it was red on Linux **by construction**
+and would have blocked the new CI on its first run; and a test forbidding the
+string "websocket" in the non-Linux stub tripped on its own explanatory comment.
+
+### Reproducible builds for the Linux agent
+
+Agent 2.1.21 is the first Linux agent built by CI rather than cross-compiled
+from a workstation — deliberate, because the channel and the PTY terminal are
+both Linux-only and a macOS cross-compile never exercises them.
+[`build-agent-linux.yml`](../.github/workflows/build-agent-linux.yml) gates on
+`go vet` + `go test` **run natively on Linux**, builds amd64 and arm64, records
+SHA-256 per binary, verifies the architecture with `file`, and fails if a
+Windows artifact ever appears. It is a separate workflow from the MSI on a
+separate trigger; the two cannot interfere.
+
+```
+2.1.21 linux/amd64  sha256 08647488082590afecb68fb652c5f4cbeb5a223e8bed8c39d60dba2af58df063
+```
+
+### Verified against production before handing over the binary
+
+The failure mode that worried us most was silent: if nginx-proxy-manager did
+not forward the WebSocket upgrade, the channel would simply never connect and
+nothing would say why. Tested with a real handshake from outside:
+
+```
+WebSocket /ws/agent/commands?device_id=729&agent_id=invalid  → 403
+[agent-channel] rejected device_id=729 (unknown device or agent_id mismatch)
+```
+
+The upgrade traversed the edge and reached the backend, and the auth gate
+rejected the bad credential. Both halves proven in one request.
+
+Deployment to 729 is manual and operator-run: 10.5.50.126 is unreachable from
+the platform host (NAT), the heartbeat `agent_update` field is still
+`None` — there is **no server-side self-update channel in production** — and
+the only Linux package in the manifest is `linux-arm64` 2.1.6 against an x86-64
+target. The deploy script refuses any binary whose SHA-256 differs from the CI
+build, backs up the running binary, and restores it automatically if the
+service does not stay up for 20 seconds.
+
+### Open finding, not acted on
+
+An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
+`POST /api/v1/agent/enroll` **every 60 seconds and receiving 403** — 1,365
+rejections against 7 successes since midnight, and the loop predates the log
+window. Cause per [agent.py:101-102](../backend/app/api/v1/endpoints/agent.py#L101-L102):
+the request carries no enrollment token. The machine therefore **never appears
+in the UI**, because a failed enrolment creates no device row. This is the same
+symptom as the second incident in the original 2026-08-03 brief. Load impact is
+negligible; the endpoint is unmanaged. Raised as RISK-ENROL-001, deferred.
+
+Device 729 is *not* this machine — it holds a valid `agent_id` and heartbeats
+normally, which is why the deployment was safe to hand over.
+
+
 ## [2026-08-03] DEPLOY-CONSOLIDATION-2026-08-03 — Seven compose files down to three, 1.5 GB reclaimed, and a private key found hiding in an "orphan"
 
 Prompted by two operator questions: *are there files we can delete so we do not
