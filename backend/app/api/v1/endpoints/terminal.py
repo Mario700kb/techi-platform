@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -123,19 +123,32 @@ def create_terminal_session(
     # proxies for /ws/devices (verified 2026-07-10: NPM's websocket support
     # is host-wide, not path-scoped — no separate NPM route was needed).
     ws_base = _ws_base()
-    RemoteActionService(db).queue_action(
-        device_id,
-        RemoteActionCreate(
-            action_type=ActionType.OPEN_TERMINAL,
-            parameters={
-                "session_id": session.id,
-                "ws_url": f"{ws_base}/ws/agent/terminal/{session.id}?ticket={agent_ticket}",
-                "engine": session.engine,
-            },
-            created_by=operator.username,
-            execution_timeout_seconds=60,
-        ),
-    )
+    # The action deadline has to match the ticket: the agent only sees this on
+    # its next heartbeat, so a flat 60s expired the action before it was ever
+    # delivered (device 729: three attempts expired with sent_at NULL). Same
+    # derivation as the ticket so the two can never drift apart.
+    action_timeout = svc.ticket_ttl_for_device(device_id)
+    try:
+        RemoteActionService(db).queue_action(
+            device_id,
+            RemoteActionCreate(
+                action_type=ActionType.OPEN_TERMINAL,
+                parameters={
+                    "session_id": session.id,
+                    "ws_url": f"{ws_base}/ws/agent/terminal/{session.id}?ticket={agent_ticket}",
+                    "engine": session.engine,
+                },
+                created_by=operator.username,
+                execution_timeout_seconds=action_timeout,
+            ),
+        )
+    except ValueError as exc:
+        # An open_terminal is already queued for this device. That is a
+        # legitimate conflict, not a server fault: returning 500 with a raw
+        # ValueError put the UI into a retry loop and hid the real reason from
+        # the operator (observed 2026-08-04, two retries two seconds apart).
+        svc.close(session, "duplicate open_terminal")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
     logger.info(
         "terminal session opened: session_id=%s device_id=%s operator=%s engine=%s",
@@ -154,7 +167,7 @@ def create_terminal_session(
         session_id=session.id,
         operator_ws_path=f"{ws_base}/ws/terminal/{session.id}?ticket={operator_ticket}",
         operator_ticket=operator_ticket,
-        expires_in_seconds=TICKET_TTL_SECONDS,
+        expires_in_seconds=svc.ticket_ttl_for_device(device_id),
     )
 
 
@@ -422,7 +435,7 @@ def create_ssh_session(
         session_id=session.id,
         operator_ws_path=f"{ws_base}/ws/terminal/{session.id}?ticket={operator_ticket}",
         operator_ticket=operator_ticket,
-        expires_in_seconds=TICKET_TTL_SECONDS,
+        expires_in_seconds=svc.ticket_ttl_for_device(device_id),
         ssh_username=ssh_username,
         credential_source=credential_source,
     )

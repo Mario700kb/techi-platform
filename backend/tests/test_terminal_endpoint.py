@@ -81,7 +81,17 @@ def test_creates_session_and_returns_ws_path(monkeypatch):
     assert body["operator_ws_path"].startswith("wss://")
     assert f"/ws/terminal/{body['session_id']}" in body["operator_ws_path"]
     assert body["operator_ticket"] in body["operator_ws_path"]
-    assert body["expires_in_seconds"] == 60
+    # Was pinned at 60 until 2026-08-04. That flat value was shorter than every
+    # heartbeat interval, and the agent only learns about the session on its
+    # next heartbeat — so the ticket routinely expired before delivery. Assert
+    # the invariant rather than a number: the ticket must outlive a full
+    # heartbeat cycle for this device's platform.
+    from app.services import agent_config_service as _cfg
+    from app.services.terminal_service import TICKET_ATTACH_GRACE_SECONDS
+
+    interval = _cfg.get_heartbeat_interval("linux")  # the fake device is linux
+    assert body["expires_in_seconds"] > interval
+    assert body["expires_in_seconds"] == interval + TICKET_ATTACH_GRACE_SECONDS
     # Audited on grant.
     rows = db.query(AuditLog).filter(AuditLog.action == "terminal_session_opened").all()
     assert len(rows) == 1

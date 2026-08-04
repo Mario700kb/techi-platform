@@ -22,9 +22,41 @@ from sqlalchemy.orm import Session
 from app.core.time import ensure_utc, utcnow
 from app.models.terminal_session import TerminalSession, TerminalSessionStatus
 
-TICKET_TTL_SECONDS = 60          # both sides must attach within this window
-SESSION_MAX_SECONDS = 3600       # hard cap on a single session
-IDLE_TIMEOUT_SECONDS = 900       # 15 min no traffic → closed
+TICKET_ATTACH_GRACE_SECONDS = 60  # time both sides get to attach once the agent knows
+SESSION_MAX_SECONDS = 3600        # hard cap on a single session
+IDLE_TIMEOUT_SECONDS = 900        # 15 min no traffic → closed
+
+# Backwards-compatible alias: the old name meant "the whole ticket lifetime",
+# which is exactly the assumption that was wrong (see ticket_ttl_seconds).
+TICKET_TTL_SECONDS = TICKET_ATTACH_GRACE_SECONDS
+
+
+def ticket_ttl_seconds(platform: Optional[str]) -> int:
+    """How long a terminal ticket must stay valid, for this device's platform.
+
+    The agent does not learn about `open_terminal` until its next heartbeat —
+    there is no push channel for it. So the ticket has to outlive a full
+    heartbeat cycle plus the time both sides need to attach. A flat 60s was
+    shorter than every heartbeat interval in the policy, which made opening a
+    terminal a race the operator usually lost:
+
+        Linux interval 250s vs ticket 60s → the click only worked if it landed
+        in the last ~60s before a heartbeat. Measured on device 729: delivered
+        after 34s (worked), 56s (worked, barely), and three attempts that were
+        never delivered at all and expired.
+
+    Deriving it from the interval means this cannot drift out of step again
+    when an interval is retuned. The attach grace stays 60s — that part was
+    never the problem.
+
+    Security note: a ticket is single-use and hashed at rest, but a longer TTL
+    does widen the window in which a leaked ticket could still be redeemed.
+    That is the deliberate trade for a feature that otherwise fails ~3 times
+    out of 4.
+    """
+    from app.services import agent_config_service as _cfg
+
+    return _cfg.get_heartbeat_interval(platform) + TICKET_ATTACH_GRACE_SECONDS
 
 # Rollout scoping (who FEATURE_TERMINAL is live for) lives in the platform
 # expansion package's "rollout" module — reusable by future features, not
@@ -38,6 +70,21 @@ def _hash_ticket(ticket: str) -> str:
 class TerminalService:
     def __init__(self, db: Session):
         self.db = db
+
+    def ticket_ttl_for_device(self, device_id: int) -> int:
+        """Ticket lifetime for this device, derived from its platform interval.
+
+        Best-effort: a device row that cannot be read falls back to the flat
+        grace period, which is the pre-2026-08-04 behaviour. Opening a terminal
+        must not fail because of a lookup.
+        """
+        try:
+            from app.models.device import Device
+
+            platform = self.db.query(Device.platform).filter(Device.id == device_id).scalar()
+        except Exception:
+            platform = None
+        return ticket_ttl_seconds(platform)
 
     def create_session(
         self, device_id: int, operator_id: Optional[int], operator_username: Optional[str], engine: str = "bash"
@@ -55,7 +102,7 @@ class TerminalService:
             status=TerminalSessionStatus.PENDING.value,
             operator_ticket_hash=_hash_ticket(operator_ticket),
             agent_ticket_hash=_hash_ticket(agent_ticket),
-            expires_at=utcnow() + timedelta(seconds=TICKET_TTL_SECONDS),
+            expires_at=utcnow() + timedelta(seconds=self.ticket_ttl_for_device(device_id)),
         )
         self.db.add(session)
         self.db.commit()
@@ -94,7 +141,7 @@ class TerminalService:
             status=TerminalSessionStatus.PENDING.value,
             operator_ticket_hash=_hash_ticket(operator_ticket),
             agent_ticket_hash=_hash_ticket(agent_ticket),
-            expires_at=utcnow() + timedelta(seconds=TICKET_TTL_SECONDS),
+            expires_at=utcnow() + timedelta(seconds=self.ticket_ttl_for_device(device_id)),
         )
         self.db.add(session)
         self.db.commit()
