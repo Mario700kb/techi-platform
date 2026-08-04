@@ -344,20 +344,14 @@ class RemoteActionService:
     # Heartbeat delivery                                                   #
     # ------------------------------------------------------------------ #
 
-    def deliver_now(self, action: RemoteAction) -> PendingActionDelivery:
-        """Mark one action SENT and build its delivery payload, for the agent
-        command channel (app/websocket/agent_channel.py).
+    def build_delivery(self, action: RemoteAction) -> PendingActionDelivery:
+        """Build an action's delivery payload **without changing its status**.
 
-        Same bookkeeping as collect_pending_for_delivery does per heartbeat —
-        marking it here is what stops the next heartbeat from delivering the
-        same action a second time and opening two terminals.
+        Split out from deliver_now so a caller can put the frame on the wire
+        before committing to it. Marking an action SENT is not reversible in
+        practice: the heartbeat path only collects QUEUED work, so an action
+        marked SENT that was never actually delivered is delivered by nobody.
         """
-        action = self.repo.mark_sent(action)
-        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
-        logger.info(
-            "[action] pushed #%d (type=%s) to device #%d over the command channel",
-            action.id, action.action_type, action.device_id,
-        )
         return PendingActionDelivery(
             action_id=action.id,
             action=action.action_type,
@@ -365,6 +359,32 @@ class RemoteActionService:
             timeout_seconds=action.execution_timeout_seconds,
             callback_secret=compute_callback_token(action.id),
         )
+
+    def mark_delivered(self, action: RemoteAction) -> RemoteAction:
+        """Record that an action reached the agent over the command channel.
+
+        Call this only once delivery is confirmed. Same bookkeeping as
+        collect_pending_for_delivery does per heartbeat — it is what stops the
+        next heartbeat from delivering the same action a second time and
+        opening two terminals.
+        """
+        action = self.repo.mark_sent(action)
+        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+        logger.info(
+            "[action] pushed #%d (type=%s) to device #%d over the command channel",
+            action.id, action.action_type, action.device_id,
+        )
+        return action
+
+    def deliver_now(self, action: RemoteAction) -> PendingActionDelivery:
+        """Mark one action SENT and build its delivery payload.
+
+        Retained for callers that deliver and commit in one step. Prefer
+        build_delivery + mark_delivered when the delivery can fail.
+        """
+        delivery = self.build_delivery(action)
+        self.mark_delivered(action)
+        return delivery
 
     def collect_pending_for_delivery(self, device_id: int) -> List[PendingActionDelivery]:
         """

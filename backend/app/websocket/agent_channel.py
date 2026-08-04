@@ -90,3 +90,26 @@ class AgentCommandChannel:
 
 
 agent_command_channel = AgentCommandChannel()
+
+
+# The event loop the application runs on.
+#
+# Sync endpoints (`def`, not `async def`) are executed by FastAPI in a worker
+# thread, where `asyncio.get_running_loop()` raises RuntimeError. A push from
+# such an endpoint therefore has to be handed to the main loop explicitly via
+# `run_coroutine_threadsafe`. Captured once at startup because there is exactly
+# one loop for the process's lifetime.
+#
+# This is not a detail: not capturing it is what broke terminal delivery on
+# 2026-08-05 — the push raised, the action had already been marked SENT, and
+# the heartbeat path (which only collects QUEUED work) never saw it again.
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    global _main_loop
+    _main_loop = loop
+
+
+def get_main_loop() -> Optional[asyncio.AbstractEventLoop]:
+    return _main_loop

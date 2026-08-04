@@ -99,6 +99,15 @@ async def lifespan(app: FastAPI):
     if pkg_dir and not os.path.isdir(pkg_dir):
         logger.warning("AGENT_PACKAGE_STORAGE_DIR does not exist or is not accessible: %s", pkg_dir)
 
+    # Sync endpoints run in a worker thread with no running loop of their own,
+    # so anything that needs to reach the agent command channel from one has to
+    # schedule onto this loop explicitly. See agent_channel.set_main_loop.
+    import asyncio as _asyncio
+
+    from app.websocket.agent_channel import set_main_loop
+
+    set_main_loop(_asyncio.get_running_loop())
+
     ensure_sqlite_dev_schema(engine)
     from app.db.session import SessionLocal
     db = SessionLocal()

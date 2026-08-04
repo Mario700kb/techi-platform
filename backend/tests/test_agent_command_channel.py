@@ -163,3 +163,135 @@ def test_pushed_action_is_marked_sent(monkeypatch):
     assert delivery.action_id == 42
     assert delivery.timeout_seconds == 310
     assert delivery.callback_secret == "tok"
+
+
+# ── delivery ordering (regression: 2026-08-05 terminal outage) ───────────── #
+
+def test_build_delivery_does_not_change_status():
+    """The payload must be constructible without committing to delivery.
+
+    Marking SENT before the frame is on the wire is unrecoverable: the
+    heartbeat path collects only QUEUED actions, so an action marked SENT that
+    was never pushed is delivered by nobody, and the duplicate-action guard
+    then blocks every retry.
+    """
+    from app.services import remote_action_service as ras
+
+    class _Action:
+        id = 7
+        device_id = 729
+        action_type = "open_terminal"
+        payload_dict = {"session_id": "s"}
+        execution_timeout_seconds = 310
+        status = "queued"
+
+    svc = ras.RemoteActionService.__new__(ras.RemoteActionService)
+    action = _Action()
+    delivery = svc.build_delivery(action)
+
+    assert action.status == "queued", "build_delivery must not mutate the action"
+    assert delivery.action_id == 7
+    assert delivery.timeout_seconds == 310
+
+
+def test_push_from_a_sync_endpoint_uses_the_captured_loop(monkeypatch):
+    """Sync endpoints run in a worker thread where get_running_loop() raises.
+
+    This is the exact 2026-08-05 defect: the push raised RuntimeError after the
+    action had already been marked SENT, so the terminal broke completely while
+    reporting success.
+    """
+    import asyncio
+    import threading
+
+    from app.websocket import agent_channel as ch
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        ch.set_main_loop(loop)
+        channel = ch.agent_command_channel
+        ws = _FakeWS()
+        asyncio.run_coroutine_threadsafe(channel.register(729, ws), loop).result(5)
+
+        marked = {"sent": False}
+
+        class _Svc:
+            def build_delivery(self, action):
+                class _D:
+                    def model_dump(self_inner):
+                        return {"action_id": 7}
+                return _D()
+
+            def mark_delivered(self, action):
+                marked["sent"] = True
+
+        from app.api.v1.endpoints import terminal as term
+
+        # Called from this thread, which has no running loop — same as FastAPI's
+        # worker thread. It must still deliver.
+        assert term._push_action_if_connected(729, object(), _Svc()) is True
+        assert ws.sent == [{"type": "action", "action": {"action_id": 7}}]
+        assert marked["sent"] is True, "a confirmed push must mark the action SENT"
+
+        asyncio.run_coroutine_threadsafe(channel.unregister(729, ws), loop).result(5)
+    finally:
+        ch.set_main_loop(None)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+
+def test_failed_push_leaves_the_action_unmarked(monkeypatch):
+    """A dead socket must leave the action deliverable by heartbeat."""
+    import asyncio
+    import threading
+
+    from app.websocket import agent_channel as ch
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        ch.set_main_loop(loop)
+        channel = ch.agent_command_channel
+        ws = _FakeWS(fail=True)
+        asyncio.run_coroutine_threadsafe(channel.register(729, ws), loop).result(5)
+
+        marked = {"sent": False}
+
+        class _Svc:
+            def build_delivery(self, action):
+                class _D:
+                    def model_dump(self_inner):
+                        return {"action_id": 7}
+                return _D()
+
+            def mark_delivered(self, action):
+                marked["sent"] = True
+
+        from app.api.v1.endpoints import terminal as term
+
+        assert term._push_action_if_connected(729, object(), _Svc()) is False
+        assert marked["sent"] is False, "a failed push must not mark the action SENT"
+    finally:
+        ch.set_main_loop(None)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+
+def test_no_captured_loop_degrades_to_heartbeat():
+    """Before startup completes there is no loop; that must not raise."""
+    from app.websocket import agent_channel as ch
+    from app.api.v1.endpoints import terminal as term
+
+    ws = _FakeWS()
+    import asyncio
+    asyncio.run(ch.agent_command_channel.register(729, ws))
+    ch.set_main_loop(None)
+    try:
+        assert term._push_action_if_connected(729, object(), None) is False
+    finally:
+        asyncio.run(ch.agent_command_channel.unregister(729, ws))
