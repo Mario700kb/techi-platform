@@ -119,6 +119,27 @@ target. The deploy script refuses any binary whose SHA-256 differs from the CI
 build, backs up the running binary, and restores it automatically if the
 service does not stay up for 20 seconds.
 
+### Distribution: the designed path already existed, and had a hole in it
+
+Rather than inventing a transfer route, the agent was published through the
+mechanism already built for this: `/api/v1/agent-packages/platform/{platform}/download`,
+which is public by design and already lists `linux-amd64` as an allowed
+platform. Registering it exposed the hole — **no `linux-amd64` package existed
+at all**, so that endpoint had always returned 404 for x86-64 Linux. The only
+Linux entry in the manifest was `linux-arm64` 2.1.6.
+
+Registration was performed by calling `AgentPackageService.upload()` inside the
+container rather than hand-editing `manifest.json`, so the file was hashed,
+validated and recorded exactly as an operator upload would be. The manifest was
+backed up first (`manifest.json.bak-pre-linux-amd64-20260805`). Verified from
+outside afterwards: the bytes the public URL returns hash to the CI SHA.
+
+Two facts about the store were wrong in the previous baseline and are corrected
+in PROJECT_STATE §5: `AGENT_PACKAGE_STORAGE_DIR` is the *relative* path
+`agent_packages`, so it resolves to `/app/agent_packages` (named volume
+`techi-platform_agent_packages`), **not** the `/opt/techi/packages` bind mount,
+which nothing reads at runtime.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
