@@ -149,6 +149,49 @@ in PROJECT_STATE §5: `AGENT_PACKAGE_STORAGE_DIR` is the *relative* path
 `techi-platform_agent_packages`), **not** the `/opt/techi/packages` bind mount,
 which nothing reads at runtime.
 
+### Outcome: deployed and connected
+
+Agent 2.1.21 went onto device 729 at 2026-08-05 01:16 CEST. Both acceptance
+conditions were met within a second of the service starting:
+
+```
+[agent-channel] device #729 connected
+729 | rustdesk-srv | 2.1.21
+```
+
+The connection then held past the 180s idle timeout with no disconnect,
+reconnect or `idle past 180s; closing` line — the agent's 60s ping against the
+server's 180s receive timeout gives a 3× margin, and two ping cycles completed.
+The previous binary is retained on the host as `techi-agent.bak-2.1.5`, so the
+rollback remains one `cp` and a restart.
+
+### The install generator cannot upgrade a running host
+
+The first attempt used the operator-facing generator and failed:
+
+```
+Downloading TECHI agent (linux-amd64)...
+curl: (23) Failure writing output to destination
+```
+
+`install.py:67` writes the download **directly over** `/usr/local/bin/techi-agent`.
+Linux refuses a write to a running executable (`ETXTBSY`), so curl exits 23 and
+`set -euo pipefail` stops the script. The installer works only on clean hosts —
+it cannot upgrade or repair an existing install.
+
+The failure landed in the safest possible place. It occurs *before* the
+`cat > "${CONFIG_PATH}"` block, and `agent_id`/`device_id` live inside that file
+(`config.go:20-21`), so nothing was overwritten: device 729 kept its identity,
+no enrolment ran, no duplicate device appeared, the fleet count stayed at 802.
+Had the download succeeded, the script would have rewritten the config and
+re-enrolled — on an existing device that invites the RISK-IDENT-001 dedup path
+that collapsed devices 774/800.
+
+The upgrade was completed instead by stopping the service, downloading to
+`/tmp`, checking the SHA-256 against the CI build, and installing — which is
+what the deploy script had been written to do, and the reason it stops the
+service first. Raised as RISK-INSTALL-001.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
