@@ -315,6 +315,32 @@ package activation is not audited. Recorded rather than reverted: the operator
 may have made the change deliberately, and there are no arm64 devices, so
 nothing is affected either way.
 
+### Decision: Embedded SSH stays off, and the agent tunnel is not built
+
+Gated behind `FEATURE_SSH` (off by default, depends on
+PLATFORM_CORE/LINUX/VAULT/TERMINAL) and enforced in three places: the Connect
+menu reports it unavailable with the real reason, and both the
+credential-candidates and session-creation routes return 404 so the flow cannot
+be driven directly while the menu says it is off. Shown rather than hidden,
+following the registry's own rule — never silently hide a method.
+
+The agent-tunnel design was assessed and declined by the owner on 2026-08-05.
+It is viable: the agent forwards TCP, the backend keeps asyncssh and the vault
+credential, so no credential reaches the endpoint and no port is opened. It was
+declined because Embedded Terminal already gives a root shell over the agent,
+making SSH's marginal value least-privilege access and credential auditing —
+not access itself.
+
+The security assessment is the part worth keeping. The whole margin rests on
+one decision: **the agent must hard-code its destination to `127.0.0.1:22`.**
+If it accepted `host:port` from the server, every agent would become a general
+TCP proxy into the customer LAN — reaching machines with no agent, and
+localhost-only services that are unauthenticated precisely because they are
+localhost-only. Against the endpoint itself the tunnel adds little, since
+`run_command` already executes arbitrary commands as root; what it would add is
+a quiet, persistent channel that starts no process. Anyone reviving this must
+carry the hard-coded destination with it.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
