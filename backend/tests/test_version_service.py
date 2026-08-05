@@ -149,3 +149,55 @@ class TestFleetOverviewAgentVersions:
         monkeypatch.setattr(vs, "get_active_version", lambda platform, architecture=None: "9.9.9")
         versions = dos._active_agent_versions()
         assert all(key.startswith("linux:") for key in versions)
+
+
+class TestOutdatedAgentCounting:
+    """Who counts toward AGENT UPDATE / Needs Agent Update.
+
+    Every device used to be measured against the Windows package version, so
+    MikroTik connectors on 1.0.0 and Linux agents on 2.1.21 were both counted
+    as needing an update against Windows' 2.1.20 — the operator reported the
+    tile and the filter inflated by the whole non-Windows fleet (2026-08-05).
+    """
+
+    class _Device:
+        def __init__(self, platform, version, architecture=None, sha256=None):
+            self.platform = platform
+            self.agent_version = version
+            self.architecture = architecture
+            self.agent_sha256 = sha256
+
+    AGENT_VERSIONS = {"linux:x86_64": "2.1.21"}
+    CONNECTOR_VERSIONS = {"mikrotik": "1.0.0"}
+
+    def _outdated(self, device):
+        from app.services import device_overview_service as dos
+
+        return dos._is_device_agent_outdated(
+            device, "2.1.20", None, self.AGENT_VERSIONS, self.CONNECTOR_VERSIONS
+        )
+
+    def test_a_current_mikrotik_is_not_counted(self):
+        assert self._outdated(self._Device("mikrotik", "1.0.0")) is False
+
+    def test_a_current_linux_agent_is_not_counted(self):
+        assert self._outdated(self._Device("linux", "2.1.21", "x86_64")) is False
+
+    def test_a_genuinely_old_linux_agent_is_counted(self):
+        assert self._outdated(self._Device("linux", "2.1.5", "x86_64")) is True
+
+    def test_a_genuinely_old_mikrotik_connector_is_counted(self):
+        assert self._outdated(self._Device("mikrotik", "0.9.0")) is True
+
+    def test_a_platform_with_no_known_latest_is_never_counted(self):
+        """An unmeasurable device is not a stale one."""
+        assert self._outdated(self._Device("linux", "2.1.21", "riscv64")) is False
+        assert self._outdated(self._Device("synology", "1.0.0")) is False
+
+    def test_windows_keeps_the_original_two_state_check(self):
+        assert self._outdated(self._Device("windows", "2.1.20")) is False
+        assert self._outdated(self._Device("windows", "2.1.19")) is True
+
+    def test_a_linux_agent_ahead_of_the_package_is_not_counted(self):
+        """Ahead is not behind — it must not appear in an update queue."""
+        assert self._outdated(self._Device("linux", "2.2.0", "x86_64")) is False

@@ -149,6 +149,30 @@ function resolveActiveVersion(
   return activeConnectorVersions?.[platform] ?? null;
 }
 
+// Is THIS device behind the latest build for ITS platform?
+//
+// The AGENT UPDATE tile and the Needs Agent Update filter used to measure every
+// device against the Windows package version, so a MikroTik connector on 1.0.0
+// and a Linux agent on 2.1.21 both counted as outdated against Windows' 2.1.20
+// — the counts were inflated by the whole non-Windows fleet (reported
+// 2026-08-05). Windows keeps the original two-state check exactly.
+//
+// A platform with no known latest version is never called outdated: a device we
+// cannot measure is not a stale one.
+function isDeviceAgentOutdated(
+  device: Device,
+  activePackageVersion?: string | null,
+  activePackageSha256?: string | null,
+  activeConnectorVersions?: Record<string, string>,
+  activeAgentVersions?: Record<string, string>,
+) {
+  const platform = (device.platform || "windows").toLowerCase();
+  if (platform === "windows") return isAgentOutdated(device, activePackageVersion, activePackageSha256);
+  const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions, activeAgentVersions);
+  if (!active) return false;
+  return compareVersions(device.agent_version, active) === "outdated";
+}
+
 // Production bug fix (Device Catalog Connect button): this row action used
 // to be RustDesk-only (`isValidRustDeskId` + no conflict) regardless of
 // platform, so every non-Windows device — which never has a rustdesk_id —
@@ -622,11 +646,11 @@ const DevicesTable = memo(function DevicesTable({
       if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
       if ((health?.health_score ?? 100) < 60) counts.low_health++;
       if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
-      if (isAgentOutdated(d, activePackageVersion, activePackageSha256)) counts.needs_agent_update++;
+      if (isDeviceAgentOutdated(d, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)) counts.needs_agent_update++;
       if (favorites.has(d.id)) counts.favorites++;
     }
     return counts;
-  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256]);
+  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions]);
 
   // Distinct agent versions present in the current device list, newest first
   const agentVersionOptions = useMemo(() => {
@@ -663,7 +687,7 @@ const DevicesTable = memo(function DevicesTable({
           (d.rustdesk_status ?? "") !== "running"
         );
         case "needs_agent_update": return (
-          isAgentOutdated(d, activePackageVersion, activePackageSha256)
+          isDeviceAgentOutdated(d, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)
         );
         case "favorites":       return favorites.has(d.id);
         default:                return true;
@@ -685,7 +709,7 @@ const DevicesTable = memo(function DevicesTable({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, sortKey, sortDir]);
+  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions, sortKey, sortDir]);
 
   // Approved V3 Connect mockup — the Catalog Connect button carries a real
   // per-row state (Ready / Credential required / Unavailable) for every
@@ -1326,6 +1350,7 @@ const DevicesTable = memo(function DevicesTable({
                   isFavorite={favorites.has(device.id)}
                   activePackageVersion={activePackageVersion}
                   activePackageSha256={activePackageSha256}
+                  agentOutdated={isDeviceAgentOutdated(device, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)}
                   onSelect={() => navigate(`/devices/${device.id}`)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
                   onConnect={

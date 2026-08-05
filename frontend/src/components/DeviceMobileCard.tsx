@@ -31,6 +31,10 @@ export interface DeviceMobileCardProps {
   isFavorite: boolean;
   activePackageVersion?: string | null;
   activePackageSha256?: string | null;
+  // Resolved by the table, which holds the per-platform version maps. The
+  // local Windows-only fallback below would call a MikroTik or Linux device
+  // outdated purely for not matching the Windows package version.
+  agentOutdated?: boolean;
   onSelect: () => void;
   onToggleFavorite?: () => void;
   onConnect: () => void;
@@ -194,6 +198,7 @@ export function DeviceMobileCard({
   isFavorite,
   activePackageVersion,
   activePackageSha256,
+  agentOutdated,
   onSelect,
   onToggleFavorite,
   onConnect,
@@ -205,7 +210,7 @@ export function DeviceMobileCard({
   const healthScore = health?.health_score;
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const outdated = isAgentOutdated(device, activePackageVersion, activePackageSha256);
+  const outdated = agentOutdated ?? isAgentOutdated(device, activePackageVersion, activePackageSha256);
   const rsIssue =
     device.rustdesk_install_status !== "not_installed" &&
     (device.rustdesk_status ?? "") !== "running";

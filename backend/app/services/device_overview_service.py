@@ -56,6 +56,10 @@ class DeviceOverviewService:
         active_pkg = _active_agent_package()
         active_agent_version = active_pkg.version if active_pkg else None
         active_agent_sha256 = _active_agent_sha256(active_pkg)
+        # Resolved once: both are cheap, query-free lookups, but the loop
+        # below runs per device.
+        agent_versions = _active_agent_versions()
+        connector_versions = _active_connector_versions()
 
         count_rows, health_rows = self.repository.get_overview_inputs(scope=scope)
 
@@ -115,7 +119,10 @@ class DeviceOverviewService:
                 except (TypeError, ValueError, json.JSONDecodeError):
                     pass
             device = entry["device"]
-            if _is_agent_outdated(device, active_agent_version, active_agent_sha256):
+            if _is_device_agent_outdated(
+                device, active_agent_version, active_agent_sha256,
+                agent_versions, connector_versions,
+            ):
                 agents_outdated += 1
 
         return DeviceFleetOverview(
@@ -140,8 +147,8 @@ class DeviceOverviewService:
             agents_outdated=agents_outdated,
             active_agent_version=active_agent_version,
             active_agent_sha256=active_agent_sha256,
-            active_connector_versions=_active_connector_versions(),
-            active_agent_versions=_active_agent_versions(),
+            active_connector_versions=connector_versions,
+            active_agent_versions=agent_versions,
             loaded_at=utcnow(),
         )
 
@@ -185,6 +192,39 @@ def _active_agent_sha256(package) -> Optional[str]:
     if package is None or getattr(package.file_type, "value", None) != "agent_binary":
         return None
     return package.sha256
+
+
+def _is_device_agent_outdated(
+    device,
+    windows_version: Optional[str],
+    windows_sha256: Optional[str],
+    agent_versions: dict,
+    connector_versions: dict,
+) -> bool:
+    """Is THIS device behind the latest build for ITS platform?
+
+    Every device used to be measured against the Windows package version, so a
+    MikroTik connector on 1.0.0 and a Linux agent on 2.1.21 both counted as
+    "needs agent update" against Windows' 2.1.20 — the AGENT UPDATE tile and
+    the Needs Agent Update filter were inflated by every non-Windows device in
+    the fleet (reported 2026-08-05).
+
+    A platform with no known latest version is never called outdated: an
+    unmeasurable device is not a stale one.
+    """
+    platform = (device.platform or "windows").strip().lower()
+    if platform == "windows":
+        return _is_agent_outdated(device, windows_version, windows_sha256)
+
+    from app.services import version_service
+
+    architecture = (device.architecture or "").strip().lower()
+    active = agent_versions.get(f"{platform}:{architecture}") if architecture else None
+    if active is None:
+        active = connector_versions.get(platform)
+    if not active:
+        return False
+    return version_service.compare_versions(device.agent_version, active) == "outdated"
 
 
 def _is_agent_outdated(device, active_version: Optional[str], active_sha256: Optional[str]) -> bool:
