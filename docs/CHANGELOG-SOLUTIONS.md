@@ -277,6 +277,18 @@ the badge "unknown" — honest, rather than guessing a build the device may not
 be running. Verified in production: `get_active_version("linux", "x86_64")` →
 `2.1.21`, status `current`.
 
+**The Device List needed a second fix.** The badge there is resolved
+independently of the drawer, and `resolveActiveVersion` sent every non-Windows
+row to the connector-version map. Linux is an agent platform and never appears
+in that map, so it resolved to `null` and stayed grey — the operator's
+screenshot showed 729 on 2.1.21 sitting next to a green Windows 2.1.20. The
+fleet overview now publishes `active_agent_versions` keyed
+`"<platform>:<uname -m>"` (`{"linux:x86_64": "2.1.21"}`), built from
+`version_service` so the arch→package table exists in one place instead of
+being restated in TypeScript. Windows is deliberately excluded and keeps using
+`active_agent_version`, so its badges are byte-identical. Verified in
+production after deploy.
+
 Noted while verifying: the `linux-arm64` 2.1.6 package is now `is_active:
 false` and was active in the 23:03:55 manifest backup. It was **not** the
 linux-amd64 registration that changed it — that sequence was replayed against

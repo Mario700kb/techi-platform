@@ -17,7 +17,7 @@
 | Field | Verified value |
 |---|---|
 | Documentation revision | `DOC-2026-08-05-TERMINALCHANNEL` |
-| Production baseline SHA | `b534b66` (see §3) — last runtime-affecting head. `d44f354` is ahead of it on the branch but adds only the Linux agent CI workflow and agent test build tags; verified `git diff d73f93c..d44f354 -- backend/` is empty, so it does not change the running system |
+| Production baseline SHA | `5b11950` (see §3) — last runtime-affecting head. `d44f354` is ahead of it on the branch but adds only the Linux agent CI workflow and agent test build tags; verified `git diff d73f93c..d44f354 -- backend/` is empty, so it does not change the running system |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Live production verification dated 2026-08-05 |
 | Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `b534b66` — `fix(version): resolve the Linux agent badge from its own architecture` |
+| Production SHA | `5b11950` — `fix(version): green agent badge for Linux rows in the Device List` |
 | Working tree | Clean, verified 2026-08-05 |
 | Origin alignment | Origin branch is one commit ahead at `d44f354` (CI workflow only, no backend change — see §2) |
 | Nearest release anchor | No immutable release tag exists at this SHA |
