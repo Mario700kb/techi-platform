@@ -407,6 +407,43 @@ Chicken-and-egg worth recording: the fix ships *in* 2.1.23, so agents on 2.1.22
 and earlier cannot use it. Each existing Linux host needs one more installer
 run; after that the UI path is self-sustaining.
 
+### Why one Linux box opens a terminal in 1s and the other in 12s
+
+Operator question, answered by measurement rather than guesswork. Delivery is
+**not** the difference: the command channel pushes to both devices with 0s
+latency. The user-visible number is how long until the agent attaches:
+
+```
+729 rustdesk-srv   session -> agent attached   1s
+812 debian3xc      session -> agent attached  12s
+```
+
+Two things compound. Each HTTPS round trip from 812's site costs 3-5s, against
+~0s from 729's — 89 devices sit behind that public IP, every RustDesk client
+among them posting telemetry every 10-15s (RISK-SUPPLY-002), so the site's
+uplink is busy. And `runAction` (`actions.go:66-88`) performs **two blocking
+callbacks — ack, then running — before dispatching the work**, so on that link
+~7s elapses before the terminal dial even starts. On 729 those cost nothing,
+which is why the ordering has never been visible.
+
+The RustDesk comparison is not like-for-like: it holds a persistent connection
+to the relay and performs no HTTP bookkeeping before acting.
+
+Starting `dispatch()` concurrently with the ack/running reports would remove
+those ~7s on slow links and change nothing on fast ones. Not done — recorded
+so the option is not rediscovered from scratch.
+
+### The Web Terminal now opens in its own window
+
+Connect in the Device Catalog deep-linked into the drawer's Terminal tab,
+which tied a long-lived working surface to a panel that closes the moment the
+operator returns to the catalog. It now opens `/terminal/:id` via
+`window.open`, named per device so a second click focuses the existing window
+rather than starting a duplicate session, with the drawer retained as the
+fallback when a browser blocks the popup. `/terminal/` bypasses `AppShell`
+alongside `/login`: a sidebar and topbar inside a 1024x640 popup would leave
+the terminal a fraction of it.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
