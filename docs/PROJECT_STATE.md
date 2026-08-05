@@ -126,6 +126,7 @@ Detailed migration history and SQL procedures are historical/reference material,
 
 | Control | Verified state |
 |---|---|
+| Terminal rollout scope | `FEATURE_TERMINAL_SCOPE=fleet` since 2026-08-05 (was `device` with allowlist `729`). Widened because the device allowlist had to be edited by hand for every new Linux install — device 812 (`debian3xc`) enrolled correctly and then showed "Embedded terminal is not enabled for this device yet". Verified structurally safe for Windows before the change: `methods_for("windows")` returns `['remote_support']` only, so Windows declares neither `web_terminal` nor `ssh` and a fleet-wide terminal scope adds nothing to it. MikroTik declares `winbox`/`webfig`. `web_terminal` is a Linux-only method, so the widened scope reaches exactly the two Linux devices. `.env` backed up as `.env.bak-terminal-scope-20260805-161934` |
 | Heartbeat auth | **none** — the endpoint is unauthenticated. The Remote Support password is gated on a matching `agent_id` (SEC-002-GATE-2026-07-29), which is a knowledge barrier, not authentication. `observe` mode does not exist in production; that code is on the unmerged `rollback/remote-support-2026-07-18` branch |
 | Agent rollout | disabled |
 | Agent auth migration | disabled |
