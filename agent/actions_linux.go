@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Linux action handlers. Actions that only make sense on Windows (RustDesk
@@ -40,13 +41,28 @@ func handleRestartDevice(ctx context.Context) actionResult {
 	return runLinuxCommand(ctx, "shutdown", "-r", "now")
 }
 
-func handleRestartAgent(ctx context.Context) actionResult {
+func handleRestartAgent(_ context.Context) actionResult {
 	if !hasSystemd() {
 		return actionResult{err: fmt.Errorf("restart_agent: systemd not available")}
 	}
 	// Fire an immediate follow-up heartbeat once systemd brings us back.
 	pendingImmediateHeartbeat.Store(true)
-	return runLinuxCommand(ctx, "systemctl", "restart", linuxServiceName)
+
+	// `systemctl restart techi-agent` SIGTERMs this very process. Running it
+	// under the action's context meant that signal cancelled the context, which
+	// killed the systemctl child mid-restart: the restart still happened, but
+	// the action reported "signal: terminated" and the operator saw a failure
+	// for a command that worked (device 812, 2026-08-05).
+	//
+	// Detach into a new session so it survives our death, and delay it briefly
+	// so the completion callback is on the wire before systemd stops us.
+	cmd := exec.Command("sh", "-c", "sleep 3; systemctl restart "+linuxServiceName)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return actionResult{err: fmt.Errorf("restart_agent: %w", err)}
+	}
+	_ = cmd.Process.Release()
+	return actionResult{message: "restart_agent: restart scheduled"}
 }
 
 func handleRebootPC(ctx context.Context, _ map[string]interface{}) actionResult {
@@ -120,11 +136,38 @@ func handleRunCommand(ctx context.Context, params map[string]interface{}) action
 	return runLinuxCommand(ctx, name, args...)
 }
 
-func handleSelfUpdate(_ context.Context, _ map[string]interface{}) actionResult {
-	// Self-update is normally triggered by the heartbeat response
-	// (performSelfUpdate); this action path lets an operator force it.
-	go performSelfUpdate(&AgentUpdate{Available: false})
-	return actionResult{message: "self_update: triggered (applies on next update signal)"}
+func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionResult {
+	// Mirrors the Windows handler: the server supplies the exact package to
+	// install, and performSelfUpdate (update_linux.go) downloads, verifies the
+	// SHA-256, swaps the binary atomically and restarts the service.
+	//
+	// This used to pass Available:false, i.e. do nothing at all, while
+	// reporting "triggered" — so the action sat in `running` forever waiting
+	// for a version change that could never come (device 812, 2026-08-05).
+	url := stringParam(params, "download_url")
+	version := stringParam(params, "version")
+	checksum := stringParam(params, "sha256")
+	if url == "" {
+		return actionResult{err: fmt.Errorf("self_update: missing 'download_url' parameter")}
+	}
+	go performSelfUpdate(&AgentUpdate{
+		Available: true,
+		Version:   version,
+		URL:       url,
+		Checksum:  checksum,
+	})
+	return actionResult{message: fmt.Sprintf("Self-update to v%s initiated in background", version)}
+}
+
+// stringParam mirrors the Windows helper; the two files never co-compile.
+func stringParam(params map[string]interface{}, key string) string {
+	if params == nil {
+		return ""
+	}
+	if v, ok := params[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 func notSupportedOnLinux(action string) actionResult {

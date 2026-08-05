@@ -50,7 +50,7 @@ def linux_architectures() -> tuple:
     return tuple(_LINUX_ARCH_PACKAGES)
 
 
-def _package_platform(platform_id: Optional[str], architecture: Optional[str]) -> Optional[str]:
+def package_platform(platform_id: Optional[str], architecture: Optional[str]) -> Optional[str]:
     """Which AgentPackage platform key holds this device's expected version."""
     if platform_id is None or platform_id == "windows":
         return "windows-amd64"
@@ -69,15 +69,15 @@ def get_active_version(
     if descriptor is not None and descriptor.latest_connector_version:
         return descriptor.latest_connector_version
 
-    package_platform = _package_platform(
+    platform_key = package_platform(
         descriptor.id if descriptor is not None else None, architecture
     )
-    if package_platform is None:
+    if platform_key is None:
         return None
     service = AgentPackageService()
     pkg = (
-        service.latest_active(package_platform, file_type="agent_binary")
-        or service.latest_active(package_platform)
+        service.latest_active(platform_key, file_type="agent_binary")
+        or service.latest_active(platform_key)
     )
     return pkg.version if pkg else None
 

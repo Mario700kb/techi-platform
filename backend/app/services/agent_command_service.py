@@ -23,6 +23,7 @@ from app.schemas.agent_command import (
     BulkCommandTarget,
     DeviceCommandStatus,
 )
+from app.services import version_service
 from app.services.agent_package_service import AgentPackageService
 
 logger = logging.getLogger(__name__)
@@ -231,50 +232,94 @@ class AgentCommandService:
 
     @staticmethod
     def _build_self_update_payloads(devices: List[Device]) -> tuple[dict, dict[int, dict]]:
-        """Pull the active agent_binary package so the command always ships
-        the exact exe that the operator has marked active in Agent Packages
-        -> Agent Binary tab.  The download URL points to the public
-        /agent-binary/download endpoint for binary-swap agents (>= 2.1.1).
-        Legacy agents below that version only know the old MSI self-update
-        flow, so they must receive an active MSI for the same target
-        version."""
+        """Per-device self_update payloads: which binary each device installs.
+
+        Windows keeps its existing behaviour exactly — the active
+        windows-amd64 agent_binary, with the legacy MSI bridge for agents
+        below 2.1.1. Linux resolves the active package for the device's OWN
+        architecture and points at the public per-platform download endpoint.
+
+        Linux was previously handed the Windows payload, which is why UI
+        self_update could never work there: the agent was told to install an
+        .exe, and its handler ignored the parameters anyway (fixed in agent
+        2.1.23, 2026-08-05).
+        """
         service = AgentPackageService()
-        package = _active_self_update_package(service)
         backend_url = settings.PUBLIC_BACKEND_URL.rstrip("/")
-        download_path = service.agent_binary_download_url()
-        binary_payload = {
-            "download_url": f"{backend_url}{download_path}",
-            "version": package.version,
-            "sha256": package.sha256,
-        }
-        legacy_devices = [device for device in devices if _requires_legacy_msi_self_update(device)]
-        if not legacy_devices:
-            return binary_payload, {device.id: dict(binary_payload) for device in devices}
 
-        msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_update_msi")
-        if msi_package is None or msi_package.version != package.version:
-            hostnames = ", ".join(sorted(device.hostname or str(device.id) for device in legacy_devices[:5]))
-            extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
-            raise ValueError(
-                "Legacy agents (version < 2.1.1) require an active Agent Update "
-                f"Bridge MSI (file_type=agent_update_msi) for version {package.version} "
-                f"before UI self_update can run. Affected devices: {hostnames}{extra}. "
-                "Upload/activate the matching bridge MSI or update them once via GPO/NETLOGON."
-            )
+        windows_devices = [d for d in devices if (d.platform or "windows").strip().lower() == "windows"]
+        linux_devices = [d for d in devices if (d.platform or "").strip().lower() == "linux"]
+        unsupported = [d for d in devices if d not in windows_devices and d not in linux_devices]
+        if unsupported:
+            names = ", ".join(sorted(d.hostname or str(d.id) for d in unsupported[:5]))
+            raise ValueError(f"self_update is not supported for these devices: {names}")
 
-        msi_payload = {
-            "download_url": f"{backend_url}{service.agent_update_msi_download_url()}",
-            "version": package.version,
-            # Old agents use this URL as an MSI. Verify completion against the
-            # installed agent exe hash instead of the MSI file hash.
-            "sha256": msi_package.sha256,
-            "target_sha256": package.sha256,
-            "package_type": "msi",
-        }
-        return binary_payload, {
-            device.id: dict(msi_payload if _requires_legacy_msi_self_update(device) else binary_payload)
-            for device in devices
-        }
+        payloads: dict[int, dict] = {}
+        default_payload: dict | None = None
+
+        if windows_devices:
+            package = _active_self_update_package(service)
+            binary_payload = {
+                "download_url": f"{backend_url}{service.agent_binary_download_url()}",
+                "version": package.version,
+                "sha256": package.sha256,
+            }
+            default_payload = binary_payload
+
+            legacy_devices = [d for d in windows_devices if _requires_legacy_msi_self_update(d)]
+            msi_payload = None
+            if legacy_devices:
+                msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_update_msi")
+                if msi_package is None or msi_package.version != package.version:
+                    hostnames = ", ".join(sorted(d.hostname or str(d.id) for d in legacy_devices[:5]))
+                    extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
+                    raise ValueError(
+                        "Legacy agents (version < 2.1.1) require an active Agent Update "
+                        f"Bridge MSI (file_type=agent_update_msi) for version {package.version} "
+                        f"before UI self_update can run. Affected devices: {hostnames}{extra}. "
+                        "Upload/activate the matching bridge MSI or update them once via GPO/NETLOGON."
+                    )
+                msi_payload = {
+                    "download_url": f"{backend_url}{service.agent_update_msi_download_url()}",
+                    "version": package.version,
+                    # Old agents use this URL as an MSI. Verify completion against
+                    # the installed agent exe hash instead of the MSI file hash.
+                    "sha256": msi_package.sha256,
+                    "target_sha256": package.sha256,
+                    "package_type": "msi",
+                }
+
+            for device in windows_devices:
+                use_msi = msi_payload is not None and _requires_legacy_msi_self_update(device)
+                payloads[device.id] = dict(msi_payload if use_msi else binary_payload)
+
+        for device in linux_devices:
+            platform_key = version_service.package_platform("linux", device.architecture)
+            if platform_key is None:
+                raise ValueError(
+                    f"{device.hostname or device.id}: unknown Linux architecture "
+                    f"{device.architecture!r}; cannot choose an agent package"
+                )
+            package = service.latest_active(platform_key, file_type="agent_binary")
+            if package is None:
+                raise ValueError(
+                    f"No active agent binary package for '{platform_key}'. "
+                    f"Upload and activate one before running self_update on "
+                    f"{device.hostname or device.id}."
+                )
+            payload = {
+                "download_url": (
+                    f"{backend_url}{settings.API_PREFIX}"
+                    f"/agent-packages/platform/{platform_key}/download"
+                ),
+                "version": package.version,
+                "sha256": package.sha256,
+            }
+            payloads[device.id] = payload
+            if default_payload is None:
+                default_payload = payload
+
+        return default_payload or {}, payloads
 
     @staticmethod
     def _effective_timeout_seconds(create_in: BulkCommandCreate) -> int:
