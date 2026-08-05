@@ -369,6 +369,44 @@ unenrolled to enrolled on disk and asserts the URL resolves only after the
 reload — and that the stale struct still does not — and one pins the signature
 so the struct cannot be reintroduced.
 
+### restart_agent lied, and self_update could not work on Linux
+
+Both reported on device 812, and both matter at fleet scale — the owner's
+constraint is "we may have 200 Linux machines and cannot go to each one by
+hand". Command delivery stays on the heartbeat by owner decision; the command
+channel continues to accelerate `open_terminal` only.
+
+**restart_agent worked and reported failure.** `systemctl restart techi-agent`
+SIGTERMs the agent itself. The handler ran it under the action's context, so
+that signal cancelled the context and killed the systemctl child mid-restart,
+recording `signal: terminated`. Proven by observation rather than reading: the
+command channel dropped at 14:44:19 and reconnected at 14:44:24, and the device
+came back on 2.1.22 — the restart had succeeded every time. The restart is now
+detached into its own session (`Setsid`) and delayed 3s so the completion
+callback reaches the server before systemd stops the process.
+
+**self_update was impossible on Linux for two independent reasons.** The agent
+handler ignored the action parameters entirely and called
+`performSelfUpdate(&AgentUpdate{Available: false})` — doing nothing while
+returning "triggered" — so the backend, which holds the action in `running`
+until a heartbeat confirms a version change, waited for a change that could
+never come. Separately, `_build_self_update_payloads` sourced every payload
+from `SELF_UPDATE_PLATFORM = "windows-amd64"`, so a Linux agent was handed the
+Windows `.exe` URL. Notably `performSelfUpdate` in `update_linux.go` was
+already complete — download, SHA-256 verify, atomic swap keeping `.old`,
+systemctl restart — so the fix was to stop starving it.
+
+The handler now mirrors Windows exactly (`download_url`/`version`/`sha256`),
+and the payload builder resolves each device's own architecture. Verified on
+production data: a real bulk self_update for 812 produced
+`platform/linux-amd64/download`, version 2.1.23, matching SHA. Windows is
+untouched, legacy MSI bridge included, and a test asserts a mixed batch gives
+each device its own binary.
+
+Chicken-and-egg worth recording: the fix ships *in* 2.1.23, so agents on 2.1.22
+and earlier cannot use it. Each existing Linux host needs one more installer
+run; after that the UI path is self-sustaining.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
