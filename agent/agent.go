@@ -61,7 +61,7 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	// if the channel never establishes, actions are still delivered by the
 	// heartbeat path exactly as before.
 	if !once {
-		go runCommandChannel(ctx, cfg)
+		go runCommandChannel(ctx, configPath)
 	}
 
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {

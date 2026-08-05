@@ -89,12 +89,27 @@ func itoa(n int) string {
 // returns an error to the caller: a channel that cannot be established is a
 // missing optimisation, not a failure, and the agent must keep heartbeating
 // regardless.
-func runCommandChannel(ctx context.Context, cfg *Config) {
+// runCommandChannel takes the config PATH, not a *Config, and reloads it every
+// cycle. That is not a style choice: enrolment happens inside
+// runSingleHeartbeat, which loads its OWN Config from disk and persists the
+// agent_id/device_id there. A long-lived goroutine holding the struct loaded at
+// startup would never observe them, so on a freshly-enrolled host the channel
+// stayed dark for the whole process lifetime and only appeared after a restart
+// (device 812, 2026-08-05).
+func runCommandChannel(ctx context.Context, configPath string) {
 	backoff := commandChannelMinBackoff
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+		cfg, err := loadConfig(configPath)
+		if err != nil {
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			continue
+		}
+		applyEnvironment(cfg)
 		endpoint := commandChannelURL(cfg)
 		if endpoint == "" {
 			// Not enrolled yet, or no websocket_url. Re-check on the next

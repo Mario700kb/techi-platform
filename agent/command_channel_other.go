@@ -12,4 +12,4 @@ import "context"
 //
 // Windows also cannot use what the channel accelerates: handleOpenTerminal is
 // a stub there (actions_windows.go) that reports "not supported on Windows".
-func runCommandChannel(_ context.Context, _ *Config) {}
+func runCommandChannel(_ context.Context, _ string) {}

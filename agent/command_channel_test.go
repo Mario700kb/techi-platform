@@ -59,7 +59,7 @@ func TestNonLinuxImplementationOpensNothing(t *testing.T) {
 	if !strings.Contains(body, `import "context"`) {
 		t.Fatalf("stub should import nothing beyond context, got:\n%s", body)
 	}
-	if !strings.Contains(body, "func runCommandChannel(_ context.Context, _ *Config) {}") {
+	if !strings.Contains(body, "func runCommandChannel(_ context.Context, _ string) {}") {
 		t.Fatalf("stub must be an empty no-op, got:\n%s", body)
 	}
 }
@@ -75,7 +75,7 @@ func TestWindowsStillRefusesOpenTerminal(t *testing.T) {
 
 func TestChannelStartIsGuardedInTheAgentLoop(t *testing.T) {
 	agent := readAgentFile(t, "agent.go")
-	idx := strings.Index(agent, "go runCommandChannel(ctx, cfg)")
+	idx := strings.Index(agent, "go runCommandChannel(ctx, configPath)")
 	if idx < 0 {
 		t.Fatal("the agent loop must start the channel")
 	}

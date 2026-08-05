@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -70,5 +72,63 @@ func TestJitterStaysWithinTwentyPercent(t *testing.T) {
 		if got < base-base/5 || got > base+base/5 {
 			t.Fatalf("jitter produced %d, outside ±20%% of %d", got, base)
 		}
+	}
+}
+
+// TestChannelObservesEnrolmentWithoutRestart pins the fix for the 2026-08-05
+// defect: the loop must read the config from disk, because enrolment persists
+// agent_id/device_id there from a different Config struct entirely
+// (runSingleHeartbeat loads its own). Holding the startup struct meant a
+// freshly-enrolled host never opened the channel until it was restarted.
+func TestChannelObservesEnrolmentWithoutRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.config.json")
+
+	// Written by the installer: no identity yet.
+	unenrolled := `{"websocket_url":"wss://example.test/ws/devices","backend_url":"https://example.test/hb"}`
+	if err := os.WriteFile(path, []byte(unenrolled), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if commandChannelURL(cfg) != "" {
+		t.Fatal("an unenrolled config must not yield a channel URL")
+	}
+
+	// Enrolment persists identity to disk, exactly as runSingleHeartbeat does.
+	enrolled := `{"websocket_url":"wss://example.test/ws/devices","backend_url":"https://example.test/hb","agent_id":"agent_abc","device_id":812}`
+	if err := os.WriteFile(path, []byte(enrolled), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	url := commandChannelURL(reloaded)
+	if url == "" {
+		t.Fatal("after enrolment the channel URL must resolve")
+	}
+	if !strings.Contains(url, "device_id=812") || !strings.Contains(url, "agent_id=agent_abc") {
+		t.Fatalf("URL must carry the enrolled identity, got %q", url)
+	}
+
+	// The stale struct still yields nothing — which is why the loop must not
+	// keep one.
+	if commandChannelURL(cfg) != "" {
+		t.Fatal("the pre-enrolment struct must remain empty; the loop has to reload")
+	}
+}
+
+func TestRunCommandChannelTakesAPathNotAStruct(t *testing.T) {
+	src := readAgentFile(t, "command_channel_linux.go")
+	if !strings.Contains(src, "func runCommandChannel(ctx context.Context, configPath string)") {
+		t.Fatal("the loop must take the config path so it can reload after enrolment")
+	}
+	if !strings.Contains(src, "loadConfig(configPath)") {
+		t.Fatal("the loop must reload the config from disk each cycle")
 	}
 }
