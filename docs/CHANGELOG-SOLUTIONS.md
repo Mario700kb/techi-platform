@@ -289,6 +289,22 @@ being restated in TypeScript. Windows is deliberately excluded and keeps using
 `active_agent_version`, so its badges are byte-identical. Verified in
 production after deploy.
 
+**And a third place: the counts.** The AGENT UPDATE tile and the Needs Agent
+Update filter ran their own check, `isAgentOutdated(device, activePackageVersion,
+…)`, which compared *every* device against the Windows package version. A
+MikroTik connector on 1.0.0 and a Linux agent on 2.1.21 were therefore both
+"outdated" against Windows' 2.1.20 — the operator noticed MikroTik devices
+queued for an update they did not need. Backend and Device List now resolve
+each device against its own platform's latest; a platform with no known latest
+is never counted, and a version *ahead* of the package is not counted either.
+Windows keeps the original two-state check including the sha256 comparison, so
+its counts are unchanged. Measured on production data immediately after
+deploy: **59 → 56**, the difference being exactly 2 MikroTik and 1 Linux.
+
+The same defect existed in three independent implementations — drawer, table
+badge, and counts — because each surface re-derived "what is the latest
+version" locally. `version_service` is now the single source for all three.
+
 Noted while verifying: the `linux-arm64` 2.1.6 package is now `is_active:
 false` and was active in the 23:03:55 manifest backup. It was **not** the
 linux-amd64 registration that changed it — that sequence was replayed against
