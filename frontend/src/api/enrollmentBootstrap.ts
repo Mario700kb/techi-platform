@@ -247,8 +247,14 @@ export function buildLinuxInstallUrl(token: string): string {
   return `${API_BASE_URL}/api/v1/install/linux?token=${encodeURIComponent(token)}`;
 }
 
+// curl first, wget as fallback: a minimal Debian install ships neither by
+// default, and an operator who has one rarely has both. Redirecting stderr on
+// the curl attempt keeps the shell's "command not found" out of the output, so
+// a host without curl simply installs via wget with no scary line (reported
+// 2026-08-05 on a fresh Debian: "-bash: curl: command not found").
 export function buildLinuxInstallCommand(token: string): string {
-  return `curl -fsSL ${buildLinuxInstallUrl(token)} | sudo bash`;
+  const url = buildLinuxInstallUrl(token);
+  return `{ curl -fsSL '${url}' 2>/dev/null || wget -qO- '${url}'; } | sudo bash`;
 }
 
 // The deployment endpoint embeds the (recoverable) token in the Windows

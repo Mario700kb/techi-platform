@@ -76,10 +76,24 @@ def test_generated_script_is_valid_bash(monkeypatch, tmp_path):
 
 def test_binary_is_not_downloaded_over_the_running_executable(monkeypatch):
     body = _script(monkeypatch)
-    assert '-o "${TMP_BIN}"' in body, "download must land in a temp file"
+    assert 'fetch "${BACKEND}' in body and '"${TMP_BIN}"' in body, (
+        "download must land in a temp file"
+    )
     assert '-o "${BIN_PATH}"' not in body, (
         "writing the download straight onto the running binary is what made "
         "this installer unusable on any host that already had the agent"
+    )
+
+
+def test_download_falls_back_to_wget(monkeypatch):
+    """A minimal Debian ships neither curl nor wget; whichever fetched this
+    script is not necessarily available for the binary download too (reported
+    2026-08-05: "-bash: curl: command not found")."""
+    body = _script(monkeypatch)
+    assert "command -v curl" in body
+    assert "wget -qO" in body
+    assert "Neither curl nor wget is available" in body, (
+        "with neither present the script must say so, not fail obscurely"
     )
 
 
@@ -93,7 +107,7 @@ def test_service_is_stopped_before_the_binary_is_replaced(monkeypatch):
 def test_download_happens_before_the_service_is_stopped(monkeypatch):
     """A failed download must cost no downtime."""
     body = _script(monkeypatch)
-    assert body.index("curl -fsSL") < body.index('systemctl stop "${SERVICE}"')
+    assert body.index('fetch "${BACKEND}') < body.index('systemctl stop "${SERVICE}"')
 
 
 def test_an_existing_configuration_is_never_overwritten(monkeypatch):

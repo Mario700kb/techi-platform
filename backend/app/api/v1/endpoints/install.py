@@ -97,9 +97,24 @@ BACKUP=""
 cleanup() {{ rm -f "${{TMP_BIN}}"; }}
 trap cleanup EXIT
 
+# A minimal Debian install ships neither curl nor wget, and whichever fetched
+# this script is not necessarily present for the binary download too.
+fetch() {{
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$2" "$1"
+  else
+    echo "Neither curl nor wget is available; cannot download the agent." >&2
+    echo "  Debian/Ubuntu: apt-get install -y curl" >&2
+    echo "  RHEL/Fedora:   dnf install -y curl" >&2
+    exit 1
+  fi
+}}
+
 # Download BEFORE stopping anything, so a failed download costs no downtime.
 echo "Downloading TECHI agent (linux-${{ARCH}})..."
-curl -fsSL "${{BACKEND}}/api/v1/agent-packages/platform/linux-${{ARCH}}/download" -o "${{TMP_BIN}}"
+fetch "${{BACKEND}}/api/v1/agent-packages/platform/linux-${{ARCH}}/download" "${{TMP_BIN}}"
 
 if [ -n "${{EXPECTED_SHA256}}" ] && command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_SHA256="$(sha256sum "${{TMP_BIN}}" | awk '{{print $1}}')"
