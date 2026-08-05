@@ -41,6 +41,15 @@ _LINUX_ARCH_PACKAGES = {
 }
 
 
+def linux_architectures() -> tuple:
+    """Every `uname -m` value that maps to a Linux agent package.
+
+    Exposed so the fleet overview can publish a version per architecture
+    without the arch->package table being duplicated in the frontend.
+    """
+    return tuple(_LINUX_ARCH_PACKAGES)
+
+
 def _package_platform(platform_id: Optional[str], architecture: Optional[str]) -> Optional[str]:
     """Which AgentPackage platform key holds this device's expected version."""
     if platform_id is None or platform_id == "windows":

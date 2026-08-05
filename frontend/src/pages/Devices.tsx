@@ -963,6 +963,7 @@ export default function Devices() {
             activePackageVersion={fleetOverview?.active_agent_version}
             activePackageSha256={fleetOverview?.active_agent_sha256}
             activeConnectorVersions={fleetOverview?.active_connector_versions}
+            activeAgentVersions={fleetOverview?.active_agent_versions}
             agentsOutdated={fleetOverview?.agents_outdated ?? 0}
             onOpenDeviceTerminal={openDeviceTerminal}
           />

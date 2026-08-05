@@ -70,6 +70,7 @@ interface DevicesTableProps {
   activePackageVersion?: string | null;
   activePackageSha256?: string | null;
   activeConnectorVersions?: Record<string, string>;
+  activeAgentVersions?: Record<string, string>;
   agentsOutdated?: number;
   // Connect ▸ Embedded Terminal from a Catalog row opens the device's
   // drawer directly on its Terminal tab (the terminal lives there).
@@ -126,9 +127,25 @@ function agentVersionTitle(device: Device, activeVersion?: string | null, active
 // above are untouched, so Windows badges are byte-identical. Non-Windows
 // rows (MikroTik, future connectors) resolve against their OWN platform's
 // latest_connector_version instead — never the Windows fleet's version.
-function resolveActiveVersion(device: Device, activePackageVersion?: string | null, activeConnectorVersions?: Record<string, string>) {
+// Agent platforms whose build is architecture-specific (Linux) resolve against
+// active_agent_versions, keyed "<platform>:<uname -m>" by the backend so the
+// arch->package mapping lives in exactly one place (version_service.py). A
+// Linux row previously fell straight through to the connector lookup, which
+// Linux never populates, so it resolved to null and the badge stayed grey no
+// matter how current the agent was (device 729 on 2.1.21, 2026-08-05).
+function resolveActiveVersion(
+  device: Device,
+  activePackageVersion?: string | null,
+  activeConnectorVersions?: Record<string, string>,
+  activeAgentVersions?: Record<string, string>,
+) {
   const platform = (device.platform || "windows").toLowerCase();
   if (platform === "windows") return activePackageVersion;
+  const architecture = (device.architecture || "").trim().toLowerCase();
+  if (architecture) {
+    const byArchitecture = activeAgentVersions?.[`${platform}:${architecture}`];
+    if (byArchitecture) return byArchitecture;
+  }
   return activeConnectorVersions?.[platform] ?? null;
 }
 
@@ -524,6 +541,7 @@ const DevicesTable = memo(function DevicesTable({
   activePackageVersion,
   activePackageSha256,
   activeConnectorVersions,
+  activeAgentVersions,
   agentsOutdated = 0,
   onOpenDeviceTerminal,
 }: DevicesTableProps) {
@@ -1681,7 +1699,7 @@ const DevicesTable = memo(function DevicesTable({
                               />
                             );
                           }
-                          const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions);
+                          const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions, activeAgentVersions);
                           return (
                             <VersionBadge
                               version={device.agent_version}

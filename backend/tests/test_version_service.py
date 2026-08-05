@@ -103,3 +103,49 @@ class TestAgentPlatformResolution:
         from app.services import version_service as vs
 
         assert vs._package_platform("linux", "aarch64") != vs._package_platform("linux", "x86_64")
+
+
+class TestFleetOverviewAgentVersions:
+    """The Device List badge reads active_agent_versions.
+
+    Before this existed, a Linux row fell through to the connector lookup —
+    which Linux never populates — resolved to None, and rendered grey however
+    current the agent was. Windows must keep using active_agent_version.
+    """
+
+    def test_linux_architectures_are_published_for_the_badge(self):
+        from app.services import version_service as vs
+
+        architectures = vs.linux_architectures()
+        assert "x86_64" in architectures
+        assert "aarch64" in architectures
+
+    def test_published_architectures_all_resolve_to_a_package_platform(self):
+        """A key the frontend can be handed but never resolve is a silent
+        grey badge, which is the bug this replaced."""
+        from app.services import version_service as vs
+
+        for architecture in vs.linux_architectures():
+            assert vs._package_platform("linux", architecture) is not None
+
+    def test_overview_keys_are_platform_colon_architecture(self, monkeypatch):
+        from app.services import device_overview_service as dos
+        from app.services import version_service as vs
+
+        monkeypatch.setattr(
+            vs, "get_active_version",
+            lambda platform, architecture=None: "2.1.21" if architecture == "x86_64" else None,
+        )
+        versions = dos._active_agent_versions()
+        assert versions == {"linux:x86_64": "2.1.21"}, (
+            "only architectures with an active package should be published"
+        )
+
+    def test_windows_is_absent_from_agent_versions(self, monkeypatch):
+        """Windows badges must stay on active_agent_version, untouched."""
+        from app.services import device_overview_service as dos
+        from app.services import version_service as vs
+
+        monkeypatch.setattr(vs, "get_active_version", lambda platform, architecture=None: "9.9.9")
+        versions = dos._active_agent_versions()
+        assert all(key.startswith("linux:") for key in versions)

@@ -258,6 +258,10 @@ class DeviceFleetOverview(BaseModel):
     # from the Platform Registry — lets the Device List badge (version_service.py)
     # compare a connector device against ITS platform's latest, not Windows'.
     active_connector_versions: Dict[str, str] = {}
+    # Latest agent version per "<platform>:<architecture>" for agent platforms
+    # whose build is arch-specific (e.g. {"linux:x86_64": "2.1.21"}). Windows is
+    # absent by design — it keeps using active_agent_version above.
+    active_agent_versions: Dict[str, str] = {}
     loaded_at: datetime
 
 

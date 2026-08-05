@@ -141,6 +141,7 @@ class DeviceOverviewService:
             active_agent_version=active_agent_version,
             active_agent_sha256=active_agent_sha256,
             active_connector_versions=_active_connector_versions(),
+            active_agent_versions=_active_agent_versions(),
             loaded_at=utcnow(),
         )
 
@@ -159,6 +160,25 @@ def _active_connector_versions() -> dict:
         for descriptor in PLATFORM_REGISTRY.values()
         if descriptor.latest_connector_version
     }
+
+
+def _active_agent_versions() -> dict:
+    """`{"<platform>:<architecture>": version}` for agent platforms whose latest
+    version depends on the device's architecture — Linux today.
+
+    Keyed by the architecture the device itself reports (`uname -m`) so the
+    Device List can resolve a row directly, without the arch->package table
+    being restated in TypeScript. Windows is deliberately absent: it keeps
+    using `active_agent_version`, so its badges are unchanged.
+    """
+    from app.services import version_service
+
+    versions = {}
+    for architecture in version_service.linux_architectures():
+        version = version_service.get_active_version("linux", architecture)
+        if version:
+            versions[f"linux:{architecture}"] = version
+    return versions
 
 
 def _active_agent_sha256(package) -> Optional[str]:
