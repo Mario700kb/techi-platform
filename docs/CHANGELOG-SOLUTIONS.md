@@ -260,6 +260,33 @@ terminal now is: a TCP-forward action where the agent bridges bytes to
 `host:22` and the backend keeps asyncssh and the vault credential server-side,
 so credentials never reach the endpoint and no port is exposed. Not built.
 
+### The Linux version badge could never be green
+
+Reported by the operator: device 729 showed no "current" badge despite running
+2.1.21, the newest build. `version_service` documents Windows *and Linux* as
+agent platforms whose latest version comes from the active AgentPackage, but
+`get_active_version` only ever looked up `windows-amd64`; every other agent
+platform fell through to `return None`, and `compare_versions(reported, None)`
+yields "unknown". No Linux device could ever be badged, at any version.
+
+The package platform is now derived from the device's reported architecture
+(`devices.architecture`, `x86_64` for 729), so an arm64 endpoint is measured
+against `linux-arm64` instead of being marked outdated whenever the amd64 line
+moves ahead. An unknown or absent architecture still resolves to None and keeps
+the badge "unknown" — honest, rather than guessing a build the device may not
+be running. Verified in production: `get_active_version("linux", "x86_64")` →
+`2.1.21`, status `current`.
+
+Noted while verifying: the `linux-arm64` 2.1.6 package is now `is_active:
+false` and was active in the 23:03:55 manifest backup. It was **not** the
+linux-amd64 registration that changed it — that sequence was replayed against
+the pre-change manifest in a scratch container and left arm64 active, since
+`set_active` only deactivates entries with the same platform key. The manifest
+was rewritten at 23:06:15 by something else that left no audit trail, because
+package activation is not audited. Recorded rather than reverted: the operator
+may have made the change deliberately, and there are no arm64 devices, so
+nothing is affected either way.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
