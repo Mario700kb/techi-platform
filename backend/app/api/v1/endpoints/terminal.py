@@ -321,6 +321,10 @@ def ssh_credential_candidates(
     than one), or show "no SSH credential available" (none) — it never falls
     back to asking for a password unless the operator explicitly picks
     Temporary Session."""
+    # Step 1 of a flow that step 2 refuses while FEATURE_SSH is off; offering
+    # a credential picker for it would be misleading.
+    if not feature_enabled("FEATURE_SSH"):
+        raise HTTPException(status_code=404, detail="Not Found")
     if not feature_enabled("FEATURE_TERMINAL"):
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -350,6 +354,10 @@ def create_ssh_session(
     dial as the agent leg of the SAME relay pair the operator's browser
     already connects to via the existing /ws/terminal/{id} route."""
     if not feature_enabled("FEATURE_TERMINAL"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    # Gated independently of the Connect menu so the route cannot be driven
+    # directly while the menu reports it unavailable (RISK-SSH-001).
+    if not feature_enabled("FEATURE_SSH"):
         raise HTTPException(status_code=404, detail="Not Found")
 
     device = DeviceRepository(db).get(device_id)

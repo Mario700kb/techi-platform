@@ -45,6 +45,9 @@ def _client(monkeypatch, platform="mikrotik", capabilities=None, operator_id=1,
     monkeypatch.setattr(settings, "FEATURE_LINUX", terminal_enabled)
     monkeypatch.setattr(settings, "FEATURE_VAULT", terminal_enabled)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL", terminal_enabled)
+    # Embedded SSH has its own flag (RISK-SSH-001); these cases assert the
+    # terminal-stack gating, so it follows the same switch.
+    monkeypatch.setattr(settings, "FEATURE_SSH", terminal_enabled)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", "fleet" if terminal_enabled else "none")
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 

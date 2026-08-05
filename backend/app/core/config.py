@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     FEATURE_LINUX: bool = False
     FEATURE_VAULT: bool = False
     FEATURE_TERMINAL: bool = False
+    # Embedded SSH. OFF by design, not by oversight: the feature dials the
+    # device from the backend (terminal.py, host = local_ip or public_ip),
+    # which no NAT'd endpoint can satisfy — it always timed out, and the
+    # public_ip fallback would mean exposing port 22 on customer servers.
+    # Turn ON only for devices the platform can route to directly, or once
+    # SSH is carried over the agent tunnel. See RISK-SSH-001.
+    FEATURE_SSH: bool = False
     FEATURE_MIKROTIK: bool = False
     FEATURE_STORAGE: bool = False
     FEATURE_HYPERVISOR: bool = False

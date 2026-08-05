@@ -45,7 +45,7 @@ def _isolated_master_key(tmp_path, monkeypatch):
 
 
 def _build(monkeypatch, role="operator", perms=None):
-    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL"):
+    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL", "FEATURE_SSH"):
         monkeypatch.setattr(settings, flag, True)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", "fleet")
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_DEVICE_IDS", "")

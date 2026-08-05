@@ -47,7 +47,7 @@ def _client(
     devices: str = "7",
     local_ip: str = "10.0.0.5",
 ):
-    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL"):
+    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL", "FEATURE_SSH"):
         monkeypatch.setattr(settings, flag, flag_on)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", scope)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_DEVICE_IDS", devices)

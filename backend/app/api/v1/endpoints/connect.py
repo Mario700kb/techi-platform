@@ -111,6 +111,11 @@ def _method_status(
         not feature_enabled("FEATURE_TERMINAL") or not is_device_in_rollout("FEATURE_TERMINAL", device)
     ):
         return "unavailable", "Embedded terminal is not enabled for this device yet", None
+    if method.id == "ssh" and not feature_enabled("FEATURE_SSH"):
+        # Shown, not hidden — the same principle the Winbox/client-OS case
+        # follows. The reason is the actual one: the backend dials the device
+        # itself, so a NAT'd endpoint can never be reached (RISK-SSH-001).
+        return "unavailable", "Embedded SSH is off — it requires a direct route from the platform to the device", None
     if method.id in _DEDICATED_METHOD_IDS or method.id not in METHOD_CREDENTIAL_TYPES:
         return "ready", None, None
     tier, candidates = VaultService(db).resolve_credentials_for_method(device, method.id)

@@ -47,7 +47,7 @@ def _isolated_master_key(tmp_path, monkeypatch):
 
 
 def _client(monkeypatch, current_user: str = "root", local_ip: str = "10.0.0.5"):
-    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL"):
+    for flag in ("FEATURE_PLATFORM_CORE", "FEATURE_LINUX", "FEATURE_VAULT", "FEATURE_TERMINAL", "FEATURE_SSH"):
         monkeypatch.setattr(settings, flag, True)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_SCOPE", "device")
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_DEVICE_IDS", "7")
