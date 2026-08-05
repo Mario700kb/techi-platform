@@ -17,6 +17,7 @@ import AlertsMobile from "../pages/AlertsMobile";
 import More from "../pages/More";
 import Settings from "../pages/Settings";
 import DeviceDetailsMobile from "../pages/DeviceDetailsMobile";
+import TerminalWindow from "../pages/TerminalWindow";
 import CredentialVault from "../pages/CredentialVault";
 import NotificationSettings from "../pages/NotificationSettings";
 import Reports from "../pages/Reports";
@@ -29,6 +30,10 @@ export default function AppRoutes() {
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/devices" element={<RequireAuth><RequirePermission perm="view_devices"><Devices /></RequirePermission></RequireAuth>} />
       <Route path="/devices/:id" element={<RequireAuth><RequirePermission perm="view_devices"><DeviceDetailsMobile /></RequirePermission></RequireAuth>} />
+      {/* Chrome-free target for window.open from the Device Catalog: the
+          terminal gets its own browser window, movable to a second screen.
+          Same guards as the catalog; the backend enforces the real gate. */}
+      <Route path="/terminal/:id" element={<RequireAuth><RequirePermission perm="view_devices"><TerminalWindow /></RequirePermission></RequireAuth>} />
       <Route path="/clients" element={<RequireAuth><RequirePermission perm="manage_clients"><Clients /></RequirePermission></RequireAuth>} />
       <Route path="/deployment" element={<RequireAuth><RequirePermission perm="deployment"><Deployment /></RequirePermission></RequireAuth>} />
       <Route path="/enrollment-bootstrap" element={<RequireAuth><RequirePermission perm="deployment"><EnrollmentBootstrap /></RequirePermission></RequireAuth>} />

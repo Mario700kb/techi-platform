@@ -4,7 +4,12 @@ import { useLocation } from "react-router-dom";
 
 function App() {
   const location = useLocation();
-  if (location.pathname === "/login") {
+  // Routes that own the whole viewport: login, and the standalone terminal
+  // window opened from the Device Catalog. Rendering the sidebar and topbar
+  // inside a 1024x640 popup would leave the terminal a fraction of it.
+  const isChromeless =
+    location.pathname === "/login" || location.pathname.startsWith("/terminal/");
+  if (isChromeless) {
     return <AppRoutes />;
   }
   return (

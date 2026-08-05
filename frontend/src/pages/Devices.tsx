@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { deviceDisplayName } from "../utils/deviceLabel";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
@@ -217,7 +218,22 @@ export default function Devices() {
   // Connect ▸ Embedded Terminal from a Device Catalog row: the terminal
   // lives in the drawer's Terminal tab, so deep-link straight to it (the
   // Connect button itself never opens the drawer).
+  // Connect opens the terminal in its own browser window rather than the
+  // drawer: a terminal is a long-lived working surface, and an operator needs
+  // to keep it open — on a second screen if they like — while still using the
+  // catalog. Named per device, so clicking Connect twice focuses the existing
+  // window instead of opening a duplicate session.
   const openDeviceTerminal = useCallback((device: Device) => {
+    const name = deviceDisplayName(device);
+    const url = `/terminal/${device.id}?name=${encodeURIComponent(name)}`;
+    const features = "width=1024,height=640,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
+    const win = window.open(url, `techi-terminal-${device.id}`, features);
+    if (win) {
+      win.focus();
+      return;
+    }
+    // Popup blocked: fall back to the drawer's Terminal tab so the click still
+    // does something rather than silently failing.
     window.clearTimeout(drawerCloseTimerRef.current);
     setDrawerInitialTab("terminal");
     setDrawerDeviceId(device.id);
