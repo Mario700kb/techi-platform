@@ -341,6 +341,34 @@ localhost-only. Against the endpoint itself the tunnel adds little, since
 a quiet, persistent channel that starts no process. Anyone reviving this must
 carry the hard-coded destination with it.
 
+### The channel never engaged on a freshly-installed endpoint
+
+Device 812 (`debian3xc`) enrolled cleanly on 2.1.21 — correct identity, healthy
+heartbeat — and then opening a terminal returned "already queued or running
+(action #2481, status=queued)". No `device #812 connected` ever appeared, while
+729 connected immediately. The agent had made **zero** connection attempts; not
+rejected, never tried.
+
+Cause, and it is mine. `runCommandChannel` was handed the `*Config` loaded at
+startup. Enrolment does not touch that struct: `runSingleHeartbeat` calls
+`loadConfig(configPath)` and persists `agent_id`/`device_id` onto its own copy.
+So on a host that enrolled during its first run, the goroutine's struct stayed
+identity-less for the process lifetime, `commandChannelURL()` returned `""`
+every cycle, and the channel stayed dark until the service was restarted. 729
+was unaffected only because it was already enrolled when 2.1.21 started — the
+one case that hid the defect during the original rollout.
+
+Nothing broke: actions fell back to the heartbeat path and were delivered on
+the next cycle, which is the pre-channel behaviour. Action #2481 completed on
+its own while being investigated. But the accelerator engaged on exactly zero
+newly installed endpoints, which is every endpoint from now on.
+
+Agent 2.1.22 takes the config path and reloads it each cycle, matching what the
+heartbeat path already does. Two regression tests: one drives a config from
+unenrolled to enrolled on disk and asserts the URL resolves only after the
+reload — and that the stale struct still does not — and one pins the signature
+so the struct cannot be reintroduced.
+
 ### Open finding, not acted on
 
 An agent (`Go-http-client/1.1`, `77.242.26.80`) has been retrying
