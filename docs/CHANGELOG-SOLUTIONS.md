@@ -430,8 +430,11 @@ The RustDesk comparison is not like-for-like: it holds a persistent connection
 to the relay and performs no HTTP bookkeeping before acting.
 
 Starting `dispatch()` concurrently with the ack/running reports would remove
-those ~7s on slow links and change nothing on fast ones. Not done — recorded
-so the option is not rediscovered from scratch.
+those ~7s on slow links and change nothing on fast ones. **Deferred by the
+owner on 2026-08-05**, with the terminal working acceptably on both hosts: it
+is an agent-wide change to how every action is executed, and there was no
+reason to take that on the same day as three other agent releases. Recorded so
+the cause does not have to be re-measured when it is picked up.
 
 ### The Web Terminal now opens in its own window
 
