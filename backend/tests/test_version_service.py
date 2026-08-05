@@ -52,3 +52,54 @@ class TestGetActiveVersion:
     def test_platform_with_no_declared_version_returns_none(self):
         # Linux declares no latest_connector_version and isn't "windows".
         assert vs.get_active_version("linux") is None
+
+
+class TestAgentPlatformResolution:
+    """Which AgentPackage a device is measured against.
+
+    Linux was declared an agent platform from the start but never resolved:
+    get_active_version only ever looked up windows-amd64, so a Linux device
+    always got None and rendered "unknown" — device 729 stayed un-badged on
+    2.1.21 while 2.1.21 was the latest build (2026-08-05).
+    """
+
+    def test_linux_maps_uname_architectures_to_package_platforms(self):
+        from app.services import version_service as vs
+
+        assert vs._package_platform("linux", "x86_64") == "linux-amd64"
+        assert vs._package_platform("linux", "amd64") == "linux-amd64"
+        assert vs._package_platform("linux", "aarch64") == "linux-arm64"
+        assert vs._package_platform("linux", "arm64") == "linux-arm64"
+        assert vs._package_platform("linux", "armv7l") == "linux-armhf"
+
+    def test_linux_architecture_matching_is_case_and_space_tolerant(self):
+        from app.services import version_service as vs
+
+        assert vs._package_platform("linux", " X86_64 ") == "linux-amd64"
+
+    def test_unknown_or_missing_linux_architecture_resolves_to_nothing(self):
+        """Better an "unknown" badge than measuring a device against a build
+        it does not run."""
+        from app.services import version_service as vs
+
+        assert vs._package_platform("linux", None) is None
+        assert vs._package_platform("linux", "") is None
+        assert vs._package_platform("linux", "riscv64") is None
+
+    def test_windows_still_resolves_to_windows_amd64(self):
+        from app.services import version_service as vs
+
+        assert vs._package_platform("windows", None) == "windows-amd64"
+        assert vs._package_platform(None, None) == "windows-amd64"
+
+    def test_connector_platforms_do_not_use_packages(self):
+        from app.services import version_service as vs
+
+        assert vs._package_platform("mikrotik", None) is None
+
+    def test_an_arm64_device_is_not_marked_outdated_by_the_amd64_build(self):
+        """The two Linux builds move independently; comparing across them
+        would report a false rollout gap."""
+        from app.services import version_service as vs
+
+        assert vs._package_platform("linux", "aarch64") != vs._package_platform("linux", "x86_64")

@@ -2,9 +2,13 @@
 version against its platform's "latest" version and renders a 3-state status
 (current / outdated / ahead). One function, every platform:
 
-- Agent platforms (Windows today) compare against the active AgentPackage —
-  delegates to the exact logic device_overview_service.py already uses for
-  the fleet dashboard (untouched, not re-implemented here).
+- Agent platforms (Windows, Linux) compare against the active AgentPackage for
+  the device's own architecture — delegates to the exact logic
+  device_overview_service.py already uses for the fleet dashboard (untouched,
+  not re-implemented here). Linux was declared here from the start but never
+  resolved: the lookup only ever asked for `windows-amd64`, so every Linux
+  device fell through to `None` and its badge showed "unknown" no matter how
+  current the agent was (fixed 2026-08-05).
 - Connector platforms (MikroTik, future Synology/QNAP/VMware/...) compare
   against `PLATFORM_REGISTRY[platform].latest_connector_version` — bump that
   ONE field when a platform's deployment template changes and every consumer
@@ -22,16 +26,51 @@ from app.services.agent_package_service import AgentPackageService
 VersionStatus = Literal["current", "outdated", "ahead", "unknown"]
 
 
-def get_active_version(platform_id: Optional[str]) -> Optional[str]:
+# An agent platform's "latest" is the active package for the device's OWN
+# architecture. Comparing an arm64 endpoint against the amd64 build would mark
+# it outdated the moment the two lines diverge, which is a false alarm, not a
+# rollout signal. Keys are what `uname -m` reports, lowercased.
+_LINUX_ARCH_PACKAGES = {
+    "x86_64": "linux-amd64",
+    "amd64": "linux-amd64",
+    "aarch64": "linux-arm64",
+    "arm64": "linux-arm64",
+    "armv7l": "linux-armhf",
+    "armv6l": "linux-armhf",
+    "armhf": "linux-armhf",
+}
+
+
+def _package_platform(platform_id: Optional[str], architecture: Optional[str]) -> Optional[str]:
+    """Which AgentPackage platform key holds this device's expected version."""
+    if platform_id is None or platform_id == "windows":
+        return "windows-amd64"
+    if platform_id == "linux":
+        # Unknown/absent architecture returns None, so the badge stays
+        # "unknown" rather than guessing a build the device may not run.
+        return _LINUX_ARCH_PACKAGES.get((architecture or "").strip().lower())
+    return None
+
+
+def get_active_version(
+    platform_id: Optional[str], architecture: Optional[str] = None
+) -> Optional[str]:
     """The version a device on this platform is expected to report."""
     descriptor = resolve_platform(platform_id)
     if descriptor is not None and descriptor.latest_connector_version:
         return descriptor.latest_connector_version
-    if descriptor is None or descriptor.id == "windows":
-        service = AgentPackageService()
-        pkg = service.latest_active("windows-amd64", file_type="agent_binary") or service.latest_active("windows-amd64")
-        return pkg.version if pkg else None
-    return None
+
+    package_platform = _package_platform(
+        descriptor.id if descriptor is not None else None, architecture
+    )
+    if package_platform is None:
+        return None
+    service = AgentPackageService()
+    pkg = (
+        service.latest_active(package_platform, file_type="agent_binary")
+        or service.latest_active(package_platform)
+    )
+    return pkg.version if pkg else None
 
 
 def compare_versions(reported: Optional[str], latest: Optional[str]) -> VersionStatus:

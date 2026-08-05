@@ -415,7 +415,11 @@ def device_drawer_meta(
     methods = methods_for(platform_id, device.capabilities)
     actions = actions_for(device.platform, device.capabilities)
 
-    latest_version = version_service.get_active_version(platform_id) if platform_id != "windows" else None
+    latest_version = (
+        version_service.get_active_version(platform_id, device.architecture)
+        if platform_id != "windows"
+        else None
+    )
     version_status = version_service.compare_versions(device.agent_version, latest_version) if latest_version else None
 
     return DrawerMetaResponse(
