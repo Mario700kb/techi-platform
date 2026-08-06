@@ -46,25 +46,27 @@ class TestMetadata:
         priorities = [m.priority for m in methods]
         assert priorities == sorted(priorities)
 
-    def test_winbox_declares_windows_only_client_os(self):
-        # Winbox.exe has no macOS/Linux build — the frontend hides it there
-        # rather than showing a launcher that can't work. The backend never
-        # filters by operator OS (it doesn't know the browser's OS); it only
-        # declares the requirement.
+    def test_winbox_is_not_gated_to_windows(self):
+        """Changed 2026-08-06 (owner request): Winbox 4 has a native macOS build
+        and operators here use it on both Windows and macOS, so the old
+        requires_client_os="windows" disabled a method that works fine.
+        No MikroTik method declares a client-OS requirement now."""
         methods = {m.id: m for m in methods_for("mikrotik", {"connect": ""})}
-        assert methods["winbox"].requires_client_os == "windows"
+        assert methods["winbox"].requires_client_os is None
         assert methods["webfig"].requires_client_os is None
         assert methods["ssh"].requires_client_os is None
 
 
 def _client(monkeypatch, flag_on: bool, platform="mikrotik", capabilities=None,
-            local_ip=None, public_ip=None, role="owner", agent_version=None):
+            local_ip=None, public_ip=None, role="owner", agent_version=None,
+            connect_host=None, connect_port=None):
     monkeypatch.setattr(settings, "FEATURE_PLATFORM_CORE", flag_on)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     db.add(Device(id=3, hostname="rb", platform=platform, capabilities=capabilities,
                   local_ip=local_ip, public_ip=public_ip, agent_version=agent_version,
+                  connect_host=connect_host, connect_port=connect_port,
                   device_type=DeviceType.UNASSIGNED, status=DeviceStatus.OFFLINE))
     db.commit()
     app = FastAPI()
@@ -102,11 +104,46 @@ class TestLaunch:
         client = _client(monkeypatch, flag_on=False, local_ip="192.168.88.1")
         assert client.get("/devices/3/connect-methods/winbox/launch").status_code == 404
 
-    def test_winbox_uses_scheme_and_local_ip(self, monkeypatch):
+    def test_network_gear_prefers_public_ip(self, monkeypatch):
+        """Changed 2026-08-06 (owner request). This used to assert
+        winbox://192.168.88.1 — the LAN address, which is exactly why all three
+        MikroTik Connect methods failed for an operator outside that LAN. A
+        router IS the NAT device, so the address its heartbeat arrived from is
+        the router itself and is reachable."""
         client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1", public_ip="203.0.113.9")
         r = client.get("/devices/3/connect-methods/winbox/launch")
         assert r.status_code == 200
-        assert r.json() == {"url": "winbox://192.168.88.1", "surface": "desktop"}
+        assert r.json() == {"url": "winbox://203.0.113.9", "surface": "desktop"}
+
+    def test_non_network_platforms_keep_local_ip_first(self, monkeypatch):
+        """The public-IP preference must NOT generalise. For a PC or a NAS the
+        observed public_ip is the customer's edge router, not the device."""
+        for platform in ("windows", "linux", "synology", "qnap"):
+            client = _client(monkeypatch, flag_on=True, platform=platform,
+                             capabilities={"terminal": ""},
+                             local_ip="10.0.0.5", public_ip="203.0.113.9")
+            r = client.get(f"/devices/3/connect-methods/ssh/launch")
+            if r.status_code == 200:
+                assert r.json()["url"] == "ssh://10.0.0.5", platform
+
+    def test_operator_connect_host_overrides_everything(self, monkeypatch):
+        """The office-VPN case: no usable public address, so the operator pins
+        the LAN address they actually reach through the tunnel."""
+        client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1",
+                         public_ip="203.0.113.9", connect_host="10.126.1.1")
+        r = client.get("/devices/3/connect-methods/winbox/launch")
+        assert r.json()["url"] == "winbox://10.126.1.1"
+
+    def test_connect_port_is_appended(self, monkeypatch):
+        """Winbox moved off 8291 — previously inexpressible."""
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9", connect_port=8292)
+        r = client.get("/devices/3/connect-methods/winbox/launch")
+        assert r.json()["url"] == "winbox://203.0.113.9:8292"
+
+    def test_connect_port_applies_to_browser_methods_too(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9", connect_port=8293)
+        r = client.get("/devices/3/connect-methods/webfig/launch")
+        assert r.json()["url"] == "http://203.0.113.9:8293/webfig/"
 
     def test_ssh_requires_connect_capability(self, monkeypatch):
         client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1")

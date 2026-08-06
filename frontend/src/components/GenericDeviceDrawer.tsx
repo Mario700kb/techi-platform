@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
-import { assignDeviceClient, assignDeviceGroup, Device } from "../api/devices";
+import { assignDeviceClient, assignDeviceGroup, Device, updateDevice } from "../api/devices";
 import { queueDeviceAction, ActionType } from "../api/actions";
 import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, DeviceNote, getDeviceNotes } from "../api/notes";
@@ -251,6 +251,83 @@ function Row({ label, value, mono = false }: { label: string; value?: string | n
   );
 }
 
+// The address Connect dials, when the reported IPs cannot express it. Two real
+// cases need this: a router reached over the office VPN on its LAN address, and
+// a management service moved off its default port (Winbox on 8292/8293 rather
+// than 8291). Left empty — which is every device until an operator sets one —
+// the backend falls back to the reported addresses.
+//
+// Deliberately does NOT re-derive that fallback for display: the rule lives in
+// `resolve_connect_host` on the backend, and a copy here would be one more
+// thing to drift. Empty simply reads "Auto".
+function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
+  device: Device; canOperate: boolean; onDeviceUpdated?: (device: Device) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [host, setHost] = useState(device.connect_host ?? "");
+  const [port, setPort] = useState(device.connect_port ? String(device.connect_port) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const current = device.connect_host
+    ? (device.connect_port ? `${device.connect_host}:${device.connect_port}` : device.connect_host)
+    : (device.connect_port ? `Auto : ${device.connect_port}` : "Auto");
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await updateDevice(device.id, {
+        connect_host: host.trim() || null,
+        connect_port: port.trim() ? Number(port) : null,
+      });
+      onDeviceUpdated?.(updated);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12.5px]">
+        <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</span>
+        <span className="flex items-baseline gap-2">
+          <span className="max-w-[62%] truncate text-right font-mono text-[11.5px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{current}</span>
+          {canOperate && (
+            <button type="button" onClick={() => setEditing(true)} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>edit</button>
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-[3px] text-[12.5px]">
+      <div className="mb-1 font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</div>
+      <div className="flex items-center gap-2">
+        <input
+          value={host} onChange={(e) => setHost(e.target.value)} placeholder="Auto (reported IP)"
+          aria-label="Connect host"
+          className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[11.5px]"
+        />
+        <input
+          value={port} onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))} placeholder="port"
+          aria-label="Connect port" inputMode="numeric"
+          className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[11.5px]"
+        />
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <button type="button" disabled={busy} onClick={() => void save()} className="text-[11px] font-semibold underline" style={{ color: "var(--th-text-primary)" }}>{busy ? "Saving…" : "Save"}</button>
+        <button type="button" disabled={busy} onClick={() => { setEditing(false); setHost(device.connect_host ?? ""); setPort(device.connect_port ? String(device.connect_port) : ""); setError(null); }} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>Cancel</button>
+        {error && <span className="text-[11px]" style={{ color: "var(--th-danger, #f87171)" }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
 // Per-section accent — a quiet visual cue (icon chip only, never a filled
 // background) so the 5 Overview sections read as distinct at a glance
 // without turning the interface colorful. Connect uses the brand accent
@@ -401,6 +478,7 @@ function Overview({
           <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
           <Row label="Local IP" value={device.local_ip} mono />
           <Row label="Public IP" value={device.public_ip} mono />
+          <ConnectTargetRow device={device} canOperate={canOperate} onDeviceUpdated={onDeviceUpdated} />
           <Row label="Current user" value={device.current_user ?? undefined} />
           <div className="flex items-center justify-between gap-3 py-[3px] text-[12.5px]">
             <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Connector</span>

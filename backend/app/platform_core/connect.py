@@ -51,10 +51,10 @@ class ConnectMethod:
     web_path: Optional[str] = None  # browser launcher path appended to http://<host>, e.g. "/webfig/"
     # OPERATOR's client OS this method's desktop app is available on, or None
     # if it works regardless (browser methods, cross-platform CLI tools like
-    # ssh). Winbox.exe is Windows-only, so its winbox:// link is a dead click
-    # on macOS/Linux — the method stays VISIBLE there but disabled with an
-    # explicit "Unavailable on this operating system" reason (approved V3
-    # Connect mockup: never silently hide a method).
+    # ssh, and Winbox, which has a native macOS build). When set, the method
+    # stays VISIBLE on other systems but is disabled with an explicit
+    # "Unavailable on this operating system" reason (approved V3 Connect
+    # mockup: never silently hide a method).
     requires_client_os: Optional[str] = None
     # Short transport/source label rendered under the method name in the menu
     # ("Agent tunnel", "Backend relay · Vault", "Browser", "Desktop app").
@@ -87,8 +87,12 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
     # macOS/Linux operator (where Winbox is unavailable) defaults to Embedded
     # SSH when it's Ready and falls back to WebFig otherwise.
     "mikrotik": (
+        # No requires_client_os: Winbox 4 ships a native macOS build and
+        # operators here use it on both Windows and macOS, so gating the link to
+        # Windows disabled the method for half the operators who can actually
+        # run it.
         ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://",
-                      requires_client_os="windows", transport="Desktop app",
+                      transport="Desktop app",
                       category=CATEGORY_DESKTOP_APP),
         ConnectMethod("ssh", "Embedded SSH", SURFACE_DESKTOP, "connect", 20, scheme="ssh://",
                       transport="Backend relay · Vault", category=CATEGORY_AVAILABLE, embedded=True),

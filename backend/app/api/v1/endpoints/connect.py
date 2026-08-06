@@ -26,6 +26,7 @@ from app.core.auth import get_current_operator, require_team_permission
 from app.db.session import get_db
 from app.models.device import Device
 from app.models.operator import Operator
+from app.platform_core import classification as clf
 from app.platform_core.actions import actions_for, effective_capabilities
 from app.platform_core.capabilities import capability_tabs
 from app.platform_core.connect import ConnectMethod, methods_for
@@ -46,6 +47,32 @@ router = APIRouter()
 # view; readiness there is governed by their own tab/capability, not a Vault
 # credential.
 _DEDICATED_METHOD_IDS = frozenset({"remote_support", "web_terminal"})
+
+
+def resolve_connect_host(device, platform_id: str) -> Optional[str]:
+    """Which address the Connect launcher should dial.
+
+    1. `device.connect_host` when the operator set one. It is the only way to
+       express a target the agent cannot report — most often a router reached
+       over the office VPN on its LAN address.
+    2. Network gear prefers `public_ip`. A router IS the NAT device, so the
+       address the platform observed the heartbeat arriving from is the router
+       itself and is directly reachable. Preferring `local_ip` produced
+       `winbox://192.168.88.1` — a LAN address no operator outside that LAN can
+       reach, which is why all three MikroTik Connect methods failed.
+    3. Everything else keeps `local_ip` first, unchanged. For a PC or a NAS the
+       observed `public_ip` is the customer's edge, not the device, so it is
+       the wrong target — this rule deliberately does NOT generalise beyond
+       network gear.
+
+    "Network gear" is decided by the Unified Classification Engine rather than a
+    platform list here, so this can never disagree with the tree or the counters.
+    """
+    if (device.connect_host or "").strip():
+        return device.connect_host.strip()
+    if clf.classify_category(device) == clf.CATEGORY_NETWORK:
+        return device.public_ip or device.local_ip
+    return device.local_ip or device.public_ip
 
 
 class ConnectMethodOut(BaseModel):
@@ -352,11 +379,12 @@ def device_connect_launch(
     if method.id in _DEDICATED_METHOD_IDS:
         raise HTTPException(status_code=400, detail=f"'{method.id}' uses its own connect flow, not the generic launcher")
 
-    host = device.local_ip or device.public_ip
+    host = resolve_connect_host(device, platform_id)
     if not host:
         raise HTTPException(status_code=409, detail="Device has no known IP address yet")
 
-    url = f"{method.scheme}{host}" if method.scheme else f"http://{host}{method.web_path or '/'}"
+    authority = f"{host}:{device.connect_port}" if device.connect_port else host
+    url = f"{method.scheme}{authority}" if method.scheme else f"http://{authority}{method.web_path or '/'}"
 
     audit_log(
         db,

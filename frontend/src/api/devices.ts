@@ -30,6 +30,11 @@ export interface Device {
   domain?: string;
   public_ip?: string;
   local_ip?: string;
+  // Operator-set Connect target. Null falls back to the reported addresses —
+  // public_ip first for network gear (a router is its own NAT device),
+  // local_ip first for everything else.
+  connect_host?: string | null;
+  connect_port?: number | null;
   os_name?: string;
   os_version?: string;
   os_caption?: string | null;

@@ -44,6 +44,13 @@ class Device(Base):
     os_build = Column(String(80), nullable=True)
     windows_product_type = Column(Integer, nullable=True)
     platform = Column(String(80), nullable=True)
+    # Operator-set Connect target. Both nullable: when unset, the launcher falls
+    # back to the reported addresses (see connect.py `resolve_connect_host`).
+    # They exist because the reported IPs cannot express two real situations —
+    # a router reached over the office VPN on its LAN address, and a management
+    # service moved off its default port (Winbox on 8292/8293 rather than 8291).
+    connect_host = Column(String(255), nullable=True)
+    connect_port = Column(Integer, nullable=True)
     device_type = Column(SQLEnum(DeviceType), default=DeviceType.UNASSIGNED, nullable=False)
     status = Column(SQLEnum(DeviceStatus), default=DeviceStatus.OFFLINE, nullable=False)
     registered_at = Column(DateTime, default=utcnow, nullable=False)

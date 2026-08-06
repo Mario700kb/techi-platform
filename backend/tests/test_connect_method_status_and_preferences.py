@@ -239,20 +239,29 @@ class TestMockupFidelity:
         assert set(methods) == {"winbox", "ssh", "webfig"}
         assert methods["winbox"]["category"] == "desktop_app"
         assert methods["winbox"]["transport"] == "Desktop app"
-        assert methods["winbox"]["requires_client_os"] == "windows"
+        # Changed 2026-08-06: Winbox 4 has a native macOS build, so it no longer
+        # declares a client-OS requirement. See the macOS test below.
+        assert methods["winbox"]["requires_client_os"] is None
         assert methods["ssh"]["label"] == "Embedded SSH"
         assert methods["ssh"]["category"] == "available"
         assert methods["ssh"]["embedded"] is True
         assert methods["webfig"]["category"] == "web"
         assert methods["webfig"]["transport"] == "Browser"
 
-    def test_winbox_visible_but_unavailable_on_macos_operator(self, monkeypatch):
-        # Never silently hidden: the method row stays in the list with an
-        # explicit unavailable status + reason.
+    def test_winbox_is_not_blocked_on_a_macos_operator(self, monkeypatch):
+        """Changed 2026-08-06 (owner request). This used to assert that Winbox
+        was reported "unavailable on this operating system" for a macOS
+        operator. That was true of Winbox 3 (Windows-only .exe) but not of
+        Winbox 4, which ships a native macOS build — and the operators here use
+        it on macOS daily, so the status was blocking a method that works.
+
+        The "never silently hide a method" rule from the approved V3 mockup is
+        untouched: the row is still present. It is simply no longer marked
+        unavailable for the wrong reason."""
         client, _ = _client(monkeypatch)
         methods = {m["id"]: m for m in client.get("/devices/3/connect-methods?client_os=macos").json()["methods"]}
-        assert methods["winbox"]["status"] == "unavailable"
-        assert "unavailable on this operating system" in methods["winbox"]["status_reason"].lower()
+        assert "winbox" in methods
+        assert methods["winbox"]["status"] != "unavailable"
 
     def test_winbox_ready_on_windows_operator_with_credential(self, monkeypatch):
         client, db = _client(monkeypatch)

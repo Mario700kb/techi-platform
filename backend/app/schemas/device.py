@@ -33,6 +33,9 @@ class DeviceBase(BaseModel):
     domain: Optional[str]
     public_ip: Optional[str]
     local_ip: Optional[str]
+    # Operator-set Connect target; NULL falls back to the reported addresses.
+    connect_host: Optional[str] = Field(default=None, max_length=255)
+    connect_port: Optional[int] = Field(default=None, ge=1, le=65535)
     os_name: Optional[str]
     os_version: Optional[str]
     os_caption: Optional[str] = None
@@ -105,6 +108,8 @@ class DeviceUpdate(BaseModel):
     domain: Optional[str] = None
     public_ip: Optional[str] = None
     local_ip: Optional[str] = None
+    connect_host: Optional[str] = Field(default=None, max_length=255)
+    connect_port: Optional[int] = Field(default=None, ge=1, le=65535)
     os_name: Optional[str] = None
     os_version: Optional[str] = None
     os_caption: Optional[str] = None

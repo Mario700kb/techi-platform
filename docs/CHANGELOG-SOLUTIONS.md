@@ -5,6 +5,87 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-06] MIKROTIK-CONNECT-2026-08-06 — All three MikroTik Connect methods were dialling the LAN address; no tunnel was needed, the launcher was pointed at the wrong IP
+
+Operator report: *"lidhja e connect kemi 3 menyra por asnjera nuk funksionon"* —
+Winbox, Embedded SSH and WebFig all fail. The operator's actual workflow, which
+turned out to be the decisive input: Winbox on **both Windows and macOS**,
+reaching routers **by public IP**, or **by LAN IP over the office VPN** when
+there is no public IP, and often on **non-standard ports (8292, 8293)**.
+
+### Root cause
+
+[connect.py:355](../backend/app/api/v1/endpoints/connect.py#L355) built the
+target as `device.local_ip or device.public_ip`. For device 733 (`Mario Home`)
+that is `192.168.88.1`, so the launcher produced `winbox://192.168.88.1` and the
+reachable public address `79.98.113.14` was discarded — `local_ip` is truthy and
+came first. Device 735 (`Main Router`) got `winbox://10.126.1.1` the same way.
+Line 359 then appended no port, ever, so 8292/8293 were inexpressible.
+
+Three symptoms, one cause: Winbox and WebFig were both handed an unreachable LAN
+address, and Embedded SSH is switched off entirely (`FEATURE_SSH` is not in the
+production `.env` — RISK-SSH-001, owner decision 2026-08-05).
+
+**An initial reading of this as the NAT problem was wrong and was corrected.**
+For a PC, `public_ip` is the customer's edge router and is useless. For a
+router, *the device IS the NAT box* — the address its heartbeat was observed
+arriving from is the router itself, and it is directly reachable. So MikroTik
+needed no tunnel, no proxy and no agent: it was already reachable and was simply
+being given the wrong address.
+
+### Fix
+
+- `resolve_connect_host(device, platform_id)`: an operator-set `connect_host`
+  wins; otherwise **network gear prefers `public_ip`**, and **everything else
+  keeps `local_ip` first, unchanged**. The public-IP preference deliberately
+  does not generalise — for a PC or a NAS the observed public IP is the edge,
+  not the device. "Network gear" is decided by the Unified Classification
+  Engine, never by a platform list at the call site, so it cannot disagree with
+  the tree or the counters.
+- New nullable `devices.connect_host` / `devices.connect_port`
+  (migration `c7n1t8h5p2r6`), settable through the existing admin-gated
+  `PUT /devices/{id}`, surfaced as an editable **Connect target** row in the
+  generic device drawer. This covers the office-VPN case (pin the LAN address)
+  and the non-default-port case. NULL keeps the reported-address behaviour, so
+  the migration alone changes no device.
+- Winbox no longer declares `requires_client_os="windows"`. Winbox 4 ships a
+  native macOS build; the gate was disabling a method that works. The frontend
+  gate reads that field straight from the backend, so macOS unlocks with no
+  frontend change.
+
+### Two design decisions reversed
+
+Both had tests encoding them, updated with the reason recorded in place:
+`test_winbox_uses_scheme_and_local_ip` asserted `winbox://192.168.88.1` — the
+exact broken URL — and `test_winbox_visible_but_unavailable_on_macos_operator`
+asserted the macOS block. Renamed to `test_network_gear_prefers_public_ip` and
+`test_winbox_is_not_blocked_on_a_macos_operator`. The V3 mockup rule "never
+silently hide a method" is untouched.
+
+### Checks
+
+- Backend **1118 passed, 0 failed, 0 errors** in both flag states. Note: the
+  first preflight run after this change reported PASSED while carrying 2
+  failures, because its `KNOWN_BACKEND_FAILURES=4` baseline masked them. The
+  baseline is stale — the suite is at zero. The two failures were found and
+  fixed rather than accepted; a green gate with tolerated failures is not a
+  green gate.
+- 6 new launch tests: public-IP preference, the non-generalisation guard across
+  windows/linux/synology/qnap, `connect_host` override, and port appending for
+  both scheme and browser methods.
+- `tsc --noEmit`, frontend production build, agent build (windows+linux) clean.
+- Migration validated offline with `alembic upgrade --sql`: two nullable
+  `ADD COLUMN`s, reversible by `downgrade`.
+
+### Not done
+
+Embedded SSH stays off — unchanged owner decision. The MikroTik connector
+remains one-way telemetry: the RouterOS scheduler posts with
+`/tool fetch … output=none`, so the response is discarded by construction and no
+action can ever reach a router. That is the Phase 7 boundary ("Registration
+only — no RouterOS management"), not a defect, but it means Connect is the only
+management surface these devices have.
+
 ## [2026-08-06] ENROLL-PLACEMENT-2026-08-06 — Non-Windows platforms now enroll hands-free into their own group, and the token group picker stopped fighting the feature that already existed
 
 Operator report: nga faqja Deployment, tokeni lidhej me klientin pa problem, por
