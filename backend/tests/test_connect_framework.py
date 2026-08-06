@@ -113,7 +113,7 @@ class TestLaunch:
         client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1", public_ip="203.0.113.9")
         r = client.get("/devices/3/connect-methods/winbox/launch")
         assert r.status_code == 200
-        assert r.json() == {"url": "winbox://203.0.113.9", "surface": "desktop"}
+        assert r.json() == {"url": "winbox://203.0.113.9", "surface": "desktop", "insecure": False}
 
     def test_non_network_platforms_keep_local_ip_first(self, monkeypatch):
         """The public-IP preference must NOT generalise. For a PC or a NAS the
@@ -155,7 +155,7 @@ class TestLaunch:
     def test_webfig_uses_web_path_not_scheme(self, monkeypatch):
         client = _client(monkeypatch, flag_on=True, local_ip="192.168.88.1")
         r = client.get("/devices/3/connect-methods/webfig/launch")
-        assert r.json() == {"url": "http://192.168.88.1/webfig/", "surface": "browser"}
+        assert r.json() == {"url": "http://192.168.88.1/webfig/", "surface": "browser", "insecure": True}
 
     def test_falls_back_to_public_ip_when_no_local_ip(self, monkeypatch):
         client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9")
@@ -238,3 +238,34 @@ class TestDrawerVersionBadge:
                           capabilities={"connect": ""}, agent_version="0.9.0")
         b = client.get("/devices/3/drawer").json()
         assert b["version_status"] == "outdated"
+
+
+class TestSchemeAndPort:
+    """WebFig scheme selection and the device-vs-credential port precedence
+    (added 2026-08-06). The URL used to be hardcoded http:// with no port at
+    all, so an encrypted WebFig was unreachable and a router password crossed
+    the internet in the clear."""
+
+    def test_webfig_defaults_to_http_and_reports_it_as_insecure(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9")
+        body = client.get("/devices/3/connect-methods/webfig/launch").json()
+        assert body["url"] == "http://203.0.113.9/webfig/"
+        assert body["insecure"] is True
+
+    def test_port_443_selects_https_and_is_not_insecure(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9", connect_port=443)
+        body = client.get("/devices/3/connect-methods/webfig/launch").json()
+        assert body["url"] == "https://203.0.113.9/webfig/"
+        assert body["insecure"] is False
+
+    def test_default_port_is_not_repeated_in_the_url(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9", connect_port=80)
+        assert client.get("/devices/3/connect-methods/webfig/launch").json()["url"] == "http://203.0.113.9/webfig/"
+
+    def test_non_default_port_is_kept(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9", connect_port=8080)
+        assert client.get("/devices/3/connect-methods/webfig/launch").json()["url"] == "http://203.0.113.9:8080/webfig/"
+
+    def test_desktop_schemes_are_never_flagged_insecure(self, monkeypatch):
+        client = _client(monkeypatch, flag_on=True, public_ip="203.0.113.9")
+        assert client.get("/devices/3/connect-methods/winbox/launch").json()["insecure"] is False

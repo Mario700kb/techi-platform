@@ -16,6 +16,7 @@ Gated by FEATURE_PLATFORM_CORE (404 when off) so today's production, where the
 existing Windows Connect button is untouched, is unchanged.
 """
 
+import json
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -47,6 +48,38 @@ router = APIRouter()
 # view; readiness there is governed by their own tab/capability, not a Vault
 # credential.
 _DEDICATED_METHOD_IDS = frozenset({"remote_support", "web_terminal"})
+
+
+def credential_port(db: Session, device, method_id: str) -> Optional[int]:
+    """Port carried by the Vault credential resolved for this method, if any.
+
+    Precedence, decided deliberately because two places can now express a port:
+    the device's own `connect_port` wins, and this is only the fallback. The
+    device field is the operator's explicit statement about THIS device, while
+    the credential's port travels with a credential that may be shared across a
+    whole client or the entire fleet — so the narrower, more specific one wins.
+
+    Reads `metadata_json` only. That column is non-secret by construction (see
+    VaultCredential), so this needs no reveal, no decryption and no audit event.
+    """
+    try:
+        _tier, candidates = VaultService(db).resolve_credentials_for_method(device, method_id)
+    except Exception:  # never let credential lookup break a launch
+        return None
+    for candidate in candidates:
+        if not candidate.metadata_json:
+            continue
+        try:
+            raw = json.loads(candidate.metadata_json).get("port")
+        except (ValueError, TypeError):
+            continue
+        try:
+            parsed = int(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if 1 <= parsed <= 65535:
+            return parsed
+    return None
 
 
 def resolve_connect_host(device, platform_id: str) -> Optional[str]:
@@ -349,6 +382,10 @@ def reset_connect_preference(
 class ConnectLaunchResponse(BaseModel):
     url: str
     surface: str  # desktop | browser — tells the frontend how to open `url`
+    # True when the URL is plain http, i.e. anything typed into that page —
+    # including the router password — crosses the network unencrypted. The
+    # caller is expected to say so rather than open it silently.
+    insecure: bool = False
 
 
 @router.get("/devices/{device_id}/connect-methods/{method_id}/launch", response_model=ConnectLaunchResponse)
@@ -383,8 +420,31 @@ def device_connect_launch(
     if not host:
         raise HTTPException(status_code=409, detail="Device has no known IP address yet")
 
-    authority = f"{host}:{device.connect_port}" if device.connect_port else host
-    url = f"{method.scheme}{authority}" if method.scheme else f"http://{authority}{method.web_path or '/'}"
+    port = device.connect_port or credential_port(db, device, method.id)
+    insecure = False
+
+    if method.scheme:
+        # Desktop schemes (winbox://, ssh://) carry their own transport
+        # security; there is no plaintext variant to warn about.
+        authority = f"{host}:{port}" if port else host
+        url = f"{method.scheme}{authority}"
+    else:
+        # RouterOS serves WebFig on `www` (80) and `www-ssl` (443). The URL was
+        # previously hardcoded to http://, so a login over a public address sent
+        # the router password across the internet in the clear and there was no
+        # way to ask for TLS at all. Port 443 now selects https, which is what
+        # makes an encrypted WebFig reachable in the first place.
+        #
+        # http remains the fallback rather than the default being flipped:
+        # RouterOS ships www-ssl DISABLED, so defaulting to https would break
+        # every router that has not enabled it. `insecure` is returned so the
+        # caller can say plainly that this session is unencrypted instead of
+        # the platform quietly handing over a plaintext link.
+        scheme = "https" if port == 443 else "http"
+        default_port = 443 if scheme == "https" else 80
+        authority = f"{host}:{port}" if port and port != default_port else host
+        url = f"{scheme}://{authority}{method.web_path or '/'}"
+        insecure = scheme == "http"
 
     audit_log(
         db,
@@ -392,10 +452,11 @@ def device_connect_launch(
         action=AuditAction.REMOTE_CONNECT,
         entity_type="device",
         entity_id=device_id,
-        details={"method": method.id, "platform": platform_id, "surface": method.surface},
+        details={"method": method.id, "platform": platform_id, "surface": method.surface,
+                 "insecure": insecure},
     )
 
-    return ConnectLaunchResponse(url=url, surface=method.surface)
+    return ConnectLaunchResponse(url=url, surface=method.surface, insecure=insecure)
 
 
 class DrawerActionOut(BaseModel):

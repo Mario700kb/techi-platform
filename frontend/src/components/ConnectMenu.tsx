@@ -273,7 +273,7 @@ export default function ConnectMenu({
     }
     setLaunching(m.id);
     try {
-      const res = await fetchJson<{ url: string; surface: "desktop" | "browser" }>(
+      const res = await fetchJson<{ url: string; surface: "desktop" | "browser"; insecure?: boolean }>(
         `/api/v1/devices/${deviceId}/connect-methods/${m.id}/launch`,
       );
       if (res.surface === "desktop" && m.id === "winbox" && operatorOS === "macos") {
@@ -300,6 +300,13 @@ export default function ConnectMenu({
         }
       } else {
         window.open(res.url, "_blank", "noopener,noreferrer");
+        if (res.insecure) {
+          // Plain http: whatever is typed into that page — the router password
+          // included — crosses the network unencrypted. Say so rather than let
+          // it look like any other connection. Fixed by enabling www-ssl on the
+          // device and setting its Connect port to 443.
+          showNote(`${m.label} opened over plain HTTP — the password you type is sent unencrypted. Enable www-ssl on the device and set its Connect port to 443.`);
+        }
       }
     } catch (e) {
       showNote(e instanceof Error ? e.message : `Could not launch ${m.label}`);

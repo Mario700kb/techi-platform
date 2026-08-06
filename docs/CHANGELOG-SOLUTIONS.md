@@ -5,6 +5,63 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-06] WEBFIG-TLS-2026-08-06 — The WebFig link was hardcoded to http://, so a router password crossed the internet in the clear; and two places could set a port
+
+Found while answering whether the Vault could supply WebFig's user/password.
+Wiring credentials into a link that is always plaintext would have automated
+the transmission of a router password in the clear, so this had to come first.
+
+### Root cause
+
+`device_connect_launch` built browser URLs as `f"http://{authority}{web_path}"`
+— the scheme was a literal, with no way to ask for TLS at all. With the Connect
+target now resolving to a router's **public** address, every WebFig login sent
+the RouterOS password across the internet unencrypted.
+
+### Fix
+
+- Port **443 selects `https`**, which is RouterOS's `www-ssl` port. http stays
+  the fallback rather than the default being flipped: RouterOS ships `www-ssl`
+  **disabled**, so defaulting to https would break every router that has not
+  enabled it. What changed is that an encrypted WebFig is now reachable at all.
+- `ConnectLaunchResponse.insecure` reports when the URL is plain http. The
+  Connect menu shows an explicit warning on open, and the `remote_connect`
+  audit record carries the flag — so a plaintext session is stated, not
+  silently handed over.
+- The default port is no longer repeated in the URL (`:80` on http, `:443` on
+  https), which keeps the common case clean.
+
+### Port precedence, decided
+
+Two places can now express a port: `devices.connect_port` and the Vault
+credential's `metadata_json.port` (the `webfig` type defines one, default 80).
+Left undecided this would have become two competing settings with no stated
+winner.
+
+**The device's `connect_port` wins; the credential's port is the fallback.**
+The device field is the operator's explicit statement about *this* device,
+while a credential may be scoped to a whole client or the entire fleet — the
+narrower, more specific setting should win.
+
+`credential_port()` reads `metadata_json` only. That column is non-secret by
+construction, so the fallback needs no reveal, no decryption and no audit
+event, and a credential lookup failure can never break a launch.
+
+### Not done
+
+The Vault still does not supply WebFig's username/password — that was the
+question that started this, and it stays open by choice. The two prerequisites
+it needed are now in place: TLS is reachable, and the port has one owner.
+
+### Checks
+
+- Backend **1123 passed, 0 failed, 0 errors** in both flag states; 5 new tests
+  covering http default + insecure flag, 443→https, default-port omission,
+  non-default port, and desktop schemes never being flagged.
+- Two existing tests compared the whole launch payload and needed the new
+  `insecure` field; the URLs they assert are unchanged.
+- `tsc --noEmit`, frontend build, agent build clean.
+
 ## [2026-08-06] MIKROTIK-CONNECT-2026-08-06 — All three MikroTik Connect methods were dialling the LAN address; no tunnel was needed, the launcher was pointed at the wrong IP
 
 Operator report: *"lidhja e connect kemi 3 menyra por asnjera nuk funksionon"* —
