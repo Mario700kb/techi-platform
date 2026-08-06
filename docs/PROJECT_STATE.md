@@ -40,9 +40,9 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `5a489eb` — `feat(terminal): open the Web Terminal in its own browser window` |
-| Working tree | Clean, verified 2026-08-05 |
-| Origin alignment | Origin branch is one commit ahead at `d44f354` (CI workflow only, no backend change — see §2) |
+| Production SHA | `b7598cb` — `feat(enrollment): place non-Windows platforms in their own group, and stop the token UI from disabling it` (deployed 2026-08-06 11:49 CEST; previous baseline `5a489eb`) |
+| Working tree | Clean, verified 2026-08-06. One untracked artefact present and deliberately left: `.env.bak-terminal-scope-20260805-161934` |
+| Origin alignment | Aligned — origin, local and production all at `b7598cb`. The earlier note that origin led at `d44f354` is stale and was retired on 2026-08-06 |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
