@@ -207,6 +207,41 @@ export default function ConnectMenu({
     setNote(text);
   };
 
+  const copyToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;  // no clipboard permission; the note still names the target
+    }
+  };
+
+  // WebFig and Winbox have no automated login, so the operator types the
+  // credential and copying it is the whole point. On the backend this is a
+  // Vault *reveal* — a human reads the plaintext — so it is gated on
+  // vault_reveal and audited as one; an operator holding only
+  // remote_support_connect gets 403 here and simply types the password
+  // themselves. Returns null on any failure: the session is already open, so a
+  // missing credential must never look like a failed connect.
+  const fetchCredential = async (m: ConnectMethod): Promise<{ text: string; label: string } | null> => {
+    try {
+      const cred = await fetchJson<{ username?: string | null; password?: string | null }>(
+        `/api/v1/devices/${deviceId}/connect-methods/${m.id}/credential`,
+        { method: "POST" },
+      );
+      const user = (cred.username ?? "").trim();
+      const pass = cred.password ?? "";
+      if (!pass) return null;
+      // Tab-separated so a single paste can fill user then password in forms
+      // that move focus on Tab; the note says which is which either way.
+      return user
+        ? { text: `${user}\t${pass}`, label: `User ${user} and password` }
+        : { text: pass, label: "Password" };
+    } catch {
+      return null;
+    }
+  };
+
   const openMenu = () => {
     anchorBelowButton();
     setOpen(true);
@@ -283,30 +318,35 @@ export default function ConnectMenu({
         // does register the handler. macOS operators open the app themselves,
         // so hand them the address rather than pretending to launch it.
         const address = res.url.replace(/^winbox:\/\//, "");
-        try {
-          await navigator.clipboard.writeText(address);
-          showNote(`Winbox has no macOS URL handler. Address copied — paste ${address} into WinBox.`);
-        } catch {
-          showNote(`Winbox has no macOS URL handler. Open WinBox and connect to ${address}.`);
-        }
+        const cred = await fetchCredential(m);
+        await copyToClipboard(cred ? `${address}\t${cred.text}` : address);
+        showNote(`Winbox has no macOS URL handler. Open WinBox and connect to ${address}.`
+          + (cred ? ` Address and ${cred.label} copied.` : ""));
       } else if (res.surface === "desktop") {
         clickProtocolUrl(res.url);
         if (m.id === "winbox") {
+          const cred = await fetchCredential(m);
+          if (cred) await copyToClipboard(cred.text);
           // The browser cannot detect whether the handler exists, so this
           // cannot claim success — but it must not read as an error either: it
           // fires on every launch, including the ones that worked. State the
           // handoff, then the remedy.
-          showNote("Opening Winbox… If nothing happened, install Winbox 4 — it registers the winbox:// handler.");
+          showNote("Opening Winbox… If nothing happened, install Winbox 4 — it registers the winbox:// handler."
+            + (cred ? ` ${cred.label} copied.` : ""));
         }
       } else {
         window.open(res.url, "_blank", "noopener,noreferrer");
-        if (res.insecure) {
-          // Plain http: whatever is typed into that page — the router password
-          // included — crosses the network unencrypted. Say so rather than let
-          // it look like any other connection. Fixed by enabling www-ssl on the
-          // device and setting its Connect port to 443.
-          showNote(`${m.label} opened over plain HTTP — the password you type is sent unencrypted. Enable www-ssl on the device and set its Connect port to 443.`);
-        }
+        const cred = await fetchCredential(m);
+        if (cred) await copyToClipboard(cred.text);
+        // Both facts matter and only one note is shown at a time, so they are
+        // combined rather than letting the second overwrite the first. Plain
+        // http means whatever is typed into that page — the router password
+        // included — crosses the network unencrypted; that comes first because
+        // it is the one the operator may want to act on before typing.
+        const warning = res.insecure
+          ? `${m.label} opened over plain HTTP — what you type is sent unencrypted. Enable www-ssl on the device and set its Connect port to 443.`
+          : `${m.label} opened.`;
+        showNote(cred ? `${warning} ${cred.label} copied.` : warning);
       }
     } catch (e) {
       showNote(e instanceof Error ? e.message : `Could not launch ${m.label}`);

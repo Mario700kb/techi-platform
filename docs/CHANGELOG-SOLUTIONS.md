@@ -5,6 +5,61 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-06] CONNECT-CREDENTIAL-2026-08-06 — Connect hands over the stored WebFig/Winbox credential, gated and audited as a Vault reveal rather than around it
+
+Operator request: *"me duhet te mari dhe user pas nga vault"*. WebFig and Winbox
+have no automated login, so the operator types the credential; until now the
+Vault held it but nothing ever delivered it — `resolve_credentials_for_method`
+was consulted only to decide whether a method showed "ready", and the launch
+endpoint never touched it.
+
+### The design question that mattered
+
+The obvious implementation — return the secret from the launch endpoint — would
+have been a back door. Launch is gated on `remote_support_connect`; the Vault
+gates plaintext on `vault_reveal` (ADMIN role or the team permission) with a
+reason and an audit record. Returning secrets from launch would have let every
+operator who can click Connect extract stored passwords **without** the reveal
+permission and **without** a reveal record, quietly hollowing out that control.
+
+So it is a separate endpoint, `POST /devices/{id}/connect-methods/{id}/credential`,
+requiring **both** permissions. The codebase already distinguishes
+`get_secret_fields_for_use()` (a live connection consumes a secret; used by
+Embedded SSH) from `reveal()` (a human reads plaintext). A human pasting a
+password into WebFig is unambiguously the second, so `reveal()` is what runs —
+writing the `reveal` usage row, the VAULT REVEAL warning log, and an audit entry
+mirroring `POST /vault/{id}/reveal`. Classifying it as a machine "use" would
+have understated the audit trail.
+
+The reason is generated (`Connect: webfig on device #733`) rather than prompted.
+Free text typed on every connect adds friction and yields worse evidence than a
+line that names the method and device and cannot be left blank.
+
+The Vault gate itself is **imported** from the vault endpoints rather than
+re-implemented — duplicating a security check is how two copies drift apart.
+
+### Frontend
+
+Opening WebFig, or Winbox on macOS/Windows, now also copies the credential:
+`user\tpassword`, so one paste can fill both fields in forms that advance focus
+on Tab. Failure is silent by design — the session is already open, and a
+missing credential (403 without `vault_reveal`, 409 when none is stored) must
+never look like a failed connect.
+
+One ordering bug was caught while writing it: the credential note and the
+plaintext-HTTP warning were separate `showNote` calls, so the second overwrote
+the first and the security warning could vanish. They are now one message, with
+the warning first because it is the part an operator may want to act on before
+typing anything.
+
+### Checks
+
+- Backend **1128 passed, 0 failed, 0 errors** in both flag states; 5 new tests
+  including the one that matters most — `remote_support_connect` alone returns
+  403, so Connect cannot be used as a route around `vault_reveal` — plus proof
+  the handover is recorded as a `reveal`, not a `use`.
+- `tsc --noEmit`, frontend build, agent build clean.
+
 ## [2026-08-06] WEBFIG-TLS-2026-08-06 — The WebFig link was hardcoded to http://, so a router password crossed the internet in the clear; and two places could set a port
 
 Found while answering whether the Vault could supply WebFig's user/password.

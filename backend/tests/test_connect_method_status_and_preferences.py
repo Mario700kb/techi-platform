@@ -380,3 +380,53 @@ class TestConnectStatusBatch:
         client, _ = _client(monkeypatch)
         too_many = ",".join(str(i) for i in range(201))
         assert client.get(f"/connect-status?device_ids={too_many}").status_code == 400
+
+
+class TestConnectCredential:
+    """WebFig/Winbox have no automated login, so the operator types the
+    credential. Handing them the plaintext is a REVEAL, and is gated and
+    audited as one (added 2026-08-06)."""
+
+    def test_returns_username_and_password(self, monkeypatch):
+        client, db = _client(monkeypatch)
+        _add_credential(db, name="wf", credential_type="webfig", scope_type="global",
+                        username="admin", secret="hunter2")
+        r = client.post("/devices/3/connect-methods/webfig/credential")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["username"] == "admin"
+        assert body["password"] == "hunter2"
+        assert body["credential_name"] == "wf"
+        assert body["credential_source"] == "global"
+
+    def test_409_when_no_credential_is_configured(self, monkeypatch):
+        client, _ = _client(monkeypatch)
+        assert client.post("/devices/3/connect-methods/webfig/credential").status_code == 409
+
+    def test_404_for_a_method_the_platform_does_not_offer(self, monkeypatch):
+        client, db = _client(monkeypatch, platform="windows")
+        _add_credential(db, credential_type="webfig", scope_type="global")
+        assert client.post("/devices/3/connect-methods/webfig/credential").status_code == 404
+
+    def test_reveal_is_recorded_as_a_reveal(self, monkeypatch):
+        """The audit trail must not understate this as a machine 'use': a human
+        read the password."""
+        from app.models.vault_credential import VaultCredentialUsage
+
+        client, db = _client(monkeypatch)
+        cred = _add_credential(db, credential_type="webfig", scope_type="global", secret="hunter2")
+        client.post("/devices/3/connect-methods/webfig/credential")
+        rows = db.query(VaultCredentialUsage).filter(
+            VaultCredentialUsage.credential_id == cred.id,
+            VaultCredentialUsage.action == "reveal").all()
+        assert len(rows) == 1, "the handover must be recorded as a reveal, not a machine 'use'"
+        assert "webfig" in (rows[0].reason or "") and "#3" in (rows[0].reason or "")
+
+    def test_connect_permission_alone_does_not_grant_the_secret(self, monkeypatch):
+        """remote_support_connect must not be a back door around vault_reveal."""
+        client, db = _client(monkeypatch)
+        _add_credential(db, credential_type="webfig", scope_type="global")
+        app = client.app
+        app.dependency_overrides[get_current_operator] = lambda: SimpleNamespace(
+            id=2, username="viewer", role="viewer")
+        assert client.post("/devices/3/connect-methods/webfig/credential").status_code == 403
