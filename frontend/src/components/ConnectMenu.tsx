@@ -191,11 +191,24 @@ export default function ConnectMenu({
     return load();
   };
 
+  // In the row variant both the menu and the note render `position: fixed`, so
+  // they need explicit coordinates. Measuring only in openMenu() was a bug: a
+  // main-click launch of a Ready default never opens the menu, so menuPos was
+  // still null and the note fell back to its static position — directly on top
+  // of the Connect button it was meant to sit under.
+  const anchorBelowButton = () => {
+    if (variant !== "row" || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
+  };
+
+  const showNote = (text: string) => {
+    anchorBelowButton();
+    setNote(text);
+  };
+
   const openMenu = () => {
-    if (variant === "row" && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
-    }
+    anchorBelowButton();
     setOpen(true);
   };
 
@@ -267,15 +280,16 @@ export default function ConnectMenu({
         clickProtocolUrl(res.url);
         if (m.id === "winbox") {
           // The browser cannot detect whether a winbox:// protocol handler
-          // exists — be honest about the dependency instead of pretending
-          // the launch always worked.
-          setNote("If Winbox didn't open, the desktop launcher isn't installed — install Winbox 4 (it registers winbox://).");
+          // exists, so this cannot claim success — but it must not read as an
+          // error either: it fires on every launch, including the ones that
+          // worked. State the handoff, then the remedy.
+          showNote("Opening Winbox… If nothing happened, install Winbox 4 — it registers the winbox:// handler.");
         }
       } else {
         window.open(res.url, "_blank", "noopener,noreferrer");
       }
     } catch (e) {
-      setNote(e instanceof Error ? e.message : `Could not launch ${m.label}`);
+      showNote(e instanceof Error ? e.message : `Could not launch ${m.label}`);
     } finally {
       setLaunching(null);
     }
@@ -485,9 +499,13 @@ export default function ConnectMenu({
       {open && menuBody}
 
       {note && (
-        <div className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-40 min-w-[220px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug`}
+        <div className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-40 min-w-[220px] max-w-[320px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug shadow-lg`}
           style={{
-            background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-secondary)",
+            // --th-bg-drawer-section is a ~2% tint meant to sit inside an
+            // already-opaque panel. As a floating overlay it let whatever was
+            // underneath read straight through the text, so this uses the same
+            // opaque card background the dropdown itself uses.
+            background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)", color: "var(--th-text-secondary)",
             ...(isRow && menuPos ? { top: menuPos.top, right: menuPos.right } : {}),
           }}
           onClick={() => setNote(null)}>
