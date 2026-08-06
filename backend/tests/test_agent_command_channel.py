@@ -36,6 +36,8 @@ class _FakeWS:
 
 @pytest.fixture
 def channel():
+    # A current event loop is guaranteed by the autouse fixture in conftest.py;
+    # on Python 3.9 the Lock in AgentCommandChannel.__init__ needs one.
     return AgentCommandChannel()
 
 
