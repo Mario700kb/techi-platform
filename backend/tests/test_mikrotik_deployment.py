@@ -231,7 +231,18 @@ def _session():
     return sessionmaker(bind=engine)()
 
 
-def test_mikrotik_token_enrollment_stays_ungrouped_and_network():
+def test_mikrotik_token_enrollment_lands_in_a_network_group():
+    """Behaviour CHANGED on 2026-08-06 (owner request): a token carrying a Client
+    but no Default Group used to leave non-agent platforms ungrouped; it now
+    creates the category's group under that client and places the device in it,
+    so MikroTik/QNAP/Synology enroll hands-free like Windows already did.
+
+    What must NOT change is the category: the group is named after the category
+    display label ("Network"), which the platform rules in _CATEGORY_RULES
+    outrank and which is not a reserved Servers/Client PC name — so membership
+    never alters what the engine says the device IS. Being forced into a
+    *standard agent* group is what would mis-classify it.
+    """
     s = _session()
     client = Client(name="Acme", slug="acme", is_active=True)
     s.add(client)
@@ -246,9 +257,11 @@ def test_mikrotik_token_enrollment_stays_ungrouped_and_network():
         signal=AssignmentSignal(platform="mikrotik"),
     )
     assert out.client_id == client.id
-    # Non-agent platform → NOT forced into a Servers/Client PC group.
-    assert out.group_id is None
-    # The engine categorizes it as Network by platform.
+    # Placed in a real group, created under this client on demand.
+    assert out.group_id is not None
+    assert out.group.name == "Network"
+    assert out.group.client_id == client.id
+    # Still categorized as Network by platform, group membership notwithstanding.
     assert clf.classify_category(out) == clf.CATEGORY_NETWORK
 
     # Drawer/List "Group" must not read blank just because there's no real

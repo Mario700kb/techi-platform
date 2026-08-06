@@ -5,6 +5,179 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-08-06] ENROLL-PLACEMENT-2026-08-06 — Non-Windows platforms now enroll hands-free into their own group, and the token group picker stopped fighting the feature that already existed
+
+Operator report: nga faqja Deployment, tokeni lidhej me klientin pa problem, por
+te zgjedhja e grupit dilte një mur "Client PC" i përsëritur pafundësisht, pa
+asnjë mënyrë për të dalluar cilin i përkiste klientit të duhur. Kërkesa:
+pajisjet jo-Windows (Linux, MikroTik, QNAP, Synology) të ulen vetë te grupi i
+duhur, i krijuar nën klient nëse mungon. Windows-i të mos preket — *"eshte
+super ok"*.
+
+### The feature already existed; the UI disabled it
+
+`apply_enrollment_assignment` vendos prej kohësh pajisjen te `Servers` ose
+`Client PC` kur tokeni mban **Client pa Group**, duke i krijuar grupet sipas
+nevojës. Dega është `if client_id and not group_id` — pra **zgjedhja e një
+grupi e çaktivizon auto-caktimin**. Hapi manual që operatori detyrohej të bënte
+ishte pikërisht ai që fikte sjelljen e kërkuar.
+
+Shkaku i detyrimit: [Deployment.tsx:141](../frontend/src/pages/Deployment.tsx#L141)
+thërriste `getGroups()` pa filtër klienti — ndonëse edhe klienti API
+([clients.ts:121](../frontend/src/api/clients.ts#L121)) edhe backend-i
+(`GET /api/v1/groups?client_id=`) e mbështesnin prej fillimi — dhe select-i
+shfaqte vetëm `g.name`, pra një "Client PC" për çdo klient në sistem.
+
+**Fix (frontend).** Grupet filtrohen sipas klientit të zgjedhur (`DeviceGroup`
+mban `client_id`, ndaj filtrimi është lokal; thirrja e pafiltruar mbetet sepse
+tabela e përdor për emrat e grupeve të çdo tokeni), ndërrimi i klientit pastron
+grupin, select-i çaktivizohet pa klient, dhe opsioni bosh u riemërtua nga
+"No group" në **"Auto by device type (Servers / Client PC)"** — emri i vjetër e
+paraqiste rrugën e saktë si mungesë grupi.
+
+### Placement extended to non-agent platforms
+
+[device_assignment_service.py:101-120](../backend/app/services/device_assignment_service.py#L101-L120):
+grupi tani emërtohet sipas etiketës së kategorisë dhe krijohet nën klient sipas
+nevojës — MikroTik/UniFi/Cisco ▸ `Network`, QNAP/Synology ▸ `Storage`,
+VMware/Proxmox/Hyper-V ▸ `Hypervisors`. Windows ndjek rrugën identike si më parë
+(kategoria e tij del gjithmonë `servers`/`clientpc`).
+
+**Pse është e sigurt.** Te `_CATEGORY_RULES` rregullat e platformës renditen
+**para** rregullit gjenerik "ka grup", dhe `Network`/`Storage`/`Hypervisors`
+nuk janë në `_SERVER_GROUP_NAMES`/`_CLIENT_GROUP_NAMES`. Pra mbajtja e një grupi
+real nuk e ndryshon kurrë kategorinë. Ajo që *do* ta prishte është futja e tyre
+në një grup standard agjenti — kufi që u ruajt. Pema nuk preket fare: e ndërton
+pamjen nga kategoria dhe injoron grupet (`void groups;`).
+
+### A design decision was reversed
+
+`test_mikrotik_token_enrollment_stays_ungrouped_and_network` pohonte
+`out.group_id is None` — kodifikonte vendimin e mëparshëm që platformat jo-agjent
+të mbeteshin pa grup. U riemërtua dhe u rishkrua te sjellja e re, me arsyen në
+docstring. Ky ishte ndryshim dizajni me miratim të pronarit, jo rregullim gabimi.
+
+### Existing devices must not move (owner requirement)
+
+Miratimi erdhi me kusht: pajisjet aktuale të shfaqen njësoj edhe pas ndryshimit.
+Kjo qëndron strukturalisht — rregulli i ri ka **një thirrës të vetëm**
+(`agent_enrollment_service.py:123`, i mbrojtur nga `if not reenrollment_matched`),
+`apply_enrollment_assignment` del herët për çdo pajisje me caktim autoritativ,
+dhe rruga auto/trusted-domain (`_detect_group`), e vetmja që prek pajisje
+ekzistuese në heartbeat, mbeti e paprekur me vetëm `Servers`/`Client PC`.
+Katër teste guard e kyçin këtë, përfshirë paritetin e pamjes: një MikroTik pa
+grup vazhdon të japë `resolved_group == "Network"` përmes etiketës së kategorisë.
+
+Nuk u bë backfill — MikroTik-ët ekzistues mbeten me `group_id` NULL me qëllim.
+
+### Checks
+
+- `pytest -k "assign or classif or enroll or tree or group or trusted or device or mikrotik"`
+  — **323 passed**, me 9 teste të reja (5 për vendosjen e platformave jo-Windows,
+  4 guard për mos-prekjen e pajisjeve ekzistuese).
+- `npx tsc --noEmit` — pastër.
+- `test_agent_command_channel.py` dhe `test_terminal_endpoint.py` dështojnë, por
+  u verifikua me `git stash` se dështojnë njësoj në pemën e paprekur — të
+  mëparshme dhe të palidhura.
+- Jo e deployuar.
+
+### Open: Linux servers enrolled by token stay in Client PC
+
+`AgentEnrollmentRequest` nuk ka fushë `device_type` dhe heuristika e serverit te
+motori është vetëm Windows (`windows_product_type`, teksti "windows server"), pra
+një server Linux merr kategorinë `clientpc` në enrollim. `LinuxAdapter.classify_device_type`
+do ta korrigjonte `device_type` në heartbeat — por ri-grupimi te
+[device_heartbeat_service.py:213-223](../backend/app/services/device_heartbeat_service.py#L213-L223)
+kryhet vetëm `if not manual_locked`, dhe `enrollment_token` **është** burim
+manual-lock. Rezultati: `device_type` bëhet SERVER, grupi mbetet `Client PC`
+përgjithmonë, dhe meqë emri i grupit renditet para heuristikës së OS-it, edhe
+pema vazhdon ta tregojë si Client PC. Shih RISK-ENROL-002.
+
+## [2026-08-06] RS-IDENTITY-LOCK-2026-08-06 — Device 711 could not connect because the agent locks RustDesk's identity file read-only; DIAGNOSED, FIX NOT APPLIED
+
+Operator report (device 711): Remote Support nuk lidhet, dhe `set_remote_password`
+raporton sukses pa pasur efekt. Riinstalimi nga UI nuk ndryshoi asgjë. **Vetëm
+kjo pajisje** — pjesa tjetër e flotës lidhet normalisht dhe një pajisje tjetër e
+provuar e mori password-in rregullisht. Ai fakt përjashton çdo shkak sistemik dhe
+e ngushton çështjen te renditja e ngjarjeve në këtë makinë.
+
+Action log: `deploy_remote_support` → `install=installed version=1.4.6.0
+config=written service=running protocol=written id=73997312`; `set_remote_password`
+→ `Remote password changed successfully`.
+
+### Evidence from the machine
+
+Read-only dump i të gjitha dosjeve config (PowerShell, si Administrator):
+
+- Vetëm **një** skedar mban identitet të vërtetë —
+  `C:\Users\kfc.k02.teg\...\TECHI Remote Support.toml`, me `enc_id` dhe `salt`
+  (relikt i kohës kur RustDesk punonte në atë profil; `2.toml` i tij daton 07/21).
+- Të dyja dosjet e shërbimit (`systemprofile`, `LocalService`) kanë
+  `TECHI Remote Support.toml` **pa `id`, pa `enc_id`, pa `salt`** — vetëm
+  `password` plus `custom-rendezvous-server`/`relay-server`/`key`. Kjo është
+  fjalë për fjalë prodhimi i `buildRustDeskTOML`
+  ([rustdesk_manage.go:240-266](../agent/rustdesk_manage.go#L240-L266)) me
+  password-in e ngjitur sipër nga `setRustDeskPassword`.
+- Të gjithë identity TOML: `ReadOnly=True`, të gjithë me timestamp **12:11:56**.
+- `2.toml` në të njëjtat dosje: `ReadOnly=False`, **12:12:22** — 26 sekonda më
+  vonë, shkruar nga vetë RustDesk. Kjo provon që shërbimi është gjallë, po
+  shkruan, dhe po përdor pikërisht ato dosje.
+
+### Root cause
+
+Shërbimi niset → lexon skedarin e vet të identitetit → nuk gjen `id`/`salt` →
+i gjeneron në memorie → provon t'i ruajë → **skedari është read-only
+(`os.Chmod(path, 0444)`, [rustdesk_readonly.go:20-24](../agent/rustdesk_readonly.go#L20-L24))
+→ ruajtja dështon**. Identiteti nuk persistohet kurrë. I njëjti bllokim ndalon
+edhe persistimin e password-it të hash-uar, sepse pa `salt` të ruajtur hash-i
+nuk rikrijohet dot i njëjtë. Prandaj `set_remote_password` raporton sukses me
+ndershmëri — agjenti e shkruan vërtet tekstin e thjeshtë në skedarë që i çbllokon
+vetë — por shërbimi s'e mban dot.
+
+Connect-i ndërtohet nga `device.rustdesk_id` në DB
+([remote_support.py:165](../backend/app/api/v1/endpoints/remote_support.py#L165)),
+jo nga ajo që raporton agjenti; me një ID që nuk ngjitet, DB-ja mbetet me një ID
+të vdekur.
+
+**Pse vetëm kjo pajisje.** Renditja. Në makinat e shëndosha RustDesk e shkroi
+identitetin e vet *përpara* kalimit të parë të riparimit, ndaj vula read-only
+ngriu një identitet tashmë të vlefshëm — e padëmshme. Këtu rruga e skedarit të
+freskët ([rustdesk_manage.go:221-234](../agent/rustdesk_manage.go#L221-L234))
+krijoi skedarë pa identitet në dosjet e shërbimit, dhe një kalim i mëvonshëm i
+kyçi. Çdo riinstalim shkakton një riparim tjetër, pra e përkeqëson.
+
+**Pse rikthehet vetvetiu.** `rustDeskConfigNeedsRepair`
+([rustdesk_toml.go:150-168](../agent/rustdesk_toml.go#L150-L168)) i kërkon
+opsionet e menaxhuara brenda skedarit të **identitetit**. RustDesk i shkruan
+opsionet te `2.toml` dhe kurrë te identiteti — pra ai kontroll kthen `true`
+përgjithmonë → patch → `setTomlReadOnly`, në çdo cikël riparimi
+([rustdesk_manage.go:74-102](../agent/rustdesk_manage.go#L74-L102)). Çdo
+rregullim manual rikyçet brenda 30 minutash.
+
+### Relation to the deferred item of 2026-06-28
+
+Ky është pikërisht borxhi i shënuar dhe i shtyrë me kërkesë të përdoruesit te
+hyrja `[2026-06-28]` më poshtë: `managedRustDeskOptions`/`writeRustDeskConfig`
+shkruajnë `rendezvous_server`/`[options]` në skedarin pa prapashtesë. Aty u
+vlerësua si ndoshta "inert/no-op". Nuk është inert — është **aktivisht
+shkatërrues** kur fiton garën ndaj shkrimit të parë të RustDesk-ut.
+
+### Status: OPEN
+
+- Mekanizmi mbështetet fort nga provat, por hapi përfundimtar i konfirmimit
+  **nuk u ekzekutua**: testi i lëvizjes së ID-së (restart shërbimi → rilexo `id`)
+  mbeti pa u bërë sepse operatori u shkëput nga makina. Të kryhet para se fiksi
+  të quhet i verifikuar.
+- Zbutja në makinë (stop service → hiq read-only → fshi me backup skedarët e
+  identitetit pa `id`/`enc_id` në dosjet e shërbimit → start) është hartuar por
+  **nuk është aplikuar**. Është e përkohshme; riparimi i agjentit e rikyç.
+- Fiksi i vërtetë është në kod: opsionet te `TECHI Remote Support2.toml`
+  (Config2), skedari i identitetit të mos vihet kurrë read-only, dhe
+  `set_remote_password` të verifikojë efektin në vend që të raportojë shkrimin
+  (`wrote = true` edhe kur asgjë s'ndryshon —
+  [rustdesk_manage.go:396-399](../agent/rustdesk_manage.go#L396-L399)).
+  Nuk është shkruar ende; prek gjithë flotën dhe prodhimi është në total rollback.
+
 ## [2026-08-05] TERMINAL-CHANNEL-2026-08-05 — The Web Terminal was unusable on Linux; fixed by pushing instead of waiting, without opening a single port
 
 Operator report (2026-08-04, device 729 `rustdesk-srv`): the Web Terminal never

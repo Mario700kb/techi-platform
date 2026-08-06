@@ -590,6 +590,10 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
   const [clientId, setClientId] = useState(token.client_id ?? "");
   const [groupId, setGroupId] = useState(token.group_id ?? "");
   const [status, setStatus] = useState<"active" | "revoked">(token.status === "revoked" ? "revoked" : "active");
+  // Only the selected client's groups. Groups are named per client ("Servers",
+  // "Client PC"), so an unfiltered list renders one indistinguishable "Client PC"
+  // per client and the operator cannot tell which one belongs to their client.
+  const visibleGroups = clientId ? groups.filter((g) => g.client_id === clientId) : [];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-lg rounded-lg border p-5" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)" }}>
@@ -598,12 +602,17 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
           <input value={name} onChange={(e) => setName(e.target.value)} id="token-name" name="token-name" aria-label="Token name" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
           <input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} id="token-max-uses" name="token-max-uses" aria-label="Maximum uses" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
           <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} id="token-expires-at" name="token-expires-at" aria-label="Expiration date and time" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <select value={clientId} onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : "")} id="token-client" name="token-client" aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <select value={clientId} onChange={(e) => { setClientId(e.target.value ? Number(e.target.value) : ""); setGroupId(""); }} id="token-client" name="token-client" aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">No client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} id="token-group" name="token-group" aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
-            <option value="">No group</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          <select value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} disabled={!clientId} id="token-group" name="token-group" aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+            <option value="">Auto by device type (Servers / Client PC)</option>{visibleGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
+          <p className="text-xs" style={{ color: "var(--th-text-secondary)" }}>
+            {clientId
+              ? "Leave on Auto so each device lands in Servers or Client PC by what it actually is. Picking a group here pins every device to it instead."
+              : "Select a client first — groups belong to a client."}
+          </p>
           <select value={status} onChange={(e) => setStatus(e.target.value as "active" | "revoked")} id="token-status" name="token-status" aria-label="Token status" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="active">active</option><option value="revoked">revoked</option>
           </select>

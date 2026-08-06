@@ -93,11 +93,21 @@ class DeviceAssignmentService:
             # Generic, platform-neutral placement: a token may carry a Client with
             # no explicit Default Group. Resolve the category from the agent-reported
             # signal via the Unified Classification Engine so ANY platform lands
-            # under the correct Client ▸ Group with no manual step. Agent platforms
-            # (servers/clientpc) get the standard group; non-agent platforms
-            # (network/storage/hypervisors — e.g. MikroTik) are categorized by the
-            # tree via their platform, so they stay ungrouped (a standard agent group
-            # would mis-classify them). Platform identity comes from the agent.
+            # under the correct Client ▸ Group with no manual step, creating the
+            # group under that client when it does not exist yet. Platform identity
+            # comes from the agent.
+            #
+            # The group is named after the category's display label, which is what
+            # makes this safe for non-agent platforms (MikroTik ▸ "Network",
+            # QNAP/Synology ▸ "Storage", ESXi/Proxmox/Hyper-V ▸ "Hypervisors"):
+            # in `_CATEGORY_RULES` the platform rules outrank the generic
+            # "has a group" rule, and these labels are NOT in the reserved
+            # _SERVER_GROUP_NAMES/_CLIENT_GROUP_NAMES sets, so holding a real
+            # group never changes what the engine says the device IS. Putting such
+            # a device in a *standard agent* group ("Servers"/"Client PC") WOULD
+            # mis-classify it — that is the case this naming rule avoids.
+            # Windows is untouched: it always resolves to servers/clientpc and
+            # therefore to the same two standard groups as before.
             if client_id and not group_id:
                 cat = clf.classify_category(clf.ClassificationInput(
                     client_id=None, group_id=None, group_name=None,
@@ -107,7 +117,8 @@ class DeviceAssignmentService:
                 ))
                 if cat in (clf.CATEGORY_SERVERS, clf.CATEGORY_CLIENTPC):
                     self._ensure_standard_groups(client_id)
-                    name = "Servers" if cat == clf.CATEGORY_SERVERS else "Client PC"
+                name = clf.category_display_label(cat)
+                if name:
                     group_id = self._get_or_create_group(client_id, name).id
             return self.devices.update(
                 device,
