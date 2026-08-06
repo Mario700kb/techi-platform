@@ -38,9 +38,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.services import version_service
 from app.services.audit_service import AuditAction, audit_log
 from app.services.connect_preference_service import ConnectPreferenceService
-from app.api.v1.endpoints.vault import _vault_gate
-from app.models.operator import OperatorRole
-from app.services.permission_service import REMOTE_SUPPORT_CONNECT, VAULT_REVEAL
+from app.services.permission_service import REMOTE_SUPPORT_CONNECT
 from app.services.vault_service import METHOD_CREDENTIAL_TYPES, VaultService
 
 router = APIRouter()
@@ -50,11 +48,6 @@ router = APIRouter()
 # view; readiness there is governed by their own tab/capability, not a Vault
 # credential.
 _DEDICATED_METHOD_IDS = frozenset({"remote_support", "web_terminal"})
-
-# The Vault's own reveal gate (ADMIN role OR the vault_reveal team permission),
-# imported rather than re-implemented: duplicating a security check is how two
-# copies quietly drift apart. Used by the Connect credential endpoint below.
-_require_vault_reveal = _vault_gate(OperatorRole.ADMIN.value, VAULT_REVEAL)
 
 
 def credential_port(db: Session, device, method_id: str) -> Optional[int]:
@@ -386,15 +379,6 @@ def reset_connect_preference(
     return None
 
 
-class ConnectCredentialResponse(BaseModel):
-    """The stored credential for a Connect method, handed to the operator so
-    they can sign in to WebFig/Winbox, which have no automated login."""
-    username: Optional[str] = None
-    password: Optional[str] = None
-    credential_name: str
-    credential_source: str  # Vault scope tier the credential resolved from
-
-
 class ConnectLaunchResponse(BaseModel):
     url: str
     surface: str  # desktop | browser — tells the frontend how to open `url`
@@ -554,74 +538,4 @@ def device_drawer_meta(
         reported_version=device.agent_version,
         latest_version=latest_version,
         version_status=version_status,
-    )
-
-
-@router.post(
-    "/devices/{device_id}/connect-methods/{method_id}/credential",
-    response_model=ConnectCredentialResponse,
-)
-def device_connect_credential(
-    device_id: int,
-    method_id: str,
-    db: Session = Depends(get_db),
-    operator: Operator = Depends(_require_vault_reveal),
-    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_CONNECT)),
-):
-    """Hand the operator the stored credential for a Connect method.
-
-    WebFig and Winbox have no automated login, so the operator types the
-    credential themselves. That makes this a **reveal** — a human reads the
-    plaintext — not a machine "use", and it is deliberately treated as one:
-
-      * `_require_vault_reveal` is the Vault's own gate, imported rather than
-        re-implemented so a security check can never drift between two copies.
-        Holding `remote_support_connect` alone is NOT enough — otherwise every
-        operator who can click Connect could extract stored passwords, which
-        would quietly hollow out the Vault's reveal permission.
-      * `VaultService.reveal()` writes the 'reveal' usage row and the VAULT
-        REVEAL warning log, and an audit record is written here, exactly like
-        POST /vault/{id}/reveal.
-
-    The reason is generated rather than prompted. An operator typing free text
-    on every connect would add friction and produce worse evidence than a
-    generated line naming the method and device, which is precise and cannot be
-    left blank.
-    """
-    if not feature_enabled("FEATURE_PLATFORM_CORE"):
-        raise HTTPException(status_code=404, detail="Not Found")
-
-    device = DeviceRepository(db).get(device_id)
-    if device is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    descriptor = resolve_platform(device.platform)
-    platform_id = descriptor.id if descriptor is not None else "windows"
-    if method_id not in {m.id for m in methods_for(platform_id, device.capabilities)}:
-        raise HTTPException(status_code=404, detail="Connect method not available for this device")
-
-    service = VaultService(db)
-    tier, candidates = service.resolve_credentials_for_method(device, method_id)
-    if not candidates:
-        raise HTTPException(status_code=409, detail="No credential configured for this method")
-
-    credential = candidates[0]
-    reason = f"Connect: {method_id} on device #{device_id}"
-    secret_fields = service.reveal(credential, operator.username, reason)
-
-    audit_log(
-        db,
-        operator=operator,
-        action="vault_credential_revealed",
-        entity_type="vault_credential",
-        entity_id=credential.id,
-        details={"name": credential.name, "reason": reason,
-                 "method": method_id, "device_id": device_id},
-    )
-
-    return ConnectCredentialResponse(
-        username=credential.username,
-        password=secret_fields.get("password") or secret_fields.get("secret"),
-        credential_name=credential.name,
-        credential_source=tier,
     )

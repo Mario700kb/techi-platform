@@ -5,7 +5,36 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-08-06] CONNECT-CREDENTIAL-2026-08-06 — Connect hands over the stored WebFig/Winbox credential, gated and audited as a Vault reveal rather than around it
+## [2026-08-06] CONNECT-CREDENTIAL-2026-08-06 — Connect credential handover: built, shipped, then REMOVED the same day at the owner's request
+
+**STATUS: REVERTED.** Shipped as `41d3f65`, removed by revert a few hours later.
+Production never depended on it. This entry is kept so the decision is on the
+record and the feature is not proposed again without the reason being weighed.
+
+**Why it was removed.** The owner's goal was never "a credential on the
+clipboard" — it was *click once and be logged in*: **"une dua qe te shkoj direk
+user pass tek logini dhe une te klikoj vec login"**. Copying cannot deliver
+that, and it cannot be made to: the WebFig login form is served by the router,
+on a different origin, and the browser's same-origin policy absolutely forbids
+one page from writing into another origin's fields. The only two designs that
+would work are a server-side WebFig proxy or a local helper app.
+
+Weighed against that, the feature was paying a real cost for a partial result:
+it moved plaintext router passwords out of the Vault and onto an operator's
+clipboard on every connect. When the owner then ruled out the remaining path on
+exposure grounds — **"nuk me intereson te jemi te eksopuzuar ne sulme"** — the
+clipboard step had no destination it was leading to, so it came out.
+
+**What was NOT reverted:** the WebFig TLS work and the port-precedence decision
+(see the entry below). Those stand on their own.
+
+**If it is ever revisited**, the security reasoning below is the part worth
+keeping: the handover must never be served from the launch endpoint, and it is
+a Vault *reveal*, not a machine *use*.
+
+---
+
+Original entry follows.
 
 Operator request: *"me duhet te mari dhe user pas nga vault"*. WebFig and Winbox
 have no automated login, so the operator types the credential; until now the
