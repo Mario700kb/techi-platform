@@ -251,13 +251,14 @@ class TestMockupFidelity:
     def test_winbox_is_not_blocked_on_a_macos_operator(self, monkeypatch):
         """Changed 2026-08-06 (owner request). This used to assert that Winbox
         was reported "unavailable on this operating system" for a macOS
-        operator. That was true of Winbox 3 (Windows-only .exe) but not of
-        Winbox 4, which ships a native macOS build — and the operators here use
-        it on macOS daily, so the status was blocking a method that works.
+        operator. Winbox 4 ships a native macOS build and the operators here use
+        it daily, so the status was blocking a method they actually use.
 
-        The "never silently hide a method" rule from the approved V3 mockup is
-        untouched: the row is still present. It is simply no longer marked
-        unavailable for the wrong reason."""
+        Availability is not the same as launchability: WinBox.app 4.3 registers
+        no URL scheme, so `winbox://` never fires on macOS. The frontend handles
+        that by copying the address for a macOS operator instead of clicking a
+        dead link — the backend's job here is only to stop declaring the method
+        unavailable. The V3 rule "never silently hide a method" is untouched."""
         client, _ = _client(monkeypatch)
         methods = {m["id"]: m for m in client.get("/devices/3/connect-methods?client_os=macos").json()["methods"]}
         assert "winbox" in methods

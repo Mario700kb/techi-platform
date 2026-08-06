@@ -276,13 +276,26 @@ export default function ConnectMenu({
       const res = await fetchJson<{ url: string; surface: "desktop" | "browser" }>(
         `/api/v1/devices/${deviceId}/connect-methods/${m.id}/launch`,
       );
-      if (res.surface === "desktop") {
+      if (res.surface === "desktop" && m.id === "winbox" && operatorOS === "macos") {
+        // WinBox.app for macOS ships NO CFBundleURLTypes — verified against
+        // 4.3.102000 (com.mikrotik.winbox) — so it registers no scheme and a
+        // winbox:// link is a dead click there, unlike Windows where Winbox 4
+        // does register the handler. macOS operators open the app themselves,
+        // so hand them the address rather than pretending to launch it.
+        const address = res.url.replace(/^winbox:\/\//, "");
+        try {
+          await navigator.clipboard.writeText(address);
+          showNote(`Winbox has no macOS URL handler. Address copied — paste ${address} into WinBox.`);
+        } catch {
+          showNote(`Winbox has no macOS URL handler. Open WinBox and connect to ${address}.`);
+        }
+      } else if (res.surface === "desktop") {
         clickProtocolUrl(res.url);
         if (m.id === "winbox") {
-          // The browser cannot detect whether a winbox:// protocol handler
-          // exists, so this cannot claim success — but it must not read as an
-          // error either: it fires on every launch, including the ones that
-          // worked. State the handoff, then the remedy.
+          // The browser cannot detect whether the handler exists, so this
+          // cannot claim success — but it must not read as an error either: it
+          // fires on every launch, including the ones that worked. State the
+          // handoff, then the remedy.
           showNote("Opening Winbox… If nothing happened, install Winbox 4 — it registers the winbox:// handler.");
         }
       } else {

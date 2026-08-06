@@ -88,9 +88,14 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
     # SSH when it's Ready and falls back to WebFig otherwise.
     "mikrotik": (
         # No requires_client_os: Winbox 4 ships a native macOS build and
-        # operators here use it on both Windows and macOS, so gating the link to
-        # Windows disabled the method for half the operators who can actually
-        # run it.
+        # operators here use it on both Windows and macOS, so gating the method
+        # to Windows disabled one they use daily.
+        #
+        # The macOS build registers no URL scheme, though — WinBox.app 4.3
+        # (com.mikrotik.winbox) has no CFBundleURLTypes — so `winbox://` only
+        # launches on Windows. That is a launcher concern, not an availability
+        # one: the frontend copies the address for a macOS operator instead of
+        # firing a dead link, so the method stays genuinely usable there.
         ConnectMethod("winbox", "Winbox", SURFACE_DESKTOP, None, 10, scheme="winbox://",
                       transport="Desktop app",
                       category=CATEGORY_DESKTOP_APP),
