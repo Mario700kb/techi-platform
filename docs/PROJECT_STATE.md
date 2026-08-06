@@ -40,7 +40,8 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `b7598cb` — `feat(enrollment): place non-Windows platforms in their own group, and stop the token UI from disabling it` (deployed 2026-08-06 11:49 CEST; previous baseline `5a489eb`) |
+| Production SHA | `7a24229` — `fix(connect): dial the reachable address for network gear, and let operators pin host/port` (deployed 2026-08-06 12:52 CEST; earlier the same day `b7598cb`, previous baseline `5a489eb`) |
+| Schema version | `c7n1t8h5p2r6` (was `mrg8b3f1c2a9`) — adds nullable `devices.connect_host` / `connect_port`. Pre-migration dump: `/opt/backups/techi/postgres-MANUAL-pre-connect-target-20260806-124831.sql.gz` |
 | Working tree | Clean, verified 2026-08-06. One untracked artefact present and deliberately left: `.env.bak-terminal-scope-20260805-161934` |
 | Origin alignment | Aligned — origin, local and production all at `b7598cb`. The earlier note that origin led at `d44f354` is stale and was retired on 2026-08-06 |
 | Nearest release anchor | No immutable release tag exists at this SHA |
