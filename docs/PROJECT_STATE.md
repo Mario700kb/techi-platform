@@ -17,7 +17,7 @@
 | Field | Verified value |
 |---|---|
 | Documentation revision | `DOC-2026-08-06-MIKROTIKCONNECT` |
-| Production baseline SHA | `41d3f65` (see §3). Superseded `5a489eb` across four deploys on 2026-08-06; the earlier note about `d44f354` leading the branch is retired |
+| Production baseline SHA | `9c284d4` (see §3). Superseded `5a489eb` across four deploys on 2026-08-06; the earlier note about `d44f354` leading the branch is retired |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Live production verification dated 2026-08-05 |
 | Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
@@ -40,10 +40,10 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `41d3f65` — `feat(connect): hand over the stored WebFig/Winbox credential, as a gated Vault reveal` (deployed 2026-08-06 14:24 CEST; earlier the same day `3ea1938`, `79ddd8d`, `8d235f0`, `7a24229` and `b7598cb`, previous baseline `5a489eb`) |
+| Production SHA | `9c284d4` — `Revert "feat(connect): hand over the stored WebFig/Winbox credential…"` (deployed 2026-08-06 14:48 CEST; earlier the same day `41d3f65` and its revert, `3ea1938`, `79ddd8d`, `8d235f0`, `7a24229`, `b7598cb`, previous baseline `5a489eb`) |
 | Schema version | `c7n1t8h5p2r6` (was `mrg8b3f1c2a9`) — adds nullable `devices.connect_host` / `connect_port`. Pre-migration dump: `/opt/backups/techi/postgres-MANUAL-pre-connect-target-20260806-124831.sql.gz` |
 | Working tree | Clean, verified 2026-08-06. One untracked artefact present and deliberately left: `.env.bak-terminal-scope-20260805-161934` |
-| Origin alignment | Aligned — origin, local and production all at `41d3f65`. The earlier note that origin led at `d44f354` is stale and was retired on 2026-08-06 |
+| Origin alignment | Aligned — origin, local and production all at `9c284d4`. The earlier note that origin led at `d44f354` is stale and was retired on 2026-08-06 |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
