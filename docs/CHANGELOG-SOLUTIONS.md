@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-01] REPORTS-PRODUCTION-2026-10-01 — Client and Device Reports deployed
+
+Commit `dbf46c86b80f41baa068dd661a59c27155e2f214` was deployed from the
+previous production runtime commit `9c284d4dad89244c733e714d24919a11598ac30f`.
+Alembic advanced from `c7n1t8h5p2r6` to `d8e4f6a1b2c3`. A pre-deploy
+PostgreSQL dump was stored at
+`/opt/backups/techi/pre-reports-deploy-2026-10-01_08-46.sql.gz` (175,961,158
+bytes; `gzip -t` passed). Backend and frontend builds passed and both services,
+with PostgreSQL, were healthy with zero restarts after rollout.
+
+Five service-level production exports using an existing client and device
+passed: Client Full PDF/CSV, Device Full PDF, and Device Alerts PDF/CSV. Their
+stored files had the expected names, formats, nonzero sizes, history entries,
+repeat reads, and audit entries. Protected Reports history and download routes
+returned 401 without authentication. The browser runtime had no available
+session, so operator login, UI interactions, and secondary-operator scope were
+not live-tested. No recurring backend errors were seen in the post-deploy logs.
+
+Full Device Report is PDF only. Device category reports support PDF and CSV.
+Historical sections reflect the retained source data; software history is
+snapshot-limited. The frontend build reported 14 dependency audit findings
+(including five high severity) without failing the build; no dependency
+changes were made during this release. Exact rollback images from `9c284d4`
+were rebuilt and tagged `pre-reports-9c284d4` for backend and frontend. The
+database migration is additive; its downgrade intentionally refuses to run
+while device report rows exist.
+
 ## [2026-08-06] CONNECT-CREDENTIAL-2026-08-06 — Connect credential handover: built, shipped, then REMOVED the same day at the owner's request
 
 **STATUS: REVERTED.** Shipped as `41d3f65`, removed by revert a few hours later.

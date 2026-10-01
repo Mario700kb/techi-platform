@@ -16,12 +16,12 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-08-06-MIKROTIKCONNECT` |
-| Production baseline SHA | `9c284d4` (see §3). Superseded `5a489eb` across four deploys on 2026-08-06; the earlier note about `d44f354` leading the branch is retired |
+| Documentation revision | `DOC-2026-10-01-REPORTS` |
+| Production baseline SHA | `dbf46c8` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
-| Verified at | Live production verification dated 2026-08-05 |
-| Evidence source | Read-only production baseline audit; reconciliation events in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
-| Release classification | **PRODUCTION BASELINE VERIFIED** |
+| Verified at | Reports deployment and service-level verification dated 2026-10-01; prior component evidence retains its original dates |
+| Evidence source | Production Reports deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
+| Release classification | **REPORTS DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
 Current blockers to a clean immutable release baseline:
@@ -40,10 +40,10 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `9c284d4` — `Revert "feat(connect): hand over the stored WebFig/Winbox credential…"` (deployed 2026-08-06 14:48 CEST; earlier the same day `41d3f65` and its revert, `3ea1938`, `79ddd8d`, `8d235f0`, `7a24229`, `b7598cb`, previous baseline `5a489eb`) |
-| Schema version | `c7n1t8h5p2r6` (was `mrg8b3f1c2a9`) — adds nullable `devices.connect_host` / `connect_port`. Pre-migration dump: `/opt/backups/techi/postgres-MANUAL-pre-connect-target-20260806-124831.sql.gz` |
-| Working tree | Clean, verified 2026-08-06. One untracked artefact present and deliberately left: `.env.bak-terminal-scope-20260805-161934` |
-| Origin alignment | Aligned — origin, local and production all at `9c284d4`. The earlier note that origin led at `d44f354` is stale and was retired on 2026-08-06 |
+| Production SHA | `dbf46c8` — Reports Client + Device release, deployed 2026-10-01 08:55 UTC; previous runtime SHA `9c284d4` |
+| Schema version | `d8e4f6a1b2c3` (was `c7n1t8h5p2r6`) — adds device scope and type to `report_runs`. Pre-deploy dump: `/opt/backups/techi/pre-reports-deploy-2026-10-01_08-46.sql.gz` |
+| Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
+| Origin alignment | Target `dbf46c8` was pushed to origin and deployed. Production's origin-tracking ref remains at `9c284d4` because server-side GitHub fetch needs credentials; the target was verified and imported via Git bundle |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
@@ -53,8 +53,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `d6be4ef…`; image rebuilt from this SHA on 2026-08-03 | Running backend image; image hash is the secondary runtime identity | Service healthy, zero restarts after deploy | Verified baseline |
-| Frontend | `0.1.0` metadata | Git SHA `4aad118…`; build has no embedded Git SHA | Running frontend build | Service healthy | Verified baseline; build provenance gap remains |
+| Backend | `1.0.0` metadata | Git SHA `dbf46c8`; image `bfac9f9c…` | Running backend image; image hash is the secondary runtime identity | Service healthy, zero restarts after deploy | Health and Reports service smoke passed; authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `dbf46c8`; image `1dc89f30…` | Running frontend build | Service healthy | HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
@@ -72,7 +72,7 @@ Agent 2.1.20 is the production Agent version. The rollout is successful and the 
 | Backend | Healthy; zero restarts at audit time; source hash matches production SHA |
 | Frontend | Healthy; HTTP 200; zero restarts at audit time |
 | PostgreSQL | Healthy; zero restarts at audit time |
-| Health verification | `/health` OK; smoke tests 8/8; protected endpoints return 401 without authentication |
+| Health verification | `/health` OK; five Reports export service checks passed; protected Reports endpoints return 401 without authentication; authenticated browser smoke pending |
 | Agent package storage | **Correction (2026-08-05): packages are *not* served from the `/opt/techi/packages` bind mount.** `AGENT_PACKAGE_STORAGE_DIR` is the relative path `agent_packages`, which resolves against the container working directory `/app` — so the live store is `/app/agent_packages`, backed by the named volume `techi-platform_agent_packages` (durable across container recreates) and holding `manifest.json` plus `files/<package-id>/`. The `/opt/techi/packages` read-only bind mount still exists and contains `archive/`, `bootstrap/` and `windows/`, but nothing reads it at runtime; the previous baseline described it as the package mount, which is misleading. Manifest backups are kept alongside as `manifest.json.bak-*` |
 | Compose inventory | **Exactly three compose files, one per running project** (consolidated 2026-08-03): `/opt/techi/techi-platform/docker-compose.yml`, `/opt/techi/rustdesk-server/docker-compose.yml`, `/root/nginx-proxy-manager/docker-compose.yml`. Four stale duplicates were renamed to `*.DISABLED-20260803` rather than deleted — `/root/docker-compose.yml`, `/docker-compose.yml`, `/root/techi-canary-rollback-20260711T230221Z/docker-compose.yml` (all three byte-identical and lacking `init: true`) and `/opt/rustdesk/docker-compose.yml` (a duplicate RustDesk stack on the same ports). Hashes recorded in `/root/backups/compose-consolidation/RENAMED-20260803.txt`; reverse with `mv` |
 | Compose-label provenance | Backend/frontend label: `/opt/techi/techi-platform/docker-compose.yml`; PostgreSQL label still reads `/root/docker-compose.yml` (now disabled). Metadata only — verified 2026-08-03 that `docker compose up -d --dry-run` from `/opt` reports all three services *Running* with no recreate, so the label mismatch has no functional effect. Correcting it requires recreating the database container and belongs in its own window |
@@ -90,7 +90,7 @@ The edge absorption rule lives outside version control by necessity — nginx-pr
 |---|---|
 | Engine | PostgreSQL `15.18` |
 | Database | `techi` |
-| Production Alembic heads | `mrg8b3f1c2a9` — single head since 2026-08-03 (mergepoint over `d8e9f0a1b2c3` and `hb1x7k9n2q4d`) |
+| Production Alembic heads | `d8e4f6a1b2c3` — single head, verified 2026-10-01 |
 | Repository heads | Match production head |
 | Schema residue | `device_repair_count_reset_20260702` |
 | Logical database size | `techi` 1496 MB (measured 2026-08-03, after the index removal and vacuum below; was 1623 MB on 2026-07-29) |
@@ -105,7 +105,7 @@ Detailed migration history and SQL procedures are historical/reference material,
 
 ## 7. Active Components and Feature Flags
 
-**Snapshot source:** verified production audit associated with the 2026-07-26 baseline. These are runtime facts, not source-code defaults.
+**Snapshot source:** prior feature flags from the verified 2026-07-26 production audit; Reporting verified again on 2026-10-01. These are runtime facts, not source-code defaults.
 
 ### Enabled product features
 
@@ -115,6 +115,8 @@ Detailed migration history and SQL procedures are historical/reference material,
 - Reporting
 - Terminal
 - Vault
+
+Reporting now supports Client Full PDF/CSV, Device Full PDF, and Device category PDF/CSV. Generated files are stored for history and repeat download. Full Device CSV is unavailable because its sections have different table columns. Historical sections follow source retention; software data is a current snapshot where history is not stored. Service-level export checks passed on 2026-10-01; authenticated browser and secondary-operator scope checks remain pending.
 
 ### Disabled product features
 
