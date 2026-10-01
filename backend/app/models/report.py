@@ -1,6 +1,6 @@
 from enum import Enum
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.core.time import utcnow
 from app.db.base import Base
@@ -45,11 +45,20 @@ class ReportSchedule(Base):
 
 class ReportRun(Base):
     __tablename__ = "report_runs"
+    __table_args__ = (
+        CheckConstraint("scope_type IN ('client', 'device')", name="ck_report_runs_scope_type"),
+        CheckConstraint("(scope_type = 'client' AND client_id IS NOT NULL AND device_id IS NULL) OR (scope_type = 'device' AND device_id IS NOT NULL)", name="ck_report_runs_target"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     schedule_id = Column(Integer, ForeignKey("report_schedules.id", ondelete="SET NULL"), nullable=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
     client_name = Column(String(160), nullable=False)
+    scope_type = Column(String(16), nullable=False, default="client", server_default="client")
+    device_id = Column(Integer, nullable=True)
+    device_name = Column(String(160), nullable=True)
+    group_id = Column(Integer, nullable=True)
+    report_type = Column(String(32), nullable=False, default="full", server_default="full")
     report_format = Column(String(8), nullable=False)
     period_start = Column(DateTime, nullable=False)
     period_end = Column(DateTime, nullable=False)

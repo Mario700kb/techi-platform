@@ -3,14 +3,30 @@ import { API_BASE_URL, ApiError, fetchJson, getAuthToken } from "./client";
 export type ReportFormat = "pdf" | "csv";
 export type ReportCadence = "daily" | "weekly" | "monthly";
 export type ReportStatus = "pending" | "completed" | "failed";
+export type ReportScope = "client" | "device";
+export type ReportType = "full" | "overview" | "user_activity" | "status_uptime" | "health" | "alerts" | "actions" | "software" | "remote_support" | "assignments" | "notes" | "event_history";
+export interface GenerateReportPayload {
+  scope_type?: ReportScope;
+  client_id?: number;
+  device_id?: number;
+  report_type?: ReportType;
+  report_format: ReportFormat;
+  period_days?: number;
+  period_from?: string;
+  period_to?: string;
+}
 
 export interface ReportClient { id: number; name: string }
 
 export interface ReportRun {
   id: number;
   schedule_id?: number | null;
-  client_id: number;
+  client_id: number | null;
   client_name: string;
+  scope_type?: ReportScope;
+  device_id?: number | null;
+  device_name?: string | null;
+  report_type?: ReportType;
   report_format: ReportFormat;
   period_start: string;
   period_end: string;
@@ -58,7 +74,7 @@ export const getReportClients = () => fetchJson<ReportClient[]>("/api/v1/reports
 export const getReportRuns = () => fetchJson<{ items: ReportRun[]; total: number }>("/api/v1/reports/runs?limit=100");
 export const getReportSchedules = () => fetchJson<ReportSchedule[]>("/api/v1/reports/schedules");
 
-export function generateReport(payload: { client_id: number; report_format: ReportFormat; period_days: number }) {
+export function generateReport(payload: GenerateReportPayload) {
   return fetchJson<ReportRun>("/api/v1/reports/generate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });

@@ -6,6 +6,8 @@ import {
   getReportClients, getReportRuns, getReportSchedules, ReportCadence, ReportClient,
   ReportFormat, ReportRun, ReportSchedule, updateReportSchedule,
 } from "../api/reports";
+import type { ReportScope, ReportType } from "../api/reports";
+import { Device, getDevices } from "../api/devices";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import Badge from "../components/ui/Badge";
@@ -13,6 +15,15 @@ import Button from "../components/ui/Button";
 
 const fieldClass = "min-h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-techi-orange/60";
 const fieldStyle = { background: "var(--th-bg-input)", borderColor: "var(--th-border-input)", color: "var(--th-text-primary)" };
+const REPORT_TYPES: { value: ReportType; label: string }[] = [
+  { value: "full", label: "Full Report" }, { value: "overview", label: "Overview" },
+  { value: "user_activity", label: "User Activity" }, { value: "status_uptime", label: "Status / Uptime" },
+  { value: "health", label: "Health" }, { value: "alerts", label: "Alerts" },
+  { value: "actions", label: "Actions" }, { value: "software", label: "Software" },
+  { value: "remote_support", label: "Remote Support" }, { value: "assignments", label: "Assignments" },
+  { value: "notes", label: "Notes" }, { value: "event_history", label: "Event History" },
+];
+const reportLabel = (type?: ReportType) => REPORT_TYPES.find((item) => item.value === type)?.label ?? "Full Report";
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "—";
@@ -35,8 +46,17 @@ export default function Reports() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
+  const [scopeType, setScopeType] = useState<ReportScope>("client");
+  const [deviceId, setDeviceId] = useState("");
+  const [deviceQuery, setDeviceQuery] = useState("");
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [reportType, setReportType] = useState<ReportType>("full");
   const [reportFormat, setReportFormat] = useState<ReportFormat>("pdf");
   const [periodDays, setPeriodDays] = useState(30);
+  const [periodChoice, setPeriodChoice] = useState("30");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleName, setScheduleName] = useState("");
   const [cadence, setCadence] = useState<ReportCadence>("monthly");
@@ -59,6 +79,22 @@ export default function Reports() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (scopeType !== "device") return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setDevicesLoading(true);
+      getDevices({ search: deviceQuery || undefined }, 0, 100, controller.signal)
+        .then((result) => {
+          setDevices(result.devices);
+          setDeviceId((current) => result.devices.some((device) => String(device.id) === current) ? current : String(result.devices[0]?.id ?? ""));
+        })
+        .catch((err) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Unable to load devices"); })
+        .finally(() => { if (!controller.signal.aborted) setDevicesLoading(false); });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [scopeType, deviceQuery]);
+
   const stats = useMemo(() => ({
     completed: runs.filter((run) => run.status === "completed").length,
     failed: runs.filter((run) => run.status === "failed").length,
@@ -66,12 +102,24 @@ export default function Reports() {
   }), [runs, schedules]);
 
   async function handleGenerate() {
-    if (!clientId) return;
+    if (scopeType === "client" ? !clientId : !deviceId) return;
+    if (periodChoice === "custom" && (!customFrom || !customTo || customFrom > customTo)) {
+      setError("Select a valid custom date range."); return;
+    }
     setBusy(true); setError(null); setSuccess(null);
     try {
-      const run = await generateReport({ client_id: Number(clientId), report_format: reportFormat, period_days: periodDays });
+      const range = periodChoice === "custom" ? {
+        period_from: new Date(`${customFrom}T00:00:00Z`).toISOString(),
+        period_to: new Date(Math.min(Date.parse(`${customTo}T00:00:00Z`) + 86400000, Date.now())).toISOString(),
+      } : { period_days: Number(periodChoice) };
+      const run = await generateReport({
+        scope_type: scopeType,
+        ...(scopeType === "client" ? { client_id: Number(clientId) } : { device_id: Number(deviceId) }),
+        report_type: scopeType === "client" ? "full" : reportType,
+        report_format: reportFormat, ...range,
+      });
       setRuns((current) => [run, ...current]);
-      setSuccess(`${run.client_name} ${run.report_format.toUpperCase()} report is ready.`);
+      setSuccess(`${run.device_name || run.client_name} ${run.report_format.toUpperCase()} report is ready.`);
       await downloadReport(run);
     } catch (err) { setError(err instanceof Error ? err.message : "Report generation failed"); }
     finally { setBusy(false); }
@@ -127,7 +175,7 @@ export default function Reports() {
       <header className="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-techi-orange/15 text-techi-orange"><FileBarChart className="h-5 w-5" /></span>
-          <div><h1 className="text-xl font-bold" style={{ color: "var(--th-text-primary)" }}>Client Reports</h1><p className="mt-1 text-sm" style={{ color: "var(--th-text-muted)" }}>Fleet health and alert proof-of-value, on demand or scheduled.</p></div>
+          <div><h1 className="text-xl font-bold" style={{ color: "var(--th-text-primary)" }}>Reports</h1><p className="mt-1 text-sm" style={{ color: "var(--th-text-muted)" }}>Client and device reports, on demand or scheduled.</p></div>
         </div>
         <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
       </header>
@@ -140,16 +188,20 @@ export default function Reports() {
 
       <section className="premium-card p-4">
         <div className="mb-4 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Generate now</h2></div>
-        <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Client<select className={`${fieldClass} mt-1`} style={fieldStyle} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<select className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv">CSV</option></select></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<select className={`${fieldClass} mt-1`} style={fieldStyle} value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={365}>Last year</option></select></label>
-          <Button onClick={() => void handleGenerate()} disabled={busy || !clientId}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Generate</Button>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 md:items-end">
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Scope<select className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType} onChange={(event) => { setScopeType(event.target.value as ReportScope); setReportType("full"); if (event.target.value === "device") { setReportFormat("pdf"); if (periodChoice === "90" || periodChoice === "365") { setPeriodChoice("30"); setPeriodDays(30); } } }}><option value="client">Client</option><option value="device">Device</option></select></label>
+          {scopeType === "client" ? <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Client<select className={`${fieldClass} mt-1`} style={fieldStyle} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label> : <div className="space-y-1"><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Find device<input className={`${fieldClass} mt-1`} style={fieldStyle} value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder="Search name or IP" /></label><select aria-label="Device" className={fieldClass} style={fieldStyle} value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={devicesLoading}><option value="">{devicesLoading ? "Loading devices..." : "Select device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.display_name || device.hostname || `Device ${device.id}`} · {device.client_name || "Unassigned"} · #{device.id}</option>)}</select></div>}
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Report type<select className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}><option value="full">Full Report</option>{scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<select className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option></select></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<select className={`${fieldClass} mt-1`} style={fieldStyle} value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>{scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}<option value="custom">Custom date range</option></select></label>
+          {periodChoice === "custom" && <><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>From (UTC)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>To (UTC, inclusive)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label></>}
+          <Button onClick={() => void handleGenerate()} disabled={busy || (scopeType === "client" ? !clientId : !deviceId) || (scopeType === "device" && reportType === "full" && reportFormat === "csv")}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Generate</Button>
         </div>
+        {scopeType === "device" && <p className="mt-3 text-xs" style={{ color: "var(--th-text-muted)" }}>Full Device Report is PDF only because its sections have different table columns. Category reports support PDF and CSV. Historical sections show available records and retention notes; software and overview are current snapshots.</p>}
       </section>
 
       {isAdmin && <section className="premium-card p-4">
-        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Schedules</h2></div><Button size="sm" variant="secondary" onClick={() => setShowSchedule((value) => !value)}><Plus className="h-4 w-4" />New</Button></div>
+        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Client schedules</h2></div><Button size="sm" variant="secondary" onClick={() => setShowSchedule((value) => !value)}><Plus className="h-4 w-4" />New</Button></div>
         {showSchedule && <div className="mt-4 grid gap-3 rounded-xl border p-3 md:grid-cols-5 md:items-end" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-input)" }}>
           <label className="text-xs font-semibold md:col-span-2" style={{ color: "var(--th-text-secondary)" }}>Schedule name<input className={`${fieldClass} mt-1`} style={fieldStyle} value={scheduleName} maxLength={160} onChange={(event) => setScheduleName(event.target.value)} /></label>
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Cadence<select className={`${fieldClass} mt-1`} style={fieldStyle} value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
@@ -161,12 +213,12 @@ export default function Reports() {
 
       <section className="premium-card overflow-hidden">
         <div className="border-b p-4" style={{ borderColor: "var(--th-border-subtle)" }}><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Report history</h2></div>
-        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-techi-orange" /></div> : runs.length === 0 ? <p className="py-12 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>Generate the first client report to begin history.</p> : <div className="divide-y" style={{ borderColor: "var(--th-border-subtle)" }}>{runs.map((run) => <div key={run.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{run.client_name}</p><Badge variant={run.status === "completed" ? "primary" : run.status === "failed" ? "secondary" : "neutral"}>{run.status}</Badge><Badge variant="ghost">{run.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>{formatDate(run.created_at)} · {run.generated_by} · {formatBytes(run.size_bytes)}</p>{run.error_message && <p className="mt-1 text-xs text-red-300">{run.error_message}</p>}</div><div className="flex gap-2">{run.status === "completed" && <Button size="sm" variant="secondary" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}><Download className="h-4 w-4" />Download</Button>}{isAdmin && <Button size="sm" variant="ghost" onClick={() => setDeleteRunTarget(run)} aria-label={`Delete report ${run.client_name}`}><Trash2 className="h-4 w-4" /></Button>}</div></div>)}</div>}
+        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-techi-orange" /></div> : runs.length === 0 ? <p className="py-12 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>Generate the first report to begin history.</p> : <div className="divide-y" style={{ borderColor: "var(--th-border-subtle)" }}>{runs.map((run) => <div key={run.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{run.device_name || run.client_name}</p><Badge variant="ghost">{run.scope_type === "device" ? "Device" : "Client"}</Badge><Badge variant="ghost">{reportLabel(run.report_type)}</Badge><Badge variant={run.status === "completed" ? "primary" : run.status === "failed" ? "secondary" : "neutral"}>{run.status}</Badge><Badge variant="ghost">{run.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>Generated at {formatDate(run.completed_at || run.created_at)} · By {run.generated_by} · Size {formatBytes(run.size_bytes)}</p>{run.error_message && <p className="mt-1 text-xs text-red-300">{run.error_message}</p>}</div><div className="flex gap-2">{run.status === "completed" && <Button size="sm" variant="secondary" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}><Download className="h-4 w-4" />Download</Button>}{isAdmin && <Button size="sm" variant="ghost" onClick={() => setDeleteRunTarget(run)} aria-label={`Delete report ${run.device_name || run.client_name}`}><Trash2 className="h-4 w-4" /></Button>}</div></div>)}</div>}
       </section>
 
       {deleteTarget && <ConfirmationModal title="Delete report schedule" confirmLabel="Delete schedule" loading={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>This removes <strong>{deleteTarget.name}</strong>. Generated report history remains available.</p></ConfirmationModal>}
 
-      {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong>{deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
+      {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong>{deleteRunTarget.device_name || deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
     </div>
   );
 }

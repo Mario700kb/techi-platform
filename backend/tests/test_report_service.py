@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import re
 
 import pytest
 from sqlalchemy import create_engine
@@ -13,6 +14,8 @@ from app.models.alert import AlertSeverity, AlertState, DeviceAlert
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.report import ReportCadence, ReportRunStatus
+from app.models.device_activity_event import DeviceActivityEvent
+from app.models.device_note import DeviceNote
 from app.services.report_service import ReportService, next_schedule_time
 
 
@@ -55,11 +58,18 @@ def test_generate_client_report(report_format, signature, tmp_path, monkeypatch)
     content = ReportService.resolve_download_path(run).read_bytes()
     assert content.startswith(signature)
     assert run.size_bytes == len(content)
-    assert "Acme-Sons" in run.filename
+    assert run.filename.startswith("CLIENT_Acme-Sons_Full_")
+    assert run.filename.endswith(f".{report_format}")
     if report_format == "csv":
         decoded = content.decode("utf-8-sig")
         assert "ACME-SRV" in decoded
         assert "Device offline" in decoded
+    else:
+        assert b"Executive Summary" in content
+        assert b"Device Inventory" in content
+        assert b"Page 1" in content
+        assert b"Operator: mario" in content
+        assert len(re.findall(rb"/Type\s*/Page\b", content)) >= 2
 
 
 def test_generation_failure_is_persisted(tmp_path, monkeypatch):
@@ -102,3 +112,124 @@ def test_cleanup_removes_old_file_and_row(tmp_path, monkeypatch):
     db.commit()
     assert ReportService(db).cleanup_expired() == 1
     assert not path.exists()
+
+
+@pytest.mark.parametrize("report_type", [
+    "full", "overview", "user_activity", "status_uptime", "health", "alerts",
+    "actions", "software", "remote_support", "assignments", "notes", "event_history",
+])
+def test_generate_device_report_types(report_type, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    db = _db()
+    client, device = _seed(db)
+    db.add(DeviceActivityEvent(
+        device_id=device.id, event_type="user_changed", summary="User changed to ACME\\alice",
+        detail="Previous: ACME\\bob", actor="agent", occurred_at=utcnow(),
+    ))
+    db.commit()
+    end = utcnow()
+    run = ReportService(db).generate_device(
+        device_id=device.id, report_type=report_type, report_format="pdf",
+        period_start=end - timedelta(days=30), period_end=end, generated_by="mario",
+    )
+    assert run.status == "completed"
+    assert run.scope_type == "device"
+    assert run.device_id == device.id
+    assert run.client_id == client.id
+    content = ReportService.resolve_download_path(run).read_bytes()
+    assert content.startswith(b"%PDF-1.4")
+    assert b"TECHI PLATFORM" in content
+    assert b"Executive Summary" in content
+    assert b"Page 1" in content
+    assert run.filename.startswith(f"DEVICE_ACME-SRV_{report_type}_")
+    assert b"remote_support_password_ciphertext" not in content
+    if report_type in ("full", "user_activity"):
+        assert b"ACME" in content
+        assert b"Source retention is 7 days" in content
+
+
+@pytest.mark.parametrize("report_type", [
+    "overview", "user_activity", "status_uptime", "health", "alerts", "actions",
+    "software", "remote_support", "assignments", "notes", "event_history",
+])
+def test_device_category_csv_and_custom_range(report_type, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    db = _db()
+    _, device = _seed(db)
+    end = utcnow()
+    run = ReportService(db).generate_device(
+        device_id=device.id, report_type=report_type, report_format="csv",
+        period_start=end - timedelta(hours=24), period_end=end, generated_by="mario",
+    )
+    content = ReportService.resolve_download_path(run).read_bytes().decode("utf-8-sig")
+    assert run.filename.startswith(f"DEVICE_ACME-SRV_{report_type}_")
+    assert run.filename.endswith(".csv")
+    assert "TECHI Device Report" in content
+    assert "ACME-SRV" in content
+    assert "remote_support_password_ciphertext" not in content
+
+
+def test_full_device_report_redacts_known_secret_fields_and_note_values(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    db = _db()
+    _, device = _seed(db)
+    device.remote_support_password_ciphertext = "CIPHERTEXT-DO-NOT-EXPORT"
+    db.add(DeviceNote(device_id=device.id, note="password: hunter2", created_by="operator"))
+    db.commit()
+    end = utcnow()
+    run = ReportService(db).generate_device(
+        device_id=device.id, report_type="full", report_format="pdf",
+        period_start=end - timedelta(days=1), period_end=end, generated_by="mario",
+    )
+    content = ReportService.resolve_download_path(run).read_bytes()
+    assert b"hunter2" not in content
+    assert b"CIPHERTEXT-DO-NOT-EXPORT" not in content
+    assert b"[redacted]" in content
+
+
+@pytest.mark.parametrize("report_format", ["pdf", "csv"])
+def test_device_notes_export_redacts_pasted_secrets(tmp_path, monkeypatch, report_format):
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    db = _db()
+    _, device = _seed(db)
+    for note in (
+        "-----BEGIN PRIVATE KEY-----\nFAKE-PRIVATE-MATERIAL\n-----END PRIVATE KEY-----",
+        "Authorization: Bearer FAKE-TEST-TOKEN",
+        "wrapped_dek=FAKE-TEST-DEK",
+        "api_key: FAKE-TEST-KEY",
+        "=SUM(1+1)",
+    ):
+        db.add(DeviceNote(device_id=device.id, note=note, created_by="operator"))
+    db.commit()
+    end = utcnow()
+    run = ReportService(db).generate_device(
+        device_id=device.id, report_type="notes", report_format=report_format,
+        period_start=end - timedelta(days=1), period_end=end, generated_by="mario",
+    )
+    content = ReportService.resolve_download_path(run).read_bytes()
+    for secret in (b"FAKE-PRIVATE-MATERIAL", b"FAKE-TEST-TOKEN", b"FAKE-TEST-DEK", b"FAKE-TEST-KEY"):
+        assert secret not in content
+    assert b"[redacted]" in content
+    if report_format == "csv":
+        assert b"'=SUM(1+1)" in content
+
+
+@pytest.mark.parametrize("report_format", ["pdf", "csv"])
+def test_client_alert_export_redacts_secret_and_escapes_csv_formula(tmp_path, monkeypatch, report_format):
+    monkeypatch.setattr(settings, "REPORT_STORAGE_DIR", str(tmp_path))
+    db = _db()
+    client, device = _seed(db)
+    db.add_all([
+        DeviceAlert(device_id=device.id, kind="device_offline", severity=AlertSeverity.WARNING,
+                    state=AlertState.OPEN, message="Bearer FAKE-CLIENT-TOKEN", created_at=utcnow(), updated_at=utcnow()),
+        DeviceAlert(device_id=device.id, kind="device_offline", severity=AlertSeverity.WARNING,
+                    state=AlertState.OPEN, message="=SUM(1+1)", created_at=utcnow(), updated_at=utcnow()),
+    ])
+    db.commit()
+    run = ReportService(db).generate(client_id=client.id, report_format=report_format,
+                                      period_days=1, generated_by="mario")
+    content = ReportService.resolve_download_path(run).read_bytes()
+    assert b"FAKE-CLIENT-TOKEN" not in content
+    assert b"[redacted]" in content
+    if report_format == "csv":
+        assert b"'=SUM(1+1)" in content

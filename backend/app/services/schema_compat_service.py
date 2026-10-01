@@ -270,8 +270,13 @@ DEV_TABLES = {
         CREATE TABLE IF NOT EXISTS report_runs (
             id INTEGER PRIMARY KEY,
             schedule_id INTEGER,
-            client_id INTEGER NOT NULL,
+            client_id INTEGER,
             client_name VARCHAR(160) NOT NULL,
+            scope_type VARCHAR(16) NOT NULL DEFAULT 'client',
+            device_id INTEGER,
+            device_name VARCHAR(160),
+            group_id INTEGER,
+            report_type VARCHAR(32) NOT NULL DEFAULT 'full',
             report_format VARCHAR(8) NOT NULL,
             period_start DATETIME NOT NULL,
             period_end DATETIME NOT NULL,
@@ -283,6 +288,8 @@ DEV_TABLES = {
             generated_by VARCHAR(128) NOT NULL,
             created_at DATETIME NOT NULL,
             completed_at DATETIME,
+            CONSTRAINT ck_report_runs_scope_type CHECK (scope_type IN ('client', 'device')),
+            CONSTRAINT ck_report_runs_target CHECK ((scope_type = 'client' AND client_id IS NOT NULL AND device_id IS NULL) OR (scope_type = 'device' AND device_id IS NOT NULL)),
             FOREIGN KEY(schedule_id) REFERENCES report_schedules(id) ON DELETE SET NULL,
             FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
         )
@@ -337,6 +344,13 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "trusted_domains": TRUSTED_DOMAIN_COLUMNS,
         "vault_credentials": VAULT_CREDENTIAL_COLUMNS,
         "terminal_sessions": TERMINAL_SESSION_COLUMNS,
+        "report_runs": {
+            "scope_type": "VARCHAR(16) NOT NULL DEFAULT 'client'",
+            "device_id": "INTEGER",
+            "device_name": "VARCHAR(160)",
+            "group_id": "INTEGER",
+            "report_type": "VARCHAR(32) NOT NULL DEFAULT 'full'",
+        },
     }.items():
         if not inspector.has_table(table_name):
             continue

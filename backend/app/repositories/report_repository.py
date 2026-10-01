@@ -2,10 +2,12 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 
 from app.core.scope import AllowedScope
 from app.core.time import utcnow
 from app.models.client import Client
+from app.models.device import Device
 from app.models.report import ReportRun, ReportRunStatus, ReportSchedule
 
 
@@ -72,9 +74,23 @@ class ReportRunRepository:
     ) -> Tuple[List[ReportRun], int]:
         query = self.db.query(ReportRun)
         if scope is not None:
-            if not scope.client_ids:
+            if scope.is_empty():
                 return [], 0
-            query = query.filter(ReportRun.client_id.in_(scope.client_ids))
+            device_access = self.db.query(Device.id).filter(
+                Device.id == ReportRun.device_id,
+                or_(Device.client_id == ReportRun.client_id, and_(Device.client_id.is_(None), ReportRun.client_id.is_(None))),
+                or_(Device.group_id == ReportRun.group_id, and_(Device.group_id.is_(None), ReportRun.group_id.is_(None))),
+            ).filter(
+                or_(
+                    Device.client_id.in_(scope.client_ids),
+                    Device.group_id.in_(scope.group_ids),
+                    Device.id.in_(scope.device_ids),
+                )
+            ).exists()
+            query = query.filter(or_(
+                and_(ReportRun.scope_type == "client", ReportRun.client_id.in_(scope.client_ids)),
+                and_(ReportRun.scope_type == "device", device_access),
+            ))
         if client_id is not None:
             query = query.filter(ReportRun.client_id == client_id)
         if status is not None:

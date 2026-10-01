@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -6,9 +7,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
-from app.core.scope import AllowedScope
+from app.core.scope import AllowedScope, device_in_scope
+from app.core.time import utcnow
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
+from app.models.device import Device
 from app.models.report import ReportRunStatus
 from app.platform_core.flags import feature_enabled
 from app.repositories.client_repository import ClientRepository
@@ -44,6 +47,22 @@ def _ensure_client_scope(client_id: int, scope: Optional[AllowedScope]) -> None:
         raise HTTPException(status_code=404, detail="Client not found")
 
 
+def _ensure_device_scope(device_id: int, db: Session, scope: Optional[AllowedScope]) -> Device:
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None or not device_in_scope(device.client_id, device.group_id, device.id, scope):
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+def _ensure_run_scope(run, db: Session, scope: Optional[AllowedScope]) -> None:
+    if run.scope_type == "device":
+        device = _ensure_device_scope(run.device_id, db, scope)
+        if scope is not None and (device.client_id != run.client_id or device.group_id != run.group_id):
+            raise HTTPException(status_code=404, detail="Report not found")
+    else:
+        _ensure_client_scope(run.client_id, scope)
+
+
 def _schedule_out(schedule, client_name: str) -> ReportScheduleOut:
     return ReportScheduleOut(
         id=schedule.id, name=schedule.name, client_id=schedule.client_id, client_name=client_name,
@@ -73,28 +92,41 @@ def generate_report(
     operator: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
-    _ensure_client_scope(payload.client_id, scope)
+    if payload.scope_type == "device":
+        _ensure_device_scope(payload.device_id, db, scope)
+    else:
+        _ensure_client_scope(payload.client_id, scope)
     service = ReportService(db)
     try:
-        run = service.generate(
-            client_id=payload.client_id,
-            report_format=payload.report_format.value,
-            period_days=payload.period_days,
-            generated_by=operator.username,
-        )
+        end = payload.period_to or utcnow()
+        start = payload.period_from or end - timedelta(days=payload.period_days)
+        if payload.scope_type == "device":
+            run = service.generate_device(
+                device_id=payload.device_id, report_type=payload.report_type,
+                report_format=payload.report_format.value, period_start=start,
+                period_end=end, generated_by=operator.username,
+            )
+        else:
+            run = service.generate(
+                client_id=payload.client_id, report_format=payload.report_format.value,
+                period_days=payload.period_days, generated_by=operator.username,
+                period_start=payload.period_from, period_end=payload.period_to,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception:
         audit_log(
             db, operator=operator, action=AuditAction.REPORT_GENERATION_FAILED,
-            entity_type="client", entity_id=payload.client_id,
-            details={"format": payload.report_format.value},
+            entity_type=payload.scope_type, entity_id=payload.device_id or payload.client_id,
+            details={"format": payload.report_format.value, "report_type": payload.report_type},
         )
         raise HTTPException(status_code=500, detail="Report generation failed")
     audit_log(
         db, operator=operator, action=AuditAction.REPORT_GENERATED,
         entity_type="report_run", entity_id=run.id,
-        details={"client_id": run.client_id, "format": run.report_format, "period_days": payload.period_days},
+        details={"client_id": run.client_id, "device_id": run.device_id, "scope_type": run.scope_type,
+                 "report_type": run.report_type, "format": run.report_format,
+                 "period_from": run.period_start.isoformat(), "period_to": run.period_end.isoformat()},
     )
     return run
 
@@ -129,7 +161,7 @@ def download_report(
     run = ReportRunRepository(db).get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Report not found")
-    _ensure_client_scope(run.client_id, scope)
+    _ensure_run_scope(run, db, scope)
     try:
         path = ReportService.resolve_download_path(run)
     except FileNotFoundError as exc:
@@ -137,7 +169,7 @@ def download_report(
     audit_log(
         db, operator=operator, action=AuditAction.REPORT_DOWNLOADED,
         entity_type="report_run", entity_id=run.id,
-        details={"client_id": run.client_id, "format": run.report_format},
+        details={"client_id": run.client_id, "device_id": run.device_id, "report_type": run.report_type, "format": run.report_format},
     )
     media_type = "application/pdf" if run.report_format == "pdf" else "text/csv; charset=utf-8"
     return FileResponse(path, media_type=media_type, filename=run.filename)
@@ -154,8 +186,8 @@ def delete_run(
     run = repo.get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Report not found")
-    _ensure_client_scope(run.client_id, scope)
-    details = {"client_id": run.client_id, "format": run.report_format, "schedule_id": run.schedule_id}
+    _ensure_run_scope(run, db, scope)
+    details = {"client_id": run.client_id, "device_id": run.device_id, "format": run.report_format, "schedule_id": run.schedule_id}
     ReportService(db).delete_run(run)
     audit_log(
         db, operator=operator, action=AuditAction.REPORT_RUN_DELETED,

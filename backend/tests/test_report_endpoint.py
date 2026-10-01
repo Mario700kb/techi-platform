@@ -72,6 +72,8 @@ def test_generate_list_download_and_audit(monkeypatch, tmp_path):
     download = client.get(f"/runs/{run['id']}/download")
     assert download.status_code == 200
     assert download.content.startswith(b"%PDF")
+    assert client.get(f"/runs/{run['id']}/download").content == download.content
+    assert client.get("/runs").json()["items"][0]["filename"] == run["filename"]
     actions = {row.action for row in db.query(AuditLog).all()}
     assert {"report_generated", "report_downloaded"} <= actions
 
@@ -187,3 +189,85 @@ def test_delete_run_respects_client_scope(monkeypatch, tmp_path):
 def test_delete_run_missing_returns_404(monkeypatch, tmp_path):
     client, _, _, _ = _client(monkeypatch, tmp_path)
     assert client.delete("/runs/999999").status_code == 404
+
+
+def test_device_generate_history_download_obey_device_scope(monkeypatch, tmp_path):
+    admin, db, c1, _ = _client(monkeypatch, tmp_path)
+    first = db.query(Device).filter(Device.client_id == c1.id).first()
+    second = Device(hostname="SECOND", client_id=c1.id)
+    db.add(second)
+    db.commit()
+    db.refresh(second)
+    payload = {"scope_type": "device", "device_id": first.id, "report_type": "full", "report_format": "pdf", "period_days": 30}
+    created = admin.post("/generate", json=payload)
+    assert created.status_code == 200, created.text
+    run = created.json()
+    assert run["device_id"] == first.id
+    assert run["report_type"] == "full"
+    assert admin.get(f"/runs/{run['id']}/download").status_code == 200
+
+    scoped = _client_reusing_db(db, role="operator", scope=AllowedScope(device_ids=frozenset({second.id})))
+    assert scoped.post("/generate", json=payload).status_code == 404
+    assert scoped.get("/runs").json()["total"] == 0
+    assert scoped.get(f"/runs/{run['id']}/download").status_code == 404
+    assert scoped.delete(f"/runs/{run['id']}").status_code == 403
+
+    allowed = _client_reusing_db(db, role="operator", scope=AllowedScope(device_ids=frozenset({first.id})))
+    assert allowed.get("/runs").json()["total"] == 1
+    assert allowed.get(f"/runs/{run['id']}/download").status_code == 200
+    assert allowed.post("/generate", json={**payload, "report_type": "full", "report_format": "csv"}).status_code == 422
+    assert allowed.post("/generate", json={**payload, "device_id": 999999}).status_code == 404
+    assert allowed.post("/generate", json={**payload, "period_from": "2026-09-01T00:00:00Z"}).status_code == 422
+
+    logs = db.query(AuditLog).filter(AuditLog.action == "report_generated").all()
+    assert any('"device_id":' in (log.details_json or "") for log in logs)
+
+
+def test_device_custom_range_and_legacy_client_row(monkeypatch, tmp_path):
+    client, db, c1, _ = _client(monkeypatch, tmp_path)
+    device = db.query(Device).filter(Device.client_id == c1.id).first()
+    response = client.post("/generate", json={
+        "scope_type": "device", "device_id": device.id, "report_type": "alerts",
+        "report_format": "csv", "period_from": "2026-09-01T00:00:00Z",
+        "period_to": "2026-09-02T00:00:00Z",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["period_start"].startswith("2026-09-01")
+    legacy = client.post("/generate", json={"client_id": c1.id, "report_format": "pdf"})
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["scope_type"] == "client"
+    assert legacy.json()["report_type"] == "full"
+    assert client.get("/runs").json()["total"] == 2
+
+
+def test_group_only_scope_can_report_its_device_without_client_export(monkeypatch, tmp_path):
+    client, db, c1, _ = _client(monkeypatch, tmp_path)
+    device = db.query(Device).filter(Device.client_id == c1.id).first()
+    device.group_id = 42
+    db.commit()
+    group_client = _client_reusing_db(db, role="operator", scope=AllowedScope(group_ids=frozenset({42})))
+    payload = {"scope_type": "device", "device_id": device.id, "report_type": "overview", "report_format": "csv"}
+    response = group_client.post("/generate", json=payload)
+    assert response.status_code == 200, response.text
+    assert group_client.get("/runs").json()["total"] == 1
+    assert group_client.get(f"/runs/{response.json()['id']}/download").status_code == 200
+    assert group_client.post("/generate", json={"client_id": c1.id}).status_code == 404
+
+
+def test_device_move_does_not_expose_old_report_to_new_group(monkeypatch, tmp_path):
+    admin, db, c1, _ = _client(monkeypatch, tmp_path)
+    device = db.query(Device).filter(Device.client_id == c1.id).first()
+    device.group_id = 10
+    db.commit()
+    generated = admin.post("/generate", json={
+        "scope_type": "device", "device_id": device.id,
+        "report_type": "overview", "report_format": "pdf",
+    })
+    assert generated.status_code == 200, generated.text
+    run_id = generated.json()["id"]
+    device.group_id = 11
+    db.commit()
+    new_group = _client_reusing_db(db, role="operator", scope=AllowedScope(group_ids=frozenset({11})))
+    assert new_group.get("/runs").json()["total"] == 0
+    assert new_group.get(f"/runs/{run_id}/download").status_code == 404
+    assert admin.get(f"/runs/{run_id}/download").status_code == 200

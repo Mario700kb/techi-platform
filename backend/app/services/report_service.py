@@ -2,7 +2,6 @@ import csv
 import io
 import logging
 import re
-import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -13,6 +12,11 @@ from app.core.config import settings
 from app.core.scope import AllowedScope
 from app.core.time import utcnow
 from app.models.report import ReportCadence, ReportFormat, ReportRun, ReportRunStatus, ReportSchedule
+from app.models.device import Device
+from app.models.device_group import DeviceGroup
+from app.services.device_report import SECTION_ORDER, SECTION_TITLES, build_device_snapshot, device_csv
+from app.services.report_output import csv_cell, safe_text
+from app.services.report_pdf import render_report_pdf
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_repository import DeviceRepository
@@ -61,57 +65,6 @@ def _safe_name(value: str) -> str:
     return compact[:80] or "client"
 
 
-def _pdf_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _simple_pdf(lines: list[str]) -> bytes:
-    """Create a dependency-free, standards-compliant, paginated PDF.
-
-    Reporting stays deployable without a second rendering service or browser.
-    The layout is intentionally text-first so every value remains selectable.
-    """
-    wrapped: list[str] = []
-    for line in lines:
-        wrapped.extend(textwrap.wrap(str(line), width=94, replace_whitespace=False) or [""])
-    pages = [wrapped[i:i + 48] for i in range(0, len(wrapped), 48)] or [[""]]
-    objects: list[bytes] = []
-    page_ids = [4 + index * 2 for index in range(len(pages))]
-    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-    objects.append(f"<< /Type /Pages /Kids [{' '.join(f'{pid} 0 R' for pid in page_ids)}] /Count {len(pages)} >>".encode())
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    for index, page_lines in enumerate(pages):
-        page_id = page_ids[index]
-        content_id = page_id + 1
-        stream_parts = ["BT", "/F1 9 Tf", "48 744 Td", "12 TL"]
-        for line_index, line in enumerate(page_lines):
-            if line_index:
-                stream_parts.append("T*")
-            stream_parts.append(f"({_pdf_escape(line)}) Tj")
-        stream_parts.append("ET")
-        stream = "\n".join(stream_parts).encode("latin-1", errors="replace")
-        objects.append(
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>".encode()
-        )
-        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
-
-    output = io.BytesIO()
-    output.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for number, obj in enumerate(objects, start=1):
-        offsets.append(output.tell())
-        output.write(f"{number} 0 obj\n".encode())
-        output.write(obj)
-        output.write(b"\nendobj\n")
-    xref = output.tell()
-    output.write(f"xref\n0 {len(objects) + 1}\n".encode())
-    output.write(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        output.write(f"{offset:010d} 00000 n \n".encode())
-    output.write(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
-    return output.getvalue()
-
-
 class ReportService:
     def __init__(self, db: Session):
         self.db = db
@@ -130,12 +83,13 @@ class ReportService:
         generated_by: str,
         schedule_id: Optional[int] = None,
         period_end: Optional[datetime] = None,
+        period_start: Optional[datetime] = None,
     ) -> ReportRun:
         client = self.client_or_none(client_id)
         if client is None or not client.is_active:
             raise ValueError("Client not found")
         end = period_end or utcnow()
-        start = end - timedelta(days=period_days)
+        start = period_start or end - timedelta(days=period_days)
         run = self.runs.create(
             schedule_id=schedule_id,
             client_id=client.id,
@@ -147,9 +101,9 @@ class ReportService:
             generated_by=generated_by,
         )
         try:
-            snapshot = self._snapshot(client.id, client.name, start, end)
+            snapshot = self._snapshot(client.id, client.name, start, end, generated_by)
             content = self._render(snapshot, report_format)
-            filename = f"techi-{_safe_name(client.name)}-{end:%Y%m%d-%H%M%S}.{report_format}"
+            filename = f"CLIENT_{_safe_name(safe_text(client.name))}_Full_{snapshot['generated_at']:%Y%m%d_%H%M}.{report_format}"
             storage_root = Path(settings.REPORT_STORAGE_DIR).resolve()
             storage_root.mkdir(parents=True, exist_ok=True)
             path = storage_root / f"{run.id}-{filename}"
@@ -162,7 +116,55 @@ class ReportService:
             self.runs.mark_failed(run, str(exc) or exc.__class__.__name__)
             raise
 
-    def _snapshot(self, client_id: int, client_name: str, start: datetime, end: datetime) -> dict:
+    def generate_device(
+        self, *, device_id: int, report_type: str, report_format: str,
+        period_start: datetime, period_end: datetime, generated_by: str,
+    ) -> ReportRun:
+        device = self.db.query(Device).filter(Device.id == device_id).first()
+        if device is None:
+            raise ValueError("Device not found")
+        client = self.client_or_none(device.client_id) if device.client_id else None
+        client_name = client.name if client else "Unassigned"
+        group = self.db.query(DeviceGroup).filter(DeviceGroup.id == device.group_id).first() if device.group_id else None
+        device_name = device.hostname or device.display_name or f"Device #{device.id}"
+        run = self.runs.create(
+            client_id=client.id if client else None,
+            client_name=client_name, scope_type="device", device_id=device.id,
+            device_name=device_name, group_id=device.group_id, report_type=report_type,
+            report_format=report_format, period_start=period_start, period_end=period_end,
+            status=ReportRunStatus.PENDING.value, generated_by=generated_by,
+        )
+        try:
+            snapshot = build_device_snapshot(
+                self.db, device, client_name, group.name if group else "Unassigned",
+                report_type, period_start, period_end, generated_by,
+            )
+            if report_format == ReportFormat.PDF.value:
+                content = render_report_pdf(
+                    scope="device", target=snapshot["device_name"],
+                    report_type=SECTION_TITLES.get(report_type, report_type),
+                    period_start=period_start, period_end=period_end,
+                    generated_at=snapshot["generated_at"], generated_by=generated_by,
+                    summary=[(key.replace("_", " ").title(), value) for key, value in snapshot["summary"].items()],
+                    sections=[(SECTION_TITLES[key], section["headers"], section["rows"], section["note"])
+                              for key in SECTION_ORDER if (section := snapshot["sections"].get(key)) is not None],
+                )
+            elif report_format == ReportFormat.CSV.value and report_type != "full":
+                content = device_csv(snapshot)
+            else:
+                raise ValueError("Unsupported device report format")
+            filename = f"DEVICE_{_safe_name(safe_text(device_name))}_{report_type}_{snapshot['generated_at']:%Y%m%d_%H%M}.{report_format}"
+            root = Path(settings.REPORT_STORAGE_DIR).resolve()
+            root.mkdir(parents=True, exist_ok=True)
+            path = root / f"{run.id}-{filename}"
+            path.write_bytes(content)
+            return self.runs.mark_completed(run, filename=filename, storage_path=str(path), size_bytes=len(content))
+        except Exception as exc:
+            logger.exception("Device report generation failed run=%s device=%s", run.id, device_id)
+            self.runs.mark_failed(run, str(exc) or exc.__class__.__name__)
+            raise
+
+    def _snapshot(self, client_id: int, client_name: str, start: datetime, end: datetime, generated_by: str) -> dict:
         scope = AllowedScope(client_ids=frozenset({client_id}))
         overview = DeviceOverviewService(self.db).get_overview(scope)
         devices = DeviceRepository(self.db).get_multi(client_id=client_id, limit=10000, scope=scope)
@@ -175,6 +177,7 @@ class ReportService:
             "period_start": start,
             "period_end": end,
             "generated_at": utcnow(),
+            "generated_by": generated_by,
             "overview": overview,
             "devices": devices,
             "alerts": alerts,
@@ -195,9 +198,10 @@ class ReportService:
         output = io.StringIO(newline="")
         writer = csv.writer(output)
         overview = snapshot["overview"]
-        writer.writerow(["TECHI Client Fleet Report", snapshot["client_name"]])
+        writer.writerow(["TECHI Client Fleet Report", csv_cell(snapshot["client_name"])])
         writer.writerow(["Period", snapshot["period_start"].isoformat(), snapshot["period_end"].isoformat()])
         writer.writerow(["Generated UTC", snapshot["generated_at"].isoformat()])
+        writer.writerow(["Generated By", csv_cell(snapshot["generated_by"])])
         writer.writerow([])
         writer.writerow(["Fleet summary"])
         writer.writerow(["Total", "Online", "Stale", "Offline", "Average health", "Critical health", "Warnings", "Needs updates"])
@@ -211,9 +215,9 @@ class ReportService:
         writer.writerow(["Hostname", "Status", "Platform", "OS", "Agent version", "Local IP", "Public IP", "Last seen"])
         for device in snapshot["devices"]:
             writer.writerow([
-                device.display_name or device.hostname, _value(device.status), device.platform or "windows",
-                device.os_caption or device.os_name or "", device.agent_version or "", device.local_ip or "",
-                device.public_ip or "", device.last_seen.isoformat() if device.last_seen else "",
+                csv_cell(device.display_name or device.hostname), csv_cell(_value(device.status)), csv_cell(device.platform or "windows"),
+                csv_cell(device.os_caption or device.os_name or ""), csv_cell(device.agent_version or ""), csv_cell(device.local_ip or ""),
+                csv_cell(device.public_ip or ""), device.last_seen.isoformat() if device.last_seen else "",
             ])
         writer.writerow([])
         writer.writerow(["Alert activity"])
@@ -223,7 +227,7 @@ class ReportService:
         for alert in snapshot["alerts"]:
             writer.writerow([
                 alert.created_at.isoformat(), alert.device_id, _value(alert.severity), _value(alert.kind),
-                _value(alert.state), alert.message,
+                _value(alert.state), csv_cell(alert.message),
             ])
         return output.getvalue().encode("utf-8-sig")
 
@@ -231,39 +235,27 @@ class ReportService:
     def _render_pdf(snapshot: dict) -> bytes:
         overview = snapshot["overview"]
         counts = snapshot["alert_counts"]
-        lines = [
-            "TECHI PLATFORM — CLIENT FLEET REPORT",
-            f"Client: {snapshot['client_name']}",
-            f"Reporting period: {snapshot['period_start']:%Y-%m-%d} to {snapshot['period_end']:%Y-%m-%d} (UTC)",
-            f"Generated: {snapshot['generated_at']:%Y-%m-%d %H:%M UTC}",
-            "",
-            "FLEET HEALTH",
-            f"Total devices: {overview.stats.total} | Online: {overview.stats.online} | Stale: {overview.stats.stale} | Offline: {overview.stats.offline}",
-            f"Average health: {overview.average_health if overview.average_health is not None else 'N/A'} | Critical: {overview.critical} | Warning: {overview.warnings}",
-            f"Needs OS updates: {overview.needs_updates} | Outdated agents: {overview.agents_outdated}",
-            "",
-            "ALERT ACTIVITY",
-            f"Alerts in period: {counts.get('total', 0)} | Open in exported activity: {len(snapshot['open_alerts'])} | Critical: {counts.get('critical', 0)} | Warning: {counts.get('warning', 0)}",
-            "",
-            "DEVICE INVENTORY",
+        summary = [
+            ("Total devices", overview.stats.total), ("Online / stale / offline", f"{overview.stats.online} / {overview.stats.stale} / {overview.stats.offline}"),
+            ("Average health", overview.average_health if overview.average_health is not None else "N/A"),
+            ("Critical / warning", f"{overview.critical} / {overview.warnings}"),
+            ("Alerts in period", counts.get("total", 0)), ("Open alerts in exported activity", len(snapshot["open_alerts"])),
         ]
-        for device in snapshot["devices"]:
-            lines.append(
-                f"{device.display_name or device.hostname} | {_value(device.status)} | {device.platform or 'windows'} | "
-                f"{device.os_caption or device.os_name or 'Unknown OS'} | Agent {device.agent_version or 'unknown'} | "
-                f"Last seen {device.last_seen:%Y-%m-%d %H:%M UTC}" if device.last_seen else
-                f"{device.display_name or device.hostname} | {_value(device.status)} | {device.platform or 'windows'} | Never seen"
-            )
-        if snapshot["alerts"]:
-            lines.extend(["", "RECENT ALERTS"])
-            for alert in snapshot["alerts"][:100]:
-                lines.append(
-                    f"{alert.created_at:%Y-%m-%d} | {_value(alert.severity).upper()} | Device {alert.device_id} | {_value(alert.kind)} | {alert.message}"
-                )
-            if snapshot["alerts_truncated"]:
-                lines.append(f"Detail is limited to the most recent {len(snapshot['alerts'])} alert rows; summary totals remain complete.")
-        lines.extend(["", "Generated by TECHI Platform. Values reflect the fleet snapshot at generation time."])
-        return _simple_pdf(lines)
+        devices = [[d.display_name or d.hostname, _value(d.status), d.platform or "windows",
+                    d.os_caption or d.os_name or "", d.agent_version or "",
+                    d.last_seen.strftime("%Y-%m-%d %H:%M") if d.last_seen else "Never"] for d in snapshot["devices"]]
+        alerts = [[a.created_at.strftime("%Y-%m-%d %H:%M"), a.device_id, _value(a.severity),
+                   _value(a.kind), _value(a.state), a.message] for a in snapshot["alerts"]]
+        return render_report_pdf(
+            scope="client", target=snapshot["client_name"], report_type="Full",
+            period_start=snapshot["period_start"], period_end=snapshot["period_end"],
+            generated_at=snapshot["generated_at"], generated_by=snapshot["generated_by"],
+            summary=summary, sections=[
+                ("Device Inventory", ["Hostname", "Status", "Platform", "OS", "Agent", "Last seen"], devices, "Current fleet snapshot."),
+                ("Alert Activity", ["Created UTC", "Device ID", "Severity", "Kind", "State", "Message"], alerts,
+                 f"Showing {len(alerts)} of {counts.get('total', 0)} alerts." if snapshot["alerts_truncated"] else "Alerts opened in the reporting period."),
+            ],
+        )
 
     def create_schedule(self, **values) -> ReportSchedule:
         values["next_run_at"] = next_schedule_time(
