@@ -361,7 +361,7 @@ mbi `#FFFFFF` dhe `#F4F4F6`. Statuset nuk vijnë më nga Tailwind.
 | `--th-accent` | `#E85A3C` | `#B6432B` | I VETMI accent (Friday `--coral`; zëvendëson #f97316/#fb923c në mobile) |
 | `--th-accent-glow` | `rgba(232,90,60,.12)` | `rgba(182,67,43,.10)` | sfonde aktive (token ekzistues, ripërdoret) |
 | `--th-accent-border` | `rgba(232,90,60,.30)` | `rgba(182,67,43,.28)` | kufij aktivë (token ekzistues, ripërdoret) |
-| `--th-status-online` | `#5E8F6C` | `#4D7559` | status — Friday "OK" `#5C8C6A` (+2% dritë për AA mbi kartë) |
+| `--th-status-online` | `#5BD096` | `#1B7F4E` | status — jeshile e ndezur (familja e "Synced" `#8FD8B2`; Friday `#5C8C6A` dilte shumë e zbehtë, ndryshuar me kërkesë të pronarit 2026-10-05) |
 | `--th-status-stale` | `#C8A000` | `#856A00` | status — Friday `--warn` |
 | `--th-status-offline` | `#A0A0AA` | `#6B6B75` | status — Friday `--text-muted` |
 | `--th-status-critical` | `#F04A2A` | `#C82C0E` | severity — Friday "Critical" |

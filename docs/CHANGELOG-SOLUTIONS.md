@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] ONLINE-GREEN-2026-10-05 — "Online" green made vivid at the owner's request
+
+Owner: the green for ONLINE, the agent version badge and "Last seen" looked
+too faded and should glow like the "Synced" badge. Measured from
+screenshots: the ONLINE number rendered `#8BAE96` (`text-emerald-300` =
+70% `#5E8F6C` + 30% ink); "Synced" (`.premium-status-online`) is `#8FD8B2`.
+Friday's OK tone `#5E8F6C` is too grey to carry a lively green. Changed
+`--th-status-online` dark `#5E8F6C` → `#5BD096` (300 shade `#89DBB3` ≈
+"Synced"; 9:1 on cards) and light `#4D7559` → `#1B7F4E` (5.0:1 on white,
+4.6:1 on page). `.premium-status-online` tint follows the new hue.
+
 ## [2026-10-05] DEPLOY-TIRANA-2026-10-05 — Tirana time system-wide + top bar clock deployed (`f3416f7` → `f19b4ff`), host timezone set to Europe/Tirane
 
 The owner approved both the deploy and the host timezone change ("po, po").

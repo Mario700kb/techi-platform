@@ -126,7 +126,7 @@
   /* Mobile UI 2.0 tokens (MOBILE-DESIGN-SPEC.md — Design System/Colors).
      Status tones follow the Friday chat palette (OK / Watch / Critical /
      Neutral + chart series), not Tailwind. */
-  --th-status-online:   #5E8F6C;
+  --th-status-online:   #5BD096;  /* owner: vivid, matches the "Synced" #8FD8B2 family */
   --th-status-stale:    #C8A000;
   --th-status-offline:  #A0A0AA;
   --th-status-critical: #F04A2A;
@@ -210,7 +210,7 @@ html.light {
   --th-btn-danger-hover:    rgba(200, 44, 14, 0.14);
 
   /* Mobile UI 2.0 tokens — Friday tones darkened for AA (≥4.5:1) on light. */
-  --th-status-online:   #4D7559;
+  --th-status-online:   #1B7F4E;
   --th-status-stale:    #856A00;
   --th-status-offline:  #6B6B75;
   --th-status-critical: #C82C0E;
@@ -750,8 +750,8 @@ html.light .drawer-table-head {
   /* ── Status colors ── */
   .premium-status-online {
     color: #8FD8B2;
-    background: rgba(92, 140, 106, 0.12);
-    border-color: rgba(92, 140, 106, 0.28);
+    background: rgba(91, 208, 150, 0.12);
+    border-color: rgba(91, 208, 150, 0.28);
   }
 
   html.light .premium-status-online { color: var(--th-status-online); }
