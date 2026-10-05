@@ -1,5 +1,6 @@
 import { Moon, PanelLeftClose, PanelLeftOpen, Sun } from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
+import TopbarClock from "./TopbarClock";
 
 interface TopbarProps {
   collapsed: boolean;
@@ -11,7 +12,7 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
 
   return (
     <div
-      className="flex h-16 min-w-0 shrink-0 items-center justify-between gap-3 border-b px-4"
+      className="relative flex h-16 min-w-0 shrink-0 items-center justify-between gap-3 border-b px-4"
       style={{
         background: "var(--th-bg-topbar)",
         borderBottomColor: "var(--th-border-default)",
@@ -41,6 +42,11 @@ export default function Topbar({ collapsed, onToggleSidebar }: TopbarProps) {
             }}
           />
         </div>
+      </div>
+
+      {/* Absolutely centred so it stays mid-bar whatever sits left and right. */}
+      <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 sm:block">
+        <TopbarClock />
       </div>
 
       <div className="flex flex-none items-center gap-2">

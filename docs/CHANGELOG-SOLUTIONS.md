@@ -38,6 +38,9 @@ schedules, inputs and logs on UTC.
 - Unchanged on purpose: PostgreSQL server timezone stays UTC. It controls
   how timestamps are cast into the naive UTC columns; changing it would
   corrupt stored times.
+- Top bar clock (owner request): a live Tirana clock sits centred in the
+  desktop top bar (`TopbarClock`, e.g. `16:44:12  Mon 5 Oct · Tirana`). It
+  ticks on the second boundary and is hidden below the `sm` width.
 
 ## [2026-10-05] DEPLOY-2026-10-05 — Friday palette, real recent deployments and Tirana time deployed (`672f751` → `f3416f7`)
 
