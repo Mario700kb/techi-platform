@@ -47,7 +47,7 @@ export interface ReportSchedule {
   report_format: ReportFormat;
   cadence: ReportCadence;
   period_days: number;
-  hour_utc: number;
+  hour_local: number;
   day_of_week?: number | null;
   day_of_month?: number | null;
   enabled: boolean;
@@ -64,7 +64,7 @@ export interface SchedulePayload {
   report_format: ReportFormat;
   cadence: ReportCadence;
   period_days: number;
-  hour_utc: number;
+  hour_local: number;
   day_of_week?: number | null;
   day_of_month?: number | null;
   enabled?: boolean;

@@ -12,7 +12,7 @@ import {
 } from "../api/teams";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
 
 const COLOR_PRESETS = [
@@ -360,7 +360,7 @@ export default function Teams() {
                     <StatPill icon={<Cpu className="h-2.5 w-2.5" />} count={team.effective_device_count} title={`Effective devices (${team.explicit_device_count} explicit)`} />
                   </td>
                   <td className="px-5 py-3.5 text-[12px] text-slate-400">
-                    {parseUTC(team.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    {parseUTC(team.created_at).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" })}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center justify-end gap-1">

@@ -28,6 +28,10 @@ RUN npm run build
 # --- production stage ---
 FROM nginx:1.27-alpine
 
+# Access-log timestamps in Tirana time (Alpine ships no zoneinfo by default).
+RUN apk add --no-cache tzdata
+ENV TZ=Europe/Tirane
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

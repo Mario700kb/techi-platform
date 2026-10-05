@@ -11,7 +11,7 @@ import {
 } from "../api/agentPackages";
 import { Badge, Button } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
@@ -19,7 +19,7 @@ const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outl
 const LINUX_ARCHES: AgentPackagePlatform[] = ["linux-amd64", "linux-arm64", "linux-armhf"];
 
 function formatDate(iso: string): string {
-  return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 interface Props {

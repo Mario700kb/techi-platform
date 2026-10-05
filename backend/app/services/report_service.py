@@ -2,7 +2,7 @@ import csv
 import io
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,30 +29,44 @@ logger = logging.getLogger(__name__)
 def next_schedule_time(
     cadence: str,
     *,
-    hour_utc: int,
+    hour_local: int,
     day_of_week: Optional[int] = None,
     day_of_month: Optional[int] = None,
     after: Optional[datetime] = None,
 ) -> datetime:
+    """Next run at `hour_local`:00 Tirana time, returned in UTC.
+
+    The schedule follows the wall clock in DISPLAY_TIMEZONE, so a 08:00
+    report stays at 08:00 across summer/winter time. Naive `after` values
+    are UTC (as stored), and the result keeps the same awareness.
+    """
     now = after or utcnow()
+    naive = now.tzinfo is None
+    local_now = to_display(now)
+    zone = local_now.tzinfo
+
+    def at(day: datetime) -> datetime:
+        return datetime(day.year, day.month, day.day, hour_local, tzinfo=zone)
+
     if cadence == ReportCadence.DAILY.value:
-        candidate = now.replace(hour=hour_utc, minute=0, second=0, microsecond=0)
-        return candidate if candidate > now else candidate + timedelta(days=1)
-    if cadence == ReportCadence.WEEKLY.value:
+        candidate = at(local_now)
+        if candidate <= local_now:
+            candidate = at(local_now + timedelta(days=1))
+    elif cadence == ReportCadence.WEEKLY.value:
         target = 0 if day_of_week is None else day_of_week
-        days = (target - now.weekday()) % 7
-        candidate = (now + timedelta(days=days)).replace(hour=hour_utc, minute=0, second=0, microsecond=0)
-        return candidate if candidate > now else candidate + timedelta(days=7)
-    target = 1 if day_of_month is None else day_of_month
-    year, month = now.year, now.month
-    candidate = datetime(year, month, target, hour_utc, tzinfo=now.tzinfo)
-    if candidate <= now:
-        if month == 12:
-            year, month = year + 1, 1
-        else:
-            month += 1
-        candidate = datetime(year, month, target, hour_utc, tzinfo=now.tzinfo)
-    return candidate
+        candidate = at(local_now + timedelta(days=(target - local_now.weekday()) % 7))
+        if candidate <= local_now:
+            candidate = at(candidate + timedelta(days=7))
+    else:
+        target = 1 if day_of_month is None else day_of_month
+        year, month = local_now.year, local_now.month
+        candidate = datetime(year, month, target, hour_local, tzinfo=zone)
+        if candidate <= local_now:
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+            candidate = datetime(year, month, target, hour_local, tzinfo=zone)
+
+    result = candidate.astimezone(timezone.utc)
+    return result.replace(tzinfo=None) if naive else result
 
 
 def _value(value) -> str:
@@ -259,7 +273,7 @@ class ReportService:
 
     def create_schedule(self, **values) -> ReportSchedule:
         values["next_run_at"] = next_schedule_time(
-            values["cadence"], hour_utc=values["hour_utc"],
+            values["cadence"], hour_local=values["hour_local"],
             day_of_week=values.get("day_of_week"), day_of_month=values.get("day_of_month"),
         )
         return self.schedules.create(**values)
@@ -267,7 +281,7 @@ class ReportService:
     def update_schedule(self, schedule: ReportSchedule, **updates) -> ReportSchedule:
         effective = {
             "cadence": updates.get("cadence", schedule.cadence),
-            "hour_utc": updates.get("hour_utc", schedule.hour_utc),
+            "hour_local": updates.get("hour_local", schedule.hour_local),
             "day_of_week": updates.get("day_of_week", schedule.day_of_week),
             "day_of_month": updates.get("day_of_month", schedule.day_of_month),
         }
@@ -276,7 +290,7 @@ class ReportService:
             raise ValueError("day_of_week is required for weekly schedules")
         if cadence == ReportCadence.MONTHLY.value and effective["day_of_month"] is None:
             raise ValueError("day_of_month is required for monthly schedules")
-        if any(key in updates for key in ("cadence", "hour_utc", "day_of_week", "day_of_month")):
+        if any(key in updates for key in ("cadence", "hour_local", "day_of_week", "day_of_month")):
             updates["next_run_at"] = next_schedule_time(**effective)
         return self.schedules.update(schedule, **updates)
 

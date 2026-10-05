@@ -2,7 +2,7 @@ import { ExternalLink, Star } from "lucide-react";
 import { Device } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import { ActiveActionEntry } from "./DevicesTable";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { MBadge, MBadgeVariant, StatusDot, FreshnessState } from "./mobile/primitives";
@@ -105,7 +105,7 @@ function getPatchBadge(patch?: PatchStatus) {
 function getMaintenanceBadge(device: Device) {
   if (!device.is_in_maintenance) return null;
   const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString()}`
+    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
     : device.maintenance_note
     ? `In maintenance: ${device.maintenance_note}`
     : "In maintenance";

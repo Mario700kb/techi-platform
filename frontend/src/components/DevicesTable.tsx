@@ -14,7 +14,7 @@ import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect 
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Badge, Button } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
@@ -448,7 +448,7 @@ const isSuggestedArchive = (device: Device) => {
 const getMaintenanceBadge = (device: Device) => {
   if (!device.is_in_maintenance) return null;
   const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString()}`
+    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
     : device.maintenance_note
     ? `In maintenance: ${device.maintenance_note}`
     : "In maintenance";
@@ -492,7 +492,7 @@ const getLifecycleSignals = (device: Device) => (
         className={compactBadgeClass}
         title={
           device.archived_at
-            ? `Archived ${parseUTC(device.archived_at).toLocaleString()}`
+            ? `Archived ${parseUTC(device.archived_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
             : "Archived device"
         }
       >

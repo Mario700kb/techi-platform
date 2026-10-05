@@ -1,4 +1,12 @@
 /**
+ * The one timezone every human-facing time in TECHI is shown and entered in.
+ * Storage and APIs stay UTC; only display and form inputs use this zone.
+ * Every toLocale*String call on a Date must pass `timeZone: APP_TIME_ZONE`
+ * (guarded by src/utils/__tests__/time.test.ts).
+ */
+export const APP_TIME_ZONE = "Europe/Tirane";
+
+/**
  * Parse an ISO-8601 datetime string as UTC, regardless of whether it carries
  * an explicit timezone offset or not.
  *
@@ -35,8 +43,8 @@ export function timeAgo(iso: string | null | undefined): string {
 }
 
 /**
- * Format a UTC ISO string as a localised date/time string using the browser's
- * locale and the user's OS timezone (DST-aware automatically).
+ * Format a UTC ISO string as a localised date/time string in Tirana time
+ * (DST-aware), whatever timezone the viewer's device is set to.
  */
 export function formatLocalDateTime(
   iso: string | null | undefined,
@@ -48,5 +56,46 @@ export function formatLocalDateTime(
   }
 ): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleString(undefined, opts);
+  return parseUTC(iso).toLocaleString(undefined, { ...opts, timeZone: APP_TIME_ZONE });
+}
+
+/** Minutes Tirana is ahead of UTC at the given instant (+120 CEST, +60 CET). */
+function zoneOffsetMinutes(utcMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const wallAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return Math.round((wallAsUtc - utcMs) / 60000);
+}
+
+/**
+ * A Tirana wall-clock value from a form input ("YYYY-MM-DD" or
+ * "YYYY-MM-DDTHH:mm") → UTC ISO string for the API. Independent of the
+ * device's own timezone.
+ */
+export function tiranaInputToUtcIso(value: string): string {
+  const [datePart, timePart = "00:00"] = value.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [hh, mm] = timePart.split(":").map(Number);
+  const wallMs = Date.UTC(y, m - 1, d, hh || 0, mm || 0);
+  let utcMs = wallMs - zoneOffsetMinutes(wallMs) * 60000;
+  // Re-check at the resolved instant so DST-change days land correctly.
+  utcMs = wallMs - zoneOffsetMinutes(utcMs) * 60000;
+  return new Date(utcMs).toISOString();
+}
+
+/** UTC ISO (from the API) → "YYYY-MM-DDTHH:mm" in Tirana, for prefilling inputs. */
+export function utcToTiranaInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const utcMs = parseUTC(iso).getTime();
+  if (Number.isNaN(utcMs)) return "";
+  return new Date(utcMs + zoneOffsetMinutes(utcMs) * 60000).toISOString().slice(0, 16);
 }

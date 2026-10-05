@@ -13,7 +13,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import PlatformIcon from "../components/PlatformIcon";
 import LinuxPackagesPanel from "./LinuxPackagesPanel";
@@ -22,7 +22,7 @@ const PLATFORMS: AgentPackagePlatform[] = ["windows", "windows-amd64", "windows-
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
 function formatDate(iso: string): string {
-  return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";

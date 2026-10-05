@@ -52,13 +52,14 @@ describe("Reports scope and history", () => {
     await screen.findByRole("option", { name: "Owner-04 · Eugreen · #606" });
     fireEvent.change(screen.getByRole("combobox", { name: "Report type" }), { target: { value: "alerts" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Period" }), { target: { value: "custom" } });
-    fireEvent.change(screen.getByLabelText("From (UTC)"), { target: { value: "2026-09-01" } });
-    fireEvent.change(screen.getByLabelText("To (UTC, inclusive)"), { target: { value: "2026-09-03" } });
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("To (inclusive)"), { target: { value: "2026-09-03" } });
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(generate).toHaveBeenCalled());
     expect(generate.mock.calls[0][0]).toMatchObject({
       scope_type: "device", device_id: 606, report_type: "alerts", report_format: "pdf",
-      period_from: "2026-09-01T00:00:00.000Z", period_to: "2026-09-04T00:00:00.000Z",
+      // Whole Tirana days (CEST, UTC+2): 1 Sep 00:00 to 4 Sep 00:00 local.
+      period_from: "2026-08-31T22:00:00.000Z", period_to: "2026-09-03T22:00:00.000Z",
     });
     expect(generate.mock.calls[0][0].client_id).toBeUndefined();
   });

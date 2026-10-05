@@ -10,7 +10,7 @@ import {
   getAuditLogs,
 } from "../api/audit";
 import { Button } from "../components/ui";
-import { parseUTC, timeAgo as timeAgoUtil } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, timeAgo as timeAgoUtil, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 
 const PAGE_SIZE = 50;
 
@@ -21,7 +21,7 @@ function timeAgo(iso: string): string {
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
   if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" });
 }
 
 function actionBadgeClass(action: string): string {
@@ -194,15 +194,15 @@ export default function Audit() {
           <input
             type="datetime-local"
             className={INPUT_CLS}
-            value={draft.from_dt ? draft.from_dt.slice(0, 16) : ""}
-            onChange={(e) => setDraft((d) => ({ ...d, from_dt: e.target.value ? new Date(e.target.value).toISOString() : undefined }))}
+            value={utcToTiranaInput(draft.from_dt)}
+            onChange={(e) => setDraft((d) => ({ ...d, from_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))}
             title="From date/time"
           />
           <input
             type="datetime-local"
             className={INPUT_CLS}
-            value={draft.to_dt ? draft.to_dt.slice(0, 16) : ""}
-            onChange={(e) => setDraft((d) => ({ ...d, to_dt: e.target.value ? new Date(e.target.value).toISOString() : undefined }))}
+            value={utcToTiranaInput(draft.to_dt)}
+            onChange={(e) => setDraft((d) => ({ ...d, to_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))}
             title="To date/time"
           />
         </div>
@@ -291,7 +291,7 @@ export default function Audit() {
                         ? <ChevronDown className="h-3.5 w-3.5" />
                         : <ChevronRight className="h-3.5 w-3.5" />}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={parseUTC(entry.created_at).toLocaleString()}>
+                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={parseUTC(entry.created_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}>
                       {timeAgo(entry.created_at)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">

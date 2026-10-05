@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
+import { APP_TIME_ZONE } from "../../utils/time";
 
 /**
  * Offline banner (MOBILE-DESIGN-SPEC.md — Offline States; audit finding
@@ -9,7 +10,7 @@ import { WifiOff } from "lucide-react";
  */
 function formatClock(ts: number | null): string {
   if (!ts) return "—";
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString([], { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit" });
 }
 
 export function OfflineBanner({ lastFetchTime }: { lastFetchTime: number | null }) {

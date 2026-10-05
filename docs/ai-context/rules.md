@@ -26,6 +26,9 @@ These rules govern all AI-assisted development on this project. Read before maki
 - Do NOT introduce external component libraries (no shadcn, no radix, no MUI)
 - Do NOT redesign the Devices page layout, Sidebar, or Topbar
 
+### Time
+- Every human-facing time is Tirana time (`Europe/Tirane`, DST-aware), on any device: frontend formats with `timeZone: APP_TIME_ZONE` and parses API values with `parseUTC`; form inputs go through `tiranaInputToUtcIso` / `utcToTiranaInput`; backend reports use `format_display` / `to_display`. Storage, APIs and the PostgreSQL server stay UTC — never store local time.
+
 ### Data
 - No fake/mock data. All data must come from real backend state.
 - No hardcoded device IDs or placeholder values in production code

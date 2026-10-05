@@ -67,7 +67,7 @@ def _schedule_out(schedule, client_name: str) -> ReportScheduleOut:
     return ReportScheduleOut(
         id=schedule.id, name=schedule.name, client_id=schedule.client_id, client_name=client_name,
         report_format=schedule.report_format, cadence=schedule.cadence, period_days=schedule.period_days,
-        hour_utc=schedule.hour_utc, day_of_week=schedule.day_of_week, day_of_month=schedule.day_of_month,
+        hour_local=schedule.hour_local, day_of_week=schedule.day_of_week, day_of_month=schedule.day_of_month,
         enabled=schedule.enabled, next_run_at=schedule.next_run_at, last_run_at=schedule.last_run_at,
         created_by=schedule.created_by, created_at=schedule.created_at, updated_at=schedule.updated_at,
     )

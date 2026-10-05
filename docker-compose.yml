@@ -36,6 +36,10 @@ services:
       context: ./backend
     env_file:
       - .env
+    environment:
+      # Log timestamps in Tirana time. Stored data stays UTC: the code only
+      # uses utcnow()/datetime.utcnow(), which ignore TZ (audited 2026-10-05).
+      TZ: Europe/Tirane
     depends_on:
       postgres:
         condition: service_healthy

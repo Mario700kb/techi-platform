@@ -73,7 +73,7 @@ class ReportWorker:
                     schedule,
                     next_run_at=next_schedule_time(
                         schedule.cadence,
-                        hour_utc=schedule.hour_utc,
+                        hour_local=schedule.hour_local,
                         day_of_week=schedule.day_of_week,
                         day_of_month=schedule.day_of_month,
                         after=now,

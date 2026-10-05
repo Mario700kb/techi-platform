@@ -5,6 +5,40 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] TIRANA-GLOBAL-2026-10-05 — Tirana time across the whole system (display, inputs, schedules, logs)
+
+Owner: "Tirana time must be global for the whole system" (reference: 16:44
+CEST). This follows TIRANA-TIME-2026-10-05, which fixed the 2-hour-behind
+parsing but still formatted in the viewer's device timezone and left report
+schedules, inputs and logs on UTC.
+
+- Display: `APP_TIME_ZONE = "Europe/Tirane"` (frontend/src/utils/time.ts).
+  All 23 `toLocale*String` date calls plus `formatLocalDateTime` pass it, so
+  a device set to another timezone still shows Tirana time. A guard test
+  (`src/utils/__tests__/time.test.ts`) fails on any new call without it.
+- Inputs: the Audit from/to filters, enrollment token expiry
+  (Deployment, EnrollmentBootstrap), vault credential expiry and the custom
+  report range are read as Tirana wall time (`tiranaInputToUtcIso`) and
+  prefilled from UTC (`utcToTiranaInput`). Bug fixed on the way: the
+  Deployment token-edit dialog prefilled the UTC wall time but saved it as
+  device-local time, so every save of a token moved its expiry 2 hours
+  earlier. The Audit filters had the same prefill mismatch.
+- Scheduled reports: `hour_utc` → `hour_local` (model, API, UI "Hour
+  (Tirana)"). `next_schedule_time` computes in Tirana wall time and returns
+  UTC, so 08:00 stays 08:00 across summer and winter time. Migration
+  `e1f2a3b4c5d6` renames the column and converts each schedule from its own
+  `next_run_at`; its next run is unchanged, and weekly/monthly days move with
+  the hour. Monthly days are clamped to 28. Downgrade converts back. Tests:
+  `test_migration_report_hour_local.py`, a DST case in
+  `test_report_service.py`.
+- Logs: backend container `TZ=Europe/Tirane` (docker-compose). Audit:
+  backend code only uses `utcnow()`/`datetime.utcnow()`, which ignore TZ;
+  there is no naive `datetime.now()`/`date.today()`. Frontend nginx image
+  gains `tzdata` and `TZ`.
+- Unchanged on purpose: PostgreSQL server timezone stays UTC. It controls
+  how timestamps are cast into the naive UTC columns; changing it would
+  corrupt stored times.
+
 ## [2026-10-05] DEPLOY-2026-10-05 — Friday palette, real recent deployments and Tirana time deployed (`672f751` → `f3416f7`)
 
 Three commits went to production together: `d1b8d8b` (Friday palette, whole

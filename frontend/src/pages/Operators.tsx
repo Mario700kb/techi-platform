@@ -15,7 +15,7 @@ import { listTeams, TeamWithStats } from "../api/teams";
 import { UserRole } from "../api/auth";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
 
 const ROLES: UserRole[] = ["owner", "admin", "operator"];
@@ -34,7 +34,7 @@ const statusBadgeClass = {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleDateString("en-GB", {
+  return parseUTC(iso).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -43,7 +43,7 @@ function formatDate(iso: string | null): string {
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "Never";
-  return parseUTC(iso).toLocaleString("en-GB", {
+  return parseUTC(iso).toLocaleString("en-GB", { timeZone: APP_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",

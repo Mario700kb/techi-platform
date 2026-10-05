@@ -26,7 +26,7 @@ import {
 import { PlatformFeatures } from "../api/platform";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { Button } from "../components/ui";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 
 // ── Deployment platform registry (metadata-driven) ─────────────────────────
 // The Deployment dialog renders from this table, gated by the backend Platform
@@ -85,7 +85,7 @@ type CopyTarget = string | null;
 
 function fmtDate(value?: string | null) {
   if (!value) return "Never";
-  return parseUTC(value).toLocaleString();
+  return parseUTC(value).toLocaleString(undefined, { timeZone: APP_TIME_ZONE });
 }
 
 function downloadText(name: string, text: string) {
@@ -587,7 +587,7 @@ function Info({ label, value }: { label: string; value: string }) {
 function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: EnrollmentToken; clients: Client[]; groups: DeviceGroup[]; onClose: () => void; onSave: (payload: Record<string, unknown>) => Promise<void> }) {
   const [name, setName] = useState(token.name);
   const [maxUses, setMaxUses] = useState(token.max_uses);
-  const [expiresAt, setExpiresAt] = useState(token.expires_at ? token.expires_at.slice(0, 16) : "");
+  const [expiresAt, setExpiresAt] = useState(utcToTiranaInput(token.expires_at));
   const [clientId, setClientId] = useState(token.client_id ?? "");
   const [groupId, setGroupId] = useState(token.group_id ?? "");
   const [status, setStatus] = useState<"active" | "revoked">(token.status === "revoked" ? "revoked" : "active");
@@ -620,7 +620,7 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button type="button" onClick={onClose}>Cancel</Button>
-          <Button type="button" onClick={() => void onSave({ name, max_uses: maxUses, expires_at: expiresAt ? new Date(expiresAt).toISOString() : null, client_id: clientId || null, group_id: groupId || null, status })}>Save</Button>
+          <Button type="button" onClick={() => void onSave({ name, max_uses: maxUses, expires_at: expiresAt ? tiranaInputToUtcIso(expiresAt) : null, client_id: clientId || null, group_id: groupId || null, status })}>Save</Button>
         </div>
       </div>
     </div>

@@ -26,7 +26,7 @@ def test_due_schedule_generates_report_and_advances(tmp_path, monkeypatch):
     db.add(Device(hostname="PC", client_id=client.id))
     schedule = ReportSchedule(
         name="Daily", client_id=client.id, report_format="pdf", cadence="daily", period_days=7,
-        hour_utc=6, enabled=True, next_run_at=utcnow() - timedelta(minutes=1), created_by="mario",
+        hour_local=6, enabled=True, next_run_at=utcnow() - timedelta(minutes=1), created_by="mario",
     )
     db.add(schedule); db.commit(); db.refresh(schedule)
     old_next = schedule.next_run_at

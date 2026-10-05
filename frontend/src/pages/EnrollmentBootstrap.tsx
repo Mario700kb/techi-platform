@@ -41,7 +41,7 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Badge, Button } from "../components/ui";
-import { formatLocalDateTime, timeAgo } from "../utils/time";
+import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
 
 function getDefaultBackendUrl(): string {
   if (typeof window === "undefined") return "http://localhost:8000";
@@ -337,7 +337,7 @@ export default function EnrollmentBootstrap() {
       const payload: CreateTokenRequest = {
         name: newName.trim(),
         max_uses: Math.max(1, Number(newMaxUses) || 1),
-        expires_at: newExpiry ? new Date(newExpiry).toISOString() : null,
+        expires_at: newExpiry ? tiranaInputToUtcIso(newExpiry) : null,
         client_id: newClientId !== "" ? Number(newClientId) : null,
         group_id: newGroupId !== "" ? Number(newGroupId) : null,
       };

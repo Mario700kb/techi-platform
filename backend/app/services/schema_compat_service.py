@@ -254,7 +254,7 @@ DEV_TABLES = {
             report_format VARCHAR(8) NOT NULL,
             cadence VARCHAR(16) NOT NULL,
             period_days INTEGER NOT NULL DEFAULT 30,
-            hour_utc INTEGER NOT NULL DEFAULT 6,
+            hour_local INTEGER NOT NULL DEFAULT 6,
             day_of_week INTEGER,
             day_of_month INTEGER,
             enabled BOOLEAN NOT NULL DEFAULT 1,

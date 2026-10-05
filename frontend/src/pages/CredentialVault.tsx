@@ -21,7 +21,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Badge, Button } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
 import EntitySearchSelect, { type EntityOption } from "../components/EntitySearchSelect";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 
 const INPUT_CLS =
   "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
@@ -51,7 +51,7 @@ const VIEW_TABS: { id: ViewTab; label: string }[] = [
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleString(undefined, {
+  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -344,7 +344,7 @@ export default function CredentialVault() {
       device_label: item.device_hostname ?? "",
       purpose: item.purpose ?? "", username: item.username ?? "", secret_fields: {},
       metadata: item.credential_metadata ?? {}, notes: item.notes ?? "",
-      expires_at: item.expires_at ? item.expires_at.slice(0, 10) : "",
+      expires_at: utcToTiranaInput(item.expires_at).slice(0, 10),
     });
     setEditingId(item.id);
     setShowForm(true);
@@ -371,7 +371,7 @@ export default function CredentialVault() {
         secret_fields: form.secret_fields,
         metadata: form.metadata,
         notes: form.notes.trim() || null,
-        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+        expires_at: form.expires_at ? tiranaInputToUtcIso(form.expires_at) : null,
       };
       if (editingId) {
         const updated = await updateVaultCredential(editingId, payload);

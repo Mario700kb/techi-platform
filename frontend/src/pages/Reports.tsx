@@ -12,7 +12,7 @@ import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import { parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso } from "../utils/time";
 
 const fieldClass = "min-h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-techi-orange/60";
 const fieldStyle = { background: "var(--th-bg-input)", borderColor: "var(--th-border-input)", color: "var(--th-text-primary)" };
@@ -26,8 +26,13 @@ const REPORT_TYPES: { value: ReportType; label: string }[] = [
 ];
 const reportLabel = (type?: ReportType) => REPORT_TYPES.find((item) => item.value === type)?.label ?? "Full Report";
 
+/** "2026-10-05" -> "2026-10-06" (calendar arithmetic, timezone-free). */
+function nextDay(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+}
+
 function formatDate(value?: string | null) {
-  return value ? parseUTC(value).toLocaleString() : "—";
+  return value ? parseUTC(value).toLocaleString(undefined, { timeZone: APP_TIME_ZONE }) : "—";
 }
 
 function formatBytes(value?: number | null) {
@@ -61,7 +66,7 @@ export default function Reports() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleName, setScheduleName] = useState("");
   const [cadence, setCadence] = useState<ReportCadence>("monthly");
-  const [hourUtc, setHourUtc] = useState(6);
+  const [hourLocal, setHourLocal] = useState(8);
   const [scheduleDay, setScheduleDay] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<ReportSchedule | null>(null);
   const [deleteRunTarget, setDeleteRunTarget] = useState<ReportRun | null>(null);
@@ -110,8 +115,9 @@ export default function Reports() {
     setBusy(true); setError(null); setSuccess(null);
     try {
       const range = periodChoice === "custom" ? {
-        period_from: new Date(`${customFrom}T00:00:00Z`).toISOString(),
-        period_to: new Date(Math.min(Date.parse(`${customTo}T00:00:00Z`) + 86400000, Date.now())).toISOString(),
+        // Whole Tirana days: from 00:00 on the first day to 00:00 after the last.
+        period_from: tiranaInputToUtcIso(customFrom),
+        period_to: new Date(Math.min(Date.parse(tiranaInputToUtcIso(nextDay(customTo))), Date.now())).toISOString(),
       } : { period_days: Number(periodChoice) };
       const run = await generateReport({
         scope_type: scopeType,
@@ -132,7 +138,7 @@ export default function Reports() {
     try {
       const created = await createReportSchedule({
         name: scheduleName.trim(), client_id: Number(clientId), report_format: reportFormat,
-        cadence, period_days: periodDays, hour_utc: hourUtc,
+        cadence, period_days: periodDays, hour_local: hourLocal,
         day_of_week: cadence === "weekly" ? scheduleDay : null,
         day_of_month: cadence === "monthly" ? scheduleDay : null,
       });
@@ -195,7 +201,7 @@ export default function Reports() {
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Report type<select className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}><option value="full">Full Report</option>{scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<select className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option></select></label>
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<select className={`${fieldClass} mt-1`} style={fieldStyle} value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>{scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}<option value="custom">Custom date range</option></select></label>
-          {periodChoice === "custom" && <><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>From (UTC)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>To (UTC, inclusive)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label></>}
+          {periodChoice === "custom" && <><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>From<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>To (inclusive)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label></>}
           <Button onClick={() => void handleGenerate()} disabled={busy || (scopeType === "client" ? !clientId : !deviceId) || (scopeType === "device" && reportType === "full" && reportFormat === "csv")}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Generate</Button>
         </div>
         {scopeType === "device" && <p className="mt-3 text-xs" style={{ color: "var(--th-text-muted)" }}>Full Device Report is PDF only because its sections have different table columns. Category reports support PDF and CSV. Historical sections show available records and retention notes; software and overview are current snapshots.</p>}
@@ -206,7 +212,7 @@ export default function Reports() {
         {showSchedule && <div className="mt-4 grid gap-3 rounded-xl border p-3 md:grid-cols-5 md:items-end" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-input)" }}>
           <label className="text-xs font-semibold md:col-span-2" style={{ color: "var(--th-text-secondary)" }}>Schedule name<input className={`${fieldClass} mt-1`} style={fieldStyle} value={scheduleName} maxLength={160} onChange={(event) => setScheduleName(event.target.value)} /></label>
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Cadence<select className={`${fieldClass} mt-1`} style={fieldStyle} value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>{cadence === "daily" ? "Hour UTC" : cadence === "weekly" ? "Weekday (0=Mon)" : "Day of month"}<input type="number" className={`${fieldClass} mt-1`} style={fieldStyle} min={cadence === "weekly" ? 0 : 1} max={cadence === "weekly" ? 6 : cadence === "monthly" ? 28 : 23} value={cadence === "daily" ? hourUtc : scheduleDay} onChange={(event) => cadence === "daily" ? setHourUtc(Number(event.target.value)) : setScheduleDay(Number(event.target.value))} /></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>{cadence === "daily" ? "Hour (Tirana)" : cadence === "weekly" ? "Weekday (0=Mon)" : "Day of month"}<input type="number" className={`${fieldClass} mt-1`} style={fieldStyle} min={cadence === "weekly" ? 0 : 1} max={cadence === "weekly" ? 6 : cadence === "monthly" ? 28 : 23} value={cadence === "daily" ? hourLocal : scheduleDay} onChange={(event) => cadence === "daily" ? setHourLocal(Number(event.target.value)) : setScheduleDay(Number(event.target.value))} /></label>
           <Button onClick={() => void handleCreateSchedule()} disabled={busy || !scheduleName.trim() || !clientId}>Create schedule</Button>
         </div>}
         <div className="mt-4 space-y-2">{schedules.length === 0 ? <p className="py-6 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>No scheduled reports.</p> : schedules.map((schedule) => <div key={schedule.id} className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{schedule.name}</p><Badge variant={schedule.enabled ? "primary" : "neutral"}>{schedule.enabled ? "Active" : "Paused"}</Badge><Badge variant="ghost">{schedule.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>{schedule.client_name} · {schedule.cadence} · next {formatDate(schedule.next_run_at)}</p></div><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => void toggleSchedule(schedule)}>{schedule.enabled ? "Pause" : "Resume"}</Button><Button size="sm" variant="ghost" onClick={() => setDeleteTarget(schedule)} aria-label={`Delete ${schedule.name}`}><Trash2 className="h-4 w-4" /></Button></div></div>)}</div>

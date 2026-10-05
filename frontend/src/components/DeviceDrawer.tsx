@@ -10,7 +10,7 @@ import {
 } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
-import { parseUTC, timeAgo } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, timeAgo } from "../utils/time";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
@@ -854,7 +854,7 @@ export default function DeviceDrawer({
                   <p className="premium-kicker mb-0.5">Last Seen</p>
                   <p className="text-xs font-medium text-slate-100">
                     {device.last_seen
-                      ? parseUTC(device.last_seen).toLocaleString(undefined, {
+                      ? parseUTC(device.last_seen).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
                           month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                         })
                       : <span className="text-slate-500">Never</span>}
@@ -962,7 +962,7 @@ export default function DeviceDrawer({
                     </span>
                     {device.maintenance_ends_at && (
                       <p className="mt-0.5 text-[10px] text-slate-500">
-                        until {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        until {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                     )}
                   </div>
@@ -1071,7 +1071,7 @@ export default function DeviceDrawer({
                       <div>
                         <p className="premium-kicker mb-0.5">Started at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_started_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_started_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -1079,7 +1079,7 @@ export default function DeviceDrawer({
                       <div className="col-span-2">
                         <p className="premium-kicker mb-0.5">Ends at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -1369,7 +1369,7 @@ export default function DeviceDrawer({
                     <div className="col-span-2">
                       <p className="premium-kicker mb-1">Last Telemetry</p>
                       <p className="text-xs font-medium text-slate-300">
-                        {parseUTC(snapshot.created_at).toLocaleTimeString(undefined, {
+                        {parseUTC(snapshot.created_at).toLocaleTimeString(undefined, { timeZone: APP_TIME_ZONE,
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",
@@ -2279,7 +2279,7 @@ export default function DeviceDrawer({
                     <p className="premium-kicker mb-1">Last Heartbeat</p>
                     <p className="text-xs font-medium text-slate-100">
                       {device.last_seen
-                        ? parseUTC(device.last_seen).toLocaleString(undefined, {
+                        ? parseUTC(device.last_seen).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
                             month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                           })
                         : <span className="text-slate-500">Never</span>}

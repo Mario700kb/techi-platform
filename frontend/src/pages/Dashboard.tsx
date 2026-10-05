@@ -32,7 +32,7 @@ import {
   statusDotColor,
 } from "../api/actions";
 import { Badge, Button } from "../components/ui";
-import { parseUTC, timeAgo } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, timeAgo } from "../utils/time";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
@@ -40,7 +40,7 @@ import { DashboardMobile } from "./DashboardMobile";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
-  return parseUTC(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
 const deploymentStatusColor = (status: RecentDeployment["status"]) => {
@@ -722,7 +722,7 @@ export default function Dashboard() {
                   const label = op.display_name ?? op.username;
                   const online = op.is_online;
                   const lastSeen = op.last_active_at
-                    ? parseUTC(op.last_active_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+                    ? parseUTC(op.last_active_at).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short" })
                     : null;
                   return (
                     <div key={op.id} className="premium-card-soft flex items-center justify-between gap-3 p-3">

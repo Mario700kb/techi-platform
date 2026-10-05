@@ -32,7 +32,7 @@ class ReportSchedule(Base):
     report_format = Column(String(8), nullable=False, default=ReportFormat.PDF.value)
     cadence = Column(String(16), nullable=False, default=ReportCadence.MONTHLY.value)
     period_days = Column(Integer, nullable=False, default=30)
-    hour_utc = Column(Integer, nullable=False, default=6)
+    hour_local = Column(Integer, nullable=False, default=6)
     day_of_week = Column(Integer, nullable=True)
     day_of_month = Column(Integer, nullable=True)
     enabled = Column(Boolean, nullable=False, default=True, index=True)

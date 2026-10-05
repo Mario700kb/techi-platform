@@ -47,7 +47,7 @@ class ReportScheduleCreate(BaseModel):
     report_format: ReportFormat = ReportFormat.PDF
     cadence: ReportCadence = ReportCadence.MONTHLY
     period_days: int = Field(default=30, ge=1, le=366)
-    hour_utc: int = Field(default=6, ge=0, le=23)
+    hour_local: int = Field(default=6, ge=0, le=23)
     day_of_week: Optional[int] = Field(default=None, ge=0, le=6)
     day_of_month: Optional[int] = Field(default=None, ge=1, le=28)
     enabled: bool = True
@@ -66,7 +66,7 @@ class ReportScheduleUpdate(BaseModel):
     report_format: Optional[ReportFormat] = None
     cadence: Optional[ReportCadence] = None
     period_days: Optional[int] = Field(default=None, ge=1, le=366)
-    hour_utc: Optional[int] = Field(default=None, ge=0, le=23)
+    hour_local: Optional[int] = Field(default=None, ge=0, le=23)
     day_of_week: Optional[int] = Field(default=None, ge=0, le=6)
     day_of_month: Optional[int] = Field(default=None, ge=1, le=28)
     enabled: Optional[bool] = None
@@ -82,7 +82,7 @@ class ReportScheduleOut(BaseModel):
     report_format: str
     cadence: str
     period_days: int
-    hour_utc: int
+    hour_local: int
     day_of_week: Optional[int]
     day_of_month: Optional[int]
     enabled: bool

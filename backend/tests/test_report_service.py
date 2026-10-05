@@ -85,9 +85,10 @@ def test_generation_failure_is_persisted(tmp_path, monkeypatch):
 
 def test_schedule_calculation_and_validation():
     after = datetime(2026, 7, 10, 8, 0)
-    assert next_schedule_time("daily", hour_utc=6, after=after) == datetime(2026, 7, 11, 6, 0)
-    assert next_schedule_time("weekly", hour_utc=9, day_of_week=0, after=after) == datetime(2026, 7, 13, 9, 0)
-    assert next_schedule_time("monthly", hour_utc=7, day_of_month=15, after=after) == datetime(2026, 7, 15, 7, 0)
+    # Hours are Tirana wall-clock time; results are UTC (CEST = UTC+2 in July).
+    assert next_schedule_time("daily", hour_local=8, after=after) == datetime(2026, 7, 11, 6, 0)
+    assert next_schedule_time("weekly", hour_local=11, day_of_week=0, after=after) == datetime(2026, 7, 13, 9, 0)
+    assert next_schedule_time("monthly", hour_local=9, day_of_month=15, after=after) == datetime(2026, 7, 15, 7, 0)
 
 
 def test_create_schedule_sets_next_run():
@@ -95,7 +96,7 @@ def test_create_schedule_sets_next_run():
     client, _ = _seed(db)
     schedule = ReportService(db).create_schedule(
         name="Monthly", client_id=client.id, report_format="pdf", cadence=ReportCadence.MONTHLY.value,
-        period_days=30, hour_utc=6, day_of_week=None, day_of_month=1, enabled=True, created_by="mario",
+        period_days=30, hour_local=6, day_of_week=None, day_of_month=1, enabled=True, created_by="mario",
     )
     assert schedule.next_run_at > datetime.utcnow()
     assert schedule.client_id == client.id
@@ -233,3 +234,12 @@ def test_client_alert_export_redacts_secret_and_escapes_csv_formula(tmp_path, mo
     assert b"[redacted]" in content
     if report_format == "csv":
         assert b"'=SUM(1+1)" in content
+
+
+def test_schedule_follows_tirana_wall_clock_across_dst():
+    # 08:00 Tirana is 06:00 UTC in summer (CEST) and 07:00 UTC in winter (CET).
+    # Winter time starts on Sunday 2026-10-25 at 03:00.
+    summer = next_schedule_time("daily", hour_local=8, after=datetime(2026, 10, 23, 12, 0))
+    winter = next_schedule_time("daily", hour_local=8, after=datetime(2026, 10, 24, 12, 0))
+    assert summer == datetime(2026, 10, 24, 6, 0)
+    assert winter == datetime(2026, 10, 25, 7, 0)

@@ -105,7 +105,7 @@ def test_schedule_crud_admin_and_validation(monkeypatch, tmp_path):
     client, db, c1, _ = _client(monkeypatch, tmp_path)
     payload = {
         "name": "Monthly proof", "client_id": c1.id, "report_format": "pdf", "cadence": "monthly",
-        "period_days": 30, "hour_utc": 6, "day_of_month": 1,
+        "period_days": 30, "hour_local": 6, "day_of_month": 1,
     }
     created = client.post("/schedules", json=payload)
     assert created.status_code == 200, created.text
@@ -121,7 +121,7 @@ def test_operator_cannot_manage_schedules(monkeypatch, tmp_path):
     client, _, c1, _ = _client(monkeypatch, tmp_path, role=OperatorRole.OPERATOR.value, scope=AllowedScope(client_ids=frozenset({1})))
     assert client.get("/schedules").status_code == 403
     assert client.post("/schedules", json={
-        "name": "x", "client_id": c1.id, "cadence": "daily", "hour_utc": 1,
+        "name": "x", "client_id": c1.id, "cadence": "daily", "hour_local": 1,
     }).status_code == 403
 
 
@@ -129,7 +129,7 @@ def test_delete_run_removes_file_and_row_but_not_its_schedule(monkeypatch, tmp_p
     client, db, c1, _ = _client(monkeypatch, tmp_path)
     schedule = client.post("/schedules", json={
         "name": "Monthly proof", "client_id": c1.id, "report_format": "pdf", "cadence": "monthly",
-        "period_days": 30, "hour_utc": 6, "day_of_month": 1,
+        "period_days": 30, "hour_local": 6, "day_of_month": 1,
     }).json()
     generated = client.post("/generate", json={"client_id": c1.id, "report_format": "pdf", "period_days": 30}).json()
     run_id = generated["id"]
