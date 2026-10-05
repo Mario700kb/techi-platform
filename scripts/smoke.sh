@@ -50,6 +50,7 @@ check "/api/v1/auth/me"              "$(code GET /api/v1/auth/me)"              
 check "/api/v1/devices/overview"     "$(code GET /api/v1/devices/overview)"      200 401
 check "/api/v1/enrollment-tokens"    "$(code GET /api/v1/enrollment-tokens)"     200 401
 check "/api/v1/agent-packages"       "$(code GET /api/v1/agent-packages)"        200 401
+check "/api/v1/deployments/recent"  "$(code GET /api/v1/deployments/recent)"  200 401
 
 # Reporting is feature-gated. OFF → 404 is valid; ON → normal auth contract.
 reports_code="$(code GET /api/v1/reports/runs)"

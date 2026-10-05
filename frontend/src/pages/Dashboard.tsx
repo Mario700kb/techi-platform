@@ -19,6 +19,7 @@ import {
 import { Link } from "react-router-dom";
 import { Device, getDevices } from "../api/devices";
 import { getRecentDeployments, RecentDeployment } from "../api/deployments";
+import { BULK_COMMAND_LABELS, BulkCommandType } from "../api/agentCommands";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -45,7 +46,28 @@ const formatDate = (iso?: string) => {
 const deploymentStatusColor = (status: RecentDeployment["status"]) => {
   if (status === "success") return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
   if (status === "warning") return "border-amber-400/25 bg-amber-400/10 text-amber-200";
+  if (status === "running") return "border-sky-400/25 bg-sky-400/10 text-sky-200";
   return "border-rose-400/25 bg-rose-400/10 text-rose-200";
+};
+
+const DEPLOYMENT_TARGET_LABELS: Record<string, string> = {
+  all: "All devices",
+  online: "Online devices",
+  client: "Client",
+  group: "Group",
+  devices: "Selected devices",
+  outdated_agents: "Outdated agents",
+};
+
+const deploymentTitle = (d: RecentDeployment) =>
+  BULK_COMMAND_LABELS[d.command_type as BulkCommandType] ?? d.command_type;
+
+/** "650/687 ok · 2 failed · 35 no response" — the counts behind the status. */
+const deploymentResult = (d: RecentDeployment) => {
+  const parts = [`${d.completed}/${d.total} ok`];
+  if (d.failed > 0) parts.push(`${d.failed} failed`);
+  if (d.timeout > 0) parts.push(`${d.timeout} no response`);
+  return parts.join(" · ");
 };
 
 function actionTimeAgo(iso?: string | null): string {
@@ -568,7 +590,7 @@ export default function Dashboard() {
                 <p className="premium-kicker">Recent Deployments</p>
                 <h2 className="mt-1.5 text-xl font-semibold text-white">Latest activity</h2>
               </div>
-              <Badge variant="ghost">API driven</Badge>
+              <Badge variant="ghost">Fleet commands</Badge>
             </div>
 
             <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.08]">
@@ -578,17 +600,28 @@ export default function Dashboard() {
                 <table className="min-w-full text-left text-[11px]">
                   <thead className="bg-slate-950/90">
                     <tr className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                      <th className="px-2.5 py-1">Title</th>
-                      <th className="px-2.5 py-1">Environment</th>
+                      <th className="px-2.5 py-1">Command</th>
+                      <th className="px-2.5 py-1">Target</th>
+                      <th className="px-2.5 py-1">Result</th>
                       <th className="px-2.5 py-1">Time</th>
                       <th className="px-2.5 py-1">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.04] bg-slate-950/50">
-                    {deployments.map((deployment) => (
+                    {deployments.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-2.5 py-3 text-center text-xs font-medium text-slate-500">No fleet commands yet</td>
+                      </tr>
+                    ) : deployments.map((deployment) => (
                       <tr key={deployment.id} className="text-slate-300">
-                        <td className="px-2.5 py-1.5 font-semibold text-white">{deployment.title}</td>
-                        <td className="px-2.5 py-1.5 text-slate-400">{deployment.environment}</td>
+                        <td className="px-2.5 py-1.5">
+                          <span className="font-semibold text-white">{deploymentTitle(deployment)}</span>
+                          {deployment.created_by_name && (
+                            <span className="ml-1.5 text-slate-500">by {deployment.created_by_name}</span>
+                          )}
+                        </td>
+                        <td className="px-2.5 py-1.5 text-slate-400">{DEPLOYMENT_TARGET_LABELS[deployment.target] ?? deployment.target}</td>
+                        <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-400">{deploymentResult(deployment)}</td>
                         <td className="px-2.5 py-1.5 text-slate-400">{formatDate(deployment.timestamp)}</td>
                         <td className="px-2.5 py-1.5">
                           <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${deploymentStatusColor(deployment.status)}`}>

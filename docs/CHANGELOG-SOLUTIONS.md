@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] DEPLOYMENTS-REAL-2026-10-05 — Dashboard "Latest activity" showed four invented rows; now reads the real fleet command batches; NOT DEPLOYED
+
+The Dashboard card "Recent Deployments / Latest activity" (badge "API driven")
+was fed by `GET /api/v1/deployments/recent`, which returned four hardcoded
+rows since V1.0 RC (`07d50a5`): "TECHI Remote Support agent update" success,
+"Client onboarding batch" Staging warning, "Server configuration push"
+success, "Policy sync failed" QA failed. Timestamps were `now - N hours`, so
+the rows always looked fresh. TECHI has no Staging/QA environments; the
+warning/failed rows reflected nothing real. This broke the "No fake/mock data"
+rule. The owner asked to keep the card but with correct values.
+
+Fix: a TECHI "deployment" is a fleet command batch (bulk command to many
+devices: agent self-update, remote password, PowerShell, …), already persisted
+in `agent_command_batches` + `remote_actions`. The endpoint now returns the
+latest batches via `AgentCommandService.get_history` (same data as the Agent
+Commands history), still gated by the DEPLOYMENT team permission, `limit`
+1–20 (default 5). Status: `running` while devices are pending; `success` when
+every device completed; `failed` when none did; `warning` otherwise. Expired
+or cancelled actions count as "no response". The card shows command, target,
+`completed/total ok · N failed · N no response`, operator and time, and
+"No fleet commands yet" when there are none. Smoke now checks the endpoint.
+Tests: `backend/tests/test_recent_deployments.py` (empty DB returns no rows,
+status rules, expired devices, ordering/limit).
+
+Note: reading history lazily expires overdue actions (existing
+`get_history` behaviour, also used by `/agent/commands/history`).
+
 ## [2026-10-05] PALETTE-FRIDAY-2026-10-05 — UI palette aligned to the Friday chat palette (dark + derived light); NOT DEPLOYED
 
 Owner decision: take the colour palette of the Friday chat audit
