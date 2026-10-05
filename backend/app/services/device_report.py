@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
 
-from app.core.time import ensure_utc, utcnow
+from app.core.time import ensure_utc, format_display, to_display, utcnow
 from app.models.alert import DeviceAlert
 from app.models.device_activity_event import DeviceActivityEvent
 from app.models.device_inventory import DeviceInventory
@@ -52,7 +52,7 @@ def _safe(value) -> str:
 
 
 def _time(value) -> str:
-    return value.strftime("%Y-%m-%d %H:%M UTC") if value else ""
+    return format_display(value)
 
 
 def _csv_cell(value) -> str:
@@ -242,8 +242,8 @@ def device_csv(snapshot: dict) -> bytes:
     writer = csv.writer(output)
     writer.writerow(["TECHI Device Report", _csv_cell(snapshot["device_name"]), snapshot["device_id"]])
     writer.writerow(["Type", SECTION_TITLES[snapshot["report_type"]]])
-    writer.writerow(["Period", snapshot["start"].isoformat(), snapshot["end"].isoformat()])
-    writer.writerow(["Generated", snapshot["generated_at"].isoformat(), _csv_cell(snapshot["generated_by"])])
+    writer.writerow(["Period", to_display(snapshot["start"]).isoformat(), to_display(snapshot["end"]).isoformat()])
+    writer.writerow(["Generated", to_display(snapshot["generated_at"]).isoformat(), _csv_cell(snapshot["generated_by"])])
     writer.writerow(["Note", section["note"].strip()])
     writer.writerow([])
     writer.writerow(section["headers"])

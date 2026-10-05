@@ -1369,7 +1369,7 @@ export default function DeviceDrawer({
                     <div className="col-span-2">
                       <p className="premium-kicker mb-1">Last Telemetry</p>
                       <p className="text-xs font-medium text-slate-300">
-                        {new Date(snapshot.created_at).toLocaleTimeString(undefined, {
+                        {parseUTC(snapshot.created_at).toLocaleTimeString(undefined, {
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",

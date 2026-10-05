@@ -28,6 +28,7 @@ import { isActiveStatus } from "../api/actions";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { appCache, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
+import { parseUTC } from "../utils/time";
 
 const DEVICE_PATCH_EVENTS = new Set([
   "device_online",
@@ -692,7 +693,7 @@ export default function Devices() {
       if (!hideOldOffline) return true;
       if (device.freshness_state !== "offline") return true;
       if (!device.last_seen) return false;
-      return new Date(device.last_seen).getTime() >= cutoff;
+      return parseUTC(device.last_seen).getTime() >= cutoff;
     });
   }, [tableDevices, hideOldOffline, hideOfflineDays]);
 

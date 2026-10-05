@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     DEV_ALLOW_RANDOM_SECRET: bool = False
     API_PREFIX: str = "/api/v1"
     PUBLIC_BACKEND_URL: str = "https://api-rdp.techi.com.al"
+    # Timezone for human-readable times (reports). Storage and APIs stay UTC.
+    DISPLAY_TIMEZONE: str = "Europe/Tirane"
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

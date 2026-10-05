@@ -127,7 +127,7 @@ function getOfflineReasonBadge(device: Device, clientSummary?: ClientOfflineSumm
     return { label: "RS stopped", variant: "agent" as MBadgeVariant };
 
   if (device.client_id && device.last_seen) {
-    const t = new Date(device.last_seen).getTime();
+    const t = parseUTC(device.last_seen).getTime();
     const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
       (ls) => ls !== t && Math.abs(ls - t) < 10 * 60 * 1000
     ).length ?? 0;

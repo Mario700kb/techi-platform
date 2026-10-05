@@ -12,6 +12,7 @@ import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
+import { parseUTC } from "../utils/time";
 
 const fieldClass = "min-h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-techi-orange/60";
 const fieldStyle = { background: "var(--th-bg-input)", borderColor: "var(--th-border-input)", color: "var(--th-text-primary)" };
@@ -26,7 +27,7 @@ const REPORT_TYPES: { value: ReportType; label: string }[] = [
 const reportLabel = (type?: ReportType) => REPORT_TYPES.find((item) => item.value === type)?.label ?? "Full Report";
 
 function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
+  return value ? parseUTC(value).toLocaleString() : "—";
 }
 
 function formatBytes(value?: number | null) {

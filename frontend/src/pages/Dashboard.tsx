@@ -722,7 +722,7 @@ export default function Dashboard() {
                   const label = op.display_name ?? op.username;
                   const online = op.is_online;
                   const lastSeen = op.last_active_at
-                    ? new Date(op.last_active_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+                    ? parseUTC(op.last_active_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
                     : null;
                   return (
                     <div key={op.id} className="premium-card-soft flex items-center justify-between gap-3 p-3">

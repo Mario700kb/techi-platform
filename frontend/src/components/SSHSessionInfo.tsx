@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getSshSessionDetail, type SSHSessionDetail } from "../api/terminal";
+import { parseUTC } from "../utils/time";
 
 // Embedded SSH Connect session info bar: device, client, operator, username,
 // authentication source, start, duration, idle timer, status — polls the
@@ -57,7 +58,7 @@ export default function SSHSessionInfo({ deviceId, sessionId }: Props) {
 
   if (!detail) return null;
 
-  const startedAtMs = detail.started_at ? new Date(detail.started_at).getTime() : null;
+  const startedAtMs = detail.started_at ? parseUTC(detail.started_at).getTime() : null;
   const elapsedSincePollSeconds = (now - fetchedAtMs) / 1000;
   const durationSeconds =
     detail.status === "active" && startedAtMs ? (now - startedAtMs) / 1000 : detail.duration_seconds;

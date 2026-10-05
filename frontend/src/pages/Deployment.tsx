@@ -26,6 +26,7 @@ import {
 import { PlatformFeatures } from "../api/platform";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { Button } from "../components/ui";
+import { parseUTC } from "../utils/time";
 
 // ── Deployment platform registry (metadata-driven) ─────────────────────────
 // The Deployment dialog renders from this table, gated by the backend Platform
@@ -84,7 +85,7 @@ type CopyTarget = string | null;
 
 function fmtDate(value?: string | null) {
   if (!value) return "Never";
-  return new Date(value).toLocaleString();
+  return parseUTC(value).toLocaleString();
 }
 
 function downloadText(name: string, text: string) {

@@ -274,7 +274,7 @@ const getOfflineReasonBadge = (
 
   // Site outage: ≥2 peers from same client offline near same time
   if (device.client_id && device.last_seen) {
-    const t = new Date(device.last_seen).getTime();
+    const t = parseUTC(device.last_seen).getTime();
     const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
       (lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000
     ).length ?? 0;
@@ -824,7 +824,7 @@ const DevicesTable = memo(function DevicesTable({
       const summary = summaries.get(device.client_id) ?? { offlineCount: 0, inactiveLastSeen: [] };
       if (freshness === "offline") summary.offlineCount += 1;
       if ((freshness === "offline" || freshness === "stale") && device.last_seen) {
-        summary.inactiveLastSeen.push(new Date(device.last_seen).getTime());
+        summary.inactiveLastSeen.push(parseUTC(device.last_seen).getTime());
       }
       summaries.set(device.client_id, summary);
     }

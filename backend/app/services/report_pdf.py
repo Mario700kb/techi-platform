@@ -12,6 +12,7 @@ from reportlab.platypus import (
     Paragraph, Spacer, Table, TableStyle,
 )
 
+from app.core.time import format_display
 from app.services.report_output import safe_text
 
 
@@ -56,7 +57,7 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
         canvas.line(42, 48, page_w - 42, 48)
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(MUTED)
-        footer = f"Generated {generated_at:%Y-%m-%d %H:%M} UTC  |  Operator: {safe_text(generated_by)}"
+        footer = f"Generated {format_display(generated_at)}  |  Operator: {safe_text(generated_by)}"
         canvas.drawString(42, 35, footer[:94])
         canvas.drawRightString(page_w - 42, 35, f"Page {doc.page}")
         canvas.restoreState()
@@ -70,8 +71,8 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
              _p(f"{report_type.replace('_', ' ').title()} Report", styles["title"]), Spacer(1, 12),
              _p(f"{scope.title()}: {target}", styles["subtitle"]), Spacer(1, 35)]
     cover_rows = [
-        ("Reporting period", f"{period_start:%Y-%m-%d %H:%M} to {period_end:%Y-%m-%d %H:%M} UTC"),
-        ("Generated", f"{generated_at:%Y-%m-%d %H:%M} UTC"),
+        ("Reporting period", f"{format_display(period_start)} to {format_display(period_end)}"),
+        ("Generated", format_display(generated_at)),
         ("Operator", generated_by),
         ("Format", "PDF"),
     ]

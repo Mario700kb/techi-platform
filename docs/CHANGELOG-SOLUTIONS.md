@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] TIRANA-TIME-2026-10-05 — Some times showed 2 hours behind; UI and reports now show Tirana time; NOT DEPLOYED
+
+Owner report: the system time looked 2 hours behind Tirana. Every DB datetime
+column is a naive `DateTime` holding UTC, so the API emits ISO strings with no
+offset. `parseUTC()` (frontend/src/utils/time.ts) exists to read those as UTC,
+but 9 call sites used `new Date(iso)`. Browsers read such strings as local
+time, so in Tirana (UTC+2 in summer) they were 2 hours behind. Five of them
+fed calculations as well as display: device age from `last_seen`
+(DevicesTable RS-state + offline summary, DeviceMobileCard, Devices
+"hide offline older than"), SSH session duration. Display-only: DeviceDrawer
+snapshot time, Dashboard operator last-active, Deployment and Reports dates.
+All nine now use `parseUTC`. The operator's machine itself was correct
+(Europe/Tirane, CEST).
+
+Reports (PDF/CSV) printed raw UTC, and the client PDF tables printed it with
+no zone label. Added `DISPLAY_TIMEZONE = "Europe/Tirane"` (config) with
+`to_display` / `format_display` (app/core/time.py, DST-aware: CEST in summer,
+CET in winter). PDF cover, footer and tables now read e.g.
+`2026-10-05 14:52 CEST`. CSV uses ISO with offset
+(`2026-10-05T14:52:00+02:00`), and file names use Tirana time. "Created UTC"
+headers became "Created". `tzdata` was added to requirements because
+`python:3.12-slim` may lack the system zoneinfo. Tests:
+`tests/test_display_time.py`.
+
+Unchanged on purpose: storage and API stay UTC; agent/server logs stay UTC.
+Scheduled reports keep their "Hour UTC" field: the hour is stored per
+schedule, and changing its meaning would move existing schedules. Converting
+that to Tirana time is a separate decision.
+
 ## [2026-10-05] DEPLOYMENTS-REAL-2026-10-05 — Dashboard "Latest activity" showed four invented rows; now reads the real fleet command batches; NOT DEPLOYED
 
 The Dashboard card "Recent Deployments / Latest activity" (badge "API driven")
