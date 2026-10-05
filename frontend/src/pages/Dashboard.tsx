@@ -373,9 +373,9 @@ export default function Dashboard() {
           style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>My Devices</p>
-            <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "#fbbf24" }}>★ Fav</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-status-warning)" }}>★ Fav</span>
           </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: favoritesCount > 0 ? "#fbbf24" : "var(--th-text-muted)" }}>
+          <p className="mt-2 text-2xl font-bold" style={{ color: favoritesCount > 0 ? "var(--th-status-warning)" : "var(--th-text-muted)" }}>
             {favoritesCount}
           </p>
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Starred devices</p>
@@ -386,7 +386,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Critical Health</p>
           </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: criticalCount > 0 ? "#f87171" : "var(--th-text-muted)" }}>
+          <p className="mt-2 text-2xl font-bold" style={{ color: criticalCount > 0 ? "var(--th-status-critical)" : "var(--th-text-muted)" }}>
             {loading ? "—" : criticalCount}
           </p>
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Health score &lt; 50</p>
@@ -397,7 +397,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Offline Now</p>
           </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: offline > 0 ? "#94a3b8" : "var(--th-text-muted)" }}>
+          <p className="mt-2 text-2xl font-bold" style={{ color: offline > 0 ? "var(--th-status-offline)" : "var(--th-text-muted)" }}>
             {loading ? "—" : offline}
           </p>
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Not responding</p>
@@ -408,7 +408,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Needs Updates</p>
           </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: patchCount > 0 ? "#fbbf24" : "var(--th-text-muted)" }}>
+          <p className="mt-2 text-2xl font-bold" style={{ color: patchCount > 0 ? "var(--th-status-warning)" : "var(--th-text-muted)" }}>
             {loading ? "—" : patchCount}
           </p>
           <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Pending patches</p>
@@ -695,7 +695,7 @@ export default function Dashboard() {
                     <div key={op.id} className="premium-card-soft flex items-center justify-between gap-3 p-3">
                       <div className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`mt-px h-2 w-2 shrink-0 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_6px_1px_rgba(52,211,153,0.5)]" : "bg-slate-600"}`}
+                          className={`mt-px h-2 w-2 shrink-0 rounded-full ${online ? "bg-[var(--th-status-online)] shadow-[0_0_6px_1px_color-mix(in_srgb,var(--th-status-online)_50%,transparent)]" : "bg-slate-600"}`}
                           title={online ? "Online" : "Offline"}
                         />
                         <div className="min-w-0">

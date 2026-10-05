@@ -183,7 +183,7 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
         <div
           className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-xs"
           style={{
-            color: phase === "error" ? "#f87171" : "var(--th-text-secondary)",
+            color: phase === "error" ? "var(--th-status-critical)" : "var(--th-text-secondary)",
             background: "var(--th-bg-drawer-section)",
             border: "1px solid var(--th-border-drawer-section)",
           }}

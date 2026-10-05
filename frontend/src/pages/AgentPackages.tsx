@@ -198,7 +198,7 @@ export default function AgentPackages() {
                 onClick={() => { setPlatformScope(scope); setError(null); }}
                 className={[
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
-                  platformScope === scope ? "bg-[#3A1A14] text-[#FF6B47]" : "text-slate-400 hover:text-slate-200",
+                  platformScope === scope ? "bg-techi-accent-dim text-techi-orange" : "text-slate-400 hover:text-slate-200",
                 ].join(" ")}
               >
                 <PlatformIcon platform={scope} size={13} />

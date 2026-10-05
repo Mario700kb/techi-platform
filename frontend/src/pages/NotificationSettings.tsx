@@ -37,10 +37,10 @@ function formatDate(iso: string | null): string {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  sent: "#4ade80",
-  pending: "#94a3b8",
-  retrying: "#fbbf24",
-  failed: "#f87171",
+  sent: "var(--th-status-online)",
+  pending: "var(--th-status-offline)",
+  retrying: "var(--th-status-warning)",
+  failed: "var(--th-status-critical)",
 };
 
 export default function NotificationSettings() {
@@ -452,8 +452,8 @@ export default function NotificationSettings() {
                     <td className="px-4 py-3 text-slate-300">{channelName(d.channel_id)}</td>
                     <td className="px-4 py-3 text-slate-300">{d.title}</td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: STATUS_COLOR[d.status] || "#94a3b8" }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[d.status] || "#94a3b8" }} />
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: STATUS_COLOR[d.status] || "var(--th-status-offline)" }}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[d.status] || "var(--th-status-offline)" }} />
                         {d.status}
                       </span>
                     </td>

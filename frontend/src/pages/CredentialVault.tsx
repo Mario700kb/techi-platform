@@ -59,15 +59,15 @@ function formatDate(iso: string | null): string {
 function lifecycleBadge(status: VaultCredential["lifecycle_status"]) {
   switch (status) {
     case "disabled":
-      return { label: "Disabled", color: "rgba(148,163,184,.9)", bg: "rgba(148,163,184,.12)", border: "rgba(148,163,184,.3)" };
+      return { label: "Disabled", color: "color-mix(in srgb, var(--th-status-offline) 90%, transparent)", bg: "color-mix(in srgb, var(--th-status-offline) 12%, transparent)", border: "color-mix(in srgb, var(--th-status-offline) 30%, transparent)" };
     case "expired":
-      return { label: "Expired", color: "#fca5a5", bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.3)" };
+      return { label: "Expired", color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" };
     case "expiring_soon":
-      return { label: "Expiring soon", color: "#fcd34d", bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.3)" };
+      return { label: "Expiring soon", color: "var(--th-status-warning)", bg: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-warning) 30%, transparent)" };
     case "validation_failed":
-      return { label: "Validation failed", color: "#fca5a5", bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.3)" };
+      return { label: "Validation failed", color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" };
     default:
-      return { label: "Active", color: "#86efac", bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.3)" };
+      return { label: "Active", color: "var(--th-status-online)", bg: "color-mix(in srgb, var(--th-status-online) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-online) 30%, transparent)" };
   }
 }
 

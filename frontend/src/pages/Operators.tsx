@@ -417,7 +417,7 @@ export default function Operators() {
                         ) : (
                           teamsForOperator(op.id).map((team) => (
                             <span key={team.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
-                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: team.color ?? "#f97316" }} />
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: team.color ?? "var(--th-accent)" }} />
                               {team.name}
                             </span>
                           ))

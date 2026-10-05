@@ -41,20 +41,20 @@ const STATUS_CONFIG: Record<
 > = {
   online: {
     label: "Online",
-    color: "#22c55e",
-    bg: "rgba(34,197,94,0.12)",
+    color: "var(--th-status-online)",
+    bg: "color-mix(in srgb, var(--th-status-online) 12%, transparent)",
     icon: Wifi,
   },
   warning: {
     label: "Warning",
-    color: "#f97316",
-    bg: "rgba(249,115,22,0.12)",
+    color: "var(--th-accent)",
+    bg: "color-mix(in srgb, var(--th-accent) 12%, transparent)",
     icon: AlertTriangle,
   },
   offline: {
     label: "Offline",
-    color: "#6b7280",
-    bg: "rgba(107,114,128,0.12)",
+    color: "var(--th-status-offline)",
+    bg: "color-mix(in srgb, var(--th-status-offline) 12%, transparent)",
     icon: WifiOff,
   },
 };
@@ -79,13 +79,13 @@ function ServiceBadge({ status }: { status: string }) {
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
       style={{
-        color: isRunning ? "#22c55e" : "#9ca3af",
-        background: isRunning ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)",
+        color: isRunning ? "var(--th-status-online)" : "var(--th-status-offline)",
+        background: isRunning ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-status-offline) 10%, transparent)",
       }}
     >
       <span
         className="h-1.5 w-1.5 rounded-full"
-        style={{ background: isRunning ? "#22c55e" : "#9ca3af" }}
+        style={{ background: isRunning ? "var(--th-status-online)" : "var(--th-status-offline)" }}
       />
       {isRunning ? "Running" : status === "stopped" ? "Stopped" : status}
     </span>
@@ -98,8 +98,8 @@ function DeviceTypeBadge({ type }: { type?: string }) {
     <span
       className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
       style={{
-        color: isServer ? "#a78bfa" : "#60a5fa",
-        background: isServer ? "rgba(167,139,250,0.1)" : "rgba(96,165,250,0.1)",
+        color: isServer ? "var(--th-status-agent)" : "var(--th-status-info)",
+        background: isServer ? "color-mix(in srgb, var(--th-status-agent) 10%, transparent)" : "color-mix(in srgb, var(--th-status-info) 10%, transparent)",
       }}
     >
       {isServer ? "Server" : type === "client" ? "Workstation" : type ?? "—"}
@@ -407,9 +407,9 @@ export default function RemoteSupport() {
             key={t.id}
             className="rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
             style={{
-              background: t.ok ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-              border: `1px solid ${t.ok ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
-              color: t.ok ? "#22c55e" : "#ef4444",
+              background: t.ok ? "color-mix(in srgb, var(--th-status-online) 15%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 15%, transparent)",
+              border: `1px solid ${t.ok ? "color-mix(in srgb, var(--th-status-online) 30%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 30%, transparent)"}`,
+              color: t.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
             }}
           >
             {t.message}
@@ -430,7 +430,7 @@ export default function RemoteSupport() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center gap-2">
-              <KeyRound className="h-4 w-4" style={{ color: "var(--techi-orange, #f59e0b)" }} />
+              <KeyRound className="h-4 w-4" style={{ color: "var(--techi-orange, var(--th-status-warning))" }} />
               <h3 className="text-base font-semibold" style={{ color: "var(--th-text)" }}>
                 Remote Support Password
               </h3>
@@ -473,7 +473,7 @@ export default function RemoteSupport() {
                   disabled={passwordModal.saving}
                   onClick={handleRegeneratePassword}
                   className="mb-3 w-full rounded-lg px-3 py-2 text-sm font-medium"
-                  style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}
+                  style={{ background: "color-mix(in srgb, var(--th-status-warning) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-warning) 30%, transparent)", color: "var(--th-status-warning)" }}
                 >
                   {passwordModal.saving ? "Working…" : "Generate new random password"}
                 </button>
@@ -491,7 +491,7 @@ export default function RemoteSupport() {
                     disabled={passwordModal.saving || passwordModal.custom.trim().length < 8}
                     onClick={handleSetCustomPassword}
                     className="rounded-lg px-3 py-2 text-sm font-medium"
-                    style={{ background: "var(--techi-orange, #f59e0b)", color: "#fff" }}
+                    style={{ background: "var(--techi-orange, var(--th-status-warning))", color: "#fff" }}
                   >
                     Set
                   </button>
@@ -525,9 +525,9 @@ export default function RemoteSupport() {
           <div className="flex items-center gap-3">
             <div
               className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{ background: "rgba(249,115,22,0.12)" }}
+              style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)" }}
             >
-              <Monitor className="h-5 w-5" style={{ color: "#f97316" }} />
+              <Monitor className="h-5 w-5" style={{ color: "var(--th-accent)" }} />
             </div>
             <div>
               <h1 className="text-lg font-semibold" style={{ color: "var(--th-text-primary)" }}>
@@ -567,10 +567,10 @@ export default function RemoteSupport() {
                   background: isActive
                     ? cfg
                       ? cfg.bg
-                      : "rgba(249,115,22,0.12)"
-                    : "var(--th-bg-elevated, rgba(255,255,255,0.03))",
+                      : "color-mix(in srgb, var(--th-accent) 12%, transparent)"
+                    : "var(--th-bg-elevated, color-mix(in srgb, var(--th-text-primary) 3%, transparent))",
                   border: `1px solid ${isActive ? (cfg ? cfg.color + "44" : "#f9731644") : "var(--th-border-subtle)"}`,
-                  color: isActive ? (cfg ? cfg.color : "#f97316") : "var(--th-text-muted)",
+                  color: isActive ? (cfg ? cfg.color : "var(--th-accent)") : "var(--th-text-muted)",
                 }}
               >
                 {cfg && <cfg.icon className="h-3 w-3" />}
@@ -581,9 +581,9 @@ export default function RemoteSupport() {
                     background: isActive
                       ? cfg
                         ? cfg.color + "22"
-                        : "rgba(249,115,22,0.15)"
-                      : "rgba(255,255,255,0.06)",
-                    color: isActive ? (cfg ? cfg.color : "#f97316") : "var(--th-text-muted)",
+                        : "color-mix(in srgb, var(--th-accent) 15%, transparent)"
+                      : "color-mix(in srgb, var(--th-text-primary) 6%, transparent)",
+                    color: isActive ? (cfg ? cfg.color : "var(--th-accent)") : "var(--th-text-muted)",
                   }}
                 >
                   {count}
@@ -614,9 +614,9 @@ export default function RemoteSupport() {
         <div
           className="rounded-xl px-4 py-3 text-sm"
           style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.2)",
-            color: "#ef4444",
+            background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--th-status-critical) 20%, transparent)",
+            color: "var(--th-status-critical)",
           }}
         >
           {error}
@@ -647,16 +647,16 @@ export default function RemoteSupport() {
               <div
                 className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-widest"
                 style={{
-                  background: "var(--th-bg-table-head, rgba(255,255,255,0.03))",
+                  background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 3%, transparent))",
                   borderBottom: "1px solid var(--th-border-subtle)",
                   color: "var(--th-text-muted)",
                 }}
               >
-                <span style={{ color: "#f97316" }}>◆</span>
+                <span style={{ color: "var(--th-accent)" }}>◆</span>
                 {domain}
                 <span
                   className="ml-1 rounded-full px-2 py-0.5 text-[10px]"
-                  style={{ background: "rgba(249,115,22,0.1)", color: "#f97316" }}
+                  style={{ background: "color-mix(in srgb, var(--th-accent) 10%, transparent)", color: "var(--th-accent)" }}
                 >
                   {domainDevices.length}
                 </span>
@@ -668,7 +668,7 @@ export default function RemoteSupport() {
                   <thead>
                     <tr
                       style={{
-                        background: "var(--th-bg-table-head, rgba(255,255,255,0.02))",
+                        background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2%, transparent))",
                         borderBottom: "1px solid var(--th-border-subtle)",
                       }}
                     >
@@ -715,7 +715,7 @@ export default function RemoteSupport() {
                               background:
                                 idx % 2 === 0
                                   ? "var(--th-bg-table-row, transparent)"
-                                  : "rgba(255,255,255,0.01)",
+                                  : "color-mix(in srgb, var(--th-text-primary) 1%, transparent)",
                               borderBottom: "1px solid var(--th-border-subtle)",
                             }}
                           >
@@ -739,7 +739,7 @@ export default function RemoteSupport() {
                               {device.techi_remote_id ? (
                                 <span
                                   className="font-mono text-[11px]"
-                                  style={{ color: "#f97316" }}
+                                  style={{ color: "var(--th-accent)" }}
                                 >
                                   {device.techi_remote_id}
                                 </span>
@@ -920,15 +920,15 @@ function ActionButton({
       className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-all"
       style={{
         background: disabled
-          ? "rgba(255,255,255,0.03)"
+          ? "color-mix(in srgb, var(--th-text-primary) 3%, transparent)"
           : isPrimary
-          ? "rgba(249,115,22,0.15)"
-          : "rgba(255,255,255,0.05)",
-        border: `1px solid ${disabled ? "var(--th-border-subtle)" : isPrimary ? "rgba(249,115,22,0.3)" : "var(--th-border-subtle)"}`,
+          ? "color-mix(in srgb, var(--th-accent) 15%, transparent)"
+          : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
+        border: `1px solid ${disabled ? "var(--th-border-subtle)" : isPrimary ? "color-mix(in srgb, var(--th-accent) 30%, transparent)" : "var(--th-border-subtle)"}`,
         color: disabled
           ? "var(--th-text-muted)"
           : isPrimary
-          ? "#f97316"
+          ? "var(--th-accent)"
           : "var(--th-text-secondary)",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,

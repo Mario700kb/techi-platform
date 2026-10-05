@@ -272,7 +272,7 @@ export default function AgentConfigPage() {
               disabled={saving || !heartbeatDirty}
               className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
               style={{
-                background: "var(--th-accent-orange, #ff553f)",
+                background: "var(--th-accent)",
                 color: "#fff",
               }}
             >
@@ -349,7 +349,7 @@ export default function AgentConfigPage() {
             disabled={remoteSaving || !remoteSupportDirty}
             className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
             style={{
-              background: "var(--th-accent-orange, #ff553f)",
+              background: "var(--th-accent)",
               color: "#fff",
             }}
           >

@@ -185,15 +185,17 @@ const drawerDevice = useMemo(
 ### Design system classes (index.css)
 | Class | Use |
 |-------|-----|
-| `.premium-card` | Dark gradient card with subtle orange glow |
+| `.premium-card` | Dark gradient card with subtle coral glow |
 | `.premium-card-soft` | Lighter card, less glow |
-| `.premium-kicker` | Orange ALL-CAPS label, 0.62rem, tracking-wide |
-| `.premium-accent-text` | Orange→pink gradient text |
+| `.premium-kicker` | Coral ALL-CAPS label, 0.62rem, tracking-wide |
+| `.premium-accent-text` | Coral gradient text |
 | `.premium-metric` | Stat card with radial corner glow |
-| `.premium-status-online` | Emerald tint, used for online badges |
-| `.premium-status-offline` | Slate tint |
+| `.premium-status-online` | Friday "OK" green tint, used for online badges |
+| `.premium-status-offline` | Neutral grey tint |
 
-Custom Tailwind colors: `techi-orange` (#FF553F), `techi-pink` (#FF3F32), `techi-dark` (#050505), `techi-surface` (#111010)
+Palette: Friday chat palette (dark, single coral accent). Source of truth is the `--th-*` tokens in `frontend/src/index.css` (dark + light), documented in `docs/reference/MOBILE-DESIGN-SPEC.md` → Design System/Colors.
+
+Tailwind colours (`tailwind.config.js`) all resolve to `--th-*` tokens: `techi-*` (orange = `--th-accent`, card/surface/hover = surface tokens), `status-*`, and every built-in hue (red→critical, amber→warning, emerald→online, sky/blue→info, teal→maint, violet→agent, orange→accent, slate→Friday neutrals). Existing classes therefore follow the palette in dark and light; no per-class `html.light` overrides are needed for hue/slate text.
 
 ---
 

@@ -5,6 +5,65 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] PALETTE-FRIDAY-2026-10-05 — UI palette aligned to the Friday chat palette (dark + derived light); NOT DEPLOYED
+
+Owner decision: take the colour palette of the Friday chat audit
+(claude.ai artifact `Jr34TUAn2u4nPW6mXWLbWj`) for TECHI, update the docs and
+`frontend/src/index.css`, adopt Friday's semantic status tones, and derive a
+light theme from it (the source is dark-only).
+
+- Dark: surfaces/text/coral were already Friday; changed `--th-bg-shell`
+  `#0B0C0F`, `--th-bg-card-hover` `#22222A`, danger buttons to Friday critical.
+- Status (`--th-status-*`) moved off Tailwind: online `#5E8F6C` (Friday OK
+  `#5C8C6A`, +2% lightness because it measured 4.47:1 on `--th-bg-card`),
+  stale/warning `#C8A000`, offline `#A0A0AA`, critical `#F04A2A`, info
+  `#7C9CBF`, maint `#4E8E86`, agent `#8E7CC3`. `--danger/--warning/--success/--info`
+  now alias these tokens; `.premium-status-online/offline` use Friday tints.
+- Light: slate-blue tint dropped for Friday's neutral greys (page `#F4F4F6`,
+  text `#131316`); accent `#C75E49` → `#B6432B` because the old value was only
+  4.10:1 on white. Every light status tone was darkened to ≥4.5:1 on `#FFFFFF`
+  and `#F4F4F6`.
+- Docs: MOBILE-DESIGN-SPEC Colors table rewritten; `docs/ai-context`
+  architecture/rules still listed the pre-coral `#FF553F/#FF3F32` and now match
+  `tailwind.config.js`.
+
+- Components (second pass, same day): every hardcoded status hex/rgba literal
+  in `DevicesTable`, `DeviceDrawer`, `Dashboard`, `DeviceTerminal`,
+  `NotificationSettings`, `ComponentStatesPanel`, `EmbeddedSSHModal` and
+  `GenericDeviceDrawer` now reads a token (red→critical, amber→warning,
+  green→online, blue→info, sky→maint, violet→agent, slate→offline,
+  orange→`--th-accent`); alpha variants use
+  `color-mix(in srgb, var(--token) N%, transparent)`. Two undefined vars that
+  always fell back were fixed: `var(--techi-orange, #f59e0b)` (the RS "Set"
+  button rendered amber) → `--th-accent`, and `var(--th-danger, …)` →
+  `--th-status-critical`. The status dots next to those glows moved from
+  `bg-emerald-400/amber-300/red-400` to `bg-[var(--th-status-*)]`.
+
+- Whole app (third pass, owner: "the whole application must follow this
+  palette"): `tailwind.config.js` now maps every Tailwind hue and the slate
+  family onto `--th-*` tokens (scale 50–950 built with `color-mix`, opacity
+  modifiers preserved), and `techi-*` resolves to tokens instead of fixed
+  dark hexes. This moves ~1,580 existing utility-class usages onto Friday without
+  touching the class names. The now-redundant `html.light` text overrides for
+  hue/slate classes and the dark `.premium-page .text-slate-*` overrides were
+  removed; the remaining light overrides, metric/op-pill classes and danger
+  text use tokens. The remaining ~240 hex/rgba literals in 21 more
+  components were moved onto tokens; inline `rgba(255,255,255,x)` became
+  `--th-text-primary` at x%, so it shows in light mode as well. An undefined
+  `var(--th-accent-orange, #ff553f)` (the old orange, 6 places in
+  AgentCommandsPanel/AgentConfig) → `--th-accent`. The default ring colour
+  (Tailwind blue) is reset to the accent. Team colour presets are persisted
+  hex values, so only the presets for new picks changed (Friday hexes);
+  saved team colours are untouched.
+
+Deliberate literals kept: Login (already Friday hexes, dark-only by design),
+PlatformIcon neutrals/coral (already Friday), xterm theme (xterm cannot read
+CSS vars), black shadows/backdrops. Requires `color-mix()` (Chrome 111+,
+Safari 16.2+, Firefox 113+); older browsers lose these colours. Critical
+`#F04A2A` sits close to the coral accent by Friday's own design. Typecheck,
+build and vitest (84/84) passed; no browser check yet; not committed or
+deployed.
+
 ## [2026-10-01] REPORTS-PRODUCTION-2026-10-01 — Client and Device Reports deployed
 
 Commit `dbf46c86b80f41baa068dd661a59c27155e2f214` was deployed from the

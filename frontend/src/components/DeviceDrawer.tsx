@@ -116,7 +116,7 @@ function WsIndicator({ status }: { status?: DeviceRealtimeStatus }) {
   if (status === "connected") {
     return (
       <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]" />
         Live
       </div>
     );
@@ -607,7 +607,7 @@ export default function DeviceDrawer({
             <div className="flex items-center gap-2">
               <span
                 className={`h-2.5 w-2.5 flex-none rounded-full ${
-                  isOnline ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-slate-600"
+                  isOnline ? "bg-[var(--th-status-online)] shadow-[0_0_6px_color-mix(in_srgb,var(--th-status-online)_60%,transparent)]" : "bg-slate-600"
                 }`}
               />
               {nameEditing ? (
@@ -668,17 +668,17 @@ export default function DeviceDrawer({
               )}
               {device.device_type === "server" ? (
                 <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-                  style={{ color: "#a78bfa", background: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.22)" }}>
+                  style={{ color: "var(--th-status-agent)", background: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-agent) 22%, transparent)" }}>
                   Server
                 </span>
               ) : device.device_type === "client" ? (
                 <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-                  style={{ color: "#60a5fa", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.2)" }}>
+                  style={{ color: "var(--th-status-info)", background: "color-mix(in srgb, var(--th-status-info) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-info) 20%, transparent)" }}>
                   WS
                 </span>
               ) : (
                 <span className="flex-none rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
-                  style={{ background: "rgba(255,255,255,0.04)" }}>
+                  style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)" }}>
                   {device.device_type}
                 </span>
               )}
@@ -686,7 +686,7 @@ export default function DeviceDrawer({
             {/* Row 2 — contextual meta */}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
               {(device.resolved_client_name || device.client_name) && (
-                <span className="text-[10px] font-semibold" style={{ color: "#fb923c" }}>
+                <span className="text-[10px] font-semibold" style={{ color: "var(--th-accent)" }}>
                   {device.resolved_client_name || device.client_name}
                 </span>
               )}
@@ -724,7 +724,7 @@ export default function DeviceDrawer({
                 onClick={() => onToggleFavorite(device.id)}
                 title={isFavorite ? "Remove from favorites" : "Add to favorites"}
                 className="rounded-lg p-1.5 transition hover:bg-white/5"
-                style={{ color: isFavorite ? "#fbbf24" : "var(--th-text-muted)" }}
+                style={{ color: isFavorite ? "var(--th-status-warning)" : "var(--th-text-muted)" }}
               >
                 <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
               </button>
@@ -748,7 +748,7 @@ export default function DeviceDrawer({
               onClick={() => setActiveTab(tab.id)}
               className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
                 activeTab === tab.id
-                  ? "bg-techi-orange/15 text-orange-100 shadow-[inset_0_0_0_1px_rgba(255,85,63,0.22)]"
+                  ? "bg-techi-orange/15 text-orange-100 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--th-accent)_22%,transparent)]"
                   : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
               }`}
             >
@@ -765,7 +765,7 @@ export default function DeviceDrawer({
           {device.is_archived && device.freshness_state !== "offline" && (
             <div
               className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
-              style={{ border: "1px solid rgba(251,146,60,0.25)", background: "rgba(251,146,60,0.07)" }}
+              style={{ border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)", background: "color-mix(in srgb, var(--th-accent) 7%, transparent)" }}
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-orange-400" />
               <div className="min-w-0">
@@ -782,7 +782,7 @@ export default function DeviceDrawer({
           {device.duplicate_candidate && (
             <div
               className="mb-4 rounded-lg px-4 py-3"
-              style={{ border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.07)" }}
+              style={{ border: "1px solid color-mix(in srgb, var(--th-status-warning) 25%, transparent)", background: "color-mix(in srgb, var(--th-status-warning) 7%, transparent)" }}
             >
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-400" />
@@ -832,9 +832,9 @@ export default function DeviceDrawer({
                   <span
                     className={`h-2.5 w-2.5 flex-none rounded-full ${
                       device.freshness_state === "online"
-                        ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]"
+                        ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]"
                         : device.freshness_state === "stale"
-                        ? "bg-amber-300 shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+                        ? "bg-[var(--th-status-warning)] shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-warning)_60%,transparent)]"
                         : "bg-slate-600"
                     }`}
                   />
@@ -874,7 +874,7 @@ export default function DeviceDrawer({
                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                       {/* Reason chip */}
                       <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.25)", color: "#fb923c" }}>
+                        style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)", color: "var(--th-accent)" }}>
                         {OFFLINE_REASON_LABELS[offlineAnalysis.reason] ?? offlineAnalysis.reason}
                       </span>
                       {/* Confidence chip */}
@@ -926,7 +926,7 @@ export default function DeviceDrawer({
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               {/* RustDesk status */}
-              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
                 <p className="premium-kicker mb-0.5">Remote Support</p>
                 <p className={`text-xs font-semibold ${
                   device.rustdesk_status === "running" ? "text-emerald-400"
@@ -939,7 +939,7 @@ export default function DeviceDrawer({
                 </p>
               </div>
               {/* Patch status */}
-              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
                 <p className="premium-kicker mb-0.5">Patch</p>
                 <p className={`text-xs font-semibold ${
                   snapshot == null ? "text-slate-500"
@@ -953,7 +953,7 @@ export default function DeviceDrawer({
                 </p>
               </div>
               {/* Maintenance status */}
-              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
                 <p className="premium-kicker mb-0.5">Maintenance</p>
                 {device.is_in_maintenance ? (
                   <div>
@@ -971,7 +971,7 @@ export default function DeviceDrawer({
                 )}
               </div>
               {/* Duplicate / lifecycle flags */}
-              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
                 <p className="premium-kicker mb-0.5">Lifecycle</p>
                 <p className={`text-xs font-semibold ${device.is_archived ? "text-amber-400" : "text-emerald-400"}`}>
                   {device.is_archived ? "Archived" : "Active"}
@@ -1575,9 +1575,9 @@ export default function DeviceDrawer({
                       title={!allowed ? "Permission required" : undefined}
                       className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
                       style={{
-                        background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
-                        color: destructive ? "#f87171" : "var(--th-text-secondary)",
+                        background: destructive ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
+                        border: `1px solid ${destructive ? "color-mix(in srgb, var(--th-status-critical) 20%, transparent)" : "var(--th-border-drawer-section)"}`,
+                        color: destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
                       }}>
                       {label}
                     </button>
@@ -1627,7 +1627,7 @@ export default function DeviceDrawer({
                     onClick={() => setActionFilter(f)}
                     className={`rounded-md px-2 py-0.5 text-[10px] font-semibold capitalize transition ${
                       actionFilter === f
-                        ? "bg-techi-orange/15 text-orange-200 shadow-[inset_0_0_0_1px_rgba(255,85,63,0.22)]"
+                        ? "bg-techi-orange/15 text-orange-200 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--th-accent)_22%,transparent)]"
                         : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
                     }`}
                   >
@@ -2059,9 +2059,9 @@ export default function DeviceDrawer({
               <div
                 className="mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
                 style={{
-                  background: rsToast.ok ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-                  border: `1px solid ${rsToast.ok ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
-                  color: rsToast.ok ? "#22c55e" : "#ef4444",
+                  background: rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 10%, transparent)",
+                  border: `1px solid ${rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 25%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 25%, transparent)"}`,
+                  color: rsToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
                 }}
               >
                 {rsToast.message}
@@ -2245,7 +2245,7 @@ export default function DeviceDrawer({
                               }
                             }}
                             className="rounded-md px-2.5 py-1 text-xs font-semibold text-white transition"
-                            style={{ background: "var(--techi-orange, #f59e0b)" }}
+                            style={{ background: "var(--th-accent)" }}
                           >
                             Set
                           </button>
@@ -2567,13 +2567,13 @@ function RsServiceBadge({ status }: { status?: string }) {
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
       style={{
-        color: isRunning ? "#22c55e" : isStopped || isNotInstalled ? "#6b7280" : "#94a3b8",
-        background: isRunning ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.05)",
+        color: isRunning ? "var(--th-status-online)" : isStopped || isNotInstalled ? "var(--th-text-faint)" : "var(--th-status-offline)",
+        background: isRunning ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
       }}
     >
       <span
         className="h-1.5 w-1.5 rounded-full"
-        style={{ background: isRunning ? "#22c55e" : "#4b5563" }}
+        style={{ background: isRunning ? "var(--th-status-online)" : "var(--th-text-faint)" }}
       />
       {isRunning ? "Running" : isStopped ? "Stopped" : isNotInstalled ? "Not installed" : (status ?? "Unknown")}
     </span>
@@ -2598,9 +2598,9 @@ function RsActionButton({
       onClick={onClick}
       className="flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
       style={{
-        border: `1px solid ${destructive ? "rgba(239,68,68,0.2)" : "var(--th-border-drawer-section)"}`,
-        background: destructive ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)",
-        color: destructive ? "#f87171" : "var(--th-text-secondary)",
+        border: `1px solid ${destructive ? "color-mix(in srgb, var(--th-status-critical) 20%, transparent)" : "var(--th-border-drawer-section)"}`,
+        background: destructive ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
+        color: destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
       }}
     >
       {busy && <RefreshCw className="h-3 w-3 animate-spin" />}

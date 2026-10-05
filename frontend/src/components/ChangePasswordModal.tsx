@@ -70,8 +70,8 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
         >
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ background: "rgba(249,115,22,0.12)" }}>
-              <KeyRound className="h-4 w-4" style={{ color: "#f97316" }} />
+              style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)" }}>
+              <KeyRound className="h-4 w-4" style={{ color: "var(--th-accent)" }} />
             </div>
             <h2 className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
               Change Password
@@ -91,14 +91,14 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
           {success ? (
             <div className="rounded-lg px-4 py-3 text-sm font-medium text-center"
-              style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", color: "#22c55e" }}>
+              style={{ background: "color-mix(in srgb, var(--th-status-online) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-online) 25%, transparent)", color: "var(--th-status-online)" }}>
               Password changed successfully
             </div>
           ) : (
             <>
               {error && (
                 <div className="rounded-lg px-3 py-2 text-xs font-medium"
-                  style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444" }}>
+                  style={{ background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 25%, transparent)", color: "var(--th-status-critical)" }}>
                   {error}
                 </div>
               )}
@@ -118,7 +118,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                     autoComplete="current-password"
                     className="w-full rounded-lg border pr-9 px-3 py-2 text-sm font-medium outline-none transition"
                     style={{
-                      background: "var(--th-bg-input, rgba(255,255,255,0.04))",
+                      background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
                       border: "1px solid var(--th-border-input)",
                       color: "var(--th-text-primary)",
                     }}
@@ -146,7 +146,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                     autoComplete="new-password"
                     className="w-full rounded-lg border px-3 py-2 pr-9 text-sm font-medium outline-none transition"
                     style={{
-                      background: "var(--th-bg-input, rgba(255,255,255,0.04))",
+                      background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
                       border: "1px solid var(--th-border-input)",
                       color: "var(--th-text-primary)",
                     }}
@@ -159,7 +159,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                   </button>
                 </div>
                 {next && next.length < 8 && (
-                  <p className="mt-1 text-[10px]" style={{ color: "#f97316" }}>
+                  <p className="mt-1 text-[10px]" style={{ color: "var(--th-accent)" }}>
                     Minimum 8 characters
                   </p>
                 )}
@@ -178,9 +178,9 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                   autoComplete="new-password"
                   className="w-full rounded-lg border px-3 py-2 text-sm font-medium outline-none transition"
                   style={{
-                    background: "var(--th-bg-input, rgba(255,255,255,0.04))",
+                    background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
                     border: confirm && confirm !== next
-                      ? "1px solid rgba(239,68,68,0.5)"
+                      ? "1px solid color-mix(in srgb, var(--th-status-critical) 50%, transparent)"
                       : "1px solid var(--th-border-input)",
                     color: "var(--th-text-primary)",
                   }}
@@ -194,7 +194,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                   onClick={onClose}
                   className="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
+                    background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
                     border: "1px solid var(--th-border-subtle)",
                     color: "var(--th-text-secondary)",
                   }}
@@ -206,9 +206,9 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                   disabled={busy}
                   className="rounded-lg px-4 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
-                    background: "rgba(249,115,22,0.18)",
-                    border: "1px solid rgba(249,115,22,0.35)",
-                    color: "#fb923c",
+                    background: "color-mix(in srgb, var(--th-accent) 18%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--th-accent) 35%, transparent)",
+                    color: "var(--th-accent)",
                   }}
                 >
                   {busy ? "Saving…" : "Change Password"}

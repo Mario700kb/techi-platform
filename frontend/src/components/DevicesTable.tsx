@@ -235,9 +235,9 @@ const renderStatusCell = (device: Device, health?: DeviceHealthSummary) => {
       <span
         className={`inline-block h-2.5 w-2.5 flex-none rounded-full ${
           isOnline
-            ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]"
+            ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]"
             : isStale
-            ? "bg-amber-300 shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+            ? "bg-[var(--th-status-warning)] shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-warning)_60%,transparent)]"
             : "bg-slate-600"
         }`}
       />
@@ -269,7 +269,7 @@ const getOfflineReasonBadge = (
     ["stopped", "not_running", "offline"].includes(rsStatus) &&
     !["not_installed", "unknown", ""].includes(rsInstall)
   ) {
-    return { label: "RS stopped", color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.25)" };
+    return { label: "RS stopped", color: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 12%, transparent)", border: "color-mix(in srgb, var(--th-accent) 25%, transparent)" };
   }
 
   // Site outage: ≥2 peers from same client offline near same time
@@ -279,22 +279,22 @@ const getOfflineReasonBadge = (
       (lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000
     ).length ?? 0;
     if (nearbyPeers >= 2)
-      return { label: "Site?", color: "#f87171", bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.3)" };
+      return { label: "Site?", color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" };
   }
 
   // Single device offline (no other offline from same client)
   if (freshness === "offline" && device.client_id) {
     if ((clientSummary?.offlineCount ?? 0) <= 1)
-      return { label: "Power?", color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.2)" };
+      return { label: "Power?", color: "var(--th-status-offline)", bg: "color-mix(in srgb, var(--th-status-offline) 8%, transparent)", border: "color-mix(in srgb, var(--th-status-offline) 20%, transparent)" };
   }
 
   // Has IP → network issue
   if (device.public_ip || device.local_ip)
-    return { label: "Network", color: "#60a5fa", bg: "rgba(96,165,250,0.1)", border: "rgba(96,165,250,0.22)" };
+    return { label: "Network", color: "var(--th-status-info)", bg: "color-mix(in srgb, var(--th-status-info) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-info) 22%, transparent)" };
 
   // Stale only
   if (freshness === "stale")
-    return { label: "Stale", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.22)" };
+    return { label: "Stale", color: "var(--th-status-warning)", bg: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-warning) 22%, transparent)" };
 
   return null;
 };
@@ -311,9 +311,9 @@ const getDeviceTypeBadge = (device: Device) => {
       <span
         className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
         style={{
-          color: "#a78bfa",
-          background: "rgba(167,139,250,0.12)",
-          border: "1px solid rgba(167,139,250,0.22)",
+          color: "var(--th-status-agent)",
+          background: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--th-status-agent) 22%, transparent)",
         }}
       >
         Server
@@ -324,9 +324,9 @@ const getDeviceTypeBadge = (device: Device) => {
       <span
         className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
         style={{
-          color: "#60a5fa",
-          background: "rgba(96,165,250,0.1)",
-          border: "1px solid rgba(96,165,250,0.2)",
+          color: "var(--th-status-info)",
+          background: "color-mix(in srgb, var(--th-status-info) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--th-status-info) 20%, transparent)",
         }}
       >
         WS
@@ -921,13 +921,13 @@ const DevicesTable = memo(function DevicesTable({
             id: "needs_updates" as QuickFilter,
             label: "Updates",
             count: pillCounts.needs_updates,
-            color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.25)",
+            color: "var(--th-status-warning)", bg: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-warning) 25%, transparent)",
           },
           {
             id: "reboot_required" as QuickFilter,
             label: "Reboot",
             count: pillCounts.reboot_required,
-            color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)",
+            color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 25%, transparent)",
           },
           {
             id: "offline" as QuickFilter,
@@ -936,31 +936,31 @@ const DevicesTable = memo(function DevicesTable({
               if (d.freshness_state !== "offline" || !d.last_seen) return false;
               return (Date.now() - new Date(d.last_seen).getTime()) > 86_400_000;
             }).length,
-            color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.2)",
+            color: "var(--th-status-offline)", bg: "color-mix(in srgb, var(--th-status-offline) 8%, transparent)", border: "color-mix(in srgb, var(--th-status-offline) 20%, transparent)",
           },
           {
             id: "maintenance" as QuickFilter,
             label: "Maintenance",
             count: pillCounts.maintenance,
-            color: "#38bdf8", bg: "rgba(56,189,248,0.1)", border: "rgba(56,189,248,0.25)",
+            color: "var(--th-status-maint)", bg: "color-mix(in srgb, var(--th-status-maint) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-maint) 25%, transparent)",
           },
           {
             id: "rustdesk_issues" as QuickFilter,
             label: "RS Issues",
             count: pillCounts.rustdesk_issues,
-            color: "#f97316", bg: "rgba(249,115,22,0.1)", border: "rgba(249,115,22,0.25)",
+            color: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 10%, transparent)", border: "color-mix(in srgb, var(--th-accent) 25%, transparent)",
           },
           {
             id: "low_health" as QuickFilter,
             label: "Health <60",
             count: pillCounts.low_health,
-            color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)",
+            color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 25%, transparent)",
           },
           {
             id: "needs_agent_update" as QuickFilter,
             label: "Agent Update",
             count: agentsOutdated || pillCounts.needs_agent_update,
-            color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.25)",
+            color: "var(--th-status-agent)", bg: "color-mix(in srgb, var(--th-status-agent) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-agent) 25%, transparent)",
           },
         ] as const).map(card => (
           <button
@@ -988,9 +988,9 @@ const DevicesTable = memo(function DevicesTable({
       {selectedIds.size > 0 && canOperate && (
       <div
         className="flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
-        style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)" }}
+        style={{ background: "color-mix(in srgb, var(--th-accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)" }}
       >
-        <span className="text-sm font-semibold" style={{ color: "#fb923c" }}>
+        <span className="text-sm font-semibold" style={{ color: "var(--th-accent)" }}>
           {selectedIds.size} device{selectedIds.size !== 1 ? "s" : ""} selected
         </span>
         <div className="ml-2 flex flex-wrap gap-1.5">
@@ -1010,9 +1010,9 @@ const DevicesTable = memo(function DevicesTable({
               }}
               className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
               style={{
-                background: btn.destructive ? "rgba(248,113,113,0.12)" : "rgba(255,255,255,0.05)",
-                border: `1px solid ${btn.destructive ? "rgba(248,113,113,0.3)" : "rgba(255,255,255,0.12)"}`,
-                color: btn.destructive ? "#f87171" : "var(--th-text-secondary)",
+                background: btn.destructive ? "color-mix(in srgb, var(--th-status-critical) 12%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
+                border: `1px solid ${btn.destructive ? "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 12%, transparent)"}`,
+                color: btn.destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
               }}
             >
               {btn.label}
@@ -1023,7 +1023,7 @@ const DevicesTable = memo(function DevicesTable({
             disabled={bulkBusy}
             onClick={() => { setPendingBulkAction({ action: "maintenance_enter", destructive: false }); setBulkConfirmOpen(true); }}
             className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
-            style={{ background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8" }}
+            style={{ background: "color-mix(in srgb, var(--th-status-maint) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-maint) 25%, transparent)", color: "var(--th-status-maint)" }}
           >
             Enter Maintenance
           </button>
@@ -1032,7 +1032,7 @@ const DevicesTable = memo(function DevicesTable({
             disabled={bulkBusy}
             onClick={() => { setPendingBulkAction({ action: "maintenance_exit", destructive: false }); setBulkConfirmOpen(true); }}
             className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--th-text-secondary)" }}
+            style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)", border: "1px solid color-mix(in srgb, var(--th-text-primary) 10%, transparent)", color: "var(--th-text-secondary)" }}
           >
             Exit Maintenance
           </button>
@@ -1081,19 +1081,19 @@ const DevicesTable = memo(function DevicesTable({
                 className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all"
                 style={{
                   background: active
-                    ? hasAlert ? "rgba(248,113,113,0.18)"
-                    : hasWarn  ? "rgba(251,191,36,0.15)"
-                    : "rgba(249,115,22,0.18)"
-                    : "rgba(255,255,255,0.04)",
+                    ? hasAlert ? "color-mix(in srgb, var(--th-status-critical) 18%, transparent)"
+                    : hasWarn  ? "color-mix(in srgb, var(--th-status-warning) 15%, transparent)"
+                    : "color-mix(in srgb, var(--th-accent) 18%, transparent)"
+                    : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
                   border: `1px solid ${active
-                    ? hasAlert ? "rgba(248,113,113,0.4)"
-                    : hasWarn  ? "rgba(251,191,36,0.35)"
-                    : "rgba(249,115,22,0.35)"
-                    : "rgba(255,255,255,0.08)"}`,
+                    ? hasAlert ? "color-mix(in srgb, var(--th-status-critical) 40%, transparent)"
+                    : hasWarn  ? "color-mix(in srgb, var(--th-status-warning) 35%, transparent)"
+                    : "color-mix(in srgb, var(--th-accent) 35%, transparent)"
+                    : "color-mix(in srgb, var(--th-text-primary) 8%, transparent)"}`,
                   color: active
-                    ? hasAlert ? "#f87171"
-                    : hasWarn  ? "#fbbf24"
-                    : "#fb923c"
+                    ? hasAlert ? "var(--th-status-critical)"
+                    : hasWarn  ? "var(--th-status-warning)"
+                    : "var(--th-accent)"
                     : count === 0 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
                   opacity: count === 0 && f.id !== "all" ? 0.45 : 1,
                 }}
@@ -1101,7 +1101,7 @@ const DevicesTable = memo(function DevicesTable({
                 {f.label}
                 {f.id !== "all" && (
                   <span className="rounded-full px-1 text-[9px] font-bold tabular-nums"
-                    style={{ background: "rgba(255,255,255,0.08)" }}>
+                    style={{ background: "color-mix(in srgb, var(--th-text-primary) 8%, transparent)" }}>
                     {count}
                   </span>
                 )}
@@ -1468,7 +1468,7 @@ const DevicesTable = memo(function DevicesTable({
             <table className="min-w-[960px] w-full border-separate border-spacing-0 text-left">
               {/* ── Header ── */}
               <thead>
-                <tr style={{ background: "var(--th-bg-table-head, rgba(255,255,255,0.025))", borderBottom: "1px solid var(--th-border-subtle)" }}>
+                <tr style={{ background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2.5%, transparent))", borderBottom: "1px solid var(--th-border-subtle)" }}>
                   {/* Checkbox */}
                   <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
                     <input
@@ -1495,7 +1495,7 @@ const DevicesTable = memo(function DevicesTable({
                     <th
                       key={label}
                       className={`px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-[0.1em] ${w ?? ""} ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""}`}
-                      style={{ color: sortable && sortKey === sortable ? "var(--th-text-primary, #e2e8f0)" : "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
+                      style={{ color: sortable && sortKey === sortable ? "var(--th-text-primary)" : "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
                       onClick={sortable ? () => handleSort(sortable) : undefined}
                     >
                       <span className="inline-flex items-center gap-1">
@@ -1534,11 +1534,11 @@ const DevicesTable = memo(function DevicesTable({
                       key={device.id}
                       className="group cursor-pointer transition-colors duration-75"
                       style={{
-                        background: rowIdx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)",
+                        background: rowIdx % 2 === 0 ? "transparent" : "color-mix(in srgb, var(--th-text-primary) 0.8%, transparent)",
                         borderBottom: "1px solid var(--th-border-subtle)",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.028)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = rowIdx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)")}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "color-mix(in srgb, var(--th-text-primary) 2.8%, transparent)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = rowIdx % 2 === 0 ? "transparent" : "color-mix(in srgb, var(--th-text-primary) 0.8%, transparent)")}
                       onClick={() => onDeviceSelect?.(device)}
                     >
                       {/* ── Checkbox ── */}
@@ -1603,14 +1603,14 @@ const DevicesTable = memo(function DevicesTable({
                           {getLifecycleSignals(device)}
                           {devAlerts?.critical ? (
                             <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
-                              style={{ color: "#f87171", background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.22)" }}>
-                              <span className="h-1.5 w-1.5 rounded-full bg-red-400" style={{ boxShadow: "0 0 3px rgba(248,113,113,0.7)" }} />
+                              style={{ color: "var(--th-status-critical)", background: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 22%, transparent)" }}>
+                              <span className="h-1.5 w-1.5 rounded-full bg-[var(--th-status-critical)]" style={{ boxShadow: "0 0 3px color-mix(in srgb, var(--th-status-critical) 70%, transparent)" }} />
                               {devAlerts.critical}
                             </span>
                           ) : null}
                           {devAlerts?.warning ? (
                             <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
-                              style={{ color: "#fbbf24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.22)" }}>
+                              style={{ color: "var(--th-status-warning)", background: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-warning) 22%, transparent)" }}>
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                               {devAlerts.warning}
                             </span>
@@ -1630,14 +1630,14 @@ const DevicesTable = memo(function DevicesTable({
                           )}
                           {isLowHealth && (
                             <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
-                              style={{ color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.22)" }}
+                              style={{ color: "var(--th-status-critical)", background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 22%, transparent)" }}
                               title={`Health score: ${healthScore}`}>
                               H:{healthScore}
                             </span>
                           )}
                           {rsIssue && !offlineBadge && (
                             <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
-                              style={{ color: "#f97316", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.22)" }}
+                              style={{ color: "var(--th-accent)", background: "color-mix(in srgb, var(--th-accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 22%, transparent)" }}
                               title={`RS: ${device.rustdesk_status}`}>
                               RS
                             </span>
@@ -1755,7 +1755,7 @@ const DevicesTable = memo(function DevicesTable({
                               onClick={() => onToggleFavorite(device.id)}
                               title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
                               className="flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
-                              style={{ color: favorites.has(device.id) ? "#fbbf24" : "var(--th-text-muted)" }}
+                              style={{ color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)" }}
                             >
                               <Star className={`h-3 w-3 ${favorites.has(device.id) ? "fill-current" : ""}`} />
                             </button>
@@ -1806,14 +1806,14 @@ const DevicesTable = memo(function DevicesTable({
                               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
                               style={{
                                 background: canConnect
-                                  ? "rgba(249,115,22,0.15)"
-                                  : "rgba(255,255,255,0.03)",
+                                  ? "color-mix(in srgb, var(--th-accent) 15%, transparent)"
+                                  : "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
                                 border: `1px solid ${
                                   canConnect
-                                    ? "rgba(249,115,22,0.3)"
+                                    ? "color-mix(in srgb, var(--th-accent) 30%, transparent)"
                                     : "var(--th-border-subtle)"
                                 }`,
-                                color: canConnect ? "#f97316" : "var(--th-text-muted)",
+                                color: canConnect ? "var(--th-accent)" : "var(--th-text-muted)",
                                 cursor: canConnect ? "pointer" : "not-allowed",
                                 opacity: canConnect ? 1 : 0.45,
                               }}
@@ -1840,18 +1840,18 @@ const DevicesTable = memo(function DevicesTable({
                               className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
                               style={{
                                 border: "1px solid var(--th-border-subtle)",
-                                background: "rgba(255,255,255,0.03)",
+                                background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
                                 color: "var(--th-text-muted)",
                               }}
                               onMouseEnter={(e) => {
                                 (e.currentTarget as HTMLElement).style.background =
-                                  "rgba(255,255,255,0.07)";
+                                  "color-mix(in srgb, var(--th-text-primary) 7%, transparent)";
                                 (e.currentTarget as HTMLElement).style.color =
                                   "var(--th-text-secondary)";
                               }}
                               onMouseLeave={(e) => {
                                 (e.currentTarget as HTMLElement).style.background =
-                                  "rgba(255,255,255,0.03)";
+                                  "color-mix(in srgb, var(--th-text-primary) 3%, transparent)";
                                 (e.currentTarget as HTMLElement).style.color =
                                   "var(--th-text-muted)";
                               }}
@@ -1885,7 +1885,7 @@ const DevicesTable = memo(function DevicesTable({
             className="hidden md:flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
             style={{
               borderTop: "1px solid var(--th-border-subtle)",
-              background: "var(--th-bg-table-head, rgba(255,255,255,0.02))",
+              background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2%, transparent))",
             }}
           >
             {/* Left: count + page size + loading */}
@@ -1895,7 +1895,7 @@ const DevicesTable = memo(function DevicesTable({
                   ? `Showing ${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total} devices`
                   : `${displayDevices.length} devices`}
                 {selectedIds.size > 0 && (
-                  <span className="ml-2 font-semibold" style={{ color: "#fb923c" }}>
+                  <span className="ml-2 font-semibold" style={{ color: "var(--th-accent)" }}>
                     · {selectedIds.size} selected
                   </span>
                 )}
@@ -1910,7 +1910,7 @@ const DevicesTable = memo(function DevicesTable({
                   className="rounded border px-2 py-0.5 text-[11px] font-medium focus:outline-none"
                   style={{
                     borderColor: "var(--th-border-subtle)",
-                    background: "rgba(15,23,42,0.7)",
+                    background: "var(--th-bg-input)",
                     color: "var(--th-text-secondary)",
                   }}
                 >
@@ -1937,7 +1937,7 @@ const DevicesTable = memo(function DevicesTable({
               >
                 <span
                   className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-                  style={{ boxShadow: "0 0 4px rgba(52,211,153,0.5)" }}
+                  style={{ boxShadow: "0 0 4px color-mix(in srgb, var(--th-status-online) 50%, transparent)" }}
                 />
                 Fleet active
               </span>
@@ -2048,9 +2048,9 @@ const DevicesTable = memo(function DevicesTable({
         <div
           className="fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
           style={{
-            background: bulkToast.ok ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-            border: `1px solid ${bulkToast.ok ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
-            color: bulkToast.ok ? "#22c55e" : "#ef4444",
+            background: bulkToast.ok ? "color-mix(in srgb, var(--th-status-online) 15%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 15%, transparent)",
+            border: `1px solid ${bulkToast.ok ? "color-mix(in srgb, var(--th-status-online) 30%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 30%, transparent)"}`,
+            color: bulkToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
           }}
         >
           {bulkToast.message}
@@ -2089,9 +2089,9 @@ const DevicesTable = memo(function DevicesTable({
                         onClick={() => setBulkMaintMinutes(opt.mins)}
                         className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition"
                         style={{
-                          background: bulkMaintMinutes === opt.mins ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.04)",
-                          border: `1px solid ${bulkMaintMinutes === opt.mins ? "rgba(56,189,248,0.35)" : "rgba(255,255,255,0.1)"}`,
-                          color: bulkMaintMinutes === opt.mins ? "#38bdf8" : "var(--th-text-secondary)",
+                          background: bulkMaintMinutes === opt.mins ? "color-mix(in srgb, var(--th-status-maint) 15%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
+                          border: `1px solid ${bulkMaintMinutes === opt.mins ? "color-mix(in srgb, var(--th-status-maint) 35%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 10%, transparent)"}`,
+                          color: bulkMaintMinutes === opt.mins ? "var(--th-status-maint)" : "var(--th-text-secondary)",
                         }}>
                         {opt.label}
                       </button>
@@ -2103,7 +2103,7 @@ const DevicesTable = memo(function DevicesTable({
                 <button type="button" disabled={bulkBusy}
                   onClick={() => setBulkConfirmOpen(false)}
                   className="rounded-lg px-3 py-1.5 text-xs font-semibold"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}>
+                  style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}>
                   Cancel
                 </button>
                 <button type="button" disabled={bulkBusy}
@@ -2135,9 +2135,9 @@ const DevicesTable = memo(function DevicesTable({
                   }}
                   className="rounded-lg px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50"
                   style={{
-                    background: pendingBulkAction.destructive ? "rgba(248,113,113,0.15)" : "rgba(249,115,22,0.15)",
-                    border: `1px solid ${pendingBulkAction.destructive ? "rgba(248,113,113,0.35)" : "rgba(249,115,22,0.35)"}`,
-                    color: pendingBulkAction.destructive ? "#f87171" : "#fb923c",
+                    background: pendingBulkAction.destructive ? "color-mix(in srgb, var(--th-status-critical) 15%, transparent)" : "color-mix(in srgb, var(--th-accent) 15%, transparent)",
+                    border: `1px solid ${pendingBulkAction.destructive ? "color-mix(in srgb, var(--th-status-critical) 35%, transparent)" : "color-mix(in srgb, var(--th-accent) 35%, transparent)"}`,
+                    color: pendingBulkAction.destructive ? "var(--th-status-critical)" : "var(--th-accent)",
                   }}>
                   {bulkBusy ? "Processing…" : `Confirm (${selectedIds.size})`}
                 </button>
@@ -2211,7 +2211,7 @@ function PaginationControls({
         onClick={() => onPageChange?.(page - 1)}
         style={{
           ...btnBase,
-          background: "rgba(255,255,255,0.04)",
+          background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
           border: "1px solid var(--th-border-subtle)",
           color: page <= 1 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
           opacity: page <= 1 ? 0.4 : 1,
@@ -2232,9 +2232,9 @@ function PaginationControls({
             onClick={() => onPageChange?.(p)}
             style={{
               ...btnBase,
-              background: p === page ? "rgba(249,115,22,0.18)" : "rgba(255,255,255,0.04)",
-              border: `1px solid ${p === page ? "rgba(249,115,22,0.4)" : "var(--th-border-subtle)"}`,
-              color: p === page ? "#fb923c" : "var(--th-text-secondary)",
+              background: p === page ? "color-mix(in srgb, var(--th-accent) 18%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
+              border: `1px solid ${p === page ? "color-mix(in srgb, var(--th-accent) 40%, transparent)" : "var(--th-border-subtle)"}`,
+              color: p === page ? "var(--th-accent)" : "var(--th-text-secondary)",
             }}
           >
             {p}
@@ -2248,7 +2248,7 @@ function PaginationControls({
         onClick={() => onPageChange?.(page + 1)}
         style={{
           ...btnBase,
-          background: "rgba(255,255,255,0.04)",
+          background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
           border: "1px solid var(--th-border-subtle)",
           color: page >= totalPages ? "var(--th-text-muted)" : "var(--th-text-secondary)",
           opacity: page >= totalPages ? 0.4 : 1,

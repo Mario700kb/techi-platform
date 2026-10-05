@@ -1520,7 +1520,7 @@ function TokenDiagnosticsDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm" onMouseDown={onClose}>
       <aside
-        className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[#0b1019] shadow-2xl"
+        className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[var(--th-bg-surface)] shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-4">

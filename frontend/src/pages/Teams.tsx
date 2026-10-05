@@ -16,9 +16,9 @@ import { parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
 
 const COLOR_PRESETS = [
-  "#f97316", "#6366f1", "#ec4899", "#10b981",
-  "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6",
-  "#f59e0b", "#64748b",
+  "#E85A3C", "#7C9CBF", "#C77B93", "#5C8C6A",
+  "#4E8E86", "#8E7CC3", "#F04A2A", "#C8A000",
+  "#FF6B47", "#A0A0AA",
 ];
 
 const INPUT_CLS =
@@ -161,7 +161,7 @@ function TeamFormFields({
   );
 }
 
-const EMPTY_FORM = { name: "", description: "", color: "#f97316", permissions: [] as string[] };
+const EMPTY_FORM = { name: "", description: "", color: "#E85A3C", permissions: [] as string[] };
 
 function StatPill({ icon, count, title }: { icon: React.ReactNode; count: number; title: string }) {
   return (
@@ -236,7 +236,7 @@ export default function Teams() {
 
   const openEdit = (team: TeamWithStats) => {
     setEditTarget(team);
-    setEditForm({ name: team.name, description: team.description ?? "", color: team.color ?? "#f97316", permissions: [] });
+    setEditForm({ name: team.name, description: team.description ?? "", color: team.color ?? "#E85A3C", permissions: [] });
     setEditError(null);
   };
 
@@ -339,7 +339,7 @@ export default function Teams() {
                 <tr key={team.id} className="group transition hover:bg-white/[0.02]">
                   <td className="px-5 py-3.5">
                     <button type="button" onClick={() => navigate(`/teams/${team.id}`)} className="flex items-center gap-2.5 text-left">
-                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: team.color ?? "#f97316" }} />
+                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: team.color ?? "#E85A3C" }} />
                       <span className="font-semibold text-white group-hover:text-techi-orange transition-colors">{team.name}</span>
                       <ChevronRight className="h-3.5 w-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>

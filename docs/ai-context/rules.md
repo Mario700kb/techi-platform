@@ -21,7 +21,7 @@ These rules govern all AI-assisted development on this project. Read before maki
 
 ### UI Design
 - Preserve the TECHI dark MSP UI design language
-- Preserve orange/pink accents (`techi-orange` #FF553F, `techi-pink` #FF3F32)
+- Preserve the Friday palette: single coral accent (`--th-accent` / `techi-orange` #E85A3C, bright #FF6B47); colors only via `--th-*` tokens or Tailwind classes (which map onto those tokens) — never hex/rgba literals in components
 - Preserve `.premium-card`, `.premium-kicker`, `.premium-metric`, `.premium-card-soft` patterns
 - Do NOT introduce external component libraries (no shadcn, no radix, no MUI)
 - Do NOT redesign the Devices page layout, Sidebar, or Topbar

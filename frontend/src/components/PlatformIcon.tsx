@@ -49,7 +49,7 @@ export default function PlatformIcon({ platform, size = 14, className }: Props) 
       return (
         <svg {...common} role="img" aria-label="Windows">
           <path
-            fill="#60A5FA"
+            style={{ fill: "var(--th-status-info)" }}
             d="M3 5.4l7.7-1.1v7.2H3zM12 4.1 21 3v8.5h-9zM3 12.5h7.7v7.2L3 18.6zM12 12.5h9V21l-9-1.3z"
           />
         </svg>

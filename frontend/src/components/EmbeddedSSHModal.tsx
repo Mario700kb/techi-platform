@@ -59,7 +59,7 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "var(--th-scrim)" }}
       onClick={onClose}
     >
       <div
@@ -86,7 +86,7 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
         {stage.kind === "error" && (
           <div
             className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
-            style={{ color: "#f87171", background: "var(--th-bg-drawer-section)" }}
+            style={{ color: "var(--th-status-critical)", background: "var(--th-bg-drawer-section)" }}
           >
             <AlertTriangle className="h-4 w-4 flex-none" />
             {stage.message}

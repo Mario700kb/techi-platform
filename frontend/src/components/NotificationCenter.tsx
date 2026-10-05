@@ -14,7 +14,7 @@ interface NotificationCenterProps {
 }
 
 function severityDot(severity: AlertSeverity): string {
-  if (severity === "critical") return "bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.5)]";
+  if (severity === "critical") return "bg-red-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-critical)_50%,transparent)]";
   if (severity === "warning") return "bg-amber-400";
   return "bg-slate-600";
 }

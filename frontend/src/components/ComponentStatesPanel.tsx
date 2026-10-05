@@ -258,7 +258,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
               {note && (
                 <div
                   className="mt-1.5 text-[10.5px]"
-                  style={{ color: note.error ? "var(--th-danger, #f87171)" : "var(--th-text-muted)" }}
+                  style={{ color: note.error ? "var(--th-status-critical)" : "var(--th-text-muted)" }}
                 >
                   {note.text}
                 </div>

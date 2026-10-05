@@ -146,8 +146,8 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               <span className="flex-none rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>
-              <span className="flex items-center gap-1.5 font-semibold" style={{ color: isOnline ? "#34d399" : "var(--th-text-muted)" }}>
-                <span className={`h-1.5 w-1.5 flex-none rounded-full ${isOnline ? "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.6)]" : "bg-slate-600"}`} />
+              <span className="flex items-center gap-1.5 font-semibold" style={{ color: isOnline ? "var(--th-status-online)" : "var(--th-text-muted)" }}>
+                <span className={`h-1.5 w-1.5 flex-none rounded-full ${isOnline ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_60%,transparent)]" : "bg-slate-600"}`} />
                 {isOnline ? "Online" : "Offline"}
               </span>
               <span style={{ opacity: 0.35 }}>•</span>
@@ -322,7 +322,7 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
       <div className="mt-1 flex items-center gap-2">
         <button type="button" disabled={busy} onClick={() => void save()} className="text-[11px] font-semibold underline" style={{ color: "var(--th-text-primary)" }}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" disabled={busy} onClick={() => { setEditing(false); setHost(device.connect_host ?? ""); setPort(device.connect_port ? String(device.connect_port) : ""); setError(null); }} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>Cancel</button>
-        {error && <span className="text-[11px]" style={{ color: "var(--th-danger, #f87171)" }}>{error}</span>}
+        {error && <span className="text-[11px]" style={{ color: "var(--th-status-critical)" }}>{error}</span>}
       </div>
     </div>
   );
@@ -334,10 +334,10 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
 // (the primary action, not a "5th color").
 type Accent = "identity" | "status" | "resources" | "assignment" | "connect" | "neutral";
 const ACCENTS: Record<Accent, { icon: string; bg: string; border: string }> = {
-  identity:   { icon: "#60A5FA", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.28)" },
-  status:     { icon: "#34D399", bg: "rgba(52,211,153,0.12)",  border: "rgba(52,211,153,0.28)" },
-  resources:  { icon: "#A78BFA", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.28)" },
-  assignment: { icon: "#FB923C", bg: "rgba(251,146,60,0.12)",  border: "rgba(251,146,60,0.28)" },
+  identity:   { icon: "var(--th-status-info)", bg: "color-mix(in srgb, var(--th-status-info) 12%, transparent)",  border: "color-mix(in srgb, var(--th-status-info) 28%, transparent)" },
+  status:     { icon: "var(--th-status-online)", bg: "color-mix(in srgb, var(--th-status-online) 12%, transparent)",  border: "color-mix(in srgb, var(--th-status-online) 28%, transparent)" },
+  resources:  { icon: "var(--th-status-agent)", bg: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)", border: "color-mix(in srgb, var(--th-status-agent) 28%, transparent)" },
+  assignment: { icon: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 12%, transparent)",  border: "color-mix(in srgb, var(--th-accent) 28%, transparent)" },
   connect:    { icon: "var(--th-accent-bright)", bg: "var(--th-accent-dim-bg)", border: "var(--th-accent-border)" },
   neutral:    { icon: "var(--th-text-muted)", bg: "var(--th-bg-card)", border: "var(--th-border-card)" },
 };
@@ -397,7 +397,7 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
 function ResourceMeter({ icon: Icon, label, percent }: { icon: LucideIcon; label: string; percent: number | null }) {
   const has = percent != null;
   const clamped = has ? Math.min(100, Math.max(0, percent as number)) : 0;
-  const fill = !has ? "var(--th-border-card)" : clamped >= 90 ? "#f87171" : clamped >= 75 ? "#fbbf24" : ACCENTS.resources.icon;
+  const fill = !has ? "var(--th-border-card)" : clamped >= 90 ? "var(--th-status-critical)" : clamped >= 75 ? "var(--th-status-warning)" : ACCENTS.resources.icon;
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">

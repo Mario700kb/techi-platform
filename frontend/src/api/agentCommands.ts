@@ -202,7 +202,7 @@ export function commandStatusDot(status: CommandStatus): string {
   switch (status) {
     case "completed": return "bg-emerald-400";
     case "failed": return "bg-red-400";
-    case "executing": return "bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.6)]";
+    case "executing": return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
     case "delivered": return "bg-amber-400";
     case "queued": return "bg-amber-300";
     case "timeout": return "bg-slate-500";

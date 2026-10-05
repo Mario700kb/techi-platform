@@ -777,7 +777,7 @@ export default function Devices() {
               className="premium-metric p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "all"
-                  ? { outline: "2px solid rgba(249,115,22,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-accent) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >
@@ -798,7 +798,7 @@ export default function Devices() {
               className="premium-metric metric-online p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "online"
-                  ? { outline: "2px solid rgba(52,211,153,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-online) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >
@@ -819,7 +819,7 @@ export default function Devices() {
               className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "stale"
-                  ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-warning) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >
@@ -840,7 +840,7 @@ export default function Devices() {
               className="premium-metric metric-offline p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "offline"
-                  ? { outline: "2px solid rgba(148,163,184,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-offline) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >
@@ -864,7 +864,7 @@ export default function Devices() {
               className="premium-metric metric-critical p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "critical"
-                  ? { outline: "2px solid rgba(248,113,113,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-critical) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >
@@ -885,7 +885,7 @@ export default function Devices() {
               className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
               style={
                 quickFilter === "warnings"
-                  ? { outline: "2px solid rgba(251,191,36,0.45)", outlineOffset: "-2px" }
+                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-warning) 45%, transparent)", outlineOffset: "-2px" }
                   : undefined
               }
             >

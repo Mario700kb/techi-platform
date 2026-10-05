@@ -368,12 +368,12 @@ export default function ConnectMenu({
   const isRow = variant === "row";
   const mainStyle = isRow
     ? {
-        background: rowState === "ready" || rowState === null ? "rgba(249,115,22,0.15)"
-          : rowState === "credential_required" ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.03)",
-        border: `1px solid ${rowState === "ready" || rowState === null ? "rgba(249,115,22,0.3)"
-          : rowState === "credential_required" ? "rgba(251,191,36,0.3)" : "var(--th-border-subtle)"}`,
+        background: rowState === "ready" || rowState === null ? "color-mix(in srgb, var(--th-accent) 15%, transparent)"
+          : rowState === "credential_required" ? "color-mix(in srgb, var(--th-status-warning) 12%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
+        border: `1px solid ${rowState === "ready" || rowState === null ? "color-mix(in srgb, var(--th-accent) 30%, transparent)"
+          : rowState === "credential_required" ? "color-mix(in srgb, var(--th-status-warning) 30%, transparent)" : "var(--th-border-subtle)"}`,
         color: rowState === "ready" || rowState === null ? "var(--th-accent-bright)"
-          : rowState === "credential_required" ? "#fbbf24" : "var(--th-text-muted)",
+          : rowState === "credential_required" ? "var(--th-status-warning)" : "var(--th-text-muted)",
       }
     : { background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent-bright)" };
 
@@ -423,7 +423,7 @@ export default function ConnectMenu({
                 style={{ color: "var(--th-text-primary)" }}
               >
                 {status === "credential_required"
-                  ? <CircleAlert className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning, #f59e0b)" }} />
+                  ? <CircleAlert className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning, var(--th-status-warning))" }} />
                   : m.embedded
                     ? <Terminal className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
                     : m.surface === "browser"
@@ -441,7 +441,7 @@ export default function ConnectMenu({
                   {reason && (
                     <span
                       className="text-[10.5px] font-normal"
-                      style={{ color: status === "credential_required" ? "var(--th-status-warning, #f59e0b)" : "var(--th-text-faint)" }}
+                      style={{ color: status === "credential_required" ? "var(--th-status-warning, var(--th-status-warning))" : "var(--th-text-faint)" }}
                     >
                       {reason}
                     </span>

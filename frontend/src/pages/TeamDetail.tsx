@@ -23,9 +23,9 @@ import { useAuth } from "../auth/AuthContext";
 // ── Color presets ────────────────────────────────────────────────────────── //
 
 const COLOR_PRESETS = [
-  "#f97316", "#6366f1", "#ec4899", "#10b981",
-  "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6",
-  "#f59e0b", "#64748b",
+  "#E85A3C", "#7C9CBF", "#C77B93", "#5C8C6A",
+  "#4E8E86", "#8E7CC3", "#F04A2A", "#C8A000",
+  "#FF6B47", "#A0A0AA",
 ];
 
 // ── Team permission definitions ──────────────────────────────────────────── //
@@ -205,7 +205,7 @@ function OverviewTab({
 }) {
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description ?? "");
-  const [color, setColor] = useState(team.color ?? "#f97316");
+  const [color, setColor] = useState(team.color ?? "#E85A3C");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -405,7 +405,7 @@ function TreeCheckbox({
 function DeviceStatusDot({ device }: { device: Device }) {
   const state = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
   const cls =
-    state === "online"  ? "bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.5)]"
+    state === "online"  ? "bg-emerald-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-online)_50%,transparent)]"
     : state === "stale" ? "bg-amber-400"
     : "bg-slate-600";
   return (
@@ -1191,7 +1191,7 @@ export default function TeamDetailPage() {
         </div>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-3">
-            <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: team.color ?? "#f97316" }} />
+            <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: team.color ?? "#E85A3C" }} />
             <div>
               <p className="premium-kicker">Team</p>
               <h1 className="text-2xl font-semibold text-white">{team.name}</h1>

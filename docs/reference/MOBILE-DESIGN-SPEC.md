@@ -352,25 +352,72 @@ refresh); kthim në foreground → revalidim automatik; pull-to-refresh manual.
 
 ## Colors (tokens të rinj — shtohen në `index.css`, dark + light)
 
+Burimi: paleta e chat-it **Friday** (dark, theks koral). Dark = vlerat e
+Friday-t; Light = të njëjtat tone, të errësuara deri në kontrast AA (≥4.5:1)
+mbi `#FFFFFF` dhe `#F4F4F6`. Statuset nuk vijnë më nga Tailwind.
+
 | Token | Dark | Light | Përdorimi |
 |---|---|---|---|
-| `--th-accent` | `#E85A3C` | `#C75E49` | I VETMI accent (ekzistues; zëvendëson #f97316/#fb923c në mobile) |
-| `--th-accent-glow` | `rgba(232,90,60,.12)` | `rgba(199,94,73,.10)` | sfonde aktive (token ekzistues, ripërdoret) |
-| `--th-accent-border` | `rgba(232,90,60,.30)` | `rgba(199,94,73,.28)` | kufij aktivë (token ekzistues, ripërdoret) |
-| `--th-status-online` | `#34d399` | `#059669` | status |
-| `--th-status-stale` | `#fbbf24` | `#b45309` | status |
-| `--th-status-offline` | `#94a3b8` | `#64748b` | status |
-| `--th-status-critical` | `#f87171` | `#dc2626` | severity |
-| `--th-status-warning` | `#fbbf24` | `#b45309` | severity |
-| `--th-status-info` | `#60a5fa` | `#2563eb` | severity |
-| `--th-status-maint` | `#38bdf8` | `#0284c7` | maintenance |
-| `--th-status-agent` | `#a78bfa` | `#7c3aed` | agent update |
-| `--th-ring-track` | `#2A2A30` | `#D9DAE0` | unaza, meters |
+| `--th-accent` | `#E85A3C` | `#B6432B` | I VETMI accent (Friday `--coral`; zëvendëson #f97316/#fb923c në mobile) |
+| `--th-accent-glow` | `rgba(232,90,60,.12)` | `rgba(182,67,43,.10)` | sfonde aktive (token ekzistues, ripërdoret) |
+| `--th-accent-border` | `rgba(232,90,60,.30)` | `rgba(182,67,43,.28)` | kufij aktivë (token ekzistues, ripërdoret) |
+| `--th-status-online` | `#5E8F6C` | `#4D7559` | status — Friday "OK" `#5C8C6A` (+2% dritë për AA mbi kartë) |
+| `--th-status-stale` | `#C8A000` | `#856A00` | status — Friday `--warn` |
+| `--th-status-offline` | `#A0A0AA` | `#6B6B75` | status — Friday `--text-muted` |
+| `--th-status-critical` | `#F04A2A` | `#C82C0E` | severity — Friday "Critical" |
+| `--th-status-warning` | `#C8A000` | `#856A00` | severity — Friday `--warn` |
+| `--th-status-info` | `#7C9CBF` | `#466990` | severity — Friday "Neutral" |
+| `--th-status-maint` | `#4E8E86` | `#3D706A` | maintenance — Friday seria 5 |
+| `--th-status-agent` | `#8E7CC3` | `#574393` | agent update — Friday seria 4 |
+| `--th-ring-track` | `#2A2A30` | `#DCDCE1` | unaza, meters |
 | `--th-scrim` | `rgba(0,0,0,.62)` | `rgba(15,15,20,.45)` | overlay backdrop |
-| `--th-chip-bg` | `rgba(255,255,255,.05)` | `rgba(20,20,28,.05)` | pills/chips |
+| `--th-chip-bg` | `rgba(255,255,255,.05)` | `rgba(19,19,22,.05)` | pills/chips |
+
+Aliaset `--danger` / `--warning` / `--success` / `--info` tani janë
+`var(--th-status-critical|warning|online|info)` — pa literal Tailwind.
+
+### Sipërfaqet, teksti, kufijtë (Friday)
+
+| Roli | Dark | Light |
+|---|---|---|
+| `--th-bg-page` / `--th-bg-main` | `#0A0A0B` | `#F4F4F6` |
+| `--th-bg-shell` | `#0B0C0F` | `#EBEBEE` |
+| `--th-bg-surface` / `--th-bg-sidebar` | `#131316` | `#FAFAFB` |
+| `--th-bg-card` | `#1A1A1E` | `#FFFFFF` |
+| `--th-bg-card-hover` | `#22222A` | `#F5F5F8` |
+| `--th-text-primary` | `#F5F5F7` | `#131316` |
+| `--th-text-secondary` | `#B8B8C2` | `#3A3A42` |
+| `--th-text-muted` | `#A0A0AA` | `#6B6B75` |
+| `--th-text-faint` (vetëm dekorativ) | `#606068` | `#8A8A94` |
+| `--th-border` | `rgba(255,255,255,.06)` | `rgba(19,19,22,.13)` |
+| `--th-border-strong` | `rgba(255,255,255,.10)` | `rgba(19,19,22,.24)` |
 
 Rregull: komponentët mobile përdorin VETËM vars. Vars ekzistuese `--th-*`
-(bg/text/border) ruhen — desktop i paprekur.
+(bg/text/border) ruhen si emra — vlerat ndjekin Friday-n.
+
+### Tailwind ndjek tokenat (i gjithë aplikacioni)
+
+`tailwind.config.js` i ripërcakton ngjyrat e Tailwind mbi tokenat `--th-*`, që
+çdo klasë ekzistuese të ndjekë paletën në dark dhe light pa override:
+
+| Familja Tailwind | Tokeni |
+|---|---|
+| `red`, `rose` | `--th-status-critical` |
+| `amber`, `yellow` | `--th-status-warning` |
+| `emerald`, `green`, `lime` | `--th-status-online` |
+| `sky`, `blue`, `indigo` | `--th-status-info` |
+| `teal`, `cyan` | `--th-status-maint` |
+| `violet`, `purple` | `--th-status-agent` |
+| `orange`, `techi-orange` | `--th-accent` |
+| `pink`, `fuchsia` | `--th-series-rose` (`#C77B93` / `#96405B`) |
+| `slate`, `gray`, `zinc`, `neutral`, `stone` | tekst → sipërfaqe Friday |
+
+Shkalla 50–950: 400/500 = tokeni; 50–300 përzihen drejt `--th-text-primary`
+(më të çelura në dark, më të errëta në light); 600–950 zhyten në
+`--th-bg-page`. Neutralet: 50–100 primary, 300 secondary, 400 muted, 600
+faint, 700 ring-track, 800 card-hover, 900 card, 950 page. Modifikuesit e
+opacitetit (`/10`, `/[0.04]`) punojnë me `color-mix()`. Ngjyrë e re në kod =
+token ose klasë Tailwind, kurrë literal hex/rgba.
 
 ## Typography
 
@@ -418,7 +465,7 @@ AccordionSection, StickyActionBar, AlertGroup/AlertItem, EmptyState.
 ## Bottom Navigation
 
 64px + safe-area; sfond `--th-bg-sidebar`; aktiv = `--th-accent` + underline
-2.5px (top); badge `#EF4444` cap 99+; ikonat 21px stroke 1.8.
+2.5px (top); badge `var(--danger)` (= `--th-status-critical`) cap 99+; ikonat 21px stroke 1.8.
 
 ## Top Bar
 

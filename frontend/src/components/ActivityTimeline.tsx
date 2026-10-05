@@ -94,7 +94,7 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                 {!isLast && (
                   <div
                     className="absolute left-[9px] top-[22px] bottom-0 w-px"
-                    style={{ background: "linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.01))" }}
+                    style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--th-text-primary) 6%, transparent), color-mix(in srgb, var(--th-text-primary) 1%, transparent))" }}
                   />
                 )}
 

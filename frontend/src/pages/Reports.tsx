@@ -180,7 +180,7 @@ export default function Reports() {
         <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
       </header>
 
-      {(error || success) && <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: error ? "rgba(239,68,68,.4)" : "rgba(34,197,94,.35)", background: error ? "rgba(239,68,68,.08)" : "rgba(34,197,94,.08)", color: "var(--th-text-primary)" }}>{error || success}</div>}
+      {(error || success) && <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: error ? "color-mix(in srgb, var(--th-status-critical) 40%, transparent)" : "color-mix(in srgb, var(--th-status-online) 35%, transparent)", background: error ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-status-online) 8%, transparent)", color: "var(--th-text-primary)" }}>{error || success}</div>}
 
       <section className="grid grid-cols-3 gap-2 sm:gap-4">
         {[{ label: "Reports ready", value: stats.completed }, { label: "Active schedules", value: stats.scheduled }, { label: "Failed runs", value: stats.failed }].map((item) => <div key={item.label} className="premium-card p-3 sm:p-4"><p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--th-text-muted)" }}>{item.label}</p><p className="mt-1 text-2xl font-bold" style={{ color: "var(--th-text-primary)" }}>{item.value}</p></div>)}

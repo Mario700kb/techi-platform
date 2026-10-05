@@ -277,7 +277,7 @@ function TreeButton({ active, child = false, icon: Icon, platformIcon, label, co
         "flex w-full items-center rounded-md text-left transition-all duration-120",
         child ? "px-2.5 py-1.5" : "px-2.5 py-1.5",
         active
-          ? "bg-[#3A1A14] text-[#FF6B47] shadow-[inset_2px_0_0_#E85A3C,inset_0_0_0_1px_rgba(232,90,60,0.18)]"
+          ? "bg-[var(--th-sidebar-nav-active-bg)] text-[var(--th-accent-bright)] shadow-[var(--th-sidebar-nav-active-shadow)]"
           : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
       )}
     >
@@ -293,7 +293,7 @@ function TreeButton({ active, child = false, icon: Icon, platformIcon, label, co
         <span className={clsx("truncate font-semibold", active ? "text-white" : "")}>{label}</span>
         <span className="fleet-tree-count rounded-full px-1.5 text-[11px] font-bold tabular-nums">{count}</span>
         {hasMaintenance && (
-          <span className="h-1.5 w-1.5 flex-none rounded-full bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.6)]" title="Has devices in maintenance" />
+          <span className="h-1.5 w-1.5 flex-none rounded-full bg-teal-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-maint)_60%,transparent)]" title="Has devices in maintenance" />
         )}
       </span>
     </button>

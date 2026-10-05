@@ -7,10 +7,10 @@ import { VersionStatus } from "../utils/version";
 // connector platforms whose reported version can exceed the registry's
 // latest_connector_version.
 const STYLES: Record<VersionStatus, React.CSSProperties> = {
-  current: { color: "#22c55e", background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.35)" },
-  outdated: { color: "#f97316", background: "rgba(249,115,22,0.2)", border: "1px solid rgba(249,115,22,0.35)" },
-  ahead: { color: "#3b82f6", background: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.35)" },
-  unknown: { color: "var(--th-text-muted)", background: "rgba(148,163,184,0.12)", border: "1px solid rgba(148,163,184,0.22)" },
+  current: { color: "var(--th-status-online)", background: "color-mix(in srgb, var(--th-status-online) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-online) 35%, transparent)" },
+  outdated: { color: "var(--th-accent)", background: "color-mix(in srgb, var(--th-accent) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 35%, transparent)" },
+  ahead: { color: "var(--th-status-info)", background: "color-mix(in srgb, var(--th-status-info) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-info) 35%, transparent)" },
+  unknown: { color: "var(--th-text-muted)", background: "color-mix(in srgb, var(--th-status-offline) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-offline) 22%, transparent)" },
 };
 
 interface Props {

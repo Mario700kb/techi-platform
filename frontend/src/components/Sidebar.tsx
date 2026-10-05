@@ -112,7 +112,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
                   expanded ? "gap-2.5 px-2.5" : "justify-center px-0"
                 } ${
                   isActive
-                    ? "bg-[#3A1A14] text-[#FF6B47] shadow-[inset_2px_0_0_#E85A3C,inset_0_0_0_1px_rgba(232,90,60,0.18)]"
+                    ? "bg-[var(--th-sidebar-nav-active-bg)] text-[var(--th-accent-bright)] shadow-[var(--th-sidebar-nav-active-shadow)]"
                     : "hover:bg-white/[0.04] hover:text-white"
                 }`
               }

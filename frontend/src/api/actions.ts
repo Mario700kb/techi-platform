@@ -170,7 +170,7 @@ export function statusDotColor(status: ActionStatus): string {
   switch (status) {
     case "completed": return "bg-emerald-400";
     case "failed": return "bg-red-400";
-    case "running": return "bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.6)]";
+    case "running": return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
     case "sent": case "acknowledged": return "bg-amber-400";
     case "queued": return "bg-amber-300";
     default: return "bg-slate-600";

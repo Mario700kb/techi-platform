@@ -53,7 +53,7 @@ function ProgressBar({ percent }: { percent: number }) {
     <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--th-bg-shell)" }}>
       <div
         className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${percent}%`, background: "var(--th-accent-orange, #ff553f)" }}
+        style={{ width: `${percent}%`, background: "var(--th-accent)" }}
       />
     </div>
   );
@@ -110,7 +110,7 @@ function InfoNote({ children }: { children: React.ReactNode }) {
 
 function WarnNote({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2 rounded-md px-3 py-2 text-xs text-amber-400" style={{ background: "rgba(245,158,11,0.08)" }}>
+    <div className="flex items-start gap-2 rounded-md px-3 py-2 text-xs text-amber-400" style={{ background: "color-mix(in srgb, var(--th-status-warning) 8%, transparent)" }}>
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{children}</span>
     </div>
@@ -170,7 +170,7 @@ function ConfirmModal({
         className="w-full max-w-sm rounded-xl p-5 space-y-4 shadow-2xl"
         style={{
           background: "var(--th-bg-drawer, var(--th-bg-shell))",
-          border: isAllDevices ? "2px solid rgba(239,68,68,0.6)" : "1px solid var(--th-border-drawer-section)",
+          border: isAllDevices ? "2px solid color-mix(in srgb, var(--th-status-critical) 60%, transparent)" : "1px solid var(--th-border-drawer-section)",
         }}
         onSubmit={submitConfirm}
         onClick={(e) => e.stopPropagation()}
@@ -202,7 +202,7 @@ function ConfirmModal({
           <>
             <div
               className="rounded-lg px-3 py-2 text-xs text-red-400"
-              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}
+              style={{ background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 30%, transparent)" }}
             >
               Agjenti do të riniset gjatë update-it. PC mund të dalë offline ~30 sekonda.
               TECHI Remote Support <strong>nuk preket</strong>.
@@ -226,7 +226,7 @@ function ConfirmModal({
         {isAllDevices && (
           <div
             className="rounded-lg px-3 py-2.5 text-center"
-            style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)" }}
+            style={{ background: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 40%, transparent)" }}
           >
             <p className="text-2xl font-bold text-red-400">{deviceCount ?? "?"}</p>
             <p className="text-xs font-medium text-red-300">Kjo do dërgohet te të gjitha pajisjet</p>
@@ -252,7 +252,7 @@ function ConfirmModal({
         {step === 1 && (
           <div
             className="rounded-lg px-3 py-2 text-xs"
-            style={{ background: "rgba(239,68,68,0.08)", color: "var(--th-text-muted)" }}
+            style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)", color: "var(--th-text-muted)" }}
           >
             This action will be sent to all targeted devices and <strong className="text-red-400">cannot be undone</strong>.
           </div>
@@ -292,7 +292,7 @@ function ConfirmModal({
               type="button"
               onClick={() => setStep(2)}
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white"
-              style={{ background: "#ef4444" }}
+              style={{ background: "var(--th-status-critical)" }}
             >
               Continue →
             </button>
@@ -301,7 +301,7 @@ function ConfirmModal({
               type="submit"
               disabled={sending || !canConfirm}
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-              style={{ background: "#ef4444" }}
+              style={{ background: "var(--th-status-critical)" }}
             >
               {sending ? "Sending…" : isSelfUpdate ? "Konfirmo përditësimin" : "Konfirmo dërgimin"}
             </button>
@@ -377,7 +377,7 @@ function OutputModal({ hostname, output, error, onClose }: OutputModalProps) {
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">Error</p>
               <pre
                 className="whitespace-pre-wrap rounded-md p-3 text-xs font-mono text-red-400"
-                style={{ background: "rgba(239,68,68,0.08)" }}
+                style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" }}
               >
                 {error}
               </pre>
@@ -441,7 +441,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
               ...inputStyle,
               borderColor:
                 payload["confirm"] && payload["password"] !== payload["confirm"]
-                  ? "rgba(239,68,68,0.6)"
+                  ? "color-mix(in srgb, var(--th-status-critical) 60%, transparent)"
                   : (inputStyle as Record<string, string>)["borderColor"],
             }}
           />
@@ -524,7 +524,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
         </div>
         <div
           className="flex items-start gap-2 rounded-md px-3 py-2 text-xs text-red-400"
-          style={{ background: "rgba(239,68,68,0.08)" }}
+          style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" }}
         >
           <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
@@ -567,7 +567,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
             style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace" }}
           />
         </div>
-        <div className="flex items-start gap-2 rounded-md px-3 py-2 text-xs" style={{ background: "rgba(232,90,60,0.08)", color: "var(--th-text-secondary)" }}>
+        <div className="flex items-start gap-2 rounded-md px-3 py-2 text-xs" style={{ background: "color-mix(in srgb, var(--th-accent) 8%, transparent)", color: "var(--th-text-secondary)" }}>
           <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--th-accent)" }} />
           <span>Runs on Linux devices via the selected engine. Windows targets use Run PowerShell instead. Admin role required.</span>
         </div>
@@ -887,7 +887,7 @@ export default function AgentCommandsPanel() {
           }}
         >
           <div className="flex items-center gap-2">
-            <Terminal className="h-4 w-4" style={{ color: "var(--th-accent-orange, #ff553f)" }} />
+            <Terminal className="h-4 w-4" style={{ color: "var(--th-accent)" }} />
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
               Send Command
             </p>
@@ -1042,7 +1042,7 @@ export default function AgentCommandsPanel() {
             onClick={() => { setSendError(null); needsConfirm ? setConfirmOpen(true) : handleSend(); }}
             disabled={sending || !isFormValid()}
             className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold text-white transition disabled:opacity-40"
-            style={{ background: "var(--th-accent-orange, #ff553f)" }}
+            style={{ background: "var(--th-accent)" }}
           >
             <Play className="h-3.5 w-3.5" />
             {sending ? "Sending…" : `Send to ${target === "all" ? "all devices" : targetLabel}`}
@@ -1062,7 +1062,7 @@ export default function AgentCommandsPanel() {
               <div className="flex items-center gap-2">
                 <RefreshCw
                   className={`h-4 w-4 ${!activeBatch.finished ? "animate-spin" : ""}`}
-                  style={{ color: "var(--th-accent-orange, #ff553f)" }}
+                  style={{ color: "var(--th-accent)" }}
                 />
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
                   Batch Progress
@@ -1171,7 +1171,7 @@ export default function AgentCommandsPanel() {
           style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)" }}
         >
           <div className="flex items-center gap-2 px-5 py-3.5">
-            <History className="h-4 w-4" style={{ color: "var(--th-accent-orange, #ff553f)" }} />
+            <History className="h-4 w-4" style={{ color: "var(--th-accent)" }} />
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
               Command History
             </p>
