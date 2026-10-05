@@ -49,6 +49,19 @@ smoke-checked). Smoke now also checks `/system/status`. Tests:
 `tests/test_system_status.py` (12: roles, each tile's states),
 `SystemStatusCard.test.tsx` (3).
 
+Deployed the same day (`cf7e946` → `1f5556e`): preflight passed (backend
+1178 with flags off/on, tsc, build, agent). Guard passed; rollback images
+`techi-platform-{backend,frontend}:pre-sysstatus-cf7e946`; both rebuilt and
+recreated, healthy. `/backups` is mounted read-only (a write attempt was
+refused). Guard and smoke passed, including `/system/status` → 401 without
+a token. Load peaked at 2.4 and fell back to 1.4. One-off evaluation inside
+the backend container gave: database Live (79.6 ms on a cold connection,
+schema `e1f2a3b4c5d6`); agents Live (560 reporting of 564 online, last
+heartbeat 0 s ago); agent versions Synced (864/887 on 2.1.20, 97%); cleanup
+Pending (first audited run at the next 03:00 UTC); backup Done (145 MB, 8
+daily copies). The workers tile is only meaningful inside the app process
+and was not evaluated here. Authenticated browser view not verified.
+
 ## [2026-10-05] ONLINE-GREEN-2026-10-05 — "Online" green made vivid at the owner's request
 
 Owner: the green for ONLINE, the agent version badge and "Last seen" looked
