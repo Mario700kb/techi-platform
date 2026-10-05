@@ -16,6 +16,13 @@ Friday's OK tone `#5E8F6C` is too grey to carry a lively green. Changed
 "Synced"; 9:1 on cards) and light `#4D7559` → `#1B7F4E` (5.0:1 on white,
 4.6:1 on page). `.premium-status-online` tint follows the new hue.
 
+Deployed the same day (frontend only): preflight passed (backend 1166 with
+flags off/on, tsc, build, agent). Guard passed; rollback image
+`techi-platform-frontend:pre-green-f19b4ff`; `git pull` → `cf7e946`; frontend
+rebuilt and recreated, healthy; guard and smoke passed. The live CSS served
+at rdp.techi.com.al contains `--th-status-online: #5BD096` (dark) and
+`#1B7F4E` (light).
+
 ## [2026-10-05] DEPLOY-TIRANA-2026-10-05 — Tirana time system-wide + top bar clock deployed (`f3416f7` → `f19b4ff`), host timezone set to Europe/Tirane
 
 The owner approved both the deploy and the host timezone change ("po, po").

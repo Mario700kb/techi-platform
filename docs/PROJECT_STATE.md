@@ -17,7 +17,7 @@
 | Field | Verified value |
 |---|---|
 | Documentation revision | `DOC-2026-10-05-TIRANA-GLOBAL` |
-| Production baseline SHA | `f19b4ff` (see §3) |
+| Production baseline SHA | `cf7e946` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
 | Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
@@ -40,10 +40,10 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `f19b4ff` — Tirana time system-wide + top bar clock; deployed 2026-10-05 ~15:07 UTC; previous runtime SHA `f3416f7` |
+| Production SHA | `cf7e946` — vivid online green (frontend only), deployed 2026-10-05; backend unchanged since `f19b4ff` (Tirana time system-wide + top bar clock, ~15:07 UTC); previous runtime SHA `f19b4ff` |
 | Schema version | `e1f2a3b4c5d6` (was `d8e4f6a1b2c3`) — `report_schedules.hour_utc` renamed `hour_local` (Tirana hour). Pre-deploy dump: `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz` |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
-| Origin alignment | `f19b4ff` was pushed to origin and pulled on the server with `git pull --ff-only` |
+| Origin alignment | `cf7e946` was pushed to origin and pulled on the server with `git pull --ff-only` |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
@@ -54,7 +54,7 @@ The primary release identity is Git SHA, followed by a future immutable release 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
 | Backend | `1.0.0` metadata | Git SHA `f19b4ff`; rebuilt 2026-10-05 15:05 UTC (rollback image `techi-platform-backend:pre-tirana-f3416f7` = `1f08c476…`); runs with `TZ=Europe/Tirane` | Running backend image | Service healthy after recreate | Guard + smoke passed (incl. `/deployments/recent`); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `f19b4ff`; rebuilt 2026-10-05 15:05 UTC (rollback image `techi-platform-frontend:pre-tirana-f3416f7` = `27ecaf00…`); runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `cf7e946`; rebuilt 2026-10-05 (rollback image `techi-platform-frontend:pre-green-f19b4ff`); runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
