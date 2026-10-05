@@ -42,7 +42,6 @@ export const CACHE_KEYS = {
   dashboardRecentDevices: "dashboard.recent-devices", // Device[]
   recentActions:      "dashboard.actions",       // RemoteActionWithDevice[]
   operatorPresence:   "dashboard.op-presence",   // OperatorPresenceRecord[]
-  recentDeployments:  "dashboard.deployments",   // RecentDeployment[]
   clientsList:        "clients.list",            // Client[]
   groupsList:         "clients.groups",          // DeviceGroup[]
   operatorsList:      "operators.list",          // OperatorRecord[]
@@ -52,7 +51,6 @@ export const CACHE_TTL = {
   dashboardRecentDevices: 60_000,
   recentActions:      30_000,
   operatorPresence:   30_000,
-  recentDeployments:  60_000,
   clientsList:        120_000,
   groupsList:         120_000,
   operatorsList:      120_000,

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     PUBLIC_BACKEND_URL: str = "https://api-rdp.techi.com.al"
     # Timezone for human-readable times (reports). Storage and APIs stay UTC.
     DISPLAY_TIMEZONE: str = "Europe/Tirane"
+    # Host backup folder, mounted read-only for the System status panel.
+    BACKUP_DIR: str = "/backups"
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

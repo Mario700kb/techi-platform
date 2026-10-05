@@ -13,6 +13,7 @@ from contextlib import suppress
 
 from app.db.session import SessionLocal
 from app.services.notification_service import NotificationService
+from app.core import worker_health
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class NotificationWorker:
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="notification-worker")
+        worker_health.register("notifications", "alerts", SWEEP_INTERVAL_SECONDS,
+                               lambda: self._task is not None and not self._task.done())
         logger.info("Notification worker started")
 
     async def stop(self) -> None:
@@ -64,6 +67,7 @@ class NotificationWorker:
                     logger.info("Notification worker retried %s delivery(ies)", attempted)
             except Exception:
                 logger.exception("Notification worker pass failed")
+            worker_health.beat("notifications")
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=SWEEP_INTERVAL_SECONDS)

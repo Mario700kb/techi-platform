@@ -5,6 +5,7 @@ from contextlib import suppress
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.device_status_service import DeviceStatusService
+from app.core import worker_health
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class DeviceReconciliationWorker:
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="device-reconciliation-worker")
+        worker_health.register("reconcile", "reconcile", settings.RECONCILIATION_INTERVAL_SECONDS,
+                               lambda: self._task is not None and not self._task.done())
         logger.info("Device reconciliation worker started")
 
     async def stop(self) -> None:
@@ -41,6 +44,7 @@ class DeviceReconciliationWorker:
                     logger.info("Reconciled %s stale device statuses", transitioned)
             except Exception:
                 logger.exception("Device reconciliation pass failed")
+            worker_health.beat("reconcile")
 
             try:
                 await asyncio.wait_for(

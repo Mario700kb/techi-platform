@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, Optional
 
 from app.websocket.manager import realtime_manager
+from app.core import worker_health
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class RealtimeEventPublisher:
         self._loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue(maxsize=1000)
         self._task = asyncio.create_task(self._run(), name="realtime-event-publisher")
+        # Event-driven: no periodic beat, liveness of the task only.
+        worker_health.register("realtime", "realtime", None,
+                               lambda: self._task is not None and not self._task.done())
         logger.info("Realtime event publisher started")
 
     async def stop(self) -> None:

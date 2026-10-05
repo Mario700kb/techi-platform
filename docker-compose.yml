@@ -50,6 +50,8 @@ services:
     volumes:
       - agent_packages:/app/agent_packages
       - /opt/techi/packages:/opt/techi/packages:ro
+      # Nightly backups, read-only, for the System status panel (newest dump age/size).
+      - /opt/backups/techi:/backups:ro
       - backend_logs:/app/logs
       - backend_data:/app/data
     restart: unless-stopped

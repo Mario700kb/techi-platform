@@ -15,6 +15,7 @@ from app.db.session import SessionLocal
 from app.repositories.report_repository import ReportScheduleRepository
 from app.services.audit_service import system_audit_log
 from app.services.report_service import ReportService, next_schedule_time
+from app.core import worker_health
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class ReportWorker:
             return
         self._stop = asyncio.Event()
         self._task = asyncio.create_task(self._run(), name="report-worker")
+        worker_health.register("reports", "reports", self.SWEEP_SECONDS,
+                               lambda: self._task is not None and not self._task.done())
         logger.info("ReportWorker started")
 
     async def stop(self) -> None:
@@ -54,6 +57,7 @@ class ReportWorker:
                 raise
             except Exception:
                 logger.exception("ReportWorker sweep failed")
+            worker_health.beat("reports")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.SWEEP_SECONDS)
                 return

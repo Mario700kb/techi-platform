@@ -25,6 +25,7 @@ from app.db.session import SessionLocal
 from app.services.audit_service import AuditAction, system_audit_log
 from app.services.terminal_relay import terminal_relay
 from app.services.terminal_service import IDLE_TIMEOUT_SECONDS, SESSION_MAX_SECONDS, TerminalService
+from app.core import worker_health
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class TerminalWatchdog:
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="terminal-watchdog")
+        worker_health.register("terminal", "terminal", SWEEP_INTERVAL_SECONDS,
+                               lambda: self._task is not None and not self._task.done())
         logger.info("Terminal watchdog started")
 
     async def stop(self) -> None:
@@ -104,6 +107,7 @@ class TerminalWatchdog:
                     logger.info("Terminal watchdog closed/expired %s session(s)", closed)
             except Exception:
                 logger.exception("Terminal watchdog pass failed")
+            worker_health.beat("terminal")
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=SWEEP_INTERVAL_SECONDS)

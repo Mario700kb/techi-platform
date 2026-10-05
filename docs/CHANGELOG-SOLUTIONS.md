@@ -5,6 +5,50 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] SYSTEM-STATUS-2026-10-05 — Dashboard "System status" panel replaces "Recent deployments" (owner/admin only)
+
+Owner: replace the Recent deployments card with the real state of the
+application's services, with animated icons; visible to owner and admin
+only. The design was agreed on a preview first (claude.ai artifact
+`1NG7B2t9ddcpNPtFMYJF8k`).
+
+`GET /api/v1/system/status` (`require_min_role(admin)`; operators and
+readonly get 403) plus two browser-side tiles. Every value is live; unknowns
+are shown as unknown:
+- API ↔ Web (browser): round trip of the status call every 30 s, with a
+  sparkline of the last 30 checks. 1.5 s or more = Slow; no answer = Down.
+- Realtime (browser): the existing realtime WebSocket state (connected /
+  connecting / polling fallback / offline).
+- Database: `SELECT 1` latency, and `alembic_version` against the code head
+  ("migration pending" if they differ).
+- Agents: devices with `last_seen` inside `HEARTBEAT_TIMEOUT_SECONDS`
+  against online. Down if the newest heartbeat is older than 2 min while
+  devices are online (ingest stalled).
+- Agent versions: share of the Windows fleet on the active agent
+  (`version_service`). At least 85% = Synced, below that = Rolling out.
+- Workers: new in-process registry `app/core/worker_health.py`. Realtime
+  publisher, reconciliation, reports, notifications and terminal watchdog
+  register on start; the periodic ones beat each pass. A worker is down if
+  its task stopped or it missed 3 beats + 30 s.
+- Nightly cleanup: running flag while it executes. Each run now writes an
+  audit row `nightly_cleanup` (rows deleted, failed tasks, duration), so the
+  result survives restarts. It shows "Pending" until the first run after
+  deploy. It still runs at 03:00 UTC (05:00/04:00 Tirana), deliberately 2 h
+  after the 03:00 Tirana backup so the two do not compete for the single
+  vCPU.
+- Nightly backup: the newest `postgres-YYYY-MM-DD_HH-MM.sql.gz` in
+  `/opt/backups/techi`, mounted read-only at `/backups` (docker-compose).
+  The backup script only gives a dump that name after `gzip -t` and the size
+  floor pass, so its presence means it was verified. More than 26 h old =
+  Late. Manual `pre-*` dumps are ignored.
+
+Frontend: `SystemStatusCard` (animations in index.css `sys-*`, still under
+`prefers-reduced-motion`). The Dashboard no longer loads recent deployments
+(client code removed; the `/deployments/recent` endpoint stays and is still
+smoke-checked). Smoke now also checks `/system/status`. Tests:
+`tests/test_system_status.py` (12: roles, each tile's states),
+`SystemStatusCard.test.tsx` (3).
+
 ## [2026-10-05] ONLINE-GREEN-2026-10-05 — "Online" green made vivid at the owner's request
 
 Owner: the green for ONLINE, the agent version badge and "Last seen" looked

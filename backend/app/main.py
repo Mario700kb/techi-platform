@@ -1,4 +1,5 @@
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import logging
@@ -58,16 +59,31 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
     )
+    from app.core import worker_health
+    from app.services.audit_service import system_audit_log
+
     db = SessionLocal()
+    worker_health.cleanup_started()
+    started = time.monotonic()
+    rows = 0
+    failed = []
     try:
         # Each task commits/vacuums independently; one failure must not stop the rest.
         for task in tasks:
             try:
-                task(db)
+                rows += int(task(db) or 0)
             except Exception:
                 db.rollback()
+                failed.append(task.__name__)
                 logger.exception("Cleanup task %s failed", task.__name__)
+        # Durable record for the System status panel (survives restarts).
+        system_audit_log(db, action="nightly_cleanup", details={
+            "rows_deleted": rows,
+            "failed_tasks": failed,
+            "duration_seconds": round(time.monotonic() - started, 1),
+        })
     finally:
+        worker_health.cleanup_finished()
         db.close()
 
 
