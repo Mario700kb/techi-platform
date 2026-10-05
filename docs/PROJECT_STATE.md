@@ -16,12 +16,12 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-10-01-REPORTS` |
-| Production baseline SHA | `dbf46c8` (see §3) |
+| Documentation revision | `DOC-2026-10-05-PALETTE-TIME` |
+| Production baseline SHA | `f3416f7` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
-| Verified at | Reports deployment and service-level verification dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production Reports deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) |
-| Release classification | **REPORTS DEPLOYED; BROWSER SMOKE PENDING** |
+| Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`DEPLOY-2026-10-05`) |
+| Release classification | **PALETTE + REAL DEPLOYMENTS + TIRANA TIME DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
 Current blockers to a clean immutable release baseline:
@@ -40,10 +40,10 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `dbf46c8` — Reports Client + Device release, deployed 2026-10-01 08:55 UTC; previous runtime SHA `9c284d4` |
-| Schema version | `d8e4f6a1b2c3` (was `c7n1t8h5p2r6`) — adds device scope and type to `report_runs`. Pre-deploy dump: `/opt/backups/techi/pre-reports-deploy-2026-10-01_08-46.sql.gz` |
+| Production SHA | `f3416f7` — Friday palette, real recent deployments, Tirana display time; deployed 2026-10-05 ~14:36 UTC; previous runtime SHA `672f751` (code = `dbf46c8`) |
+| Schema version | `d8e4f6a1b2c3` — unchanged by the 2026-10-05 deploy (no migration) |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
-| Origin alignment | Target `dbf46c8` was pushed to origin and deployed. Production's origin-tracking ref remains at `9c284d4` because server-side GitHub fetch needs credentials; the target was verified and imported via Git bundle |
+| Origin alignment | `f3416f7` was pushed to origin and pulled on the server with `git pull --ff-only` |
 | Nearest release anchor | No immutable release tag exists at this SHA |
 | `main` | Not the current production branch |
 
@@ -53,8 +53,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `dbf46c8`; image `bfac9f9c…` | Running backend image; image hash is the secondary runtime identity | Service healthy, zero restarts after deploy | Health and Reports service smoke passed; authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `dbf46c8`; image `1dc89f30…` | Running frontend build | Service healthy | HTTP 200; authenticated browser smoke pending |
+| Backend | `1.0.0` metadata | Git SHA `f3416f7`; rebuilt 2026-10-05 (rollback image `techi-platform-backend:pre-palette-672f751` = `bfac9f9c…`) | Running backend image | Service healthy after recreate | Guard + smoke passed (incl. `/deployments/recent`); authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `f3416f7`; rebuilt 2026-10-05 (rollback image `techi-platform-frontend:pre-palette-672f751` = `1dc89f30…`) | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |

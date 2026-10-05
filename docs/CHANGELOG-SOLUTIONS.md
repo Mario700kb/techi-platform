@@ -5,7 +5,42 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-05] TIRANA-TIME-2026-10-05 — Some times showed 2 hours behind; UI and reports now show Tirana time; NOT DEPLOYED
+## [2026-10-05] DEPLOY-2026-10-05 — Friday palette, real recent deployments and Tirana time deployed (`672f751` → `f3416f7`)
+
+Three commits went to production together: `d1b8d8b` (Friday palette, whole
+frontend), `dc12f4e` (Dashboard recent deployments from real command batches)
+and `f3416f7` (Tirana display time in UI and reports). The palette had been
+committed earlier the same day but had not reached the server. Production
+was still on `672f751` (code = `dbf46c8`), so all three shipped in this
+deploy.
+
+Sequence on `/opt/techi/techi-platform`:
+1. Local `scripts/preflight.sh` passed at `f3416f7`: contract 15/15, backend
+   1163 passed with flags off and on, tsc, build, agent build.
+2. `techi-deploy-guard` passed (single root/compose file, all required
+   `FEATURE_` flags effective).
+3. Rollback images were tagged `techi-platform-{backend,frontend}:pre-palette-672f751`
+   (`bfac9f9cbee7` / `1dc89f30b47a`).
+4. `git pull --ff-only` → `f3416f7`; `docker compose build backend frontend`.
+5. In a throwaway container from the new backend image, `Europe/Tirane`
+   resolved correctly (`2026-10-05 14:52:00+02:00`), confirming `tzdata`.
+6. `docker compose up -d --no-deps backend frontend`: both healthy; guard
+   passed again; `scripts/smoke.sh` passed (9/9, including the new
+   `/deployments/recent` check).
+7. Load peaked at 4.9 as the fleet reconnected, then fell back to 1.4 within
+   ~2.5 minutes. No traceback or 500 appeared in the backend log excerpt.
+   Public frontend and API `/health` both returned 200.
+
+No DB migration (schema stays `d8e4f6a1b2c3`); no `.env` change.
+Not verified: authenticated browser check (dark/light, desktop/mobile) and a
+direct heartbeat-ingest count after restart. Reading backend logs and the DB
+from the session was not permitted.
+
+Rollback: `docker tag techi-platform-{backend,frontend}:pre-palette-672f751`
+back to `:latest`, then `docker compose up -d --no-deps backend frontend`
+(code: `git checkout 672f751`).
+
+## [2026-10-05] TIRANA-TIME-2026-10-05 — Some times showed 2 hours behind; UI and reports now show Tirana time
 
 Owner report: the system time looked 2 hours behind Tirana. Every DB datetime
 column is a naive `DateTime` holding UTC, so the API emits ISO strings with no
@@ -34,7 +69,7 @@ Scheduled reports keep their "Hour UTC" field: the hour is stored per
 schedule, and changing its meaning would move existing schedules. Converting
 that to Tirana time is a separate decision.
 
-## [2026-10-05] DEPLOYMENTS-REAL-2026-10-05 — Dashboard "Latest activity" showed four invented rows; now reads the real fleet command batches; NOT DEPLOYED
+## [2026-10-05] DEPLOYMENTS-REAL-2026-10-05 — Dashboard "Latest activity" showed four invented rows; now reads the real fleet command batches
 
 The Dashboard card "Recent Deployments / Latest activity" (badge "API driven")
 was fed by `GET /api/v1/deployments/recent`, which returned four hardcoded
@@ -61,7 +96,7 @@ status rules, expired devices, ordering/limit).
 Note: reading history lazily expires overdue actions (existing
 `get_history` behaviour, also used by `/agent/commands/history`).
 
-## [2026-10-05] PALETTE-FRIDAY-2026-10-05 — UI palette aligned to the Friday chat palette (dark + derived light); NOT DEPLOYED
+## [2026-10-05] PALETTE-FRIDAY-2026-10-05 — UI palette aligned to the Friday chat palette (dark + derived light)
 
 Owner decision: take the colour palette of the Friday chat audit
 (claude.ai artifact `Jr34TUAn2u4nPW6mXWLbWj`) for TECHI, update the docs and
@@ -117,8 +152,7 @@ PlatformIcon neutrals/coral (already Friday), xterm theme (xterm cannot read
 CSS vars), black shadows/backdrops. Requires `color-mix()` (Chrome 111+,
 Safari 16.2+, Firefox 113+); older browsers lose these colours. Critical
 `#F04A2A` sits close to the coral accent by Friday's own design. Typecheck,
-build and vitest (84/84) passed; no browser check yet; not committed or
-deployed.
+build and vitest (84/84) passed. Deployed 2026-10-05 (see `DEPLOY-2026-10-05`).
 
 ## [2026-10-01] REPORTS-PRODUCTION-2026-10-01 — Client and Device Reports deployed
 
