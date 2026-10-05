@@ -5,6 +5,43 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-05] DEPLOY-TIRANA-2026-10-05 — Tirana time system-wide + top bar clock deployed (`f3416f7` → `f19b4ff`), host timezone set to Europe/Tirane
+
+The owner approved both the deploy and the host timezone change ("po, po").
+
+1. Local preflight passed at `56109b9`: backend 1166 passed with flags
+   off/on, tsc, build, agent. The clock commit `f19b4ff` adds frontend only
+   (vitest 89/89, build OK).
+2. Guard passed. Load before the deploy was 1.0.
+3. Full dump `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz`:
+   148,553,437 bytes, `gzip -t` OK, ends with "PostgreSQL database dump
+   complete", 35 `CREATE TABLE`. It is smaller than the 2026-10-01 dump
+   (175 MB), consistent with the 7-day heartbeat/telemetry retention.
+4. Rollback images were tagged `techi-platform-{backend,frontend}:pre-tirana-f3416f7`
+   (`1f08c476dfeb` / `27ecaf00fbd1`).
+5. `git pull --ff-only` → `f19b4ff`; built backend and frontend. In
+   throwaway containers, the backend clock with `TZ` read 17:06 CEST,
+   `format_display` gave `2026-10-05 16:44 CEST`, and the frontend `date`
+   read 17:06 CEST.
+6. `docker compose run --rm backend alembic upgrade head` ran
+   `d8e4f6a1b2c3 → e1f2a3b4c5d6`. `report_schedules` was empty before and
+   after, so there was nothing to convert. Then
+   `up -d --no-deps backend frontend`.
+7. Both containers healthy; backend `date` = CEST; guard passed; smoke
+   passed. Load peaked at 3.3 and fell to 1.2 within ~1.5 minutes. Public
+   frontend and API both returned 200.
+8. Host: `timedatectl set-timezone Europe/Tirane` (was `Etc/UTC`),
+   `systemctl restart cron`, NTP synchronized. The only owned timed job,
+   root cron `0 3 * * * /root/techi-backup.sh`, now runs at 03:00 Tirana
+   (01:00/02:00 UTC). Other entries are Debian system jobs.
+9. The PostgreSQL server timezone was confirmed to still be `UTC`. 361
+   devices had `last_seen` within the 3 minutes after the deploy.
+
+Not verified: authenticated browser check of the clock, inputs and
+schedules. Rollback: retag the `pre-tirana-f3416f7` images to `:latest`,
+`alembic downgrade d8e4f6a1b2c3` (reversible; it converts hours back), and
+`up -d --no-deps backend frontend`. Host: `timedatectl set-timezone Etc/UTC`.
+
 ## [2026-10-05] TIRANA-GLOBAL-2026-10-05 — Tirana time across the whole system (display, inputs, schedules, logs)
 
 Owner: "Tirana time must be global for the whole system" (reference: 16:44
