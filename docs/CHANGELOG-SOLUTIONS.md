@@ -26,6 +26,16 @@ Also: the System status cleanup tile said "Runs every night at 03:00 UTC".
 It now shows the Tirana time of that run ("05:00 (Tirana)" in summer,
 "04:00" in winter).
 
+The owner reviewed a locally rendered sample PDF and approved it. Deployed
+2026-10-07 (`1f5556e` → `8a05679`, backend only): preflight passed (1181
+with flags off/on, tsc, build, agent). Guard passed; rollback image
+`techi-platform-backend:pre-logo-1f5556e`; the new image contains
+`app/assets/techi-logo-on-light.png`; backend healthy with 0 restarts; guard
+and smoke passed. A PDF rendered inside the production container had the
+logo file and 2 image objects (header + cover). Load peaked at 4.5 as agents
+reconnected and settled at 1.3 within ~4 min. That is slower than the
+previous deploys (~2 min); `top` showed no unusual process afterwards.
+
 ## [2026-10-05] SYSTEM-STATUS-2026-10-05 — Dashboard "System status" panel replaces "Recent deployments" (owner/admin only)
 
 Owner: replace the Recent deployments card with the real state of the
