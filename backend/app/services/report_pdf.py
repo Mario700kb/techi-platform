@@ -1,14 +1,19 @@
 """PDF layout shared by client and device reports."""
 
 import io
+import logging
 from datetime import datetime
+from functools import lru_cache
 from html import escape
+from pathlib import Path
+from typing import Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
-    BaseDocTemplate, CondPageBreak, Frame, KeepTogether, PageBreak, PageTemplate,
+    BaseDocTemplate, CondPageBreak, Frame, Image, KeepTogether, PageBreak, PageTemplate,
     Paragraph, Spacer, Table, TableStyle,
 )
 
@@ -18,8 +23,23 @@ from app.services.report_output import safe_text
 
 INK = colors.HexColor("#17243A")
 MUTED = colors.HexColor("#5F6C7B")
-ACCENT = colors.HexColor("#E87722")
+ACCENT = colors.HexColor("#E85A3C")  # TECHI coral, same as the logo mark
 PALE = colors.HexColor("#F2F5F8")
+
+# Coral mark + dark wordmark, made for white backgrounds (800×185 PNG, alpha).
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "techi-logo-on-light.png"
+LOGO_RATIO = 800 / 185
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _logo() -> Optional[ImageReader]:
+    """The logo, or None so a missing file never breaks report generation."""
+    try:
+        return ImageReader(str(LOGO_PATH))
+    except Exception:
+        logger.warning("Report logo not found at %s; using the text header", LOGO_PATH)
+        return None
 
 
 def _p(value, style):
@@ -49,9 +69,16 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
         canvas.setStrokeColor(ACCENT)
         canvas.setLineWidth(2)
         canvas.line(42, page_h - 45, page_w - 42, page_h - 45)
-        canvas.setFont("Helvetica-Bold", 8)
-        canvas.setFillColor(INK)
-        canvas.drawString(42, page_h - 34, "TECHI PLATFORM  /  REPORTS")
+        logo = _logo()
+        if logo is not None:
+            canvas.drawImage(logo, 42, page_h - 40, width=16 * LOGO_RATIO, height=16, mask="auto")
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.setFillColor(MUTED)
+            canvas.drawRightString(page_w - 42, page_h - 34, "REPORTS")
+        else:
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.setFillColor(INK)
+            canvas.drawString(42, page_h - 34, "TECHI PLATFORM  /  REPORTS")
         canvas.setStrokeColor(colors.HexColor("#D9E0E7"))
         canvas.setLineWidth(0.5)
         canvas.line(42, 48, page_w - 42, 48)
@@ -67,7 +94,12 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
     doc = BaseDocTemplate(output, pagesize=A4, pageCompression=0,
                           pageTemplates=[PageTemplate(id="report", frames=frame, onPage=draw_page)],
                           title=f"TECHI {scope.title()} {report_type} Report", author="TECHI Platform")
-    story = [Spacer(1, 95), _p("TECHI PLATFORM  /  REPORTS", styles["eyebrow"]), Spacer(1, 16),
+    cover_logo = (
+        [Image(str(LOGO_PATH), width=40 * LOGO_RATIO, height=40, hAlign="LEFT"), Spacer(1, 26)]
+        if _logo() is not None else []
+    )
+    story = [Spacer(1, 95 if not cover_logo else 40), *cover_logo,
+             _p("TECHI PLATFORM  /  REPORTS", styles["eyebrow"]), Spacer(1, 16),
              _p(f"{report_type.replace('_', ' ').title()} Report", styles["title"]), Spacer(1, 12),
              _p(f"{scope.title()}: {target}", styles["subtitle"]), Spacer(1, 35)]
     cover_rows = [

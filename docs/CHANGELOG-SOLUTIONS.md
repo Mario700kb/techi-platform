@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-07] REPORT-LOGO-2026-10-07 — TECHI logo on every report PDF
+
+Owner request: add the TECHI logo to the PDF reports. The app logo
+(`frontend/public/brand/techi-logo-dark.png`) has a light-grey wordmark that
+is invisible on the white PDF page. The PDF uses
+`agent/TECHI-branding-assets/techi-horizontal-dark.png` (coral mark, dark
+wordmark, 800×185, alpha), copied to `backend/app/assets/techi-logo-on-light.png`
+so it ships inside the backend image (only `./app` is copied).
+
+- Every page: the logo (16 pt high) replaces the "TECHI PLATFORM / REPORTS"
+  text top-left; "REPORTS" moves to the right.
+- Cover: the logo (40 pt high) sits above the title.
+- PDF accent changed from the old orange `#E87722` to TECHI coral `#E85A3C`,
+  matching the logo mark.
+- If the file is missing, the PDF falls back to the text header instead of
+  failing (`_logo()` returns None). Tests: `tests/test_report_pdf_logo.py`.
+
+Also: the System status cleanup tile said "Runs every night at 03:00 UTC".
+It now shows the Tirana time of that run ("05:00 (Tirana)" in summer,
+"04:00" in winter).
+
 ## [2026-10-05] SYSTEM-STATUS-2026-10-05 — Dashboard "System status" panel replaces "Recent deployments" (owner/admin only)
 
 Owner: replace the Recent deployments card with the real state of the

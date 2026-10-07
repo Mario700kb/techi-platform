@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core import worker_health
 from app.core.config import settings
-from app.core.time import ensure_utc, utcnow
+from app.core.time import ensure_utc, to_display, utcnow
 from app.models.audit_log import AuditLog
 from app.models.device import Device, DeviceStatus
 from app.schemas.system_status import ServiceTile, SystemStatus
@@ -134,8 +134,9 @@ def cleanup_tile(db: Session, now: datetime) -> ServiceTile:
         .order_by(AuditLog.created_at.desc()).first()
     )
     if last is None:
+        nightly = to_display(now.replace(hour=3, minute=0, second=0, microsecond=0))
         return ServiceTile(key="cleanup", state="unknown", label="Pending",
-                           detail="No run recorded yet", sub="Runs every night at 03:00 UTC")
+                           detail="No run recorded yet", sub=f"Runs every night at {nightly:%H:%M} (Tirana)")
     details = json.loads(last.details_json or "{}")
     at = ensure_utc(last.created_at)
     failed = details.get("failed_tasks") or []
