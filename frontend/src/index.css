@@ -1440,7 +1440,18 @@ textarea:focus-visible,
   color: var(--th-text-primary);
 }
 .th-search input::placeholder { color: var(--th-text-faint); }
-.th-search:focus-within input:focus-visible { outline: none; }
+/* The field draws the focus (border + glow, like .th-select); the bare input
+   inside must not add its own ring. The selectors out-rank the page-wide
+   .premium-page/.devices-premium input focus rules, which use !important. */
+label.th-search:focus-within { box-shadow: 0 0 0 4px var(--th-accent-glow); }
+.th-search input:focus,
+.th-search input:focus-visible,
+.premium-page .th-search input:focus-visible:not([type="checkbox"]):not([type="radio"]),
+.devices-premium .th-search input:focus-visible {
+  outline: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
 
 .th-kbd {
   display: inline-flex;
