@@ -2086,13 +2086,88 @@ a.th-list-row:hover { background: var(--th-sidebar-nav-hover); }
 @media (min-width: 1280px) {
   .th-explorer { height: 100%; max-height: none; }
 }
+/* Grid: the list is inset 8px and rows pad 8px, so every row's content
+   starts 16px from the card edge, the same as the header, labels and footer. */
+.th-explorer-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 12px 12px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-explorer-head h2 { font-size: 14px; font-weight: 600; line-height: 20px; color: var(--th-text-primary); }
+.th-explorer-head p { font-size: 12px; line-height: 16px; color: var(--th-text-faint); font-variant-numeric: tabular-nums; }
+.th-explorer-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--th-text-faint);
+}
+.th-explorer-sticky {
+  position: sticky;
+  /* -1px tucks its divider under the header's once it sticks: one line, not two. */
+  top: -1px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 8px;
+  margin-top: 6px;
+  background: var(--th-bg-card);
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-search.th-explorer-search { height: 32px; padding: 0 8px; }
+/* The page-wide form rules give inputs 36px, a border and a fill; inside
+   this compact search the label draws the field, the input stays bare. */
+.th-explorer-search input {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.th-explorer-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--th-text-faint);
+}
+.th-explorer-clear:hover { color: var(--th-text-primary); background: var(--th-sidebar-nav-hover); }
+.th-explorer-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.th-explorer-empty { padding: 12px 8px; font-size: 12px; color: var(--th-text-muted); }
+.th-explorer-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-top: 1px solid var(--th-border-subtle);
+  font-size: 12px;
+  color: var(--th-text-muted);
+  cursor: pointer;
+}
+
 .th-tree-item {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 0 8px 0 4px;
+  height: 32px;
+  padding: 0 4px 0 8px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
@@ -2100,37 +2175,45 @@ a.th-list-row:hover { background: var(--th-sidebar-nav-hover); }
   color: var(--th-text-secondary);
   transition: background-color 120ms ease, color 120ms ease;
 }
-.th-tree-item[data-child="true"] { padding-left: 8px; }
+.th-tree-item[data-child="true"] { height: 30px; }
 .th-tree-item:hover { background: var(--th-sidebar-nav-hover); color: var(--th-text-primary); }
-.th-tree-item svg { color: var(--th-text-faint); }
+.th-tree-item:focus-visible { outline: 2px solid var(--th-accent-border); outline-offset: -2px; }
+.th-tree-icon { display: inline-flex; width: 16px; height: 16px; flex: none; align-items: center; justify-content: center; color: var(--th-text-faint); }
+.th-tree-item:hover .th-tree-icon,
+.th-tree-item[data-within="true"] .th-tree-icon { color: var(--th-text-muted); }
 .th-tree-item[data-within="true"] { color: var(--th-text-primary); }
 .th-tree-item[data-active="true"] {
-  background: var(--th-sidebar-nav-active-bg);
-  color: var(--th-accent-bright);
+  background: color-mix(in srgb, var(--th-accent) 10%, transparent);
+  color: var(--th-text-primary);
   font-weight: 600;
 }
-.th-tree-item[data-active="true"] svg { color: var(--th-accent-bright); }
-.th-tree-caret { display: inline-flex; width: 14px; flex: none; justify-content: center; }
+.th-tree-item[data-active="true"] .th-tree-icon { color: var(--th-accent-bright); }
+.th-tree-caret { display: inline-flex; width: 16px; flex: none; justify-content: center; color: var(--th-text-faint); }
+.th-tree-item:hover .th-tree-caret { color: var(--th-text-muted); }
 .th-tree-count {
-  min-width: 22px;
+  min-width: 28px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--th-text-muted);
   background: var(--th-chip-bg);
 }
-.th-tree-item[data-active="true"] .th-tree-count { color: var(--th-accent-bright); background: color-mix(in srgb, var(--th-accent) 16%, transparent); }
+.th-tree-item[data-active="true"] .th-tree-count { color: var(--th-accent-bright); background: color-mix(in srgb, var(--th-accent) 14%, transparent); }
 .th-tree-maint { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--th-status-maint); }
+/* Children: the guide line runs through the parent's icon centre and each
+   child's icon sits under the parent's label. */
 .fleet-tree-child {
-  margin: 2px 0 4px 22px;
-  padding-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 2px 16px;
+  padding-left: 7px;
   border-left: 1px solid var(--th-border-subtle);
 }
-.fleet-tree-child > li + li { margin-top: 2px; }
 
 /* ── Switch (checkbox with role="switch") ── */
 input.th-switch {

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { Building2, ChevronRight, LayoutGrid, Monitor, PackageX, RefreshCcw, Search, Server } from "lucide-react";
+import { Building2, ChevronRight, LayoutGrid, Monitor, PackageX, RefreshCcw, Search, Server, X } from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
@@ -136,15 +136,19 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
 
   return (
     <aside className="premium-card th-explorer p-0" aria-label="Device explorer">
-      <div className="th-panel-head">
-        <h2>Explorer</h2>
+      <header className="th-explorer-head">
+        <div className="min-w-0">
+          <h2>Explorer</h2>
+          <p>{allCount} devices · {sortedClients.length} clients</p>
+        </div>
         <button type="button" onClick={onRefreshCounts} className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7" title="Refresh counts" aria-label="Refresh counts">
           <RefreshCcw className="h-3.5 w-3.5" />
         </button>
-      </div>
+      </header>
 
-      <div className="fleet-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <ul className="space-y-0.5">
+      <div className="fleet-tree min-h-0 flex-1 overflow-y-auto">
+        <p className="th-explorer-label">Fleet</p>
+        <ul className="th-explorer-list">
           <li>
             <TreeButton active={selectedKey === "all"} icon={LayoutGrid} label="All devices" count={allCount} onClick={() => onSelect("all")} />
           </li>
@@ -153,20 +157,26 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
           </li>
         </ul>
 
-        <div className="mt-4 flex items-center justify-between px-2.5">
-          <p className="th-nav-section !mb-0 !px-0">Clients</p>
-          <span className="text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{visibleClients.length}</span>
-        </div>
-        {sortedClients.length > 6 && (
-          <label className="th-search mx-0.5 mt-2 !h-8">
+        {/* Stays in view while the client list scrolls underneath. */}
+        <div className="th-explorer-sticky">
+          <div className="th-explorer-label !p-0">
+            <span>Clients</span>
+            <span className="tabular-nums">{visibleClients.length}</span>
+          </div>
+          <label className="th-search th-explorer-search">
             <Search className="h-3.5 w-3.5 flex-none" />
             <input value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} placeholder="Filter clients" aria-label="Filter clients" />
+            {clientQuery && (
+              <button type="button" onClick={() => setClientQuery("")} className="th-explorer-clear" aria-label="Clear filter">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </label>
-        )}
+        </div>
 
-        <ul className="mt-1.5 space-y-0.5">
+        <ul className="th-explorer-list pb-2">
           {visibleClients.length === 0 && (
-            <li className="px-2.5 py-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+            <li className="th-explorer-empty">
               {clientQuery ? "No clients match." : "No clients with devices."}
             </li>
           )}
@@ -180,7 +190,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
               <li key={client.id}>
                 <TreeButton
                   active={selectedKey === `client-${client.id}`}
-                  withinActive={activeClientFolder?.clientId === client.id}
+                  withinActive={activeClientFolder?.clientId === client.id || (expanded && childFolders.length > 0)}
                   expanded={expanded}
                   hasChildren={childFolders.length > 0}
                   icon={Building2}
@@ -234,7 +244,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         </ul>
       </div>
 
-      <label className="th-panel-foot flex cursor-pointer items-center justify-between gap-3">
+      <label className="th-explorer-foot">
         <span>Show empty clients</span>
         <input
           type="checkbox"
@@ -266,6 +276,8 @@ interface TreeButtonProps {
 }
 
 function TreeButton({ active, withinActive = false, child = false, icon: Icon, platformIcon, label, count, expanded = false, hasChildren = false, hasMaintenance = false, onClick }: TreeButtonProps) {
+  // One anatomy for every level: icon column on the left, count column and
+  // disclosure slot on the right, so all rows line up whatever their depth.
   return (
     <button
       type="button"
@@ -276,20 +288,17 @@ function TreeButton({ active, withinActive = false, child = false, icon: Icon, p
       data-active={active}
       data-within={withinActive}
       data-child={child}
+      title={label}
     >
-      {!child && (
-        <span className="th-tree-caret" aria-hidden="true">
-          {hasChildren && <ChevronRight className={clsx("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />}
-        </span>
-      )}
-      {platformIcon ? (
-        <PlatformIcon platform={platformIcon} size={14} className="shrink-0" />
-      ) : Icon ? (
-        <Icon className="h-4 w-4 shrink-0" />
-      ) : null}
+      <span className="th-tree-icon" aria-hidden="true">
+        {platformIcon ? <PlatformIcon platform={platformIcon} size={14} /> : Icon ? <Icon className="h-4 w-4" /> : null}
+      </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {hasMaintenance && <span className="th-tree-maint" title="Has devices in maintenance" />}
       <span className="th-tree-count">{count}</span>
+      <span className="th-tree-caret" aria-hidden="true">
+        {hasChildren && <ChevronRight className={clsx("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-90")} />}
+      </span>
     </button>
   );
 }
