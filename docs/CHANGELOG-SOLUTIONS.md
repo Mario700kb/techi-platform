@@ -5,6 +5,61 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] UI-REDESIGN-2026-10-11 — TECHI Connect redesign, dashboard trends, faster dashboard
+
+Owner request: an enterprise, modern, symmetric UI that stays easy to use,
+without changing the app's structure, and the app renamed to "TECHI Connect".
+Reviewed element by element on localhost before deploy. Commit `af70d85`.
+
+- Shell: flush layout, sidebar and account menu, three-column topbar
+  (breadcrumb, command palette trigger, Tirana clock, alerts panel).
+- Global command palette over devices, clients, pages and settings, fed by
+  one navigation source (`components/navigation.ts`, `useVisibleNav`).
+- Login, Dashboard, Devices (explorer, tabs, quick filters, row menu) and
+  every Device drawer tab redesigned on shared components: `PageHeader`,
+  `EmptyState`, `Select`/`SelectField` (replaces every native select),
+  `ConnectButton`. Tailwind scales pinned to px; Inter self-hosted.
+- Desktop Devices page fits the screen; the explorer and the table scroll
+  inside, table header sticky.
+- Mark-only favicon and home-screen icons; `mobile-web-app-capable` meta.
+- Agent and installer still say "TECHI" — renaming them needs an MSI
+  rebuild and was left out.
+
+New endpoint `GET /api/v1/devices/insights` (dashboard trends): daily
+availability over 30 days measured from `device_status_history` (time with
+unknown state is excluded and reported as coverage, same rule as the device
+report), 7-day alerts opened/resolved with mean time to resolve, and the top
+five problem devices; days bucketed in Tirana time. No migration.
+
+Performance, found on the first deploy: on production data (904 devices,
+638k status transitions in 30 days, single vCPU) the first version took
+**33 s**, because every transition was fetched into Python and scanned
+against every day boundary. On PostgreSQL the segments are now cut into
+days inside the database (`LEAD` + `width_bucket`); results are identical
+to the Python path, verified on a production-sized local dataset
+(668k transitions). Measured in production: ~7–10 s per recompute.
+
+Dashboard values then still appeared late: measured cold vs cached,
+`/insights` 6.75 s vs 0.00 s, `/devices/overview` 1.22 s vs 0.01 s. Every
+cache expiry (30 s / 5 min) made the next visitor wait. Both read models
+now use a stale-while-revalidate cache (`app/core/swr_cache.py`): an
+expired entry is served at once while one background thread recomputes it
+on its own session, concurrent misses compute once, and both are warmed at
+startup. Measured against the live backend right after restart: overview
+0.021 s, insights 0.016 s.
+
+Deployed 2026-10-11 in four steps (`8a05679` → `af70d85`; backend and
+frontend rebuilt, PostgreSQL untouched), then committed and pushed; the
+server checkout was moved to `af70d85` with `git reset` (working tree
+already matched, verified by checksum of all 116 files). Pre-deploy dump
+`/opt/backups/techi/pre-ui-redesign-2026-10-11_01-09.sql.gz` (gzip-tested);
+rollback images `pre-ui-8a05679` (before any of it), `pre-ui2`, `pre-ui3`,
+`pre-ui4`. Tests: backend 1192, frontend 92, `tsc` clean. Containers
+healthy, `/health` 200. Authenticated browser smoke pending.
+
+Found, not fixed: the backend logs the full `DATABASE_URL`, password
+included, at every startup (`techi.startup Database: …`).
+
 ## [2026-10-07] REPORT-LOGO-2026-10-07 — TECHI logo on every report PDF
 
 Owner request: add the TECHI logo to the PDF reports. The app logo
