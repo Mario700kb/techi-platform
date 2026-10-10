@@ -1,19 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import {
-  Building2,
-  ClipboardList,
-  Info,
-  KeyRound,
-  LogOut,
-  Monitor,
-  MonitorCog,
-  Package,
-  Radio,
-  Settings as SettingsIcon,
-  SlidersHorizontal,
-  Users,
-  UsersRound,
-} from "lucide-react";
+import { Info, LogOut, Monitor, Settings as SettingsIcon } from "lucide-react";
+import { ALL_NAV_ITEMS, NavItem } from "../components/navigation";
+import { useVisibleNav } from "../hooks/useNavigation";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import pkg from "../../package.json";
@@ -25,28 +13,7 @@ import pkg from "../../package.json";
  * absent (placeholder page — audit finding).
  */
 
-interface Row {
-  label: string;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  permission: string | null;
-  note?: string;
-}
-
-const WORKSPACE: Row[] = [
-  { label: "Remote Support", to: "/remote-support", icon: Radio, permission: null },
-  { label: "Clients", to: "/clients", icon: Building2, permission: "manage_clients" },
-  { label: "Audit Log", to: "/audit", icon: ClipboardList, permission: "audit_log" },
-];
-
-const DESKTOP_CONSOLE: Row[] = [
-  { label: "Deployment", to: "/deployment", icon: MonitorCog, permission: "deployment", note: "Desktop only" },
-  { label: "Enrollment", to: "/enrollment-bootstrap", icon: KeyRound, permission: "deployment", note: "Desktop only" },
-  { label: "Packages", to: "/agent-packages", icon: Package, permission: "deployment", note: "Desktop only" },
-  { label: "Operators", to: "/operators", icon: Users, permission: "manage_operators", note: "Desktop only" },
-  { label: "Teams", to: "/teams", icon: UsersRound, permission: "manage_teams", note: "Desktop only" },
-  { label: "Agent Config", to: "/agent-config", icon: SlidersHorizontal, permission: "system_settings", note: "Desktop only" },
-];
+type Row = NavItem & { note?: string };
 
 function SectionCard({
   title,
@@ -87,7 +54,7 @@ function MoreRow({
     <button
       type="button"
       onClick={() => onNavigate(row.to)}
-      className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[13.5px] font-bold transition-colors"
+      className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold transition-colors"
       style={{
         color: dim ? "var(--th-text-muted)" : "var(--th-text-primary)",
         borderBottom: "1px solid var(--th-border-subtle)",
@@ -110,14 +77,14 @@ function MoreRow({
 
 export default function More() {
   const navigate = useNavigate();
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout } = useAuth();
   const { fleetOverview } = useAppData();
+  const { canSee } = useVisibleNav();
 
-  const visible = (rows: Row[]) =>
-    rows.filter((r) => r.permission === null || hasPermission(r.permission));
-
-  const workspace = visible(WORKSPACE);
-  const desktopConsole = visible(DESKTOP_CONSOLE);
+  const workspace: Row[] = ALL_NAV_ITEMS.filter((i) => i.mobile === "workspace" && canSee(i));
+  const desktopConsole: Row[] = ALL_NAV_ITEMS
+    .filter((i) => i.mobile === "desktop" && canSee(i))
+    .map((i) => ({ ...i, note: "Desktop only" }));
   const initial = user ? (user.display_name || user.username).charAt(0).toUpperCase() : "?";
   const agentVersion = fleetOverview?.active_agent_version;
 
@@ -140,13 +107,10 @@ export default function More() {
             {initial}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[14.5px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
+            <p className="truncate text-[15px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
               {user.display_name || user.username}
             </p>
-            <p
-              className="text-[11px] font-bold uppercase tracking-[0.08em]"
-              style={{ color: "var(--th-text-muted)", fontFamily: '"JetBrains Mono", monospace' }}
-            >
+            <p className="text-[12px] font-medium capitalize" style={{ color: "var(--th-text-muted)" }}>
               {user.role}
             </p>
           </div>
@@ -173,7 +137,7 @@ export default function More() {
         <button
           type="button"
           onClick={() => navigate("/settings")}
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[13.5px] font-bold"
+          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold"
           style={{ color: "var(--th-text-primary)", borderBottom: "1px solid var(--th-border-subtle)" }}
         >
           <SettingsIcon className="h-[18px] w-[18px] flex-none" />
@@ -183,7 +147,7 @@ export default function More() {
           </span>
         </button>
         <div
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-[13.5px] font-bold"
+          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-[14px] font-bold"
           style={{ color: "var(--th-text-primary)", borderBottom: "1px solid var(--th-border-subtle)" }}
         >
           <Info className="h-[18px] w-[18px] flex-none" style={{ color: "var(--th-text-secondary)" }} />
@@ -199,7 +163,7 @@ export default function More() {
         <button
           type="button"
           onClick={logout}
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[13.5px] font-bold"
+          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold"
           style={{ color: "var(--th-status-critical)" }}
         >
           <LogOut className="h-[18px] w-[18px] flex-none" />
@@ -212,7 +176,7 @@ export default function More() {
         className="px-2 pb-2 text-center text-[11px] font-semibold"
         style={{ color: "var(--th-text-faint)", fontFamily: '"JetBrains Mono", monospace' }}
       >
-        TECHI MSP Console
+        TECHI Connect
       </p>
     </div>
   );

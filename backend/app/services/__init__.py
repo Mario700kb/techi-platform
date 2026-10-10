@@ -1,1 +1,1 @@
-"""Service layer placeholder for TECHI Platform backend."""
+"""Service layer placeholder for TECHI Connect backend."""

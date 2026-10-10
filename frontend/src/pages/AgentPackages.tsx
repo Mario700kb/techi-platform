@@ -12,8 +12,8 @@ import {
 } from "../api/agentPackages";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Badge, Button } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { Badge, Button, PageHeader, SelectField } from "../components/ui";
+import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE } from "../utils/time";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import PlatformIcon from "../components/PlatformIcon";
 import LinuxPackagesPanel from "./LinuxPackagesPanel";
@@ -22,7 +22,7 @@ const PLATFORMS: AgentPackagePlatform[] = ["windows", "windows-amd64", "windows-
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
 function formatDate(iso: string): string {
-  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";
@@ -32,27 +32,27 @@ const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string; f
     id: "msi",
     label: "MSI Packages",
     fileType: "msi",
-    hint: "Për GPO, instalim të ri dhe PC të reja. Përmban TECHI Remote Support + techi-agent.",
+    hint: "For GPO, fresh installs and new PCs. Contains TECHI Remote Support + techi-agent.",
   },
   {
     id: "agent_binary",
     label: "Agent Binary",
     fileType: "agent_binary",
-    hint: "Vetëm techi-agent.exe. Përdoret nga komanda \"Përditëso Agjentin\" — nuk prek TECHI Remote Support.",
+    hint: "techi-agent.exe only. Used by the \"Update agent\" command — does not touch TECHI Remote Support.",
     fixedPlatform: "windows-amd64",
   },
   {
     id: "agent_update_msi",
     label: "Update MSI (Bridge)",
     fileType: "agent_update_msi",
-    hint: "Bridge MSI vetëm me agjentin (TECHI-Agent-Update-*.msi). Përdoret nga \"Përditëso Agjentin\" për agjentët legacy (< 2.1.1) — nuk prek TECHI Remote Support dhe nuk përdoret për GPO/bootstrap.",
+    hint: "Agent-only bridge MSI (TECHI-Agent-Update-*.msi). Used by \"Update agent\" for legacy agents (< 2.1.1) — does not touch TECHI Remote Support and is not used for GPO/bootstrap.",
     fixedPlatform: "windows-amd64",
   },
   {
     id: "remote_support_msi",
     label: "Remote Support Packages",
     fileType: "remote_support_msi",
-    hint: "TECHI Remote Support MSI i versionuar veç nga Agent. Përdoret për install, update, repair dhe reinstall të Remote Support.",
+    hint: "TECHI Remote Support MSI, versioned separately from the agent. Used to install, update, repair and reinstall Remote Support.",
     fixedPlatform: "windows-amd64",
   },
 ];
@@ -170,23 +170,21 @@ export default function AgentPackages() {
 
   return (
     <section className="premium-page space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="premium-kicker">Deployment</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white">Agent Packages</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Manage downloadable Techi Agent packages for GPO deployments and binary-only updates.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title="Agent Packages"
+        description="Manage downloadable Techi Agent packages for GPO deployments and binary-only updates."
+        actions={
+          <>
             <Badge variant="ghost">{activeCount} active</Badge>
-            <Button size="sm" onClick={() => void load()} disabled={loading}>
+            <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
               <RefreshCcw className="h-3.5 w-3.5" />
               Refresh
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
+
+      <div className="premium-card overflow-hidden px-5 pb-4 pt-1">
 
         {/* Platform scope toggle — only when Linux is enabled */}
         {showLinux && (
@@ -262,7 +260,7 @@ export default function AgentPackages() {
                 {currentTab.fixedPlatform}
               </div>
             ) : (
-              <select
+              <SelectField
                 value={platform}
                 onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
                 id="package-platform"
@@ -273,7 +271,7 @@ export default function AgentPackages() {
                 {PLATFORMS.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
-              </select>
+              </SelectField>
             )}
             <input
               type="file"
@@ -365,7 +363,7 @@ export default function AgentPackages() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <Button size="sm" onClick={() => void handleDownload(pkg)} disabled={busyId === pkg.id}>
+                      <Button variant="secondary" size="sm" onClick={() => void handleDownload(pkg)} disabled={busyId === pkg.id}>
                         <Download className="h-3.5 w-3.5" />
                         Download
                       </Button>
@@ -373,9 +371,9 @@ export default function AgentPackages() {
                         <>
                           <Button
                             size="sm"
+                            variant={pkg.is_active ? "secondary" : "primary"}
                             onClick={() => void handleActiveToggle(pkg, !pkg.is_active)}
                             disabled={busyId === pkg.id}
-                            className={pkg.is_active ? "th-btn-secondary" : undefined}
                           >
                             {pkg.is_active ? "Deactivate" : "Activate"}
                           </Button>
@@ -383,7 +381,7 @@ export default function AgentPackages() {
                             size="sm"
                             onClick={() => setDeleteTarget(pkg)}
                             disabled={busyId === pkg.id || deleting}
-                            className="th-btn-danger hover:bg-red-500/20"
+                            variant="danger"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Delete

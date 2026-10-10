@@ -27,6 +27,8 @@ import {
   RemoteSupportStatus,
 } from "../api/remoteSupport";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
+import { timeAgo } from "../utils/time";
+import { Button, ConnectButton, PageHeader } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
 import { RemoteSupportMobileList } from "../components/mobile/RemoteSupportMobileList";
@@ -96,7 +98,7 @@ function DeviceTypeBadge({ type }: { type?: string }) {
   const isServer = type === "server";
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
       style={{
         color: isServer ? "var(--th-status-agent)" : "var(--th-status-info)",
         background: isServer ? "color-mix(in srgb, var(--th-status-agent) 10%, transparent)" : "color-mix(in srgb, var(--th-status-info) 10%, transparent)",
@@ -108,12 +110,7 @@ function DeviceTypeBadge({ type }: { type?: string }) {
 }
 
 function formatLastSeen(ts?: string): string {
-  if (!ts) return "Never";
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  return ts ? timeAgo(ts) : "Never";
 }
 
 // ------------------------------------------------------------------ //
@@ -399,7 +396,7 @@ export default function RemoteSupport() {
             <Activity className="h-6 w-6 animate-spin" style={{ color: "var(--th-text-muted)" }} />
           </div>
         ) : (
-    <section className="space-y-5">
+    <section className="premium-page space-y-5">
       {/* Toasts */}
       <div className="fixed right-4 top-4 z-50 flex flex-col gap-2">
         {toasts.map((t) => (
@@ -516,44 +513,22 @@ export default function RemoteSupport() {
         </div>
       )}
 
-      {/* Header */}
-      <div
-        className="rounded-2xl px-6 py-5"
-        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-      >
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)" }}
-            >
-              <Monitor className="h-5 w-5" style={{ color: "var(--th-accent)" }} />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                Remote Support
-              </h1>
-              <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>
-                TECHI Remote Support — {counts.total} devices
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={runNow}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              background: "var(--th-btn-secondary-bg)",
-              border: "1px solid var(--th-border-input)",
-              color: "var(--th-text-secondary)",
-            }}
-          >
+      <PageHeader
+        title="Remote Support"
+        description={`Connect to managed devices with TECHI Remote Support. ${counts.total} devices.`}
+        actions={
+          <Button size="sm" variant="secondary" onClick={runNow}>
             <RefreshCcw className="h-3.5 w-3.5" />
             Refresh
-          </button>
-        </div>
+          </Button>
+        }
+      />
 
-        {/* Stats */}
-        <div className="mt-4 flex flex-wrap gap-3">
+      <div
+        className="rounded-xl px-4 py-3"
+        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
           {(["all", "online", "warning", "offline"] as const).map((s) => {
             const count = s === "all" ? counts.total : counts[s];
             const cfg = s === "all" ? null : STATUS_CONFIG[s];
@@ -576,7 +551,7 @@ export default function RemoteSupport() {
                 {cfg && <cfg.icon className="h-3 w-3" />}
                 {s === "all" ? "All" : STATUS_CONFIG[s].label}
                 <span
-                  className="rounded-full px-1.5 py-0.5 text-[10px]"
+                  className="rounded-full px-1.5 py-0.5 text-[11px]"
                   style={{
                     background: isActive
                       ? cfg
@@ -655,7 +630,7 @@ export default function RemoteSupport() {
                 <span style={{ color: "var(--th-accent)" }}>◆</span>
                 {domain}
                 <span
-                  className="ml-1 rounded-full px-2 py-0.5 text-[10px]"
+                  className="ml-1 rounded-full px-2 py-0.5 text-[11px]"
                   style={{ background: "color-mix(in srgb, var(--th-accent) 10%, transparent)", color: "var(--th-accent)" }}
                 >
                   {domainDevices.length}
@@ -687,8 +662,8 @@ export default function RemoteSupport() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="px-3 py-2.5 text-left font-semibold uppercase tracking-wider"
-                          style={{ color: "var(--th-text-muted)", fontSize: 10 }}
+                          className={`px-3 py-2.5 text-left font-semibold ${h === "Actions" ? "th-sticky-end" : ""}`}
+                          style={{ color: "var(--th-text-muted)" }}
                         >
                           {h}
                         </th>
@@ -720,7 +695,7 @@ export default function RemoteSupport() {
                             }}
                           >
                             {/* Device name */}
-                            <td className="px-3 py-2.5">
+                            <td className="whitespace-nowrap px-3 py-2.5">
                               <span
                                 className="font-semibold"
                                 style={{ color: "var(--th-text-primary)" }}
@@ -773,7 +748,7 @@ export default function RemoteSupport() {
 
                             {/* Version */}
                             <td
-                              className="px-3 py-2.5 font-mono text-[10px]"
+                              className="px-3 py-2.5 font-mono text-[11px]"
                               style={{ color: "var(--th-text-muted)" }}
                             >
                               {device.app_version ?? "—"}
@@ -796,15 +771,13 @@ export default function RemoteSupport() {
                             </td>
 
                             {/* Actions */}
-                            <td className="px-3 py-2">
+                            <td className="th-sticky-end px-3 py-2">
                               <div className="flex items-center gap-1.5">
                                 {/* Connect */}
-                                <ActionButton
-                                  label="Connect"
-                                  icon={<ExternalLink className="h-3 w-3" />}
-                                  disabled={!canConnect || acts.connect === "loading"}
+                                <ConnectButton
+                                  size="sm"
+                                  disabled={!canConnect}
                                   loading={acts.connect === "loading"}
-                                  variant="primary"
                                   onClick={() => handleConnect(device)}
                                   title={
                                     !device.techi_remote_id

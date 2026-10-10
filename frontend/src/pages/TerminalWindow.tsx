@@ -23,7 +23,7 @@ export default function TerminalWindow() {
 
   useEffect(() => {
     const previous = document.title;
-    document.title = `Terminal — ${name}`;
+    document.title = `Terminal — ${name} · TECHI Connect`;
     return () => {
       document.title = previous;
     };

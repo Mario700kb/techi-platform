@@ -1,6 +1,7 @@
 import { AlertTriangle, ExternalLink, Loader2, Search, Wrench } from "lucide-react";
 import { RemoteSupportDevice } from "../../api/remoteSupport";
 import { MBadge } from "./primitives";
+import { ConnectButton } from "../ui";
 
 /**
  * Remote Support — mobile view (docs/reference/MOBILE-DESIGN-SPEC.md —
@@ -29,7 +30,7 @@ function DeviceRow({
   return (
     <div className="flex items-center gap-3 px-4 py-[11px]" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13.5px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
+        <p className="truncate text-[14px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
           {device.hostname ?? `Device #${device.device_id}`}
         </p>
         <div className="mt-[3px] flex flex-wrap items-center gap-[6px] text-[11px]" style={{ color: "var(--th-text-muted)" }}>
@@ -54,16 +55,7 @@ function DeviceRow({
           {busy === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
         </button>
       )}
-      <button
-        type="button"
-        onClick={onConnect}
-        disabled={!device.techi_remote_id}
-        className="flex h-9 flex-none items-center gap-1.5 rounded-lg px-3 text-[12px] font-bold text-white disabled:opacity-40"
-        style={{ background: "var(--th-accent)" }}
-      >
-        <ExternalLink className="h-3.5 w-3.5" />
-        Connect
-      </button>
+      <ConnectButton size="lg" onClick={onConnect} disabled={!device.techi_remote_id} />
     </div>
   );
 }

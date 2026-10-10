@@ -32,7 +32,7 @@ export function OfflineBanner({ lastFetchTime }: { lastFetchTime: number | null 
   return (
     <div
       role="status"
-      className="flex flex-none items-center gap-2 px-3 py-[6px] text-[11.5px] font-bold md:hidden"
+      className="flex flex-none items-center gap-2 px-3 py-[6px] text-[12px] font-bold md:hidden"
       style={{
         background: "color-mix(in srgb, var(--th-status-warning) 14%, var(--th-bg-topbar))",
         borderBottom: "1px solid var(--th-status-warning)",

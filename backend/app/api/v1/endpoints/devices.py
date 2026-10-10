@@ -40,6 +40,8 @@ from app.services.device_inventory_service import DeviceInventoryService
 from app.services.device_note_service import DeviceNoteService
 from app.services.device_service import DeviceService
 from app.services.device_overview_service import DeviceOverviewService
+from app.services.fleet_insights_service import FleetInsightsService
+from app.schemas.fleet_insights import FleetInsights
 from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
@@ -180,6 +182,16 @@ def read_devices_overview(
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
     return DeviceOverviewService(db).get_overview(scope=scope)
+
+
+@router.get("/insights", response_model=FleetInsights)
+def read_fleet_insights(
+    days: int = Query(30, ge=7, le=60),
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Dashboard trends: daily availability, 7-day alert flow, top problem devices."""
+    return FleetInsightsService(db).get_insights(scope=scope, days=days)
 
 
 @router.get("/count")

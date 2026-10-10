@@ -36,7 +36,7 @@ export function AccordionSection({
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="flex min-h-[48px] w-full items-center gap-[10px] px-4 py-[13px] text-left text-[13.5px] font-bold"
+        className="flex min-h-[48px] w-full items-center gap-[10px] px-4 py-[13px] text-left text-[14px] font-bold"
         style={{ color: "var(--th-text-primary)" }}
       >
         <span className="flex-none" style={{ color: "var(--th-text-secondary)" }}>{icon}</span>
@@ -49,7 +49,7 @@ export function AccordionSection({
       </button>
       {everOpened && (
         <div
-          className={open ? "flex flex-col gap-[10px] px-4 pb-4 text-[12.5px]" : "hidden"}
+          className={open ? "flex flex-col gap-[10px] px-4 pb-4 text-[13px]" : "hidden"}
           style={{ borderTop: "1px solid var(--th-border-subtle)", paddingTop: 12, color: "var(--th-text-secondary)" }}
         >
           {children}

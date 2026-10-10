@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Archive, AlertTriangle, ArrowUpDown, ExternalLink, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
+import { Archive, AlertTriangle, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
 import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
 import { Client } from "../api/clients";
@@ -12,9 +12,9 @@ import { getConnectUrl } from "../api/remoteSupport";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { Badge, Button } from "./ui";
+import { Badge, Button, ConnectButton, Select, SelectField } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
@@ -75,6 +75,9 @@ interface DevicesTableProps {
   // Connect ▸ Embedded Terminal from a Catalog row opens the device's
   // drawer directly on its Terminal tab (the terminal lives there).
   onOpenDeviceTerminal?: (device: Device) => void;
+  toolbarExtra?: React.ReactNode;
+  /** Fleet-wide counts for the status tabs (the list itself is paginated). */
+  statusCounts?: Record<"all" | "online" | "stale" | "offline" | "critical" | "warnings", number>;
 }
 
 export type QuickFilter =
@@ -83,6 +86,16 @@ export type QuickFilter =
   | "healthy" | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites"
   | "needs_agent_update";
 
+const STATUS_TABS: { id: "all" | "online" | "stale" | "offline" | "critical" | "warnings"; label: string; tone?: string }[] = [
+  { id: "all", label: "All" },
+  { id: "online", label: "Online", tone: "var(--th-status-online)" },
+  { id: "stale", label: "Stale", tone: "var(--th-status-stale)" },
+  { id: "offline", label: "Offline", tone: "var(--th-status-offline)" },
+  { id: "critical", label: "Critical", tone: "var(--th-status-critical)" },
+  { id: "warnings", label: "Warnings", tone: "var(--th-status-warning)" },
+];
+const STATUS_TAB_IDS = new Set<QuickFilter>(STATUS_TABS.map((t) => t.id));
+
 const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "all",               label: "All" },
   { id: "online",            label: "Online" },
@@ -90,17 +103,17 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "offline",           label: "Offline" },
   { id: "servers",           label: "Servers" },
   { id: "workstations",      label: "Workstations" },
-  { id: "needs_updates",     label: "Needs Updates" },
-  { id: "reboot_required",   label: "Reboot Required" },
+  { id: "needs_updates",     label: "Needs updates" },
+  { id: "reboot_required",   label: "Reboot required" },
   { id: "warnings",          label: "Warnings" },
   { id: "critical",          label: "Critical" },
   { id: "healthy",           label: "Healthy" },
   { id: "maintenance",       label: "Maintenance" },
-  { id: "needs_attention",   label: "Needs Attention" },
-  { id: "low_health",        label: "Low Health" },
-  { id: "rustdesk_issues",   label: "RustDesk Issues" },
-  { id: "needs_agent_update", label: "Needs Agent Update" },
-  { id: "favorites",         label: "★ Favorites" },
+  { id: "needs_attention",   label: "Needs attention" },
+  { id: "low_health",        label: "Low health" },
+  { id: "rustdesk_issues",   label: "Remote Support issues" },
+  { id: "needs_agent_update", label: "Agent update" },
+  { id: "favorites",         label: "★ Starred" },
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
@@ -199,54 +212,16 @@ export function hasStructuralConnectMethod(device: Device): boolean {
 
 // ─── Visual constants ────────────────────────────────────────────────────────
 
-const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[10px] !leading-3";
+const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[11px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
 const FILTER_INPUT_CLS =
-  "th-input rounded-lg border px-3 py-1.5 text-xs font-medium focus:border-techi-orange/50 focus:outline-none";
-const ACTION_MENU_WIDTH = 192;
-const ACTION_MENU_MAX_HEIGHT = 220;
+  "th-input rounded-lg border px-3 text-[13px] focus:border-techi-orange/50 focus:outline-none";
+const ACTION_MENU_WIDTH = 240;
+const ACTION_MENU_MAX_HEIGHT = 340;
 const ACTION_MENU_GAP = 6;
 const ACTION_MENU_MARGIN = 8;
 
 // ─── Cell helpers ────────────────────────────────────────────────────────────
-
-/** Status dot + colored health score in the leftmost cell. */
-const renderStatusCell = (device: Device, health?: DeviceHealthSummary) => {
-  const state = device.freshness_state ?? device.status;
-  const isOnline = state === "online";
-  const isStale = state === "stale";
-
-  const score = health?.health_score ?? null;
-  const healthState = health?.health_state ?? "healthy";
-  const scoreColor =
-    score === null
-      ? "text-slate-700"
-      : healthState === "critical"
-      ? "text-red-400"
-      : healthState === "warning"
-      ? "text-amber-400"
-      : "text-emerald-400/80";
-
-  return (
-    <div
-      className="flex flex-col items-center gap-0.5"
-      title={`${device.freshness_state ?? device.status}${score != null ? ` · health ${score}` : ""}`}
-    >
-      <span
-        className={`inline-block h-2.5 w-2.5 flex-none rounded-full ${
-          isOnline
-            ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]"
-            : isStale
-            ? "bg-[var(--th-status-warning)] shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-warning)_60%,transparent)]"
-            : "bg-slate-600"
-        }`}
-      />
-      <span className={`text-[9px] font-bold tabular-nums leading-none ${scoreColor}`}>
-        {score != null ? score : "—"}
-      </span>
-    </div>
-  );
-};
 
 /** Lightweight client-side offline reason badge (no API call). */
 interface ClientOfflineSummary {
@@ -300,39 +275,14 @@ const getOfflineReasonBadge = (
 };
 
 /** Server / Workstation pill badge. */
-const getDeviceTypeBadge = (device: Device) => {
+const deviceTypeLabel = (device: Device): string => {
   const cat = device.resolved_device_category;
-  const dt = device.device_type;
-  const isServer = cat === "servers" || dt === "server";
-  const isWs = cat === "clientpc" || dt === "client";
-
-  if (isServer)
-    return (
-      <span
-        className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-        style={{
-          color: "var(--th-status-agent)",
-          background: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--th-status-agent) 22%, transparent)",
-        }}
-      >
-        Server
-      </span>
-    );
-  if (isWs)
-    return (
-      <span
-        className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-        style={{
-          color: "var(--th-status-info)",
-          background: "color-mix(in srgb, var(--th-status-info) 10%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--th-status-info) 20%, transparent)",
-        }}
-      >
-        WS
-      </span>
-    );
-  return null;
+  if (cat === "servers" || device.device_type === "server") return "Server";
+  if (cat === "clientpc" || device.device_type === "client") return "Workstation";
+  if (cat === "network") return "Network device";
+  if (cat === "storage") return "Storage";
+  if (cat === "hypervisors") return "Hypervisor";
+  return "Unclassified";
 };
 
 /** Color-coded "last seen" display. */
@@ -347,40 +297,6 @@ const getLastSeenDisplay = (lastSeen?: string): { text: string; cls: string } =>
   if (hours < 24) return { text: `${Math.floor(hours)}h ago`, cls: "text-slate-300" };
   if (days < 7) return { text: `${Math.floor(days)}d ago`, cls: "text-amber-400" };
   return { text: `${Math.floor(days)}d ago`, cls: "text-red-400" };
-};
-
-const getAssignmentBadge = (device: Device) => {
-  const source =
-    device.resolved_assignment_source || device.assignment_source || "unassigned";
-  if (source === "enrollment_token")
-    return (
-      <Badge variant="ghost" className={subtleBadgeClass} title="Enrollment token assignment">
-        token
-      </Badge>
-    );
-  if (source === "manual" || source === "legacy_manual")
-    return (
-      <Badge variant="ghost" className={subtleBadgeClass} title="Manual assignment">
-        manual
-      </Badge>
-    );
-  if (source === "trusted_domain")
-    return (
-      <Badge variant="ghost" className={subtleBadgeClass} title="Domain assignment">
-        domain
-      </Badge>
-    );
-  if (source === "auto_os" || source === "system_auto")
-    return (
-      <Badge variant="ghost" className={subtleBadgeClass} title="Auto assigned from domain">
-        auto
-      </Badge>
-    );
-  return (
-    <Badge variant="ghost" className={subtleBadgeClass} title="Unassigned">
-      unassigned
-    </Badge>
-  );
 };
 
 const getUserSourceBadge = (device: Device) => {
@@ -448,7 +364,7 @@ const isSuggestedArchive = (device: Device) => {
 const getMaintenanceBadge = (device: Device) => {
   if (!device.is_in_maintenance) return null;
   const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
+    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
     : device.maintenance_note
     ? `In maintenance: ${device.maintenance_note}`
     : "In maintenance";
@@ -492,7 +408,7 @@ const getLifecycleSignals = (device: Device) => (
         className={compactBadgeClass}
         title={
           device.archived_at
-            ? `Archived ${parseUTC(device.archived_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
+            ? `Archived ${parseUTC(device.archived_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
             : "Archived device"
         }
       >
@@ -568,12 +484,13 @@ const DevicesTable = memo(function DevicesTable({
   activeAgentVersions,
   agentsOutdated = 0,
   onOpenDeviceTerminal,
+  toolbarExtra,
+  statusCounts,
 }: DevicesTableProps) {
   const navigate = useNavigate();
   // Platform Expansion: show the platform icon only when Linux is enabled, so
   // with the flag off the catalog is visually identical to today.
   const platformFeatures = usePlatformFeatures();
-  const showPlatformIcon = platformFeatures.FEATURE_LINUX;
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -840,6 +757,20 @@ const DevicesTable = memo(function DevicesTable({
     return next;
   });
 
+  // The sticky Actions column only needs a divider while the table actually
+  // scrolls sideways and content is passing underneath it.
+  const [hasOverflow, setHasOverflow] = useState(false);
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const measure = () => setHasOverflow(node.scrollWidth - node.clientWidth - node.scrollLeft > 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    node.addEventListener("scroll", measure, { passive: true });
+    return () => { observer.disconnect(); node.removeEventListener("scroll", measure); };
+  }, [devices.length]);
+
   useLayoutEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -911,79 +842,7 @@ const DevicesTable = memo(function DevicesTable({
   };
 
   return (
-    <div className="space-y-2.5">
-      {/* Filter bar */}
-      {/* ── Fleet Health Panel ── */}
-      {devices.length > 0 && (
-      <div className="hidden md:grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
-        {([
-          {
-            id: "needs_updates" as QuickFilter,
-            label: "Updates",
-            count: pillCounts.needs_updates,
-            color: "var(--th-status-warning)", bg: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-warning) 25%, transparent)",
-          },
-          {
-            id: "reboot_required" as QuickFilter,
-            label: "Reboot",
-            count: pillCounts.reboot_required,
-            color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 25%, transparent)",
-          },
-          {
-            id: "offline" as QuickFilter,
-            label: "Offline >24h",
-            count: devices.filter(d => {
-              if (d.freshness_state !== "offline" || !d.last_seen) return false;
-              return (Date.now() - new Date(d.last_seen).getTime()) > 86_400_000;
-            }).length,
-            color: "var(--th-status-offline)", bg: "color-mix(in srgb, var(--th-status-offline) 8%, transparent)", border: "color-mix(in srgb, var(--th-status-offline) 20%, transparent)",
-          },
-          {
-            id: "maintenance" as QuickFilter,
-            label: "Maintenance",
-            count: pillCounts.maintenance,
-            color: "var(--th-status-maint)", bg: "color-mix(in srgb, var(--th-status-maint) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-maint) 25%, transparent)",
-          },
-          {
-            id: "rustdesk_issues" as QuickFilter,
-            label: "RS Issues",
-            count: pillCounts.rustdesk_issues,
-            color: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 10%, transparent)", border: "color-mix(in srgb, var(--th-accent) 25%, transparent)",
-          },
-          {
-            id: "low_health" as QuickFilter,
-            label: "Health <60",
-            count: pillCounts.low_health,
-            color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 25%, transparent)",
-          },
-          {
-            id: "needs_agent_update" as QuickFilter,
-            label: "Agent Update",
-            count: agentsOutdated || pillCounts.needs_agent_update,
-            color: "var(--th-status-agent)", bg: "color-mix(in srgb, var(--th-status-agent) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-agent) 25%, transparent)",
-          },
-        ] as const).map(card => (
-          <button
-            key={card.id}
-            type="button"
-            onClick={() => applyQuickFilter(quickFilter === card.id ? "all" : card.id)}
-            className="rounded-xl px-3 py-2.5 text-left transition-all hover:opacity-90"
-            style={{
-              background: quickFilter === card.id ? card.bg : "var(--th-bg-card)",
-              border: `1px solid ${quickFilter === card.id ? card.border : "var(--th-border-card)"}`,
-            }}
-          >
-            <p className="text-2xl font-bold tabular-nums" style={{ color: card.count > 0 ? card.color : "var(--th-text-muted)" }}>
-              {card.count}
-            </p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-              {card.label}
-            </p>
-          </button>
-        ))}
-      </div>
-      )}
-
+    <div className="space-y-2.5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-2.5 xl:space-y-0">
       {/* ── Bulk Action Bar ── */}
       {selectedIds.size > 0 && canOperate && (
       <div
@@ -997,8 +856,8 @@ const DevicesTable = memo(function DevicesTable({
           {([
             { label: "Restart Device",    action: "restart_device"   as const, destructive: true  },
             { label: "Restart Agent",     action: "restart_agent"    as const, destructive: true  },
-            { label: "Sync RS",           action: "sync_rustdesk"    as const, destructive: false },
-            { label: "Reinstall RS",      action: "reinstall_rustdesk" as const, destructive: true },
+            { label: "Sync Remote Support", action: "sync_rustdesk"    as const, destructive: false },
+            { label: "Reinstall Remote Support", action: "reinstall_rustdesk" as const, destructive: true },
           ] as const).map(btn => (
             <button
               key={btn.action}
@@ -1049,160 +908,120 @@ const DevicesTable = memo(function DevicesTable({
       )}
 
       <div
-        className="hidden md:block rounded-xl p-3"
+        className="hidden md:block rounded-xl"
         style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
       >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              Devices catalog
-            </h2>
-            <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
-              Full device roster for all managed clients.
-            </p>
+        {/* Status tabs — fleet-wide counts for the current explorer scope */}
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 pt-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+          <div role="tablist" aria-label="Device status" className="th-tabs">
+            {STATUS_TABS.map(({ id, label, tone }) => {
+              const count = statusCounts ? statusCounts[id] : pillCounts[id];
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={quickFilter === id}
+                  onClick={() => applyQuickFilter(quickFilter === id && id !== "all" ? "all" : id)}
+                  className="th-tab"
+                  style={{ "--tab-tone": tone } as React.CSSProperties}
+                >
+                  {tone && <span className="th-tab-dot" aria-hidden="true" />}
+                  {label}
+                  <span className="th-tab-count">{count}</span>
+                </button>
+              );
+            })}
           </div>
-          <Button size="sm" onClick={onRefresh}>
-            Refresh list
-          </Button>
+          <div className="pb-2">{toolbarExtra}</div>
         </div>
 
-        {/* Quick filter pills */}
-        <div className="mt-2.5 flex flex-wrap gap-1">
-          {QUICK_FILTERS.map(f => {
-            const count = pillCounts[f.id];
-            const active = quickFilter === f.id;
-            const hasAlert = (f.id === "critical" || f.id === "needs_attention") && count > 0;
-            const hasWarn  = (f.id === "warnings" || f.id === "low_health" || f.id === "rustdesk_issues") && count > 0;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => applyQuickFilter(f.id)}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all"
-                style={{
-                  background: active
-                    ? hasAlert ? "color-mix(in srgb, var(--th-status-critical) 18%, transparent)"
-                    : hasWarn  ? "color-mix(in srgb, var(--th-status-warning) 15%, transparent)"
-                    : "color-mix(in srgb, var(--th-accent) 18%, transparent)"
-                    : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-                  border: `1px solid ${active
-                    ? hasAlert ? "color-mix(in srgb, var(--th-status-critical) 40%, transparent)"
-                    : hasWarn  ? "color-mix(in srgb, var(--th-status-warning) 35%, transparent)"
-                    : "color-mix(in srgb, var(--th-accent) 35%, transparent)"
-                    : "color-mix(in srgb, var(--th-text-primary) 8%, transparent)"}`,
-                  color: active
-                    ? hasAlert ? "var(--th-status-critical)"
-                    : hasWarn  ? "var(--th-status-warning)"
-                    : "var(--th-accent)"
-                    : count === 0 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
-                  opacity: count === 0 && f.id !== "all" ? 0.45 : 1,
-                }}
-              >
-                {f.label}
-                {f.id !== "all" && (
-                  <span className="rounded-full px-1 text-[9px] font-bold tabular-nums"
-                    style={{ background: "color-mix(in srgb, var(--th-text-primary) 8%, transparent)" }}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-2 grid gap-1.5 lg:grid-cols-[1.6fr_1fr] xl:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+        {/* Search + refinements */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--th-text-faint)" }} />
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search name, hostname, user, domain or IP..."
-              className={`${FILTER_INPUT_CLS} w-full py-1.5 pl-9 pr-3`}
+              placeholder="Search name, hostname, user, domain or IP…"
+              aria-label="Search devices"
+              className={`${FILTER_INPUT_CLS} w-full pl-9 pr-3`}
             />
           </div>
-          <select
-            value={filters.freshness_state || "all"}
-            onChange={(e) => onFilterChange("freshness_state", e.target.value)}
-            className={FILTER_INPUT_CLS}
-            id="filter-device-status"
-            name="filter-device-status"
-            aria-label="Filter by device status"
-          >
-            <option value="all">All statuses</option>
-            <option value="online">Online</option>
-            <option value="stale">Stale</option>
-            <option value="offline">Offline</option>
-          </select>
-          <select
-            value={["healthy", "warnings", "critical"].includes(quickFilter) ? quickFilter : "all"}
-            onChange={(e) => onQuickFilterChange(e.target.value as QuickFilter)}
-            className={FILTER_INPUT_CLS}
-            id="filter-health"
-            name="filter-health"
-            aria-label="Filter by health"
-          >
-            <option value="all">All health</option>
-            <option value="healthy">Healthy</option>
-            <option value="warnings">Warning</option>
-            <option value="critical">Critical</option>
-          </select>
-          <select
-            value={filters.lifecycle_state || "active"}
-            onChange={(e) => onFilterChange("lifecycle_state", e.target.value)}
-            className={FILTER_INPUT_CLS}
+          <Select
             id="filter-lifecycle-state"
-            name="filter-lifecycle-state"
             aria-label="Filter by lifecycle state"
-          >
-            <option value="active">Active devices</option>
-            <option value="archived">Archived devices</option>
-            <option value="all">All devices</option>
-          </select>
-          <select
-            value={
-              filters.duplicate_candidates
-                ? "duplicate"
-                : filters.maintenance_state || "all"
-            }
-            onChange={(e) => {
-              const value = e.target.value;
+            className="w-[176px]"
+            value={(filters.lifecycle_state || "active") as string}
+            onChange={(v) => onFilterChange("lifecycle_state", v)}
+            options={[
+              { value: "active", label: "Active devices", hint: "Excludes archived devices" },
+              { value: "archived", label: "Archived devices", hint: "Retired, kept for history" },
+              { value: "all", label: "All devices", hint: "Active and archived" },
+            ]}
+          />
+          <Select
+            id="filter-maintenance-state"
+            aria-label="Filter by maintenance state"
+            className="w-[176px]"
+            value={filters.duplicate_candidates ? "duplicate" : (filters.maintenance_state || "all")}
+            onChange={(value) => {
               if (value === "duplicate") {
                 onFilterChange("maintenance_state", undefined);
                 onFilterChange("duplicate_candidates", true);
                 return;
               }
               onFilterChange("duplicate_candidates", undefined);
-              onFilterChange(
-                "maintenance_state",
-                value === "all" ? undefined : value
-              );
+              onFilterChange("maintenance_state", value === "all" ? undefined : value);
             }}
-            className={FILTER_INPUT_CLS}
-            id="filter-maintenance-state"
-            name="filter-maintenance-state"
-            aria-label="Filter by maintenance state"
-          >
-            <option value="all">All signals</option>
-            <option value="maintenance">In maintenance</option>
-            <option value="normal">Normal only</option>
-            <option value="duplicate">Duplicates only</option>
-          </select>
-          <select
-            value={agentVersionFilter}
-            onChange={(e) => setAgentVersionFilter(e.target.value)}
-            className={FILTER_INPUT_CLS}
+            options={[
+              { value: "all", label: "All signals" },
+              { value: "maintenance", label: "In maintenance", hint: "Alerts paused for these devices" },
+              { value: "normal", label: "Normal only", hint: "Not in maintenance" },
+              { value: "duplicate", label: "Duplicates only", hint: "Possible duplicate enrollments" },
+            ]}
+          />
+          <Select
             id="filter-agent-version"
-            name="filter-agent-version"
             aria-label="Filter by agent version"
-          >
-            <option value="all">All versions</option>
-            {agentVersionOptions.map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-            <option value="unknown">Unknown</option>
-          </select>
+            className="w-[160px]"
+            value={agentVersionFilter}
+            onChange={setAgentVersionFilter}
+            options={[
+              { value: "all", label: "All versions" },
+              ...agentVersionOptions.map((v) => ({ value: v, label: `Agent ${v}` })),
+              { value: "unknown", label: "Unknown version" },
+            ]}
+          />
         </div>
+
+        {/* Secondary quick filters — only the ones that currently match devices */}
+        {(() => {
+          const extras = QUICK_FILTERS.filter((f) => !STATUS_TAB_IDS.has(f.id)).map((f) => ({
+            ...f,
+            count: f.id === "needs_agent_update" ? (agentsOutdated || pillCounts[f.id]) : pillCounts[f.id],
+          })).filter((f) => f.count > 0 || quickFilter === f.id);
+          if (extras.length === 0) return null;
+          return (
+            <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+              <span className="mr-1 text-[12px]" style={{ color: "var(--th-text-faint)" }}>Quick filters</span>
+              {extras.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={quickFilter === f.id}
+                  onClick={() => applyQuickFilter(quickFilter === f.id ? "all" : f.id)}
+                  className="th-filter-chip"
+                >
+                  {f.label}
+                  <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>{f.count}</span>
+                  {quickFilter === f.id && <X className="h-3 w-3" aria-label="Clear filter" />}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Mobile (< 768px): sticky header ALWAYS visible + own state
@@ -1263,7 +1082,7 @@ const DevicesTable = memo(function DevicesTable({
                   key={chip.key}
                   type="button"
                   onClick={chip.onClear}
-                  className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold"
+                  className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold"
                   style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
                 >
                   {chip.label}
@@ -1292,7 +1111,7 @@ const DevicesTable = memo(function DevicesTable({
           <div className="flex flex-col items-center gap-3 py-14 text-center">
             <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>Unable to load devices</p>
             <p className="text-[13px]" style={{ color: "var(--th-status-critical)" }}>{error}</p>
-            <Button onClick={onRefresh} size="sm">Try again</Button>
+            <Button variant="secondary" onClick={onRefresh} size="sm">Try again</Button>
           </div>
         ) : displayDevices.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
@@ -1307,7 +1126,7 @@ const DevicesTable = memo(function DevicesTable({
                     Searched across name, hostname, user, domain and IP.
                   </p>
                 </div>
-                <button type="button" onClick={() => onSearch("")} className="rounded-lg px-4 py-2 text-[12.5px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
+                <button type="button" onClick={() => onSearch("")} className="rounded-lg px-4 py-2 text-[13px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
                   Clear search
                 </button>
               </>
@@ -1317,7 +1136,7 @@ const DevicesTable = memo(function DevicesTable({
                   <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>No devices match these filters</p>
                   <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>Adjust or clear filters to see more devices.</p>
                 </div>
-                <button type="button" onClick={clearAllMobileFilters} className="rounded-lg px-4 py-2 text-[12.5px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
+                <button type="button" onClick={clearAllMobileFilters} className="rounded-lg px-4 py-2 text-[13px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
                   Clear filters
                 </button>
               </>
@@ -1398,7 +1217,7 @@ const DevicesTable = memo(function DevicesTable({
                 key={opt.key}
                 type="button"
                 onClick={() => { handleSort(opt.key); setSortSheetOpen(false); }}
-                className="flex min-h-[48px] items-center justify-between rounded-lg px-3 text-[13.5px] font-bold"
+                className="flex min-h-[48px] items-center justify-between rounded-lg px-3 text-[14px] font-bold"
                 style={{ color: active ? "var(--th-accent)" : "var(--th-text-primary)", background: active ? "var(--th-accent-glow)" : "transparent" }}
               >
                 {opt.label}
@@ -1447,13 +1266,14 @@ const DevicesTable = memo(function DevicesTable({
         </div>
       ) : (
         <div
-          className="hidden md:block overflow-hidden rounded-xl"
+          className="hidden md:block overflow-hidden rounded-xl xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
           style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
         >
-          <div className="hidden md:block">
+          <div className="hidden md:block xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
           <div
             ref={scrollRef}
-            className="overflow-x-auto"
+            className="th-table-scroll overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto"
+            data-overflow={hasOverflow}
             onScroll={(event) => {
               scrollPositionRef.current = {
                 left: event.currentTarget.scrollLeft,
@@ -1465,7 +1285,7 @@ const DevicesTable = memo(function DevicesTable({
               }
             }}
           >
-            <table className="min-w-[960px] w-full border-separate border-spacing-0 text-left">
+            <table className="min-w-[880px] w-full border-separate border-spacing-0 text-left">
               {/* ── Header ── */}
               <thead>
                 <tr style={{ background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2.5%, transparent))", borderBottom: "1px solid var(--th-border-subtle)" }}>
@@ -1481,27 +1301,25 @@ const DevicesTable = memo(function DevicesTable({
                     />
                   </th>
                   {[
-                    { label: "St",            w: "w-[52px]",  sortable: null },
-                    { label: "Hostname",                       sortable: "hostname" as SortKey },
-                    { label: "Client / Group",                 sortable: "client_name" as SortKey },
-                    { label: "User",                           sortable: null },
-                    { label: "Domain",                         sortable: null },
-                    { label: "IP",                             sortable: null },
-                    { label: "OS",                             sortable: null },
+                    { label: "Device",                         sortable: "hostname" as SortKey },
+                    { label: "Status",                         sortable: "last_seen" as SortKey },
+                    { label: "Health",                         sortable: null },
+                    { label: "Client / group",                 sortable: "client_name" as SortKey },
+                    { label: "User / domain",                  sortable: null },
+                    { label: "IP address",                     sortable: null },
                     { label: "Agent",                          sortable: null },
-                    { label: "Last Seen",                      sortable: "last_seen" as SortKey },
                     { label: "Actions",                        sortable: null },
-                  ].map(({ label, w, sortable }) => (
+                  ].map(({ label, sortable }) => (
                     <th
                       key={label}
-                      className={`px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-[0.1em] ${w ?? ""} ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""}`}
+                      className={`px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""} ${label === "Actions" ? "th-sticky-end" : ""}`}
                       style={{ color: sortable && sortKey === sortable ? "var(--th-text-primary)" : "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
                       onClick={sortable ? () => handleSort(sortable) : undefined}
                     >
                       <span className="inline-flex items-center gap-1">
                         {label}
                         {sortable && sortKey === sortable && (
-                          <span className="text-[8px] opacity-70">{sortDir === "asc" ? "▲" : "▼"}</span>
+                          <span className="text-[11px] opacity-70">{sortDir === "asc" ? "▲" : "▼"}</span>
                         )}
                       </span>
                     </th>
@@ -1511,7 +1329,7 @@ const DevicesTable = memo(function DevicesTable({
 
               {/* ── Rows ── */}
               <tbody>
-                {displayDevices.map((device, rowIdx) => {
+                {displayDevices.map((device) => {
                   const health = healthMap[device.id];
                   const ls = getLastSeenDisplay(device.last_seen);
                   const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
@@ -1532,13 +1350,8 @@ const DevicesTable = memo(function DevicesTable({
                   return (
                     <tr
                       key={device.id}
-                      className="group cursor-pointer transition-colors duration-75"
-                      style={{
-                        background: rowIdx % 2 === 0 ? "transparent" : "color-mix(in srgb, var(--th-text-primary) 0.8%, transparent)",
-                        borderBottom: "1px solid var(--th-border-subtle)",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "color-mix(in srgb, var(--th-text-primary) 2.8%, transparent)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = rowIdx % 2 === 0 ? "transparent" : "color-mix(in srgb, var(--th-text-primary) 0.8%, transparent)")}
+                      className="th-device-row group cursor-pointer"
+                      data-selected={selectedIds.has(device.id)}
                       onClick={() => onDeviceSelect?.(device)}
                     >
                       {/* ── Checkbox ── */}
@@ -1554,92 +1367,81 @@ const DevicesTable = memo(function DevicesTable({
                         />
                       </td>
 
-                      {/* ── Status + Health ── */}
-                      <td className="w-[52px] px-2 py-1.5 align-middle">
-                        <div className="flex items-center justify-center gap-1">
-                          {renderStatusCell(device, health)}
-                          {activeActionMap[device.id] && (
-                            <ActionIndicator entry={activeActionMap[device.id]} />
-                          )}
-                        </div>
-                      </td>
-
                       {/* ── Hostname ── */}
-                      <td className="px-2.5 py-1.5 align-middle">
+                      <td className="min-w-[200px] max-w-[244px] px-2.5 py-1.5 align-middle">
                         {(() => {
                           const label = deviceDisplayName(device);
                           const hostname = deviceHostnameSubtitle(device);
                           return (
                             <>
-                              {showPlatformIcon ? (
-                                <div
-                                  className="flex max-w-[180px] items-center gap-1.5 text-[12px] font-bold leading-[1.3]"
-                                  style={{ color: "var(--th-text-primary)" }}
-                                  title={label}
-                                >
-                                  <PlatformIcon platform={device.platform} size={13} className="shrink-0" />
-                                  <span className="truncate">{label}</span>
-                                </div>
-                              ) : (
-                                <div
-                                  className="max-w-[180px] truncate text-[12px] font-bold leading-[1.3]"
-                                  style={{ color: "var(--th-text-primary)" }}
-                                  title={label}
-                                >
-                                  {label}
-                                </div>
-                              )}
+                              <div
+                                className="flex max-w-[200px] items-center gap-1.5 text-[13px] font-semibold leading-[1.3]"
+                                style={{ color: "var(--th-text-primary)" }}
+                                title={device.os_name ? `${label} · ${device.os_name}` : label}
+                              >
+                                <PlatformIcon platform={device.platform} size={13} className="shrink-0 opacity-70" />
+                                <span className="truncate">{label}</span>
+                              </div>
                               {hostname && (
-                                <div className="max-w-[180px] truncate font-mono text-[10px] leading-4" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
+                                <div className="max-w-[180px] truncate font-mono text-[11px] leading-4" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
                                   {hostname}
                                 </div>
                               )}
                             </>
                           );
                         })()}
-                        <div className="mt-0.5 flex flex-wrap items-center gap-0.5">
-                          {getDeviceTypeBadge(device)}
+                        <div className="mt-0.5 flex max-w-[220px] items-center gap-1.5 overflow-hidden whitespace-nowrap pl-[21px] text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                          <span>{deviceTypeLabel(device)}</span>
                           {getPatchBadge(patchMap[device.id])}
                           {getLifecycleSignals(device)}
-                          {devAlerts?.critical ? (
-                            <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
-                              style={{ color: "var(--th-status-critical)", background: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 22%, transparent)" }}>
-                              <span className="h-1.5 w-1.5 rounded-full bg-[var(--th-status-critical)]" style={{ boxShadow: "0 0 3px color-mix(in srgb, var(--th-status-critical) 70%, transparent)" }} />
-                              {devAlerts.critical}
+                          {rsIssue && (
+                            <span className="inline-flex min-w-0 items-center gap-1" style={{ color: "var(--th-status-warning)" }} title={`TECHI Remote Support is ${device.rustdesk_status || "not running"} on this device`}>
+                              <span aria-hidden="true">·</span>
+                              <MonitorOff className="h-3 w-3 flex-none" />
+                              <span className="truncate">Remote off</span>
                             </span>
-                          ) : null}
-                          {devAlerts?.warning ? (
-                            <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold tabular-nums"
-                              style={{ color: "var(--th-status-warning)", background: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-warning) 22%, transparent)" }}>
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                              {devAlerts.warning}
-                            </span>
-                          ) : null}
-                          {offlineBadge && (
+                          )}
+                        </div>
+                      </td>
+
+                      {/* ── Status ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        {(() => {
+                          const state = (device.freshness_state ?? device.status ?? "offline") as string;
+                          return (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className="th-status-dot" data-state={state} aria-hidden="true" />
+                                <span className="text-[13px] font-medium capitalize" style={{ color: "var(--th-text-primary)" }}>{state}</span>
+                                {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
+                              </div>
+                              <div className="mt-0.5 pl-4 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                                <span title="Last heartbeat">{ls.text}</span>
+                                {offlineBadge && <span title="Likely cause (inferred)"> · {offlineBadge.label}</span>}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </td>
+
+                      {/* ── Health ── */}
+                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="th-score"
+                            data-tone={healthScore == null ? "none" : healthScore < 50 ? "critical" : healthScore < 80 ? "warning" : "good"}
+                            title={healthScore == null ? "No health score yet" : `Health score ${healthScore} of 100`}
+                          >
+                            {healthScore ?? "—"}
+                          </span>
+                          {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0) > 0 && (
                             <span
-                              className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
-                              style={{
-                                color: offlineBadge.color,
-                                background: offlineBadge.bg,
-                                border: `1px solid ${offlineBadge.border}`,
-                              }}
-                              title="Offline reason (inferred)"
+                              className="th-alert-count"
+                              data-tone={devAlerts?.critical ? "critical" : "warning"}
+                              title={`${devAlerts?.critical ?? 0} critical · ${devAlerts?.warning ?? 0} warning open alerts`}
                             >
-                              {offlineBadge.label}
-                            </span>
-                          )}
-                          {isLowHealth && (
-                            <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-bold"
-                              style={{ color: "var(--th-status-critical)", background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 22%, transparent)" }}
-                              title={`Health score: ${healthScore}`}>
-                              H:{healthScore}
-                            </span>
-                          )}
-                          {rsIssue && !offlineBadge && (
-                            <span className="inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold"
-                              style={{ color: "var(--th-accent)", background: "color-mix(in srgb, var(--th-accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 22%, transparent)" }}
-                              title={`RS: ${device.rustdesk_status}`}>
-                              RS
+                              <AlertTriangle className="h-3 w-3" />
+                              {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0)}
                             </span>
                           )}
                         </div>
@@ -1658,12 +1460,11 @@ const DevicesTable = memo(function DevicesTable({
                         </div>
                         <div className="mt-0.5 flex items-center gap-1">
                           <span
-                            className="max-w-[130px] truncate text-[9px] font-medium leading-3"
+                            className="max-w-[160px] truncate text-[12px]"
                             style={{ color: "var(--th-text-muted)" }}
                           >
                             {device.group_name || "No group"}
                           </span>
-                          {getAssignmentBadge(device)}
                         </div>
                       </td>
 
@@ -1671,43 +1472,30 @@ const DevicesTable = memo(function DevicesTable({
                       <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
                         <div className="flex items-center gap-1">
                           <span
-                            className="max-w-[120px] truncate text-[11px] font-medium"
+                            className="max-w-[140px] truncate text-[12px] font-medium"
                             style={{ color: "var(--th-text-secondary)" }}
                           >
                             {device.current_user || "—"}
                           </span>
                           {getUserSourceBadge(device)}
                         </div>
-                      </td>
-
-                      {/* ── Domain ── */}
-                      <td
-                        className="whitespace-nowrap px-2.5 py-1.5 align-middle text-[11px] font-medium"
-                        style={{ color: "var(--th-text-secondary)" }}
-                      >
-                        {device.domain || "—"}
+                        <div className="max-w-[160px] truncate text-[11px]" style={{ color: "var(--th-text-muted)" }} title={device.domain || undefined}>
+                          {device.domain || "—"}
+                        </div>
                       </td>
 
                       {/* ── IP (public + local stacked) ── */}
                       <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <div className="font-mono text-[10px]" style={{ color: "var(--th-text-secondary)" }}>
+                        <div className="font-mono text-[11px]" style={{ color: "var(--th-text-secondary)" }}>
                           {device.public_ip || "—"}
                         </div>
                         {device.local_ip && (
-                          <div className="font-mono text-[10px]" style={{ color: "var(--th-text-muted)" }}>
+                          <div className="font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>
                             {device.local_ip}
                           </div>
                         )}
                       </td>
 
-                      {/* ── OS ── */}
-                      <td
-                        className="max-w-[120px] truncate px-2.5 py-1.5 align-middle text-[10px] font-medium"
-                        style={{ color: "var(--th-text-muted)" }}
-                        title={device.os_name || "—"}
-                      >
-                        {device.os_name || "—"}
-                      </td>
 
                       {/* ── Agent version ── */}
                       <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
@@ -1735,16 +1523,9 @@ const DevicesTable = memo(function DevicesTable({
                         })()}
                       </td>
 
-                      {/* ── Last Seen ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <span className={`text-[11px] font-semibold tabular-nums ${ls.cls}`}>
-                          {ls.text}
-                        </span>
-                      </td>
-
                       {/* ── Actions ── */}
                       <td
-                        className="px-2 py-1.5 align-middle"
+                        className="th-sticky-end px-2 py-1.5 align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center gap-1.5">
@@ -1754,10 +1535,11 @@ const DevicesTable = memo(function DevicesTable({
                               type="button"
                               onClick={() => onToggleFavorite(device.id)}
                               title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
-                              className="flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
+                              aria-label={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                              className={`flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:bg-[var(--th-sidebar-nav-hover)] ${favorites.has(device.id) ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
                               style={{ color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)" }}
                             >
-                              <Star className={`h-3 w-3 ${favorites.has(device.id) ? "fill-current" : ""}`} />
+                              <Star className={`h-3.5 w-3.5 ${favorites.has(device.id) ? "fill-current" : ""}`} />
                             </button>
                           )}
                           {/* Connect (approved V3 Connect mockup). Windows keeps its
@@ -1773,9 +1555,8 @@ const DevicesTable = memo(function DevicesTable({
                               the old open-the-device behavior (no Connect Framework
                               endpoints exist then). */}
                           {isWindowsDevice || !platformFeatures.FEATURE_PLATFORM_CORE ? (
-                            <button
-                              type="button"
-                              disabled={!canConnect}
+                            <ConnectButton
+                              size="sm"
                               onClick={
                                 isWindowsDevice
                                   ? async () => {
@@ -1803,24 +1584,8 @@ const DevicesTable = memo(function DevicesTable({
                                   ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
                                   : "No Connect method available for this device yet"
                               }
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all"
-                              style={{
-                                background: canConnect
-                                  ? "color-mix(in srgb, var(--th-accent) 15%, transparent)"
-                                  : "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
-                                border: `1px solid ${
-                                  canConnect
-                                    ? "color-mix(in srgb, var(--th-accent) 30%, transparent)"
-                                    : "var(--th-border-subtle)"
-                                }`,
-                                color: canConnect ? "var(--th-accent)" : "var(--th-text-muted)",
-                                cursor: canConnect ? "pointer" : "not-allowed",
-                                opacity: canConnect ? 1 : 0.45,
-                              }}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Connect
-                            </button>
+                              disabled={!canConnect}
+                            />
                           ) : (
                             <ConnectMenu
                               variant="row"
@@ -1901,7 +1666,7 @@ const DevicesTable = memo(function DevicesTable({
                 )}
               </span>
               {total > 0 && (
-                <select
+                <SelectField
                   value={limit}
                   onChange={(e) => onLimitChange?.(Number(e.target.value))}
                   id="rows-per-page"
@@ -1917,7 +1682,7 @@ const DevicesTable = memo(function DevicesTable({
                   <option value={10}>10 / page</option>
                   <option value={20}>20 / page</option>
                   <option value={50}>50 / page</option>
-                </select>
+                </SelectField>
               )}
               {tableLoading && <Loader2 className="h-3 w-3 animate-spin text-orange-400/70" />}
             </div>
@@ -1932,7 +1697,7 @@ const DevicesTable = memo(function DevicesTable({
               />
             ) : (
               <span
-                className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider"
                 style={{ color: "var(--th-text-muted)", opacity: 0.6 }}
               >
                 <span
@@ -1965,80 +1730,78 @@ const DevicesTable = memo(function DevicesTable({
         createPortal(
           <div
             data-action-menu="true"
-            style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left }}
-            className="th-elevated z-[10000] max-h-[220px] w-48 overflow-y-auto rounded-lg border p-1 shadow-2xl"
+            role="menu"
+            aria-label={`Actions for ${deviceDisplayName(activeActionDevice)}`}
+            style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left, width: ACTION_MENU_WIDTH, maxHeight: ACTION_MENU_MAX_HEIGHT }}
+            className="th-menu !z-[10000] overflow-y-auto"
           >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-sky-100 transition hover:bg-sky-500/10"
-              onClick={() => {
-                setOpenActionDeviceId(null);
-                setMenuAnchor(null);
-                void queueDeviceAction(activeActionDevice.id, {
-                  action_type: "ping",
-                  created_by: currentUser ?? "unknown",
-                });
-              }}
-            >
-              <PlayCircle className="h-3.5 w-3.5" />
-              Ping device
-            </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:bg-white/[0.05]"
-              onClick={() => {
-                setOpenActionDeviceId(null);
-                setMenuAnchor(null);
-                void queueDeviceAction(activeActionDevice.id, {
-                  action_type: "refresh_inventory",
-                  created_by: currentUser ?? "unknown",
-                });
-              }}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Refresh inventory
-            </button>
-            {!activeActionDevice.is_archived ? (
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-100 transition hover:bg-amber-500/10"
-                onClick={() => {
-                  setOpenActionDeviceId(null);
-                  setMenuAnchor(null);
-                  setPendingAction({ type: "archive", device: activeActionDevice });
-                }}
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Archive device
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/10"
-                onClick={() => {
-                  setOpenActionDeviceId(null);
-                  setMenuAnchor(null);
-                  setPendingAction({ type: "restore", device: activeActionDevice });
-                }}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Restore device
-              </button>
-            )}
-            {canDelete && (
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-200 transition hover:bg-red-500/10 hover:text-red-100"
-                onClick={() => {
-                  setOpenActionDeviceId(null);
-                  setMenuAnchor(null);
-                  setPendingAction({ type: "delete", device: activeActionDevice });
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove permanently
-              </button>
-            )}
+            {(() => {
+              const device = activeActionDevice;
+              const state = (device.freshness_state ?? device.status ?? "offline") as string;
+              const close = () => { setOpenActionDeviceId(null); setMenuAnchor(null); };
+              const queue = (action_type: "ping" | "refresh_inventory", label: string) => {
+                close();
+                queueDeviceAction(device.id, { action_type, created_by: currentUser ?? "unknown" })
+                  .then(() => showBulkToast(`${label} queued for ${deviceDisplayName(device)}`, true))
+                  .catch((err) => showBulkToast(err instanceof Error ? err.message : `${label} failed`, false));
+              };
+              return (
+                <>
+                  <div className="flex items-center gap-2.5 px-3 py-2.5">
+                    <span className="th-status-dot" data-state={state} aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{deviceDisplayName(device)}</p>
+                      <p className="truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
+                        {state} · {device.client_name || "No client"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="th-menu-group">
+                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); onDeviceSelect?.(device); }}>
+                      <ExternalLink className="h-4 w-4" /> Open details
+                    </button>
+                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => queue("ping", "Ping")}>
+                      <PlayCircle className="h-4 w-4" /> Ping device
+                    </button>
+                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => queue("refresh_inventory", "Inventory refresh")}>
+                      <RotateCcw className="h-4 w-4" /> Refresh inventory
+                    </button>
+                    {isValidRustDeskId(device.rustdesk_id) && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="th-menu-item"
+                        onClick={() => {
+                          close();
+                          navigator.clipboard
+                            .writeText(String(device.rustdesk_id))
+                            .then(() => showBulkToast(`Remote Support ID ${device.rustdesk_id} copied`, true))
+                            .catch(() => showBulkToast("Could not copy to clipboard", false));
+                        }}
+                      >
+                        <Copy className="h-4 w-4" /> Copy Remote Support ID
+                      </button>
+                    )}
+                  </div>
+                  <div className="th-menu-group">
+                    {!device.is_archived ? (
+                      <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); setPendingAction({ type: "archive", device }); }}>
+                        <Archive className="h-4 w-4" /> Archive device
+                      </button>
+                    ) : (
+                      <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); setPendingAction({ type: "restore", device }); }}>
+                        <RotateCcw className="h-4 w-4" /> Restore device
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button type="button" role="menuitem" className="th-menu-item th-menu-item-danger" onClick={() => { close(); setPendingAction({ type: "delete", device }); }}>
+                        <Trash2 className="h-4 w-4" /> Remove permanently
+                      </button>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>,
           document.body
         )}

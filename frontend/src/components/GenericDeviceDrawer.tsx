@@ -23,6 +23,7 @@ import ConnectMenu from "./ConnectMenu";
 import HealthBadge from "./HealthBadge";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
+import { SelectField } from "./ui";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
@@ -143,9 +144,9 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-[15px] font-bold leading-tight" style={{ color: "var(--th-text-primary)" }}>{device.display_name || device.hostname}</h2>
-              <span className="flex-none rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
+              <span className="flex-none rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
               <span className="flex items-center gap-1.5 font-semibold" style={{ color: isOnline ? "var(--th-status-online)" : "var(--th-text-muted)" }}>
                 <span className={`h-1.5 w-1.5 flex-none rounded-full ${isOnline ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_60%,transparent)]" : "bg-slate-600"}`} />
                 {isOnline ? "Online" : "Offline"}
@@ -165,7 +166,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${tab === t.id ? "bg-techi-orange/15 text-techi-orange" : "hover:bg-white/5"}`}
+              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors ${tab === t.id ? "bg-techi-orange/15 text-techi-orange" : "hover:bg-white/5"}`}
               style={tab === t.id ? undefined : { color: "var(--th-text-secondary)" }}
             >
               {t.label}
@@ -244,9 +245,9 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
 function Row({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
   if (!value) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12.5px]">
+    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[13px]">
       <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>{label}</span>
-      <span className={`max-w-[62%] truncate text-right font-semibold ${mono ? "font-mono text-[11.5px]" : ""}`} style={{ color: "var(--th-text-primary)" }}>{value}</span>
+      <span className={`max-w-[62%] truncate text-right font-semibold ${mono ? "font-mono text-[12px]" : ""}`} style={{ color: "var(--th-text-primary)" }}>{value}</span>
     </div>
   );
 }
@@ -292,10 +293,10 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
 
   if (!editing) {
     return (
-      <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12.5px]">
+      <div className="flex items-baseline justify-between gap-3 py-[3px] text-[13px]">
         <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</span>
         <span className="flex items-baseline gap-2">
-          <span className="max-w-[62%] truncate text-right font-mono text-[11.5px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{current}</span>
+          <span className="max-w-[62%] truncate text-right font-mono text-[12px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{current}</span>
           {canOperate && (
             <button type="button" onClick={() => setEditing(true)} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>edit</button>
           )}
@@ -305,18 +306,18 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
   }
 
   return (
-    <div className="py-[3px] text-[12.5px]">
+    <div className="py-[3px] text-[13px]">
       <div className="mb-1 font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</div>
       <div className="flex items-center gap-2">
         <input
           value={host} onChange={(e) => setHost(e.target.value)} placeholder="Auto (reported IP)"
           aria-label="Connect host"
-          className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[11.5px]"
+          className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[12px]"
         />
         <input
           value={port} onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))} placeholder="port"
           aria-label="Connect port" inputMode="numeric"
-          className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[11.5px]"
+          className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[12px]"
         />
       </div>
       <div className="mt-1 flex items-center gap-2">
@@ -385,7 +386,7 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
     normalized === "auto_os" || normalized === "system_auto" ? "auto" :
     "unassigned";
   return (
-    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
+    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
       {label}
     </span>
   );
@@ -480,7 +481,7 @@ function Overview({
           <Row label="Public IP" value={device.public_ip} mono />
           <ConnectTargetRow device={device} canOperate={canOperate} onDeviceUpdated={onDeviceUpdated} />
           <Row label="Current user" value={device.current_user ?? undefined} />
-          <div className="flex items-center justify-between gap-3 py-[3px] text-[12.5px]">
+          <div className="flex items-center justify-between gap-3 py-[3px] text-[13px]">
             <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Connector</span>
             <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
           </div>
@@ -500,31 +501,31 @@ function Overview({
           <Row label="Client" value={device.resolved_client_name ?? undefined} />
           <Row label="Group" value={device.resolved_group ?? undefined} />
         </div>
-        <div className="mt-0.5 flex items-center justify-between gap-3 py-[3px] text-[12.5px]">
+        <div className="mt-0.5 flex items-center justify-between gap-3 py-[3px] text-[13px]">
           <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Source</span>
           <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
         </div>
         {canOperate && (
           <div className="mt-2.5 grid grid-cols-2 gap-2 border-t pt-2.5" style={{ borderColor: "var(--th-border-card)" }}>
             <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
-              <select
+              <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
+              <SelectField
                 value={device.client_id ?? "none"}
                 onChange={async (e) => {
                   const value = e.target.value === "none" ? null : Number(e.target.value);
                   const updated = await assignDeviceClient(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1.5 text-[12.5px] font-medium outline-none"
+                className="w-full rounded-md border px-2 py-1.5 text-[13px] font-medium outline-none"
                 style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
               >
                 <option value="none">No client</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </SelectField>
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Group</span>
-              <select
+              <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Group</span>
+              <SelectField
                 value={device.group_id ?? "none"}
                 disabled={!device.client_id}
                 onChange={async (e) => {
@@ -532,12 +533,12 @@ function Overview({
                   const updated = await assignDeviceGroup(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1.5 text-[12.5px] font-medium outline-none disabled:opacity-50"
+                className="w-full rounded-md border px-2 py-1.5 text-[13px] font-medium outline-none disabled:opacity-50"
                 style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
               >
                 <option value="none">No group</option>
                 {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
+              </SelectField>
             </label>
           </div>
         )}
@@ -573,11 +574,11 @@ function SimpleTable({ title, head, rows, empty }: { title: string; head: string
   return (
     <Section title={title}>
       {rows.length === 0 ? (
-        <p className="py-1 text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>{empty}</p>
+        <p className="py-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>{empty}</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--th-border-card)" }}>
-          <table className="min-w-full text-[12.5px]">
-            <thead><tr>{head.map((h) => <th key={h} className="px-3 py-1.5 text-left text-[10.5px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{h}</th>)}</tr></thead>
+          <table className="min-w-full text-[13px]">
+            <thead><tr>{head.map((h) => <th key={h} className="px-3 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.slice(0, 200).map((r, i) => (
                 <tr key={i} style={{ borderTop: "1px solid var(--th-border-card)" }}>{r.map((c, j) => <td key={j} className="px-3 py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>{c}</td>)}</tr>
@@ -593,14 +594,14 @@ function SimpleTable({ title, head, rows, empty }: { title: string; head: string
 function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMeta; busy: string | null; canOperate: boolean; onAction: (a: DrawerAction) => void }) {
   return (
     <Section title="Actions" icon={Wrench}>
-      {!canOperate && <p className="mb-2 text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>You have read-only access.</p>}
+      {!canOperate && <p className="mb-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>You have read-only access.</p>}
       <div className="flex flex-wrap gap-2">
         {meta.actions.map((a) => (
           <button
             key={a.id}
             disabled={!canOperate || busy === a.id}
             onClick={() => onAction(a)}
-            className={`rounded-md border px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50 ${a.confirm === "confirm" ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "hover:bg-white/5"}`}
+            className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition-colors disabled:opacity-50 ${a.confirm === "confirm" ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "hover:bg-white/5"}`}
             style={a.confirm === "confirm" ? undefined : { borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}
           >
             {busy === a.id ? "…" : a.label}
@@ -617,12 +618,12 @@ function NotesPanel({ notes, noteText, setNoteText, onAdd, canOperate }: { notes
       {canOperate && (
         <div className="mb-4">
           <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} placeholder="Add a note…" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <div className="mt-2 flex justify-end"><button onClick={onAdd} disabled={!noteText.trim()} className="rounded-md border px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-50" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>Add note</button></div>
+          <div className="mt-2 flex justify-end"><button onClick={onAdd} disabled={!noteText.trim()} className="rounded-md border px-3 py-1.5 text-[13px] font-semibold disabled:opacity-50" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>Add note</button></div>
         </div>
       )}
       <div className="space-y-2">
         {notes.length === 0 ? (
-          <p className="text-[12.5px]" style={{ color: "var(--th-text-muted)" }}>No notes yet.</p>
+          <p className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>No notes yet.</p>
         ) : notes.map((n) => (
           <div key={n.id} className="rounded-lg border p-3" style={{ borderColor: "var(--th-border-card)" }}>
             <p className="text-[13px]" style={{ color: "var(--th-text-primary)" }}>{n.note}</p>

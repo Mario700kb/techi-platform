@@ -131,7 +131,7 @@ def test_routeros6_script_uses_routeros6_fetch_syntax():
         "mikrotik", token="TKN-6", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
         routeros_version="6",
     )
-    assert "# TECHI Platform - MikroTik connector (RouterOS 6.x)" in script
+    assert "# TECHI Connect - MikroTik connector (RouterOS 6.x)" in script
     assert 'http-header-field="Content-Type:application/json"' in script
     assert "http-header-field-value" not in script
     assert "keep-result=no" in script
@@ -150,7 +150,7 @@ def test_routeros7_script_uses_routeros7_fetch_syntax():
         "mikrotik", token="TKN-7", api_endpoint="https://api-rdp.techi.com.al/", version="1.0.0",
         routeros_version="7",
     )
-    assert "# TECHI Platform - MikroTik connector (RouterOS 7.x)" in script
+    assert "# TECHI Connect - MikroTik connector (RouterOS 7.x)" in script
     assert 'http-header-field="Content-Type:application/json"' in script
     assert "http-header-field-value" not in script
     assert "output=none" in script

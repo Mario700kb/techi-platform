@@ -45,6 +45,7 @@ export const CACHE_KEYS = {
   clientsList:        "clients.list",            // Client[]
   groupsList:         "clients.groups",          // DeviceGroup[]
   operatorsList:      "operators.list",          // OperatorRecord[]
+  dashboardInsights:  "dashboard.insights",      // FleetInsights, suffixed with the user id
 } as const;
 
 export const CACHE_TTL = {

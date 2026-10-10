@@ -9,9 +9,9 @@ import {
   setAgentPackageActive,
   uploadAgentPackage,
 } from "../api/agentPackages";
-import { Badge, Button } from "../components/ui";
+import { Badge, Button, SelectField } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE } from "../utils/time";
 
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
@@ -19,7 +19,7 @@ const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outl
 const LINUX_ARCHES: AgentPackagePlatform[] = ["linux-amd64", "linux-arm64", "linux-armhf"];
 
 function formatDate(iso: string): string {
-  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 interface Props {
@@ -118,9 +118,9 @@ export default function LinuxPackagesPanel({ canManage }: Props) {
           </div>
           <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
             <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="Version (e.g. 2.1.6)" className={INPUT_CLS} />
-            <select value={platform} onChange={(e) => setPlatform(e.target.value as AgentPackagePlatform)} aria-label="Architecture" className={INPUT_CLS}>
+            <SelectField value={platform} onChange={(e) => setPlatform(e.target.value as AgentPackagePlatform)} aria-label="Architecture" className={INPUT_CLS}>
               {LINUX_ARCHES.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+            </SelectField>
             <input type="file" aria-label="Binary file" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`} />
             <Button onClick={() => void handleUpload()} disabled={uploading || !file || !version.trim()}>
@@ -135,7 +135,7 @@ export default function LinuxPackagesPanel({ canManage }: Props) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
-              <tr className="border-b border-white/5 text-[10px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3">Version</th>
                 <th className="px-4 py-3">Arch</th>
                 <th className="px-4 py-3">File</th>

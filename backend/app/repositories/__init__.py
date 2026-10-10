@@ -1,1 +1,1 @@
-"""Repository layer placeholder for TECHI Platform backend."""
+"""Repository layer placeholder for TECHI Connect backend."""

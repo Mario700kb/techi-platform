@@ -73,7 +73,7 @@ export function MBadge({
   return (
     <span
       title={title}
-      className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[10.5px] font-extrabold tracking-[0.03em]"
+      className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-extrabold tracking-[0.03em]"
       style={{
         color: c,
         background: `color-mix(in srgb, ${c} 13%, transparent)`,

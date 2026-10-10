@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Bell, CheckCircle, XCircle } from "lucide-react";
-import { Alert, AlertSeverity } from "../types/alert";
+import { Activity, ArrowRight, Bell, Check, CheckCircle2, Clock3, Cpu, HardDrive, KeyRound, LucideIcon, MemoryStick, MonitorX, RefreshCw, TriangleAlert, WifiOff } from "lucide-react";
+import { Alert, AlertKind } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
-import { parseUTC } from "../utils/time";
+import { timeAgo } from "../utils/time";
 
 interface NotificationCenterProps {
   alerts: Alert[];
@@ -13,28 +13,24 @@ interface NotificationCenterProps {
   onAlertResolved?: (alertId: number) => void;
 }
 
-function severityDot(severity: AlertSeverity): string {
-  if (severity === "critical") return "bg-red-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-critical)_50%,transparent)]";
-  if (severity === "warning") return "bg-amber-400";
-  return "bg-slate-600";
-}
+const KIND_ICON: Partial<Record<AlertKind, LucideIcon>> = {
+  device_offline: WifiOff,
+  heartbeat_stale: Clock3,
+  telemetry_missing: Activity,
+  repeated_reconnects: RefreshCw,
+  high_cpu: Cpu,
+  high_ram: MemoryStick,
+  low_disk: HardDrive,
+  rustdesk_sync_failure: MonitorX,
+  token_usage_warning: KeyRound,
+  token_usage_critical: KeyRound,
+};
 
-function severityText(severity: AlertSeverity): string {
-  if (severity === "critical") return "text-red-400";
-  if (severity === "warning") return "text-amber-400";
-  return "text-slate-400";
-}
-
-function timeAgo(iso: string): string {
-  const diff = (Date.now() - parseUTC(iso).getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-}
+type SeverityFilter = "all" | "critical" | "warning";
 
 function kindLabel(kind: string): string {
-  return kind.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const text = kind.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 // Synthetic computed-on-read alerts (negative id); they cannot be resolved
@@ -43,7 +39,7 @@ function isTokenUsageAlert(alert: Alert): boolean {
   return alert.kind === "token_usage_warning" || alert.kind === "token_usage_critical";
 }
 
-const PANEL_MAX_WIDTH = 360;
+const PANEL_MAX_WIDTH = 380;
 const PANEL_MARGIN = 8;
 const PANEL_GAP = 6;
 
@@ -62,11 +58,13 @@ export default function NotificationCenter({
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [resolving, setResolving] = useState<Set<number>>(new Set());
+  const [filter, setFilter] = useState<SeverityFilter>("all");
+  const [confirmResolveAll, setConfirmResolveAll] = useState(false);
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({
     position: "fixed",
     top: -9999,
     left: -9999,
-    width: 360,
+    width: 380,
     zIndex: 9999,
   });
 
@@ -168,8 +166,14 @@ export default function NotificationCenter({
     if (!open) {
       positionPanel();
     }
+    setConfirmResolveAll(false);
     setOpen((v) => !v);
   };
+
+  const resolvable = alerts.filter((a) => !isTokenUsageAlert(a));
+  const criticalCount = alerts.filter((a) => a.severity === "critical").length;
+  const warningCount = alerts.filter((a) => a.severity === "warning").length;
+  const visibleAlerts = filter === "all" ? alerts : alerts.filter((a) => a.severity === filter);
 
   const handleResolveAll = async () => {
     for (const alert of alerts.filter((a) => !isTokenUsageAlert(a))) {
@@ -203,26 +207,17 @@ export default function NotificationCenter({
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
-        className={`th-btn th-btn-secondary relative flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors duration-150 ${
-          open ? "border-techi-orange/50 bg-techi-orange/10" : ""
-        }`}
-        style={open ? { color: "var(--th-text-primary)" } : {
-          borderColor: "var(--th-border-default)",
-          background: "var(--th-bg-surface)",
-          color: "var(--th-text-secondary)",
-        }}
+        className="th-icon-btn th-icon-btn-ghost relative"
+        data-active={open}
+        aria-label={totalOpen > 0 ? `Alerts, ${totalOpen} open` : "Alerts"}
+        title={totalOpen > 0 ? `${totalOpen} open ${totalOpen === 1 ? "alert" : "alerts"}` : "No open alerts"}
       >
-        <Bell className={`h-3.5 w-3.5 ${hasCritical ? "text-red-400" : ""}`} />
+        <Bell className="h-4 w-4" />
         {totalOpen > 0 && (
-          <span
-            className={`flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ${
-              hasCritical ? "bg-red-500" : "bg-amber-500"
-            }`}
-          >
+          <span className="th-count-badge" data-tone={hasCritical ? "critical" : "warning"}>
             {totalOpen > 99 ? "99+" : totalOpen}
           </span>
         )}
-        <span className="hidden sm:inline">Alerts</span>
       </button>
 
       {createPortal(
@@ -236,92 +231,125 @@ export default function NotificationCenter({
             transform: open ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.98)",
             pointerEvents: open ? "auto" : "none",
             transition: "opacity 130ms ease-out, transform 130ms ease-out",
-            border: "1px solid var(--th-border-card)",
-            background: "var(--th-bg-surface)",
           }}
-          className="overflow-hidden rounded-lg shadow-[0_8px_40px_rgba(0,0,0,0.4)]"
+          className="th-menu"
         >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--th-text-muted)" }}>
-            Active Alerts
-          </span>
-          {alerts.length > 0 && (
-            <button
-              type="button"
-              onClick={() => void handleResolveAll()}
-              className="text-[11px] font-medium transition"
-              style={{ color: "var(--th-text-muted)" }}
-            >
-              Resolve all
-            </button>
+        <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-3.5">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Alerts</h2>
+            {totalOpen > 0 && <span className="th-nav-badge">{totalOpen}</span>}
+          </div>
+          {resolvable.length > 0 && (
+            confirmResolveAll ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Resolve {resolvable.length}?</span>
+                <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(false)}>Cancel</button>
+                <button
+                  type="button"
+                  className="th-link-btn th-link-btn-primary"
+                  onClick={() => { setConfirmResolveAll(false); void handleResolveAll(); }}
+                >
+                  Confirm
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(true)}>
+                Resolve all
+              </button>
+            )
           )}
         </div>
 
+        {alerts.length > 0 && (
+          <div className="th-segmented mx-4 mb-2" role="radiogroup" aria-label="Filter alerts by severity">
+            {([
+              ["all", "All", alerts.length],
+              ["critical", "Critical", criticalCount],
+              ["warning", "Warning", warningCount],
+            ] as const).map(([id, label, count]) => (
+              <button key={id} type="button" role="radio" aria-checked={filter === id} onClick={() => setFilter(id)}>
+                {label}
+                <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Body */}
-        <div className="max-h-[340px] overflow-y-auto">
-          {alerts.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-10">
-              <CheckCircle className="h-5 w-5 text-emerald-500/60" />
-              <div className="text-center">
-                <p className="text-xs font-medium" style={{ color: "var(--th-text-secondary)" }}>Fleet operating normally</p>
-                <p className="mt-0.5 text-[11px]" style={{ color: "var(--th-text-muted)" }}>No active incidents</p>
-              </div>
+        <div className="max-h-[360px] overflow-y-auto" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
+          {visibleAlerts.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--th-status-online) 12%, transparent)", color: "var(--th-status-online)" }}>
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+              <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                {alerts.length === 0 ? "All clear" : `No ${filter} alerts`}
+              </p>
+              <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {alerts.length === 0 ? "No open alerts across the fleet." : "Other severities still have open alerts."}
+              </p>
             </div>
           ) : (
-            <ul>
-              {alerts.map((alert) => (
-                <li
-                  key={alert.id}
-                  className="group flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors"
-                  style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-                  onClick={() => {
-                    if (isTokenUsageAlert(alert)) {
-                      navigate("/enrollment-bootstrap");
-                    } else if (alert.device_id != null) {
-                      onDeviceJump?.(alert.device_id);
-                    }
-                    setOpen(false);
-                  }}
-                >
-                  <span className={`mt-[5px] h-1.5 w-1.5 flex-none rounded-full ${severityDot(alert.severity)}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] font-semibold leading-snug" style={{ color: "var(--th-text-primary)" }}>
-                      {alert.message}
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-medium">
-                      <span className={`font-semibold ${severityText(alert.severity)}`}>{alert.severity}</span>
-                      <span style={{ color: "var(--th-text-muted)" }}> · </span>
-                      <span style={{ color: "var(--th-text-tertiary)" }}>{kindLabel(alert.kind)}</span>
-                    </p>
-                  </div>
-                  <div className="flex flex-none flex-col items-end gap-1.5">
-                    <span className="text-[10px] font-medium tabular-nums" style={{ color: "var(--th-text-tertiary)" }}>{timeAgo(alert.created_at)} ago</span>
-                    {!isTokenUsageAlert(alert) && (
-                    <button
-                      type="button"
-                      title="Resolve"
-                      onClick={(e) => void handleResolve(e, alert.id)}
-                      disabled={resolving.has(alert.id)}
-                      className="rounded p-0.5 opacity-0 transition hover:text-emerald-400 group-hover:opacity-100 disabled:opacity-30"
-                      style={{ color: "var(--th-text-muted)" }}
+            <ul className="py-1">
+              {visibleAlerts.map((alert) => {
+                const Icon = KIND_ICON[alert.kind] ?? TriangleAlert;
+                const canResolve = !isTokenUsageAlert(alert);
+                return (
+                  <li key={alert.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="th-alert-row group"
+                      onClick={() => {
+                        if (isTokenUsageAlert(alert)) navigate("/onboarding?tab=installer");
+                        else if (alert.device_id != null) onDeviceJump?.(alert.device_id);
+                        setOpen(false);
+                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLElement).click(); }}
+                      title={`${alert.severity} · ${kindLabel(alert.kind)}`}
                     >
-                      <XCircle className="h-3 w-3" />
-                    </button>
-                    )}
-                  </div>
-                </li>
-              ))}
+                      <span className="th-alert-icon" data-severity={alert.severity} aria-label={alert.severity}>
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{alert.message}</p>
+                        <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{kindLabel(alert.kind)}</p>
+                      </div>
+                      <div className="relative flex h-7 w-16 flex-none items-center justify-end">
+                        <span className={`text-[12px] tabular-nums ${canResolve ? "group-hover:invisible" : ""}`} style={{ color: "var(--th-text-faint)" }}>
+                          {timeAgo(alert.created_at)}
+                        </span>
+                        {canResolve && (
+                          <button
+                            type="button"
+                            title="Resolve alert"
+                            aria-label="Resolve alert"
+                            onClick={(e) => void handleResolve(e, alert.id)}
+                            disabled={resolving.has(alert.id)}
+                            className="th-icon-btn th-icon-btn-ghost invisible absolute right-0 top-0 !min-h-7 !min-w-7 group-hover:visible disabled:opacity-40"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
-          <p className="text-center text-[10px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-            {alerts.length > 0 ? "Click alert to jump to device · hover row to dismiss" : "All systems nominal"}
-          </p>
-        </div>
+        <button
+          type="button"
+          className="th-menu-item justify-center gap-1.5 py-2.5 text-[12px]"
+          style={{ borderTop: "1px solid var(--th-border-subtle)" }}
+          onClick={() => { setOpen(false); navigate("/alerts"); }}
+        >
+          View all alerts <ArrowRight className="h-3.5 w-3.5" />
+        </button>
         </div>,
         document.body
       )}

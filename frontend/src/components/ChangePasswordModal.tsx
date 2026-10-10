@@ -159,7 +159,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
                   </button>
                 </div>
                 {next && next.length < 8 && (
-                  <p className="mt-1 text-[10px]" style={{ color: "var(--th-accent)" }}>
+                  <p className="mt-1 text-[11px]" style={{ color: "var(--th-accent)" }}>
                     Minimum 8 characters
                   </p>
                 )}

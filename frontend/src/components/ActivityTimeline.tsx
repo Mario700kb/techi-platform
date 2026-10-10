@@ -66,14 +66,14 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
             onClick={onReload}
             className="th-btn th-btn-secondary inline-flex min-h-8 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold"
           >
-            <RefreshCcw className="h-2.5 w-2.5" />
+            <RefreshCcw className="h-3.5 w-3.5" />
             Refresh
           </button>
         )}
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-xs font-medium text-slate-500">Loading activity...</div>
+        <div className="py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading activity…</div>
       ) : events.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
           <Activity className="h-5 w-5 text-slate-500" />
@@ -93,25 +93,25 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                 {/* Connector line */}
                 {!isLast && (
                   <div
-                    className="absolute left-[9px] top-[22px] bottom-0 w-px"
+                    className="absolute left-[11px] top-[30px] bottom-0 w-px"
                     style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--th-text-primary) 6%, transparent), color-mix(in srgb, var(--th-text-primary) 1%, transparent))" }}
                   />
                 )}
 
                 {/* Icon circle */}
                 <div
-                  className={`relative z-10 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border ${config.bg} ${config.border} flex-shrink-0 mt-0.5`}
+                  className={`relative z-10 mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border ${config.bg} ${config.border}`}
                 >
-                  <Icon className={`h-2.5 w-2.5 ${config.iconClass}`} />
+                  <Icon className={`h-3 w-3 ${config.iconClass}`} />
                 </div>
 
                 {/* Content */}
                 <div className="min-w-0 flex-1 pb-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className={`text-[13px] font-semibold leading-snug ${config.color}`}>
+                    <span className="text-[13px] font-medium leading-snug" style={{ color: "var(--th-text-primary)" }}>
                       {event.summary}
                     </span>
-                    <span className="flex-none text-[11px] font-medium tabular-nums text-slate-500">
+                    <span className="flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
                       {formatActivityTime(event.occurred_at)}
                     </span>
                   </div>
@@ -122,11 +122,11 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                         {event.detail}
                       </p>
                     ) : (
-                      <p className="mt-0.5 truncate text-[12px] text-slate-400">{event.detail}</p>
+                      <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{event.detail}</p>
                     )
                   )}
                   {event.actor && (
-                    <p className="mt-0.5 text-[10px] text-slate-600">by {event.actor}</p>
+                    <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-faint)" }}>by {event.actor}</p>
                   )}
                 </div>
               </li>

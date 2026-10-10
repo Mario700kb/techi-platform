@@ -150,6 +150,18 @@ async def lifespan(app: FastAPI):
     if feature_enabled("FEATURE_REPORTING"):
         report_worker.start()
 
+    # Build the dashboard read models in the background so the first visit
+    # after a restart does not wait on them.
+    from app.services.device_overview_service import warm_overview_cache
+    from app.services.fleet_insights_service import warm_insights_cache
+
+    warm_db = SessionLocal()
+    try:
+        warm_overview_cache(warm_db)
+        warm_insights_cache(warm_db)
+    finally:
+        warm_db.close()
+
     yield
 
     cleanup_task.cancel()

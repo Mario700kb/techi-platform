@@ -16,7 +16,7 @@ function Vital({ label, pct }: { label: string; pct: number | null }) {
       className="flex min-w-0 flex-1 flex-col gap-[7px] rounded-[14px] p-[10px_12px]"
       style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
     >
-      <span className="text-[10.5px] font-extrabold uppercase tracking-[0.07em]" style={{ color: "var(--th-text-muted)" }}>
+      <span className="text-[11px] font-extrabold uppercase tracking-[0.07em]" style={{ color: "var(--th-text-muted)" }}>
         {label}
       </span>
       <span className="num text-[16px] font-extrabold" style={{ color: pct == null ? "var(--th-text-faint)" : "var(--th-text-primary)" }}>

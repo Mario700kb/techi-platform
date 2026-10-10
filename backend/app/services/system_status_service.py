@@ -70,6 +70,17 @@ def database_tile(db: Session) -> ServiceTile:
                        sub="Schema matches the running code")
 
 
+def _ago(age: timedelta) -> str:
+    seconds = max(0, int(age.total_seconds()))
+    if seconds < 10:
+        return "just now"
+    if seconds < 60:
+        return f"{seconds}s ago"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    return f"{seconds // 3600} h ago"
+
+
 def agents_tile(db: Session, now: datetime) -> ServiceTile:
     active = db.query(Device).filter(Device.is_archived.is_(False))
     online = active.filter(Device.status == DeviceStatus.ONLINE).count()
@@ -79,7 +90,7 @@ def agents_tile(db: Session, now: datetime) -> ServiceTile:
     newest_age = (now - newest) if newest else None
 
     detail = f"{reporting} reporting · last {settings.HEARTBEAT_TIMEOUT_SECONDS // 60} min"
-    sub = f"of {online} online" + (f" · last heartbeat {int(newest_age.total_seconds())} s ago" if newest_age is not None else "")
+    sub = f"of {online} online" + (f" · last heartbeat {_ago(newest_age)}" if newest_age is not None else "")
     if online and (newest_age is None or newest_age > HEARTBEAT_STALL):
         return ServiceTile(key="agents", state="down", label="Stalled", detail=detail, sub=sub,
                            value=reporting, total=online)

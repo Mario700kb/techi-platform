@@ -10,7 +10,7 @@ import {
   updateTeam,
   deleteTeam,
 } from "../api/teams";
-import { Button } from "../components/ui";
+import { Button, EmptyState, PageHeader } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -127,7 +127,7 @@ function TemplateSelector({ onSelect }: { onSelect: (perms: string[]) => void })
             }`}
           >
             <p className="font-semibold">{tmpl.label}</p>
-            <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{tmpl.description}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{tmpl.description}</p>
           </button>
         ))}
       </div>
@@ -274,17 +274,12 @@ export default function Teams() {
   return (
     <section className="premium-page space-y-5">
       {/* Header */}
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="premium-kicker">Access Control</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white">Teams</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Group operators into teams and grant each team visibility over specific clients, device groups, or individual devices.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void loadData()} disabled={loading}>
+      <PageHeader
+        title="Teams"
+        description="Group operators into teams and grant each team visibility over specific clients, device groups, or individual devices."
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void loadData()} disabled={loading}>
               <RefreshCcw className="h-3.5 w-3.5" /> Refresh
             </Button>
             {canManage && (
@@ -292,9 +287,9 @@ export default function Teams() {
                 <Plus className="h-3.5 w-3.5" /> New Team
               </Button>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">{error}</div>}
 
@@ -330,8 +325,23 @@ export default function Teams() {
             <tbody className="divide-y divide-white/[0.04]">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm font-medium text-slate-500">
-                    {loading ? "Loading…" : search ? "No teams match your search." : "No teams yet. Create one to get started."}
+                  <td colSpan={8} className="p-0">
+                    {loading ? (
+                      <p className="px-5 py-10 text-center text-sm font-medium text-slate-500">Loading…</p>
+                    ) : search ? (
+                      <EmptyState icon={<Search className="h-5 w-5" />} title="No teams match your search" description="Try a different name." />
+                    ) : (
+                      <EmptyState
+                        icon={<UsersRound className="h-5 w-5" />}
+                        title="No teams yet"
+                        description="Teams give a group of operators access to specific clients, device groups or devices."
+                        action={canManage && (
+                          <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}>
+                            <Plus className="h-3.5 w-3.5" /> New Team
+                          </Button>
+                        )}
+                      />
+                    )}
                   </td>
                 </tr>
               )}

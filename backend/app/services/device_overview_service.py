@@ -1,11 +1,11 @@
 import json
-import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.scope import AllowedScope
+from app.core.swr_cache import SWRCache, scope_cache_key
 from app.core.time import utcnow
 from app.platform_core.flags import feature_enabled
 from app.repositories.device_repository import DeviceRepository
@@ -14,43 +14,28 @@ from app.services.agent_package_service import AgentPackageService
 from app.services.device_health_score_service import compute_device_health_score
 
 
-_overview_cache: OrderedDict[str, tuple[DeviceFleetOverview, float]] = OrderedDict()
-_OVERVIEW_CACHE_TTL = 30.0
-_OVERVIEW_CACHE_MAX_SIZE = 20
-
-
-def _scope_cache_key(scope: Optional[AllowedScope]) -> str:
-    if scope is None:
-        return "global"
-    return (
-        f"c{sorted(scope.client_ids)}"
-        f"g{sorted(scope.group_ids)}"
-        f"d{sorted(scope.device_ids)}"
-    )
+# Fresh for 30 seconds; after that the last overview is served at once while
+# one background thread recomputes it, so no dashboard waits on the ~1s build.
+_overview_cache: SWRCache[DeviceFleetOverview] = SWRCache("overview", ttl=30.0, max_age=300.0)
 
 
 def invalidate_overview_cache() -> None:
     _overview_cache.clear()
 
 
+def warm_overview_cache(db: Session) -> None:
+    """Build the fleet-wide overview at startup so the first dashboard is instant."""
+    _overview_cache.warm(scope_cache_key(None), db, lambda session: DeviceOverviewService(session)._compute_overview(None))
+
+
 class DeviceOverviewService:
     def __init__(self, db: Session):
+        self.db = db
         self.repository = DeviceRepository(db)
 
     def get_overview(self, scope: Optional[AllowedScope] = None) -> DeviceFleetOverview:
-        key = _scope_cache_key(scope)
-        entry = _overview_cache.get(key)
-        if entry is not None and time.monotonic() - entry[1] < _OVERVIEW_CACHE_TTL:
-            _overview_cache.move_to_end(key)
-            return entry[0]
-        if entry is not None:
-            _overview_cache.pop(key, None)
-
-        overview = self._compute_overview(scope)
-        _overview_cache[key] = (overview, time.monotonic())
-        while len(_overview_cache) > _OVERVIEW_CACHE_MAX_SIZE:
-            _overview_cache.popitem(last=False)
-        return overview
+        return _overview_cache.get(scope_cache_key(scope), self.db,
+                                   lambda session: DeviceOverviewService(session)._compute_overview(scope))
 
     def _compute_overview(self, scope: Optional[AllowedScope]) -> DeviceFleetOverview:
         active_pkg = _active_agent_package()

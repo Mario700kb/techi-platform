@@ -1,25 +1,33 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { LockKeyhole, ShieldCheck } from "lucide-react";
+import { Activity, AlertCircle, Check, Eye, EyeOff, Info, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { getPreferredDefaultScreen } from "./Settings";
 import { SESSION_EXPIRED_FLAG } from "../store/sessionStore";
+import pkg from "../../package.json";
+
+const HIGHLIGHTS = [
+  { icon: Activity, title: "Live fleet health", text: "Status, alerts and health scores for every managed client." },
+  { icon: MonitorSmartphone, title: "One-click remote support", text: "Open TECHI Remote Support sessions straight from the console." },
+  { icon: ShieldCheck, title: "Audited access", text: "Every sign-in and operator action is recorded." },
+];
 
 export default function Login() {
   const { user, login } = useAuth();
+  const { theme } = useTheme();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Mobile UI 2.0 (audit finding B9): tell the user WHY they landed here
-  // instead of silently dropping them on /login after a 401. Read (and
-  // clear) the flag in an effect, not a useState lazy initializer or
-  // module-scope code — the former is double-invoked by React StrictMode
-  // in dev (the second call finds the flag already cleared by the first
-  // and silently drops it), and the latter would miss a client-side
-  // redirect to /login that happens long after this module was first
-  // imported. The ranRef guard keeps the effect's own StrictMode
-  // double-invoke from doing the same thing to itself.
+  // idle → submitting → success (brief confirmation before the hand-off).
+  const [phase, setPhase] = useState<"idle" | "submitting" | "success">("idle");
+  const [shakeKey, setShakeKey] = useState(0);
+  const busy = phase !== "idle";
+  // Tell the user WHY they landed here after a 401 (audit finding B9). Read
+  // and clear the flag in an effect guarded by ranRef so StrictMode's double
+  // invoke cannot swallow it.
   const [sessionExpired, setSessionExpired] = useState(false);
   const ranRef = useRef(false);
   useEffect(() => {
@@ -32,103 +40,138 @@ export default function Login() {
   }, []);
   const navigate = useNavigate();
   const location = useLocation();
-  // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Settings/Preferences): honor the
-  // user's preferred landing screen only for a plain login, never
+  // Honor the preferred landing screen only for a plain login, never
   // overriding a protected-route redirect ("from").
   const target =
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || getPreferredDefaultScreen();
 
-  if (user) return <Navigate to={target} replace />;
+  // Already signed in on arrival: go straight through. During our own
+  // submit we hold the page for the success animation instead.
+  if (user && phase === "idle") return <Navigate to={target} replace />;
+
+  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setBusy(true);
+    if (busy) return;
+    setPhase("submitting");
     setError(null);
     try {
       await login(username, password);
-      navigate(target, { replace: true });
+      setPhase("success");
+      window.setTimeout(() => navigate(target, { replace: true }), reducedMotion ? 0 : 650);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
-      setBusy(false);
+      setError(err instanceof Error ? err.message : "Sign-in failed");
+      setShakeKey((k) => k + 1);
+      setPhase("idle");
     }
   };
 
+  const trackCaps = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState("CapsLock"));
+  const logo = theme === "light" ? "/brand/techi-logo.webp" : "/brand/techi-logo-dark.png";
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center px-4 py-8"
-      style={{ background: "#0A0A0B", color: "#F5F5F7" }}
-    >
-      <form
-        onSubmit={submit}
-        className="box-border w-full rounded-xl p-6 shadow-2xl sm:p-7"
-        style={{
-          maxWidth: "min(27rem, calc(100vw - 2rem))",
-          border: "1px solid rgba(255, 255, 255, 0.10)",
-          background: "#131316",
-          boxShadow: "0 24px 70px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
-        }}
-      >
-        <div className="mb-7 text-center">
-          <img
-            src="/brand/techi-logo-dark.png"
-            alt="TECHI"
-            className="mx-auto h-10 w-auto object-contain"
-            onError={(e) => {
-              e.currentTarget.src = "/brand/techi-mark-dark.png";
-            }}
-          />
-          <div className="mx-auto mt-5 flex h-11 w-11 items-center justify-center rounded-lg border border-techi-orange/25 bg-techi-orange/10">
-            <LockKeyhole className="h-5 w-5 text-orange-300" />
-          </div>
-          <div className="mt-4">
-            <h1 className="text-xl font-semibold text-techi-orange">TECHI MSP Operator Login</h1>
-            <p className="mt-1 text-sm font-medium text-slate-400">Secure access for TECHI operators</p>
-          </div>
+    <div className="th-auth" data-phase={phase}>
+      {/* Brand panel */}
+      <aside className="th-auth-brand">
+        <img src={logo} alt="TECHI Connect" className="h-7 w-auto self-start object-contain" />
+        <div className="max-w-md">
+          <h2 className="th-enter text-[28px] font-semibold leading-tight tracking-tight" style={{ color: "var(--th-text-primary)", animationDelay: "80ms" }}>
+            Run every managed device from one console.
+          </h2>
+          <ul className="mt-8 space-y-5">
+            {HIGHLIGHTS.map(({ icon: Icon, title, text }, i) => (
+              <li key={title} className="th-enter flex gap-3" style={{ animationDelay: `${180 + i * 90}ms` }}>
+                <span className="th-auth-feature-icon"><Icon className="h-4 w-4" /></span>
+                <span>
+                  <span className="block text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{title}</span>
+                  <span className="mt-0.5 block text-[13px]" style={{ color: "var(--th-text-muted)" }}>{text}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-        {sessionExpired && !error && (
-          <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">
-            Session expired — please sign in again.
+        <p className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>TECHI Connect · v{pkg.version}</p>
+      </aside>
+
+      {/* Sign-in form */}
+      <main className="th-auth-main">
+        <form key={shakeKey} onSubmit={submit} className={`th-enter relative w-full max-w-[360px] ${shakeKey ? "th-shake" : ""}`} noValidate aria-busy={busy}>
+          <span className="th-auth-progress" aria-hidden="true" data-active={phase === "submitting"} />
+          <img src={logo} alt="TECHI Connect" className="mb-10 h-7 w-auto object-contain lg:hidden" />
+          <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: "var(--th-text-primary)" }}>Sign in to TECHI Connect</h1>
+          <p className="mt-1.5 text-[14px]" style={{ color: "var(--th-text-muted)" }}>Use your operator account to continue.</p>
+
+          {(error || sessionExpired) && (
+            <div className="th-auth-notice mt-6" data-tone={error ? "error" : "info"} role={error ? "alert" : "status"}>
+              {error ? <AlertCircle className="h-4 w-4 flex-none" /> : <Info className="h-4 w-4 flex-none" />}
+              <span>{error ?? "Your session expired. Sign in again to continue."}</span>
+            </div>
+          )}
+
+          <div className="mt-6 space-y-4">
+            <label className="block">
+              <span className="th-auth-label">Username or email</span>
+              <input
+                className="th-auth-input"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoFocus
+                required
+                disabled={busy}
+              />
+            </label>
+            <label className="block">
+              <span className="th-auth-label">Password</span>
+              <span className="relative block">
+                <input
+                  className="th-auth-input pr-11"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  onKeyDown={trackCaps}
+                  onKeyUp={trackCaps}
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="th-icon-btn th-icon-btn-ghost absolute right-1 top-1/2 !min-h-8 !min-w-8 -translate-y-1/2"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </span>
+              {capsLock && (
+                <span className="mt-1.5 block text-[12px]" style={{ color: "var(--th-status-warning)" }}>Caps Lock is on</span>
+              )}
+            </label>
           </div>
-        )}
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300">
-            {error}
-          </div>
-        )}
-        <div className="space-y-4">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Username</span>
-            <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Username or email"
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1E] px-3 py-2.5 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-techi-orange/50 focus:ring-4 focus:ring-techi-orange/10"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Password</span>
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
-              type="password"
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1E] px-3 py-2.5 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-techi-orange/50 focus:ring-4 focus:ring-techi-orange/10"
-            />
-          </label>
+
           <button
             type="submit"
             disabled={busy || !username.trim() || !password}
-            className="th-btn mt-1 w-full border border-techi-orange/40 bg-techi-orange px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[#FF6B47] disabled:cursor-not-allowed disabled:opacity-50"
+            className="th-btn th-btn-primary th-auth-submit mt-6 flex w-full items-center justify-center gap-2 border"
+            data-phase={phase}
+            style={{ minHeight: 40 }}
           >
-            {busy ? "Signing in..." : "Sign in"}
+            {phase === "submitting" && <span className="th-spinner" style={{ borderTopColor: "var(--th-on-accent)" }} aria-hidden="true" />}
+            {phase === "success" && <Check className="th-pop h-4 w-4" aria-hidden="true" />}
+            {phase === "submitting" ? "Signing in…" : phase === "success" ? "Signed in" : "Sign in"}
           </button>
-        </div>
-        <div className="mt-6 flex items-center justify-center gap-2 border-t border-white/[0.06] pt-4 text-xs font-semibold text-slate-500">
-          <ShieldCheck className="h-3.5 w-3.5 text-orange-300" />
-          <span>Operator console</span>
-        </div>
-      </form>
+
+          <p className="mt-8 flex items-start gap-2 text-[12px] leading-5" style={{ color: "var(--th-text-faint)" }}>
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none" />
+            Access is limited to authorized operators. Sign-ins are recorded in the audit log.
+          </p>
+        </form>
+      </main>
     </div>
   );
 }

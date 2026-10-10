@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, CircleAlert, Link2, Monitor, Globe, Pin, PinOff, Plus, Terminal } from "lucide-react";
+import { ChevronDown, CircleAlert, Monitor, Globe, Pin, PinOff, Plus, Terminal, ExternalLink } from "lucide-react";
 
 import { fetchJson } from "../api/client";
 import {
@@ -366,16 +366,7 @@ export default function ConnectMenu({
 
   const rowState = initialState;
   const isRow = variant === "row";
-  const mainStyle = isRow
-    ? {
-        background: rowState === "ready" || rowState === null ? "color-mix(in srgb, var(--th-accent) 15%, transparent)"
-          : rowState === "credential_required" ? "color-mix(in srgb, var(--th-status-warning) 12%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
-        border: `1px solid ${rowState === "ready" || rowState === null ? "color-mix(in srgb, var(--th-accent) 30%, transparent)"
-          : rowState === "credential_required" ? "color-mix(in srgb, var(--th-status-warning) 30%, transparent)" : "var(--th-border-subtle)"}`,
-        color: rowState === "ready" || rowState === null ? "var(--th-accent-bright)"
-          : rowState === "credential_required" ? "var(--th-status-warning)" : "var(--th-text-muted)",
-      }
-    : { background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent-bright)" };
+  const connectTone = rowState === "credential_required" ? "warning" : rowState === "unavailable" ? "muted" : "default";
 
   const mainTitle = rowState === "credential_required"
     ? (initialStateReason ?? "Credential required — open the menu to add one")
@@ -392,7 +383,7 @@ export default function ConnectMenu({
       }}
     >
       {hostname && (
-        <div className="px-3 pb-1 pt-2.5 font-mono text-[9.5px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+        <div className="px-3 pb-1 pt-2.5 font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
           Connect to {hostname}
         </div>
       )}
@@ -403,7 +394,7 @@ export default function ConnectMenu({
       )}
       {groupConnectMethods(methods, preferredMethodId, operatorOS).map((group) => (
         <div key={group.label}>
-          <div className="px-3 pb-0.5 pt-2 font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+          <div className="px-3 pb-0.5 pt-2 font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
             {group.label}
           </div>
           {group.methods.map((m) => {
@@ -433,14 +424,14 @@ export default function ConnectMenu({
                   <span className="flex items-center gap-1.5">
                     {launching === m.id ? "Opening…" : m.label}
                     {isPreferred && (
-                      <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: "var(--th-accent-glow)", color: "var(--th-accent)" }}>
+                      <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ background: "var(--th-accent-glow)", color: "var(--th-accent)" }}>
                         Default
                       </span>
                     )}
                   </span>
                   {reason && (
                     <span
-                      className="text-[10.5px] font-normal"
+                      className="text-[11px] font-normal"
                       style={{ color: status === "credential_required" ? "var(--th-status-warning, var(--th-status-warning))" : "var(--th-text-faint)" }}
                     >
                       {reason}
@@ -486,33 +477,29 @@ export default function ConnectMenu({
 
   return (
     <div className={`relative ${isRow ? "inline-flex" : ""}`} ref={ref}>
-      <div className="inline-flex items-stretch">
+      <div className="th-connect-group">
         <button
           type="button"
           onClick={() => void onMainClick()}
           title={mainTitle}
-          className={
-            isRow
-              ? "inline-flex items-center gap-1 rounded-l-md px-2 py-1 text-[11px] font-semibold transition-all"
-              : "inline-flex items-center gap-1.5 rounded-l-lg px-3.5 py-2 text-[13px] font-semibold transition hover:brightness-110"
-          }
-          style={{ ...mainStyle, borderRight: "none" }}
+          className="th-connect"
+          data-size={isRow ? "sm" : "md"}
+          data-tone={connectTone}
         >
-          <Link2 className={isRow ? "h-3 w-3" : "h-3.5 w-3.5"} />
+          <ExternalLink className="th-connect-icon" />
           Connect
         </button>
         <button
           type="button"
           aria-label="Connect options"
+          aria-haspopup="menu"
+          aria-expanded={open}
           onClick={() => void onArrowClick()}
-          className={
-            isRow
-              ? "inline-flex items-center rounded-r-md px-1 py-1 transition-all"
-              : "inline-flex items-center rounded-r-lg px-1.5 py-2 transition hover:brightness-110"
-          }
-          style={mainStyle}
+          className="th-connect th-connect-arrow"
+          data-size={isRow ? "sm" : "md"}
+          data-tone={connectTone}
         >
-          <ChevronDown className={`${isRow ? "h-3 w-3" : "h-3.5 w-3.5"} transition-transform ${open ? "rotate-180" : ""}`} />
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
       </div>
 

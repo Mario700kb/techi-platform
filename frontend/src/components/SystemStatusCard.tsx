@@ -67,9 +67,9 @@ function Tile({ tile, extra }: { tile: ServiceTile; extra?: React.ReactNode }) {
   return (
     <article className="sys-tile" data-state={tile.state}>
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5 text-[13.5px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+        <div className="flex min-w-0 items-center gap-2.5 text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
           <StateIcon state={tile.state} />
-          <span className="truncate">{TITLES[tile.key] ?? tile.key}</span>
+          <span className="min-w-0 leading-tight">{TITLES[tile.key] ?? tile.key}</span>
         </div>
         <span className="sys-pill" data-state={tile.state}>{tile.label}</span>
       </div>
@@ -85,13 +85,13 @@ function Tile({ tile, extra }: { tile: ServiceTile; extra?: React.ReactNode }) {
         <div className="sys-bar" aria-hidden="true"><i style={{ width: `${Math.round(ratio * 100)}%` }} /></div>
       )}
       {extra}
-      {tile.sub && <div className="text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>{tile.sub}</div>}
+      {tile.sub && <div className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{tile.sub}</div>}
     </article>
   );
 }
 
 /** Live state of TECHI's own services (owner/admin). Replaces "Recent deployments". */
-export default function SystemStatusCard() {
+export default function SystemStatusCard({ compact = false }: { compact?: boolean }) {
   const { realtimeStatus } = useAppData();
   const [server, setServer] = useState<ServiceTile[] | null>(null);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
@@ -157,19 +157,48 @@ export default function SystemStatusCard() {
       ? `${warn} service${warn > 1 ? "s" : ""} need${warn > 1 ? "" : "s"} attention`
       : "All systems operational";
 
+  if (compact) {
+    return (
+      <section className="premium-card flex h-full flex-col p-0" aria-labelledby="system-status-title">
+        <div className="th-panel-head">
+          <h2 id="system-status-title">System status</h2>
+          <span className="sys-overall" data-state={overall} role="status">
+            <StateIcon state={overall} />
+            {server === null && !apiError ? "Checking…" : overallText}
+          </span>
+        </div>
+        <ul className="flex-1 px-2 pb-1">
+          {tiles.map((tile) => (
+            <li key={tile.key} className="th-status-row" title={tile.sub ?? undefined}>
+              <StateIcon state={tile.state} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{TITLES[tile.key] ?? tile.key}</span>
+                <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{tile.detail}</span>
+              </span>
+              <span className="sys-pill" data-state={tile.state}>{tile.label}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="th-panel-foot tabular-nums">
+          {checkedAt ? `Updated ${clock.format(checkedAt)}` : "Updating…"} · refreshes every 30 s
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="premium-card p-4" aria-labelledby="system-status-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="premium-kicker">Platform health</p>
-          <h2 id="system-status-title" className="mt-1.5 text-xl font-semibold" style={{ color: "var(--th-text-primary)" }}>System status</h2>
+          <h2 id="system-status-title">System status</h2>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Platform services, agents and nightly jobs.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="sys-overall" data-state={overall} role="status">
             <StateIcon state={overall} />
             {server === null && !apiError ? "Checking…" : overallText}
           </span>
-          <span className="font-mono text-[11.5px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+          <span className="text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
             {checkedAt ? `Updated ${clock.format(checkedAt)}` : "Updating…"} · auto 30s
           </span>
         </div>

@@ -70,7 +70,7 @@ const STATUS_STYLES: Record<string, string> = {
 function StatusBadge({ health, status }: { health: string; status: string }) {
   const cls = STATUS_STYLES[health] ?? STATUS_STYLES.unknown;
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
       {status}
     </span>
   );
@@ -189,13 +189,13 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
               style={{ borderColor: "var(--th-border-subtle)" }}
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12.5px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
                   {state.display_name}
                 </span>
                 <div className="flex items-center gap-1.5">
                   {livePhase[state.component_id] && (
                     <span
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PHASE_STYLES[livePhase[state.component_id]]}`}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_STYLES[livePhase[state.component_id]]}`}
                     >
                       {livePhase[state.component_id] === "running" && (
                         <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -206,7 +206,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                   <StatusBadge health={state.health} status={state.status} />
                 </div>
               </div>
-              <div className="mt-1 grid grid-cols-2 gap-x-3 text-[11.5px]" style={{ color: "var(--th-text-muted)" }}>
+              <div className="mt-1 grid grid-cols-2 gap-x-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                 <span>
                   Installed:{" "}
                   <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>
@@ -232,7 +232,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                         <span
                           key={entry.operation}
                           title="Handled out of band (not triggerable)"
-                          className="rounded border px-1.5 py-0.5 text-[10px] font-medium opacity-60"
+                          className="rounded border px-1.5 py-0.5 text-[11px] font-medium opacity-60"
                           style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-muted)" }}
                         >
                           {entry.label}
@@ -245,7 +245,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                         type="button"
                         disabled={componentBusy}
                         onClick={() => runOperation(state.component_id, entry.operation, entry.label)}
-                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                         style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
                       >
                         {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
@@ -257,7 +257,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
               )}
               {note && (
                 <div
-                  className="mt-1.5 text-[10.5px]"
+                  className="mt-1.5 text-[11px]"
                   style={{ color: note.error ? "var(--th-status-critical)" : "var(--th-text-muted)" }}
                 >
                   {note.text}

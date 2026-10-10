@@ -41,7 +41,7 @@ class NotificationSender(ABC):
 
 
 def _plain_text_body(title: str, message: str, event_type: str) -> str:
-    return f"{title}\n\n{message}\n\n--\nEvent: {event_type}\nSent by TECHI Platform"
+    return f"{title}\n\n{message}\n\n--\nEvent: {event_type}\nSent by TECHI Connect"
 
 
 def _html_body(title: str, message: str, event_type: str) -> str:
@@ -52,7 +52,7 @@ def _html_body(title: str, message: str, event_type: str) -> str:
         f"<h2 style=\"margin:0 0 12px\">{safe_title}</h2>"
         f'<p style="white-space:pre-wrap">{safe_message}</p>'
         f'<hr style="border:none;border-top:1px solid #ddd;margin:16px 0">'
-        f'<p style="color:#888;font-size:12px">Event: {event_type} &middot; Sent by TECHI Platform</p>'
+        f'<p style="color:#888;font-size:12px">Event: {event_type} &middot; Sent by TECHI Connect</p>'
         f"</div>"
     )
 

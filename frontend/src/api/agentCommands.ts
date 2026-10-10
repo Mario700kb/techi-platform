@@ -30,7 +30,7 @@ export const BULK_COMMAND_LABELS: Record<BulkCommandType, string> = {
   run_powershell: "Run PowerShell Script",
   run_command: "Run Command (Linux)",
   register_protocol: "Register Protocol",
-  self_update: "Përditëso Agjentin",
+  self_update: "Update agent",
 };
 
 export const BULK_COMMAND_TYPES: BulkCommandType[] = [
@@ -56,11 +56,11 @@ export interface BulkCommandCategory {
 
 /** Visual grouping only — command values/payloads below are untouched. */
 export const BULK_COMMAND_CATEGORIES: BulkCommandCategory[] = [
-  { label: "Diagnostikë", commands: ["ping", "collect_inventory"] },
+  { label: "Diagnostics", commands: ["ping", "collect_inventory"] },
   { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "run_command", "self_update"] },
-  { label: "Pajisje", commands: ["reboot_pc", "restart_device"] },
+  { label: "Device", commands: ["reboot_pc", "restart_device"] },
   {
-    label: "RustDesk / Remote",
+    label: "Remote Support",
     commands: ["sync_rustdesk", "restart_rustdesk", "set_remote_password", "register_protocol"],
   },
 ];
@@ -79,8 +79,8 @@ export const BULK_COMMAND_DESCRIPTIONS: Record<BulkCommandType, string> = {
   set_remote_password: "Sets the TECHI Remote Support password on all targeted devices.",
   register_protocol: "Registers the techiremotesupport:// URL scheme in the Windows Registry.",
   self_update:
-    "Shkarkon dhe instalon versionin e ri të agjentit automatikisht. Nuk kërkon ndërhyrje manuale. " +
-    "PC mund të dalë offline ~2 minuta gjatë instalimit.",
+    "Downloads and installs the new agent version automatically, with no manual steps. " +
+    "The PC may go offline for about 2 minutes during the install.",
 };
 
 /** Commands that require a destructive confirmation dialog (2-step for reboot_pc) */

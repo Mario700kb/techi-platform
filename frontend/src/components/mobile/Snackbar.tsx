@@ -33,7 +33,7 @@ export function Snackbar({
   return (
     <div
       role="status"
-      className="fixed left-3 right-3 z-[80] flex items-center gap-[10px] rounded-xl px-[14px] py-[11px] text-[12.5px] font-semibold md:hidden"
+      className="fixed left-3 right-3 z-[80] flex items-center gap-[10px] rounded-xl px-[14px] py-[11px] text-[13px] font-semibold md:hidden"
       style={{
         bottom: "calc(64px + 12px + env(safe-area-inset-bottom))",
         background: "var(--th-bg-elevated)",
@@ -47,7 +47,7 @@ export function Snackbar({
         <button
           type="button"
           onClick={onAction}
-          className="ml-auto min-h-[32px] px-2 text-[12.5px] font-extrabold"
+          className="ml-auto min-h-[32px] px-2 text-[13px] font-extrabold"
           style={{ color: "var(--th-accent)" }}
         >
           {actionLabel}

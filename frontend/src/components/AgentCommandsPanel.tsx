@@ -36,16 +36,15 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useAppData } from "../contexts/AppDataContext";
+import { timeAgo } from "../utils/time";
+import { SelectField } from "./ui";
 
 const POLL_INTERVAL = 3000;
 
 // ── small helpers ──────────────────────────────────────────────────────── //
 
 function RelativeTime({ ts }: { ts: string }) {
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-  if (diff < 60) return <span>{diff}s ago</span>;
-  if (diff < 3600) return <span>{Math.floor(diff / 60)}m ago</span>;
-  return <span>{Math.floor(diff / 3600)}h ago</span>;
+  return <span>{timeAgo(ts)}</span>;
 }
 
 function ProgressBar({ percent }: { percent: number }) {
@@ -182,7 +181,7 @@ function ConfirmModal({
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              {isSelfUpdate ? "Përditëso Agjentin" : twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
+              {isSelfUpdate ? "Update agent" : twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
             </p>
             <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
               <strong className="text-amber-400">{BULK_COMMAND_LABELS[commandType]}</strong>{" "}
@@ -204,13 +203,13 @@ function ConfirmModal({
               className="rounded-lg px-3 py-2 text-xs text-red-400"
               style={{ background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 30%, transparent)" }}
             >
-              Agjenti do të riniset gjatë update-it. PC mund të dalë offline ~30 sekonda.
-              TECHI Remote Support <strong>nuk preket</strong>.
+              The agent restarts during the update and the PC may go offline for about 30 seconds.
+              TECHI Remote Support is <strong>not affected</strong>.
             </div>
             {selfUpdatePackage && (
               <div className="space-y-1 rounded-md px-3 py-2 text-xs" style={{ background: "var(--th-bg-shell)" }}>
                 <p style={{ color: "var(--th-text-muted)" }}>
-                  Version aktual → <strong style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.version}</strong>
+                  Target version → <strong style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.version}</strong>
                 </p>
                 {selfUpdatePackage.sha256 && (
                   <p style={{ color: "var(--th-text-muted)" }}>
@@ -229,7 +228,7 @@ function ConfirmModal({
             style={{ background: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 40%, transparent)" }}
           >
             <p className="text-2xl font-bold text-red-400">{deviceCount ?? "?"}</p>
-            <p className="text-xs font-medium text-red-300">Kjo do dërgohet te të gjitha pajisjet</p>
+            <p className="text-xs font-medium text-red-300">This will be sent to every device</p>
           </div>
         )}
 
@@ -303,7 +302,7 @@ function ConfirmModal({
               className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: "var(--th-status-critical)" }}
             >
-              {sending ? "Sending…" : isSelfUpdate ? "Konfirmo përditësimin" : "Konfirmo dërgimin"}
+              {sending ? "Sending…" : isSelfUpdate ? "Confirm update" : "Confirm and send"}
             </button>
           )}
           <button
@@ -541,7 +540,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
       <div className="space-y-3">
         <div>
           <FieldLabel>Execution Engine</FieldLabel>
-          <select
+          <SelectField
             value={payload["engine"] ?? "bash"}
             onChange={(e) => set("engine", e.target.value)}
             className={inputCls}
@@ -551,7 +550,7 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
             <option value="sh">sh</option>
             <option value="busybox">BusyBox</option>
             <option value="python3">Python 3</option>
-          </select>
+          </SelectField>
           <p className="mt-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
             Auto: Linux → Bash. Future platforms resolve via their adapter.
           </p>
@@ -588,8 +587,8 @@ function PayloadEditor({ commandType, payload, onChange }: PayloadEditorProps) {
   if (commandType === "self_update") {
     return (
       <InfoNote>
-        Download URL, version dhe SHA256 merren automatikisht nga paketa aktive te Agent Packages —
-        nuk ka fusha për t'u plotësuar me dorë.
+        Download URL, version and SHA256 come from the active package in Agent Packages —
+        nothing to fill in by hand.
       </InfoNote>
     );
   }
@@ -897,7 +896,7 @@ export default function AgentCommandsPanel() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <FieldLabel>Command</FieldLabel>
-              <select
+              <SelectField
                 value={commandType}
                 onChange={(e) => setCommandType(e.target.value as BulkCommandType)}
                 className={inputCls}
@@ -914,14 +913,14 @@ export default function AgentCommandsPanel() {
                     </optgroup>
                   );
                 })}
-              </select>
+              </SelectField>
               <p className="mt-1.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
                 {BULK_COMMAND_DESCRIPTIONS[commandType]}
               </p>
             </div>
             <div>
               <FieldLabel>Target</FieldLabel>
-              <select
+              <SelectField
                 value={target}
                 onChange={(e) => setTarget(e.target.value as typeof target)}
                 className={inputCls}
@@ -933,7 +932,7 @@ export default function AgentCommandsPanel() {
                 <option value="client">By client</option>
                 <option value="group">By group</option>
                 <option value="devices">Specific device IDs</option>
-              </select>
+              </SelectField>
             </div>
           </div>
 
@@ -941,7 +940,7 @@ export default function AgentCommandsPanel() {
           {target === "client" && (
             <div>
               <FieldLabel>Client</FieldLabel>
-              <select
+              <SelectField
                 value={clientId ?? ""}
                 onChange={(e) => setClientId(e.target.value ? parseInt(e.target.value, 10) : null)}
                 className={inputCls}
@@ -949,7 +948,7 @@ export default function AgentCommandsPanel() {
               >
                 <option value="">Select client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </SelectField>
             </div>
           )}
 
@@ -957,7 +956,7 @@ export default function AgentCommandsPanel() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <FieldLabel>Client</FieldLabel>
-                <select
+                <SelectField
                   value={clientId ?? ""}
                   onChange={(e) => setClientId(e.target.value ? parseInt(e.target.value, 10) : null)}
                   className={inputCls}
@@ -965,11 +964,11 @@ export default function AgentCommandsPanel() {
                 >
                   <option value="">Select client…</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                </SelectField>
               </div>
               <div>
                 <FieldLabel>Group</FieldLabel>
-                <select
+                <SelectField
                   value={groupId ?? ""}
                   onChange={(e) => setGroupId(e.target.value ? parseInt(e.target.value, 10) : null)}
                   disabled={!clientId || groups.length === 0}
@@ -978,7 +977,7 @@ export default function AgentCommandsPanel() {
                 >
                   <option value="">Select group…</option>
                   {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
+                </SelectField>
               </div>
             </div>
           )}

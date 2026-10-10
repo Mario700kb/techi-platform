@@ -412,7 +412,7 @@ class VaultService:
             "webhook",
             config={"url": url, "headers": headers},
             secret=secret,
-            title="TECHI Vault connection test",
+            title="TECHI Connect vault connection test",
             message="This is a test ping from the TECHI Credential Vault.",
             event_type="vault_test",
         )

@@ -1,11 +1,9 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "../pages/Dashboard";
 import Devices from "../pages/Devices";
 import Clients from "../pages/Clients";
 import Audit from "../pages/Audit";
-import AgentPackages from "../pages/AgentPackages";
-import Deployment from "../pages/Deployment";
-import EnrollmentBootstrap from "../pages/EnrollmentBootstrap";
+import Onboarding from "../pages/Onboarding";
 import Inventory from "../pages/Inventory";
 import Operators from "../pages/Operators";
 import RemoteSupport from "../pages/RemoteSupport";
@@ -35,9 +33,11 @@ export default function AppRoutes() {
           Same guards as the catalog; the backend enforces the real gate. */}
       <Route path="/terminal/:id" element={<RequireAuth><RequirePermission perm="view_devices"><TerminalWindow /></RequirePermission></RequireAuth>} />
       <Route path="/clients" element={<RequireAuth><RequirePermission perm="manage_clients"><Clients /></RequirePermission></RequireAuth>} />
-      <Route path="/deployment" element={<RequireAuth><RequirePermission perm="deployment"><Deployment /></RequirePermission></RequireAuth>} />
-      <Route path="/enrollment-bootstrap" element={<RequireAuth><RequirePermission perm="deployment"><EnrollmentBootstrap /></RequirePermission></RequireAuth>} />
-      <Route path="/agent-packages" element={<RequireAuth><RequirePermission perm="deployment"><AgentPackages /></RequirePermission></RequireAuth>} />
+      <Route path="/onboarding" element={<RequireAuth><RequirePermission perm="deployment"><Onboarding /></RequirePermission></RequireAuth>} />
+      {/* Former standalone pages — kept as redirects so bookmarks and links keep working. */}
+      <Route path="/agent-packages" element={<Navigate to="/onboarding?tab=packages" replace />} />
+      <Route path="/deployment" element={<Navigate to="/onboarding?tab=tokens" replace />} />
+      <Route path="/enrollment-bootstrap" element={<Navigate to="/onboarding?tab=installer" replace />} />
       <Route path="/inventory" element={<RequireAuth><RequirePermission perm="view_inventory"><Inventory /></RequirePermission></RequireAuth>} />
       <Route path="/operators" element={<RequireAuth><RequirePermission perm="manage_operators"><Operators /></RequirePermission></RequireAuth>} />
       <Route path="/teams" element={<RequireAuth><RequirePermission perm="manage_teams"><Teams /></RequirePermission></RequireAuth>} />

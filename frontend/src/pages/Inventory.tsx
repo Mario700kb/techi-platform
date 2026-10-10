@@ -1,28 +1,28 @@
+import { Link } from "react-router-dom";
+import { Cpu } from "lucide-react";
+import { PageHeader } from "../components/ui";
+
 export default function Inventory() {
   return (
-    <section className="space-y-6">
-      <div
-        className="rounded-3xl p-6 shadow-soft"
-        style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
-      >
-        <h2 className="text-2xl font-semibold" style={{ color: "var(--th-text-primary)" }}>Inventory</h2>
-        <p className="mt-3" style={{ color: "var(--th-text-muted)" }}>This screen will map clients, groups, and device types in later development.</p>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div
-          className="rounded-3xl p-6 shadow-soft"
-          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+    <section className="premium-page space-y-5">
+      <PageHeader
+        title="Inventory"
+        description="Hardware and software inventory grouped by client, device group and device role."
+      />
+      <div className="premium-card flex flex-col items-center gap-3 px-6 py-14 text-center">
+        <span
+          className="flex h-11 w-11 items-center justify-center rounded-xl border"
+          style={{ borderColor: "var(--th-border-default)", background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
         >
-          <p className="text-sm uppercase tracking-[0.3em] text-techi-orange">Prepared For</p>
-          <p className="mt-3" style={{ color: "var(--th-text-primary)" }}>Smart grouping by client and device role.</p>
-        </div>
-        <div
-          className="rounded-3xl p-6 shadow-soft"
-          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
-        >
-          <p className="text-sm uppercase tracking-[0.3em] text-techi-orange">Agent</p>
-          <p className="mt-3" style={{ color: "var(--th-text-primary)" }}>Windows Golang agent and heartbeat flow will connect inventory later.</p>
-        </div>
+          <Cpu className="h-5 w-5" />
+        </span>
+        <h2>Fleet inventory is not available yet</h2>
+        <p className="max-w-md text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+          Per-device hardware, software and patch details are already in each device&apos;s drawer on the Devices page.
+        </p>
+        <Link to="/devices" className="th-btn th-btn-secondary mt-1 inline-flex min-h-9 items-center rounded-lg border px-3.5 text-sm">
+          Open Devices
+        </Link>
       </div>
     </section>
   );

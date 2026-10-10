@@ -78,7 +78,7 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
         else:
             canvas.setFont("Helvetica-Bold", 8)
             canvas.setFillColor(INK)
-            canvas.drawString(42, page_h - 34, "TECHI PLATFORM  /  REPORTS")
+            canvas.drawString(42, page_h - 34, "TECHI CONNECT  /  REPORTS")
         canvas.setStrokeColor(colors.HexColor("#D9E0E7"))
         canvas.setLineWidth(0.5)
         canvas.line(42, 48, page_w - 42, 48)
@@ -93,13 +93,13 @@ def render_report_pdf(*, scope: str, target: str, report_type: str,
                   topPadding=0, bottomPadding=0)
     doc = BaseDocTemplate(output, pagesize=A4, pageCompression=0,
                           pageTemplates=[PageTemplate(id="report", frames=frame, onPage=draw_page)],
-                          title=f"TECHI {scope.title()} {report_type} Report", author="TECHI Platform")
+                          title=f"TECHI {scope.title()} {report_type} Report", author="TECHI Connect")
     cover_logo = (
         [Image(str(LOGO_PATH), width=40 * LOGO_RATIO, height=40, hAlign="LEFT"), Spacer(1, 26)]
         if _logo() is not None else []
     )
     story = [Spacer(1, 95 if not cover_logo else 40), *cover_logo,
-             _p("TECHI PLATFORM  /  REPORTS", styles["eyebrow"]), Spacer(1, 16),
+             _p("TECHI CONNECT  /  REPORTS", styles["eyebrow"]), Spacer(1, 16),
              _p(f"{report_type.replace('_', ' ').title()} Report", styles["title"]), Spacer(1, 12),
              _p(f"{scope.title()}: {target}", styles["subtitle"]), Spacer(1, 35)]
     cover_rows = [

@@ -9,19 +9,16 @@ import {
   ENTITY_TYPE_LABELS,
   getAuditLogs,
 } from "../api/audit";
-import { Button } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC, timeAgo as timeAgoUtil, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
+import { Button, PageHeader, SelectField } from "../components/ui";
+import { APP_TIME_ZONE, parseUTC, timeAgo, tiranaInputToUtcIso, utcToTiranaInput, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 
 const PAGE_SIZE = 50;
 
-function timeAgo(iso: string): string {
-  const d = parseUTC(iso);
-  const diffSec = (Date.now() - d.getTime()) / 1000;
-  if (diffSec < 60) return `${Math.floor(diffSec)}s ago`;
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
-  return d.toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" });
+
+/** "notification_channel_created" → "Notification channel created" */
+function humanize(value: string): string {
+  const text = value.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function actionBadgeClass(action: string): string {
@@ -126,21 +123,18 @@ export default function Audit() {
 
   return (
     <section className="premium-page space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="premium-kicker">Security & Compliance</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white">Audit Log</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Append-only record of operator actions across the platform.
-            </p>
-          </div>
-          <Button size="sm" onClick={() => void load(filters, offset)} disabled={loading}>
-            <RefreshCcw className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Audit Log"
+        description="Append-only record of operator actions across the platform."
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void load(filters, offset)} disabled={loading}>
+              <RefreshCcw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {/* Filters */}
       <div className="premium-card-soft p-4">
@@ -158,14 +152,14 @@ export default function Audit() {
             </button>
           )}
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
           <input
             className={INPUT_CLS}
             placeholder="Operator username"
             value={draft.operator_username ?? ""}
             onChange={(e) => setDraft((d) => ({ ...d, operator_username: e.target.value || undefined }))}
           />
-          <select
+          <SelectField
             className={SELECT_CLS}
             id="filter-action"
             name="filter-action"
@@ -175,10 +169,10 @@ export default function Audit() {
           >
             <option value="">All actions</option>
             {ALL_ACTIONS.map((a) => (
-              <option key={a} value={a}>{ACTION_LABELS[a] ?? a}</option>
+              <option key={a} value={a}>{ACTION_LABELS[a] ?? humanize(a)}</option>
             ))}
-          </select>
-          <select
+          </SelectField>
+          <SelectField
             className={SELECT_CLS}
             id="filter-entity-type"
             name="filter-entity-type"
@@ -188,9 +182,9 @@ export default function Audit() {
           >
             <option value="">All entity types</option>
             {ALL_ENTITY_TYPES.map((t) => (
-              <option key={t} value={t}>{ENTITY_TYPE_LABELS[t] ?? t}</option>
+              <option key={t} value={t}>{ENTITY_TYPE_LABELS[t] ?? humanize(t)}</option>
             ))}
-          </select>
+          </SelectField>
           <input
             type="datetime-local"
             className={INPUT_CLS}
@@ -205,9 +199,7 @@ export default function Audit() {
             onChange={(e) => setDraft((d) => ({ ...d, to_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))}
             title="To date/time"
           />
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button size="sm" onClick={applyFilters} disabled={loading}>
+          <Button onClick={applyFilters} disabled={loading}>
             Apply
           </Button>
         </div>
@@ -291,7 +283,7 @@ export default function Audit() {
                         ? <ChevronDown className="h-3.5 w-3.5" />
                         : <ChevronRight className="h-3.5 w-3.5" />}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={parseUTC(entry.created_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}>
+                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400" title={parseUTC(entry.created_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}>
                       {timeAgo(entry.created_at)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
@@ -300,12 +292,12 @@ export default function Audit() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${actionBadgeClass(entry.action)}`}>
-                        {ACTION_LABELS[entry.action] ?? entry.action}
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${actionBadgeClass(entry.action)}`}>
+                        {ACTION_LABELS[entry.action] ?? humanize(entry.action)}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400 capitalize">
-                      {entry.entity_type ? (ENTITY_TYPE_LABELS[entry.entity_type] ?? entry.entity_type) : "—"}
+                    <td className="whitespace-nowrap px-4 py-3 text-[12px] text-slate-400">
+                      {entry.entity_type ? (ENTITY_TYPE_LABELS[entry.entity_type] ?? humanize(entry.entity_type)) : "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-[12px] font-mono text-slate-500">
                       {entry.entity_id ?? "—"}

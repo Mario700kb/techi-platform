@@ -40,7 +40,7 @@ import {
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Badge, Button } from "../components/ui";
+import { Badge, Button, EmptyState, PageHeader, SelectField } from "../components/ui";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
 
 function getDefaultBackendUrl(): string {
@@ -96,7 +96,7 @@ function usageWarningBadge(token: EnrollmentToken, onClick?: () => void) {
           ? `Token exhausted (${token.use_count}/${token.max_uses})${onClick ? " — click to raise max uses" : ""}`
           : `Token at ${usagePercent(token)}% of max uses${onClick ? " — click to raise max uses" : ""}`
       }
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${
         critical
           ? "border-red-400/30 bg-red-500/15 text-red-300"
           : "border-amber-400/30 bg-amber-400/15 text-amber-300"
@@ -501,23 +501,20 @@ export default function EnrollmentBootstrap() {
   return (
     <section className="premium-page space-y-5">
       {/* ── header ───────────────────────────────────────────────────────── */}
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="premium-kicker">Enrollment</p>
-            <h1 className="mt-2 text-2xl font-semibold text-white">Enrollment Bootstrap</h1>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-300">
-              Generate a one-click PowerShell installer for Windows endpoints.
+      <PageHeader
+        title="Enrollment Bootstrap"
+        description={<>Generate a one-click PowerShell installer for Windows endpoints.
               Use <strong>Token Enrollment</strong> for manual/test installs or
-              <strong> Trusted Domain / GPO</strong> for domain-joined PCs.
-            </p>
-          </div>
-          <Button size="sm" type="button" onClick={() => void loadTokens()} disabled={tokensLoading}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+              <strong> Trusted Domain / GPO</strong> for domain-joined PCs.</>}
+        actions={
+          <>
+            <Button variant="secondary" size="sm" type="button" onClick={() => void loadTokens()} disabled={tokensLoading}>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {/* ── token usage warnings ──────────────────────────────────────────── */}
       {warningTokens.length > 0 && (
@@ -607,7 +604,7 @@ export default function EnrollmentBootstrap() {
                   size="sm"
                   onClick={() => void handleRegenerateDefault()}
                   disabled={regenerating}
-                  className="th-btn-secondary"
+                  variant="secondary"
                 >
                   <RotateCcw className={`mr-1.5 h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
                   {regenerating ? "Regenerating…" : "Regenerate"}
@@ -619,7 +616,7 @@ export default function EnrollmentBootstrap() {
       )}
 
       {/* ── generator + output ───────────────────────────────────────────── */}
-      <div className="grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
         {/* ── left: generator ─────────────────────────────────────────────── */}
         <div className="premium-card-soft p-5">
           <div className="mb-4 flex items-center gap-2">
@@ -706,7 +703,7 @@ export default function EnrollmentBootstrap() {
                     </button>
                   )}
 
-                  <select
+                  <SelectField
                     value={tokenId}
                     onChange={(e) => { setTokenId(e.target.value); setPlaintextToken(""); }}
                     id="deployment-token"
@@ -722,14 +719,14 @@ export default function EnrollmentBootstrap() {
                         {t.is_default ? "⭐ " : ""}#{t.id} · {t.name} ({t.use_count}/{t.max_uses} uses)
                       </option>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
 
                 <label className="block">
                   <span className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-slate-200">
                     Plaintext token value
                     {plaintextToken && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
                         <Check className="h-2.5 w-2.5" /> auto-filled
                       </span>
                     )}
@@ -767,7 +764,7 @@ export default function EnrollmentBootstrap() {
             {/* Platform */}
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-slate-200">Platform</span>
-              <select
+              <SelectField
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as EnrollmentBootstrapPlatform)}
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
@@ -775,7 +772,7 @@ export default function EnrollmentBootstrap() {
                 <option value="windows">Windows</option>
                 <option value="macos">macOS</option>
                 <option value="linux">Linux</option>
-              </select>
+              </SelectField>
             </label>
 
             {/* ── Availability Profile ─────────────────────────────────────── */}
@@ -1018,8 +1015,12 @@ export default function EnrollmentBootstrap() {
           )}
 
           {!bootstrap && (
-            <div className="premium-card-soft flex h-48 items-center justify-center">
-              <p className="text-sm text-slate-500">Configure settings and click Generate Installer</p>
+            <div className="premium-card-soft">
+              <EmptyState
+                icon={<Terminal className="h-5 w-5" />}
+                title="No installer generated yet"
+                description="Pick the deployment mode, token and profile on the left, then select Generate Installer. The PowerShell script and copy-ready command appear here."
+              />
             </div>
           )}
 
@@ -1106,7 +1107,7 @@ export default function EnrollmentBootstrap() {
                 <th className="px-4 py-3">Expires</th>
                 <th className="px-4 py-3">Last used</th>
                 <th className="px-4 py-3">Created</th>
-                {canManage && <th className="px-4 py-3 text-right">Actions</th>}
+                {canManage && <th className="th-sticky-end px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
@@ -1181,9 +1182,9 @@ export default function EnrollmentBootstrap() {
                     {formatLocalDateTime(token.created_at)}
                   </td>
                   {canManage && (
-                    <td className="px-4 py-3">
+                    <td className="th-sticky-end px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" onClick={() => void openDiagnostics(token)} className="th-btn-secondary">
+                        <Button size="sm" onClick={() => void openDiagnostics(token)} variant="secondary">
                           <Eye className="mr-1 h-3 w-3" />
                           Diagnostics
                         </Button>
@@ -1203,7 +1204,7 @@ export default function EnrollmentBootstrap() {
                             size="sm"
                             onClick={() => void handleRegenerateDefault()}
                             disabled={regenerating}
-                            className="th-btn-secondary"
+                            variant="secondary"
                           >
                             <RotateCcw className={`mr-1 h-3 w-3 ${regenerating ? "animate-spin" : ""}`} />
                             Regen
@@ -1214,7 +1215,7 @@ export default function EnrollmentBootstrap() {
                             size="sm"
                             onClick={() => setRevokeTarget(token)}
                             disabled={revoking.has(token.id)}
-                            className="th-btn-danger hover:bg-red-500/20"
+                            variant="danger"
                           >
                             {revoking.has(token.id) ? "Revoking…" : "Revoke"}
                           </Button>
@@ -1223,7 +1224,7 @@ export default function EnrollmentBootstrap() {
                           size="sm"
                           onClick={() => setDeleteTarget(token)}
                           disabled={deleting}
-                          className="th-btn-danger hover:bg-red-500/20"
+                          variant="danger"
                         >
                           <Trash2 className="mr-1 h-3 w-3" />
                           Delete
@@ -1312,7 +1313,7 @@ export default function EnrollmentBootstrap() {
                     <span className="mb-1.5 block text-xs font-semibold text-slate-200">
                       Assign to client (optional)
                     </span>
-                    <select
+                    <SelectField
                       value={newClientId}
                       onChange={(e) => setNewClientId(e.target.value === "" ? "" : Number(e.target.value))}
                       className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
@@ -1321,7 +1322,7 @@ export default function EnrollmentBootstrap() {
                       {clients.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </label>
 
                   {newClientId !== "" && groups.length > 0 && (
@@ -1329,7 +1330,7 @@ export default function EnrollmentBootstrap() {
                       <span className="mb-1.5 block text-xs font-semibold text-slate-200">
                         Assign to group (optional)
                       </span>
-                      <select
+                      <SelectField
                         value={newGroupId}
                         onChange={(e) => setNewGroupId(e.target.value === "" ? "" : Number(e.target.value))}
                         className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
@@ -1338,7 +1339,7 @@ export default function EnrollmentBootstrap() {
                         {groups.map((g) => (
                           <option key={g.id} value={g.id}>{g.name}</option>
                         ))}
-                      </select>
+                      </SelectField>
                     </label>
                   )}
                 </>
@@ -1608,7 +1609,7 @@ function TokenDiagnosticsDrawer({
                 </div>
                 {events.length > 0 && events.length % 50 === 0 && (
                   <div className="flex justify-center border-t border-white/[0.08] p-3">
-                    <Button size="sm" onClick={onLoadMore} disabled={eventsLoading} className="th-btn-secondary">
+                    <Button size="sm" onClick={onLoadMore} disabled={eventsLoading} variant="secondary">
                       {eventsLoading ? "Loading…" : "Load more"}
                     </Button>
                   </div>

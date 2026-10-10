@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle, ClipboardCopy, Edit3, ExternalLink, Loader2, Monitor, PlayCircle, RefreshCw, RotateCcw, Save, Star, Trash2, Wifi, WifiOff, Wrench, X } from "lucide-react";
+import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
 import {
   getConnectUrl,
   getRemoteSupportDevice,
@@ -10,7 +10,7 @@ import {
 } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
-import { APP_TIME_ZONE, parseUTC, timeAgo } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, timeAgo, DISPLAY_LOCALE } from "../utils/time";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
@@ -37,6 +37,7 @@ import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
+import { Button, ConnectButton, EmptyState, SelectField } from "./ui";
 import { Alert, AlertSeverity } from "../types/alert";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
@@ -94,7 +95,7 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
     normalized === "auto_os" || normalized === "system_auto" ? "auto" :
     "unassigned";
   return (
-    <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+    <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
       {label}
     </span>
   );
@@ -110,31 +111,6 @@ function HeartbeatFreshness({ lastSeen }: { lastSeen?: string }) {
   else if (diffSec < 900) { label = `${Math.floor(diffSec / 60)}m ago`; cls = "text-amber-400"; }
   else { label = `${Math.floor(diffSec / 3600)}h ago`; cls = "text-red-400"; }
   return <span className={`text-xs font-semibold ${cls}`}>{label}</span>;
-}
-
-function WsIndicator({ status }: { status?: DeviceRealtimeStatus }) {
-  if (status === "connected") {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]" />
-        Live
-      </div>
-    );
-  }
-  if (status === "connecting") {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-amber-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-        Connecting
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
-      Polling
-    </div>
-  );
 }
 
 function formatUptime(seconds: number | null): string {
@@ -182,11 +158,11 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
       <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${alertSeverityDot(alert.severity)}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-semibold uppercase tracking-wide ${alertSeverityColor(alert.severity)}`}>
+          <span className={`text-[11px] font-semibold uppercase tracking-wide ${alertSeverityColor(alert.severity)}`}>
             {alert.severity}
           </span>
-          {resolved && <span className="text-[10px] text-slate-500">resolved</span>}
-          <span className="ml-auto flex-none text-[10px] text-slate-500">{alertTimeAgo(alert.created_at)}</span>
+          {resolved && <span className="text-[11px] text-slate-500">resolved</span>}
+          <span className="ml-auto flex-none text-[11px] text-slate-500">{alertTimeAgo(alert.created_at)}</span>
         </div>
         <p className="text-xs leading-5 text-slate-200">{alert.message}</p>
       </div>
@@ -261,6 +237,28 @@ export default function DeviceDrawer({
   const [rsLoading, setRsLoading] = useState(false);
   const [rsBusyAction, setRsBusyAction] = useState<string | null>(null);
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const [maintFormOpen, setMaintFormOpen] = useState(false);
+  const canConnectRs = isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected && hasPermission("remote_support_connect");
+  const connectRsTitle = !hasPermission("remote_support_connect")
+    ? "Permission required: remote_support_connect"
+    : device.rustdesk_conflict_detected
+    ? "Remote Support ID conflict detected"
+    : isValidRustDeskId(device.rustdesk_id)
+    ? "Open TECHI Remote Support"
+    : "Remote ID not resolved yet";
+  const connectRemoteSupport = async () => {
+    try {
+      const res = await getConnectUrl(device.id);
+      launchConnect(
+        res.connect_url,
+        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+        () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
+      );
+    } catch (err) {
+      setRsToast({ message: err instanceof Error ? err.message : "Connect failed", ok: false });
+      setTimeout(() => setRsToast(null), 3000);
+    }
+  };
   const [rsCopySuccess, setRsCopySuccess] = useState(false);
   const rsLoadedFor = useRef<number | null>(null);
   const [rsPassword, setRsPassword] = useState<string | null>(null);
@@ -589,7 +587,7 @@ export default function DeviceDrawer({
 
       {/* Paneli */}
       <div
-        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl transition-transform duration-300 ease-out ${
+        className={`th-drawer fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col shadow-2xl transition-transform duration-300 ease-out ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         style={{
@@ -598,20 +596,16 @@ export default function DeviceDrawer({
         }}
       >
         {/* Koka */}
-        <div
-          className="flex flex-none items-start justify-between px-5 pb-3 pt-4"
-          style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}
-        >
-          <div className="min-w-0 flex-1">
-            {/* Row 1 — status dot + hostname + type badge */}
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2.5 w-2.5 flex-none rounded-full ${
-                  isOnline ? "bg-[var(--th-status-online)] shadow-[0_0_6px_color-mix(in_srgb,var(--th-status-online)_60%,transparent)]" : "bg-slate-600"
-                }`}
-              />
+        <header className="flex-none px-5 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+          <div className="flex items-start gap-3">
+            <span className="th-palette-icon !h-10 !w-10 flex-none" aria-hidden="true">
+              {device.device_type === "server" ? <Server className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
+              <i style={{ background: device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" }} />
+            </span>
+
+            <div className="min-w-0 flex-1">
               {nameEditing ? (
-                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <input
                     value={nameDraft}
                     onChange={(e) => setNameDraft(e.target.value)}
@@ -625,140 +619,124 @@ export default function DeviceDrawer({
                     maxLength={128}
                     autoFocus
                     placeholder={device.hostname || "Device name"}
-                    className="min-w-0 flex-1 rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-sm font-bold text-white outline-none focus:border-orange-400/60"
+                    aria-label="Display name"
+                    className="th-input h-8 min-w-0 flex-1 rounded-md border px-2 text-[14px] font-semibold"
                   />
-                  <button
-                    type="button"
-                    disabled={nameSaving}
-                    onClick={() => void saveDisplayName()}
-                    title="Save name"
-                    className="rounded p-1 text-emerald-300 transition hover:bg-white/5 disabled:opacity-50"
-                  >
-                    {nameSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  <button type="button" disabled={nameSaving} onClick={() => void saveDisplayName()} title="Save name" aria-label="Save name" className="th-icon-btn th-icon-btn-ghost !min-h-8 !min-w-8">
+                    {nameSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   </button>
                   <button
                     type="button"
                     disabled={nameSaving}
-                    onClick={() => {
-                      setNameDraft(device.display_name ?? "");
-                      setNameEditing(false);
-                    }}
+                    onClick={() => { setNameDraft(device.display_name ?? ""); setNameEditing(false); }}
                     title="Cancel"
-                    className="rounded p-1 text-slate-500 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                    aria-label="Cancel"
+                    className="th-icon-btn th-icon-btn-ghost !min-h-8 !min-w-8"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               ) : (
-                <>
-                  <h2 className="truncate text-sm font-bold text-white" title={displayName}>
+                <div className="group/name flex min-w-0 items-center gap-1">
+                  <h2 className="min-w-0 break-words text-[17px] font-semibold leading-snug" style={{ color: "var(--th-text-primary)" }} title={displayName}>
                     {displayName}
                   </h2>
                   {canOperate && (
                     <button
                       type="button"
                       onClick={() => setNameEditing(true)}
-                      title="Edit display name"
-                      className="rounded p-1 text-slate-500 transition hover:bg-white/5 hover:text-white"
+                      title="Rename device"
+                      aria-label="Rename device"
+                      className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 opacity-0 focus-visible:opacity-100 group-hover/name:opacity-100"
                     >
                       <Edit3 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                </>
+                </div>
               )}
-              {device.device_type === "server" ? (
-                <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-                  style={{ color: "var(--th-status-agent)", background: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-agent) 22%, transparent)" }}>
-                  Server
-                </span>
-              ) : device.device_type === "client" ? (
-                <span className="flex-none rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide"
-                  style={{ color: "var(--th-status-info)", background: "color-mix(in srgb, var(--th-status-info) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-info) 20%, transparent)" }}>
-                  WS
-                </span>
-              ) : (
-                <span className="flex-none rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
-                  style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)" }}>
-                  {device.device_type}
-                </span>
-              )}
+              <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {[
+                  device.device_type === "server" ? "Server" : device.device_type === "client" ? "Workstation" : "Unclassified",
+                  device.resolved_client_name || device.client_name || "No client",
+                  device.resolved_group || device.group_name,
+                  hostnameSubtitle ? `host ${hostnameSubtitle}` : null,
+                  `#${device.id}`,
+                ].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            {/* Row 2 — contextual meta */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-              {(device.resolved_client_name || device.client_name) && (
-                <span className="text-[10px] font-semibold" style={{ color: "var(--th-accent)" }}>
-                  {device.resolved_client_name || device.client_name}
-                </span>
-              )}
-              {(device.resolved_group || device.group_name) && (
-                <span className="text-[10px] font-medium text-slate-400">
-                  {device.resolved_group || device.group_name}
-                </span>
-              )}
-              {device.current_user && (
-                <span className="text-[10px] font-medium text-slate-400">
-                  <span className="text-slate-600">user </span>{device.current_user}
-                </span>
-              )}
-              {device.os_name && (
-                <span className="max-w-[130px] truncate text-[10px] font-medium text-slate-500" title={device.os_name}>
-                  {device.os_name}
-                </span>
-              )}
-              {device.domain && (
-                <span className="text-[10px] font-medium text-slate-500">{device.domain}</span>
-              )}
-              {hostnameSubtitle && (
-                <span className="max-w-[150px] truncate font-mono text-[10px] font-medium text-slate-500" title={device.hostname}>
-                  host {hostnameSubtitle}
-                </span>
-              )}
-            </div>
-            <p className="mt-1 text-[10px] font-medium text-slate-600">Device #{device.id}</p>
-          </div>
-          <div className="ml-3 flex flex-none items-center gap-3">
-            <WsIndicator status={wsStatus} />
-            {onToggleFavorite && (
-              <button
-                type="button"
-                onClick={() => onToggleFavorite(device.id)}
-                title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                className="rounded-lg p-1.5 transition hover:bg-white/5"
-                style={{ color: isFavorite ? "var(--th-status-warning)" : "var(--th-text-muted)" }}
-              >
-                <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
 
-        <div className="flex flex-none gap-1 overflow-x-auto px-4 py-2" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-          {visibleDrawerTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                activeTab === tab.id
-                  ? "bg-techi-orange/15 text-orange-100 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--th-accent)_22%,transparent)]"
-                  : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+            <div className="flex flex-none items-center gap-0.5">
+              {onToggleFavorite && (
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(device.id)}
+                  title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                  aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                  className="th-icon-btn th-icon-btn-ghost"
+                  style={isFavorite ? { color: "var(--th-status-warning)" } : undefined}
+                >
+                  <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
+                </button>
+              )}
+              <button type="button" onClick={onClose} aria-label="Close" title="Close (Esc)" className="th-icon-btn th-icon-btn-ghost">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Status strip + primary action */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="th-status-chip" style={{ "--chip-tone": device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" } as React.CSSProperties}>
+              <i />
+              <span className="capitalize">{device.freshness_state ?? device.status}</span>
+              <span style={{ color: "var(--th-text-faint)" }}>· {timeAgo(device.last_seen)}</span>
+            </span>
+            {healthScore != null && (
+              <span
+                className="th-status-chip"
+                style={{ "--chip-tone": healthState === "critical" ? "var(--th-status-critical)" : healthState === "warning" ? "var(--th-status-warning)" : "var(--th-status-online)" } as React.CSSProperties}
+                title="Health score of 100"
+              >
+                <i />Health {healthScore}
+              </span>
+            )}
+            {device.is_in_maintenance && (
+              <span className="th-status-chip" style={{ "--chip-tone": "var(--th-status-maint)" } as React.CSSProperties}><i />Maintenance</span>
+            )}
+            <ConnectButton className="ml-auto" disabled={!canConnectRs} onClick={() => void connectRemoteSupport()} title={connectRsTitle} />
+          </div>
+
+          <div role="tablist" aria-label="Device sections" className="th-tabs mt-3 !flex-nowrap overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {visibleDrawerTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className="th-tab flex-none whitespace-nowrap !px-3"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </header>
 
         {/* Trupi me scroll */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {/* Toast feedback */}
+          {rsToast && (
+            <div
+              className="mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
+              style={{
+                background: rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 10%, transparent)",
+                border: `1px solid ${rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 25%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 25%, transparent)"}`,
+                color: rsToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
+              }}
+            >
+              {rsToast.message}
+            </div>
+          )}
           <div className={activeTab === "overview" ? "" : "hidden"}>
 
           {/* Paralajmerim per pajisje te arkivuar por aktive */}
@@ -820,166 +798,113 @@ export default function DeviceDrawer({
             </div>
           )}
 
-          {/* Health & Status */}
-          <section className="mb-4">
-            <p className="premium-kicker mb-2">Health &amp; Status</p>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              <div className="mb-3 flex items-center justify-between border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`h-2.5 w-2.5 flex-none rounded-full ${
-                      device.freshness_state === "online"
-                        ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_70%,transparent)]"
-                        : device.freshness_state === "stale"
-                        ? "bg-[var(--th-status-warning)] shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-warning)_60%,transparent)]"
-                        : "bg-slate-600"
-                    }`}
-                  />
-                  <span className={`text-xs font-semibold capitalize ${
-                    device.freshness_state === "online" ? "text-emerald-300"
-                    : device.freshness_state === "stale" ? "text-amber-300"
-                    : "text-slate-400"
-                  }`}>
-                    {device.freshness_state ?? device.status}
-                  </span>
-                </div>
-                <HealthBadge state={healthState} score={healthScore} showLabel />
-              </div>
+          {/* Status */}
+          <section className="mb-5">
+            <p className="premium-kicker mb-2">Status</p>
+            <div className="th-drawer-card">
+              <dl className="th-dl">
+                <dt>Last seen</dt>
+                <dd>
+                  {device.last_seen
+                    ? <>
+                        {parseUTC(device.last_seen).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        <span style={{ color: "var(--th-text-muted)" }}> · <HeartbeatFreshness lastSeen={device.last_seen} /></span>
+                      </>
+                    : <span style={{ color: "var(--th-text-muted)" }}>Never</span>}
+                </dd>
+                <dt>Health</dt>
+                <dd><HealthBadge state={healthState} score={healthScore} showLabel /></dd>
+              </dl>
 
-              <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
-                <div>
-                  <p className="premium-kicker mb-0.5">Last Seen</p>
-                  <p className="text-xs font-medium text-slate-100">
-                    {device.last_seen
-                      ? parseUTC(device.last_seen).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
-                          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                        })
-                      : <span className="text-slate-500">Never</span>}
-                  </p>
-                </div>
-                <div>
-                  <p className="premium-kicker mb-0.5">Freshness</p>
-                  <HeartbeatFreshness lastSeen={device.last_seen} />
-                </div>
-
-                {/* Offline Analysis — dynamic backend inference */}
-                {device.freshness_state !== "online" && offlineAnalysis && offlineAnalysis.reason && (
-                  <div className="col-span-2 border-t border-white/5 pt-2">
-                    <div className="mb-1.5 flex items-center gap-2">
-                      <p className="premium-kicker">Offline Analysis</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                      {/* Reason chip */}
-                      <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)", color: "var(--th-accent)" }}>
-                        {OFFLINE_REASON_LABELS[offlineAnalysis.reason] ?? offlineAnalysis.reason}
-                      </span>
-                      {/* Confidence chip */}
-                      {offlineAnalysis.confidence && (
-                        <span className={`inline-flex items-center rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${CONFIDENCE_COLORS[offlineAnalysis.confidence] ?? ""}`}>
-                          {offlineAnalysis.confidence}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] leading-4 text-slate-300 mb-1">{offlineAnalysis.explanation}</p>
-                    {offlineAnalysis.evidence.length > 0 && (
-                      <ul className="space-y-0.5">
-                        {offlineAnalysis.evidence.map((e, i) => (
-                          <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-500">
-                            <span className="mt-0.5 h-1 w-1 flex-none rounded-full bg-slate-600" />
-                            {e}
-                          </li>
-                        ))}
-                      </ul>
+              {device.freshness_state !== "online" && offlineAnalysis && offlineAnalysis.reason && (
+                <div className="th-drawer-callout mt-3" data-tone="warning">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-none" />
+                    <span className="text-[13px] font-semibold">{OFFLINE_REASON_LABELS[offlineAnalysis.reason] ?? offlineAnalysis.reason}</span>
+                    {offlineAnalysis.confidence && (
+                      <span className="text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>· {offlineAnalysis.confidence} confidence</span>
                     )}
                   </div>
-                )}
-                {device.freshness_state === "online" && (
-                  <div className="col-span-2">
-                    <p className="text-[11px] text-slate-500">Device is currently online.</p>
-                  </div>
-                )}
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>{offlineAnalysis.explanation}</p>
+                  {offlineAnalysis.evidence.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                      {offlineAnalysis.evidence.map((e, i) => <li key={i}>· {e}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
 
-                {/* Health reasons */}
-                {healthReasons.length > 0 && (
-                  <div className="col-span-2 border-t border-white/5 pt-2">
-                    <p className="premium-kicker mb-1">Health Issues</p>
-                    <div className="space-y-0.5">
-                      {healthReasons.slice(0, 4).map((r) => (
-                        <p key={r} className="text-[11px] font-medium text-amber-300">⚠ {r}</p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {healthReasons.length > 0 && (
+                <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--th-border-drawer-section)" }}>
+                  <p className="mb-1.5 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>Health issues</p>
+                  <ul className="space-y-1">
+                    {healthReasons.slice(0, 4).map((r) => (
+                      <li key={r} className="flex items-start gap-2 text-[13px]" style={{ color: "var(--th-text-primary)" }}>
+                        <span className="mt-1.5 h-1.5 w-1.5 flex-none rounded-full" style={{ background: "var(--th-status-warning)" }} />
+                        {r}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </section>
 
-          {/* Fleet Status grid */}
-          <section className="mb-4">
-            <p className="premium-kicker mb-2">Fleet Status</p>
-            <div
-              className="grid grid-cols-2 gap-2 rounded-lg p-3"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              {/* RustDesk status */}
-              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
-                <p className="premium-kicker mb-0.5">Remote Support</p>
-                <p className={`text-xs font-semibold ${
-                  device.rustdesk_status === "running" ? "text-emerald-400"
-                  : device.rustdesk_install_status === "not_installed" ? "text-slate-500"
-                  : "text-amber-400"
-                }`}>
-                  {device.rustdesk_status === "running" ? "Running"
-                   : device.rustdesk_install_status === "not_installed" ? "Not installed"
-                   : (device.rustdesk_status ?? "Unknown")}
-                </p>
-              </div>
-              {/* Patch status */}
-              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
-                <p className="premium-kicker mb-0.5">Patch</p>
-                <p className={`text-xs font-semibold ${
-                  snapshot == null ? "text-slate-500"
-                  : "text-slate-200"
-                }`}>
-                  {device.is_in_maintenance ? (
-                    <span className="text-sky-300">Maintenance</span>
+          {/* Services */}
+          <section className="mb-5">
+            <p className="premium-kicker mb-2">Services</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(() => {
+                const rsRunning = device.rustdesk_status === "running";
+                const rsMissing = device.rustdesk_install_status === "not_installed";
+                const tiles: { label: string; value: string; tone: string; sub?: string; onClick?: () => void }[] = [
+                  {
+                    label: "Remote Support",
+                    value: rsRunning ? "Running" : rsMissing ? "Not installed" : (device.rustdesk_status ?? "Unknown").replace(/_/g, " "),
+                    tone: rsRunning ? "var(--th-status-online)" : rsMissing ? "var(--th-text-faint)" : "var(--th-status-warning)",
+                    sub: device.rustdesk_version ? `v${device.rustdesk_version}` : undefined,
+                    onClick: () => setActiveTab("remote_support"),
+                  },
+                  {
+                    label: "Updates",
+                    value: "View software",
+                    tone: "var(--th-text-faint)",
+                    sub: "Patches and installed apps",
+                    onClick: () => setActiveTab("software"),
+                  },
+                  {
+                    label: "Maintenance",
+                    value: device.is_in_maintenance ? "Active" : "Off",
+                    tone: device.is_in_maintenance ? "var(--th-status-maint)" : "var(--th-text-faint)",
+                    sub: device.is_in_maintenance && device.maintenance_ends_at
+                      ? `until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                      : undefined,
+                  },
+                  {
+                    label: "Lifecycle",
+                    value: device.is_archived ? "Archived" : "Active",
+                    tone: device.is_archived ? "var(--th-status-warning)" : "var(--th-status-online)",
+                    sub: device.duplicate_candidate ? "Possible duplicate" : undefined,
+                  },
+                ];
+                return tiles.map((t) => {
+                  const body = (
+                    <>
+                      <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{t.label}</span>
+                      <span className="mt-1 flex items-center gap-2 text-[14px] font-semibold first-letter:uppercase" style={{ color: "var(--th-text-primary)" }}>
+                        <span className="h-2 w-2 flex-none rounded-full" style={{ background: t.tone }} />
+                        {t.value}
+                      </span>
+                      {t.sub && <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{t.sub}</span>}
+                    </>
+                  );
+                  return t.onClick ? (
+                    <button key={t.label} type="button" onClick={t.onClick} className="th-drawer-tile flex flex-col items-start justify-start text-left">{body}</button>
                   ) : (
-                    <span className="text-slate-200">Check Inventory</span>
-                  )}
-                </p>
-              </div>
-              {/* Maintenance status */}
-              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
-                <p className="premium-kicker mb-0.5">Maintenance</p>
-                {device.is_in_maintenance ? (
-                  <div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 px-1.5 py-px text-[10px] font-semibold text-sky-400">
-                      ● Active
-                    </span>
-                    {device.maintenance_ends_at && (
-                      <p className="mt-0.5 text-[10px] text-slate-500">
-                        until {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs font-medium text-slate-400">Off</p>
-                )}
-              </div>
-              {/* Duplicate / lifecycle flags */}
-              <div className="rounded-md p-2" style={{ background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)" }}>
-                <p className="premium-kicker mb-0.5">Lifecycle</p>
-                <p className={`text-xs font-semibold ${device.is_archived ? "text-amber-400" : "text-emerald-400"}`}>
-                  {device.is_archived ? "Archived" : "Active"}
-                </p>
-                {device.duplicate_candidate && (
-                  <p className="mt-0.5 text-[10px] text-amber-400">Possible duplicate</p>
-                )}
-              </div>
+                    <div key={t.label} className="th-drawer-tile flex flex-col items-start">{body}</div>
+                  );
+                });
+              })()}
             </div>
           </section>
 
@@ -989,7 +914,7 @@ export default function DeviceDrawer({
             <div className="mb-2 flex items-center gap-2">
               <p className="premium-kicker">Alerts</p>
               {openAlerts.length > 0 && (
-                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-400">
                   {openAlerts.length} active
                 </span>
               )}
@@ -1012,7 +937,7 @@ export default function DeviceDrawer({
                     const isC = sev === "critical";
                     return (
                       <div key={sev} className="mb-2 last:mb-0">
-                        <p className={`mb-1 text-[9px] font-bold uppercase tracking-[0.1em] ${isC ? "text-red-500" : "text-amber-500"}`}>
+                        <p className={`mb-1 text-[11px] font-bold uppercase tracking-[0.1em] ${isC ? "text-red-500" : "text-amber-500"}`}>
                           {sev} · {group.length}
                         </p>
                         <div className="space-y-1">
@@ -1023,7 +948,7 @@ export default function DeviceDrawer({
                             </div>
                           ))}
                           {group.length > 3 && (
-                            <p className="text-[10px] text-slate-500 pl-3">+{group.length - 3} more</p>
+                            <p className="text-[11px] text-slate-500 pl-3">+{group.length - 3} more</p>
                           )}
                         </div>
                       </div>
@@ -1040,7 +965,7 @@ export default function DeviceDrawer({
             <div className="mb-2 flex items-center gap-2">
               <p className="premium-kicker">Maintenance</p>
               {device.is_in_maintenance && (
-                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-400">
+                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-sky-400">
                   active
                 </span>
               )}
@@ -1071,7 +996,7 @@ export default function DeviceDrawer({
                       <div>
                         <p className="premium-kicker mb-0.5">Started at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_started_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_started_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -1079,7 +1004,7 @@ export default function DeviceDrawer({
                       <div className="col-span-2">
                         <p className="premium-kicker mb-0.5">Ends at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     )}
@@ -1110,11 +1035,18 @@ export default function DeviceDrawer({
                   )}
                 </div>
               ) : (
-                <div className="space-y-2.5">
-                  <p className="text-[11px] font-medium text-slate-500">
-                    Alerts are suppressed while a device is in maintenance. Heartbeats and telemetry continue normally.
-                  </p>
-	                  {canOperate && hasPermission("maintenance_mode") && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                      Pauses alerts for this device. Heartbeats and telemetry continue.
+                    </p>
+                    {canOperate && hasPermission("maintenance_mode") && !maintFormOpen && (
+                      <Button size="sm" variant="secondary" className="flex-none" onClick={() => setMaintFormOpen(true)}>
+                        <Wrench className="h-3.5 w-3.5" /> Start
+                      </Button>
+                    )}
+                  </div>
+	                  {canOperate && hasPermission("maintenance_mode") && maintFormOpen && (
 	                  <>
 	                  <div className="grid grid-cols-2 gap-2">
                     <label className="block">
@@ -1125,7 +1057,7 @@ export default function DeviceDrawer({
                         placeholder="Leave blank for indefinite"
                         value={maintenanceForm.duration}
                         onChange={(e) => setMaintenanceForm((f) => ({ ...f, duration: e.target.value }))}
-                        className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                        className="th-input h-9 w-full rounded-lg border px-3 text-[13px] outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
                       />
                     </label>
                     <label className="block">
@@ -1135,14 +1067,13 @@ export default function DeviceDrawer({
                         placeholder="Reason..."
                         value={maintenanceForm.note}
                         onChange={(e) => setMaintenanceForm((f) => ({ ...f, note: e.target.value }))}
-                        className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                        className="th-input h-9 w-full rounded-lg border px-3 text-[13px] outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
                       />
                     </label>
                   </div>
-	                  <button
-                    type="button"
-                    disabled={maintenanceBusy}
-                    onClick={async () => {
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setMaintFormOpen(false)} disabled={maintenanceBusy}>Cancel</Button>
+                    <Button size="sm" disabled={maintenanceBusy} onClick={async () => {
                       setMaintenanceBusy(true);
                       try {
                         const updated = await enterDeviceMaintenance(device.id, {
@@ -1151,16 +1082,15 @@ export default function DeviceDrawer({
                           started_by: user?.display_name ?? user?.username ?? "operator",
                         });
                         setMaintenanceForm({ duration: "", note: "" });
+                        setMaintFormOpen(false);
                         onDeviceUpdated?.(updated);
                       } finally {
                         setMaintenanceBusy(false);
                       }
-                    }}
-                    className="w-full rounded-md border border-sky-400/30 bg-sky-400/10 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Wrench className="mr-1 inline h-3 w-3" />
-	                    Enter maintenance
-	                  </button>
+                    }}>
+                      <Wrench className="h-3.5 w-3.5" /> Enter maintenance
+                    </Button>
+                  </div>
 	                  </>
 	                  )}
 	                </div>
@@ -1183,7 +1113,7 @@ export default function DeviceDrawer({
                   </p>
                   {device.user_source && device.user_source !== "no_interactive_user" && device.user_source !== "fallback" && (
                     <span
-                      className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase leading-3 ${
+                      className={`inline-flex items-center rounded px-1 py-0.5 text-[11px] font-semibold uppercase leading-3 ${
                         device.user_source === "rdp_session"
                           ? "border border-purple-400/25 bg-purple-400/[0.1] text-purple-300"
                           : "border border-sky-400/25 bg-sky-400/[0.1] text-sky-300"
@@ -1195,7 +1125,7 @@ export default function DeviceDrawer({
                   )}
                 </div>
                 {device.user_session_state && device.user_session_state !== "unknown" && (
-                  <p className="mt-0.5 text-[10px] font-medium text-slate-500">
+                  <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                     Session: {device.user_session_state}
                   </p>
                 )}
@@ -1235,7 +1165,7 @@ export default function DeviceDrawer({
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(device.capabilities).map(([name, version]) => (
                       <span key={name}
-                        className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
                         {name}{version ? <span className="font-mono text-slate-500">{version}</span> : null}
                       </span>
                     ))}
@@ -1261,7 +1191,7 @@ export default function DeviceDrawer({
 	              {canOperate && (
 	              <label className="col-span-2 block">
                 <span className="premium-kicker mb-1 block">Assign Client</span>
-                <select
+                <SelectField
                   value={device.client_id ?? "none"}
                   onChange={async (event) => {
                     const value = event.target.value === "none" ? null : Number(event.target.value);
@@ -1274,13 +1204,13 @@ export default function DeviceDrawer({
                   {clients.map((client) => (
                     <option key={client.id} value={client.id}>{client.name}</option>
                   ))}
-                </select>
+                </SelectField>
 	              </label>
 	              )}
 	              {canOperate && (
 	              <label className="col-span-2 block">
                 <span className="premium-kicker mb-1 block">Assign Group</span>
-                <select
+                <SelectField
                   value={device.group_id ?? "none"}
                   disabled={!assignmentClientId}
                   onChange={async (event) => {
@@ -1294,7 +1224,7 @@ export default function DeviceDrawer({
                   {availableGroups.map((group) => (
                     <option key={group.id} value={group.id}>{group.name}</option>
                   ))}
-                </select>
+                </SelectField>
 	              </label>
 	              )}
             </div>
@@ -1399,7 +1329,7 @@ export default function DeviceDrawer({
             <div className="mb-2 flex items-center gap-2">
               <p className="premium-kicker">Alerts</p>
               {openAlerts.length > 0 && (
-                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-400">
                   {openAlerts.length} active
                 </span>
               )}
@@ -1424,7 +1354,7 @@ export default function DeviceDrawer({
                   )}
                   {resolvedAlerts.length > 0 && (
                     <div className={`divide-y divide-white/5 ${openAlerts.length > 0 ? "mt-2 border-t border-white/5 pt-2" : ""}`}>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
                       {resolvedAlerts.map((a) => (
                         <AlertRow key={a.id} alert={a} resolved />
                       ))}
@@ -1484,36 +1414,28 @@ export default function DeviceDrawer({
           {/* Veprimet remote */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
-              <p className="premium-kicker">Remote Actions</p>
+              <p className="premium-kicker">Remote actions</p>
               {actions.filter((a) => isActiveStatus(a.status)).length > 0 && (
-                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-                  {actions.filter((a) => isActiveStatus(a.status)).length} active
+                <span className="th-status-chip !h-6" style={{ "--chip-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                  <i />{actions.filter((a) => isActiveStatus(a.status)).length} in progress
                 </span>
               )}
-              <button
-                type="button"
-                onClick={loadActions}
-                className="ml-auto rounded p-0.5 text-slate-600 hover:text-slate-300"
-                title="Refresh actions"
-              >
-                <RotateCcw className="h-3 w-3" />
+              <button type="button" onClick={loadActions} className="th-icon-btn th-icon-btn-ghost ml-auto !min-h-7 !min-w-7" title="Refresh actions" aria-label="Refresh actions">
+                <RotateCcw className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div>
               {/* Paralajmerime */}
               {device.is_archived && (
-                <div className="mb-3 flex items-start gap-2 rounded-md bg-orange-500/10 px-3 py-2 text-[11px] text-orange-200">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none text-orange-400" />
+                <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="warning">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
                   <span>Device is archived. Actions will queue but may not be delivered.</span>
                 </div>
               )}
               {device.is_in_maintenance && (
-                <div className="mb-3 flex items-start gap-2 rounded-md bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
-                  <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400" />
+                <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="maint">
+                  <Wrench className="mt-0.5 h-4 w-4 flex-none" />
                   <span>Device is in maintenance. Actions will still be queued.</span>
                 </div>
               )}
@@ -1528,8 +1450,8 @@ export default function DeviceDrawer({
                 });
                 if (recentRestart) {
                   return (
-                    <div className="mb-3 flex items-start gap-2 rounded-md bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
-                      <RefreshCw className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400 animate-spin" />
+                    <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="info">
+                      <RefreshCw className="mt-0.5 h-4 w-4 flex-none animate-spin" />
                       <span>
                         {recentRestart.action_type === "restart_device"
                           ? "Device restart triggered — waiting for reconnect after boot."
@@ -1539,15 +1461,15 @@ export default function DeviceDrawer({
                   );
                 }
                 return (
-                  <div className="mb-3 flex items-start gap-2 rounded-md bg-slate-700/30 px-3 py-2 text-[11px] text-slate-400">
-                    <WifiOff className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" />
+                  <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="neutral">
+                    <WifiOff className="mt-0.5 h-4 w-4 flex-none" />
                     <span>Device is offline. Action will queue and deliver on next heartbeat.</span>
                   </div>
                 );
               })()}
               {device.freshness_state === "online" && !device.is_archived && (
-                <div className="mb-3 flex items-start gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-200">
-                  <Wifi className="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-400" />
+                <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="online">
+                  <Wifi className="mt-0.5 h-4 w-4 flex-none" />
                   <span>Device is online. Action will be delivered on next heartbeat.</span>
                 </div>
               )}
@@ -1569,46 +1491,42 @@ export default function DeviceDrawer({
                   const allowed = hasPermission(perm);
                   if (destructive && !allowed) return null;
                   return (
-                    <button type="button"
+                    <DrawerActionTile
+                      type={type}
+                      label={label}
+                      destructive={destructive}
                       disabled={actionBusy || !allowed}
-                      onClick={() => runAction(type)}
                       title={!allowed ? "Permission required" : undefined}
-                      className="rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                      style={{
-                        background: destructive ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-                        border: `1px solid ${destructive ? "color-mix(in srgb, var(--th-status-critical) 20%, transparent)" : "var(--th-border-drawer-section)"}`,
-                        color: destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
-                      }}>
-                      {label}
-                    </button>
+                      onClick={() => runAction(type)}
+                    />
                   );
                 };
                 const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
-                  <div className="mb-2">
-                    <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
-                    <div className="flex flex-wrap gap-1">{children}</div>
+                  <div className="mb-4">
+                    <p className="th-menu-label !px-0 !pt-0">{label}</p>
+                    <div className="grid grid-cols-2 gap-2">{children}</div>
                   </div>
                 );
                 return (
-                  <div className="mb-3">
+                  <div className="mb-2">
                     <Group label="Diagnostics">
                       <Btn type="ping" label="Ping" perm="diagnostics" />
                       <Btn type="immediate_heartbeat" label="Heartbeat" perm="diagnostics" />
-                      <Btn type="refresh_inventory" label="Refresh Inv." perm="view_inventory" />
-                      <Btn type="sync_inventory" label="Sync Inv." perm="view_inventory" />
+                      <Btn type="refresh_inventory" label="Refresh inventory" perm="view_inventory" />
+                      <Btn type="sync_inventory" label="Sync inventory" perm="view_inventory" />
                     </Group>
                     <Group label="Agent">
-                      <Btn type="restart_agent" label="Restart Agent" destructive perm="restart_agent" />
-                      <Btn type="apply_power_policy" label="Power Policy" perm="maintenance_mode" />
+                      <Btn type="restart_agent" label="Restart agent" destructive perm="restart_agent" />
+                      <Btn type="apply_power_policy" label="Power policy" perm="maintenance_mode" />
                     </Group>
                     <Group label="Remote Support">
-                      <Btn type="restart_rustdesk" label="Restart RS" perm="remote_support_manage" />
-                      <Btn type="sync_rustdesk" label="Sync RS" perm="remote_support_manage" />
-                      <Btn type="reopen_rustdesk" label="Reopen RS" perm="remote_support_manage" />
-                      <Btn type="repair_config_rustdesk" label="Repair Config" perm="remote_support_manage" />
+                      <Btn type="restart_rustdesk" label="Restart service" perm="remote_support_manage" />
+                      <Btn type="sync_rustdesk" label="Sync ID" perm="remote_support_manage" />
+                      <Btn type="reopen_rustdesk" label="Reopen app" perm="remote_support_manage" />
+                      <Btn type="repair_config_rustdesk" label="Repair config" perm="remote_support_manage" />
                     </Group>
                     <Group label="Device">
-                      <Btn type="restart_device" label="Restart Device" destructive perm="restart_device" />
+                      <Btn type="restart_device" label="Restart device" destructive perm="restart_device" />
                     </Group>
                   </div>
                 );
@@ -1618,29 +1536,23 @@ export default function DeviceDrawer({
                 </p>
               )}
 
-              {/* Status filter pills */}
-              <div className="mb-3 flex gap-1.5">
-                {(["all", "active", "done", "failed"] as const).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setActionFilter(f)}
-                    className={`rounded-md px-2 py-0.5 text-[10px] font-semibold capitalize transition ${
-                      actionFilter === f
-                        ? "bg-techi-orange/15 text-orange-200 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--th-accent)_22%,transparent)]"
-                        : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
+              {/* History */}
+              <div className="mb-2 flex items-center justify-between gap-3 border-t pt-4" style={{ borderColor: "var(--th-border-drawer-section)" }}>
+                <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>History</p>
+                <div className="th-segmented w-[260px]" role="radiogroup" aria-label="Filter actions">
+                  {(["all", "active", "done", "failed"] as const).map((f) => (
+                    <button key={f} type="button" role="radio" aria-checked={actionFilter === f} onClick={() => setActionFilter(f)} className="capitalize">
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Lista e veprimeve */}
               {actionsLoading ? (
-                <p className="py-3 text-center text-[11px] text-slate-500">Loading actions…</p>
+                <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading actions…</p>
               ) : actions.length === 0 ? (
-                <p className="py-3 text-center text-[11px] text-slate-500">No actions yet</p>
+                <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>No actions sent to this device yet.</p>
               ) : (
                 <div className="space-y-1.5 max-h-72 overflow-y-auto">
                   {actions
@@ -1684,24 +1596,27 @@ export default function DeviceDrawer({
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Inventory</p>
-              <button
-                type="button"
-                onClick={() => void loadInventory()}
-                disabled={inventoryLoading}
-                className="rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-techi-orange/60 disabled:opacity-50"
-                style={{ background: "var(--th-bg-drawer-section)" }}
-              >
-                {inventoryLoading ? "Loading…" : inventory ? "Refresh" : "Load inventory"}
-              </button>
+              {inventory && (
+                <Button size="sm" variant="secondary" onClick={() => void loadInventory()} disabled={inventoryLoading}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${inventoryLoading ? "animate-spin" : ""}`} />
+                  {inventoryLoading ? "Refreshing…" : "Refresh"}
+                </Button>
+              )}
             </div>
-            {!inventory && !inventoryLoading && (
-              <div
-                className="rounded-lg p-4 text-xs text-slate-400"
-                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-              >
-                Not loaded automatically, to avoid an unnecessary server request on every drawer
-                open. Click <span className="font-semibold text-slate-200">Load inventory</span> to
-                fetch patch status, software, services and processes for this device.
+            {!inventory && (
+              <div className="th-drawer-card">
+                <EmptyState
+                  className="!py-6"
+                  icon={<Package className="h-5 w-5" />}
+                  title="Inventory not loaded"
+                  description="Patch status, installed software, services and processes for this device. Loaded on request to keep the drawer fast."
+                  action={
+                    <Button size="sm" onClick={() => void loadInventory()} disabled={inventoryLoading}>
+                      {inventoryLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      {inventoryLoading ? "Loading…" : "Load inventory"}
+                    </Button>
+                  }
+                />
               </div>
             )}
           </section>
@@ -1711,7 +1626,7 @@ export default function DeviceDrawer({
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Patch Status</p>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${patchStateClass(inventory?.patch_state)}`}>
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${patchStateClass(inventory?.patch_state)}`}>
                 {patchStateLabel(inventory?.patch_state)}
               </span>
             </div>
@@ -1745,7 +1660,7 @@ export default function DeviceDrawer({
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Processes</p>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[11px] text-slate-500">
                 {inventory.processes.length} collected
               </span>
             </div>
@@ -1764,7 +1679,7 @@ export default function DeviceDrawer({
                   <div className="max-h-60 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                        <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                           <th className="pb-1.5 pr-3">PID</th>
                           <th className="pb-1.5 pr-3">Name</th>
                           <th className="pb-1.5 text-right">Mem (MB)</th>
@@ -1773,7 +1688,7 @@ export default function DeviceDrawer({
                       <tbody className="divide-y divide-white/[0.04]">
                         {filteredProcesses.map((p) => (
                           <tr key={p.pid} className="text-slate-300 hover:bg-white/[0.02]">
-                            <td className="py-1 pr-3 font-mono text-[10px] text-slate-500">{p.pid}</td>
+                            <td className="py-1 pr-3 font-mono text-[11px] text-slate-500">{p.pid}</td>
                             <td className="max-w-[200px] truncate py-1 pr-3 font-medium">{p.name}</td>
                             <td className="py-1 text-right text-slate-400">
                               {p.memory_mb != null ? p.memory_mb.toFixed(1) : "—"}
@@ -1800,7 +1715,7 @@ export default function DeviceDrawer({
             <section className="mb-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="premium-kicker">Services</p>
-                <span className="text-[10px] text-slate-500">
+                <span className="text-[11px] text-slate-500">
                   {inventory.services.length} collected
                 </span>
               </div>
@@ -1818,7 +1733,7 @@ export default function DeviceDrawer({
                 <div className="max-h-60 overflow-y-auto">
                   <table className="w-full text-[11px]">
                     <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                      <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         <th className="pb-1.5 pr-3">Name</th>
                         <th className="pb-1.5 pr-3">Status</th>
                         <th className="pb-1.5 text-right">Startup</th>
@@ -1829,7 +1744,7 @@ export default function DeviceDrawer({
                         <tr key={s.name} className="text-slate-300 hover:bg-white/[0.02]">
                           <td className="py-1 pr-3">
                             <p className="max-w-[180px] truncate font-medium">{s.display_name || s.name}</p>
-                            <p className="font-mono text-[10px] text-slate-600">{s.name}</p>
+                            <p className="font-mono text-[11px] text-slate-600">{s.name}</p>
                           </td>
                           <td className="py-1 pr-3">
                             <span
@@ -1867,7 +1782,7 @@ export default function DeviceDrawer({
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Software</p>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[11px] text-slate-500">
                 {(inventory.software ?? []).length} collected
               </span>
             </div>
@@ -1886,7 +1801,7 @@ export default function DeviceDrawer({
                   <div className="max-h-72 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                        <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                           <th className="pb-1.5 pr-3">Name</th>
                           <th className="pb-1.5 pr-3">Version</th>
                           <th className="pb-1.5">Publisher</th>
@@ -1920,7 +1835,7 @@ export default function DeviceDrawer({
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Notes</p>
-              <span className="text-[10px] text-slate-500">{notes.length} saved</span>
+              <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
             </div>
             <div
               className="rounded-lg p-4"
@@ -1931,14 +1846,14 @@ export default function DeviceDrawer({
                 onChange={(e) => setNoteText(e.target.value)}
                 rows={3}
                 placeholder="Add an internal note..."
-                className="w-full resize-none rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
+                className="th-input w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-5 outline-none"
               />
               <div className="mt-2 flex justify-end">
                 <button
                   type="button"
                   disabled={noteBusy || !noteText.trim()}
                   onClick={addNote}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-techi-orange/25 bg-techi-orange/10 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px]"
                 >
                   <Save className="h-3 w-3" />
                   Add note
@@ -1948,14 +1863,14 @@ export default function DeviceDrawer({
 
             <div className="mt-3 space-y-2">
               {notesLoading ? (
-                <p className="py-4 text-center text-[11px] text-slate-500">Loading notes...</p>
+                <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading notes…</p>
               ) : notes.length === 0 ? (
-                <div
-                  className="rounded-lg p-4 text-center text-xs font-medium text-slate-500"
-                  style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-                >
-                  No notes yet.
-                </div>
+                <EmptyState
+                  className="!py-6"
+                  icon={<StickyNote className="h-5 w-5" />}
+                  title="No notes yet"
+                  description="Internal notes are visible to every operator who can see this device."
+                />
               ) : (
                 notes.map((note) => (
                   <div
@@ -1964,10 +1879,11 @@ export default function DeviceDrawer({
                     style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
                   >
                     <div className="mb-1.5 flex items-center gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      <span className="th-avatar !h-6 !w-6 !text-[11px]">{(note.created_by || "A").charAt(0).toUpperCase()}</span>
+                      <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
                         {note.created_by || "admin"}
                       </span>
-                      <span className="text-[10px] text-slate-600">{actionTimeAgo(note.updated_at)}</span>
+                      <span className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>{actionTimeAgo(note.updated_at)}</span>
 	                      {canOperate && (
 	                      <div className="ml-auto flex items-center gap-1">
                         <button
@@ -1977,19 +1893,21 @@ export default function DeviceDrawer({
                             setEditingNoteId(note.id);
                             setEditingText(note.note);
                           }}
-                          className="rounded p-1 text-slate-600 transition hover:bg-white/[0.05] hover:text-slate-300 disabled:opacity-50"
+                          className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7"
                           title="Edit note"
+                          aria-label="Edit note"
                         >
-                          <Edit3 className="h-3 w-3" />
+                          <Edit3 className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           disabled={noteBusy}
                           onClick={() => removeNote(note.id)}
-                          className="rounded p-1 text-slate-600 transition hover:bg-white/[0.05] hover:text-red-300 disabled:opacity-50"
+                          className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 hover:!text-[var(--th-status-critical)]"
                           title="Delete note"
+                          aria-label="Delete note"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
 	                      </div>
 	                      )}
@@ -2000,7 +1918,7 @@ export default function DeviceDrawer({
                           value={editingText}
                           onChange={(e) => setEditingText(e.target.value)}
                           rows={3}
-                          className="w-full resize-none rounded-md border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white outline-none focus:border-techi-orange/60"
+                          className="th-input w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-5 outline-none"
                         />
                         <div className="mt-2 flex justify-end gap-2">
                           <button
@@ -2009,7 +1927,7 @@ export default function DeviceDrawer({
                               setEditingNoteId(null);
                               setEditingText("");
                             }}
-                            className="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-300"
+                            className="th-btn th-btn-secondary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Cancel
                           </button>
@@ -2017,7 +1935,7 @@ export default function DeviceDrawer({
                             type="button"
                             disabled={noteBusy || !editingText.trim()}
                             onClick={() => saveNote(note.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-techi-orange/25 bg-techi-orange/10 px-2 py-1 text-[11px] font-semibold text-orange-200 transition hover:bg-techi-orange/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1 rounded-lg border px-3 text-[13px]"
                           >
                             <Save className="h-3 w-3" />
                             Save
@@ -2025,7 +1943,7 @@ export default function DeviceDrawer({
                         </div>
                       </div>
                     ) : (
-                      <p className="whitespace-pre-wrap text-xs leading-5 text-slate-300">{note.note}</p>
+                      <p className="whitespace-pre-wrap pl-8 text-[13px] leading-5" style={{ color: "var(--th-text-secondary)" }}>{note.note}</p>
                     )}
                   </div>
                 ))
@@ -2035,10 +1953,7 @@ export default function DeviceDrawer({
           </div>
 
           <div className={activeTab === "timeline" ? "" : "hidden"}>
-          <section
-            className="rounded-lg p-4"
-            style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-          >
+          <section className="th-drawer-card">
             <ActivityTimeline events={events} loading={loading} onReload={reload} />
           </section>
           </div>
@@ -2054,71 +1969,25 @@ export default function DeviceDrawer({
 
           {/* ── Remote Support tab ── */}
           <div className={activeTab === "remote_support" ? "" : "hidden"}>
-            {/* Toast feedback */}
-            {rsToast && (
-              <div
-                className="mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
-                style={{
-                  background: rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 10%, transparent)",
-                  border: `1px solid ${rsToast.ok ? "color-mix(in srgb, var(--th-status-online) 25%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 25%, transparent)"}`,
-                  color: rsToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
-                }}
-              >
-                {rsToast.message}
-              </div>
-            )}
 
-            {/* Status header + Connect */}
-            <section className="mb-4">
+            {/* Credentials + service */}
+            <section className="mb-5">
               <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Monitor className="h-4 w-4 text-orange-400/70" />
-                  <p className="premium-kicker">TECHI Remote Support</p>
-                </div>
-                <button
-                  type="button"
-                  disabled={!isValidRustDeskId(device.rustdesk_id) || device.rustdesk_conflict_detected || !hasPermission("remote_support_connect")}
-                  onClick={async () => {
-                    try {
-                      const res = await getConnectUrl(device.id);
-                      launchConnect(
-                        res.connect_url,
-                        buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                        () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
-                      );
-                    } catch (err) {
-                      setRsToast({ message: err instanceof Error ? err.message : "Connect failed", ok: false });
-                      setTimeout(() => setRsToast(null), 3000);
-                    }
-                  }}
-                  title={
-                    !hasPermission("remote_support_connect")
-                      ? "Permission required: remote_support_connect"
-                      : device.rustdesk_conflict_detected
-                      ? "Remote Support ID conflict detected"
-                      : isValidRustDeskId(device.rustdesk_id)
-                      ? "Open TECHI Remote Support"
-                      : "Remote ID not resolved yet"
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-orange-400/30 bg-orange-400/15 px-3 py-1.5 text-xs font-semibold text-orange-200 transition hover:bg-orange-400/25 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-transparent disabled:text-slate-600"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Connect
-                </button>
+                <p className="premium-kicker">Connection</p>
+                <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} />
               </div>
 
-              <div
-                className="rounded-lg p-4"
-                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-              >
+              <div className="th-drawer-card">
                 {/* Remote ID with copy */}
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-                  <p className="premium-kicker mb-1">Remote ID</p>
+                  <p className="mb-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Remote Support ID</p>
                   <div className="flex items-center gap-2">
                     {device.rustdesk_id && isValidRustDeskId(device.rustdesk_id) ? (
-                      <span className="font-mono text-sm font-semibold text-orange-300">{device.rustdesk_id}</span>
+                      <span className="font-mono text-[22px] font-semibold tracking-wide" style={{ color: "var(--th-text-primary)" }}>
+                        {device.rustdesk_id.replace(/(\d{3})(?=\d)/g, "$1 ")}
+                      </span>
                     ) : (
-                      <span className="text-xs font-medium text-slate-500">{device.rustdesk_id || "Not assigned"}</span>
+                      <span className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_id || "Not assigned yet"}</span>
                     )}
                     {device.rustdesk_id && (
                       <button
@@ -2132,13 +2001,14 @@ export default function DeviceDrawer({
                             // clipboard may be unavailable
                           }
                         }}
-                        className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-200"
-                        title="Copy Remote ID"
+                        className="th-icon-btn th-icon-btn-ghost !min-h-8 !min-w-8"
+                        title="Copy Remote Support ID"
+                        aria-label="Copy Remote Support ID"
                       >
                         {rsCopySuccess ? (
                           <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
                         ) : (
-                          <ClipboardCopy className="h-3.5 w-3.5" />
+                          <ClipboardCopy className="h-4 w-4" />
                         )}
                       </button>
                     )}
@@ -2148,7 +2018,7 @@ export default function DeviceDrawer({
                 {/* Per-device Remote Support password — owner/admin only */}
                 {can("admin") && (
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-                  <p className="premium-kicker mb-1">Password</p>
+                  <p className="mb-1.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Password</p>
                   {rsPassword === null ? (
                     <button
                       type="button"
@@ -2165,15 +2035,15 @@ export default function DeviceDrawer({
                           setRsPasswordBusy(false);
                         }
                       }}
-                      className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                      style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                      className="th-btn th-btn-secondary inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px]"
                     >
-                      {rsPasswordBusy ? "Loading…" : "Reveal password"}
+                      <span className="font-mono tracking-[0.2em]" style={{ color: "var(--th-text-faint)" }}>••••••••</span>
+                      {rsPasswordBusy ? "Loading…" : "Reveal"}
                     </button>
                   ) : (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-semibold text-orange-300">{rsPassword}</span>
+                        <span className="font-mono text-[15px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{rsPassword}</span>
                         <button
                           type="button"
                           onClick={async () => {
@@ -2185,13 +2055,14 @@ export default function DeviceDrawer({
                               setRsToast({ message: "Copy failed", ok: false });
                             }
                           }}
-                          className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-200"
+                          className="th-icon-btn th-icon-btn-ghost !min-h-8 !min-w-8"
                           title="Copy password"
+                          aria-label="Copy password"
                         >
                           <ClipboardCopy className="h-3.5 w-3.5" />
                         </button>
                         {rsPasswordSource && (
-                          <span className="text-[10px] uppercase tracking-wide text-slate-500">{rsPasswordSource}</span>
+                          <span className="th-role-chip">{rsPasswordSource}</span>
                         )}
                       </div>
                       {hasPermission("remote_support_manage") && (
@@ -2213,18 +2084,17 @@ export default function DeviceDrawer({
                                 setRsPasswordBusy(false);
                               }
                             }}
-                            className="rounded-md px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                            style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                            className="th-btn th-btn-secondary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Regenerate
                           </button>
                           <input
                             type="text"
-                            placeholder="Custom (min 8)"
+                            placeholder="Custom password (min 8)"
+                            aria-label="Custom password"
                             value={rsCustomPassword}
                             onChange={(e) => setRsCustomPassword(e.target.value)}
-                            className="w-32 rounded-md bg-black/20 px-2 py-1 text-xs text-slate-200 outline-none"
-                            style={{ border: "1px solid var(--th-border-drawer-section)" }}
+                            className="th-input h-8 min-w-0 flex-1 rounded-lg border px-2.5 text-[13px] outline-none"
                           />
                           <button
                             type="button"
@@ -2244,8 +2114,7 @@ export default function DeviceDrawer({
                                 setRsPasswordBusy(false);
                               }
                             }}
-                            className="rounded-md px-2.5 py-1 text-xs font-semibold text-white transition"
-                            style={{ background: "var(--th-accent)" }}
+                            className="th-btn th-btn-primary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Set
                           </button>
@@ -2256,64 +2125,49 @@ export default function DeviceDrawer({
                 </div>
                 )}
 
-                {/* Details grid */}
-                <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-                  <div>
-                    <p className="premium-kicker mb-1">Service</p>
-                    <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} />
-                  </div>
-                  <div>
-                    <p className="premium-kicker mb-1">Version</p>
-                    <p className="font-mono text-xs font-medium text-slate-100">
-                      {device.rustdesk_version ? `v${device.rustdesk_version}` : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="premium-kicker mb-1">Sync State</p>
-                    <p className={`text-xs font-semibold ${syncColor}`}>{syncLabel}</p>
-                    {device.rustdesk_sync_message && (
-                      <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{device.rustdesk_sync_message}</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="premium-kicker mb-1">Last Heartbeat</p>
-                    <p className="text-xs font-medium text-slate-100">
-                      {device.last_seen
-                        ? parseUTC(device.last_seen).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
-                            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                          })
-                        : <span className="text-slate-500">Never</span>}
-                    </p>
-                  </div>
-                  {rsDevice?.install_path && (
-                    <div className="col-span-2">
-                      <p className="premium-kicker mb-1">Install Path</p>
-                      <p className="break-all font-mono text-[11px] text-slate-400">{rsDevice.install_path}</p>
-                    </div>
-                  )}
-                  {rsDevice != null && (
-                    <div>
-                      <p className="premium-kicker mb-1">Repair Count</p>
-                      <p className="text-xs font-medium text-slate-100">{rsDevice.repair_count ?? 0}</p>
-                    </div>
-                  )}
-                  <div className="col-span-2">
-                    <p className="premium-kicker mb-1">Config Status</p>
+                {/* Details */}
+                <dl className="th-dl">
+                  <dt>Version</dt>
+                  <dd className="font-mono">{device.rustdesk_version ? `v${device.rustdesk_version}` : "—"}</dd>
+                  <dt>ID sync</dt>
+                  <dd>
+                    <span className={`${syncColor} inline-block first-letter:uppercase`}>{syncLabel}</span>
+                    {device.rustdesk_sync_message && <span className="block text-[12px]" style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_sync_message}</span>}
+                  </dd>
+                  <dt>Configuration</dt>
+                  <dd>
                     {device.rustdesk_install_status === "not_installed"
-                      ? <p className="text-xs font-medium text-slate-500">Not installed</p>
+                      ? <span style={{ color: "var(--th-text-muted)" }}>Not installed</span>
                       : device.rustdesk_sync_state === "synced"
-                        ? <p className="text-xs font-medium text-emerald-400">Synced</p>
+                        ? <span className="text-emerald-400">Synced</span>
                         : device.rustdesk_sync_state === "degraded"
-                          ? <p className="text-xs font-medium text-amber-400">Degraded</p>
+                          ? <span className="text-amber-400">Degraded</span>
                           : device.rustdesk_sync_state === "failed"
-                            ? <p className="text-xs font-medium text-red-400">Failed</p>
-                            : <p className="text-xs font-medium text-slate-500">{device.rustdesk_sync_state || "Not synced"}</p>
-                    }
-                  </div>
-                </div>
+                            ? <span className="text-red-400">Failed</span>
+                            : <span style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_sync_state || "Not synced"}</span>}
+                  </dd>
+                  <dt>Last heartbeat</dt>
+                  <dd>
+                    {device.last_seen
+                      ? parseUTC(device.last_seen).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : <span style={{ color: "var(--th-text-muted)" }}>Never</span>}
+                  </dd>
+                  {rsDevice != null && (
+                    <>
+                      <dt>Repairs</dt>
+                      <dd className="tabular-nums">{rsDevice.repair_count ?? 0}</dd>
+                    </>
+                  )}
+                  {rsDevice?.install_path && (
+                    <>
+                      <dt>Install path</dt>
+                      <dd className="break-all font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>{rsDevice.install_path}</dd>
+                    </>
+                  )}
+                </dl>
 
                 {!isValidRustDeskId(device.rustdesk_id) && (
-                  <p className="mt-3 text-[11px] font-medium text-slate-500">
+                  <p className="mt-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                     TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.
                   </p>
                 )}
@@ -2322,16 +2176,13 @@ export default function DeviceDrawer({
 
             {/* Management actions */}
             {canOperate && (hasPermission("remote_support_manage") || hasPermission("reinstall_remote_support") || hasPermission("deployment")) && (
-              <section className="mb-4">
-                <p className="premium-kicker mb-2">Management</p>
-                <div
-                  className="rounded-lg p-4"
-                  style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-                >
+              <section className="mb-5">
+                <p className="premium-kicker mb-2">Actions</p>
+                <div>
                   {/* Deploy prompt when not installed */}
                   {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && hasPermission("deployment") && (
                     <div className="mb-3">
-                      <p className="mb-2 text-[11px] font-medium text-slate-400">
+                      <p className="mb-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
                         TECHI Remote Support does not appear to be installed on this device.
                       </p>
                       <button
@@ -2354,7 +2205,7 @@ export default function DeviceDrawer({
                             setRsBusyAction(null);
                           }
                         }}
-                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-orange-400/30 bg-orange-400/15 py-2 text-xs font-semibold text-orange-200 transition hover:bg-orange-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="th-btn th-btn-primary inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border text-[13px]"
                       >
                         {rsBusyAction === "deploy" ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
                         Deploy TECHI Remote Support
@@ -2365,8 +2216,9 @@ export default function DeviceDrawer({
                   <div className="grid grid-cols-2 gap-2">
                     {/* Sync */}
                     {hasPermission("remote_support_manage") && (
-                    <RsActionButton
-                      label="Sync"
+                    <DrawerActionTile
+                      type="sync_rustdesk"
+                      label="Sync ID"
                       busy={rsBusyAction === "sync_rustdesk"}
                       onClick={async () => {
                         setRsBusyAction("sync_rustdesk");
@@ -2386,8 +2238,9 @@ export default function DeviceDrawer({
                     )}
                     {/* Restart */}
                     {hasPermission("remote_support_manage") && (
-                    <RsActionButton
-                      label="Restart"
+                    <DrawerActionTile
+                      type="restart_rustdesk"
+                      label="Restart service"
                       busy={rsBusyAction === "restart_rustdesk"}
                       onClick={async () => {
                         setRsBusyAction("restart_rustdesk");
@@ -2407,8 +2260,9 @@ export default function DeviceDrawer({
                     )}
                     {/* Reopen */}
                     {hasPermission("remote_support_manage") && (
-                    <RsActionButton
-                      label="Reopen"
+                    <DrawerActionTile
+                      type="reopen_rustdesk"
+                      label="Reopen app"
                       busy={rsBusyAction === "reopen_rustdesk"}
                       onClick={async () => {
                         setRsBusyAction("reopen_rustdesk");
@@ -2428,7 +2282,8 @@ export default function DeviceDrawer({
                     )}
                     {/* Reinstall — destructive, triggers existing confirmation modal */}
                     {hasPermission("reinstall_remote_support") && (
-                    <RsActionButton
+                    <DrawerActionTile
+                      type="reinstall_rustdesk"
                       label="Reinstall"
                       destructive
                       busy={rsBusyAction === "reinstall_rustdesk"}
@@ -2450,6 +2305,51 @@ export default function DeviceDrawer({
         </div>
       </div>
     </>
+  );
+}
+
+const ACTION_META: Partial<Record<ActionType, { icon: typeof Activity; hint: string }>> = {
+  ping: { icon: Activity, hint: "Check the agent responds" },
+  immediate_heartbeat: { icon: HeartPulse, hint: "Request a fresh heartbeat now" },
+  refresh_inventory: { icon: RefreshCw, hint: "Collect hardware and software" },
+  sync_inventory: { icon: UploadCloud, hint: "Send inventory to the server" },
+  restart_agent: { icon: RotateCcw, hint: "Restart the TECHI agent service" },
+  apply_power_policy: { icon: Zap, hint: "Keep the PC awake for support" },
+  restart_rustdesk: { icon: RotateCcw, hint: "Restart the background service" },
+  sync_rustdesk: { icon: Fingerprint, hint: "Re-check and repair the ID" },
+  reopen_rustdesk: { icon: AppWindow, hint: "Reopen the Remote Support app" },
+  repair_config_rustdesk: { icon: Wrench, hint: "Rewrite the server configuration" },
+  restart_device: { icon: Power, hint: "Reboot Windows now" },
+  reinstall_rustdesk: { icon: Download, hint: "Remove and install again" },
+};
+
+function DrawerActionTile({
+  type,
+  label,
+  destructive = false,
+  disabled = false,
+  busy = false,
+  title,
+  onClick,
+}: {
+  type: ActionType;
+  label: string;
+  destructive?: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  const meta = ACTION_META[type];
+  const Icon = meta?.icon ?? Activity;
+  return (
+    <button type="button" className="th-action-tile" data-destructive={destructive} disabled={disabled || busy} title={title} onClick={onClick}>
+      <span className="th-action-icon">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}</span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[13px] font-medium">{label}</span>
+        {meta?.hint && <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{meta.hint}</span>}
+      </span>
+    </button>
   );
 }
 
@@ -2489,45 +2389,45 @@ function ActionRow({
 
   return (
     <div
-      className="flex items-start gap-2 rounded-md px-3 py-2 text-xs"
+      className="flex items-start gap-3 rounded-lg px-3 py-2.5 text-[13px]"
       style={{ background: "var(--th-bg-drawer-section)", border: "1px solid var(--th-border-drawer-section)" }}
     >
       {isRunning ? (
-        <Loader2 className="mt-0.5 h-3 w-3 flex-none animate-spin text-sky-400" />
+        <Loader2 className="mt-0.5 h-3.5 w-3.5 flex-none animate-spin text-sky-400" />
       ) : (
-        <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${statusDotColor(action.status)}`} />
+        <span className={`mt-1.5 h-2 w-2 flex-none rounded-full ${statusDotColor(action.status)}`} />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-slate-100">{label}</span>
-          <span className={`text-[10px] font-medium ${statusColor(action.status)}`}>
+          <span className="font-medium" style={{ color: "var(--th-text-primary)" }}>{label}</span>
+          <span className={`text-[12px] font-medium ${statusColor(action.status)}`}>
             {statusLabel}
           </span>
           {action.duration_seconds != null && (
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[11px] text-slate-500">
               {formatDuration(action.duration_seconds)}
             </span>
           )}
-          <span className="ml-auto flex-none text-[10px] text-slate-600">
+          <span className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
             {actionTimeAgo(relevantTime)}
           </span>
         </div>
         {action.created_by && (
-          <p className="text-[10px] text-slate-600">by {action.created_by}</p>
+          <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>by {action.created_by}</p>
         )}
         {action.result_message && (
-          <p className="mt-0.5 text-[10px] text-emerald-400">{action.result_message}</p>
+          <p className="mt-0.5 text-[11px] text-emerald-400">{action.result_message}</p>
         )}
         {action.error_message && (
-          <p className="mt-0.5 text-[10px] text-red-400">{action.error_message}</p>
+          <p className="mt-0.5 text-[11px] text-red-400">{action.error_message}</p>
         )}
         {action.output && action.output !== action.result_message && (
-          <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap break-words rounded bg-white/[0.03] px-2 py-1 text-[9px] font-mono leading-4 text-slate-400">
+          <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap break-words rounded bg-white/[0.03] px-2 py-1 text-[11px] font-mono leading-4 text-slate-400">
             {action.output}
           </pre>
         )}
         {action.stderr_output && (
-          <pre className="mt-1 max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded bg-red-950/30 px-2 py-1 text-[9px] font-mono leading-4 text-red-300">
+          <pre className="mt-1 max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded bg-red-950/30 px-2 py-1 text-[11px] font-mono leading-4 text-red-300">
             {action.stderr_output}
           </pre>
         )}
@@ -2536,7 +2436,7 @@ function ActionRow({
             <button
               type="button"
               onClick={() => onCancel?.(action.id)}
-              className="text-[10px] font-semibold text-slate-500 underline hover:text-slate-300"
+              className="text-[11px] font-semibold text-slate-500 underline hover:text-slate-300"
             >
               Cancel
             </button>
@@ -2545,7 +2445,7 @@ function ActionRow({
             <button
               type="button"
               onClick={() => onRetry?.(action.id)}
-              className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 underline hover:text-slate-300"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 underline hover:text-slate-300"
             >
               <RefreshCw className="h-2.5 w-2.5" />
               Retry
@@ -2565,7 +2465,7 @@ function RsServiceBadge({ status }: { status?: string }) {
   const isNotInstalled = status === "not_installed";
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
       style={{
         color: isRunning ? "var(--th-status-online)" : isStopped || isNotInstalled ? "var(--th-text-faint)" : "var(--th-status-offline)",
         background: isRunning ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
@@ -2580,31 +2480,3 @@ function RsServiceBadge({ status }: { status?: string }) {
   );
 }
 
-function RsActionButton({
-  label,
-  busy,
-  onClick,
-  destructive = false,
-}: {
-  label: string;
-  busy: boolean;
-  onClick: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={onClick}
-      className="flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
-      style={{
-        border: `1px solid ${destructive ? "color-mix(in srgb, var(--th-status-critical) 20%, transparent)" : "var(--th-border-drawer-section)"}`,
-        background: destructive ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-        color: destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
-      }}
-    >
-      {busy && <RefreshCw className="h-3 w-3 animate-spin" />}
-      {label}
-    </button>
-  );
-}

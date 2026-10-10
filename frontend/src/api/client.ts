@@ -63,6 +63,9 @@ export function clearAuthSession(): void {
 export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   let networkError: unknown;
 
+  // A 401 only means "your session expired" if a session was sent.
+  const sentToken = Boolean(getAuthToken());
+
   for (const baseUrl of API_BASE_URLS) {
     let response: Response;
     try {
@@ -98,7 +101,7 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
         // Keep the HTTP status message when the response is not JSON.
       }
 
-      if (response.status === 401) {
+      if (response.status === 401 && sentToken) {
         unauthorizedHandler?.();
       }
       throw new ApiError(message, response.status);

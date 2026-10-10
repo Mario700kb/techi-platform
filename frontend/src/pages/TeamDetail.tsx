@@ -145,32 +145,32 @@ function DashboardSummary({
       {/* Stat grid — 2 columns on mobile, 5 on sm+ */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className={statBoxCls}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Members</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Members</span>
           <span className="text-2xl font-bold text-white">{memberCount}</span>
         </div>
         <div className={statBoxCls}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Clients</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Clients</span>
           <span className="text-2xl font-bold text-white">{team.client_ids.length}</span>
         </div>
         <div className={statBoxCls}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Groups</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Groups</span>
           <span className="text-2xl font-bold text-white">{team.group_ids.length}</span>
         </div>
         <div className={statBoxCls}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Explicit Devices</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Explicit Devices</span>
           <span className="text-2xl font-bold text-white">{team.device_ids.length}</span>
-          <span className="text-[10px] text-slate-600">direct only</span>
+          <span className="text-[11px] text-slate-600">direct only</span>
         </div>
         <div className={`${statBoxCls} border-techi-orange/15 bg-techi-orange/[0.04]`}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-orange-400/70">Effective Devices</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-orange-400/70">Effective Devices</span>
           <span className="text-2xl font-bold text-orange-200">{effectiveDeviceCount}</span>
-          <span className="text-[10px] text-slate-600">via clients + groups</span>
+          <span className="text-[11px] text-slate-600">via clients + groups</span>
         </div>
       </div>
 
       {/* Assigned permissions summary */}
       <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
           Permissions Assigned ({permLabels.length})
         </p>
         {permLabels.length === 0 ? (
@@ -333,7 +333,7 @@ function MembersTab({
                     <p className="text-sm font-semibold text-white truncate">{op.display_name ?? op.username}</p>
                     <p className="text-[11px] text-slate-500">{op.email}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${op.role === "owner" ? "border-orange-300/25 bg-techi-orange/15 text-orange-200" : op.role === "admin" ? "border-red-300/25 bg-red-500/10 text-red-200" : "border-white/[0.10] bg-white/[0.05] text-slate-400"}`}>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${op.role === "owner" ? "border-orange-300/25 bg-techi-orange/15 text-orange-200" : op.role === "admin" ? "border-red-300/25 bg-red-500/10 text-red-200" : "border-white/[0.10] bg-white/[0.05] text-slate-400"}`}>
                     {op.role}
                   </span>
                 </label>
@@ -653,7 +653,7 @@ function AccessTab({
                         {client.name}
                       </p>
                       {devCount > 0 && (
-                        <span className="shrink-0 text-[10px] text-slate-600">
+                        <span className="shrink-0 text-[11px] text-slate-600">
                           {devCount} device{devCount !== 1 ? "s" : ""}
                         </span>
                       )}
@@ -695,7 +695,7 @@ function AccessTab({
                                 <span className={`text-[13px] ${inherited ? "text-orange-200/70" : "text-slate-300"}`}>
                                   {group.name}
                                 </span>
-                                <span className="shrink-0 text-[10px] text-slate-600">
+                                <span className="shrink-0 text-[11px] text-slate-600">
                                   ({groupDevices.length})
                                 </span>
                               </div>
@@ -757,7 +757,7 @@ function AccessTab({
                               <span className="h-3 w-3 shrink-0 text-slate-700">·</span>
                               <div className="flex min-w-0 flex-1 items-baseline gap-2">
                                 <span className="text-[12px] italic text-slate-600">(Ungrouped)</span>
-                                <span className="text-[10px] text-slate-700">{ung.length}</span>
+                                <span className="text-[11px] text-slate-700">{ung.length}</span>
                               </div>
                             </div>
                             <ul className="border-t border-white/[0.03] bg-white/[0.01]">
@@ -920,7 +920,7 @@ function PermissionsTab({
       {/* Quick templates */}
       {canManage && (
         <div className="space-y-2">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Quick Templates</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Quick Templates</p>
           <div className="flex flex-wrap gap-2">
             {PERM_TEMPLATES.map((t) => (
               <button
@@ -953,7 +953,7 @@ function PermissionsTab({
       )}
 
       {/* Two-panel layout */}
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
 
         {/* LEFT: Permission groups */}
         <div className="space-y-3">
@@ -965,7 +965,7 @@ function PermissionsTab({
               <div key={cat} className="overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]">
                 <div className={`flex items-center gap-2 border-b border-white/[0.06] px-3 py-2 ${color}`}>
                   <span className="text-[11px] font-bold uppercase tracking-wide">{cat}</span>
-                  <span className="ml-auto text-[10px] font-semibold text-slate-600">
+                  <span className="ml-auto text-[11px] font-semibold text-slate-600">
                     {selectedCount}/{rows.length}
                   </span>
                 </div>
@@ -989,7 +989,7 @@ function PermissionsTab({
                                 {row.label}
                               </span>
                               {wasAutoAdded && (
-                                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-sky-400">
+                                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[11px] font-bold uppercase text-sky-400">
                                   auto
                                 </span>
                               )}
@@ -1010,7 +1010,7 @@ function PermissionsTab({
         <div className="space-y-3">
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-4">
             <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 Selected Permissions ({selected.size})
               </p>
               {selected.size === 0 ? (
@@ -1020,7 +1020,7 @@ function PermissionsTab({
                   {TEAM_PERMISSION_DEFS.filter((d) => selected.has(d.key)).map((d) => (
                     <span
                       key={d.key}
-                      className="rounded-full border border-techi-orange/20 bg-techi-orange/10 px-2 py-0.5 text-[10px] font-semibold text-orange-200"
+                      className="rounded-full border border-techi-orange/20 bg-techi-orange/10 px-2 py-0.5 text-[11px] font-semibold text-orange-200"
                     >
                       {d.label}
                     </span>
@@ -1030,7 +1030,7 @@ function PermissionsTab({
             </div>
 
             <div className="border-t border-white/[0.06] pt-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 Operator Capabilities
               </p>
               {selected.size === 0 ? (
@@ -1171,7 +1171,7 @@ export default function TeamDetailPage() {
 
   if (error || !team) {
     return (
-      <section className="premium-page space-y-4">
+      <section className="premium-page space-y-5">
         <button type="button" onClick={() => navigate("/teams")} className="flex items-center gap-1.5 text-sm font-medium text-slate-400 transition hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Back to Teams
         </button>
@@ -1198,7 +1198,7 @@ export default function TeamDetailPage() {
               {team.description && <p className="mt-0.5 text-sm text-slate-400">{team.description}</p>}
             </div>
           </div>
-          <Button size="sm" onClick={() => void loadTeam()}>
+          <Button variant="secondary" size="sm" onClick={() => void loadTeam()}>
             <RefreshCcw className="h-3.5 w-3.5" /> Refresh
           </Button>
         </div>

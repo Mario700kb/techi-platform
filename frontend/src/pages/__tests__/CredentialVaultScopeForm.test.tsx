@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { chooseOption } from "../../test/select";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -67,8 +68,8 @@ function fillCommonFields() {
   fireEvent.change(screen.getByPlaceholderText("Password *"), { target: { value: "hunter2" } });
 }
 
-function selectScope(scope: "global" | "client" | "group" | "device") {
-  fireEvent.change(screen.getByRole("combobox", { name: "Scope" }), { target: { value: scope } });
+async function selectScope(scope: "global" | "client" | "group" | "device") {
+  await chooseOption("Scope", scope);
 }
 
 async function pickFromSearchSelect(placeholder: string, optionLabel: string) {
@@ -94,7 +95,7 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
 
     renderPage();
     await openForm();
-    selectScope("client");
+    await selectScope("client");
     await pickFromSearchSelect("Select client", "Acme");
     fillCommonFields();
     fireEvent.click(screen.getByText("Add credential"));
@@ -117,7 +118,7 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
 
     renderPage();
     await openForm();
-    selectScope("group");
+    await selectScope("group");
     await pickFromSearchSelect("Filter by client (optional)", "Acme");
     await pickFromSearchSelect("Select group", "Network");
     fillCommonFields();
@@ -145,7 +146,7 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
 
     renderPage();
     await openForm();
-    selectScope("device");
+    await selectScope("device");
     await pickFromSearchSelect("Filter by client (optional)", "Acme");
     // Device picker is async (loadOptions) — open it and wait for the debounced search.
     fireEvent.click(await screen.findByText("Search device by hostname…"));
@@ -175,10 +176,10 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
 
     renderPage();
     await openForm();
-    selectScope("client");
+    await selectScope("client");
     await pickFromSearchSelect("Select client", "Acme");
     // Switch back to Global — the client picker must disappear entirely.
-    selectScope("global");
+    await selectScope("global");
     expect(screen.queryByText("Select client")).not.toBeInTheDocument();
 
     fillCommonFields();

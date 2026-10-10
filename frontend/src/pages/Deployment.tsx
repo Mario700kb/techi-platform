@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Boxes, Check, Clipboard, Copy, Download, Eye, HardDrive, KeyRound, Laptop, Layers, Loader2, LucideIcon, Monitor, Package, Pencil, RefreshCcw, Router, Search, Server, Terminal, Trash2 } from "lucide-react";
 import { API_BASE_URL, getAuthToken } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
@@ -25,8 +26,9 @@ import {
 } from "../api/enrollmentBootstrap";
 import { PlatformFeatures } from "../api/platform";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
-import { Button } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
+import { Button, PageHeader, SelectField } from "../components/ui";
+import ConfirmationModal from "../components/ConfirmationModal";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 
 // ── Deployment platform registry (metadata-driven) ─────────────────────────
 // The Deployment dialog renders from this table, gated by the backend Platform
@@ -85,7 +87,7 @@ type CopyTarget = string | null;
 
 function fmtDate(value?: string | null) {
   if (!value) return "Never";
-  return parseUTC(value).toLocaleString(undefined, { timeZone: APP_TIME_ZONE });
+  return parseUTC(value).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE });
 }
 
 function downloadText(name: string, text: string) {
@@ -127,6 +129,8 @@ export default function Deployment() {
   const [editToken, setEditToken] = useState<EnrollmentToken | null>(null);
   const [oneTimeToken, setOneTimeToken] = useState<CreateTokenResponse | null>(null);
   const [tokenSearch, setTokenSearch] = useState("");
+  const [pendingTokenAction, setPendingTokenAction] = useState<{ kind: "revoke" | "delete"; token: EnrollmentToken } | null>(null);
+  const [tokenActionBusy, setTokenActionBusy] = useState(false);
 
   const bootstrapUrl = useMemo(() => token ? buildWindowsBootstrapUrl(token.token) : "", [token]);
   const bootstrapCommand = useMemo(() => token ? buildWindowsBootstrapCommand(token.token) : "", [token]);
@@ -188,22 +192,15 @@ export default function Deployment() {
 
   return (
     <section className="premium-page space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="premium-kicker">Deployment</p>
-            <h1 className="mt-2 text-2xl font-semibold" style={{ color: "var(--th-text-primary)" }}>Windows Bootstrap Deployment</h1>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-6" style={{ color: "var(--th-text-secondary)" }}>
-              Generate enrollment tokens and use AMSI-friendlier download-and-run commands for manual or GPO startup deployment.
-            </p>
-          </div>
-          <div className="rounded-lg border px-3 py-2 text-xs font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
-            Windows 10/11 · Server 2019/2022 · Domain Controllers
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Windows Bootstrap Deployment"
+        description="Generate enrollment tokens and use AMSI-friendlier download-and-run commands for manual or GPO startup deployment."
+        actions={
+          <span className="th-status-chip">Windows 10/11 · Server 2019/2022 · Domain Controllers</span>
+        }
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <div className="premium-card-soft p-5">
           <div className="mb-4 flex items-center gap-2">
             <KeyRound className="h-4 w-4 text-techi-orange" />
@@ -283,7 +280,7 @@ export default function Deployment() {
         ) : (
           <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>
             No active Windows deployment package. Upload an MSI via{" "}
-            <a href="/agent-packages" className="text-techi-orange hover:underline">Agent Packages</a>.
+            <Link to="/onboarding?tab=packages" className="text-techi-orange hover:underline">Packages</Link>.
           </p>
         )}
       </div>
@@ -299,13 +296,13 @@ export default function Deployment() {
               <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
               <input
                 className="th-input rounded-lg py-1.5 pl-8 pr-3 text-xs"
-                placeholder="Kërko token sipas emrit..."
+                placeholder="Search tokens by name..."
                 value={tokenSearch}
                 onChange={(e) => setTokenSearch(e.target.value)}
                 style={{ width: 220 }}
               />
             </div>
-            <Button type="button" size="sm" onClick={() => void loadTokens()} disabled={tableLoading}>
+            <Button variant="secondary" type="button" size="sm" onClick={() => void loadTokens()} disabled={tableLoading}>
               {tableLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />}
               Refresh
             </Button>
@@ -330,13 +327,15 @@ export default function Deployment() {
                   <td>{fmtDate(row.created_at)}</td>
                   <td>{fmtDate(row.used_at)}</td>
                   <td>
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="sm" type="button" onClick={async () => setViewDeployment(await getEnrollmentTokenDeployment(row.id))}><Eye className="mr-1 h-3.5 w-3.5" />View</Button>
-                      <Button size="sm" type="button" onClick={async () => copy(`cmd-${row.id}`, (await getEnrollmentTokenDeployment(row.id)).manual_command)}><Copy className="mr-1 h-3.5 w-3.5" />Cmd</Button>
-                      <Button size="sm" type="button" onClick={() => setEditToken(row)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
-                      <Button size="sm" type="button" onClick={async () => { const next = await regenerateEnrollmentToken(row.id); setOneTimeToken(next); await loadTokens(); }}><RefreshCcw className="mr-1 h-3.5 w-3.5" />Regenerate</Button>
-                      <Button size="sm" type="button" onClick={async () => { await revokeEnrollmentToken(row.id); await loadTokens(); }}>Revoke</Button>
-                      <Button size="sm" type="button" onClick={async () => { await deleteEnrollmentToken(row.id, { confirmActive: true, confirmDefault: true }); await loadTokens(); }}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+                    <div className="flex items-center gap-1 whitespace-nowrap">
+                      <Button variant="secondary" size="sm" type="button" onClick={async () => setViewDeployment(await getEnrollmentTokenDeployment(row.id))}><Eye className="h-3.5 w-3.5" />View</Button>
+                      <Button variant="ghost" size="sm" type="button" title="Copy install command" aria-label="Copy install command" onClick={async () => copy(`cmd-${row.id}`, (await getEnrollmentTokenDeployment(row.id)).manual_command)}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" type="button" title="Edit token" aria-label="Edit token" onClick={() => setEditToken(row)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" type="button" title="Regenerate token value" aria-label="Regenerate token value" onClick={async () => { const next = await regenerateEnrollmentToken(row.id); setOneTimeToken(next); await loadTokens(); }}><RefreshCcw className="h-3.5 w-3.5" /></Button>
+                      {row.status !== "revoked" && (
+                        <Button variant="ghost" size="sm" type="button" onClick={() => setPendingTokenAction({ kind: "revoke", token: row })}>Revoke</Button>
+                      )}
+                      <Button variant="ghost" size="sm" type="button" title="Delete token" aria-label="Delete token" className="hover:!text-[var(--th-status-critical)]" onClick={() => setPendingTokenAction({ kind: "delete", token: row })}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   </td>
                 </tr>
@@ -344,7 +343,7 @@ export default function Deployment() {
               {!filteredTokens.length && (
                 <tr>
                   <td colSpan={9} className="py-8 text-center" style={{ color: "var(--th-text-muted)" }}>
-                    {tokenSearch.trim() ? "Asnjë token nuk u gjet." : "No enrollment tokens yet."}
+                    {tokenSearch.trim() ? "No tokens match your search." : "No enrollment tokens yet."}
                   </td>
                 </tr>
               )}
@@ -352,6 +351,33 @@ export default function Deployment() {
           </table>
         </div>
       </div>
+
+      {pendingTokenAction && (
+        <ConfirmationModal
+          title={pendingTokenAction.kind === "revoke" ? "Revoke token" : "Delete token"}
+          confirmLabel={pendingTokenAction.kind === "revoke" ? "Revoke token" : "Delete token"}
+          loading={tokenActionBusy}
+          onClose={() => setPendingTokenAction(null)}
+          onConfirm={async () => {
+            const { kind, token: target } = pendingTokenAction;
+            setTokenActionBusy(true);
+            try {
+              if (kind === "revoke") await revokeEnrollmentToken(target.id);
+              else await deleteEnrollmentToken(target.id, { confirmActive: true, confirmDefault: true });
+              await loadTokens();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : `Failed to ${kind} token`);
+            } finally {
+              setTokenActionBusy(false);
+              setPendingTokenAction(null);
+            }
+          }}
+        >
+          {pendingTokenAction.kind === "revoke"
+            ? <>New devices can no longer enroll with <strong>{pendingTokenAction.token.name}</strong>. Devices already enrolled are not affected.</>
+            : <>Permanently delete <strong>{pendingTokenAction.token.name}</strong>? Install commands that use it stop working. Devices already enrolled are not affected.</>}
+        </ConfirmationModal>
+      )}
 
       {viewDeployment && (
         <DeploymentModal
@@ -411,7 +437,7 @@ function DeploymentModal({ deployment, features, linuxPackage, copied, onCopy, o
       <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg border p-5" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)", color: "var(--th-text-primary)" }}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Deployment: {deployment.token_name}</h3>
-          <Button size="sm" type="button" onClick={onClose}>Close</Button>
+          <Button variant="secondary" size="sm" type="button" onClick={onClose}>Close</Button>
         </div>
         {!deployment.token_available && <div className="mb-4 rounded-lg border border-yellow-400/30 bg-yellow-400/10 p-3 text-sm text-yellow-100">This token has no recoverable value. Regenerate it to copy a usable command.</div>}
         <div className="space-y-5">
@@ -456,7 +482,7 @@ function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy
           <CommandBlock label="GPO startup command" value={deployment.gpo_command} copied={copied === "modal-gpo"} onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)} />
           <CommandBlock label="GPO Scheduled Task Deploy (Domain Controller)" value={deployment.gpo_deploy_command} copied={copied === "modal-gpo-deploy"} onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)} />
           <CommandBlock label="Bootstrap URL" value={deployment.bootstrap_url} copied={copied === "modal-url"} onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)} />
-          <Button type="button" onClick={onDownload} disabled={!deployment.token_available}><Download className="mr-2 h-4 w-4" />Download PS1</Button>
+          <Button variant="secondary" type="button" onClick={onDownload} disabled={!deployment.token_available}><Download className="mr-2 h-4 w-4" />Download PS1</Button>
         </>
       )}
 
@@ -478,7 +504,7 @@ function PlatformSection({ meta, deployment, token, linuxPackage, copied, onCopy
                 {linuxPackage ? (
                   <div className="text-xs" style={{ color: "var(--th-text-primary)" }}>Active Linux Package · <span className="font-mono">{linuxPackage.version}</span> · <span className="font-mono">{linuxPackage.filename}</span></div>
                 ) : (
-                  <div className="text-xs" style={{ color: "var(--th-text-muted)" }}>No active Linux package — upload one in <a href="/agent-packages" className="text-techi-orange hover:underline">Agent Packages</a>.</div>
+                  <div className="text-xs" style={{ color: "var(--th-text-muted)" }}>No active Linux package — upload one in <Link to="/onboarding?tab=packages" className="text-techi-orange hover:underline">Packages</Link>.</div>
                 )}
               </div>
             </div>
@@ -603,23 +629,23 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
           <input value={name} onChange={(e) => setName(e.target.value)} id="token-name" name="token-name" aria-label="Token name" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
           <input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} id="token-max-uses" name="token-max-uses" aria-label="Maximum uses" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
           <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} id="token-expires-at" name="token-expires-at" aria-label="Expiration date and time" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <select value={clientId} onChange={(e) => { setClientId(e.target.value ? Number(e.target.value) : ""); setGroupId(""); }} id="token-client" name="token-client" aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <SelectField value={clientId} onChange={(e) => { setClientId(e.target.value ? Number(e.target.value) : ""); setGroupId(""); }} id="token-client" name="token-client" aria-label="Client" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">No client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} disabled={!clientId} id="token-group" name="token-group" aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          </SelectField>
+          <SelectField value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : "")} disabled={!clientId} id="token-group" name="token-group" aria-label="Group" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">Auto by device type (Servers / Client PC)</option>{visibleGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+          </SelectField>
           <p className="text-xs" style={{ color: "var(--th-text-secondary)" }}>
             {clientId
               ? "Leave on Auto so each device lands in Servers or Client PC by what it actually is. Picking a group here pins every device to it instead."
               : "Select a client first — groups belong to a client."}
           </p>
-          <select value={status} onChange={(e) => setStatus(e.target.value as "active" | "revoked")} id="token-status" name="token-status" aria-label="Token status" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
+          <SelectField value={status} onChange={(e) => setStatus(e.target.value as "active" | "revoked")} id="token-status" name="token-status" aria-label="Token status" className="th-input w-full rounded-lg border px-3 py-2 text-sm">
             <option value="active">active</option><option value="revoked">revoked</option>
-          </select>
+          </SelectField>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
           <Button type="button" onClick={() => void onSave({ name, max_uses: maxUses, expires_at: expiresAt ? tiranaInputToUtcIso(expiresAt) : null, client_id: clientId || null, group_id: groupId || null, status })}>Save</Button>
         </div>
       </div>

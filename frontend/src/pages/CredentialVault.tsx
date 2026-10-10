@@ -18,10 +18,10 @@ import { getDevice, getDevices } from "../api/devices";
 import { emitConnectRefresh } from "../api/connect";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Badge, Button } from "../components/ui";
+import { Badge, Button, PageHeader, SelectField } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
 import EntitySearchSelect, { type EntityOption } from "../components/EntitySearchSelect";
-import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, utcToTiranaInput, DISPLAY_LOCALE } from "../utils/time";
 
 const INPUT_CLS =
   "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
@@ -51,7 +51,7 @@ const VIEW_TABS: { id: ViewTab; label: string }[] = [
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE,
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE,
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -499,24 +499,12 @@ export default function CredentialVault() {
   }
 
   return (
-    <section className="premium-page space-y-4">
-      <div className="premium-card overflow-hidden p-4 md:p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-orange-400/70" />
-              <p className="premium-kicker">Enterprise Credential Vault</p>
-              <Badge variant="ghost">Encrypted</Badge>
-            </div>
-            <h1 className="mt-1.5 text-2xl font-semibold text-white">
-              Credential <span className="premium-accent-text">Vault</span>
-            </h1>
-            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-300">
-              Secrets are stored with AES-256-GCM envelope encryption. Using a
-              credential never exposes it; Reveal requires a reason and is audited.
-            </p>
-          </div>
-          <div className="flex gap-2">
+    <section className="premium-page space-y-5">
+      <PageHeader
+        title="Credential Vault"
+        description="Secrets are stored with AES-256-GCM envelope encryption. Using a credential never exposes it; Reveal requires a reason and is audited."
+        actions={
+          <>
             <Button variant="secondary" onClick={() => void load()}>
               <RefreshCcw className="h-4 w-4" />
               Refresh
@@ -527,9 +515,9 @@ export default function CredentialVault() {
                 New credential
               </Button>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">
@@ -552,7 +540,7 @@ export default function CredentialVault() {
           { label: "Attention", value: summary.attention, icon: AlertTriangle },
         ].map(({ label, value, icon: Icon }) => (
           <div key={label} className="premium-card flex flex-col gap-1 p-3">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               <Icon className="h-3 w-3" /> {label}
             </div>
             <p className="text-xl font-bold text-white">{value}</p>
@@ -579,29 +567,29 @@ export default function CredentialVault() {
       {/* Filters */}
       <div className="premium-card grid gap-2 p-3 sm:grid-cols-2 md:grid-cols-5">
         <input className={INPUT_CLS} placeholder="Search name/username/purpose" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className={INPUT_CLS} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+        <SelectField className={INPUT_CLS} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
           <option value="">All types</option>
           {types.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
-        <select className={INPUT_CLS} value={filterScope} onChange={(e) => setFilterScope(e.target.value)}>
+        </SelectField>
+        <SelectField className={INPUT_CLS} value={filterScope} onChange={(e) => setFilterScope(e.target.value)}>
           <option value="">All scopes</option>
           <option value="global">Global</option>
           <option value="client">Client</option>
           <option value="group">Group</option>
           <option value="device">Device</option>
-        </select>
-        <select className={INPUT_CLS} value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
+        </SelectField>
+        <SelectField className={INPUT_CLS} value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
           <option value="">All clients</option>
           {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className={INPUT_CLS} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        </SelectField>
+        <SelectField className={INPUT_CLS} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
           <option value="expiring_soon">Expiring soon</option>
           <option value="expired">Expired</option>
           <option value="validation_failed">Validation failed</option>
-        </select>
+        </SelectField>
       </div>
 
       {/* Create / edit form */}
@@ -610,13 +598,13 @@ export default function CredentialVault() {
           <p className="premium-kicker mb-3">{editingId ? "Edit credential" : "New credential"}</p>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <input className={INPUT_CLS} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <select
+            <SelectField
               className={INPUT_CLS} value={form.credential_type} disabled={!!editingId}
               onChange={(e) => setForm({ ...form, credential_type: e.target.value as VaultCredentialType, secret_fields: {}, metadata: {} })}
             >
               {types.filter((t) => !t.legacy).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-            <select
+            </SelectField>
+            <SelectField
               aria-label="Scope"
               className={INPUT_CLS} value={form.scope_type} disabled={!!editingId}
               onChange={(e) => setForm({
@@ -632,7 +620,7 @@ export default function CredentialVault() {
               <option value="client">Client</option>
               <option value="group">Group</option>
               <option value="device">Device</option>
-            </select>
+            </SelectField>
             <input className={INPUT_CLS} placeholder="Purpose (e.g. embedded_terminal)" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
 
             {form.scope_type === "client" && (
@@ -709,7 +697,7 @@ export default function CredentialVault() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead>
-              <tr className="border-b border-white/5 text-[10px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Purpose</th>
@@ -764,7 +752,7 @@ export default function CredentialVault() {
                           {badge.label}
                         </span>
                         {testResult && (
-                          <p className={`mt-1 text-[10px] ${testResult.status === "success" ? "text-emerald-400" : testResult.status === "failed" ? "text-red-400" : "text-slate-500"}`}>
+                          <p className={`mt-1 text-[11px] ${testResult.status === "success" ? "text-emerald-400" : testResult.status === "failed" ? "text-red-400" : "text-slate-500"}`}>
                             {testResult.message}
                           </p>
                         )}
@@ -817,7 +805,7 @@ export default function CredentialVault() {
           <div className="space-y-2">
             {Object.entries(revealed.fields).map(([key, value]) => (
               <div key={key}>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{key}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{key}</p>
                 <p className="break-all font-mono text-sm" style={{ color: "var(--th-text-primary)" }}>{value}</p>
               </div>
             ))}
@@ -860,10 +848,10 @@ export default function CredentialVault() {
             )}
             {canAssign && (
               <div className="flex gap-2">
-                <select className={`${INPUT_CLS} flex-1`} value={assignClientId} onChange={(e) => setAssignClientId(e.target.value)}>
+                <SelectField className={`${INPUT_CLS} flex-1`} value={assignClientId} onChange={(e) => setAssignClientId(e.target.value)}>
                   <option value="">Select client to assign</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                </SelectField>
                 <Button onClick={() => void handleAddAssignment()} disabled={!assignClientId}>Add</Button>
               </div>
             )}
@@ -884,9 +872,9 @@ function FieldInput({
 }) {
   if (spec.kind === "select" && spec.options) {
     return (
-      <select className={INPUT_CLS} value={value} onChange={(e) => onChange(e.target.value)}>
+      <SelectField className={INPUT_CLS} value={value} onChange={(e) => onChange(e.target.value)}>
         {spec.options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
+      </SelectField>
     );
   }
   if (spec.kind === "textarea") {

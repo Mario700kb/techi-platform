@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { ChevronRight, RefreshCcw, Server, Monitor, Box, LayoutGrid } from "lucide-react";
+import { Building2, ChevronRight, LayoutGrid, Monitor, PackageX, RefreshCcw, Search, Server } from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
@@ -70,6 +70,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   }, [selectedKey]);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
   const [showEmptyGroups, setShowEmptyGroups] = useState(readShowEmptyGroups);
+  const [clientQuery, setClientQuery] = useState("");
 
   // Use stable treeCounts for all top-level counts — not recalculated on heartbeat
   const allCount = treeCounts.total;
@@ -109,13 +110,15 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
     [clients]
   );
   const visibleClients = useMemo(() => {
-    if (showEmptyGroups) return sortedClients;
-    return sortedClients.filter((client) => {
+    const q = clientQuery.trim().toLowerCase();
+    const matching = q ? sortedClients.filter((client) => client.name.toLowerCase().includes(q)) : sortedClients;
+    if (showEmptyGroups) return matching;
+    return matching.filter((client) => {
       const hasDevices = (treeCounts.byClient.get(client.id) ?? 0) > 0;
       const isActive = selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id;
       return hasDevices || isActive;
     });
-  }, [activeClientFolder, treeCounts, selectedKey, showEmptyGroups, sortedClients]);
+  }, [activeClientFolder, treeCounts, selectedKey, showEmptyGroups, sortedClients, clientQuery]);
 
   useEffect(() => {
     window.localStorage.setItem(SHOW_EMPTY_STORAGE_KEY, String(showEmptyGroups));
@@ -132,47 +135,41 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   };
 
   return (
-    <div className="premium-card overflow-hidden">
-      <div className="border-b border-white/[0.06] px-4 py-3">
-        <p className="premium-kicker">Device Explorer</p>
-        <div className="mt-1 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Fleet tree</h3>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onRefreshCounts}
-              className="rounded p-0.5 text-slate-500 hover:text-slate-300 transition-colors"
-              title="Refresh tree counts"
-            >
-              <RefreshCcw className="h-3 w-3" />
-            </button>
-            <span className="rounded-full border border-emerald-400/25 bg-emerald-400/[0.07] px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-              Live
-            </span>
-          </div>
-        </div>
+    <aside className="premium-card th-explorer p-0" aria-label="Device explorer">
+      <div className="th-panel-head">
+        <h2>Explorer</h2>
+        <button type="button" onClick={onRefreshCounts} className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7" title="Refresh counts" aria-label="Refresh counts">
+          <RefreshCcw className="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      <div className="fleet-tree p-2.5">
-        <ul className="space-y-1">
+      <div className="fleet-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <ul className="space-y-0.5">
           <li>
-            <TreeButton
-              active={selectedKey === "all"}
-              icon={LayoutGrid}
-              label="All Devices"
-              count={allCount}
-              onClick={() => onSelect("all")}
-            />
+            <TreeButton active={selectedKey === "all"} icon={LayoutGrid} label="All devices" count={allCount} onClick={() => onSelect("all")} />
           </li>
           <li>
-            <TreeButton
-              active={selectedKey === "unassigned"}
-              icon={Box}
-              label="No Client"
-              count={unassignedCount}
-              onClick={() => onSelect("unassigned")}
-            />
+            <TreeButton active={selectedKey === "unassigned"} icon={PackageX} label="No client" count={unassignedCount} onClick={() => onSelect("unassigned")} />
           </li>
+        </ul>
+
+        <div className="mt-4 flex items-center justify-between px-2.5">
+          <p className="th-nav-section !mb-0 !px-0">Clients</p>
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{visibleClients.length}</span>
+        </div>
+        {sortedClients.length > 6 && (
+          <label className="th-search mx-0.5 mt-2 !h-8">
+            <Search className="h-3.5 w-3.5 flex-none" />
+            <input value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} placeholder="Filter clients" aria-label="Filter clients" />
+          </label>
+        )}
+
+        <ul className="mt-1.5 space-y-0.5">
+          {visibleClients.length === 0 && (
+            <li className="px-2.5 py-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              {clientQuery ? "No clients match." : "No clients with devices."}
+            </li>
+          )}
           {visibleClients.map((client) => {
             const childFolders = CLIENT_FOLDERS.filter((folder) => {
               if (showEmptyGroups) return true;
@@ -182,17 +179,18 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             return (
               <li key={client.id}>
                 <TreeButton
-                  active={selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id}
+                  active={selectedKey === `client-${client.id}`}
+                  withinActive={activeClientFolder?.clientId === client.id}
                   expanded={expanded}
                   hasChildren={childFolders.length > 0}
-                  icon={Server}
+                  icon={Building2}
                   label={client.name}
                   count={clientCount(client.id)}
                   hasMaintenance={clientHasMaintenance(client.id)}
                   onClick={() => toggleClient(client.id)}
                 />
                 {expanded && childFolders.length > 0 && (
-                  <ul className="fleet-tree-child mt-1 space-y-1 border-l pl-4" style={{ borderColor: "var(--th-border-subtle)" }}>
+                  <ul className="fleet-tree-child">
                     {childFolders.map((folder) => {
                       const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
                       return (
@@ -200,14 +198,14 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                           <TreeButton
                             active={selectedKey === `client-${client.id}-${folder.id}`}
                             child
-                            icon={Monitor}
+                            icon={folder.id === "servers" ? Server : Monitor}
                             label={folder.label}
                             count={folderCount(client.id, folder.id)}
                             hasMaintenance={folderHasMaintenance(client.id, folder.id)}
                             onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
                           />
                           {platforms.length > 0 && (
-                            <ul className="mt-1 space-y-1 border-l pl-4" style={{ borderColor: "var(--th-border-subtle)" }}>
+                            <ul className="fleet-tree-child">
                               {platforms.map(([platform, count]) => {
                                 const key = `client-${client.id}-${folder.id}-${platform}`;
                                 return (
@@ -236,19 +234,17 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         </ul>
       </div>
 
-      <div className="border-t border-white/[0.05] px-4 py-2.5">
-        <label className="flex cursor-pointer items-center justify-between gap-3 text-[12px] font-semibold text-slate-400">
-          <span>Show empty groups</span>
-          <input
-            type="checkbox"
-            checked={showEmptyGroups}
-            onChange={(event) => setShowEmptyGroups(event.target.checked)}
-            className="h-3.5 w-3.5 rounded border-white/15 bg-slate-950 accent-orange-500"
-          />
-        </label>
-        <p className="mt-2 text-[11px] text-slate-600">Browse by client · device type</p>
-      </div>
-    </div>
+      <label className="th-panel-foot flex cursor-pointer items-center justify-between gap-3">
+        <span>Show empty clients</span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="th-switch"
+          checked={showEmptyGroups}
+          onChange={(event) => setShowEmptyGroups(event.target.checked)}
+        />
+      </label>
+    </aside>
   );
 });
 
@@ -256,6 +252,8 @@ export default DeviceTree;
 
 interface TreeButtonProps {
   active: boolean;
+  /** A sub-folder of this item is selected. */
+  withinActive?: boolean;
   child?: boolean;
   icon?: typeof LayoutGrid;
   platformIcon?: string;
@@ -267,35 +265,31 @@ interface TreeButtonProps {
   onClick: () => void;
 }
 
-function TreeButton({ active, child = false, icon: Icon, platformIcon, label, count, expanded = false, hasChildren = false, hasMaintenance = false, onClick }: TreeButtonProps) {
+function TreeButton({ active, withinActive = false, child = false, icon: Icon, platformIcon, label, count, expanded = false, hasChildren = false, hasMaintenance = false, onClick }: TreeButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? "true" : undefined}
-      className={clsx(
-        "flex w-full items-center rounded-md text-left transition-all duration-120",
-        child ? "px-2.5 py-1.5" : "px-2.5 py-1.5",
-        active
-          ? "bg-[var(--th-sidebar-nav-active-bg)] text-[var(--th-accent-bright)] shadow-[var(--th-sidebar-nav-active-shadow)]"
-          : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
-      )}
+      aria-expanded={hasChildren ? expanded : undefined}
+      className="th-tree-item"
+      data-active={active}
+      data-within={withinActive}
+      data-child={child}
     >
-      <span className="flex min-w-0 items-center gap-1.5">
-        {hasChildren && (
-          <ChevronRight className={clsx("h-3.5 w-3.5 shrink-0 transition-transform", expanded ? "rotate-90 text-slate-300" : "text-slate-600")} />
-        )}
-        {platformIcon ? (
-          <PlatformIcon platform={platformIcon} size={14} className="shrink-0" />
-        ) : Icon ? (
-          <Icon className={clsx(child ? "h-3.5 w-3.5" : "h-4 w-4", "shrink-0", active ? "text-techi-orange" : "text-slate-600")} />
-        ) : null}
-        <span className={clsx("truncate font-semibold", active ? "text-white" : "")}>{label}</span>
-        <span className="fleet-tree-count rounded-full px-1.5 text-[11px] font-bold tabular-nums">{count}</span>
-        {hasMaintenance && (
-          <span className="h-1.5 w-1.5 flex-none rounded-full bg-teal-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-maint)_60%,transparent)]" title="Has devices in maintenance" />
-        )}
-      </span>
+      {!child && (
+        <span className="th-tree-caret" aria-hidden="true">
+          {hasChildren && <ChevronRight className={clsx("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />}
+        </span>
+      )}
+      {platformIcon ? (
+        <PlatformIcon platform={platformIcon} size={14} className="shrink-0" />
+      ) : Icon ? (
+        <Icon className="h-4 w-4 shrink-0" />
+      ) : null}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {hasMaintenance && <span className="th-tree-maint" title="Has devices in maintenance" />}
+      <span className="th-tree-count">{count}</span>
     </button>
   );
 }

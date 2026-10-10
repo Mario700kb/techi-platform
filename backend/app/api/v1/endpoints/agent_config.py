@@ -199,7 +199,7 @@ def _build_ps_script(seconds: int, generated_at: str) -> str:
 # ============================================================
 # TECHI Agent Heartbeat Configuration Script
 # Generated  : {generated_at}
-# Platform   : TECHI Platform
+# Platform   : TECHI Connect
 # Target     : heartbeat_interval_seconds = {seconds}
 # ============================================================
 #

@@ -9,6 +9,7 @@ import { deviceDisplayName } from "../utils/deviceLabel";
 import { parseUTC } from "../utils/time";
 import { Pill } from "../components/mobile/primitives";
 import { Snackbar } from "../components/mobile/Snackbar";
+import { PageHeader } from "../components/ui";
 
 /**
  * Alerts — Mobile UI 2.0 (docs/reference/MOBILE-DESIGN-SPEC.md — Alerts).
@@ -101,7 +102,7 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
           <span className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>
             {KIND_LABEL[alert.kind] ?? alert.kind}
           </span>
-          <time className="ml-auto flex-none text-[10.5px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
+          <time className="ml-auto flex-none text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
             {timeAgo(alert.created_at)}
           </time>
         </div>
@@ -111,7 +112,7 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
         <button
           type="button"
           onClick={() => onDismiss(alert.id)}
-          className="mt-[8px] rounded-md px-3 py-[6px] text-[11.5px] font-bold"
+          className="mt-[8px] rounded-md px-3 py-[6px] text-[12px] font-bold"
           style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}
         >
           Dismiss
@@ -149,11 +150,11 @@ function AlertGroup({
           className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
         >
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13.5px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
+            <span className="block truncate text-[14px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
               {label.name}
             </span>
             {label.client && (
-              <span className="block truncate text-[11.5px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
+              <span className="block truncate text-[12px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
                 {label.client}
               </span>
             )}
@@ -284,6 +285,11 @@ export default function AlertsMobile() {
 
   return (
     <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 112px)" }}>
+      <PageHeader
+        className="mb-5 hidden md:block"
+        title="Alerts"
+        description="Open alerts across every managed device, newest first."
+      />
       <div
         className="flex gap-2 overflow-x-auto px-1 pb-3"
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}

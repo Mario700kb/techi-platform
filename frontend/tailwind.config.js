@@ -55,10 +55,43 @@ const agent = scale("--th-status-agent");
 const accent = scale("--th-accent");
 const rose = scale("--th-series-rose");
 
+// The root font-size is 14px, so Tailwind's rem-based scales came out at
+// 0.875× (p-4 = 14px, text-xs = 10.5px, rounded-lg = 7px) — off the 4px grid
+// and too small to read. These scales are pinned in px so every spacing,
+// radius and type step lands on the grid regardless of the root size.
+const spacing = Object.fromEntries(
+  [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 96]
+    .map((n) => [String(n), `${n * 4}px`]),
+);
+spacing.px = "1px";
+
 export default {
   darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
+    spacing,
+    fontSize: {
+      xs: ["12px", { lineHeight: "16px" }],
+      sm: ["13px", { lineHeight: "20px" }],
+      base: ["14px", { lineHeight: "22px" }],
+      lg: ["16px", { lineHeight: "24px" }],
+      xl: ["18px", { lineHeight: "26px" }],
+      "2xl": ["22px", { lineHeight: "28px" }],
+      "3xl": ["26px", { lineHeight: "32px" }],
+      "4xl": ["32px", { lineHeight: "38px" }],
+      "5xl": ["40px", { lineHeight: "46px" }],
+    },
+    borderRadius: {
+      none: "0px",
+      sm: "4px",
+      DEFAULT: "6px",
+      md: "6px",
+      lg: "8px",
+      xl: "10px",
+      "2xl": "12px",
+      "3xl": "16px",
+      full: "9999px",
+    },
     extend: {
       fontFamily: {
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "monospace"],

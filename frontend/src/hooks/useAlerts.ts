@@ -5,6 +5,8 @@ import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 
 interface UseAlertsOptions {
   latestEvent?: DeviceRealtimeEvent | null;
+  /** Fetch only for a signed-in operator; flipping to true (login) loads immediately. */
+  enabled?: boolean;
 }
 
 interface UseAlertsResult {
@@ -16,7 +18,7 @@ interface UseAlertsResult {
 
 const EMPTY_COUNT: AlertCount = { total_open: 0, by_severity: {} };
 
-export function useAlerts({ latestEvent }: UseAlertsOptions = {}): UseAlertsResult {
+export function useAlerts({ latestEvent, enabled = true }: UseAlertsOptions = {}): UseAlertsResult {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertCount, setAlertCount] = useState<AlertCount>(EMPTY_COUNT);
   const [loading, setLoading] = useState(false);
@@ -39,10 +41,15 @@ export function useAlerts({ latestEvent }: UseAlertsOptions = {}): UseAlertsResu
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      setAlerts([]);
+      setAlertCount(EMPTY_COUNT);
+      return;
+    }
     void loadAlerts();
     const id = window.setInterval(() => void loadAlerts(), 120000);
     return () => window.clearInterval(id);
-  }, [loadAlerts]);
+  }, [loadAlerts, enabled]);
 
   useEffect(() => {
     if (!latestEvent) return;

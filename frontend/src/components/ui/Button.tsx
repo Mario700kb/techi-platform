@@ -9,9 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export default function Button({ children, className, size = "md", variant = "primary", ...props }: ButtonProps) {
   const sizeClasses = {
-    sm: "min-h-9 px-3.5 py-2 text-sm",
-    md: "min-h-10 px-4 py-2.5 text-sm",
-    lg: "min-h-11 px-5 py-3 text-base",
+    sm: "min-h-8 px-3 py-1.5 text-[13px]",
+    md: "min-h-9 px-3.5 py-2 text-[13px]",
+    lg: "min-h-10 px-4 py-2 text-sm",
   };
   const variantClasses = {
     primary: "th-btn-primary",

@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Monitor, Bell, MoreHorizontal } from "lucide-react";
 import { useAppData } from "../contexts/AppDataContext";
+import { MORE_PATHS } from "./navigation";
 
 /**
  * Mobile UI 2.0 bottom navigation (docs/reference/MOBILE-DESIGN-SPEC.md):
@@ -9,20 +10,7 @@ import { useAppData } from "../contexts/AppDataContext";
  */
 
 // Pages reachable from the More screen — the More tab stays active on them.
-const MORE_SUBPATHS = [
-  "/more",
-  "/settings",
-  "/clients",
-  "/remote-support",
-  "/audit",
-  "/deployment",
-  "/enrollment-bootstrap",
-  "/agent-packages",
-  "/inventory",
-  "/operators",
-  "/teams",
-  "/agent-config",
-];
+const MORE_SUBPATHS = MORE_PATHS;
 
 export function BottomNav() {
   const location = useLocation();
@@ -105,7 +93,7 @@ export function BottomNav() {
               {badge > 0 && (
                 <span
                   aria-hidden="true"
-                  className="absolute -right-3 -top-2 flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 text-[9.5px] font-extrabold leading-none"
+                  className="absolute -right-3 -top-2 flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 text-[11px] font-extrabold leading-none"
                   style={{ background: "var(--danger)", color: "#fff" }}
                 >
                   {badgeText}

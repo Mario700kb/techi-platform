@@ -7,6 +7,7 @@ import {
   putAgentConfig,
 } from "../api/agentConfig";
 import AgentCommandsPanel from "../components/AgentCommandsPanel";
+import { PageHeader } from "../components/ui";
 
 type CopyTarget = "rollout" | "rollback" | null;
 const PLATFORM_ROWS = [
@@ -136,20 +137,12 @@ export default function AgentConfigPage() {
   const remoteSupportDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="mx-auto max-w-2xl space-y-6">
-      {/* Header */}
-      <div>
-        <h1
-          className="mb-1 text-xl font-bold tracking-tight"
-          style={{ color: "var(--th-text-primary)" }}
-        >
-          Agent Configuration
-        </h1>
-        <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>
-          Platform-wide heartbeat policy and bulk command center.
-        </p>
-      </div>
+    <section className="premium-page space-y-5">
+      <PageHeader
+        title="Agent Configuration"
+        description="Platform-wide heartbeat policy and bulk command center."
+      />
+      <div className="gap-4 xl:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
 
       {/* How each column reaches the fleet.
           Heartbeat is served on every heartbeat response (agent.py get_heartbeat_interval →
@@ -454,6 +447,6 @@ export default function AgentConfigPage() {
         </p>
         <AgentCommandsPanel />
       </div>
-    </div>
+    </section>
   );
 }

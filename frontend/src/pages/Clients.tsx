@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import ConfirmationModal from "../components/ConfirmationModal";
 import { Building2, Globe2, Pencil, Plus, RefreshCcw, Trash2, Users, X } from "lucide-react";
 import { Client, DeviceGroup, TrustedDomain, createClient, createGroup, createTrustedDomain, deleteClient, deleteGroup, deleteTrustedDomain, getClients, getGroups, getTrustedDomains, updateClient, updateGroup, updateTrustedDomain } from "../api/clients";
-import { Button } from "../components/ui";
+import { Button, PageHeader, SelectField } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 
@@ -17,6 +18,8 @@ export default function Clients() {
   const [groupDescription, setGroupDescription] = useState("");
   const [groupClientId, setGroupClientId] = useState("");
   const [domainName, setDomainName] = useState("");
+  const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: ReactNode; confirmLabel: string; run: () => Promise<void> } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [domainClientId, setDomainClientId] = useState("");
   const [editingGroup, setEditingGroup] = useState<DeviceGroup | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -137,9 +140,11 @@ export default function Clients() {
     }
   };
 
-  const handleDeleteTrustedDomain = async (domain: TrustedDomain) => {
-    const confirmed = window.confirm(`Delete trusted domain mapping "${domain.domain}"?`);
-    if (!confirmed) return;
+  const handleDeleteTrustedDomain = (domain: TrustedDomain) => setPendingConfirm({
+    title: "Delete domain mapping",
+    message: <>Delete the trusted domain mapping <strong>{domain.domain}</strong>?</>,
+    confirmLabel: "Delete mapping",
+    run: async () => {
     try {
       setError(null);
       await deleteTrustedDomain(domain.id);
@@ -147,7 +152,8 @@ export default function Clients() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete domain mapping");
     }
-  };
+    },
+  });
 
   const openEditClient = (client: Client) => {
     setEditingClient(client);
@@ -170,11 +176,11 @@ export default function Clients() {
     }
   };
 
-  const handleDeleteClient = async (client: Client) => {
-    const confirmed = window.confirm(
-      `Delete client "${client.name}"? Devices will stay in the dashboard but will be detached from this client and its groups.`
-    );
-    if (!confirmed) return;
+  const handleDeleteClient = (client: Client) => setPendingConfirm({
+    title: "Delete client",
+    message: <>Delete <strong>{client.name}</strong>? Its devices stay in the dashboard but are detached from this client and its groups.</>,
+    confirmLabel: "Delete client",
+    run: async () => {
     try {
       setError(null);
       await deleteClient(client.id);
@@ -187,13 +193,14 @@ export default function Clients() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete client");
     }
-  };
+    },
+  });
 
-  const handleDeleteGroup = async (group: DeviceGroup) => {
-    const confirmed = window.confirm(
-      `Delete group "${group.name}"? Devices in this group will be detached and remain in the dashboard.`
-    );
-    if (!confirmed) return;
+  const handleDeleteGroup = (group: DeviceGroup) => setPendingConfirm({
+    title: "Delete group",
+    message: <>Delete <strong>{group.name}</strong>? Devices in this group are detached and remain in the dashboard.</>,
+    confirmLabel: "Delete group",
+    run: async () => {
     try {
       setError(null);
       await deleteGroup(group.id);
@@ -201,7 +208,8 @@ export default function Clients() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete group");
     }
-  };
+    },
+  });
 
   const openEditGroup = (group: DeviceGroup) => {
     setEditingGroup(group);
@@ -226,21 +234,18 @@ export default function Clients() {
 
   return (
     <section className="premium-page space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="premium-kicker">Organizations</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white">Clients</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Create customer records and lightweight groups used by device assignment and enrollment tokens.
-            </p>
-          </div>
-          <Button size="sm" onClick={() => void loadData(true)} disabled={loading}>
-            <RefreshCcw className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Clients"
+        description="Create customer records and lightweight groups used by device assignment and enrollment tokens."
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
+              <RefreshCcw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
@@ -248,7 +253,7 @@ export default function Clients() {
         </div>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="premium-card-soft overflow-hidden">
           <div className="border-b border-white/[0.08] px-5 py-4">
             <div className="flex items-center gap-2">
@@ -365,7 +370,7 @@ export default function Clients() {
               <h2 className="text-base font-semibold text-white">Create group</h2>
             </div>
             <div className="space-y-3">
-              <select
+              <SelectField
                 value={groupClientId}
                 onChange={(event) => setGroupClientId(event.target.value)}
                 id="group-client"
@@ -376,7 +381,7 @@ export default function Clients() {
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>{client.name}</option>
                 ))}
-              </select>
+              </SelectField>
               <input
                 value={groupName}
                 onChange={(event) => setGroupName(event.target.value)}
@@ -390,7 +395,7 @@ export default function Clients() {
                 rows={3}
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
-              <Button className="w-full" type="button" onClick={handleCreateGroup} disabled={!clients.length}>
+              <Button variant="secondary" className="w-full" type="button" onClick={handleCreateGroup} disabled={!clients.length}>
                 Create Group
               </Button>
 	            </div>
@@ -411,7 +416,7 @@ export default function Clients() {
                 placeholder="x"
                 className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
               />
-              <select
+              <SelectField
                 value={domainClientId}
                 onChange={(event) => setDomainClientId(event.target.value)}
                 aria-label="Mapped client"
@@ -420,8 +425,8 @@ export default function Clients() {
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>{client.name}</option>
                 ))}
-              </select>
-              <Button className="w-full" type="button" onClick={handleCreateTrustedDomain} disabled={!clients.length}>
+              </SelectField>
+              <Button variant="secondary" className="w-full" type="button" onClick={handleCreateTrustedDomain} disabled={!clients.length}>
                 Save Mapping
               </Button>
             </div>
@@ -443,7 +448,7 @@ export default function Clients() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <select
+                    <SelectField
                       value={domain.client_id ?? ""}
                       onChange={(event) => void handleTrustedDomainClientChange(domain, event.target.value)}
                       aria-label={`Client for ${domain.domain}`}
@@ -452,7 +457,7 @@ export default function Clients() {
                       {clients.map((client) => (
                         <option key={client.id} value={client.id}>{client.name}</option>
                       ))}
-                    </select>
+                    </SelectField>
                     <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-400">
                       <input
                         type="checkbox"
@@ -561,6 +566,22 @@ export default function Clients() {
             </div>
           </div>
         </div>
+      )}
+      {pendingConfirm && (
+        <ConfirmationModal
+          title={pendingConfirm.title}
+          confirmLabel={pendingConfirm.confirmLabel}
+          loading={confirmBusy}
+          onClose={() => setPendingConfirm(null)}
+          onConfirm={async () => {
+            setConfirmBusy(true);
+            await pendingConfirm.run();
+            setConfirmBusy(false);
+            setPendingConfirm(null);
+          }}
+        >
+          {pendingConfirm.message}
+        </ConfirmationModal>
       )}
     </section>
   );

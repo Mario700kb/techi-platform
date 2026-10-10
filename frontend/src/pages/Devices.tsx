@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deviceDisplayName } from "../utils/deviceLabel";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, Clock3, Radio, RefreshCcw, Server, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, RefreshCcw } from "lucide-react";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import {
   archiveDevice,
   deleteDevice,
+  getDevice,
   getDevices,
   getDeviceTableDetails,
   restoreDevice,
@@ -18,8 +19,7 @@ import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
 import DeviceTree from "../components/DeviceTree";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
-import NotificationCenter from "../components/NotificationCenter";
-import { Button } from "../components/ui";
+import { Button, PageHeader } from "../components/ui";
 import { useFavorites } from "../hooks/useFavorites";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useAuth } from "../auth/AuthContext";
@@ -150,6 +150,19 @@ export default function Devices() {
 
   const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("techi.devices.explorer");
+      if (saved !== null) return saved === "open";
+    } catch { /* storage unavailable */ }
+    return window.innerWidth >= 1600;
+  });
+  const toggleExplorer = () => {
+    setExplorerOpen((open) => {
+      try { window.localStorage.setItem("techi.devices.explorer", open ? "closed" : "open"); } catch { /* storage unavailable */ }
+      return !open;
+    });
+  };
   const [hideOfflineDays, setHideOfflineDays] = useState(30);
   const snapshotLoading = fleetOverviewLoading && fleetOverview === null;
   const [error, setError] = useState<string | null>(null);
@@ -246,11 +259,6 @@ export default function Devices() {
     window.clearTimeout(drawerCloseTimerRef.current);
     drawerCloseTimerRef.current = window.setTimeout(() => setDrawerDeviceId(null), 310);
   }, []);
-
-  const jumpToDevice = useCallback((deviceId: number) => {
-    const device = tableDevices.find((d) => d.id === deviceId);
-    if (device) openDrawer(device);
-  }, [tableDevices, openDrawer]);
 
   // loadTableData fetches the paginated table data from the API (stale-while-revalidate cache)
   const loadTableData = useCallback(async () => {
@@ -542,6 +550,19 @@ export default function Devices() {
     }, 200);
   };
 
+  // ?folder=unassigned | client-<id> opens that explorer folder (dashboard links).
+  const urlFolder = searchParams.get("folder");
+  useEffect(() => {
+    if (!urlFolder) return;
+    handleTreeSelect(urlFolder);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("folder");
+      return next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlFolder]);
+
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
     window.clearTimeout(searchTimerRef.current);
@@ -555,6 +576,35 @@ export default function Devices() {
       }, { replace: true });
     }, 300);
   }, [setSearchParams]);
+
+  // The top-bar search and the alert bell link here with ?q= / ?device=;
+  // pick those up even when the page is already mounted.
+  const urlQuery = searchParams.get("q") || "";
+  useEffect(() => {
+    if (urlQuery === debouncedSearch) return;
+    setSearchQuery(urlQuery);
+    setDebouncedSearch(urlQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuery]);
+
+  const urlDeviceId = Number(searchParams.get("device")) || null;
+  useEffect(() => {
+    if (urlDeviceId === null) return;
+    let cancelled = false;
+    const known = tableDevices.find((d) => d.id === urlDeviceId);
+    const open = (device: Device) => {
+      if (cancelled) return;
+      openDrawer(device);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("device");
+        return next;
+      }, { replace: true });
+    };
+    if (known) open(known);
+    else void getDevice(urlDeviceId).then(open).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [urlDeviceId, tableDevices, openDrawer, setSearchParams]);
 
   const handleFilterChange = (key: keyof DeviceFilters, value: string | boolean | undefined) => {
     let nextValue: string | number | boolean | undefined;
@@ -698,64 +748,36 @@ export default function Devices() {
   }, [tableDevices, hideOldOffline, hideOfflineDays]);
 
   return (
-    <section className="premium-page devices-premium min-w-0 space-y-5">
+    <section className="premium-page devices-premium min-w-0 space-y-5 xl:flex xl:h-full xl:flex-col xl:gap-5 xl:space-y-0">
       {/* Mobile: the screen title lives in MobileTopBar (Mobile UI 2.0);
           the alert count lives in the BottomNav badge. */}
 
-      {/* Desktop header card — hidden on mobile */}
-      <div className="hidden md:block premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <p className="premium-kicker">TECHI Devices Hub</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white md:text-4xl">
-              Remote device <span className="premium-accent-text">management</span>
-            </h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Inspect endpoint posture, filter client fleets, and launch TECHI Remote Support connections.
-            </p>
-          </div>
-          <div className="flex flex-none flex-wrap items-center gap-2">
-            <NotificationCenter
-              alerts={alerts}
-              totalOpen={alertCount.total_open}
-              onDeviceJump={jumpToDevice}
-            />
-            <Button onClick={handleRefresh} size="sm">
+      <PageHeader
+        className="hidden shrink-0 md:block"
+        title="Devices"
+        description="Monitor endpoint health, filter by client and connect with TECHI Remote Support."
+        actions={
+          <>
+            <span
+              className="th-status-chip"
+              style={{ "--chip-tone": realtimeStatus === "connected" ? "var(--th-status-online)" : realtimeStatus === "fallback" ? "var(--th-status-warning)" : "var(--th-status-critical)" } as React.CSSProperties}
+              title={realtimeStatus === "connected" ? "Live updates over WebSocket" : realtimeStatus === "fallback" ? "WebSocket unavailable, refreshing by polling" : "Live updates disconnected"}
+            >
+              <i />
+              {realtimeStatus === "connected" ? "Live" : realtimeStatus === "fallback" ? "Polling" : "Disconnected"}
+            </span>
+            <Button onClick={handleRefresh} size="sm" variant="secondary">
               <RefreshCcw className="h-3.5 w-3.5" />
               Refresh
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {/* Operational status strip */}
-        <div className="op-strip">
-          <span className={`op-pill ${realtimeStatus === "connected" ? "op-pill-ok" : realtimeStatus === "fallback" ? "op-pill-warn" : "op-pill-err"}`}>
-            <span className="op-dot" />
-            {realtimeStatus === "connected" ? "WS Connected" : realtimeStatus === "fallback" ? "WS Fallback" : "WS Offline"}
-          </span>
-          <span className="op-pill op-pill-ok">
-            <span className="op-dot" />
-            Backend Healthy
-          </span>
-          <span className="op-pill op-pill-neutral">
-            <span className="op-dot" />
-            Agent Active
-          </span>
-          {alertCount.total_open > 0 && (
-            <span className={`op-pill ${(alertCount.by_severity["critical"] ?? 0) > 0 ? "op-pill-err" : "op-pill-warn"}`}>
-              <span className="op-dot" />
-              {alertCount.total_open} Active {alertCount.total_open === 1 ? "Alert" : "Alerts"}
-            </span>
-          )}
-          <span className="op-pill op-pill-neutral ml-auto">
-            {tableTotal > 0 ? `${tableTotal} devices` : `${visibleDevices.length} devices`}
-          </span>
-        </div>
-      </div>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
-        {/* DeviceTree — desktop only */}
-        <div className="hidden md:block min-w-0">
+      {/* Desktop: the page fits the screen; the explorer and the table scroll inside. */}
+      <div className={`grid min-w-0 items-start gap-4 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)] xl:items-stretch ${explorerOpen ? "xl:grid-cols-[248px_minmax(0,1fr)]" : ""}`}>
+        {/* DeviceTree — desktop only, collapsible */}
+        <div className={explorerOpen ? "hidden min-w-0 md:sticky md:top-0 md:block md:self-start xl:static xl:h-full xl:min-h-0 xl:self-stretch" : "hidden"}>
           <DeviceTree
             selectedKey={selectedTreeKey}
             onSelect={handleTreeSelect}
@@ -768,177 +790,7 @@ export default function Devices() {
           />
         </div>
 
-        <div className="min-w-0 space-y-4">
-          {/* Stat cards — desktop only */}
-          <div className="hidden md:grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {/* Total */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange("all")}
-              className="premium-metric p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "all"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-accent) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Total</p>
-                <Radio className="h-4 w-4 text-orange-400/70" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-white">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.total}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Scoped fleet snapshot</p>
-            </button>
-
-            {/* Online */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange(quickFilter === "online" ? "all" : "online")}
-              className="premium-metric metric-online p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "online"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-online) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Online</p>
-                <Wifi className="h-4 w-4 text-emerald-400/70" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-emerald-300">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.online}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Active endpoints available</p>
-            </button>
-
-            {/* Stale */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange(quickFilter === "stale" ? "all" : "stale")}
-              className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "stale"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-warning) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Stale</p>
-                <Clock3 className="h-4 w-4 text-amber-400/80" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-amber-200">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.stale}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Last seen within 15 minutes</p>
-            </button>
-
-            {/* Offline */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange(quickFilter === "offline" ? "all" : "offline")}
-              className="premium-metric metric-offline p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "offline"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-offline) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Offline</p>
-                <WifiOff className="h-4 w-4 text-slate-500" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-slate-200">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : snapshotStats.offline}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Devices not responding</p>
-            </button>
-          </div>
-
-          {/* Health metric cards — desktop only */}
-          <div className="hidden md:grid min-w-0 gap-4 sm:grid-cols-2">
-            {/* Critical health */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange(quickFilter === "critical" ? "all" : "critical")}
-              className="premium-metric metric-critical p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "critical"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-critical) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Critical</p>
-                <ShieldAlert className="h-4 w-4 text-red-400/80" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-red-300">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : (fleetOverview?.critical ?? 0)}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Critical device health</p>
-            </button>
-
-            {/* Warnings */}
-            <button
-              type="button"
-              onClick={() => handleQuickFilterChange(quickFilter === "warnings" ? "all" : "warnings")}
-              className="premium-metric metric-warning p-5 text-left transition-all hover:opacity-90"
-              style={
-                quickFilter === "warnings"
-                  ? { outline: "2px solid color-mix(in srgb, var(--th-status-warning) 45%, transparent)", outlineOffset: "-2px" }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className="premium-kicker">Warnings</p>
-                <AlertTriangle className="h-4 w-4 text-amber-400/80" />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-amber-200">
-                {snapshotLoading ? <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-700/60" /> : (fleetOverview?.warnings ?? 0)}
-              </p>
-              <p className="mt-2 text-[13px] text-slate-400">Warning device health</p>
-            </button>
-          </div>
-
-          {/* Info panels — desktop only */}
-          <div className="hidden md:flex premium-card-soft flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-orange-300" />
-              <span>Native TECHI Remote Support connect action is preserved as a future desktop-launch workflow.</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
-              <Server className="h-4 w-4" />
-              <span>Managed fleet</span>
-            </div>
-          </div>
-
-          <div className="hidden md:flex premium-card-soft flex-col gap-3 p-4 text-sm font-medium text-slate-200 lg:flex-row lg:items-center lg:justify-between">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={hideOldOffline}
-                onChange={(event) => setHideOldOffline(event.target.checked)}
-                className="h-4 w-4 rounded border-white/15 bg-slate-950 accent-orange-500"
-              />
-              <span>Hide offline devices older than</span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={365}
-                id="hide-offline-days"
-                name="hide-offline-days"
-                aria-label="Days offline before hiding"
-                value={hideOfflineDays}
-                onChange={(event) => setHideOfflineDays(Math.max(1, Number(event.target.value) || 1))}
-                className="w-20 rounded-lg border border-white/[0.1] bg-slate-900/70 px-3 py-2 text-[13px] font-semibold text-white focus:border-techi-orange/50 focus:outline-none"
-              />
-              <span className="text-[13px] text-slate-400">days</span>
-            </div>
-          </div>
-
+        <div className="min-w-0 space-y-4 xl:min-h-0">
           <DevicesTable
             devices={visibleDevices}
             loading={tableLoading && tableDevices.length === 0}
@@ -983,6 +835,49 @@ export default function Devices() {
             activeAgentVersions={fleetOverview?.active_agent_versions}
             agentsOutdated={fleetOverview?.agents_outdated ?? 0}
             onOpenDeviceTerminal={openDeviceTerminal}
+            statusCounts={{
+              all: snapshotStats.total,
+              online: snapshotStats.online,
+              stale: snapshotStats.stale,
+              offline: snapshotStats.offline,
+              critical: fleetOverview?.critical ?? 0,
+              warnings: fleetOverview?.warnings ?? 0,
+            }}
+            toolbarExtra={
+              <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleExplorer}
+                className="th-icon-btn hidden min-h-8 gap-1.5 px-2.5 text-[12px] font-medium md:inline-flex"
+                aria-pressed={explorerOpen}
+                title={explorerOpen ? "Hide the client explorer" : "Show the client explorer"}
+              >
+                {explorerOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+                Explorer
+              </button>
+              <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
+                <input
+                  type="checkbox"
+                  checked={hideOldOffline}
+                  onChange={(event) => setHideOldOffline(event.target.checked)}
+                  className="h-4 w-4 rounded accent-orange-500"
+                />
+                Hide devices offline more than
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  id="hide-offline-days"
+                  name="hide-offline-days"
+                  aria-label="Days offline before hiding"
+                  value={hideOfflineDays}
+                  onChange={(event) => setHideOfflineDays(Math.max(1, Number(event.target.value) || 1))}
+                  className="th-input w-16 px-2 py-1 text-[13px]"
+                />
+                days
+              </label>
+              </div>
+            }
           />
         </div>
       </div>

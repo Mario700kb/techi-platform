@@ -1,1 +1,1 @@
-"""Database package for TECHI Platform."""
+"""Database package for TECHI Connect."""

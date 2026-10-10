@@ -139,7 +139,7 @@ def test_generate_device_report_types(report_type, tmp_path, monkeypatch):
     assert run.client_id == client.id
     content = ReportService.resolve_download_path(run).read_bytes()
     assert content.startswith(b"%PDF-1.4")
-    assert b"TECHI PLATFORM" in content
+    assert b"TECHI CONNECT" in content
     assert b"Executive Summary" in content
     assert b"Page 1" in content
     assert run.filename.startswith(f"DEVICE_ACME-SRV_{report_type}_")

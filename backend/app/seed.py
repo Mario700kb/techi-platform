@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed script for TECHI Platform development data.
+Seed script for TECHI Connect development data.
 Run with: python -m app.seed
 """
 import sys

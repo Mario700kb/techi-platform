@@ -13,7 +13,7 @@ import {
 } from "../api/operators";
 import { listTeams, TeamWithStats } from "../api/teams";
 import { UserRole } from "../api/auth";
-import { Button } from "../components/ui";
+import { Button, PageHeader, SelectField } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -295,17 +295,12 @@ export default function Operators() {
 
   return (
     <section className="premium-page space-y-5">
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="premium-kicker">Access Control</p>
-            <h1 className="mt-1.5 text-3xl font-semibold text-white">Operators</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
-              Manage platform users, roles, and access permissions.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void loadData(true)} disabled={loading}>
+      <PageHeader
+        title="Operators"
+        description="Manage platform users, roles, and access permissions."
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
               <RefreshCcw className="h-3.5 w-3.5" />
               Refresh
             </Button>
@@ -321,9 +316,9 @@ export default function Operators() {
                 Add User
               </Button>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && !/Permission denied|Insufficient role/.test(error) && (
         <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
@@ -381,7 +376,7 @@ export default function Operators() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-white">{displayLabel}</span>
                         {isSelf && (
-                          <span className="rounded-full border border-techi-orange/30 bg-techi-orange/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-techi-orange">
+                          <span className="rounded-full border border-techi-orange/30 bg-techi-orange/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-techi-orange">
                             you
                           </span>
                         )}
@@ -416,7 +411,7 @@ export default function Operators() {
                           <span className="text-[11px] text-slate-600">—</span>
                         ) : (
                           teamsForOperator(op.id).map((team) => (
-                            <span key={team.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                            <span key={team.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
                               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: team.color ?? "var(--th-accent)" }} />
                               {team.name}
                             </span>
@@ -548,7 +543,7 @@ export default function Operators() {
             </div>
             <div>
               <label className={LABEL_CLS}>Role *</label>
-              <select
+              <SelectField
                 value={createForm.role}
                 onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value as UserRole }))}
                 id="create-role"
@@ -559,7 +554,7 @@ export default function Operators() {
                 {availableRoles().map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm font-semibold text-slate-200">
               <span>Enabled</span>
@@ -628,7 +623,7 @@ export default function Operators() {
             </div>
             <div>
               <label className={LABEL_CLS}>Role</label>
-              <select
+              <SelectField
                 value={editForm.role ?? editTarget.role}
                 onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as UserRole }))}
                 id="edit-role"
@@ -640,7 +635,7 @@ export default function Operators() {
                 {availableRoles().map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button

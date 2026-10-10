@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
+  BellRing,
+  Building2,
+  ChevronRight,
   Clock3,
+  Cpu,
+  Download,
   HeartPulse,
   Loader2,
+  Monitor,
   RefreshCcw,
-  Server,
-  Shield,
-  ShieldCheck,
+  Star,
   Terminal,
   Users,
-  Wifi,
   WifiOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Device, getDevices } from "../api/devices";
+import { Device, FleetInsights, getDevices, getFleetInsights } from "../api/devices";
+import { AlertFlowChart, AvailabilityChart } from "../components/InsightCharts";
+import { Client, getClients } from "../api/clients";
 import SystemStatusCard from "../components/SystemStatusCard";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
@@ -30,8 +32,8 @@ import {
   statusColor,
   statusDotColor,
 } from "../api/actions";
-import { Badge, Button } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC, timeAgo } from "../utils/time";
+import { Button, EmptyState, PageHeader } from "../components/ui";
+import { APP_TIME_ZONE, parseUTC, timeAgo, DISPLAY_LOCALE } from "../utils/time";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
@@ -39,22 +41,12 @@ import { DashboardMobile } from "./DashboardMobile";
 
 const formatDate = (iso?: string) => {
   if (!iso) return "Unknown";
-  return parseUTC(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
 function actionTimeAgo(iso?: string | null): string {
   return iso ? timeAgo(iso) : "—";
 }
-
-const compactBadgeClass = "!px-1 !py-0 !text-[8px] !leading-3";
-const assignmentBadgeClass = `${compactBadgeClass} !border-slate-500/30 !bg-slate-500/10 !text-slate-500`;
-const assignmentSourceLabel = (device: Device) => {
-  const source = device.assignment_source || "system_auto_unassigned";
-  if (source === "enrollment_token") return "token";
-  if (source === "manual") return "manual";
-  if (source === "system_auto") return "auto";
-  return "unassigned";
-};
 
 const statusBadgeClass = (device: Device) => {
   const state = device.freshness_state ?? device.status;
@@ -86,9 +78,30 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
-  const [enrollmentLimit, setEnrollmentLimit] = useState(10);
+  const [enrollmentLimit] = useState(8);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
   const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
+  const [clientNames, setClientNames] = useState<Record<number, string>>(() =>
+    Object.fromEntries((appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []).map((c) => [c.id, c.name])),
+  );
+  useEffect(() => {
+    getClients()
+      .then((list) => setClientNames(Object.fromEntries(list.map((c) => [c.id, c.name]))))
+      .catch(() => undefined);
+  }, []);
+  // Trends are kept per user, so returning to the dashboard shows the last
+  // result at once while a fresh one loads.
+  const insightsKey = `${CACHE_KEYS.dashboardInsights}.${user?.id ?? "anon"}`;
+  const [insights, setInsights] = useState<FleetInsights | null>(() => appCache.peek<FleetInsights>(insightsKey));
+  const loadInsights = useCallback(() => {
+    getFleetInsights(30)
+      .then((data) => {
+        appCache.set(insightsKey, data);
+        setInsights(data);
+      })
+      .catch(() => undefined);
+  }, [insightsKey]);
+  useEffect(() => { loadInsights(); }, [loadInsights]);
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
   const [error, setError] = useState<string | null>(null);
   const [activityReady, setActivityReady] = useState(
@@ -239,19 +252,26 @@ export default function Dashboard() {
       : averageHealth < 80
       ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
       : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-  const healthBar =
-    averageHealth == null
-      ? "bg-amber-400"
-      : averageHealth < 50
-      ? "bg-red-400"
-      : averageHealth < 80
-      ? "bg-amber-400"
-      : "bg-emerald-400";
   // System status is for owner and admin only (the API enforces it too).
   const isAdmin = user?.role === "owner" || user?.role === "admin";
+  const onlineOperators = operators.filter((op) => op.is_online);
+  const clientBreakdown = (() => {
+    const byClient = fleetOverview?.tree_counts.by_client ?? {};
+    const rows = Object.entries(byClient)
+      .map(([id, count]) => ({ id, name: clientNames[Number(id)] ?? `Client #${id}`, count }))
+      .sort((a, b) => b.count - a.count);
+    const top = rows.slice(0, 4);
+    const rest = rows.slice(4).reduce((sum, r) => sum + r.count, 0);
+    const unassigned = fleetOverview?.tree_counts.unassigned ?? 0;
+    return [
+      ...top,
+      ...(rest > 0 ? [{ id: "other", name: `${rows.length - 4} more clients`, count: rest }] : []),
+      ...(unassigned > 0 ? [{ id: "none", name: "No client", count: unassigned }] : []),
+    ];
+  })();
 
   return (
-    <section className="premium-page space-y-4">
+    <section className="premium-page space-y-5">
       {/* Mobile dashboard — shown only below md (768px) */}
       <div className="md:hidden">
         <DashboardMobile
@@ -270,461 +290,375 @@ export default function Dashboard() {
 
       {/* Desktop dashboard — shown only at md+ (768px) */}
       <div className="hidden md:block space-y-4">
-      <div className="premium-card overflow-hidden p-4 md:p-5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="premium-kicker">TECHI Mission Control</p>
-              <Badge variant="ghost">Live API</Badge>
-            </div>
-            <h1 className="mt-1.5 text-2xl font-semibold text-white md:text-3xl">
-              Remote operations <span className="premium-accent-text">dashboard</span>
-            </h1>
-            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-300">
-              Dense MSP visibility for device health, deployment cadence, and active operations. Metrics continue to refresh from the existing backend polling flow.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => {
-              appCache.invalidate();
-              setActivityReady(false);
-              void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
-            }}>
-              <RefreshCcw className="h-4 w-4" />
+      <PageHeader
+        title="Dashboard"
+        description="Fleet health, open issues and recent activity across all clients."
+        actions={
+          <>
+            {onlineOperators.length > 0 && (
+              <Link to={hasPermission("manage_operators") ? "/operators" : "/"} className="th-status-chip" title={onlineOperators.map((op) => op.display_name ?? op.username).join(", ")}>
+                <Users className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
+                {onlineOperators.length} {onlineOperators.length === 1 ? "operator" : "operators"} online
+              </Link>
+            )}
+            <span
+              className="th-status-chip"
+              style={{ "--chip-tone": realtimeStatus === "connected" ? "var(--th-status-online)" : "var(--th-status-warning)" } as React.CSSProperties}
+              title={realtimeStatus === "connected" ? "Live updates over WebSocket" : "WebSocket unavailable, refreshing by polling"}
+            >
+              <i />
+              {realtimeStatus === "connected" ? "Live" : "Polling"}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                appCache.invalidate();
+                setActivityReady(false);
+                loadInsights();
+                void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
+              }}
+            >
+              <RefreshCcw className="h-3.5 w-3.5" />
               Refresh
             </Button>
-            <Badge variant="primary">{loading ? "Syncing" : `${availability}% availability`}</Badge>
-              <Badge variant="ghost">{realtimeStatus === "connected" ? "Realtime" : "Polling fallback"}</Badge>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && (
-        <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+        <div className="th-auth-notice" data-tone="error" role="alert">
           {error}
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="premium-metric p-4">
-          <div className="flex items-center justify-between">
-            <p className="premium-kicker">Total Devices</p>
-            <Server className="h-4 w-4 text-orange-400/60" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-white">{loading ? "—" : total}</p>
-          <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-            <span>Managed endpoints</span>
-            <Badge variant="ghost">Inventory</Badge>
-          </div>
-        </div>
-
-        <div className="premium-metric metric-online p-4">
-          <div className="flex items-center justify-between">
-            <p className="premium-kicker">Online</p>
-            <Wifi className="h-4 w-4 text-emerald-400/70" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-emerald-300">{loading ? "—" : online}</p>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.04]">
-            <div className="h-full rounded-full bg-emerald-400/70 transition-all duration-500" style={{ width: loading ? "0%" : `${availability}%` }} />
-          </div>
-        </div>
-
-        <div className="premium-metric metric-warning p-4">
-          <div className="flex items-center justify-between">
-            <p className="premium-kicker">Stale</p>
-            <Clock3 className="h-4 w-4 text-amber-400/80" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-amber-200">{loading ? "—" : stale}</p>
-          <p className="mt-3 text-xs text-slate-400">Seen within the last 15 minutes.</p>
-        </div>
-
-        <div className="premium-metric metric-offline p-4">
-          <div className="flex items-center justify-between">
-            <p className="premium-kicker">Offline</p>
-            <WifiOff className="h-4 w-4 text-slate-500" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-slate-200">{loading ? "—" : offline}</p>
-          <p className="mt-3 text-xs text-slate-400">Triage queue for unreachable devices.</p>
-        </div>
+      {/* KPIs */}
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {([
+          { to: "/devices", label: "All devices", value: total, tone: "var(--th-text-faint)", hint: "Managed endpoints" },
+          { to: "/devices?filter=online", label: "Online", value: online, tone: "var(--th-status-online)", hint: `${availability}% available` },
+          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: "var(--th-status-stale)", hint: "No heartbeat for 15 min" },
+          { to: "/devices?filter=offline", label: "Offline", value: offline, tone: "var(--th-status-offline)", hint: "Not responding" },
+          { to: "/devices?filter=critical", label: "Critical health", value: criticalCount, tone: "var(--th-status-critical)", hint: "Health score below 50" },
+          { to: "/devices?filter=needs_updates", label: "Needs updates", value: patchCount, tone: "var(--th-status-warning)", hint: "Pending patches" },
+        ]).map((kpi) => (
+          <Link key={kpi.label} to={kpi.to} className="th-kpi" style={{ "--kpi-tone": kpi.tone } as React.CSSProperties}>
+            <span className="th-kpi-label"><span className="th-kpi-dot" />{kpi.label}</span>
+            <span className="th-kpi-value">{loading ? "—" : kpi.value}</span>
+            <span className="th-kpi-hint">{kpi.hint}</span>
+          </Link>
+        ))}
       </div>
 
-      {/* Fleet Operations Quick Access */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Link to="/devices?filter=favorites" className="group rounded-xl p-4 transition-all hover:opacity-90"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>My Devices</p>
-            <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--th-status-warning)" }}>★ Fav</span>
+      {/* Health · attention · platform */}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
+          <div className="th-panel-head">
+            <h2 id="fleet-health-title">Fleet health</h2>
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${healthTone}`}>
+              {averageHealth == null ? "No score" : averageHealth < 50 ? "Critical" : averageHealth < 80 ? "Warning" : "Healthy"}
+            </span>
           </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: favoritesCount > 0 ? "var(--th-status-warning)" : "var(--th-text-muted)" }}>
-            {favoritesCount}
-          </p>
-          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Starred devices</p>
-        </Link>
-
-        <Link to="/devices?filter=low_health" className="group rounded-xl p-4 transition-all hover:opacity-90"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Critical Health</p>
-          </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: criticalCount > 0 ? "var(--th-status-critical)" : "var(--th-text-muted)" }}>
-            {loading ? "—" : criticalCount}
-          </p>
-          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Health score &lt; 50</p>
-        </Link>
-
-        <Link to="/devices?filter=offline" className="group rounded-xl p-4 transition-all hover:opacity-90"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Offline Now</p>
-          </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: offline > 0 ? "var(--th-status-offline)" : "var(--th-text-muted)" }}>
-            {loading ? "—" : offline}
-          </p>
-          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Not responding</p>
-        </Link>
-
-        <Link to="/devices?filter=needs_updates" className="group rounded-xl p-4 transition-all hover:opacity-90"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "var(--th-text-muted)" }}>Needs Updates</p>
-          </div>
-          <p className="mt-2 text-2xl font-bold" style={{ color: patchCount > 0 ? "var(--th-status-warning)" : "var(--th-text-muted)" }}>
-            {loading ? "—" : patchCount}
-          </p>
-          <p className="mt-1 text-[10px]" style={{ color: "var(--th-text-muted)" }}>Pending patches</p>
-        </Link>
-      </div>
-
-      <div className="premium-card-soft p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${healthTone}`}>
-              <HeartPulse className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="premium-kicker">Fleet Health</p>
-              <p className="mt-0.5 text-sm font-medium text-slate-300">
-                Active-device average excludes archived devices.
-              </p>
-            </div>
-          </div>
-          <div className="min-w-[220px]">
-            <div className="flex items-end justify-between gap-3">
-              <span className="text-2xl font-bold text-white">{loading || averageHealth == null ? "—" : averageHealth}</span>
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${healthTone}`}>
-                {averageHealth == null ? "No score" : averageHealth < 50 ? "Critical" : averageHealth < 80 ? "Warning" : "Healthy"}
-              </span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
-              <div
-                className={`${healthBar} h-full rounded-full transition-all duration-500`}
-                style={{ width: loading || averageHealth == null ? "0%" : `${averageHealth}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-        <div className="space-y-3">
-          <div className="premium-card p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="premium-kicker">Recent Devices</p>
-                <h2 className="mt-1.5 text-xl font-semibold text-white">Latest enrollments</h2>
+          <div className="flex items-center gap-6 px-5 pb-4">
+            <HealthRing value={loading ? null : averageHealth} />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className="flex h-2 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }} aria-label="Device status mix">
+                <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: "var(--th-status-online)" }} />
+                <div style={{ width: loading ? "0%" : `${stalePct}%`, background: "var(--th-status-stale)" }} />
+                <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: "var(--th-status-offline)" }} />
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={enrollmentLimit}
-                  onChange={(e) => setEnrollmentLimit(Number(e.target.value))}
-                  className="rounded-md border border-white/10 bg-slate-900/70 px-2.5 py-1 text-xs font-semibold text-slate-200 focus:border-orange-400/50 focus:outline-none"
-                >
-                  {[10, 20, 50].map((n) => (
-                    <option key={n} value={n}>{n} rows</option>
-                  ))}
-                </select>
-                <Link
-                  to="/devices"
-                  className="inline-flex items-center rounded-md border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
-                >
-                  View all
+              <ul className="space-y-2 text-[13px]">
+                {([
+                  ["Online", online, onlinePct, "var(--th-status-online)"],
+                  ["Stale", stale, stalePct, "var(--th-status-stale)"],
+                  ["Offline", offline, offlinePct, "var(--th-status-offline)"],
+                ] as const).map(([label, count, pct, tone]) => (
+                  <li key={label} className="flex items-center gap-2">
+                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: tone }} />
+                    <span style={{ color: "var(--th-text-secondary)" }}>{label}</span>
+                    <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{loading ? "—" : count}</span>
+                    <span className="w-10 text-right tabular-nums" style={{ color: "var(--th-text-faint)" }}>{loading ? "" : `${Math.round(pct)}%`}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="flex flex-1 flex-col px-5 pb-3 pt-3" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
+            <p className="th-menu-label !px-0 !pt-0">Devices by client</p>
+            {clientBreakdown.length === 0 ? (
+              <p className="py-3 text-[13px]" style={{ color: "var(--th-text-muted)" }}>No devices yet.</p>
+            ) : (
+              <ul className="mt-1 flex flex-1 flex-col justify-between gap-1">
+                {clientBreakdown.map((row) => (
+                  <li key={row.id} className="text-[13px]">
+                    <Link
+                      to={row.id === "none" ? "/devices?folder=unassigned" : row.id === "other" ? "/clients" : `/devices?folder=client-${row.id}`}
+                      className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
+                    >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate" style={{ color: row.id === "none" ? "var(--th-text-muted)" : "var(--th-text-secondary)" }}>{row.name}</span>
+                      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{row.count}</span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, background: row.id === "none" ? "var(--th-text-faint)" : "var(--th-accent)" }} />
+                    </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <p className="th-panel-foot">Average health score of active devices. Archived devices are excluded.</p>
+        </section>
+
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="attention-title">
+          <div className="th-panel-head">
+            <h2 id="attention-title">Needs attention</h2>
+            <Link to="/alerts" className="th-link-btn">View alerts</Link>
+          </div>
+          <ul className="flex-1 px-2 pb-2">
+            {([
+              { to: "/alerts", label: "Open alerts", count: totalOpenAlerts, tone: "var(--th-status-critical)", icon: BellRing },
+              { to: "/devices?filter=offline", label: "Offline devices", count: offline, tone: "var(--th-status-offline)", icon: WifiOff },
+              { to: "/devices?filter=stale", label: "Stale devices", count: stale, tone: "var(--th-status-stale)", icon: Clock3 },
+              { to: "/devices?filter=critical", label: "Critical health", count: criticalCount, tone: "var(--th-status-critical)", icon: HeartPulse },
+              { to: "/devices?filter=needs_updates", label: "Pending updates", count: patchCount, tone: "var(--th-status-warning)", icon: Download },
+              { to: "/devices?filter=needs_agent_update", label: "Agent updates", count: fleetOverview?.agents_outdated ?? 0, tone: "var(--th-status-agent)", icon: Cpu },
+              { to: "/devices?folder=unassigned", label: "Devices without a client", count: fleetOverview?.tree_counts.unassigned ?? 0, tone: "var(--th-status-info)", icon: Building2 },
+              { to: "/devices?filter=favorites", label: "Starred devices", count: favoritesCount, tone: "var(--th-status-warning)", icon: Star },
+            ]).map(({ to, label, count, tone, icon: Icon }) => (
+              <li key={label}>
+                <Link to={to} className="th-attention-row" data-empty={!loading && count === 0} style={{ "--row-tone": tone } as React.CSSProperties}>
+                  <span className="th-attention-icon"><Icon className="h-3.5 w-3.5" /></span>
+                  <span className="flex-1 truncate">{label}</span>
+                  <span className="th-attention-count">{loading ? "—" : count}</span>
+                  <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
                 </Link>
-              </div>
-            </div>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)]">
-              <div className="rounded-lg border border-white/[0.08] bg-slate-950/55 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="premium-kicker">Status mix</p>
-                    <p className="mt-1 text-2xl font-bold text-white">{loading ? "—" : total}</p>
-                  </div>
-                  <Server className="h-4 w-4 text-orange-300/70" />
-                </div>
-                <div className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-                  <div className="bg-emerald-400/80" style={{ width: loading ? "0%" : `${onlinePct}%` }} />
-                  <div className="bg-amber-300/80" style={{ width: loading ? "0%" : `${stalePct}%` }} />
-                  <div className="bg-slate-500/90" style={{ width: loading ? "0%" : `${offlinePct}%` }} />
-                </div>
-                <div className="mt-3 space-y-1.5 text-[10px] font-semibold">
-                  <div className="flex items-center justify-between text-emerald-300">
-                    <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Online</span>
-                    <span>{loading ? "—" : online}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-amber-200">
-                    <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" />Stale</span>
-                    <span>{loading ? "—" : stale}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-slate-500" />Offline</span>
-                    <span>{loading ? "—" : offline}</span>
-                  </div>
-                </div>
-              </div>
+        {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={loading} currentUserId={user?.id} />}
+      </div>
 
-            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-              <div className="max-h-[400px] overflow-x-auto overflow-y-auto">
-                <table className="min-w-full text-left text-[10px]">
-                  <thead className="bg-slate-950/90">
-                    <tr className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                      <th className="px-2 py-1">Remote Support ID</th>
-                      <th className="px-2 py-1">Hostname</th>
-                      <th className="px-2 py-1">User</th>
-                      <th className="px-2 py-1">Assignment</th>
-                      <th className="px-2 py-1">Domain</th>
-                      <th className="px-2 py-1">Public IP</th>
-                      <th className="px-2 py-1">Local IP</th>
-                      <th className="px-2 py-1">Type</th>
-                      <th className="px-2 py-1">Registered At</th>
-                      <th className="px-2 py-1">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04] bg-slate-950/50">
-                    {loading ? (
-                      <tr>
-                        <td colSpan={10} className="px-2 py-3 text-center text-xs font-medium text-slate-500">Loading devices...</td>
-                      </tr>
-                    ) : recentDevices.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="px-2 py-3 text-center text-xs font-medium text-slate-500">No recent devices</td>
-                      </tr>
-                    ) : (
-                      recentDevices.map((device) => (
-                        <tr key={device.id} className="text-slate-300 hover:bg-white/[0.025]">
-                          <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-100">{device.rustdesk_id || "—"}</td>
-                          <td className="whitespace-nowrap px-2 py-1 font-semibold text-white">{device.hostname || "Unknown"}</td>
-                          <td className="whitespace-nowrap px-2 py-1">{device.current_user || "—"}</td>
-                          <td className="px-2 py-1">
-                            <div className="whitespace-nowrap font-semibold text-slate-100">{device.client_name || "No client"}</div>
-                            <div className="flex items-center gap-0.5 whitespace-nowrap text-[9px] text-slate-500">
-                              <span>{device.group_name || "No group"}</span>
-                              <Badge variant="neutral" className={assignmentBadgeClass}>{assignmentSourceLabel(device)}</Badge>
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-1">{device.domain || "—"}</td>
-                          <td className="whitespace-nowrap px-2 py-1">{device.public_ip || "—"}</td>
-                          <td className="whitespace-nowrap px-2 py-1">{device.local_ip || "—"}</td>
-                          <td className="whitespace-nowrap px-2 py-1">{device.device_type}</td>
-                          <td className="whitespace-nowrap px-2 py-1">{formatDate(device.registered_at)}</td>
-                          <td className="whitespace-nowrap px-2 py-1">
-                            <span className={`rounded-full border px-1 py-0 text-[9px] font-semibold leading-4 ${statusBadgeClass(device)}`}>
-                              {device.freshness_state ?? device.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+      {/* Trends */}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="availability-title">
+          <div className="th-panel-head">
+            <h2 id="availability-title">Availability</h2>
+            <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 30 days</span>
+          </div>
+          <div className="flex flex-1 flex-col px-5 pb-4">
+            <p className="th-metric-big">{insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}</p>
+            <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Share of time managed devices were online</p>
+            <div className="min-h-0 flex-1">
+              {insights ? <AvailabilityChart series={insights.availability.series} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
             </div>
           </div>
+          <p className="th-panel-foot">
+            {insights?.availability.coverage_pct != null && insights.availability.coverage_pct < 99
+              ? `Based on ${insights.availability.coverage_pct}% of device time with a known status.`
+              : "Measured from recorded online/offline transitions."}
+          </p>
+        </section>
 
-          {isAdmin && <SystemStatusCard />}
-
-          <div className="premium-card p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="premium-kicker">Remote Actions</p>
-                <h2 className="mt-1.5 text-xl font-semibold text-white">Recent fleet actions</h2>
-              </div>
-              <Terminal className="h-4 w-4 text-orange-300/70" />
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alert-trend-title">
+          <div className="th-panel-head">
+            <h2 id="alert-trend-title">Alerts this week</h2>
+            <span className="flex items-center gap-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="1" />Opened</span>
+              <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="2" />Resolved</span>
+            </span>
+          </div>
+          <div className="flex flex-1 flex-col px-5 pb-4">
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              {([
+                ["Opened", insights?.alerts.opened_total],
+                ["Resolved", insights?.alerts.resolved_total],
+                ["Avg. time to resolve", insights?.alerts.mean_time_to_resolve_hours != null ? `${insights.alerts.mean_time_to_resolve_hours} h` : undefined],
+              ] as const).map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[20px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value ?? "—"}</p>
+                  <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{label}</p>
+                </div>
+              ))}
             </div>
-
-            <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.08]">
-              {loading ? (
-                <p className="px-2.5 py-3 text-center text-xs font-medium text-slate-500">Loading actions...</p>
-              ) : recentActions.length === 0 ? (
-                <p className="px-2.5 py-3 text-center text-xs font-medium text-slate-500">No actions yet</p>
-              ) : (
-                <table className="min-w-full text-left text-[11px]">
-                  <thead className="bg-slate-950/90">
-                    <tr className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                      <th className="px-2.5 py-1">Device</th>
-                      <th className="px-2.5 py-1">Action</th>
-                      <th className="px-2.5 py-1">By</th>
-                      <th className="px-2.5 py-1">Status</th>
-                      <th className="px-2.5 py-1">When</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04] bg-slate-950/50">
-                    {recentActions.map((action) => {
-                      const isRunning = action.status === "running";
-                      const relevantTime = action.completed_at ?? action.failed_at ?? action.started_at ?? action.sent_at ?? action.created_at;
-                      return (
-                        <tr key={action.id} className="text-slate-300 hover:bg-white/[0.025]">
-                          <td className="whitespace-nowrap px-2.5 py-1.5 font-semibold text-slate-100">
-                            {action.device_hostname ?? `#${action.device_id}`}
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 text-slate-200">
-                            {ACTION_LABELS[action.action_type as ActionType] ?? action.action_type}
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 text-slate-500">
-                            {action.created_by ?? "—"}
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5">
-                            <span className="inline-flex items-center gap-1">
-                              {isRunning ? (
-                                <Loader2 className="h-2.5 w-2.5 animate-spin text-sky-400" />
-                              ) : (
-                                <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
-                              )}
-                              <span className={`text-[9px] font-semibold ${statusColor(action.status)}`}>
-                                {ACTION_STATUS_LABELS[action.status] ?? action.status}
-                              </span>
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 text-slate-500">
-                            {actionTimeAgo(relevantTime)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+            <div className="min-h-0 flex-1">
+              {insights ? <AlertFlowChart series={insights.alerts.series} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
             </div>
           </div>
-        </div>
+          <p className="th-panel-foot">{insights ? `${insights.alerts.open_now} still open right now.` : "Loading…"}</p>
+        </section>
 
-        <aside className="space-y-3">
-          <div className="premium-card p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="premium-kicker">Operators</p>
-                <h2 className="mt-1.5 text-lg font-semibold text-white">Active panel</h2>
-              </div>
-              <Users className="h-5 w-5 text-orange-300" />
-            </div>
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="problem-devices-title">
+          <div className="th-panel-head">
+            <h2 id="problem-devices-title">Problem devices</h2>
+            <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 7 days</span>
+          </div>
+          {!insights ? (
+            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+          ) : insights.problem_devices.length === 0 ? (
+            <EmptyState className="flex-1" icon={<HeartPulse className="h-5 w-5" />} title="No repeat offenders" description="No device went offline or raised an alert this week." />
+          ) : (
+            <ul className="flex-1 px-2 pb-2">
+              {insights.problem_devices.map((d, i) => (
+                <li key={d.device_id}>
+                  <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums" style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}>{i + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{d.name}</span>
+                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{d.client_name ?? "No client"}</span>
+                    </span>
+                    <span className="text-right text-[12px] leading-5 tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
+                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{d.offline_events}</strong> offline</span>
+                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{d.alerts}</strong> alerts</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
+        </section>
+      </div>
 
-            <div className="mt-4 space-y-2.5">
-              {loading ? (
-                <p className="py-2 text-center text-xs text-slate-500">Loading…</p>
-              ) : operators.length === 0 ? (
-                <p className="py-2 text-center text-xs text-slate-500">No active operators</p>
-              ) : (
-                operators.map((op) => {
-                  const label = op.display_name ?? op.username;
-                  const online = op.is_online;
-                  const lastSeen = op.last_active_at
-                    ? parseUTC(op.last_active_at).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short" })
-                    : null;
-                  return (
-                    <div key={op.id} className="premium-card-soft flex items-center justify-between gap-3 p-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span
-                          className={`mt-px h-2 w-2 shrink-0 rounded-full ${online ? "bg-[var(--th-status-online)] shadow-[0_0_6px_1px_color-mix(in_srgb,var(--th-status-online)_50%,transparent)]" : "bg-slate-600"}`}
-                          title={online ? "Online" : "Offline"}
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="truncate font-semibold text-white">{label}</p>
-                            {op.id === user?.id && (
-                              <span className="rounded-full border border-techi-orange/30 bg-techi-orange/10 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-techi-orange">
-                                you
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-500">
-                            <Shield className="h-2.5 w-2.5" />
-                            <span className="capitalize">{op.role}</span>
-                            {lastSeen && <><span className="text-slate-700">·</span><span>last {lastSeen}</span></>}
-                          </div>
-                        </div>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                          online
-                            ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
-                            : "border-slate-500/30 bg-slate-800/60 text-slate-400"
-                        }`}
-                      >
-                        {online ? "Online" : "Offline"}
+      {/* Enrollments · activity */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
+          <div className="th-panel-head">
+            <h2 id="enrollments-title">Latest enrollments</h2>
+            <Link to="/devices" className="th-link-btn">View all devices</Link>
+          </div>
+          {loading ? (
+            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading devices…</p>
+          ) : recentDevices.length === 0 ? (
+            <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices yet" description="Enrolled devices appear here as soon as their agent checks in." />
+          ) : (
+            <ul className="flex-1 px-2 pb-2">
+              {recentDevices.slice(0, 6).map((device) => (
+                <li key={device.id}>
+                  <Link to={`/devices?device=${device.id}`} className="th-list-row">
+                    <span className="th-palette-icon !h-8 !w-8">
+                      <Monitor className="h-4 w-4" />
+                      <i style={{ background: device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" }} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{device.hostname || "Unknown"}</span>
+                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                        {[device.client_name || "No client", device.current_user, device.public_ip].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${statusBadgeClass(device)}`}>
+                        {device.freshness_state ?? device.status}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{formatDate(device.registered_at)}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="activity-title">
+          <div className="th-panel-head">
+            <h2 id="activity-title">Recent remote actions</h2>
+            {hasPermission("audit_log") && <Link to="/audit" className="th-link-btn">Audit log</Link>}
+          </div>
+          {loading ? (
+            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading actions…</p>
+          ) : recentActions.length === 0 ? (
+            <EmptyState className="flex-1 justify-center" icon={<Terminal className="h-5 w-5" />} title="No remote actions yet" description="Restarts, syncs and scripts sent to devices show up here with their result." />
+          ) : (
+            <ul className="flex-1 px-2 pb-2">
+              {recentActions.slice(0, 6).map((action) => {
+                const isRunning = action.status === "running";
+                const relevantTime = action.completed_at ?? action.failed_at ?? action.started_at ?? action.sent_at ?? action.created_at;
+                return (
+                  <li key={action.id}>
+                    <div className="th-list-row">
+                      <span className="th-palette-icon !h-8 !w-8">
+                        {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                          {ACTION_LABELS[action.action_type as ActionType] ?? action.action_type}
+                          <span style={{ color: "var(--th-text-muted)" }}> · {action.device_hostname ?? `Device #${action.device_id}`}</span>
+                        </span>
+                        <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                          {action.created_by ? `by ${action.created_by} · ` : ""}{actionTimeAgo(relevantTime)}
+                        </span>
+                      </span>
+                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
+                        {ACTION_STATUS_LABELS[action.status] ?? action.status}
                       </span>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="premium-card p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="premium-kicker">Operations</p>
-                <h2 className="mt-1.5 text-lg font-semibold text-white">Activity stream</h2>
-              </div>
-              <Activity className="h-5 w-5 text-pink-300" />
-            </div>
-
-            <div className="mt-4 space-y-2.5 text-sm font-medium text-slate-300">
-              {activityReady ? (
-                <>
-                  <div className="premium-card-soft flex items-start gap-3 p-3">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
-                    <div>
-                      <p className="font-semibold text-white">Inventory synchronized</p>
-                      <p className="mt-1">fleet telemetry active</p>
-                    </div>
-                  </div>
-                  <div className="premium-card-soft flex items-start gap-3 p-3">
-                    <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
-                    <div>
-                      <p className="font-semibold text-white">{offline} offline devices</p>
-                      <p className="mt-1">Review the device tree for endpoint triage.</p>
-                    </div>
-                  </div>
-                  <div className="premium-card-soft flex items-start gap-3 p-3">
-                    <ShieldCheck className="mt-0.5 h-5 w-5 text-orange-300" />
-                    <div>
-                      <p className="font-semibold text-white">TECHI Remote Support native path</p>
-                      <p className="mt-1">Connect action remains ready for native launch.</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-2.5">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="premium-card-soft flex items-start gap-3 p-3 opacity-40">
-                      <div className="mt-0.5 h-5 w-5 flex-none rounded-full bg-slate-600/60" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-3 w-32 rounded bg-slate-600/60" />
-                        <div className="h-2.5 w-48 rounded bg-slate-700/60" />
-                      </div>
-                    </div>
-                  ))}
-                  <p className="pt-1 text-center text-[11px] text-slate-600">
-                    Click Refresh to load activity
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </aside>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
       </div>{/* end hidden md:block */}
+    </section>
+  );
+}
+
+function HealthRing({ value }: { value: number | null }) {
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
+  const tone = value == null ? "var(--th-text-faint)" : value < 50 ? "var(--th-status-critical)" : value < 80 ? "var(--th-status-warning)" : "var(--th-status-online)";
+  return (
+    <div className="relative h-[88px] w-[88px] flex-none" role="img" aria-label={value == null ? "No health score" : `Average health ${value} of 100`}>
+      <svg viewBox="0 0 88 88" className="h-full w-full -rotate-90">
+        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" style={{ stroke: "var(--th-ring-track)" }} />
+        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} style={{ stroke: tone, transition: "stroke-dasharray 600ms ease" }} />
+      </svg>
+      <span className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[22px] font-semibold leading-none tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value ?? "—"}</span>
+        <span className="mt-1 text-[11px]" style={{ color: "var(--th-text-faint)" }}>of 100</span>
+      </span>
+    </div>
+  );
+}
+
+function OperatorsPanel({ operators, loading, currentUserId }: { operators: OperatorPresenceRecord[]; loading: boolean; currentUserId?: number }) {
+  return (
+    <section className="premium-card flex h-full flex-col p-0" aria-labelledby="operators-title">
+      <div className="th-panel-head">
+        <h2 id="operators-title">Operators</h2>
+        <span className="th-nav-badge">{operators.filter((op) => op.is_online).length} online</span>
+      </div>
+      {loading ? (
+        <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+      ) : operators.length === 0 ? (
+        <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators online" />
+      ) : (
+        <ul className="flex-1 px-2 pb-2">
+          {operators.map((op) => {
+            const label = op.display_name ?? op.username;
+            return (
+              <li key={op.id} className="th-list-row">
+                <span className="th-avatar">{label.charAt(0).toUpperCase()}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                    {label}{op.id === currentUserId && <span style={{ color: "var(--th-text-muted)" }}> (you)</span>}
+                  </span>
+                  <span className="block truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>{op.role}</span>
+                </span>
+                <span className="th-status-chip" style={{ "--chip-tone": op.is_online ? "var(--th-status-online)" : "var(--th-status-offline)" } as React.CSSProperties}>
+                  <i />{op.is_online ? "Online" : "Offline"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

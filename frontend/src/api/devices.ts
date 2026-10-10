@@ -251,6 +251,37 @@ export interface DeviceFleetOverview {
   loaded_at: string;
 }
 
+export interface FleetInsights {
+  availability: {
+    days: number;
+    series: { date: string; availability_pct: number | null }[];
+    overall_pct: number | null;
+    coverage_pct: number | null;
+    device_count: number;
+  };
+  alerts: {
+    days: number;
+    series: { date: string; opened: number; resolved: number }[];
+    opened_total: number;
+    resolved_total: number;
+    open_now: number;
+    mean_time_to_resolve_hours: number | null;
+  };
+  problem_devices: {
+    device_id: number;
+    name: string;
+    client_name: string | null;
+    offline_events: number;
+    alerts: number;
+    freshness_state: string;
+  }[];
+  generated_at: string;
+}
+
+export async function getFleetInsights(days = 30): Promise<FleetInsights> {
+  return fetchJson<FleetInsights>(`/api/v1/devices/insights?days=${days}`);
+}
+
 export async function getDevicesOverview(): Promise<DeviceFleetOverview> {
   return fetchJson<DeviceFleetOverview>("/api/v1/devices/overview");
 }

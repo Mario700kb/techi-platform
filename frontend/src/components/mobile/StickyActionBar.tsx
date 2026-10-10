@@ -42,7 +42,7 @@ export function ActionBarPrimary({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-11 flex-[1.4] items-center justify-center gap-[7px] rounded-xl text-[13.5px] font-extrabold text-white disabled:opacity-45"
+      className="flex h-11 flex-[1.4] items-center justify-center gap-[7px] rounded-xl text-[14px] font-extrabold text-white disabled:opacity-45"
       style={{ background: "var(--th-accent)" }}
     >
       {children}
@@ -66,7 +66,7 @@ export function ActionBarSecondary({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-11 flex-1 items-center justify-center gap-[6px] rounded-xl text-[12.5px] font-bold disabled:opacity-45"
+      className="flex h-11 flex-1 items-center justify-center gap-[6px] rounded-xl text-[13px] font-bold disabled:opacity-45"
       style={{
         background: "var(--th-bg-card)",
         border: `1px solid ${danger ? "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" : "var(--th-border-subtle)"}`,

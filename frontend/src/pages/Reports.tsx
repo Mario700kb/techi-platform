@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Download, FileBarChart, FileSpreadsheet, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarClock, Download, FileSpreadsheet, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import {
   createReportSchedule, deleteReportRun, deleteReportSchedule, downloadReport, generateReport,
@@ -12,7 +12,9 @@ import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso } from "../utils/time";
+import PageHeader from "../components/ui/PageHeader";
+import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
+import { SelectField } from "../components/ui";
 
 const fieldClass = "min-h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-techi-orange/60";
 const fieldStyle = { background: "var(--th-bg-input)", borderColor: "var(--th-border-input)", color: "var(--th-text-primary)" };
@@ -32,7 +34,7 @@ function nextDay(date: string): string {
 }
 
 function formatDate(value?: string | null) {
-  return value ? parseUTC(value).toLocaleString(undefined, { timeZone: APP_TIME_ZONE }) : "—";
+  return value ? parseUTC(value).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE }) : "—";
 }
 
 function formatBytes(value?: number | null) {
@@ -178,29 +180,27 @@ export default function Reports() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-3 pb-24 sm:p-5 md:pb-5">
-      <header className="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-techi-orange/15 text-techi-orange"><FileBarChart className="h-5 w-5" /></span>
-          <div><h1 className="text-xl font-bold" style={{ color: "var(--th-text-primary)" }}>Reports</h1><p className="mt-1 text-sm" style={{ color: "var(--th-text-muted)" }}>Client and device reports, on demand or scheduled.</p></div>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
-      </header>
+    <section className="premium-page space-y-5">
+      <PageHeader
+        title="Reports"
+        description="Client and device reports, on demand or scheduled."
+        actions={<Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>}
+      />
 
       {(error || success) && <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: error ? "color-mix(in srgb, var(--th-status-critical) 40%, transparent)" : "color-mix(in srgb, var(--th-status-online) 35%, transparent)", background: error ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-status-online) 8%, transparent)", color: "var(--th-text-primary)" }}>{error || success}</div>}
 
       <section className="grid grid-cols-3 gap-2 sm:gap-4">
-        {[{ label: "Reports ready", value: stats.completed }, { label: "Active schedules", value: stats.scheduled }, { label: "Failed runs", value: stats.failed }].map((item) => <div key={item.label} className="premium-card p-3 sm:p-4"><p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--th-text-muted)" }}>{item.label}</p><p className="mt-1 text-2xl font-bold" style={{ color: "var(--th-text-primary)" }}>{item.value}</p></div>)}
+        {[{ label: "Reports ready", value: stats.completed }, { label: "Active schedules", value: stats.scheduled }, { label: "Failed runs", value: stats.failed }].map((item) => <div key={item.label} className="premium-card p-3 sm:p-4"><p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--th-text-muted)" }}>{item.label}</p><p className="mt-1 text-2xl font-bold" style={{ color: "var(--th-text-primary)" }}>{item.value}</p></div>)}
       </section>
 
       <section className="premium-card p-4">
         <div className="mb-4 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Generate now</h2></div>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 md:items-end">
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Scope<select className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType} onChange={(event) => { setScopeType(event.target.value as ReportScope); setReportType("full"); if (event.target.value === "device") { setReportFormat("pdf"); if (periodChoice === "90" || periodChoice === "365") { setPeriodChoice("30"); setPeriodDays(30); } } }}><option value="client">Client</option><option value="device">Device</option></select></label>
-          {scopeType === "client" ? <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Client<select className={`${fieldClass} mt-1`} style={fieldStyle} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label> : <div className="space-y-1"><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Find device<input className={`${fieldClass} mt-1`} style={fieldStyle} value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder="Search name or IP" /></label><select aria-label="Device" className={fieldClass} style={fieldStyle} value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={devicesLoading}><option value="">{devicesLoading ? "Loading devices..." : "Select device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.display_name || device.hostname || `Device ${device.id}`} · {device.client_name || "Unassigned"} · #{device.id}</option>)}</select></div>}
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Report type<select className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}><option value="full">Full Report</option>{scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<select className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option></select></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<select className={`${fieldClass} mt-1`} style={fieldStyle} value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>{scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}<option value="custom">Custom date range</option></select></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Scope<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType} onChange={(event) => { setScopeType(event.target.value as ReportScope); setReportType("full"); if (event.target.value === "device") { setReportFormat("pdf"); if (periodChoice === "90" || periodChoice === "365") { setPeriodChoice("30"); setPeriodDays(30); } } }}><option value="client">Client</option><option value="device">Device</option></SelectField></label>
+          {scopeType === "client" ? <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Client<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</SelectField></label> : <div className="space-y-1"><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Find device<input className={`${fieldClass} mt-1`} style={fieldStyle} value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder="Search name or IP" /></label><SelectField aria-label="Device" className={fieldClass} style={fieldStyle} value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={devicesLoading}><option value="">{devicesLoading ? "Loading devices..." : "Select device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.display_name || device.hostname || `Device ${device.id}`} · {device.client_name || "Unassigned"} · #{device.id}</option>)}</SelectField></div>}
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Report type<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}><option value="full">Full Report</option>{scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</SelectField></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option></SelectField></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>{scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}<option value="custom">Custom date range</option></SelectField></label>
           {periodChoice === "custom" && <><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>From<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>To (inclusive)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label></>}
           <Button onClick={() => void handleGenerate()} disabled={busy || (scopeType === "client" ? !clientId : !deviceId) || (scopeType === "device" && reportType === "full" && reportFormat === "csv")}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Generate</Button>
         </div>
@@ -211,7 +211,7 @@ export default function Reports() {
         <div className="flex items-center justify-between"><div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Client schedules</h2></div><Button size="sm" variant="secondary" onClick={() => setShowSchedule((value) => !value)}><Plus className="h-4 w-4" />New</Button></div>
         {showSchedule && <div className="mt-4 grid gap-3 rounded-xl border p-3 md:grid-cols-5 md:items-end" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-input)" }}>
           <label className="text-xs font-semibold md:col-span-2" style={{ color: "var(--th-text-secondary)" }}>Schedule name<input className={`${fieldClass} mt-1`} style={fieldStyle} value={scheduleName} maxLength={160} onChange={(event) => setScheduleName(event.target.value)} /></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Cadence<select className={`${fieldClass} mt-1`} style={fieldStyle} value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
+          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Cadence<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></SelectField></label>
           <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>{cadence === "daily" ? "Hour (Tirana)" : cadence === "weekly" ? "Weekday (0=Mon)" : "Day of month"}<input type="number" className={`${fieldClass} mt-1`} style={fieldStyle} min={cadence === "weekly" ? 0 : 1} max={cadence === "weekly" ? 6 : cadence === "monthly" ? 28 : 23} value={cadence === "daily" ? hourLocal : scheduleDay} onChange={(event) => cadence === "daily" ? setHourLocal(Number(event.target.value)) : setScheduleDay(Number(event.target.value))} /></label>
           <Button onClick={() => void handleCreateSchedule()} disabled={busy || !scheduleName.trim() || !clientId}>Create schedule</Button>
         </div>}
@@ -226,6 +226,6 @@ export default function Reports() {
       {deleteTarget && <ConfirmationModal title="Delete report schedule" confirmLabel="Delete schedule" loading={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>This removes <strong>{deleteTarget.name}</strong>. Generated report history remains available.</p></ConfirmationModal>}
 
       {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong>{deleteRunTarget.device_name || deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
-    </div>
+    </section>
   );
 }

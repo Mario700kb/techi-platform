@@ -1,1 +1,1 @@
-"""Core utilities for TECHI Platform."""
+"""Core utilities for TECHI Connect."""

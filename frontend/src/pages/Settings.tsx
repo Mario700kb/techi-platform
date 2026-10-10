@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
+import { PageHeader } from "../components/ui";
 import { type ConnectPreference, listConnectPreferences, resetConnectPreference } from "../api/connect";
 import pkg from "../../package.json";
 
@@ -114,6 +115,7 @@ export default function Settings() {
 
   return (
     <div className="mx-auto flex max-w-md flex-col gap-3 md:max-w-2xl">
+      <PageHeader title="Settings" description="Your appearance, account and connection preferences." className="mb-1 hidden md:block" />
       <Section title="Appearance">
         <div className="flex gap-2" role="radiogroup" aria-label="Theme">
           {themeOptions.map(({ id, label, icon: Icon }) => {
@@ -190,7 +192,7 @@ export default function Settings() {
                 role="radio"
                 aria-checked={active}
                 onClick={() => handleDefaultScreen(id)}
-                className="flex min-h-[40px] flex-1 items-center justify-center rounded-lg text-[12.5px] font-bold transition-colors"
+                className="flex min-h-[40px] flex-1 items-center justify-center rounded-lg text-[13px] font-bold transition-colors"
                 style={{
                   background: active ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
                   border: `1px solid ${active ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
@@ -218,7 +220,7 @@ export default function Settings() {
                 className="flex items-center justify-between gap-2 rounded-lg px-3 py-2"
                 style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }}
               >
-                <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--th-text-primary)" }}>
+                <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-primary)" }}>
                   <Link2 className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
                   <span className="font-bold capitalize">{pref.platform}</span>
                   {pref.device_id && (
@@ -244,7 +246,7 @@ export default function Settings() {
       )}
 
       <Section title="Diagnostics">
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[12.5px]">
+        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[13px]">
           <dt style={{ color: "var(--th-text-muted)" }}>Realtime</dt>
           <dd
             className="font-semibold"
@@ -264,7 +266,7 @@ export default function Settings() {
         <button
           type="button"
           onClick={() => void handleCopyDiagnostics()}
-          className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-lg text-[12.5px] font-bold"
+          className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-lg text-[13px] font-bold"
           style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-primary)" }}
         >
           <Copy className="h-3.5 w-3.5" />
@@ -275,7 +277,7 @@ export default function Settings() {
       <button
         type="button"
         onClick={logout}
-        className="flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] text-[13.5px] font-extrabold"
+        className="flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] text-[14px] font-extrabold"
         style={{
           background: "var(--th-btn-danger-bg)",
           border: "1px solid color-mix(in srgb, var(--th-status-critical) 30%, transparent)",

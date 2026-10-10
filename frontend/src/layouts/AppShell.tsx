@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -6,6 +6,7 @@ import { BottomNav } from "../components/BottomNav";
 import { MobileTopBar } from "../components/mobile/MobileTopBar";
 import { OfflineBanner } from "../components/mobile/OfflineBanner";
 import { useAppData } from "../contexts/AppDataContext";
+import { locateNav } from "../components/navigation";
 
 interface AppShellProps {
   children: ReactNode;
@@ -17,31 +18,12 @@ interface AppShellProps {
  * replaced by the More tab. Desktop layout is unchanged.
  */
 
-// Screen titles for the mobile top bar. The four tab roots show no back
-// button; every other route is a sub-page reached from More.
-const MOBILE_TITLES: Record<string, string> = {
-  "/": "Dashboard",
-  "/devices": "Devices",
-  "/alerts": "Alerts",
-  "/more": "More",
-  "/settings": "Settings",
-  "/clients": "Clients",
-  "/remote-support": "Remote Support",
-  "/audit": "Audit Log",
-  "/deployment": "Deployment",
-  "/enrollment-bootstrap": "Enrollment",
-  "/agent-packages": "Packages",
-  "/inventory": "Inventory",
-  "/operators": "Operators",
-  "/teams": "Teams",
-  "/agent-config": "Agent Config",
-};
+// The four tab roots show no back button; every other route is a sub-page
+// reached from More. Titles come from the shared navigation config.
 const TAB_ROOTS = new Set(["/", "/devices", "/alerts", "/more"]);
 
 function mobileTitleFor(pathname: string): string {
-  if (MOBILE_TITLES[pathname]) return MOBILE_TITLES[pathname];
-  const base = "/" + pathname.split("/")[1];
-  return MOBILE_TITLES[base] ?? "TECHI";
+  return locateNav(pathname).label;
 }
 
 // Device Details (MOBILE-DESIGN-SPEC.md — Device Details) renders its own
@@ -64,6 +46,12 @@ export default function AppShell({ children }: AppShellProps) {
     window.localStorage.setItem("techi.sidebar.collapsed", String(collapsed));
   };
 
+  // Browser tab title: "Devices · TECHI Connect".
+  useEffect(() => {
+    const { label } = locateNav(location.pathname);
+    document.title = label && label !== "TECHI Connect" ? `${label} · TECHI Connect` : "TECHI Connect";
+  }, [location.pathname]);
+
   const isTabRoot = TAB_ROOTS.has(location.pathname);
   const isDeviceDetail = isDeviceDetailRoute(location.pathname);
   const { lastFetchTime } = useAppData();
@@ -73,13 +61,10 @@ export default function AppShell({ children }: AppShellProps) {
       className="h-screen overflow-hidden"
       style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
     >
-      <div className="h-full p-2 lg:p-3">
+      <div className="h-full">
         <div
-          className="grid h-full min-w-0 grid-cols-1 overflow-hidden rounded-xl shadow-soft md:grid-cols-[auto_minmax(0,1fr)]"
-          style={{
-            border: "1px solid var(--th-shell-border)",
-            background: "var(--th-bg-surface)",
-          }}
+          className="grid h-full min-w-0 grid-cols-1 overflow-hidden md:grid-cols-[auto_minmax(0,1fr)]"
+          style={{ background: "var(--th-bg-surface)" }}
         >
           {/* Desktop sidebar — unchanged */}
           <div className="hidden min-w-0 md:block">
@@ -103,7 +88,7 @@ export default function AppShell({ children }: AppShellProps) {
             )}
             <OfflineBanner lastFetchTime={lastFetchTime} />
             <main
-              className={`min-w-0 flex-1 overflow-y-auto p-3 lg:p-4 ${isDeviceDetail ? "pb-3 md:pb-4" : "pb-16 md:pb-4"}`}
+              className={`min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "pb-16 md:pb-5"}`}
               style={{ background: "var(--th-bg-main)" }}
             >
               {children}

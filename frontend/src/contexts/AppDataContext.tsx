@@ -166,7 +166,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     void refreshFleetOverview();
   }, [refreshFleetOverview, userId]);
 
-  const { alerts, alertCount, reload: reloadAlerts } = useAlerts({ latestEvent });
+  const { alerts, alertCount, reload: reloadAlerts } = useAlerts({ latestEvent, enabled: Boolean(userId) });
 
   const realtimeStatus = useDeviceRealtime({
     enabled: Boolean(userId),

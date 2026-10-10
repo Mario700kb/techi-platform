@@ -27,7 +27,7 @@ MODE_PROXY_ADAPTER = "proxy_adapter"
 # The scheduled scripts are self-contained (no RouterOS globals) so they
 # survive a reboot. Placeholders ({{...}}) are filled server-side from the
 # Platform Registry and Agent Config.
-MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Platform - MikroTik connector (RouterOS {{ROUTEROS_VERSION_LABEL}})
+MIKROTIK_ROUTEROS_BASE_TEMPLATE = """# TECHI Connect - MikroTik connector (RouterOS {{ROUTEROS_VERSION_LABEL}})
 # Paste into RouterOS terminal (or import as a script). Requires outbound HTTPS.
 {
 :local serial ""

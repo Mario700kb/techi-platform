@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import Sidebar from "../Sidebar";
 import * as authContext from "../../auth/AuthContext";
 import * as platformFeaturesHook from "../../hooks/usePlatformFeatures";
+import * as appDataContext from "../../contexts/AppDataContext";
 
 // Contract under test: a menu item must never be visible if its route would
 // reject the same operator for the same feature/permission state (see the
@@ -22,6 +23,12 @@ const ALL_FEATURES_OFF = {
 };
 
 function mockAuth(hasPermission: (perm: string) => boolean) {
+  // The sidebar shows live device/alert counts; none are needed for this contract.
+  vi.spyOn(appDataContext, "useAppData").mockReturnValue({
+    fleetOverview: null,
+    totalOpenAlerts: 0,
+    alertCount: { total_open: 0, by_severity: {} },
+  } as any);
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "operator", email: "" } as any,
     token: "t",

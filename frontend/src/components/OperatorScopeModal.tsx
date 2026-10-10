@@ -59,7 +59,7 @@ function CheckRow({
       <span className="mt-px flex-shrink-0 text-slate-400">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium text-slate-200">{label}</span>
-        {sub && <span className="block truncate text-[10px] text-slate-500">{sub}</span>}
+        {sub && <span className="block truncate text-[11px] text-slate-500">{sub}</span>}
       </span>
     </label>
   );
@@ -225,7 +225,7 @@ export default function OperatorScopeModal({ operator, onClose }: Props) {
           <>
             {/* Effective access summary */}
             <div className="th-table-head border-b border-white/[0.06] px-5 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Effective Access</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Effective Access</p>
               <p className={`mt-0.5 text-xs font-medium ${totalEntries === 0 ? "text-amber-400" : "text-emerald-300"}`}>
                 {effectiveSummary}
               </p>

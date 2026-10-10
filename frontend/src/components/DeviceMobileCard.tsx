@@ -2,10 +2,11 @@ import { ExternalLink, Star } from "lucide-react";
 import { Device } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 import { ActiveActionEntry } from "./DevicesTable";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { MBadge, MBadgeVariant, StatusDot, FreshnessState } from "./mobile/primitives";
+import { ConnectButton } from "./ui";
 
 /**
  * Mobile UI 2.0 device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
@@ -88,7 +89,7 @@ function getPatchBadge(patch?: PatchStatus) {
   if (state === "up_to_date")
     return (
       <span
-        className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[10.5px] font-bold"
+        className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
         style={{ color: "var(--th-text-muted)", background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }}
       >
         patched
@@ -105,7 +106,7 @@ function getPatchBadge(patch?: PatchStatus) {
 function getMaintenanceBadge(device: Device) {
   if (!device.is_in_maintenance) return null;
   const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(undefined, { timeZone: APP_TIME_ZONE })}`
+    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
     : device.maintenance_note
     ? `In maintenance: ${device.maintenance_note}`
     : "In maintenance";
@@ -230,7 +231,7 @@ export function DeviceMobileCard({
           {/* L1: device name (dominant) + hostname when it differs */}
           <div className="flex min-w-0 items-baseline gap-2">
             <span
-              className="min-w-0 truncate text-[16.5px] font-extrabold tracking-[-0.015em]"
+              className="min-w-0 truncate text-[16px] font-extrabold tracking-[-0.015em]"
               style={{ color: "var(--th-text-primary)" }}
               title={displayName}
             >
@@ -261,7 +262,7 @@ export function DeviceMobileCard({
             {offlineBadge && <MBadge variant={offlineBadge.variant}>{offlineBadge.label}</MBadge>}
             {rsIssue && !offlineBadge && (
               <span
-                className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[10.5px] font-bold"
+                className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
                 style={{
                   color: "var(--th-accent)",
                   background: "var(--th-accent-glow)",
@@ -325,23 +326,12 @@ export function DeviceMobileCard({
               <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
             </button>
           )}
-          <button
-            type="button"
+          <ConnectButton
+            size="lg"
             disabled={!canConnect}
             onClick={onConnect}
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-bold transition-colors"
-            style={{
-              background: canConnect ? "var(--th-accent)" : "var(--th-chip-bg)",
-              color: canConnect ? "#fff" : "var(--th-text-muted)",
-              opacity: canConnect ? 1 : 0.5,
-              cursor: canConnect ? "pointer" : "not-allowed",
-              minWidth: 92,
-            }}
             title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote ID not resolved yet")}
-          >
-            <ExternalLink className="h-3.5 w-3.5 flex-none" />
-            Connect
-          </button>
+          />
         </div>
       </div>
     </div>

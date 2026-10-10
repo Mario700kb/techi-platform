@@ -6,6 +6,26 @@
  */
 export const APP_TIME_ZONE = "Europe/Tirane";
 
+/** One locale for every displayed date, so all screens read "10 Oct 2026, 22:12". */
+export const DISPLAY_LOCALE = "en-GB";
+
+export const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+};
+
+/** "10 Oct 2026, 22:12" in Tirana time. */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = parseUTC(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE });
+}
+
 /**
  * Parse an ISO-8601 datetime string as UTC, regardless of whether it carries
  * an explicit timezone offset or not.
@@ -34,12 +54,17 @@ export function parseUTC(iso: string): Date {
  */
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const diffSec = (Date.now() - parseUTC(iso).getTime()) / 1000;
+  const d = parseUTC(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  // Clock skew between browser and server can make a fresh timestamp look
+  // slightly in the future; never show a negative age.
+  const diffSec = Math.max(0, (Date.now() - d.getTime()) / 1000);
   if (diffSec < 10) return "just now";
   if (diffSec < 60) return `${Math.floor(diffSec)}s ago`;
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  return `${Math.floor(diffSec / 86400)}d ago`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
+  return d.toLocaleDateString(DISPLAY_LOCALE, { day: "numeric", month: "short", year: "numeric", timeZone: APP_TIME_ZONE });
 }
 
 /**
@@ -56,7 +81,7 @@ export function formatLocalDateTime(
   }
 ): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleString(undefined, { ...opts, timeZone: APP_TIME_ZONE });
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", ...opts, timeZone: APP_TIME_ZONE });
 }
 
 /** Minutes Tirana is ahead of UTC at the given instant (+120 CEST, +60 CET). */

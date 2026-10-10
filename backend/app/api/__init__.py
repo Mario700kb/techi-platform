@@ -1,1 +1,1 @@
-"""API package for TECHI Platform backend."""
+"""API package for TECHI Connect backend."""

@@ -198,8 +198,8 @@ class NotificationService:
             rule_id=None,
             channel_id=channel.id,
             event_type="test",
-            title="TECHI test notification",
-            message=message or "This is a test notification from TECHI Platform.",
+            title="TECHI Connect test notification",
+            message=message or "This is a test notification from TECHI Connect.",
             payload_json=None,
         )
         config = self._decode_config(channel)

@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "TECHI Platform"
+    PROJECT_NAME: str = "TECHI Connect"
     PROJECT_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEV_ALLOW_RANDOM_SECRET: bool = False

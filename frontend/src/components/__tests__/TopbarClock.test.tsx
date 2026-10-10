@@ -11,10 +11,11 @@ describe("TopbarClock", () => {
 
   it("shows Tirana time and keeps ticking", () => {
     render(<TopbarClock />);
-    expect(screen.getByText("16:44:00")).toBeInTheDocument();
-    expect(screen.getByText("Mon 5 Oct · Tirana")).toBeInTheDocument();
+    expect(screen.getByText("16:44")).toBeInTheDocument();
+    expect(screen.getByText("Mon 5 Oct")).toBeInTheDocument();
+    expect(screen.getByText("Tirana")).toBeInTheDocument();
 
     act(() => { vi.advanceTimersByTime(61_000); });
-    expect(screen.getByText("16:45:01")).toBeInTheDocument();
+    expect(screen.getByText("16:45")).toBeInTheDocument();
   });
 });

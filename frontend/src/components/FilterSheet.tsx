@@ -111,7 +111,7 @@ export function FilterSheet({
           <button
             type="button"
             onClick={onClose}
-            className="flex-none rounded-xl px-[18px] text-[12.5px] font-bold"
+            className="flex-none rounded-xl px-[18px] text-[13px] font-bold"
             style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", minHeight: 44 }}
           >
             Reset
@@ -119,7 +119,7 @@ export function FilterSheet({
           <button
             type="button"
             onClick={handleApply}
-            className="flex-1 rounded-xl text-[13.5px] font-extrabold text-white"
+            className="flex-1 rounded-xl text-[14px] font-extrabold text-white"
             style={{ background: "var(--th-accent)", minHeight: 44 }}
           >
             Apply filters
@@ -131,7 +131,7 @@ export function FilterSheet({
         {/* Status */}
         <div>
           <p
-            className="mb-[10px] text-[10px] font-extrabold uppercase tracking-[0.1em]"
+            className="mb-[10px] text-[11px] font-extrabold uppercase tracking-[0.1em]"
             style={{ color: "var(--th-text-muted)" }}
           >
             Status
@@ -162,7 +162,7 @@ export function FilterSheet({
         {(validClients.length > 0 || (unassignedCount ?? 0) > 0) && (
           <div>
             <p
-              className="mb-[10px] text-[10px] font-extrabold uppercase tracking-[0.1em]"
+              className="mb-[10px] text-[11px] font-extrabold uppercase tracking-[0.1em]"
               style={{ color: "var(--th-text-muted)" }}
             >
               Client

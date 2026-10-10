@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { chooseOption, findOption, openSelect } from "../../test/select";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Reports from "../Reports";
@@ -34,7 +35,7 @@ describe("Reports scope and history", () => {
     mockPage();
     const generate = vi.spyOn(reportsApi, "generateReport").mockResolvedValue(run({ id: 3 }));
     render(<Reports />);
-    await screen.findByRole("option", { name: "Eugreen" });
+    await findOption("Client", "Eugreen");
     expect(screen.getByRole("combobox", { name: "Client" })).toBeInTheDocument();
     expect(screen.getByText("User Activity")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
@@ -46,12 +47,12 @@ describe("Reports scope and history", () => {
     mockPage();
     const generate = vi.spyOn(reportsApi, "generateReport").mockResolvedValue(run({ scope_type: "device", device_id: 606, device_name: "Owner-04", report_type: "alerts" }));
     render(<Reports />);
-    await screen.findByRole("option", { name: "Eugreen" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Scope" }), { target: { value: "device" } });
+    await findOption("Client", "Eugreen");
+    await chooseOption("Scope", "device");
     await waitFor(() => expect(devicesApi.getDevices).toHaveBeenCalled());
-    await screen.findByRole("option", { name: "Owner-04 · Eugreen · #606" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Report type" }), { target: { value: "alerts" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Period" }), { target: { value: "custom" } });
+    await findOption("Device", "Owner-04 · Eugreen · #606");
+    await chooseOption("Report type", "alerts");
+    await chooseOption("Period", "custom");
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-01" } });
     fireEvent.change(screen.getByLabelText("To (inclusive)"), { target: { value: "2026-09-03" } });
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
@@ -67,21 +68,21 @@ describe("Reports scope and history", () => {
   it("disables CSV for a Full Device Report", async () => {
     mockPage();
     render(<Reports />);
-    await screen.findByRole("option", { name: "Eugreen" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Scope" }), { target: { value: "device" } });
-    const format = screen.getByRole("combobox", { name: "Format" });
-    expect((format.querySelector('option[value="csv"]') as HTMLOptionElement).disabled).toBe(true);
+    await findOption("Client", "Eugreen");
+    await chooseOption("Scope", "device");
+    const formats = await openSelect("Format");
+    expect(formats.querySelector('[role="option"][data-value="csv"]')).toHaveAttribute("aria-disabled", "true");
   });
 
   it("selects CSV for a device category and downloads a stored history run", async () => {
     mockPage();
     const generate = vi.spyOn(reportsApi, "generateReport").mockResolvedValue(run({ id: 3, scope_type: "device", device_name: "Owner-04", report_type: "alerts", report_format: "csv" }));
     render(<Reports />);
-    await screen.findByRole("option", { name: "Eugreen" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Scope" }), { target: { value: "device" } });
-    await screen.findByRole("option", { name: "Owner-04 · Eugreen · #606" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Report type" }), { target: { value: "alerts" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Format" }), { target: { value: "csv" } });
+    await findOption("Client", "Eugreen");
+    await chooseOption("Scope", "device");
+    await findOption("Device", "Owner-04 · Eugreen · #606");
+    await chooseOption("Report type", "alerts");
+    await chooseOption("Format", "csv");
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(generate.mock.calls[0][0]).toMatchObject({ report_type: "alerts", report_format: "csv" }));
     const downloadButtons = screen.getAllByRole("button", { name: "Download" });

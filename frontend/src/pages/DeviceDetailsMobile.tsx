@@ -261,7 +261,7 @@ export default function DeviceDetailsMobile() {
         <button
           type="button"
           onClick={() => void loadDevice()}
-          className="rounded-lg px-4 py-2 text-[12.5px] font-bold"
+          className="rounded-lg px-4 py-2 text-[13px] font-bold"
           style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
         >
           Try again
@@ -327,7 +327,7 @@ export default function DeviceDetailsMobile() {
             </div>
           ) : (
             <>
-              <h1 className="min-w-0 truncate text-[19px] font-extrabold tracking-[-0.02em]" style={{ color: "var(--th-text-primary)" }}>
+              <h1 className="min-w-0 truncate text-[18px] font-extrabold tracking-[-0.02em]" style={{ color: "var(--th-text-primary)" }}>
                 {displayName}
               </h1>
               {canOperate && (
@@ -419,7 +419,7 @@ export default function DeviceDetailsMobile() {
                   cpu={telemetryHistory.map((t) => t.cpu_percent ?? 0)}
                   ram={telemetryHistory.map((t) => t.ram_percent ?? 0)}
                 />
-                <div className="flex items-center gap-3 text-[10.5px]" style={{ color: "var(--th-text-muted)" }}>
+                <div className="flex items-center gap-3 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
                   <span className="flex items-center gap-1">
                     <span className="inline-block h-[2px] w-3 rounded-full" style={{ background: "var(--th-status-online)" }} />
                     CPU
@@ -477,7 +477,7 @@ export default function DeviceDetailsMobile() {
             <button
               type="button"
               onClick={() => void loadSoftware()}
-              className="flex min-h-[40px] items-center justify-center rounded-lg text-[12.5px] font-bold"
+              className="flex min-h-[40px] items-center justify-center rounded-lg text-[13px] font-bold"
               style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
             >
               Load software list
@@ -541,7 +541,7 @@ export default function DeviceDetailsMobile() {
               onChange={(e) => setNoteDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleAddNote(); }}
               placeholder="Add a note…"
-              className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-[12.5px] outline-none"
+              className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none"
               style={{ background: "var(--th-chip-bg)", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
             />
             <button
@@ -622,7 +622,7 @@ export default function DeviceDetailsMobile() {
               type="button"
               disabled={actionBusy}
               onClick={() => void runAction(a.label, () => queueDeviceAction(device.id, { action_type: a.type, created_by: user?.display_name ?? user?.username }))}
-              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[13.5px] font-bold text-left disabled:opacity-50"
+              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[14px] font-bold text-left disabled:opacity-50"
               style={{ color: "var(--th-text-primary)" }}
             >
               {a.label}
@@ -633,7 +633,7 @@ export default function DeviceDetailsMobile() {
               type="button"
               disabled={actionBusy}
               onClick={() => void runAction("Exit maintenance", async () => { setDevice(await clearDeviceMaintenance(device.id)); })}
-              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[13.5px] font-bold text-left disabled:opacity-50"
+              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[14px] font-bold text-left disabled:opacity-50"
               style={{ color: "var(--th-status-maint)" }}
             >
               Exit Maintenance
@@ -643,7 +643,7 @@ export default function DeviceDetailsMobile() {
               type="button"
               disabled={actionBusy}
               onClick={() => void runAction("Enter maintenance", async () => { setDevice(await enterDeviceMaintenance(device.id, { duration_minutes: 60, started_by: user?.display_name ?? user?.username })); })}
-              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[13.5px] font-bold text-left disabled:opacity-50"
+              className="flex min-h-[48px] w-full items-center rounded-lg px-3 text-[14px] font-bold text-left disabled:opacity-50"
               style={{ color: "var(--th-status-maint)" }}
             >
               Enter Maintenance (60 min)
@@ -661,7 +661,7 @@ export default function DeviceDetailsMobile() {
             <button
               type="button"
               onClick={() => setConfirmAction(null)}
-              className="flex-none rounded-xl px-[18px] text-[12.5px] font-bold"
+              className="flex-none rounded-xl px-[18px] text-[13px] font-bold"
               style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", minHeight: 44 }}
             >
               Cancel
@@ -670,7 +670,7 @@ export default function DeviceDetailsMobile() {
               type="button"
               disabled={actionBusy}
               onClick={() => confirmAction && void confirmAction.run()}
-              className="flex-1 rounded-xl text-[13.5px] font-extrabold text-white disabled:opacity-50"
+              className="flex-1 rounded-xl text-[14px] font-extrabold text-white disabled:opacity-50"
               style={{ background: "var(--th-status-critical)", minHeight: 44 }}
             >
               {actionBusy ? "Working…" : "Confirm"}

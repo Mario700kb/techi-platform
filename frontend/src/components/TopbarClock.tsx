@@ -5,7 +5,6 @@ const timeFormat = new Intl.DateTimeFormat("en-GB", {
   timeZone: APP_TIME_ZONE,
   hour: "2-digit",
   minute: "2-digit",
-  second: "2-digit",
   hourCycle: "h23",
 });
 
@@ -36,15 +35,12 @@ export default function TopbarClock() {
   return (
     <time
       dateTime={now.toISOString()}
-      title="Tirana time (Europe/Tirane)"
-      className="flex items-baseline gap-2 whitespace-nowrap"
+      title="Platform time — Tirana (Europe/Tirane)"
+      className="th-clock"
     >
-      <span className="font-mono text-[15px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
-        {timeFormat.format(now)}
-      </span>
-      <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-        {dateFormat.format(now)} · Tirana
-      </span>
+      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{timeFormat.format(now)}</span>
+      <span style={{ color: "var(--th-text-muted)" }}>{dateFormat.format(now)}</span>
+      <span style={{ color: "var(--th-text-faint)" }}>Tirana</span>
     </time>
   );
 }

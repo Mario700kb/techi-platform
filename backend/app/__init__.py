@@ -1,1 +1,1 @@
-"""TECHI Platform backend application package."""
+"""TECHI Connect backend application package."""
