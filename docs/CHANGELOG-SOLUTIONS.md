@@ -5,6 +5,82 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ALERT-NOISE-2026-10-11 — sustained CPU/RAM alerts; alerts that never closed
+
+Commit `bebe94f`. The owner asked for two fixes: the RAM warning fired at
+80%, and some alerts had been open since 8 June.
+
+### What was measured
+
+Production data, read-only:
+
+- In the last 7 days the platform opened 8,577 CPU alerts and 7,953 RAM
+  alerts, about 1,550 a day. 87% of the CPU alerts and 54% of the RAM alerts
+  closed within ten minutes.
+- Of the 49 open RAM warnings, 35 were below 85%.
+- The cause was the opening rule: a single sample above the line opened an
+  alert.
+
+### Threshold choice
+
+Simulated on 24 h of production telemetry. Each row is alert episodes per day.
+
+| Rule | CPU | RAM |
+|---|---|---|
+| One sample (old rule), CPU 75% / RAM 80% | 854 | 696 |
+| 3 in a row, CPU 75% / RAM 80% | 70 | 251 |
+| **3 in a row, CPU 85% / RAM 90% (chosen)** | **47** (16 devices) | **49** (19 devices) |
+
+### Alert rules now
+
+- **Opening.** An alert opens after 3 consecutive samples, about 15 minutes
+  at the 300 s heartbeat.
+  - CPU: warning 85%, critical 95%.
+  - RAM: warning 90%, critical 95%.
+- **Hysteresis.** An open alert closes only when the value is 5 points
+  below the warning line.
+- **Disk.** Unchanged.
+
+### Alerts that never closed
+
+Three code defects left alerts open permanently:
+
+- `repeated_reconnects` had a way to open but no way to close. It now
+  closes once the reconnect count drops below the threshold.
+- Alerts based on readings (CPU, memory, disk, reconnects, stale
+  heartbeat, missing telemetry) of a device that went offline were never
+  re-evaluated. They now close on the offline transition, whether from a
+  timeout or a power event.
+- Archiving a device left its alerts open. Archiving now closes them.
+
+A nightly sweep (`resolve_stale_alerts`, the first step of the cleanup run)
+closes anything these rules leave behind. Device-offline alerts for devices
+that are still offline are correct and stay open.
+
+### Deploy
+
+- **When.** 2026-10-11 15:50, backend only.
+- **Dump.** `/opt/backups/techi/pre-alertnoise-2026-10-11_15-48.sql.gz`.
+- **Rollback image.** `techi-platform-backend:pre-alertnoise-3a83349`.
+- **Tests.** Backend 1,241, of which 9 are new.
+
+### One-off sweep after deploy
+
+- **Result.** Resolved 62 alerts:
+  - 35 low disk, 9 high RAM, 5 high CPU and 8 reconnects on offline devices;
+  - 3 settled reconnects;
+  - 2 alerts on archived devices.
+- **Revert record.** The resolved ids and reasons are in
+  `/app/logs/stale-alerts-resolved-2026-10-11.json`.
+- **Open alerts.** 324 before the sweep, 265 after it. The RAM warnings
+  under 85% close at their next telemetry heartbeat.
+
+### Found
+
+The root filesystem reached 91% (2.3 GB free) after this deploy. Rollback
+image tags and the build cache are accumulating, so a controlled cleanup is
+due.
+
 ## [2026-10-11] TABLE-FOOTER-2026-10-11 — one table footer for Devices and Alerts
 
 The owner asked for the Alerts footer to match the one on Devices. Commit
