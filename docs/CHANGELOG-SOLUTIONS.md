@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] CLIENTS-UI-2026-10-11 — Clients page in the Onboarding design; real status; domain mappings always load
+
+Commit `d02fad0`; frontend only, deployed 2026-10-11 22:10. Rollback image
+`techi-platform-frontend:pre-clients-ui-e6673af`.
+
+### Fixed
+- **Every client showed "Active"** whatever its `is_active`. The chip was
+  hard-coded; it now reads the field, and All / Active / Inactive tabs
+  filter on it.
+- **Domain mappings came up empty** when the client cache was fresh: the
+  page returned before loading them. They now always load.
+
+### Changed
+- **Summary:** four stat cards: clients, groups, assigned devices, domain
+  mappings.
+- **New client and New group** are paired cards of equal height.
+- **Clients table:**
+  - search by name, slug, description or group;
+  - devices per client, from `/devices/tree`;
+  - group chips with inline edit and delete;
+  - icon actions and the shared pagination.
+- **Domain mapping** is a table with an inline add row, a client picker
+  per mapping and an active switch.
+- **Shared parts:** `CardHead` and `ModalShell` moved to
+  `components/ui/PanelCard`, shared by Onboarding, Reports, Audit Log and
+  Clients.
+- **Verification:** 143 frontend tests (new `Clients.test.tsx`).
+  Production: frontend healthy, console 200, and the new styles are served.
+
 ## [2026-10-11] AUDIT-UI-2026-10-11 — Audit Log redesign; filters cover every action the log holds
 
 Commit `e6673af`; backend and frontend, deployed 2026-10-11 21:22.
