@@ -2178,6 +2178,16 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 .th-batch-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; border-radius: 10px; border: 1px solid var(--th-border-subtle); }
 .th-batch-list > li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 12px; }
 .th-batch-list > li + li { border-top: 1px solid var(--th-border-subtle); }
+.th-vault-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-surface);
+}
+@media (max-width: 1023px) { .th-vault-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .th-vault-filters { grid-template-columns: minmax(0, 1fr); } }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }

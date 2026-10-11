@@ -164,4 +164,25 @@ describe("CredentialVault enterprise UI", () => {
     await waitFor(() => expect(screen.getByText(/still in use/i)).toBeInTheDocument());
     expect(screen.getByText(/still referenced by: Client #1/i)).toBeInTheDocument();
   });
+  it("reveals a secret only after a reason of at least 5 characters, inside the dialog", async () => {
+    mockAuth();
+    vi.spyOn(vaultApi, "listVaultCredentialTypes").mockResolvedValue(TYPES);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
+    vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
+    const reveal = vi.spyOn(vaultApi, "revealVaultCredential").mockResolvedValue({ id: 1, name: "srv ssh", username: "admin", secret_fields: { password: "hunter2" } });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("srv ssh")).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle("Reveal"));
+    const dialog = await screen.findByRole("dialog");
+    const submit = within(dialog).getByRole("button", { name: "Reveal" });
+    fireEvent.change(within(dialog).getByPlaceholderText(/why the secret is needed/i), { target: { value: "abc" } });
+    expect(submit).toBeDisabled();
+    fireEvent.change(within(dialog).getByPlaceholderText(/why the secret is needed/i), { target: { value: "TICKET-42" } });
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(reveal).toHaveBeenCalledWith(1, "TICKET-42"));
+    expect(await within(screen.getByRole("dialog")).findByText("hunter2")).toBeInTheDocument();
+  });
 });
