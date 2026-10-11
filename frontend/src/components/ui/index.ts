@@ -7,3 +7,4 @@ export type { SelectOption } from "./Select";
 export { default as SelectField } from "./SelectField";
 export { default as ConnectButton } from "./ConnectButton";
 export { default as TablePagination } from "./TablePagination";
+export { default as Modal } from "./Modal";

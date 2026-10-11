@@ -1,7 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { AlertTriangle, ExternalLink, Terminal as TerminalIcon, X } from "lucide-react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, ExternalLink, Terminal as TerminalIcon } from "lucide-react";
 
 import { getSshCredentialCandidates, type SSHCredentialCandidate } from "../api/terminal";
+import Button from "./ui/Button";
+import Modal from "./ui/Modal";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 const SSHSessionInfo = lazy(() => import("./SSHSessionInfo"));
@@ -57,53 +60,34 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      style={{ background: "var(--th-scrim)" }}
-      onClick={onClose}
+    <Modal
+      title="Embedded SSH"
+      subtitle="Uses a Credential Vault credential, or a temporary one you type in"
+      icon={TerminalIcon}
+      size="xl"
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onOpenExternal} className="th-onb-link mr-auto">
+          <ExternalLink className="h-3.5 w-3.5" />
+          Open in your own SSH client instead
+        </button>
+      }
     >
-      <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col gap-3 rounded-xl p-4"
-        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            <TerminalIcon className="h-4 w-4" />
-            Embedded SSH Connect
-          </div>
-          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[var(--th-bg-card-hover)]" aria-label="Close">
-            <X className="h-4 w-4" style={{ color: "var(--th-text-secondary)" }} />
-          </button>
-        </div>
-
         {stage.kind === "loading" && (
-          <div className="py-8 text-center text-sm" style={{ color: "var(--th-text-secondary)" }}>
-            Resolving SSH credentials…
-          </div>
+          <div className="th-onb-empty">Resolving SSH credentials…</div>
         )}
 
         {stage.kind === "error" && (
-          <div
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
-            style={{ color: "var(--th-status-critical)", background: "var(--th-bg-drawer-section)" }}
-          >
-            <AlertTriangle className="h-4 w-4 flex-none" />
-            {stage.message}
+          <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{stage.message}</span>
           </div>
         )}
 
         {stage.kind === "none" && (
           <div className="flex flex-col gap-3">
-            <div
-              className="flex items-start gap-2 rounded-md px-3 py-2 text-sm"
-              style={{
-                color: "var(--th-text-secondary)",
-                background: "var(--th-bg-drawer-section)",
-                border: "1px solid var(--th-border-drawer-section)",
-              }}
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+            <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as CSSProperties}>
+              <AlertTriangle className="h-4 w-4" />
               <span>
                 No SSH credential is available for this device. Add one in the Credential Vault (Device, Group,
                 Client, or Global scope), or start a Temporary Session below.
@@ -121,28 +105,24 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
 
         {stage.kind === "select" && (
           <div className="flex flex-col gap-2">
-            <div className="text-xs" style={{ color: "var(--th-text-secondary)" }}>
-              Multiple SSH credentials are available for this device — choose one:
-            </div>
+            <span className="th-onb-hint">Several SSH credentials reach this device. Choose one:</span>
             {stage.candidates.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => { setSessionId(null); setStage({ kind: "connecting", credentialId: c.id }); }}
-                className="flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition hover:bg-[var(--th-bg-card-hover)]"
-                style={{ border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-primary)" }}
+                className="th-onb-option flex items-center justify-between"
               >
-                <span>{c.name}</span>
-                <span className="text-xs" style={{ color: "var(--th-text-faint)" }}>{c.username}</span>
+                <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{c.name}</span>
+                <span className="font-mono text-[12px]" style={{ color: "var(--th-text-muted)" }}>{c.username}</span>
               </button>
             ))}
             <button
               type="button"
               onClick={() => setStage({ kind: "temporary" })}
-              className="self-start text-xs underline"
-              style={{ color: "var(--th-text-faint)" }}
+              className="th-onb-link self-start"
             >
-              Use a Temporary Session instead
+              Use a temporary session instead
             </button>
           </div>
         )}
@@ -165,7 +145,7 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
               </Suspense>
             )}
             <div className="flex-1">
-              <Suspense fallback={<div className="py-8 text-center text-sm">Loading terminal…</div>}>
+              <Suspense fallback={<div className="th-onb-empty">Loading terminal…</div>}>
                 <DeviceTerminal
                   deviceId={deviceId}
                   mode="ssh"
@@ -181,19 +161,7 @@ export default function EmbeddedSSHModal({ deviceId, onClose, onOpenExternal }: 
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t pt-2 text-xs" style={{ borderColor: "var(--th-border-drawer-section)" }}>
-          <button
-            type="button"
-            onClick={onOpenExternal}
-            className="inline-flex items-center gap-1 underline"
-            style={{ color: "var(--th-text-faint)" }}
-          >
-            <ExternalLink className="h-3 w-3" />
-            Open in your own SSH client instead
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -211,36 +179,16 @@ function TemporaryForm({
   onSubmit: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-md p-3" style={{ border: "1px solid var(--th-border-drawer-section)" }}>
-      <div className="text-xs font-semibold" style={{ color: "var(--th-text-primary)" }}>Temporary Session</div>
-      <div className="text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-        Entered once, used only for this connection, never saved to the Credential Vault.
+    <div className="th-onb-sub">
+      <div>
+        <div className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>Temporary session</div>
+        <div className="th-onb-hint">Used for this connection only and never saved to the Credential Vault.</div>
       </div>
-      <input
-        type="text"
-        placeholder="Username"
-        value={username}
-        onChange={(e) => onUsername(e.target.value)}
-        className="rounded-md px-2 py-1.5 text-sm outline-none"
-        style={{ background: "var(--th-bg-input)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-primary)" }}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => onPassword(e.target.value)}
-        className="rounded-md px-2 py-1.5 text-sm outline-none"
-        style={{ background: "var(--th-bg-input)", border: "1px solid var(--th-border-drawer-section)", color: "var(--th-text-primary)" }}
-      />
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!username || !password}
-        className="self-start rounded-md px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ background: "var(--th-accent)", color: "#fff" }}
-      >
-        Connect
-      </button>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <input type="text" placeholder="Username" value={username} onChange={(e) => onUsername(e.target.value)} aria-label="Username" data-autofocus />
+        <input type="password" placeholder="Password" value={password} onChange={(e) => onPassword(e.target.value)} aria-label="Password" onKeyDown={(e) => e.key === "Enter" && onSubmit()} />
+        <Button type="button" onClick={onSubmit} disabled={!username || !password}>Connect</Button>
+      </div>
     </div>
   );
 }

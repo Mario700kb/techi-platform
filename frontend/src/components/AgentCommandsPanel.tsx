@@ -37,7 +37,7 @@ import { useAuth } from "../auth/AuthContext";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useAppData } from "../contexts/AppDataContext";
 import { timeAgo } from "../utils/time";
-import { SelectField } from "./ui";
+import { Button, Modal, SelectField } from "./ui";
 
 const POLL_INTERVAL = 3000;
 
@@ -138,14 +138,6 @@ function ConfirmModal({
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmInput, setConfirmInput] = useState("");
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const isAllDevices = target === "all";
   const isSelfUpdate = commandType === "self_update";
   const expectedText = deviceCount !== null ? String(deviceCount) : "";
@@ -159,163 +151,82 @@ function ConfirmModal({
     if (!sending && canConfirm) onConfirm();
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)" }}
-      onClick={onClose}
-    >
-      <form
-        className="w-full max-w-sm rounded-xl p-5 space-y-4 shadow-2xl"
-        style={{
-          background: "var(--th-bg-drawer, var(--th-bg-shell))",
-          border: isAllDevices ? "2px solid color-mix(in srgb, var(--th-status-critical) 60%, transparent)" : "1px solid var(--th-border-drawer-section)",
-        }}
-        onSubmit={submitConfirm}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/10">
-            <AlertTriangle className="h-4 w-4 text-red-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              {isSelfUpdate ? "Update agent" : twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
-            </p>
-            <p className="mt-0.5 text-xs" style={{ color: "var(--th-text-muted)" }}>
-              <strong className="text-amber-400">{BULK_COMMAND_LABELS[commandType]}</strong>{" "}
-              → <strong style={{ color: "var(--th-text-primary)" }}>{targetLabel}</strong>
-              {deviceCount !== null && !isAllDevices && (
-                <span> ({deviceCount} device{deviceCount !== 1 ? "s" : ""})</span>
-              )}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="mt-0.5 rounded p-1 hover:opacity-70" style={{ color: "var(--th-text-muted)" }}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+  const danger = { "--onb-tone": "var(--th-status-critical)" } as React.CSSProperties;
 
-        {/* self_update — agent restart warning + active package info */}
+  return (
+    <Modal
+      title={isSelfUpdate ? "Update agent" : twoStep && step === 2 ? "Confirm once more" : "Confirm bulk action"}
+      subtitle={<><strong style={{ color: "var(--th-text-primary)" }}>{BULK_COMMAND_LABELS[commandType]}</strong> → {targetLabel}{deviceCount !== null && !isAllDevices ? ` (${deviceCount} device${deviceCount !== 1 ? "s" : ""})` : ""}</>}
+      icon={AlertTriangle}
+      tone="danger"
+      size="sm"
+      busy={sending}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={sending} data-autofocus>Cancel</Button>
+          {twoStep && step === 1 ? (
+            <Button type="button" variant="danger" onClick={() => setStep(2)}>Continue</Button>
+          ) : (
+            <Button type="submit" form="bulk-confirm-form" variant="danger" disabled={sending || !canConfirm}>
+              {sending ? "Sending…" : isSelfUpdate ? "Confirm update" : "Confirm and send"}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <form id="bulk-confirm-form" onSubmit={submitConfirm} className="flex flex-col gap-4">
         {isSelfUpdate && (
           <>
-            <div
-              className="rounded-lg px-3 py-2 text-xs text-red-400"
-              style={{ background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 30%, transparent)" }}
-            >
-              The agent restarts during the update and the PC may go offline for about 30 seconds.
-              TECHI Remote Support is <strong>not affected</strong>.
+            <div className="th-onb-note" style={danger}>
+              <AlertTriangle className="h-4 w-4" />
+              <span>The agent restarts during the update and the PC may be offline for about 30 seconds. Remote Support is <strong>not affected</strong>.</span>
             </div>
             {selfUpdatePackage && (
-              <div className="space-y-1 rounded-md px-3 py-2 text-xs" style={{ background: "var(--th-bg-shell)" }}>
-                <p style={{ color: "var(--th-text-muted)" }}>
-                  Target version → <strong style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.version}</strong>
-                </p>
-                {selfUpdatePackage.sha256 && (
-                  <p style={{ color: "var(--th-text-muted)" }}>
-                    SHA256 → <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>{selfUpdatePackage.sha256.slice(0, 8)}…</span>
-                  </p>
-                )}
-              </div>
+              <dl className="th-onb-meta">
+                <div><dt>Target version</dt><dd className="tabular-nums">{selfUpdatePackage.version}</dd></div>
+                <div><dt>SHA-256</dt><dd className="font-mono !text-[12px]">{selfUpdatePackage.sha256 ? `${selfUpdatePackage.sha256.slice(0, 12)}…` : "—"}</dd></div>
+              </dl>
             )}
           </>
         )}
 
-        {/* All-devices emphasis */}
         {isAllDevices && (
-          <div
-            className="rounded-lg px-3 py-2.5 text-center"
-            style={{ background: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 40%, transparent)" }}
-          >
-            <p className="text-2xl font-bold text-red-400">{deviceCount ?? "?"}</p>
-            <p className="text-xs font-medium text-red-300">This will be sent to every device</p>
+          <div className="th-onb-alldevices">
+            <span className="tabular-nums">{deviceCount ?? "?"}</span>
+            <small>This goes to every device</small>
           </div>
         )}
 
-        {/* run_powershell script preview */}
         {scriptPreview && (
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-              Script Preview
-            </p>
-            <pre
-              className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md p-2.5 text-xs font-mono"
-              style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
-            >
-              {scriptPreview}
-            </pre>
+          <div className="th-onb-field">
+            Script preview
+            <pre className="th-onb-code max-h-32 overflow-y-auto whitespace-pre-wrap p-3">{scriptPreview}</pre>
           </div>
         )}
 
-        {/* Step 1 warning */}
         {step === 1 && (
-          <div
-            className="rounded-lg px-3 py-2 text-xs"
-            style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)", color: "var(--th-text-muted)" }}
-          >
-            This action will be sent to all targeted devices and <strong className="text-red-400">cannot be undone</strong>.
+          <div className="th-onb-note" style={danger}>
+            <AlertTriangle className="h-4 w-4" />
+            <span>This is sent to every targeted device and <strong>cannot be undone</strong>.</span>
           </div>
         )}
 
-        {/* Step 2 – type device count to confirm */}
         {twoStep && step === 2 && (
-          <div className="space-y-2">
-            <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>
-              Type <strong style={{ color: "var(--th-text-primary)" }}>{expectedText}</strong> (device count) to confirm:
-            </p>
-            <input
-              autoFocus
-              type="text"
-              value={confirmInput}
-              onChange={(e) => setConfirmInput(e.target.value)}
-              placeholder={expectedText}
-              className={inputCls}
-              style={inputStyle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && canConfirm) submitConfirm(e);
-              }}
-            />
-          </div>
+          <label className="th-onb-field th-onb-reveal">
+            <span>Type <strong style={{ color: "var(--th-text-primary)" }}>{expectedText}</strong>, the device count, to confirm</span>
+            <input type="text" inputMode="numeric" value={confirmInput} onChange={(e) => setConfirmInput(e.target.value)} placeholder={expectedText} data-autofocus />
+          </label>
         )}
 
         {error && (
-          <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
-            {error}
-          </p>
+          <div className="th-onb-note th-onb-reveal" style={danger} role="alert">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{error}</span>
+          </div>
         )}
-
-        {/* Buttons */}
-        <div className="flex gap-2">
-          {twoStep && step === 1 ? (
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white"
-              style={{ background: "var(--th-status-critical)" }}
-            >
-              Continue →
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={sending || !canConfirm}
-              className="flex-1 rounded-md py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-              style={{ background: "var(--th-status-critical)" }}
-            >
-              {sending ? "Sending…" : isSelfUpdate ? "Confirm update" : "Confirm and send"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-4 py-1.5 text-sm font-semibold"
-            style={{ background: "var(--th-bg-shell)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-primary)" }}
-          >
-            Anulo
-          </button>
-        </div>
       </form>
-    </div>
+    </Modal>
   );
 }
 
@@ -329,65 +240,30 @@ interface OutputModalProps {
 }
 
 function OutputModal({ hostname, output, error, onClose }: OutputModalProps) {
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)" }}
-      onClick={onClose}
+    <Modal
+      title={hostname}
+      subtitle="Command output"
+      icon={Terminal}
+      tone={error ? "danger" : "accent"}
+      size="lg"
+      onClose={onClose}
+      footer={<Button type="button" variant="secondary" onClick={onClose}>Close</Button>}
     >
-      <div
-        className="flex max-h-[80vh] w-full max-w-2xl flex-col space-y-3 rounded-xl p-5 shadow-2xl"
-        style={{
-          background: "var(--th-bg-drawer, var(--th-bg-shell))",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-mono font-semibold" style={{ color: "var(--th-text-primary)" }}>{hostname}</p>
-          <button type="button" onClick={onClose} className="rounded p-1 hover:opacity-70" style={{ color: "var(--th-text-muted)" }}>
-            <X className="h-4 w-4" />
-          </button>
+      {output && (
+        <div className="th-onb-field">
+          Output
+          <pre className="th-onb-code max-h-[50vh] overflow-auto whitespace-pre-wrap p-3">{output}</pre>
         </div>
-        <div className="flex-1 space-y-3 overflow-y-auto">
-          {output && (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-                Output
-              </p>
-              <pre
-                className="whitespace-pre-wrap rounded-md p-3 text-xs font-mono"
-                style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
-              >
-                {output}
-              </pre>
-            </div>
-          )}
-          {error && (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">Error</p>
-              <pre
-                className="whitespace-pre-wrap rounded-md p-3 text-xs font-mono text-red-400"
-                style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" }}
-              >
-                {error}
-              </pre>
-            </div>
-          )}
-          {!output && !error && (
-            <p className="text-xs" style={{ color: "var(--th-text-muted)" }}>No output captured.</p>
-          )}
+      )}
+      {error && (
+        <div className="th-onb-field">
+          <span style={{ color: "var(--th-status-critical)" }}>Error</span>
+          <pre className="th-onb-code max-h-[40vh] overflow-auto whitespace-pre-wrap p-3" style={{ color: "var(--th-status-critical)" }}>{error}</pre>
         </div>
-      </div>
-    </div>
+      )}
+      {!output && !error && <p className="th-onb-hint">No output captured.</p>}
+    </Modal>
   );
 }
 

@@ -10,7 +10,8 @@ import {
   deleteTeam,
 } from "../api/teams";
 import { Button, EmptyState, PageHeader } from "../components/ui";
-import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import { CardHead } from "../components/ui/PanelCard";
+import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -390,11 +391,11 @@ export default function Teams() {
       </div>
 
       {showCreate && (
-        <ModalShell
+        <Modal
           title="New team"
           subtitle="Add members and access after creating it"
           icon={UsersRound}
-          width="max-w-xl"
+          size="lg"
           onClose={() => setShowCreate(false)}
           footer={
             <>
@@ -405,11 +406,11 @@ export default function Teams() {
         >
           <TeamFormFields form={createForm} onChange={(u) => setCreateForm((f) => ({ ...f, ...u }))} error={createError} />
           <TemplateSelector onSelect={(perms) => setCreateForm((f) => ({ ...f, permissions: perms }))} />
-        </ModalShell>
+        </Modal>
       )}
 
       {editTarget && (
-        <ModalShell
+        <Modal
           title="Edit team"
           subtitle={editTarget.name}
           icon={Pencil}
@@ -422,7 +423,7 @@ export default function Teams() {
           }
         >
           <TeamFormFields form={editForm} onChange={(u) => setEditForm((f) => ({ ...f, ...u }))} error={editError} />
-        </ModalShell>
+        </Modal>
       )}
 
       {deleteTarget && (

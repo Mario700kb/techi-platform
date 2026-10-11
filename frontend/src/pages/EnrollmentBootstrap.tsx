@@ -45,9 +45,9 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { API_BASE_URL } from "../api/client";
-import { Button, EmptyState, PageHeader, Select, SelectField } from "../components/ui";
+import { Button, EmptyState, Modal, PageHeader, Select } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
-import { TokenStatusChip, UsageMeter, TOKEN_FILTERS, TokenFilter, formatTokenPrefix, tokenState, usagePercent } from "../components/EnrollmentTokenBits";
+import { TokenStatusChip, UsageMeter, TOKEN_FILTERS, TokenFilter, formatTokenPrefix, tokenState } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { formatCount } from "../utils/number";
@@ -1069,158 +1069,94 @@ export default function EnrollmentBootstrap() {
         />
       )}
 
-      {/* ── Create Token Modal ────────────────────────────────────────────────── */}
+      {/* ── New token ─────────────────────────────────────────────────────────── */}
       {createOpen && (
-        <div className="th-modal-scrim fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="th-modal w-full max-w-md rounded-xl p-5 shadow-2xl" style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-surface)" }}>
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>New enrollment token</h3>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="th-onb-action" aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <label className="th-onb-field">
-                Token name *
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. ADPascucci — Office PCs"
-                  autoFocus
-                  onKeyDown={(e) => e.key === "Enter" && void handleCreateToken()}
-                  className="w-full"
-                />
-              </label>
-
-              <label className="th-onb-field">
-                Max uses
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={newMaxUses}
-                  onChange={(e) => setNewMaxUses(Math.max(1, Number(e.target.value)))}
-                  className="w-full"
-                />
-              </label>
-
-              <label className="th-onb-field">
-                Expires (Tirana time, optional)
-                <input
-                  type="datetime-local"
-                  value={newExpiry}
-                  onChange={(e) => setNewExpiry(e.target.value)}
-                  className="w-full"
-                />
-              </label>
-
-              {clients.length > 0 && (
-                <>
-                  <label className="th-onb-field">
-                    Assign to client (optional)
-                    <SelectField
-                      value={newClientId}
-                      onChange={(e) => setNewClientId(e.target.value === "" ? "" : Number(e.target.value))}
-                      className="w-full"
-                    >
-                      <option value="">— No assignment —</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </SelectField>
-                  </label>
-
-                  {newClientId !== "" && groups.length > 0 && (
-                    <label className="th-onb-field">
-                      Assign to group (optional)
-                      <SelectField
-                        value={newGroupId}
-                        onChange={(e) => setNewGroupId(e.target.value === "" ? "" : Number(e.target.value))}
-                        className="w-full"
-                      >
-                        <option value="">— No group —</option>
-                        {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
-                        ))}
-                      </SelectField>
-                    </label>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="mt-5 flex flex-row-reverse gap-2">
-              <Button
-                type="button"
-                
-                onClick={() => void handleCreateToken()}
-                disabled={!newName.trim() || creating}
-              >
-                {creating ? "Creating…" : "Create and select"}
-              </Button>
+        <Modal
+          title="New enrollment token"
+          subtitle="Selected in the generator once created"
+          icon={KeyRound}
+          busy={creating}
+          onClose={() => setCreateOpen(false)}
+          footer={
+            <>
               <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Change max uses Modal ─────────────────────────────────────────────── */}
-      {editMaxUsesTarget && (
-        <div className="th-modal-scrim fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="th-modal w-full max-w-md rounded-xl p-5 shadow-2xl" style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-surface)" }}>
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>Change max uses</h3>
-              <button
-                type="button"
-                onClick={() => setEditMaxUsesTarget(null)}
-                className="th-onb-action" aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="mb-4 text-sm leading-6" style={{ color: "var(--th-text-secondary)" }}>
-              <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{editMaxUsesTarget.name}</span> is at{" "}
-              <span className="font-mono">
-                {editMaxUsesTarget.use_count}/{editMaxUsesTarget.max_uses}
-              </span>{" "}
-              ({usagePercent(editMaxUsesTarget)}%) of its enrollment limit.
-              {editMaxUsesTarget.status === "used" &&
-                " Raising the limit above the current use count reactivates the token."}
-            </p>
-
+              <Button type="button" onClick={() => void handleCreateToken()} disabled={!newName.trim() || creating}>{creating ? "Creating…" : "Create and select"}</Button>
+            </>
+          }
+        >
+          <label className="th-onb-field">
+            Name
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. ADPascucci — Office PCs" data-autofocus onKeyDown={(e) => e.key === "Enter" && void handleCreateToken()} />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="th-onb-field">
               Max uses
-              <input
-                type="number"
-                min={1}
-                max={1000000}
-                value={editMaxUses}
-                autoFocus
-                onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))}
-                onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()}
-                className="w-full"
-              />
+              <input type="number" min={1} max={1000} value={newMaxUses} onChange={(e) => setNewMaxUses(Math.max(1, Number(e.target.value)))} />
             </label>
-
-            <div className="mt-5 flex flex-row-reverse gap-2">
-              <Button
-                type="button"
-                
-                onClick={() => void handleSaveMaxUses()}
-                disabled={savingMaxUses}
-              >
-                {savingMaxUses ? "Saving…" : "Save"}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setEditMaxUsesTarget(null)} disabled={savingMaxUses}>Cancel</Button>
-            </div>
+            <label className="th-onb-field">
+              Expires (Tirana time)
+              <input type="datetime-local" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} />
+            </label>
           </div>
-        </div>
+          {clients.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="th-onb-field">
+                Client
+                <Select
+                  id="new-token-client"
+                  aria-label="Assign to client"
+                  value={newClientId === "" ? "" : String(newClientId)}
+                  onChange={(value) => setNewClientId(value === "" ? "" : Number(value))}
+                  options={[{ value: "", label: "No assignment" }, ...clients.map((c) => ({ value: String(c.id), label: c.name }))]}
+                />
+              </div>
+              <div className="th-onb-field">
+                Group
+                <Select
+                  id="new-token-group"
+                  aria-label="Assign to group"
+                  disabled={newClientId === "" || groups.length === 0}
+                  value={newGroupId === "" ? "" : String(newGroupId)}
+                  onChange={(value) => setNewGroupId(value === "" ? "" : Number(value))}
+                  options={[{ value: "", label: "Auto by device type" }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+                />
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* ── Change max uses ───────────────────────────────────────────────────── */}
+      {editMaxUsesTarget && (
+        <Modal
+          title="Change max uses"
+          subtitle={editMaxUsesTarget.name}
+          icon={KeyRound}
+          size="sm"
+          busy={savingMaxUses}
+          onClose={() => setEditMaxUsesTarget(null)}
+          footer={
+            <>
+              <Button type="button" variant="secondary" onClick={() => setEditMaxUsesTarget(null)} disabled={savingMaxUses}>Cancel</Button>
+              <Button type="button" onClick={() => void handleSaveMaxUses()} disabled={savingMaxUses}>{savingMaxUses ? "Saving…" : "Save"}</Button>
+            </>
+          }
+        >
+          <div className="flex items-center justify-between gap-4">
+            <span>Used so far</span>
+            <UsageMeter token={editMaxUsesTarget} />
+          </div>
+          {editMaxUsesTarget.status === "used" && (
+            <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+              <Info className="h-4 w-4" />
+              <span>The token is exhausted. A limit above {editMaxUsesTarget.use_count} reactivates it.</span>
+            </div>
+          )}
+          <label className="th-onb-field">
+            Max uses
+            <input type="number" min={1} max={1000000} value={editMaxUses} data-autofocus onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))} onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()} />
+          </label>
+        </Modal>
       )}
 
       {revokeTarget && (

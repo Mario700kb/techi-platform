@@ -1,7 +1,8 @@
-import { ReactNode, useEffect } from "react";
-import { createPortal } from "react-dom";
-import { AlertTriangle } from "lucide-react";
-import clsx from "clsx";
+import { ReactNode } from "react";
+import { AlertTriangle, HelpCircle } from "lucide-react";
+
+import Button from "./ui/Button";
+import Modal from "./ui/Modal";
 
 interface ConfirmationModalProps {
   title: string;
@@ -14,6 +15,7 @@ interface ConfirmationModalProps {
   onClose: () => void;
 }
 
+/** A yes/no question on the global Modal; destructive ones carry the danger tone. */
 export default function ConfirmationModal({
   title,
   children,
@@ -24,75 +26,25 @@ export default function ConfirmationModal({
   onConfirm,
   onClose,
 }: ConfirmationModalProps) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !loading) {
-        onClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [loading, onClose]);
-
-  return createPortal(
-    <div
-      className="th-modal-scrim fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirmation-modal-title"
-      onMouseDown={() => {
-        if (!loading) onClose();
-      }}
-    >
-      <div
-        className={clsx(
-          "th-modal w-full max-w-md overflow-y-auto rounded-xl border p-5 shadow-2xl",
-          "max-h-[calc(100dvh-2rem)]",
-          destructive ? "border-red-400/30 bg-red-950/40" : ""
-        )}
-        style={destructive ? {} : {
-          border: "1px solid var(--th-border-card)",
-          background: "var(--th-bg-surface)",
-        }}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className={clsx("mb-4 flex items-center gap-2", destructive ? "text-red-200" : "")}>
-          <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: "var(--th-text-secondary)" }} />
-          <h3 id="confirmation-modal-title" className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            {title}
-          </h3>
-        </div>
-        <div className="text-sm leading-6" style={{ color: "var(--th-text-secondary)" }}>{children}</div>
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="th-btn th-btn-secondary min-h-10 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={loading}
-            className={clsx(
-              "th-btn min-h-10 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50",
-              destructive ? "th-btn-danger" : "th-btn-primary"
-            )}
-          >
+  return (
+    <Modal
+      title={title}
+      icon={destructive ? AlertTriangle : HelpCircle}
+      tone={destructive ? "danger" : "accent"}
+      size="sm"
+      busy={loading}
+      onClose={onClose}
+      footer={
+        <>
+          {/* A destructive question starts on Cancel, so Enter never deletes by accident. */}
+          <Button variant="secondary" type="button" onClick={onClose} disabled={loading} data-autofocus={destructive || undefined}>{cancelLabel}</Button>
+          <Button variant={destructive ? "danger" : "primary"} type="button" onClick={onConfirm} disabled={loading} data-autofocus={!destructive || undefined}>
             {loading ? `${confirmLabel}…` : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
+          </Button>
+        </>
+      }
+    >
+      <div>{children}</div>
+    </Modal>
   );
 }

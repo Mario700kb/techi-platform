@@ -1,28 +1,37 @@
-import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, KeyRound, X } from "lucide-react";
+import { useState } from "react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
 import { changePassword } from "../api/auth";
+import Button from "./ui/Button";
+import Modal from "./ui/Modal";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
+}
+
+function PasswordField({ label, value, onChange, autoComplete, invalid, hint, autoFocus }: { label: string; value: string; onChange: (v: string) => void; autoComplete: string; invalid?: boolean; hint?: string; autoFocus?: boolean }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <label className="th-onb-field">
+      {label}
+      <span className="th-onb-pw" data-invalid={invalid || undefined}>
+        <input type={shown ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} data-autofocus={autoFocus || undefined} />
+        <button type="button" tabIndex={-1} onClick={() => setShown((v) => !v)} aria-label={shown ? "Hide password" : "Show password"}>
+          {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      </span>
+      {hint && <span className="th-onb-hint" style={invalid ? { color: "var(--th-status-critical)" } : undefined}>{hint}</span>}
+    </label>
+  );
 }
 
 export default function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNext, setShowNext] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const firstRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    firstRef.current?.focus();
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
 
   const validate = (): string | null => {
     if (!current) return "Current password is required";
@@ -32,8 +41,8 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
     return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const err = validate();
     if (err) { setError(err); return; }
     setBusy(true);
@@ -42,182 +51,46 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
       await changePassword(current, next);
       setSuccess(true);
       setTimeout(onClose, 1800);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Password change failed";
-      setError(msg);
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "Password change failed");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div
-        className="fixed left-1/2 top-1/2 z-50 w-full max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-2xl"
-        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ background: "color-mix(in srgb, var(--th-accent) 12%, transparent)" }}>
-              <KeyRound className="h-4 w-4" style={{ color: "var(--th-accent)" }} />
-            </div>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              Change Password
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 transition hover:bg-white/[0.06]"
-            style={{ color: "var(--th-text-muted)" }}
-          >
-            <X className="h-4 w-4" />
-          </button>
+    <Modal
+      title="Change password"
+      subtitle="For your own account"
+      icon={KeyRound}
+      size="sm"
+      busy={busy}
+      onClose={onClose}
+      footer={success ? undefined : (
+        <>
+          <Button variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="change-password-form" disabled={busy}>{busy ? "Saving…" : "Change password"}</Button>
+        </>
+      )}
+    >
+      {success ? (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-online)" } as CSSProperties} role="status">
+          <CheckCircle2 className="h-4 w-4" />
+          <span>Password changed.</span>
         </div>
-
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
-          {success ? (
-            <div className="rounded-lg px-4 py-3 text-sm font-medium text-center"
-              style={{ background: "color-mix(in srgb, var(--th-status-online) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-online) 25%, transparent)", color: "var(--th-status-online)" }}>
-              Password changed successfully
+      ) : (
+        <form id="change-password-form" onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-4">
+          {error && (
+            <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+              <AlertTriangle className="h-4 w-4" />
+              <span>{error}</span>
             </div>
-          ) : (
-            <>
-              {error && (
-                <div className="rounded-lg px-3 py-2 text-xs font-medium"
-                  style={{ background: "color-mix(in srgb, var(--th-status-critical) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-critical) 25%, transparent)", color: "var(--th-status-critical)" }}>
-                  {error}
-                </div>
-              )}
-
-              {/* Current password */}
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide"
-                  style={{ color: "var(--th-text-muted)" }}>
-                  Current Password
-                </span>
-                <div className="relative">
-                  <input
-                    ref={firstRef}
-                    type={showCurrent ? "text" : "password"}
-                    value={current}
-                    onChange={(e) => setCurrent(e.target.value)}
-                    autoComplete="current-password"
-                    className="w-full rounded-lg border pr-9 px-3 py-2 text-sm font-medium outline-none transition"
-                    style={{
-                      background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
-                      border: "1px solid var(--th-border-input)",
-                      color: "var(--th-text-primary)",
-                    }}
-                  />
-                  <button type="button" tabIndex={-1}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2"
-                    style={{ color: "var(--th-text-muted)" }}
-                    onClick={() => setShowCurrent(v => !v)}>
-                    {showCurrent ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </label>
-
-              {/* New password */}
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide"
-                  style={{ color: "var(--th-text-muted)" }}>
-                  New Password
-                </span>
-                <div className="relative">
-                  <input
-                    type={showNext ? "text" : "password"}
-                    value={next}
-                    onChange={(e) => setNext(e.target.value)}
-                    autoComplete="new-password"
-                    className="w-full rounded-lg border px-3 py-2 pr-9 text-sm font-medium outline-none transition"
-                    style={{
-                      background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
-                      border: "1px solid var(--th-border-input)",
-                      color: "var(--th-text-primary)",
-                    }}
-                  />
-                  <button type="button" tabIndex={-1}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2"
-                    style={{ color: "var(--th-text-muted)" }}
-                    onClick={() => setShowNext(v => !v)}>
-                    {showNext ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-                {next && next.length < 8 && (
-                  <p className="mt-1 text-[11px]" style={{ color: "var(--th-accent)" }}>
-                    Minimum 8 characters
-                  </p>
-                )}
-              </label>
-
-              {/* Confirm */}
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide"
-                  style={{ color: "var(--th-text-muted)" }}>
-                  Confirm New Password
-                </span>
-                <input
-                  type="password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  autoComplete="new-password"
-                  className="w-full rounded-lg border px-3 py-2 text-sm font-medium outline-none transition"
-                  style={{
-                    background: "var(--th-bg-input, color-mix(in srgb, var(--th-text-primary) 4%, transparent))",
-                    border: confirm && confirm !== next
-                      ? "1px solid color-mix(in srgb, var(--th-status-critical) 50%, transparent)"
-                      : "1px solid var(--th-border-input)",
-                    color: "var(--th-text-primary)",
-                  }}
-                />
-              </label>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-                  style={{
-                    background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-                    border: "1px solid var(--th-border-subtle)",
-                    color: "var(--th-text-secondary)",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="rounded-lg px-4 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    background: "color-mix(in srgb, var(--th-accent) 18%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--th-accent) 35%, transparent)",
-                    color: "var(--th-accent)",
-                  }}
-                >
-                  {busy ? "Saving…" : "Change Password"}
-                </button>
-              </div>
-            </>
           )}
+          <PasswordField label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" autoFocus />
+          <PasswordField label="New password" value={next} onChange={setNext} autoComplete="new-password" invalid={!!next && next.length < 8} hint={next && next.length < 8 ? "At least 8 characters" : undefined} />
+          <PasswordField label="Confirm new password" value={confirm} onChange={setConfirm} autoComplete="new-password" invalid={!!confirm && confirm !== next} hint={confirm && confirm !== next ? "Does not match" : undefined} />
         </form>
-      </div>
-    </>
+      )}
+    </Modal>
   );
 }

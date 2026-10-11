@@ -28,7 +28,7 @@ import {
 } from "../api/remoteSupport";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { timeAgo } from "../utils/time";
-import { Button, ConnectButton, PageHeader } from "../components/ui";
+import { Button, ConnectButton, Modal, PageHeader } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useAuth } from "../auth/AuthContext";
 import { RemoteSupportMobileList } from "../components/mobile/RemoteSupportMobileList";
@@ -414,39 +414,25 @@ export default function RemoteSupport() {
         ))}
       </div>
 
-      {/* Per-device Remote Support password modal */}
+      {/* Per-device Remote Support password */}
       {passwordModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={() => setPasswordModal(null)}
+        <Modal
+          title="Remote Support password"
+          subtitle={`${passwordModal.device.hostname ?? `Device ${passwordModal.device.device_id}`}${passwordModal.source ? ` · ${passwordModal.source}` : ""}`}
+          icon={KeyRound}
+          busy={passwordModal.saving}
+          onClose={() => setPasswordModal(null)}
+          footer={<Button type="button" variant="secondary" onClick={() => setPasswordModal(null)}>Close</Button>}
         >
-          <div
-            className="w-full max-w-md rounded-2xl p-6"
-            style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center gap-2">
-              <KeyRound className="h-4 w-4" style={{ color: "var(--techi-orange, var(--th-status-warning))" }} />
-              <h3 className="text-base font-semibold" style={{ color: "var(--th-text)" }}>
-                Remote Support Password
-              </h3>
-            </div>
-            <p className="mb-3 text-xs" style={{ color: "var(--th-text-muted)" }}>
-              {passwordModal.device.hostname ?? `Device ${passwordModal.device.device_id}`}
-              {passwordModal.source ? ` · ${passwordModal.source}` : ""}
-            </p>
-
-            <div className="mb-4 flex items-center gap-2">
-              <input
-                readOnly
-                value={passwordModal.loading ? "Loading…" : passwordModal.password}
-                className="flex-1 rounded-lg px-3 py-2 font-mono text-sm"
-                style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
-              />
-              <button
+          <div className="th-onb-field">
+            Current password
+            <div className="flex items-stretch gap-2">
+              <input readOnly value={passwordModal.loading ? "Loading…" : passwordModal.password} className="font-mono" aria-label="Current password" />
+              <Button
                 type="button"
+                variant="secondary"
                 disabled={passwordModal.loading || !passwordModal.password}
+                aria-label="Copy password"
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(passwordModal.password);
@@ -455,62 +441,37 @@ export default function RemoteSupport() {
                     addToast("Copy failed", false);
                   }
                 }}
-                className="rounded-lg px-3 py-2 text-sm font-medium"
-                style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
-                title="Copy password"
               >
                 <ClipboardCopy className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
+          </div>
 
-            {isOperator && (
-              <>
-                <button
-                  type="button"
-                  disabled={passwordModal.saving}
-                  onClick={handleRegeneratePassword}
-                  className="mb-3 w-full rounded-lg px-3 py-2 text-sm font-medium"
-                  style={{ background: "color-mix(in srgb, var(--th-status-warning) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-warning) 30%, transparent)", color: "var(--th-status-warning)" }}
-                >
-                  {passwordModal.saving ? "Working…" : "Generate new random password"}
-                </button>
-                <div className="flex items-center gap-2">
+          {isOperator && (
+            <>
+              <Button type="button" variant="secondary" className="w-full" disabled={passwordModal.saving} onClick={handleRegeneratePassword}>
+                {passwordModal.saving ? "Working…" : "Generate a new random password"}
+              </Button>
+              <div className="th-onb-field">
+                Or set your own
+                <div className="flex items-stretch gap-2">
                   <input
                     type="text"
-                    placeholder="Set custom password (min 8)"
+                    placeholder="At least 8 characters"
                     value={passwordModal.custom}
                     onChange={(e) => setPasswordModal((m) => (m ? { ...m, custom: e.target.value } : m))}
-                    className="flex-1 rounded-lg px-3 py-2 text-sm"
-                    style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
+                    aria-label="Custom password"
                   />
-                  <button
-                    type="button"
-                    disabled={passwordModal.saving || passwordModal.custom.trim().length < 8}
-                    onClick={handleSetCustomPassword}
-                    className="rounded-lg px-3 py-2 text-sm font-medium"
-                    style={{ background: "var(--techi-orange, var(--th-status-warning))", color: "#fff" }}
-                  >
-                    Set
-                  </button>
+                  <Button type="button" disabled={passwordModal.saving || passwordModal.custom.trim().length < 8} onClick={handleSetCustomPassword}>Set</Button>
                 </div>
-              </>
-            )}
+              </div>
+            </>
+          )}
 
-            <p className="mt-4 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-              Unique per device. Applied to Remote Support on the next agent heartbeat
-              (agents &lt; 2.1.5 still use the legacy password until upgraded).
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setPasswordModal(null)}
-              className="mt-4 w-full rounded-lg px-3 py-2 text-sm font-medium"
-              style={{ background: "var(--th-bg-input, rgba(0,0,0,0.2))", border: "1px solid var(--th-border-card)", color: "var(--th-text)" }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
+          <p className="th-onb-hint">
+            Unique per device. Remote Support picks it up on the next agent heartbeat; agents older than 2.1.5 keep the legacy password until upgraded.
+          </p>
+        </Modal>
       )}
 
       <PageHeader

@@ -15,7 +15,8 @@ import {
 import { listTeams, TeamWithStats } from "../api/teams";
 import { UserRole } from "../api/auth";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
-import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import { CardHead } from "../components/ui/PanelCard";
+import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
@@ -511,7 +512,7 @@ export default function Operators() {
       </div>
 
       {showCreate && (
-        <ModalShell
+        <Modal
           title="Add operator"
           subtitle="They sign in with the username and password set here"
           icon={UserPlus}
@@ -537,11 +538,11 @@ export default function Operators() {
             <input type="checkbox" checked={createForm.is_active} onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))} />
             <span>Active<small>Inactive accounts cannot sign in</small></span>
           </label>
-        </ModalShell>
+        </Modal>
       )}
 
       {editTarget && (
-        <ModalShell
+        <Modal
           title="Edit operator"
           subtitle={editTarget.display_name ?? editTarget.username}
           icon={Pencil}
@@ -564,11 +565,11 @@ export default function Operators() {
             <Select id="edit-role" aria-label="Role" value={editForm.role ?? editTarget.role} onChange={(value) => setEditForm((f) => ({ ...f, role: value as UserRole }))} options={roleOptions} disabled={!canEditRole(editTarget.role)} />
             <span className="th-onb-hint">{ROLE_INFO[(editForm.role ?? editTarget.role) as UserRole].hint}.</span>
           </div>
-        </ModalShell>
+        </Modal>
       )}
 
       {passwordTarget && (
-        <ModalShell
+        <Modal
           title="Reset password"
           subtitle={passwordTarget.display_name ?? passwordTarget.username}
           icon={KeySquare}
@@ -585,7 +586,7 @@ export default function Operators() {
             New password for <span className="font-mono">{passwordTarget.username}</span>
             <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" />
           </label>
-        </ModalShell>
+        </Modal>
       )}
 
       {deleteTarget && (

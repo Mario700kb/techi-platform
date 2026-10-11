@@ -5,7 +5,8 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { Client, DeviceGroup, TrustedDomain, createClient, createGroup, createTrustedDomain, deleteClient, deleteGroup, deleteTrustedDomain, getClients, getGroups, getTrustedDomains, updateClient, updateGroup, updateTrustedDomain } from "../api/clients";
 import { getDeviceTree } from "../api/devices";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
-import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import { CardHead } from "../components/ui/PanelCard";
+import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
@@ -579,7 +580,7 @@ export default function Clients() {
       )}
 
       {editingGroup && (
-        <ModalShell
+        <Modal
           title="Edit group"
           subtitle={clients.find((c) => c.id === editingGroup.client_id)?.name}
           icon={Users}
@@ -599,11 +600,11 @@ export default function Clients() {
             Description
             <textarea value={editGroupDescription} onChange={(event) => setEditGroupDescription(event.target.value)} rows={3} placeholder="Optional" />
           </label>
-        </ModalShell>
+        </Modal>
       )}
 
       {editingClient && (
-        <ModalShell
+        <Modal
           title="Edit client"
           subtitle={editingClient.slug}
           icon={Building2}
@@ -623,7 +624,7 @@ export default function Clients() {
             Description
             <textarea value={editClientDescription} onChange={(event) => setEditClientDescription(event.target.value)} rows={3} placeholder="Optional" />
           </label>
-        </ModalShell>
+        </Modal>
       )}
 
       {pendingConfirm && (

@@ -31,7 +31,8 @@ import { useTabIndicator } from "../hooks/useTabIndicator";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import { CardHead } from "../components/ui/PanelCard";
+import Modal from "../components/ui/Modal";
 import { TOKEN_FILTERS, TokenFilter, TokenStatusChip, UsageMeter, formatTokenPrefix, tokenState } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -545,11 +546,11 @@ function DeploymentModal({ deployment, features, linuxPackage, copied, onCopy, o
   const visible = DEPLOYMENT_PLATFORMS.filter((meta) => isPlatformVisible(meta, features));
   const meta = deployment.token_metadata;
   return (
-    <ModalShell
+    <Modal
       title={deployment.token_name}
       subtitle="Deployment commands for every platform"
       icon={Terminal}
-      width="max-w-4xl"
+      size="xl"
       onClose={onClose}
       footer={<Button variant="secondary" type="button" onClick={onClose}>Close</Button>}
     >
@@ -577,7 +578,7 @@ function DeploymentModal({ deployment, features, linuxPackage, copied, onCopy, o
           onDownload={onDownload}
         />
       ))}
-    </ModalShell>
+    </Modal>
   );
 }
 
@@ -724,7 +725,7 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
     }
   };
   return (
-    <ModalShell
+    <Modal
       title="Edit token"
       subtitle={token.name}
       icon={Pencil}
@@ -784,17 +785,17 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
           ))}
         </div>
       </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
 function OneTimeTokenModal({ token, command, onCopy, onClose }: { token: CreateTokenResponse; command: string; onCopy: (value: string) => void; onClose: () => void }) {
   return (
-    <ModalShell
+    <Modal
       title="Copy the token now"
       subtitle={token.name}
       icon={KeyRound}
-      width="max-w-2xl"
+      size="lg"
       onClose={onClose}
       footer={<Button type="button" onClick={onClose}>Done</Button>}
     >
@@ -804,6 +805,6 @@ function OneTimeTokenModal({ token, command, onCopy, onClose }: { token: CreateT
       </div>
       <CommandBlock label="Token" value={token.token} copied={false} onCopy={() => onCopy(token.token)} />
       <CommandBlock label="Install command" value={command} copied={false} onCopy={() => onCopy(command)} />
-    </ModalShell>
+    </Modal>
   );
 }

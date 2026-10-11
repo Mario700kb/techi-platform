@@ -1896,6 +1896,143 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-onb-option:hover { border-color: var(--th-border-strong); }
 .th-onb-option[aria-pressed="true"] { border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 7%, var(--th-bg-card)); }
+/* ── Modal ── the one dialog (components/ui/Modal.tsx): tone icon, title and
+   close on one row, a body that scrolls, actions right-aligned in a footer.
+   Four widths, so every dialog of a kind is the same size. */
+.th-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--th-scrim);
+  backdrop-filter: blur(6px);
+}
+.th-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--th-border-card);
+  background: var(--th-bg-surface);
+  box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+.th-modal[data-size="sm"] { max-width: 420px; }
+.th-modal[data-size="lg"] { max-width: 720px; }
+.th-modal[data-size="xl"] { max-width: 960px; }
+.th-modal-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px 16px 20px;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-modal-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--modal-tone);
+  border: 1px solid color-mix(in srgb, var(--modal-tone) 28%, transparent);
+  background: color-mix(in srgb, var(--modal-tone) 11%, transparent);
+}
+.th-modal-title { font-size: 15px; font-weight: 600; line-height: 20px; color: var(--th-text-primary); overflow-wrap: anywhere; }
+.th-modal-subtitle { margin-top: 2px; font-size: 12.5px; line-height: 17px; color: var(--th-text-muted); overflow-wrap: anywhere; }
+.th-modal-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--th-text-secondary);
+}
+.th-modal-body--flush { gap: 0; padding: 0; }
+.th-modal-foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--th-border-subtle);
+  background: color-mix(in srgb, var(--th-bg-card) 55%, var(--th-bg-surface));
+}
+/* Dialogs render in a portal, outside .premium-page, so they carry the form
+   control rules themselves. */
+.th-modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+.th-modal select,
+.th-modal textarea {
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-input);
+  background: var(--th-bg-input);
+  color: var(--th-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.th-modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+.th-modal select { height: 36px; padding: 0 12px; }
+.th-modal textarea { padding: 8px 12px; resize: vertical; }
+.th-modal input::placeholder,
+.th-modal textarea::placeholder { color: var(--th-text-muted); }
+.th-modal input:hover:not(:focus):not([readonly]),
+.th-modal textarea:hover:not(:focus) { border-color: var(--th-border-strong); }
+.th-modal input:focus-visible:not([type="checkbox"]):not([type="radio"]),
+.th-modal select:focus-visible,
+.th-modal textarea:focus-visible { border-color: var(--th-accent-border); box-shadow: 0 0 0 4px var(--th-accent-glow); }
+.th-modal input[readonly] { color: var(--th-text-secondary); }
+@media (max-width: 640px) {
+  .th-modal-scrim { align-items: flex-end; padding: 8px; }
+  .th-modal { max-height: calc(100dvh - 16px); }
+  .th-modal-foot > * { flex: 1 1 auto; }
+}
+.th-onb-pw { position: relative; display: block; }
+.th-onb-field .th-onb-pw input { padding-right: 36px; }
+.th-onb-pw[data-invalid="true"] input { border-color: color-mix(in srgb, var(--th-status-critical) 55%, transparent); }
+.th-onb-pw > button {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  transform: translateY(-50%);
+  color: var(--th-text-muted);
+}
+.th-onb-pw > button:hover { color: var(--th-text-primary); background: var(--th-sidebar-nav-hover); }
+.th-onb-alldevices {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--th-status-critical) 35%, transparent);
+  background: color-mix(in srgb, var(--th-status-critical) 9%, transparent);
+  color: var(--th-status-critical);
+}
+.th-onb-alldevices > span { font-size: 28px; font-weight: 700; line-height: 32px; }
+.th-onb-alldevices > small { font-size: 12px; font-weight: 500; }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
