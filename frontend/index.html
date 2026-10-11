@@ -25,9 +25,44 @@
         document.documentElement.style.colorScheme = t;
       })();
     </script>
+    <style>
+      /* Boot screen. Inline so it paints before any bundle loads; the React
+         AppPreloader reuses these classes so the hand-over is seamless. */
+      .th-preloader { position: fixed; inset: 0; z-index: 2147483000; display: flex; align-items: center; justify-content: center; background: var(--th-bg-page); }
+      .th-preloader--inline { position: static; inset: auto; z-index: auto; min-height: 40vh; background: transparent; }
+      .th-preloader__stack { display: flex; flex-direction: column; align-items: center; gap: 22px; animation: th-preloader-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+      .th-preloader__mark { display: block; width: 44px; height: 44px; }
+      .th-preloader__track { position: relative; width: 120px; height: 2px; overflow: hidden; border-radius: 2px; background: var(--th-border-subtle); }
+      .th-preloader__bar { position: absolute; top: 0; bottom: 0; left: -45%; width: 45%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--th-accent) 50%, transparent); animation: th-preloader-slide 1400ms cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+      .th-preloader__label { font: 500 11px/1 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--th-text-faint); }
+      @keyframes th-preloader-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      @keyframes th-preloader-slide { to { left: 100%; } }
+      @keyframes th-preloader-pulse { 50% { opacity: 0.35; } }
+      @media (prefers-reduced-motion: reduce) {
+        .th-preloader__stack { animation: none; }
+        .th-preloader__bar { left: 27.5%; animation: th-preloader-pulse 2s ease-in-out infinite; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="th-preloader" role="status" aria-label="Loading TECHI Connect">
+        <div class="th-preloader__stack">
+          <img class="th-preloader__mark" src="/brand/techi-mark.svg" alt="" width="44" height="44" />
+          <div class="th-preloader__track"><div class="th-preloader__bar"></div></div>
+          <div class="th-preloader__label">TECHI Connect</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var now = performance.now();
+        var stack = document.querySelector(".th-preloader__stack");
+        var bar = document.querySelector(".th-preloader__bar");
+        if (stack) stack.style.animationDelay = Math.round(150 - now) + "ms";
+        if (bar) bar.style.animationDelay = -Math.round(now % 1400) + "ms";
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

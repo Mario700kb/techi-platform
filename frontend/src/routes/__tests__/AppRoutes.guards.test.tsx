@@ -103,7 +103,7 @@ describe.each([
     // undefined/false flag state must not be treated as "off".
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: /loading/i })).toBeInTheDocument();
   });
 });
 
