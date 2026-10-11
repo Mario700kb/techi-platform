@@ -1511,11 +1511,19 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 /* ── Alerts table ── one grid, 16px gutters on both sides, a 3px severity
    edge per row, fixed column widths so the layout never shifts with content. */
 .th-alerts-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   overflow: clip;
   border-radius: 12px;
   border: 1px solid var(--th-border-card);
   background: var(--th-bg-card);
 }
+.th-alerts-card > :not(.th-alerts-scroll) { flex-shrink: 0; }
+/* The page fits the screen: only the rows scroll, under a header that stays. */
+.th-alerts-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.th-alerts-scroll thead th { position: sticky; top: 0; z-index: 2; background: var(--th-bg-table-head); }
 .th-alerts-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2642,6 +2650,11 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 .th-device-row > td { animation: th-rise 280ms var(--th-ease-out) backwards; animation-delay: calc(var(--row, 0) * 22ms); }
 .th-table-scroll tbody { transition: opacity 200ms var(--th-ease); }
 .th-table-scroll[data-loading="true"] tbody { opacity: 0.55; }
+/* Alerts: the card rises after the summary tiles; arriving rows rise in a
+   short stagger (rows already shown are keyed and stay still on live
+   updates); the table dims while a refresh is in flight. */
+.th-main .th-alerts-card { animation: th-rise 420ms var(--th-ease-out) 160ms backwards; }
+.th-alerts-row > td { animation: th-rise 280ms var(--th-ease-out) backwards; animation-delay: calc(min(var(--row, 0), 14) * 22ms); }
 .th-device-card { animation: th-rise 280ms var(--th-ease-out) backwards; }
 .th-device-card:nth-child(2) { animation-delay: 30ms; }
 .th-device-card:nth-child(3) { animation-delay: 60ms; }

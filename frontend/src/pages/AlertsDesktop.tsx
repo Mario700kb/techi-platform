@@ -169,8 +169,9 @@ export default function AlertsDesktop() {
   ];
 
   return (
-    <section className="premium-page space-y-4">
+    <section className="premium-page flex h-full min-h-0 flex-col gap-4">
       <PageHeader
+        className="shrink-0"
         title="Alerts"
         description="Open alerts on the devices you manage, newest first."
         actions={
@@ -181,7 +182,7 @@ export default function AlertsDesktop() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map((kpi) => {
           const body = (
             <>
@@ -209,7 +210,7 @@ export default function AlertsDesktop() {
         })}
       </div>
 
-      <div className="th-alerts-card th-table-scroll">
+      <div className="th-alerts-card">
         <div className="th-alerts-toolbar">
           <div ref={tabsRef} role="tablist" aria-label="Alert severity" className="th-tabs">
             {visibleTabs.map(({ id, label }) => (
@@ -255,7 +256,7 @@ export default function AlertsDesktop() {
         </div>
 
         {selected.size > 0 && (
-          <div className="th-alerts-bulk">
+          <div className="th-alerts-bulk th-bulk-bar">
             <span className="tabular-nums">{formatCount(selected.size)} selected</span>
             <Button size="sm" variant="secondary" onClick={() => setBulkConfirmOpen(true)}>Dismiss selected</Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
@@ -263,13 +264,14 @@ export default function AlertsDesktop() {
         )}
 
         {loading && alerts.length === 0 ? (
-          <div aria-busy="true" aria-label="Loading alerts">
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading alerts">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
             ))}
           </div>
         ) : failed && alerts.length === 0 ? (
           <EmptyState
+            className="th-fade-in flex-1 justify-center"
             icon={<AlertTriangle className="h-5 w-5" />}
             title="Couldn't load alerts"
             description="The server did not respond. Try again."
@@ -277,12 +279,14 @@ export default function AlertsDesktop() {
           />
         ) : alerts.length === 0 ? (
           <EmptyState
+            className="th-fade-in flex-1 justify-center"
             icon={<CheckCircle2 className="h-5 w-5" />}
             title={filtered ? "No open alerts match these filters" : "No open alerts"}
             description={filtered ? undefined : "Every managed device is quiet."}
             action={filtered ? <Button size="sm" variant="secondary" onClick={resetFilters}>Clear filters</Button> : undefined}
           />
         ) : (
+          <div className="th-alerts-scroll th-table-scroll" data-loading={(loading && alerts.length > 0) || undefined}>
           <table className="th-alerts-table">
             <colgroup>
               <col className="w-11" />
@@ -313,7 +317,7 @@ export default function AlertsDesktop() {
               </tr>
             </thead>
             <tbody>
-              {alerts.map((alert) => {
+              {alerts.map((alert, index) => {
                 const tone = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
                 const isDevice = alert.device_id != null && alert.id > 0;
                 const deviceName = alert.device_name ?? (alert.device_id != null ? `Device #${alert.device_id}` : "Enrollment tokens");
@@ -323,10 +327,11 @@ export default function AlertsDesktop() {
                 return (
                   <tr
                     key={alert.id}
+                    className="th-alerts-row"
                     data-selected={selected.has(alert.id)}
                     data-clickable={isDevice}
                     onClick={openDevice}
-                    style={{ "--row-tone": tone } as React.CSSProperties}
+                    style={{ "--row-tone": tone, "--row": index % PAGE_SIZE } as React.CSSProperties}
                   >
                     <td onClick={(e) => e.stopPropagation()}>
                       {alert.id > 0 && (
@@ -348,7 +353,7 @@ export default function AlertsDesktop() {
                         <span className="th-alerts-kind" aria-hidden="true"><AlertKindIcon kind={alert.kind} className="h-4 w-4" /></span>
                         <span className="min-w-0">
                           <span className="th-alerts-primary">{kindLabel}</span>
-                          <span className="th-alerts-secondary" title={summary}>{summary}</span>
+                          <span className="th-alerts-secondary" title={summary.length > 48 ? summary : undefined}>{summary}</span>
                         </span>
                       </div>
                     </td>
@@ -392,6 +397,7 @@ export default function AlertsDesktop() {
               })}
             </tbody>
           </table>
+          </div>
         )}
 
         {alerts.length > 0 && (
