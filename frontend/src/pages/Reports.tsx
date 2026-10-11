@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Download, FileSpreadsheet, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { AlertTriangle, Building2, CalendarClock, CheckCircle2, Download, FileCheck2, FileSpreadsheet, History, Loader2, LucideIcon, Monitor, Pause, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 
 import {
   createReportSchedule, deleteReportRun, deleteReportSchedule, downloadReport, generateReport,
   getReportClients, getReportRuns, getReportSchedules, ReportCadence, ReportClient,
-  ReportFormat, ReportRun, ReportSchedule, updateReportSchedule,
+  ReportFormat, ReportRun, ReportSchedule, ReportStatus, updateReportSchedule,
 } from "../api/reports";
 import type { ReportScope, ReportType } from "../api/reports";
 import { Device, getDevices } from "../api/devices";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
-import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
-import { APP_TIME_ZONE, parseUTC, tiranaInputToUtcIso, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
-import { SelectField } from "../components/ui";
+import TablePagination from "../components/ui/TablePagination";
+import { EmptyState, SelectField } from "../components/ui";
+import { useTabIndicator } from "../hooks/useTabIndicator";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
+import { formatLocalDateTime, tiranaInputToUtcIso } from "../utils/time";
 
-const fieldClass = "min-h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-techi-orange/60";
-const fieldStyle = { background: "var(--th-bg-input)", borderColor: "var(--th-border-input)", color: "var(--th-text-primary)" };
 const REPORT_TYPES: { value: ReportType; label: string }[] = [
   { value: "full", label: "Full Report" }, { value: "overview", label: "Overview" },
   { value: "user_activity", label: "User Activity" }, { value: "status_uptime", label: "Status / Uptime" },
@@ -34,14 +36,37 @@ function nextDay(date: string): string {
 }
 
 function formatDate(value?: string | null) {
-  return value ? parseUTC(value).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE }) : "—";
+  return value ? formatLocalDateTime(value) : "—";
+}
+
+/** Whole days, Tirana time. The end is exclusive (00:00 after the last day,
+ *  or "now"), so the last covered day is the one just before it. */
+function formatPeriod(start: string, end: string) {
+  const day: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+  const last = new Date(Date.parse(end.endsWith("Z") || end.includes("+") ? end : `${end}Z`) - 1000).toISOString();
+  return `${formatLocalDateTime(start, day)} – ${formatLocalDateTime(last, day)}`;
 }
 
 function formatBytes(value?: number | null) {
   if (!value) return "—";
   if (value < 1024) return `${value} B`;
-  return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+const RUN_STATUS: Record<ReportStatus, { label: string; tone: string }> = {
+  completed: { label: "Completed", tone: TONE.online },
+  pending: { label: "Running", tone: TONE.info },
+  failed: { label: "Failed", tone: TONE.critical },
+};
+
+type HistoryFilter = "all" | ReportScope;
+
+const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "client", label: "Client" },
+  { id: "device", label: "Device" },
+];
 
 export default function Reports() {
   const { can } = useAuth();
@@ -72,6 +97,11 @@ export default function Reports() {
   const [scheduleDay, setScheduleDay] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<ReportSchedule | null>(null);
   const [deleteRunTarget, setDeleteRunTarget] = useState<ReportRun | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [historySearch, setHistorySearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const scopeTabsRef = useTabIndicator<HTMLDivElement>(historyFilter);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -108,6 +138,21 @@ export default function Reports() {
     failed: runs.filter((run) => run.status === "failed").length,
     scheduled: schedules.filter((schedule) => schedule.enabled).length,
   }), [runs, schedules]);
+
+  const historyCounts = useMemo(() => {
+    const counts: Record<HistoryFilter, number> = { all: runs.length, client: 0, device: 0 };
+    for (const run of runs) counts[run.scope_type === "device" ? "device" : "client"] += 1;
+    return counts;
+  }, [runs]);
+  const visibleRuns = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return runs.filter((run) => {
+      if (historyFilter !== "all" && (run.scope_type === "device" ? "device" : "client") !== historyFilter) return false;
+      if (!q) return true;
+      return [run.client_name, run.device_name ?? "", run.generated_by, reportLabel(run.report_type)].some((v) => v.toLowerCase().includes(q));
+    });
+  }, [runs, historyFilter, historySearch]);
+  const pagedRuns = useMemo(() => visibleRuns.slice((page - 1) * pageSize, page * pageSize), [visibleRuns, page, pageSize]);
 
   async function handleGenerate() {
     if (scopeType === "client" ? !clientId : !deviceId) return;
@@ -180,52 +225,323 @@ export default function Reports() {
   }
 
   return (
-    <section className="premium-page space-y-5">
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Reports"
-        description="Client and device reports, on demand or scheduled."
-        actions={<Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>}
+        description="Client and device reports, on demand or on a schedule."
+        actions={<Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />Refresh</Button>}
       />
 
-      {(error || success) && <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: error ? "color-mix(in srgb, var(--th-status-critical) 40%, transparent)" : "color-mix(in srgb, var(--th-status-online) 35%, transparent)", background: error ? "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" : "color-mix(in srgb, var(--th-status-online) 8%, transparent)", color: "var(--th-text-primary)" }}>{error || success}</div>}
-
-      <section className="grid grid-cols-3 gap-2 sm:gap-4">
-        {[{ label: "Reports ready", value: stats.completed }, { label: "Active schedules", value: stats.scheduled }, { label: "Failed runs", value: stats.failed }].map((item) => <div key={item.label} className="premium-card p-3 sm:p-4"><p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--th-text-muted)" }}>{item.label}</p><p className="mt-1 text-2xl font-bold" style={{ color: "var(--th-text-primary)" }}>{item.value}</p></div>)}
-      </section>
-
-      <section className="premium-card p-4">
-        <div className="mb-4 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Generate now</h2></div>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 md:items-end">
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Scope<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType} onChange={(event) => { setScopeType(event.target.value as ReportScope); setReportType("full"); if (event.target.value === "device") { setReportFormat("pdf"); if (periodChoice === "90" || periodChoice === "365") { setPeriodChoice("30"); setPeriodDays(30); } } }}><option value="client">Client</option><option value="device">Device</option></SelectField></label>
-          {scopeType === "client" ? <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Client<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</SelectField></label> : <div className="space-y-1"><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Find device<input className={`${fieldClass} mt-1`} style={fieldStyle} value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder="Search name or IP" /></label><SelectField aria-label="Device" className={fieldClass} style={fieldStyle} value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={devicesLoading}><option value="">{devicesLoading ? "Loading devices..." : "Select device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.display_name || device.hostname || `Device ${device.id}`} · {device.client_name || "Unassigned"} · #{device.id}</option>)}</SelectField></div>}
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Report type<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}><option value="full">Full Report</option>{scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</SelectField></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Format<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}><option value="pdf">PDF</option><option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option></SelectField></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Period<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>{scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}<option value="custom">Custom date range</option></SelectField></label>
-          {periodChoice === "custom" && <><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>From<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label><label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>To (inclusive)<input type="date" className={`${fieldClass} mt-1`} style={fieldStyle} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label></>}
-          <Button onClick={() => void handleGenerate()} disabled={busy || (scopeType === "client" ? !clientId : !deviceId) || (scopeType === "device" && reportType === "full" && reportFormat === "csv")}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Generate</Button>
+      {(error || success) && (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": error ? "var(--th-status-critical)" : "var(--th-status-online)" } as CSSProperties} role={error ? "alert" : "status"}>
+          {error ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+          <span className="flex-1">{error || success}</span>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => { setError(null); setSuccess(null); }} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
         </div>
-        {scopeType === "device" && <p className="mt-3 text-xs" style={{ color: "var(--th-text-muted)" }}>Full Device Report is PDF only because its sections have different table columns. Category reports support PDF and CSV. Historical sections show available records and retention notes; software and overview are current snapshots.</p>}
-      </section>
+      )}
 
-      {isAdmin && <section className="premium-card p-4">
-        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-techi-orange" /><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Client schedules</h2></div><Button size="sm" variant="secondary" onClick={() => setShowSchedule((value) => !value)}><Plus className="h-4 w-4" />New</Button></div>
-        {showSchedule && <div className="mt-4 grid gap-3 rounded-xl border p-3 md:grid-cols-5 md:items-end" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-input)" }}>
-          <label className="text-xs font-semibold md:col-span-2" style={{ color: "var(--th-text-secondary)" }}>Schedule name<input className={`${fieldClass} mt-1`} style={fieldStyle} value={scheduleName} maxLength={160} onChange={(event) => setScheduleName(event.target.value)} /></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Cadence<SelectField className={`${fieldClass} mt-1`} style={fieldStyle} value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></SelectField></label>
-          <label className="text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>{cadence === "daily" ? "Hour (Tirana)" : cadence === "weekly" ? "Weekday (0=Mon)" : "Day of month"}<input type="number" className={`${fieldClass} mt-1`} style={fieldStyle} min={cadence === "weekly" ? 0 : 1} max={cadence === "weekly" ? 6 : cadence === "monthly" ? 28 : 23} value={cadence === "daily" ? hourLocal : scheduleDay} onChange={(event) => cadence === "daily" ? setHourLocal(Number(event.target.value)) : setScheduleDay(Number(event.target.value))} /></label>
-          <Button onClick={() => void handleCreateSchedule()} disabled={busy || !scheduleName.trim() || !clientId}>Create schedule</Button>
-        </div>}
-        <div className="mt-4 space-y-2">{schedules.length === 0 ? <p className="py-6 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>No scheduled reports.</p> : schedules.map((schedule) => <div key={schedule.id} className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{schedule.name}</p><Badge variant={schedule.enabled ? "primary" : "neutral"}>{schedule.enabled ? "Active" : "Paused"}</Badge><Badge variant="ghost">{schedule.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>{schedule.client_name} · {schedule.cadence} · next {formatDate(schedule.next_run_at)}</p></div><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => void toggleSchedule(schedule)}>{schedule.enabled ? "Pause" : "Resume"}</Button><Button size="sm" variant="ghost" onClick={() => setDeleteTarget(schedule)} aria-label={`Delete ${schedule.name}`}><Trash2 className="h-4 w-4" /></Button></div></div>)}</div>
-      </section>}
+      {/* ── summary ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Reports ready", value: stats.completed, hint: "Stored and downloadable", icon: FileCheck2, tone: TONE.online },
+          { label: "Active schedules", value: stats.scheduled, hint: `${formatCount(schedules.length)} configured`, icon: CalendarClock, tone: "var(--th-accent)" },
+          { label: "Failed runs", value: stats.failed, hint: stats.failed ? "See the history below" : "Nothing failed", icon: AlertTriangle, tone: stats.failed ? TONE.critical : TONE.neutral },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{formatCount(item.value)}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
+            </div>
+          </div>
+        ))}
+      </div>
 
-      <section className="premium-card overflow-hidden">
-        <div className="border-b p-4" style={{ borderColor: "var(--th-border-subtle)" }}><h2 className="font-semibold" style={{ color: "var(--th-text-primary)" }}>Report history</h2></div>
-        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-techi-orange" /></div> : runs.length === 0 ? <p className="py-12 text-center text-sm" style={{ color: "var(--th-text-muted)" }}>Generate the first report to begin history.</p> : <div className="divide-y" style={{ borderColor: "var(--th-border-subtle)" }}>{runs.map((run) => <div key={run.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--th-border-subtle)" }}><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>{run.device_name || run.client_name}</p><Badge variant="ghost">{run.scope_type === "device" ? "Device" : "Client"}</Badge><Badge variant="ghost">{reportLabel(run.report_type)}</Badge><Badge variant={run.status === "completed" ? "primary" : run.status === "failed" ? "secondary" : "neutral"}>{run.status}</Badge><Badge variant="ghost">{run.report_format.toUpperCase()}</Badge></div><p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>Generated at {formatDate(run.completed_at || run.created_at)} · By {run.generated_by} · Size {formatBytes(run.size_bytes)}</p>{run.error_message && <p className="mt-1 text-xs text-red-300">{run.error_message}</p>}</div><div className="flex gap-2">{run.status === "completed" && <Button size="sm" variant="secondary" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}><Download className="h-4 w-4" />Download</Button>}{isAdmin && <Button size="sm" variant="ghost" onClick={() => setDeleteRunTarget(run)} aria-label={`Delete report ${run.device_name || run.client_name}`}><Trash2 className="h-4 w-4" /></Button>}</div></div>)}</div>}
-      </section>
+      {/* ── generate · schedules ────────────────────────────────────────── */}
+      <div className={`grid items-stretch gap-4 ${isAdmin ? "xl:grid-cols-2" : ""}`}>
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as CSSProperties}>
+          <CardHead icon={FileSpreadsheet} tone="var(--th-accent)" title="Generate now" subtitle="Builds the report and downloads it" />
+          <div className="th-onb-body flex-1">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="th-onb-field">
+                Scope
+                <SelectField value={scopeType} onChange={(event) => { setScopeType(event.target.value as ReportScope); setReportType("full"); if (event.target.value === "device") { setReportFormat("pdf"); if (periodChoice === "90" || periodChoice === "365") { setPeriodChoice("30"); setPeriodDays(30); } } }}>
+                  <option value="client">Client</option>
+                  <option value="device">Device</option>
+                </SelectField>
+              </label>
+              {scopeType === "client" ? (
+                <label className="th-onb-field">
+                  Client
+                  <SelectField value={clientId} onChange={(event) => setClientId(event.target.value)}>
+                    <option value="">Select client</option>
+                    {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                  </SelectField>
+                </label>
+              ) : (
+                <label className="th-onb-field">
+                  Find device
+                  <input value={deviceQuery} onChange={(event) => setDeviceQuery(event.target.value)} placeholder="Search name or IP" />
+                </label>
+              )}
+              {scopeType === "device" && (
+                <div className="th-onb-field th-onb-reveal sm:col-span-2">
+                  Device
+                  <SelectField aria-label="Device" value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={devicesLoading}>
+                    <option value="">{devicesLoading ? "Loading devices..." : "Select device"}</option>
+                    {devices.map((device) => <option key={device.id} value={device.id}>{device.display_name || device.hostname || `Device ${device.id}`} · {device.client_name || "Unassigned"} · #{device.id}</option>)}
+                  </SelectField>
+                </div>
+              )}
+              <label className="th-onb-field">
+                Report type
+                <SelectField value={scopeType === "client" ? "full" : reportType} onChange={(event) => { const next = event.target.value as ReportType; setReportType(next); if (next === "full" && scopeType === "device") setReportFormat("pdf"); }}>
+                  <option value="full">Full Report</option>
+                  {scopeType === "device" && REPORT_TYPES.filter((item) => item.value !== "full").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </SelectField>
+              </label>
+              <label className="th-onb-field">
+                Format
+                <SelectField value={reportFormat} onChange={(event) => setReportFormat(event.target.value as ReportFormat)}>
+                  <option value="pdf">PDF</option>
+                  <option value="csv" disabled={scopeType === "device" && reportType === "full"}>CSV{scopeType === "device" && reportType === "full" ? " (not available for Full Device Report)" : ""}</option>
+                </SelectField>
+              </label>
+              <label className="th-onb-field sm:col-span-2">
+                Period
+                <SelectField value={periodChoice} onChange={(event) => { setPeriodChoice(event.target.value); if (event.target.value !== "custom") setPeriodDays(Number(event.target.value)); }}>
+                  <option value="1">Last 24 hours</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  {scopeType === "client" && <><option value="90">Last 90 days</option><option value="365">Last year</option></>}
+                  <option value="custom">Custom date range</option>
+                </SelectField>
+              </label>
+              {periodChoice === "custom" && (
+                <>
+                  <label className="th-onb-field th-onb-reveal">From<input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label>
+                  <label className="th-onb-field th-onb-reveal">To (inclusive)<input type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label>
+                </>
+              )}
+            </div>
+            {scopeType === "device" && (
+              <p className="th-onb-hint th-onb-reveal">Full Device Report is PDF only, because its sections have different columns. Category reports support PDF and CSV. Historical sections show the records still retained; software and overview are current snapshots.</p>
+            )}
+          </div>
+          <div className="th-onb-foot">
+            <Button className="w-full" onClick={() => void handleGenerate()} disabled={busy || (scopeType === "client" ? !clientId : !deviceId) || (scopeType === "device" && reportType === "full" && reportFormat === "csv")}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Generate
+            </Button>
+          </div>
+        </div>
 
-      {deleteTarget && <ConfirmationModal title="Delete report schedule" confirmLabel="Delete schedule" loading={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>This removes <strong>{deleteTarget.name}</strong>. Generated report history remains available.</p></ConfirmationModal>}
+        {isAdmin && (
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+            <CardHead
+              icon={CalendarClock}
+              tone="var(--th-accent)"
+              title="Client schedules"
+              subtitle="Full client reports, generated and stored on a cadence"
+              aside={<Button size="sm" variant={showSchedule ? "secondary" : "primary"} onClick={() => setShowSchedule((value) => !value)}>{showSchedule ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}{showSchedule ? "Close" : "New"}</Button>}
+            />
+            <div className="th-onb-body flex-1">
+              {showSchedule && (
+                <div className="th-onb-sub th-onb-reveal sm:grid-cols-2">
+                  <label className="th-onb-field sm:col-span-2">Schedule name<input value={scheduleName} maxLength={160} onChange={(event) => setScheduleName(event.target.value)} placeholder={clients.find((c) => String(c.id) === clientId)?.name ? `${clients.find((c) => String(c.id) === clientId)!.name} monthly` : "e.g. Monthly client report"} /></label>
+                  <label className="th-onb-field">
+                    Cadence
+                    <SelectField value={cadence} onChange={(event) => { setCadence(event.target.value as ReportCadence); setScheduleDay(event.target.value === "weekly" ? 0 : 1); }}>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </SelectField>
+                  </label>
+                  <label className="th-onb-field">
+                    {cadence === "daily" ? "Hour (Tirana)" : cadence === "weekly" ? "Weekday (0=Mon)" : "Day of month"}
+                    <input type="number" min={cadence === "weekly" ? 0 : 1} max={cadence === "weekly" ? 6 : cadence === "monthly" ? 28 : 23} value={cadence === "daily" ? hourLocal : scheduleDay} onChange={(event) => cadence === "daily" ? setHourLocal(Number(event.target.value)) : setScheduleDay(Number(event.target.value))} />
+                  </label>
+                  <p className="th-onb-hint sm:col-span-2">Uses the client, format and period chosen in Generate now.</p>
+                  <div className="sm:col-span-2"><Button className="w-full" onClick={() => void handleCreateSchedule()} disabled={busy || !scheduleName.trim() || !clientId}>Create schedule</Button></div>
+                </div>
+              )}
+              {schedules.length === 0 ? (
+                !showSchedule && (
+                  <div className="th-onb-empty !p-0">
+                    <EmptyState
+                      icon={<CalendarClock className="h-5 w-5" />}
+                      title="No scheduled reports"
+                      description="Schedule a client's full report to arrive daily, weekly or monthly."
+                      action={<Button size="sm" variant="secondary" onClick={() => setShowSchedule(true)}><Plus className="h-3.5 w-3.5" />New schedule</Button>}
+                    />
+                  </div>
+                )
+              ) : (
+                <ul className="th-onb-list">
+                  {schedules.map((schedule, index) => (
+                    <li key={schedule.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{schedule.name}</span>
+                          <span className="th-status-chip !h-5 !px-2 !text-[11px]" style={{ "--chip-tone": schedule.enabled ? TONE.online : TONE.neutral } as CSSProperties}><i />{schedule.enabled ? "Active" : "Paused"}</span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                          {schedule.client_name} · {schedule.cadence} · {schedule.report_format.toUpperCase()} · next {formatDate(schedule.next_run_at)}
+                        </div>
+                      </div>
+                      <div className="th-onb-actions">
+                        <button type="button" className="th-onb-action" onClick={() => void toggleSchedule(schedule)} title={schedule.enabled ? "Pause" : "Resume"} aria-label={`${schedule.enabled ? "Pause" : "Resume"} ${schedule.name}`}>
+                          {schedule.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                        </button>
+                        <button type="button" className="th-onb-action" data-tone="danger" onClick={() => setDeleteTarget(schedule)} title="Delete" aria-label={`Delete ${schedule.name}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
-      {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong>{deleteRunTarget.device_name || deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
+      {/* ── history ─────────────────────────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 5 } as CSSProperties}>
+        <CardHead icon={History} tone="var(--th-accent)" title="Report history" subtitle={loading && runs.length === 0 ? "Loading…" : `${formatCount(runs.length)} reports`} />
+        <div className="th-alerts-toolbar">
+          <div ref={scopeTabsRef} role="tablist" aria-label="Report scope" className="th-tabs">
+            {HISTORY_FILTERS.map(({ id, label }) => (
+              <button key={id} type="button" role="tab" aria-selected={historyFilter === id} onClick={() => { setHistoryFilter(id); setPage(1); }} className="th-tab">
+                {label}
+                <span className="th-tab-count">{formatCount(historyCounts[id])}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pb-2">
+            <label className="th-search th-search-sm w-[260px]">
+              <Search className="h-3.5 w-3.5 flex-none" />
+              <input value={historySearch} onChange={(e) => { setHistorySearch(e.target.value); setPage(1); }} placeholder="Search reports" aria-label="Search reports" />
+              {historySearch && (
+                <button type="button" onClick={() => setHistorySearch("")} className="th-explorer-clear" aria-label="Clear search">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
+          </div>
+        </div>
+
+        {loading && runs.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading reports">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />)}
+          </div>
+        ) : visibleRuns.length === 0 ? (
+          <EmptyState
+            className="th-fade-in py-10"
+            icon={<History className="h-5 w-5" />}
+            title={runs.length === 0 ? "No reports yet" : "No reports match these filters"}
+            description={runs.length === 0 ? "Generate the first report to begin the history." : undefined}
+            action={runs.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setHistoryFilter("all"); setHistorySearch(""); }}>Clear filters</Button> : undefined}
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col />
+                <col className="w-[110px]" />
+                <col className="w-[130px]" />
+                <col className="w-[80px]" />
+                <col className="w-[200px]" />
+                <col className="w-[96px]" />
+                <col className="w-[96px]" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Report</th>
+                  <th>Scope</th>
+                  <th>Status</th>
+                  <th>Format</th>
+                  <th>Generated</th>
+                  <th className="text-right">Size</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRuns.map((run, index) => {
+                  const status = RUN_STATUS[run.status];
+                  const subject = run.device_name || run.client_name;
+                  return (
+                    <tr key={run.id} className="th-alerts-row" style={{ "--row": index, "--row-tone": run.status === "failed" ? TONE.critical : undefined } as CSSProperties}>
+                      <td>
+                        <span className="th-alerts-primary">{subject}</span>
+                        <span className="th-alerts-secondary" style={run.error_message ? { color: "var(--th-status-critical)" } : undefined} title={run.error_message ?? undefined}>
+                          {run.error_message || <><span>{reportLabel(run.report_type)}</span> · {formatPeriod(run.period_start, run.period_end)}</>}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="th-status-chip">{run.scope_type === "device" ? <Monitor className="h-3.5 w-3.5" /> : <Building2 className="h-3.5 w-3.5" />}{run.scope_type === "device" ? "Device" : "Client"}</span>
+                      </td>
+                      <td><span className="th-status-chip" style={{ "--chip-tone": status.tone } as CSSProperties}><i />{status.label}</span></td>
+                      <td><span className="th-alerts-primary font-mono !text-[12px]">{run.report_format.toUpperCase()}</span></td>
+                      <td>
+                        <span className="th-alerts-primary tabular-nums">{formatDate(run.completed_at || run.created_at)}</span>
+                        <span className="th-alerts-secondary">{run.generated_by}{run.schedule_id ? " · scheduled" : ""}</span>
+                      </td>
+                      <td className="text-right"><span className="th-alerts-primary tabular-nums">{formatBytes(run.size_bytes)}</span></td>
+                      <td>
+                        <div className="th-onb-actions">
+                          {run.status === "completed" && (
+                            <button type="button" className="th-onb-action" title={`Download ${subject}`} aria-label="Download" onClick={() => void downloadReport(run).catch((err) => setError(err instanceof Error ? err.message : "Download failed"))}>
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button type="button" className="th-onb-action" data-tone="danger" title="Delete" aria-label={`Delete report ${subject}`} onClick={() => setDeleteRunTarget(run)}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {visibleRuns.length > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={visibleRuns.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            pageSizeOptions={[25, 50, 100]}
+            itemLabel="reports"
+          />
+        )}
+      </div>
+
+      {deleteTarget && <ConfirmationModal title="Delete report schedule" confirmLabel="Delete schedule" loading={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>This removes <strong style={{ color: "var(--th-text-primary)" }}>{deleteTarget.name}</strong>. Generated report history remains available.</p></ConfirmationModal>}
+
+      {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong style={{ color: "var(--th-text-primary)" }}>{deleteRunTarget.device_name || deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
     </section>
+  );
+}
+
+function CardHead({ icon: Icon, tone, title, subtitle, aside }: { icon: LucideIcon; tone: string; title: string; subtitle?: string; aside?: ReactNode }) {
+  return (
+    <div className="th-onb-card-head">
+      <div className="th-onb-card-title">
+        <span className="th-onb-icon" style={{ "--onb-tone": tone } as CSSProperties}><Icon className="h-4 w-4" /></span>
+        <span className="min-w-0">
+          <span className="block truncate">{title}</span>
+          {subtitle && <small className="truncate">{subtitle}</small>}
+        </span>
+      </div>
+      {aside}
+    </div>
   );
 }

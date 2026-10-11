@@ -1791,6 +1791,11 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-onb-sha:hover { color: var(--th-text-primary); }
 .th-onb-sha svg { color: var(--th-text-faint); }
+.th-onb-stat { flex-direction: row; align-items: center; gap: 14px; padding: 16px 18px; }
+.th-onb-stat .th-onb-icon { width: 40px; height: 40px; border-radius: 10px; }
+.th-onb-list { display: flex; flex-direction: column; margin: -4px 0; }
+.th-onb-list > li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--th-border-subtle); }
+.th-onb-list > li:last-child { border-bottom: 0; }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
