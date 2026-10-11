@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math/rand"
 	"time"
 )
 
@@ -72,8 +73,8 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	}
 	applyPendingInterval(&interval)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(jitteredInterval(interval))
+	defer timer.Stop()
 
 	for {
 		select {
@@ -83,18 +84,29 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 				return nil
 			}
 			return ctx.Err()
-		case <-ticker.C:
+		case <-timer.C:
 			if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
 				log.Printf("heartbeat cycle failed: %v", err)
 				recordHeartbeatOutcome(startupState, err)
 			} else {
 				recordHeartbeatOutcome(startupState, nil)
 			}
-			if changed := applyPendingInterval(&interval); changed {
-				ticker.Reset(interval)
-			}
+			applyPendingInterval(&interval)
+			timer.Reset(jitteredInterval(interval))
 		}
 	}
+}
+
+// jitteredInterval spreads each wait by up to ±10%. A fixed period keeps
+// agents that started together (a site powering on, a mass upgrade, a backend
+// restart they all retried against) in lockstep forever, so the backend sees
+// the whole cohort as one burst every cycle instead of a steady stream.
+func jitteredInterval(d time.Duration) time.Duration {
+	spread := int64(d / 10)
+	if spread <= 0 {
+		return d
+	}
+	return d + time.Duration(rand.Int63n(2*spread+1)-spread)
 }
 
 func logStartupDiagnostics(configPath string, logPath string, cfg *Config) {

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - stable/phase-2-heartbeat
+      - backport/platform-components-92a521c
     paths:
       - 'agent/**'
       - '.github/workflows/build-agent-msi.yml'
@@ -245,3 +246,83 @@ jobs:
             agent/installer/techi-agent-${{ steps.version.outputs.version }}.exe.sha256
           retention-days: 30
           if-no-files-found: error
+
+  # ------------------------------------------------------------------ #
+  # Install, uninstall and upgrade the MSI that build-msi just produced  #
+  # on a clean runner. Builds nothing that ships and publishes nothing:  #
+  # a release is activated only by uploading it to the platform.         #
+  # ------------------------------------------------------------------ #
+  msi-lifecycle-test:
+    name: MSI install / upgrade test (windows-latest)
+    needs: build-msi
+    runs-on: windows-latest
+    env:
+      BASELINE_COMMIT: 5b32c84
+      BASELINE_VERSION: 2.1.20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go 1.21
+        uses: actions/setup-go@v5.3.0
+        with:
+          go-version: '1.21'
+          cache-dependency-path: agent/go.sum
+
+      - name: Install WiX v7 + UI extension
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 7.0.0
+          wix eula accept wix7
+          wix extension add --global WixToolset.UI.wixext/7.0.0
+
+      - name: Read agent version
+        id: version
+        shell: pwsh
+        working-directory: agent
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "version4=$version.0" >> $env:GITHUB_OUTPUT
+
+      - name: Download the MSI under test
+        uses: actions/download-artifact@v4.1.8
+        with:
+          name: TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}
+          path: ci-msi
+
+      # The fleet runs 2.1.20+ installed by this same UpgradeCode; build that
+      # MSI from its own commit so the upgrade path is the real one.
+      - name: Build baseline MSI (${{ env.BASELINE_VERSION }})
+        shell: pwsh
+        run: |
+          $base = Join-Path $env:RUNNER_TEMP 'baseline'
+          git worktree add $base $env:BASELINE_COMMIT
+          Push-Location (Join-Path $base 'agent')
+          go build -ldflags="-s -w -X main.AgentVersion=$env:BASELINE_VERSION" -trimpath -o installer/techi-agent.exe .
+          Set-Location installer
+          wix build installer.wxs -arch x64 -ext WixToolset.UI.wixext -d SourceDir=. -d "Version=$env:BASELINE_VERSION.0" -d "BuildCommit=$env:BASELINE_COMMIT" -o (Join-Path $env:RUNNER_TEMP 'baseline.msi')
+          Pop-Location
+
+      - name: Install, uninstall, upgrade
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\agent\installer\ci\msi-lifecycle-test.ps1" `
+            -NewMsi "$env:GITHUB_WORKSPACE\ci-msi\TECHI-Endpoint-Deployment-${{ steps.version.outputs.version }}.msi" `
+            -BaselineMsi "$env:RUNNER_TEMP\baseline.msi" `
+            -ExpectedVersion "${{ steps.version.outputs.version4 }}" `
+            -PayloadDir "$env:GITHUB_WORKSPACE\agent\installer\TECHI-Remote-Support" `
+            -LogDir "$env:RUNNER_TEMP\msi-logs"
+          exit $LASTEXITCODE
+
+      - name: Upload MSI logs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: msi-lifecycle-logs-${{ steps.version.outputs.version }}
+          path: ${{ runner.temp }}/msi-logs
+          retention-days: 14
+          if-no-files-found: warn

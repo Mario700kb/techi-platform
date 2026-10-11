@@ -81,7 +81,7 @@
 
     <CustomAction Id="WriteTechiConfigs.SetParam"
                   Property="WriteTechiConfigs"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
     <CustomAction Id="WriteTechiConfigs"
                   BinaryRef="EpCustomActDll"
                   DllEntry="WriteTechiConfigs"
@@ -91,7 +91,7 @@
 
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
                   Property="ApplyTechiRemoteSupportConfigFinal"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
                   BinaryRef="EpCustomActDll"
                   DllEntry="ApplyTechiRemoteSupportConfigFinal"

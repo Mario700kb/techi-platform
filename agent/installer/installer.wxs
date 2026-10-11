@@ -348,7 +348,7 @@
          i humbet device_id (pajisja ri-enrollohet si e re) — i pranueshem per nje rruge
          praktikisht te vdekur. Gjithe rruga normale e instalimit eshte script-free. -->
     <CustomAction Id="BackupAgentConfigBeforeLegacyRemove"
-                  Directory="TECHIDATADIR"
+                  Directory="SystemFolder"
                   ExeCommand="powershell.exe -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABsAG8AZwAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQAtAGMAbwBuAGYAaQBnAC0AbQBpAGcAcgBhAHQAZQAuAGwAbwBnACcACgAkAHMAcgBjACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABlAG4AdgA6AFAAcgBvAGcAcgBhAG0ARABhAHQAYQAgACcAVABlAGMAaABpAEEAZwBlAG4AdABcAGEAZwBlAG4AdAAuAGMAbwBuAGYAaQBnAC4AagBzAG8AbgAnAAoAJABkAHMAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBXAEkATgBEAEkAUgAgACcAVABlAG0AcABcAHQAZQBjAGgAaQBfAGMAbwBuAGYAaQBnAF8AYgBhAGMAawB1AHAALgBqAHMAbwBuACcACgB0AHIAeQAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAcwB0AGEAcgB0ACAAcwByAGMAPQB7ADAAfQAgAGQAcwB0AD0AewAxAH0AIgAgAC0AZgAgACQAcwByAGMALAAkAGQAcwB0ACkACgAgACAAaQBmACAAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAcwByAGMAKQAgAHsACgAgACAAIAAgACQAYwBmAGcAIAA9ACAARwBlAHQALQBDAG8AbgB0AGUAbgB0ACAAJABzAHIAYwAgAC0AUgBhAHcAIAB8ACAAQwBvAG4AdgBlAHIAdABGAHIAbwBtAC0ASgBzAG8AbgAKACAAIAAgACAAaQBmACAAKAAkAG4AdQBsAGwAIAAtAG4AZQAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAAgAC0AYQBuAGQAIABbAHMAdAByAGkAbgBnAF0AJABjAGYAZwAuAGQAZQB2AGkAYwBlAF8AaQBkACAALQBuAGUAIAAnACcAKQAgAHsACgAgACAAIAAgACAAIABDAG8AcAB5AC0ASQB0AGUAbQAgACQAcwByAGMAIAAkAGQAcwB0ACAALQBGAG8AcgBjAGUACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAoACIAYgBhAGMAawB1AHAAIABjAG8AcABpAGUAZAAgAGQAZQB2AGkAYwBlAF8AaQBkAD0AewAwAH0AIgAgAC0AZgAgACQAYwBmAGcALgBkAGUAdgBpAGMAZQBfAGkAZAApAAoAIAAgACAAIAB9ACAAZQBsAHMAZQAgAHsACgAgACAAIAAgACAAIABBAGQAZAAtAEMAbwBuAHQAZQBuAHQAIAAtAFAAYQB0AGgAIAAkAGwAbwBnACAALQBWAGEAbAB1AGUAIAAnAGIAYQBjAGsAdQBwACAAcwBrAGkAcABwAGUAZAAgAG0AaQBzAHMAaQBuAGcAIABkAGUAdgBpAGMAZQBfAGkAZAAnAAoAIAAgACAAIAB9AAoAIAAgAH0AIABlAGwAcwBlACAAewAKACAAIAAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAJwBiAGEAYwBrAHUAcAAgAHMAawBpAHAAcABlAGQAIABtAGkAcwBzAGkAbgBnACAAcwBvAHUAcgBjAGUAJwAKACAAIAB9AAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAQQBkAGQALQBDAG8AbgB0AGUAbgB0ACAALQBQAGEAdABoACAAJABsAG8AZwAgAC0AVgBhAGwAdQBlACAAKAAiAGIAYQBjAGsAdQBwACAAZQByAHIAbwByACAAewAwAH0AIgAgAC0AZgAgACQAXwAuAEUAeABjAGUAcAB0AGkAbwBuAC4ATQBlAHMAcwBhAGcAZQApAAoAfQA="
                   Execute="immediate"
                   Return="ignore"/>
@@ -404,7 +404,7 @@
          e shendetshem). I kufizuar me Start-Job/Wait-Job -Timeout; logon start/done/timeout. -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' [KillTechiRS] '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' KillTechiRS: '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -422,7 +422,7 @@
          i ndalimit s'e ndal MSI-n (vazhdon i sigurt; InstallFiles ka FileInUse handling). -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' [KillTechiRSBeforeInstall] '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' KillTechiRSBeforeInstall: '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -458,10 +458,12 @@
     <!-- EpCustomActDll nga v1.0.4 — shkruan TOML konfigurim për TECHI Remote Support -->
     <Binary Id="EpCustomActDll" SourceFile="EpCustomActDll.dll"/>
 
-    <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key) për RS -->
+    <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key) për RS.
+         Fusha e 4-t (api-server) mbetet bosh me qellim: me [API_URL] aty çdo klient RS
+         postonte telemetrine e vet te platforma çdo 10-15s (RISK-SUPPLY-002). -->
     <CustomAction Id="WriteTechiConfigs.SetParam"
                   Property="WriteTechiConfigs"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
     <CustomAction Id="WriteTechiConfigs"
                   BinaryRef="EpCustomActDll"
                   DllEntry="WriteTechiConfigs"
@@ -472,7 +474,7 @@
     <!-- ApplyTechiRemoteSupportConfigFinal: aplikon konfigurimet finale të RS -->
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
                   Property="ApplyTechiRemoteSupportConfigFinal"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
                   BinaryRef="EpCustomActDll"
                   DllEntry="ApplyTechiRemoteSupportConfigFinal"
@@ -491,10 +493,12 @@
       <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
       <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
       <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
-      <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
-           file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
-           RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
-      <Custom Action="KillTechiRSBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
+      <!-- KillTechiRSBeforeInstall: PARA RemoveExistingProducts (pra edhe para InstallFiles) —
+           file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te hiqen/mbishkruhen nese
+           RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim.
+           MajorUpgrade heq produktin e vjeter menjehere pas InstallInitialize, dhe KillTechiRS
+           i 2.1.19-2.1.22 (qe do ta ndalte RS ne ate uninstall) eshte no-op (RISK-MSI-002). -->
+      <Custom Action="KillTechiRSBeforeInstall" Before="RemoveExistingProducts" Condition="NOT REMOVE"/>
       <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
            WriteAgentConfig: PS script-i brenda kontrollon vetë nëse config ekziston (idempotent).
            SetServiceRecovery: duhet gjithmonë pas upgrade — v1.0.4 nuk e kishte vendosur.
