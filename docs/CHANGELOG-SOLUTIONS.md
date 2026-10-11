@@ -5,6 +5,36 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] OPERATORS-UI-2026-10-11 — Operators page in the Onboarding design; row actions keep their place
+
+Commit `b2b930b`; frontend only, deployed 2026-10-11 22:30. Rollback image
+`techi-platform-frontend:pre-operators-ui-1365ba5`.
+
+### Fixed
+- **Row actions shifted** whenever a row had fewer allowed actions; your
+  own row lacked deactivate and delete. Every row now has the same four
+  slots. The ones that are not allowed are disabled, with the reason in the
+  tooltip.
+- **"Deact."** was a text button among icons; it is now a power icon.
+
+### Changed
+- **Summary:** stat cards for operators, active, owners & admins and never
+  signed in.
+- **Table:**
+  - role tabs, and search by name, username, email, role or team;
+  - avatar initials and calmer role chips (the owner badge was a saturated
+    gradient);
+  - team chips in their colour;
+  - relative and absolute last sign-in;
+  - shared pagination and motion.
+- **Dialogs:** add, edit and reset password use the shared modal shell,
+  and the role picker explains each role.
+
+### Verification
+- 145 frontend tests (new `Operators.test.tsx`) and a screenshot check.
+- Production: frontend healthy, console 200, and the new page is in the
+  served bundle.
+
 ## [2026-10-11] CLIENTS-SYMMETRY-2026-10-11 — Clients page alignment pass
 
 Commit `1365ba5`; frontend only, deployed 2026-10-11 22:20. Rollback image
