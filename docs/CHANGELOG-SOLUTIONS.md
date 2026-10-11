@@ -5,6 +5,66 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ALERTS-SCOPE-2026-10-11 — alerts scoped to the operator; desktop Alerts table
+
+Found while reviewing the Alerts page; commit `fb02992`.
+
+Security fix. `GET /alerts/`, `GET /alerts/count` and
+`PUT /alerts/{id}/resolve` ignored the operator's scope:
+
+- a technician limited to one client listed every client's alerts, hostnames
+  included;
+- the same technician counted all of them in the bell badge;
+- they could also resolve any alert by its id.
+
+The per-device alert endpoint was already scoped. Now all three apply the
+device scope. A resolve outside the scope returns 404, so ids cannot be
+probed. Token-usage alerts describe enrollment tokens rather than devices,
+so only unscoped operators see them.
+
+Alerts page:
+
+- **Desktop.** Desktop used the mobile card layout. It now has a table:
+  - severity tabs with server totals;
+  - a type filter with counts;
+  - the device's current name and client;
+  - the opened time, with the exact Tirana time on hover;
+  - Dismiss per row, plus a confirmed Dismiss for a selection;
+  - "Showing N of M" with Load more.
+
+  Filters run on the server.
+- **Device names.** Alerts now carry the device name and client. Neither page
+  fetches each device separately any more (mobile made one request per
+  device), and neither shows the hostname frozen into the message.
+
+Verified in production right after deploy (read-only, inside the backend
+container):
+
+- every listed alert carries a device name;
+- 326 open alerts: 191 critical, 135 warning;
+- by type: 143 device offline, 102 low disk, 54 high memory, 11 repeated
+  reconnects, 10 high CPU, 6 Remote Support sync;
+- scoped to client 3: 29 alerts, none outside the scope;
+- list query 2.3 ms in PostgreSQL, 6–7 ms per warm request;
+- unauthenticated calls to `/alerts/` and `/alerts/count` return 401.
+
+Offline-alert rate after `HB-TIMEOUT-2026-10-11`: about 290 an hour before
+13:46, about 15 an hour after. Before the change, 94% of offline alerts
+resolved within a minute (1,344 of 1,437 from 09:00); after it, 5 of 17.
+
+Found, not fixed:
+
+- uvicorn logs the WebSocket URL at INFO, including the session JWT carried
+  in its query string (`/ws/devices?...&token=...`). Anyone who can read the
+  container logs can replay a live session until it expires.
+- The root filesystem is at 89% (2.7 GB free). Rollback image tags and the
+  build cache keep growing.
+
+Deployed 2026-10-11 15:05, backend and frontend; no migration. Pre-deploy
+dump `/opt/backups/techi/pre-alerts-2026-10-11_15-02.sql.gz`. Rollback images
+`techi-platform-{backend,frontend}:pre-alerts-71c3c65`. Tests: backend 1223
+(7 new), frontend 105 (3 new), `tsc` clean, build OK.
+
 ## [2026-10-11] UI-AUDIT-2-2026-10-11 — Devices filters, sorting and counts run on the server
 
 Package 2 of the UI audit, commit `71c3c65`. Several controls ran in the

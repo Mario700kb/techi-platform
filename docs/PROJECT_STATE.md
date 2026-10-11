@@ -16,11 +16,11 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-10-11-UI-AUDIT-2` |
-| Production baseline SHA | `71c3c65` (see §3) |
+| Documentation revision | `DOC-2026-10-11-ALERTS-SCOPE` |
+| Production baseline SHA | `fb02992` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
 | Release classification | **TIRANA TIME SYSTEM-WIDE + TOP BAR CLOCK DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `71c3c65`: backend and frontend both built from it, deployed 2026-10-11 14:50–14:52. This is UI audit package 2: Devices quick filters, sorting and counts are computed server-side, and the shared health index also feeds the overview. Previous runtime: backend `25d38eb`, frontend `f60b03c` |
+| Production SHA | `fb02992`: backend and frontend, deployed 2026-10-11 15:05. Alerts are scoped to the operator, and desktop has an Alerts table. Previous runtime: `71c3c65` (UI audit package 2) |
 | Schema version | `e1f2a3b4c5d6` (was `d8e4f6a1b2c3`) — `report_schedules.hour_utc` renamed `hour_local` (Tirana hour). Pre-deploy dump: `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz` |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
 | Origin alignment | `af70d85` was pushed to origin; the server working tree already matched it (checksums of all 116 files) and was moved to it with `git fetch` + `git reset` |
@@ -53,8 +53,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `71c3c65`; rebuilt 2026-10-11 14:50 (server-side quick filters, health index; rollback image `techi-platform-backend:pre-pkg2-f60b03c`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `71c3c65`; rebuilt 2026-10-11 14:52 (UI audit package 2). Rollback image `techi-platform-frontend:pre-pkg2-f60b03c`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Backend | `1.0.0` metadata | Git SHA `fb02992`; rebuilt 2026-10-11 15:05 (alerts scoped to the operator; rollback image `techi-platform-backend:pre-alerts-71c3c65`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `fb02992`; rebuilt 2026-10-11 15:05 (desktop Alerts table). Rollback image `techi-platform-frontend:pre-alerts-71c3c65`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
