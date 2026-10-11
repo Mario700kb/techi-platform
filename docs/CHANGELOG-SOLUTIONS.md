@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] TEAMS-UI-2026-10-11 — Teams list in the Onboarding design
+
+Commit `88f74d8`; frontend only, deployed 2026-10-11 22:40. Rollback image
+`techi-platform-frontend:pre-teams-ui-b2b930b`.
+
+- **Summary:** stat cards for teams, clients granted, groups granted and
+  the widest reach.
+- **Table:**
+  - the description moves under the team name, replacing the near-empty
+    column;
+  - right-aligned counts replace pills;
+  - devices reached shows its explicit grants when there are any;
+  - the row edge is the team colour, and the whole row opens the team;
+  - search, the shared pagination and motion.
+- **Dialogs:** New / Edit use the shared modal shell, and the colour
+  swatches and permission templates use tokens.
+- **Verification:** 146 frontend tests (new `Teams.test.tsx`) and a
+  screenshot check. Production: frontend healthy, console 200, and the new
+  styles are served.
+
 ## [2026-10-11] OPERATORS-UI-2026-10-11 — Operators page in the Onboarding design; row actions keep their place
 
 Commit `b2b930b`; frontend only, deployed 2026-10-11 22:30. Rollback image
