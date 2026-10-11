@@ -5,6 +5,52 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] MODAL-TEAMDETAIL-2026-10-11 — one global Modal; team detail redesign
+
+Commits `05aac17` and `3f6cd58`; frontend only, deployed 2026-10-11 23:10.
+Rollback image `techi-platform-frontend:pre-modal-team-88f74d8`.
+
+### One global Modal (`components/ui/Modal.tsx`)
+- **What it replaces:** three dialog systems — ConfirmationModal,
+  ModalShell, and about a dozen hand-built overlays.
+- **Layout:** a tone-icon header, a scrolling body, and a right-aligned
+  footer, in four widths.
+- **Behaviour:**
+  - focus trap, Escape and scrim close, focus restored to the opener;
+  - `busy` blocks dismissal while an action runs;
+  - bottom-docked on phones.
+- **Carried over:** ConfirmationModal keeps its props, so its 15 users are
+  unchanged. A destructive question starts focus on Cancel.
+- **Moved onto it:**
+  - the redesigned pages' dialogs;
+  - Installer's token dialogs;
+  - Change password;
+  - the bulk agent command confirm and output (its cancel button read
+    "Anulo");
+  - the Remote Support password dialog (it used the non-existent token
+    `--th-text` and a hard-coded `#fff`);
+  - Embedded SSH.
+- **Removed:** `OperatorScopeModal`, which was imported nowhere.
+
+### Team detail (`/teams/:id`)
+- **Fixed: Device access loaded only the first 1,000 devices**, the list
+  endpoint's page cap. The fleet is at 905; past 1,000, devices would have
+  dropped out of the access tree and the reach count. All pages are now
+  fetched.
+- **Fixed: only Permissions showed unsaved changes.** Every tab now ends
+  with the same save footer, and Save is enabled only on a real change.
+- **Changed:**
+  - identity hero in the team colour, and five stat cards;
+  - tabs with counts and a gliding underline;
+  - a token-styled members list, access tree and permission cards with a
+    sticky preview.
+- **Removed:** the unused role permission matrix.
+
+### Verification
+- 149 frontend tests (new `TeamDetail.test.tsx`), and screenshot checks of
+  three modal types and all four team tabs.
+- Production: frontend healthy, console 200, and the new styles are served.
+
 ## [2026-10-11] TEAMS-UI-2026-10-11 — Teams list in the Onboarding design
 
 Commit `88f74d8`; frontend only, deployed 2026-10-11 22:40. Rollback image
