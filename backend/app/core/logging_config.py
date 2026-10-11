@@ -18,7 +18,7 @@ class _RedactSecrets(logging.Filter):
     handlers, not to one logger, so it covers every logger that writes.
     """
 
-    _SECRET_QUERY = re.compile(r"([?&](?:token|access_token|ticket)=)[^&\s\"']+", re.IGNORECASE)
+    _SECRET_QUERY = re.compile(r"([?&](?:token|access_token|ticket|auth)=)[^&\s\"']+", re.IGNORECASE)
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:

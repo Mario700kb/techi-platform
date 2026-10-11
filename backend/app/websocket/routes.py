@@ -13,11 +13,39 @@ router = APIRouter()
 # Sentinel returned when WebSocket authentication fails.
 _AUTH_FAILED = object()
 
+# The dashboard sends its session token as a WebSocket subprotocol
+# ("techi.auth.<jwt>") next to "techi.v1", never in the URL: a URL lands in
+# every proxy and server access log, a subprotocol header does not. The
+# server answers with "techi.v1", which browsers require when protocols
+# were offered.
+WS_SUBPROTOCOL = "techi.v1"
+_AUTH_PREFIX = "techi.auth."
+
+
+def _offered_subprotocols(websocket: WebSocket) -> list:
+    raw = websocket.headers.get("sec-websocket-protocol", "") if hasattr(websocket, "headers") else ""
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _token_from_subprotocols(websocket: WebSocket) -> Optional[str]:
+    for item in _offered_subprotocols(websocket):
+        if item.startswith(_AUTH_PREFIX):
+            return item[len(_AUTH_PREFIX):] or None
+    return None
+
+
+def _subprotocol_for(websocket: WebSocket) -> Optional[str]:
+    return WS_SUBPROTOCOL if WS_SUBPROTOCOL in _offered_subprotocols(websocket) else None
+
 
 async def _reject_ws(websocket: WebSocket) -> None:
     # Accept before closing so browsers receive the application close code
     # instead of a generic failed-handshake error and reconnect loop.
-    await websocket.accept()
+    subprotocol = _subprotocol_for(websocket)
+    if subprotocol:
+        await websocket.accept(subprotocol=subprotocol)
+    else:
+        await websocket.accept()
     await websocket.close(code=4001)
 
 
@@ -60,12 +88,13 @@ async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
 
 
 @router.websocket("/ws/devices")
-async def devices_websocket(websocket: WebSocket, tenant_id: str = "default", token: Optional[str] = None):
-    scope = await _authenticate_ws(websocket, token)
+async def devices_websocket(websocket: WebSocket, tenant_id: str = "default"):
+    scope = await _authenticate_ws(websocket, _token_from_subprotocols(websocket))
     if scope is _AUTH_FAILED:
         return
     connection_id = await realtime_manager.connect(
-        websocket, tenant_id=tenant_id, channel="devices", operator_scope=scope
+        websocket, tenant_id=tenant_id, channel="devices", operator_scope=scope,
+        subprotocol=_subprotocol_for(websocket),
     )
     try:
         while True:
@@ -78,12 +107,13 @@ async def devices_websocket(websocket: WebSocket, tenant_id: str = "default", to
 
 
 @router.websocket("/ws/deployments")
-async def deployments_websocket(websocket: WebSocket, tenant_id: str = "default", token: Optional[str] = None):
-    scope = await _authenticate_ws(websocket, token)
+async def deployments_websocket(websocket: WebSocket, tenant_id: str = "default"):
+    scope = await _authenticate_ws(websocket, _token_from_subprotocols(websocket))
     if scope is _AUTH_FAILED:
         return
     connection_id = await realtime_manager.connect(
-        websocket, tenant_id=tenant_id, channel="deployments", operator_scope=scope
+        websocket, tenant_id=tenant_id, channel="deployments", operator_scope=scope,
+        subprotocol=_subprotocol_for(websocket),
     )
     try:
         while True:

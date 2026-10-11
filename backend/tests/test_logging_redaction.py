@@ -50,7 +50,7 @@ def test_access_log_enrollment_token_is_masked_and_the_rest_kept(captured):
     assert line.rstrip().endswith("200")
 
 
-@pytest.mark.parametrize("param", ["token", "access_token", "ticket", "TOKEN"])
+@pytest.mark.parametrize("param", ["token", "access_token", "ticket", "auth", "TOKEN"])
 def test_every_secret_parameter_is_masked(captured, param):
     logger, stream = captured
     logger.info("GET /x?a=1&%s=s3cr3t-value&b=2", param)

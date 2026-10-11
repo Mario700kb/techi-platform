@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import logging
 import os
 
+from sqlalchemy.engine import make_url
+
 from app.core.logging_config import configure_logging
 
 configure_logging()
@@ -108,7 +110,7 @@ async def lifespan(app: FastAPI):
         logger.warning("CORS: allow_all=true — all origins permitted (LAN/dev mode only)")
     else:
         logger.info("CORS origins: %s", settings.BACKEND_CORS_ORIGINS)
-    logger.info("Database: %s", settings.DATABASE_URL)
+    logger.info("Database: %s", make_url(settings.DATABASE_URL).render_as_string(hide_password=True))
 
     if settings.ENVIRONMENT != "development" and not settings.BOOTSTRAP_OWNER_PASSWORD:
         logger.warning("BOOTSTRAP_OWNER_PASSWORD is not set — bootstrap owner will use a random password")

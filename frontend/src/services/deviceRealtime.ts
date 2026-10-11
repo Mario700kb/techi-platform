@@ -141,11 +141,14 @@ export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
   const url = new URL(wsBase);
   url.pathname = "/ws/devices";
   url.searchParams.set("tenant_id", tenantId);
-  const token = window.localStorage.getItem("techi.auth.token");
-  if (token) {
-    url.searchParams.set("token", token);
-  }
   return url.toString();
+}
+
+// The session token rides in the WebSocket subprotocol header, never in the
+// URL, which proxies and servers write to their access logs.
+export function deviceRealtimeProtocols(): string[] {
+  const token = window.localStorage.getItem("techi.auth.token");
+  return token ? ["techi.v1", `techi.auth.${token}`] : ["techi.v1"];
 }
 
 export class DeviceRealtimeClient {
@@ -200,7 +203,7 @@ export class DeviceRealtimeClient {
     }
 
     this.emitStatus("connecting");
-    this.socket = new WebSocket(buildDeviceRealtimeUrl(this.tenantId));
+    this.socket = new WebSocket(buildDeviceRealtimeUrl(this.tenantId), deviceRealtimeProtocols());
 
     this.socket.onopen = () => {
       this.attempt = 0;

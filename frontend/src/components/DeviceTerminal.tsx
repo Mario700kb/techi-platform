@@ -10,7 +10,6 @@ import {
   SSH_FAILURE_MESSAGES,
   type SSHSessionCreateOptions,
 } from "../api/terminal";
-import { getAuthToken } from "../api/client";
 
 // Lazy-loaded (see DeviceDrawer) so xterm.js never ships on the main path — the
 // flag-off bundle behavior is unchanged. Platform-independent: it drives the
@@ -96,11 +95,9 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
           term.writeln("\x1b[2m[reconnected — new session]\x1b[0m");
         }
 
-        // Token is passed as a query param (WebSocket has no header support);
-        // the operator ticket already scopes this to one session.
-        const token = getAuthToken();
-        const url = session.operator_ws_path + (token ? `&auth=${encodeURIComponent(token)}` : "");
-        ws = new WebSocket(url);
+        // The one-time operator ticket in the path authenticates this socket;
+        // the session token stays out of the URL (and out of access logs).
+        ws = new WebSocket(session.operator_ws_path);
         ws.binaryType = "arraybuffer";
 
         const sendResize = () => {

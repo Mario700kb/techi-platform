@@ -44,8 +44,9 @@ class RealtimeConnectionManager:
         tenant_id: str = "default",
         channel: str = "devices",
         operator_scope: Optional["AllowedScope"] = None,
+        subprotocol: Optional[str] = None,
     ) -> str:
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol)
         connection = RealtimeConnection(
             websocket=websocket,
             tenant_id=tenant_id,
