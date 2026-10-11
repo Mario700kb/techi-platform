@@ -384,7 +384,6 @@ export default function RemoteSupport() {
           actionStates={actionStates}
           onConnect={(d) => void handleConnect(d)}
           onRepair={(d) => void handleRepair(d)}
-          onRestart={(d) => void handleRestart(d)}
           onRetry={() => void runNow()}
         />
       </div>
