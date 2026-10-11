@@ -20,7 +20,7 @@
 | Production baseline SHA | `2c83384` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`ONBOARDING-2026-10-11`, `LOG-SECRETS-2026-10-11`, `UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`ONBOARDING-TABS-2026-10-11`, `ONBOARDING-2026-10-11`, `LOG-SECRETS-2026-10-11`, `UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
 | Release classification | **TIRANA TIME SYSTEM-WIDE + TOP BAR CLOCK DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
@@ -54,7 +54,7 @@ The primary release identity is Git SHA, followed by a future immutable release 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
 | Backend | `1.0.0` metadata | Git SHA `70ec491`; rebuilt 2026-10-11 20:48 (enrollment token list carries `last_used_at` from the enrollment audit; rollback image `techi-platform-backend:pre-onboarding-2c83384`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `70ec491`; rebuilt 2026-10-11 20:48 (boot preloader; Onboarding installer redesign with the correct default backend URL). Rollback image `techi-platform-frontend:pre-onboarding-2c83384`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `aa77483`; rebuilt 2026-10-11 21:10 (all three Onboarding tabs redesigned, with motion; boot preloader). Rollback image `techi-platform-frontend:pre-onb-tabs-70ec491`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |

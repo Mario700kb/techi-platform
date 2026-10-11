@@ -5,6 +5,45 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ONBOARDING-TABS-2026-10-11 — Packages and Tokens & commands redesigned; motion on all three Onboarding tabs
+
+Commits `a63bdf2` and `aa77483`; frontend only, deployed 2026-10-11 21:10.
+Rollback image `techi-platform-frontend:pre-onb-tabs-70ec491`.
+
+### Fixed
+- **Packages → Agent binary listed the Linux agent too.** The tab filtered by
+  `file_type` only, so `linux-amd64` 2.1.23 appeared as a Windows package.
+  Every package type now also filters by platform. The Linux agent is its
+  own tab in the same table, so `LinuxPackagesPanel` and its scope toggle
+  are gone.
+- **Tokens & commands → "Last used"** read `used_at`, which only records
+  exhaustion. It now reads `last_used_at`.
+
+### Changed
+- **Packages:**
+  - one summary card per type shows the live version;
+  - a single table with type tabs, inline upload, status chips, SHA-256
+    copy and icon actions.
+- **Tokens & commands:**
+  - paired cards of equal height;
+  - the token table has the Installer's tabs, search (also by client),
+    usage meter, client · group names and pagination;
+  - one modal shell for the deployment, edit and one-time-token dialogs.
+- Token status, usage and filters come from one shared module
+  (`EnrollmentTokenBits`). No hard-coded colours remain on these pages.
+- **Motion:**
+  - a step switch fades the panel in and its cards rise in order;
+  - tab underlines glide;
+  - segmented controls slide a thumb;
+  - arriving rows rise in a stagger, and toggled panels drop open;
+  - reduced motion is respected.
+
+### Verification
+- 139 frontend tests, typecheck and build pass. Screenshots of both tabs
+  were taken with production-like data.
+- Production: frontend healthy, console and API 200, and the served bundle
+  contains the new styles and pages.
+
 ## [2026-10-11] ONBOARDING-2026-10-11 — boot preloader; installer page redesign; correct default backend URL; real "Last used"
 
 Commits `cf3b37f`, `dc1b880`, `70ec491`; deployed 2026-10-11 20:48 (backend and
