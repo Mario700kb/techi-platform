@@ -75,8 +75,6 @@ that are still offline are correct and stay open.
 - **Open alerts.** 324 before the sweep, 265 after it. The RAM warnings
   under 85% close at their next telemetry heartbeat.
 
-### Found
-
 Measured 16 minutes after deploy against the 16 minutes before it:
 
 | Alert | Opened before | Opened after |
@@ -87,6 +85,8 @@ Measured 16 minutes after deploy against the 16 minutes before it:
 
 In the same window 22 old RAM warnings closed through hysteresis. Open
 alerts went from 324 to 239.
+
+### Found
 
 The root filesystem reached 91% (2.3 GB free) after this deploy. Rollback
 image tags and the build cache are accumulating, so a controlled cleanup is
