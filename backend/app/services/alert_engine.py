@@ -8,6 +8,7 @@ from app.models.alert import AlertKind, AlertSeverity, DeviceAlert
 from app.platform_core.classification import CATEGORY_CLIENTPC, classify_category
 from app.repositories.alert_repository import AlertRepository
 from app.services.device_maintenance_service import is_maintenance_active
+from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 from app.services.alert_rules import (
     ALERT_RULES,
     CPU_CRIT,
@@ -17,6 +18,9 @@ from app.services.alert_rules import (
     RAM_CRIT,
     RAM_WARN,
     RECONNECT_THRESHOLD,
+    RESOLVE_HYSTERESIS,
+    STALE_WHEN_OFFLINE,
+    SUSTAINED_SAMPLES,
 )
 from app.services.notification_events import NotificationEvent
 from app.services.notification_service import NotificationService
@@ -172,22 +176,30 @@ class AlertEngine:
         disk_percent: Optional[float],
     ) -> None:
         hostname = device.hostname or f"device-{device.id}"
+        recent = None
 
-        if cpu_percent is not None:
-            if cpu_percent > CPU_CRIT:
-                self._open_alert(device.id, AlertKind.HIGH_CPU, AlertSeverity.CRITICAL, f"CPU critical on {hostname}: {cpu_percent:.1f}%", device=device)
-            elif cpu_percent > CPU_WARN:
-                self._open_alert(device.id, AlertKind.HIGH_CPU, AlertSeverity.WARNING, f"CPU elevated on {hostname}: {cpu_percent:.1f}%", device=device)
-            else:
-                self._resolve(device.id, AlertKind.HIGH_CPU, reason="cpu_normalized")
+        def sustained(attr: str, threshold: float) -> bool:
+            # The current sample is stored before alerts are evaluated, so the
+            # latest SUSTAINED_SAMPLES rows include it.
+            nonlocal recent
+            if recent is None:
+                recent = DeviceTelemetryRepository(self.repo.db).get_recent_by_device(device.id, limit=SUSTAINED_SAMPLES)
+            if len(recent) < SUSTAINED_SAMPLES:
+                return False
+            return all((getattr(sample, attr) or 0) > threshold for sample in recent)
 
-        if ram_percent is not None:
-            if ram_percent > RAM_CRIT:
-                self._open_alert(device.id, AlertKind.HIGH_RAM, AlertSeverity.CRITICAL, f"RAM critical on {hostname}: {ram_percent:.1f}%", device=device)
-            elif ram_percent > RAM_WARN:
-                self._open_alert(device.id, AlertKind.HIGH_RAM, AlertSeverity.WARNING, f"RAM elevated on {hostname}: {ram_percent:.1f}%", device=device)
-            else:
-                self._resolve(device.id, AlertKind.HIGH_RAM, reason="ram_normalized")
+        for kind, attr, label, value, warn, crit in (
+            (AlertKind.HIGH_CPU, "cpu_percent", "CPU", cpu_percent, CPU_WARN, CPU_CRIT),
+            (AlertKind.HIGH_RAM, "ram_percent", "RAM", ram_percent, RAM_WARN, RAM_CRIT),
+        ):
+            if value is None:
+                continue
+            if value > crit and sustained(attr, crit):
+                self._open_alert(device.id, kind, AlertSeverity.CRITICAL, f"{label} critical on {hostname}: {value:.1f}%", device=device)
+            elif value > warn and sustained(attr, warn):
+                self._open_alert(device.id, kind, AlertSeverity.WARNING, f"{label} elevated on {hostname}: {value:.1f}%", device=device)
+            elif value < warn - RESOLVE_HYSTERESIS:
+                self._resolve(device.id, kind, reason=f"{label.lower()}_normalized")
 
         if disk_percent is not None:
             if disk_percent > DISK_CRIT:
@@ -221,6 +233,23 @@ class AlertEngine:
                 message=f"{hostname} reconnected {recent_online_count}× in the last 10 minutes",
                 device=device,
             )
+        else:
+            # This alert used to stay open forever: nothing ever closed it.
+            self._resolve(device.id, AlertKind.REPEATED_RECONNECTS, reason="reconnects_settled")
+
+    def resolve_stale_on_offline(self, device) -> None:
+        """A device that stops reporting has no current CPU, memory or disk
+        reading, so the alerts built on those readings close with it."""
+        for kind in STALE_WHEN_OFFLINE:
+            self._resolve(device.id, kind, reason="device_offline")
+
+    def resolve_all_for_device(self, device_id: int, reason: str) -> int:
+        """Close every open alert of a device (it was archived)."""
+        closed = 0
+        for alert in self.repo.list_open_for_device(device_id):
+            if self._resolve(device_id, alert.kind, reason=reason) is not None:
+                closed += 1
+        return closed
 
     def evaluate_archived_checkin(self, device) -> None:
         """

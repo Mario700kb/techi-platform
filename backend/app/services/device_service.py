@@ -195,6 +195,10 @@ class DeviceService:
         if not device:
             return None
         archived = self.repository.archive(device, archived_by=archived_by)
+        # An archived device leaves the active fleet; its open alerts would
+        # otherwise stay open with nothing left to close them.
+        from app.services.alert_engine import AlertEngine
+        AlertEngine(self.repository.db).resolve_all_for_device(archived.id, reason="device_archived")
         self.activity.record(
             device_id=archived.id,
             event_type="device_archived",

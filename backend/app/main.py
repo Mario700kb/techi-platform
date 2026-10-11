@@ -47,8 +47,10 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_status_history,
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
+        resolve_stale_alerts,
     )
     tasks = (
+        resolve_stale_alerts,
         cleanup_old_heartbeats,
         cleanup_old_telemetry,
         cleanup_old_activity_events,

@@ -117,3 +117,4 @@ class DeviceStatusService:
             build_event(RealtimeEventType.DEVICE_UPDATED, data=payload, reason=reason),
             dedupe_key=f"device_updated:{device.id}:{device.status.value}",
         )
+        _get_alert_engine(self.db).resolve_stale_on_offline(device)

@@ -169,6 +169,13 @@ class AlertRepository:
             "oldest_open_at": oldest,
         }
 
+    def list_open_for_device(self, device_id: int) -> List[DeviceAlert]:
+        return (
+            self.db.query(DeviceAlert)
+            .filter(DeviceAlert.device_id == device_id, DeviceAlert.state == AlertState.OPEN.value)
+            .all()
+        )
+
     def get_in_scope(self, alert_id: int, scope: Optional["AllowedScope"] = None) -> Optional[DeviceAlert]:
         return self._in_scope(self.db.query(DeviceAlert), scope).filter(DeviceAlert.id == alert_id).first()
 

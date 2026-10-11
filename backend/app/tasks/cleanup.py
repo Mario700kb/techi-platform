@@ -140,3 +140,47 @@ def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
     _vacuum_analyze(db, "enrollment_audit")
     logger.info(f"Cleanup: deleted {deleted} enrollment audit records older than {days} days")
     return deleted
+
+
+def find_stale_alerts(db: Session) -> list:
+    """Open alerts that nothing will ever close: (alert, reason) pairs.
+
+    - any alert of an archived device (except the "archived device checked
+      in" warning, which exists precisely for archived devices);
+    - readings-based alerts (CPU, memory, disk, reconnects…) of a device that
+      is offline, whose reading is no longer current;
+    - repeated-reconnect alerts past their window, which used to have no
+      closing path at all.
+    """
+    from app.models.alert import AlertKind, AlertState, DeviceAlert
+    from app.models.device import Device, DeviceStatus
+    from app.services.alert_rules import RECONNECT_WINDOW_SECONDS, STALE_WHEN_OFFLINE
+
+    reconnect_cutoff = datetime.utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
+    rows = (
+        db.query(DeviceAlert, Device)
+        .join(Device, Device.id == DeviceAlert.device_id)
+        .filter(DeviceAlert.state == AlertState.OPEN.value)
+        .all()
+    )
+    stale = []
+    for alert, device in rows:
+        if device.is_archived and alert.kind != AlertKind.ARCHIVED_CHECKIN:
+            stale.append((alert, "device_archived"))
+        elif device.status == DeviceStatus.OFFLINE and alert.kind in STALE_WHEN_OFFLINE:
+            stale.append((alert, "device_offline"))
+        elif alert.kind == AlertKind.REPEATED_RECONNECTS and alert.created_at < reconnect_cutoff:
+            stale.append((alert, "reconnects_settled"))
+    return stale
+
+
+def resolve_stale_alerts(db: Session) -> int:
+    from app.services.alert_engine import AlertEngine
+
+    engine = AlertEngine(db)
+    resolved = 0
+    for alert, reason in find_stale_alerts(db):
+        if engine._resolve(alert.device_id, alert.kind, reason=reason) is not None:
+            resolved += 1
+    logger.info(f"Cleanup: resolved {resolved} stale open alerts")
+    return resolved

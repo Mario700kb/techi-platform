@@ -23,12 +23,33 @@ ALERT_RULES: dict[AlertKind, AlertRule] = {
     AlertKind.ARCHIVED_CHECKIN: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=3600),
 }
 
-CPU_WARN = 75.0
-CPU_CRIT = 90.0
-RAM_WARN = 80.0
-RAM_CRIT = 90.0
+# CPU and memory alert only on sustained load. A single sample above the line
+# opened ~1,550 CPU/RAM alerts a day, most closing within ten minutes (spikes;
+# Windows routinely sits above 80% memory). Measured on 24 h of production
+# telemetry (2026-10-11): 3 consecutive samples (~15 min at the 300 s
+# heartbeat) at 85% CPU / 90% RAM leave ~96 a day across ~35 devices.
+CPU_WARN = 85.0
+CPU_CRIT = 95.0
+RAM_WARN = 90.0
+RAM_CRIT = 95.0
+SUSTAINED_SAMPLES = 3
+# An open CPU/RAM alert closes only once the value is this far below the
+# warning line, so a value hovering at the line does not open and close it.
+RESOLVE_HYSTERESIS = 5.0
+
 DISK_WARN = 85.0
 DISK_CRIT = 95.0
 
 RECONNECT_WINDOW_SECONDS = 600
 RECONNECT_THRESHOLD = 3
+
+# Alerts that describe live readings. When the device stops reporting they
+# describe nothing current, so they close instead of staying open forever.
+STALE_WHEN_OFFLINE = (
+    AlertKind.HIGH_CPU,
+    AlertKind.HIGH_RAM,
+    AlertKind.LOW_DISK,
+    AlertKind.REPEATED_RECONNECTS,
+    AlertKind.HEARTBEAT_STALE,
+    AlertKind.TELEMETRY_MISSING,
+)
