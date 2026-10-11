@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronRight } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, CheckCircle2, ChevronRight, KeyRound, Monitor, RefreshCw, ShieldAlert } from "lucide-react";
 import AlertKindIcon from "../components/AlertKindIcon";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
 import { parseUTC } from "../utils/time";
-import { Pill } from "../components/mobile/primitives";
 import { Snackbar } from "../components/mobile/Snackbar";
-import { PageHeader } from "../components/ui";
+import { Button, EmptyState, PageHeader } from "../components/ui";
 
 /**
  * Alerts — Mobile UI 2.0 (docs/reference/MOBILE-DESIGN-SPEC.md — Alerts).
@@ -58,34 +58,24 @@ interface DeviceLabel {
 function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number) => void }) {
   const color = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
   return (
-    <div className="flex items-start gap-[10px] px-4 py-[11px]" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-      <span className="mt-[2px] w-[3px] self-stretch flex-none rounded-full" style={{ background: color }} />
-      <div
-        className="mt-[1px] flex h-8 w-8 flex-none items-center justify-center rounded-lg"
-        style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 26%, transparent)`, color }}
-      >
+    <div className="th-malert">
+      <span className="th-onb-icon !h-8 !w-8 flex-none" style={{ "--onb-tone": color } as CSSProperties}>
         <AlertKindIcon kind={alert.kind} className="h-4 w-4" />
-      </div>
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>
+          <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
             {ALERT_KIND_LABELS[alert.kind] ?? alert.kind}
           </span>
-          <time className="ml-auto flex-none text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
-            {timeAgo(alert.created_at)}
-          </time>
+          <time className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>{timeAgo(alert.created_at)}</time>
         </div>
-        <p className="mt-[3px] text-[12px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>
-          {alert.message}
-        </p>
-        <button
-          type="button"
-          onClick={() => onDismiss(alert.id)}
-          className="mt-[8px] rounded-md px-3 py-[6px] text-[12px] font-bold"
-          style={{ background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}
-        >
-          Dismiss
-        </button>
+        <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>{alert.message}</p>
+        <div className="mt-2 flex justify-end">
+          <button type="button" onClick={() => onDismiss(alert.id)} className="th-malert-dismiss">
+            <Check className="h-3.5 w-3.5" />
+            Dismiss
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -106,45 +96,37 @@ function AlertGroup({
   onDismissAll: (ids: number[]) => void;
   onOpenDevice: (deviceId: number) => void;
 }) {
+  const worst = alerts.some((a) => a.severity === "critical") ? "critical" : alerts.some((a) => a.severity === "warning") ? "warning" : "info";
+  const tone = ALERT_SEVERITY_TONE[worst] ?? ALERT_SEVERITY_TONE.info;
   return (
-    <div className="overflow-hidden rounded-[14px]" style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-      <div
-        className="flex min-h-[48px] w-full items-center gap-[10px] px-4 py-[11px]"
-        style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-      >
+    <section className="th-onb-card overflow-hidden th-onb-enter" style={{ "--row-tone": tone } as CSSProperties} data-severity={worst}>
+      <div className="th-malert-head">
         <button
           type="button"
           onClick={() => deviceId != null && onOpenDevice(deviceId)}
           disabled={deviceId == null}
-          className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default disabled:opacity-100"
         >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
-              {label.name}
-            </span>
-            {label.client && (
-              <span className="block truncate text-[12px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
-                {label.client}
-              </span>
-            )}
+          <span className="th-onb-icon !h-9 !w-9 flex-none" style={{ "--onb-tone": tone } as CSSProperties}>
+            {deviceId != null ? <Monitor className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
           </span>
-          {deviceId != null && <ChevronRight className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{label.name}</span>
+            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              {label.client ? `${label.client} · ` : ""}{alerts.length} open alert{alerts.length === 1 ? "" : "s"}
+            </span>
+          </span>
+          {deviceId != null && <ChevronRight className="h-4 w-4 flex-none" style={{ color: "var(--th-text-faint)" }} />}
         </button>
-        {alerts.length > 1 && (
-          <button
-            type="button"
-            onClick={() => onDismissAll(alerts.map((a) => a.id))}
-            className="flex-none rounded-md px-[10px] py-[6px] text-[11px] font-bold"
-            style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
-          >
-            Dismiss all ({alerts.length})
-          </button>
-        )}
       </div>
-      {alerts.map((a) => (
-        <AlertItem key={a.id} alert={a} onDismiss={onDismiss} />
-      ))}
-    </div>
+      {alerts.map((a) => <AlertItem key={a.id} alert={a} onDismiss={onDismiss} />)}
+      {alerts.length > 1 && (
+        <button type="button" onClick={() => onDismissAll(alerts.map((a) => a.id))} className="th-malert-all">
+          <CheckCheck className="h-4 w-4" />
+          Dismiss all ({alerts.length})
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -226,87 +208,92 @@ export default function AlertsMobile() {
       });
   }, [filtered]);
 
+  const filterCounts = useMemo(() => {
+    const visible = alerts.filter((a) => !hiddenIds.has(a.id));
+    return Object.fromEntries(FILTER_PILLS.map(({ id }) => [id, applyFilter(visible, id).length])) as Record<FilterId, number>;
+  }, [alerts, hiddenIds]);
+  const shownFilters = FILTER_PILLS.filter(({ id }) => id === "all" || filterCounts[id] > 0 || id === activeFilter);
+  const affectedDevices = new Set(alerts.filter((a) => !hiddenIds.has(a.id) && a.device_id != null).map((a) => a.device_id)).size;
+  const stats = [
+    { label: "Critical", value: filterCounts.critical, tone: filterCounts.critical ? ALERT_SEVERITY_TONE.critical : "var(--th-text-faint)", icon: ShieldAlert },
+    { label: "Warning", value: filterCounts.warning, tone: filterCounts.warning ? ALERT_SEVERITY_TONE.warning : "var(--th-text-faint)", icon: AlertTriangle },
+    { label: "Devices", value: affectedDevices, tone: "var(--th-accent)", icon: Monitor },
+  ];
+
   return (
-    <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 112px)" }}>
-      <PageHeader
-        className="mb-5 hidden md:block"
-        title="Alerts"
-        description="Open alerts across every managed device, newest first."
-      />
-      <div
-        className="flex gap-2 overflow-x-auto px-1 pb-3"
-        style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-      >
-        {FILTER_PILLS.map(({ id, label }) => (
-          <Pill key={id} active={activeFilter === id} onClick={() => setActiveFilter(id)}>
-            {label}
-          </Pill>
+    <div className="th-onb flex flex-col gap-3">
+      <PageHeader className="mb-2 hidden md:block" title="Alerts" description="Open alerts across every managed device, newest first." />
+
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map(({ label, value, tone, icon: Icon }, index) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => label !== "Devices" && setActiveFilter(label === "Critical" ? "critical" : "warning")}
+            className="th-onb-card th-malert-stat th-onb-enter"
+            style={{ "--i": index } as CSSProperties}
+            aria-label={`${value} ${label.toLowerCase()}`}
+          >
+            <span className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+              <Icon className="h-3.5 w-3.5" style={{ color: tone }} />
+              {label}
+            </span>
+            <span className="text-[22px] font-semibold leading-7 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value}</span>
+          </button>
         ))}
-        <button
-          type="button"
-          onClick={() => void handleReload()}
-          className="ml-auto flex-none rounded-full px-3 py-[7px] text-[12px] font-bold"
-          style={{ background: "var(--th-chip-bg)", color: "var(--th-text-secondary)", border: "1px solid var(--th-border-subtle)" }}
-        >
-          Refresh
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="th-mdev-chips min-w-0 flex-1 !mx-0 !px-0" role="tablist" aria-label="Alert filter">
+          {shownFilters.map(({ id, label }) => (
+            <button key={id} type="button" role="tab" aria-selected={activeFilter === id} onClick={() => setActiveFilter(id)} className="th-mdev-chip">
+              {label}
+              <span className="tabular-nums">{filterCounts[id]}</span>
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={() => void handleReload()} aria-label="Refresh alerts" className="th-mdev-tool !h-[30px] !w-[30px] !rounded-full">
+          <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-[10px]">
-        {groups.length === 0 ? (
-          <div
-            className="flex flex-col items-center gap-3 rounded-[14px] px-6 py-12"
-            style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-          >
-            <CheckCircle2 className="h-10 w-10" style={{ color: "var(--th-status-online)" }} />
-            <p className="text-[14px] font-bold" style={{ color: "var(--th-status-online)" }}>No active alerts</p>
-            <p className="text-center text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-              {activeFilter !== "all" ? "Try a different filter" : "All systems healthy"}
-            </p>
-            {activeFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setActiveFilter("all")}
-                className="mt-1 rounded-lg px-4 py-2 text-[12px] font-bold"
-                style={{ background: "var(--th-chip-bg)", color: "var(--th-text-secondary)" }}
-              >
-                Show all
-              </button>
-            )}
-          </div>
-        ) : (
-          groups.map(({ deviceId, alerts: groupAlerts }) => (
-            <AlertGroup
-              key={deviceId ?? "token"}
-              deviceId={deviceId}
-              label={deviceId != null
-                ? { name: groupAlerts[0].device_name ?? `Device #${deviceId}`, client: groupAlerts[0].client_name ?? null }
-                : { name: "Enrollment tokens", client: null }}
-              alerts={groupAlerts}
-              onDismiss={(id) => dismissIds([id])}
-              onDismissAll={dismissIds}
-              onOpenDevice={(id) => navigate(`/devices/${id}`)}
-            />
-          ))
-        )}
-      </div>
+      {groups.length === 0 ? (
+        <div className="th-onb-card">
+          <EmptyState
+            className="py-10"
+            icon={<CheckCircle2 className="h-5 w-5" style={{ color: "var(--th-status-online)" }} />}
+            title="No active alerts"
+            description={activeFilter !== "all" ? "Nothing matches this filter." : "All systems healthy."}
+            action={activeFilter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setActiveFilter("all")}>Show all</Button> : undefined}
+          />
+        </div>
+      ) : (
+        groups.map(({ deviceId, alerts: groupAlerts }) => (
+          <AlertGroup
+            key={deviceId ?? "token"}
+            deviceId={deviceId}
+            label={deviceId != null
+              ? { name: groupAlerts[0].device_name ?? `Device #${deviceId}`, client: groupAlerts[0].client_name ?? null }
+              : { name: "Enrollment tokens", client: null }}
+            alerts={groupAlerts}
+            onDismiss={(id) => dismissIds([id])}
+            onDismissAll={dismissIds}
+            onOpenDevice={(id) => navigate(`/devices/${id}`)}
+          />
+        ))
+      )}
 
       {groups.length > 3 && (
-        <button
-          type="button"
-          onClick={() => navigate("/devices?filter=needs_attention")}
-          className="mt-[10px] flex min-h-[44px] items-center justify-center gap-1.5 rounded-[14px] text-[13px] font-bold"
-          style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
-        >
+        <Button variant="secondary" onClick={() => navigate("/devices?filter=needs_attention")} className="min-h-[44px] w-full">
           View all affected devices
           <ChevronRight className="h-4 w-4" />
-        </button>
+        </Button>
       )}
 
       <Snackbar
         open={snackMessage !== null}
         message={snackMessage ?? ""}
-        actionLabel="UNDO"
+        actionLabel="Undo"
         onAction={handleUndo}
         onClose={() => setSnackMessage(null)}
       />
