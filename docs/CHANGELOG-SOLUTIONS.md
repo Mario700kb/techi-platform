@@ -5,6 +5,38 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] TABLE-FOOTER-2026-10-11 — one table footer for Devices and Alerts
+
+The owner asked for the Alerts footer to match the one on Devices. Commit
+`e9a8be6`.
+
+Devices and Alerts now share one component, `ui/TablePagination`. It
+shows:
+
+- the range and the total;
+- how many rows are selected;
+- the rows-per-page setting, through the themed Select;
+- a loading spinner;
+- page controls with seven slots, so the width does not change while
+  paging, and a gap never hides a single page.
+
+Alerts now pages on the server (limit and offset) instead of "Load more".
+Changing a filter returns to page 1.
+
+On Devices, the shared footer also closes the pagination findings from the
+UI audit:
+
+- controls are 32 px with an 8 px radius, instead of 24 px with 4 px;
+- the arrows have an `aria-label` and the current page has `aria-current`;
+- the native 11 px select is replaced by the themed Select;
+- the "Fleet active" dot is gone. It was green whatever the state.
+
+Deployed 2026-10-11, frontend only. Rollback image:
+`techi-platform-frontend:pre-pagination-c15b7ea`. Checks: frontend 114
+tests (5 new), `tsc` clean, build OK, public HTTP 200, and the served CSS
+contains the new classes. Both footers were checked by rendering the real
+components against the built CSS.
+
 ## [2026-10-11] ALERTS-FIT-2026-10-11 — Alerts page fits the screen; smooth motion
 
 Owner request: make the page fit the screen, scroll the table inside itself,
