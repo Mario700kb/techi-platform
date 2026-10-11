@@ -59,6 +59,22 @@ describe("TeamDetail", () => {
     expect(within(reached as HTMLElement).getByText("1,002")).toBeInTheDocument();
   });
 
+  it("pages the client list and filters it to clients the team can reach", async () => {
+    const names = Array.from({ length: 12 }, (_, i) => `Client ${String(i + 1).padStart(2, "0")}`);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue(names.map((name, i) => ({ id: i + 1, name }) as clientsApi.Client));
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([{ id: 10, client_id: 12, name: "Servers" } as clientsApi.DeviceGroup]);
+    vi.spyOn(devicesApi, "getDevices").mockResolvedValue({ devices: [], total: 0 });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: /Device access/ }));
+    await screen.findByText("Client 01");
+    expect(screen.queryByText("Client 12")).not.toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.classList.contains("th-status-chip") === true && el.textContent === "1 group")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /With access/ }));
+    expect(screen.getByText("Client 12")).toBeInTheDocument();
+    expect(screen.queryByText("Client 01")).not.toBeInTheDocument();
+  });
+
   it("applies a permission template with its dependencies", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: /Permissions/ }));

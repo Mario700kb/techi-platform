@@ -21,6 +21,7 @@ import { getDevices, Device } from "../api/devices";
 import { Button, EmptyState } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
+import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
@@ -228,6 +229,14 @@ function DeviceStatusDot({ device }: { device: Device }) {
   return <span className="th-onb-dot !h-2 !w-2" style={{ "--swatch": color } as CSSProperties} title={state} />;
 }
 
+type AccessFilter = "all" | "granted" | "none";
+
+const ACCESS_FILTERS: { id: AccessFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "granted", label: "With access" },
+  { id: "none", label: "No access" },
+];
+
 function AccessTab({
   team,
   clients,
@@ -249,6 +258,9 @@ function AccessTab({
   const [exClients, setExClients]   = useState<Set<number>>(new Set());
   const [exGroups, setExGroups]     = useState<Set<number>>(new Set());
   const [search, setSearch]         = useState("");
+  const [filter, setFilter]         = useState<AccessFilter>("all");
+  const [page, setPage]             = useState(1);
+  const [pageSize, setPageSize]     = useState(10);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [saved, setSaved]           = useState(false);
@@ -333,6 +345,18 @@ function AccessTab({
     return anyDescendantSelected ? "indeterminate" : "unchecked";
   };
 
+  const hasAccess = (clientId: number) => clientCheckState(clientId) !== "unchecked";
+  const accessCounts: Record<AccessFilter, number> = {
+    all: filteredClients.length,
+    granted: filteredClients.filter((client) => hasAccess(client.id)).length,
+    none: filteredClients.filter((client) => !hasAccess(client.id)).length,
+  };
+  const listedClients = filter === "all" ? filteredClients : filteredClients.filter((client) => hasAccess(client.id) === (filter === "granted"));
+  const pageCount = Math.max(1, Math.ceil(listedClients.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedClients = listedClients.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
+
   const groupCheckState = (group: DeviceGroup): CheckState => {
     if (selClients.has(group.client_id ?? -1)) return "inherited";
     if (selGroups.has(group.id)) return "checked";
@@ -393,26 +417,37 @@ function AccessTab({
         subtitle="A client grants all its devices, a group all of its devices, a device only itself; access is the union"
         aside={
           <div className="flex items-center gap-2">
-            <div className="w-[260px]">
-              <label className="th-search th-search-sm">
-                <Search className="h-3.5 w-3.5 flex-none" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients, groups, devices" aria-label="Search access" />
-                {search && <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
-              </label>
-            </div>
             <Button size="sm" variant="secondary" onClick={expandAll}>Expand all</Button>
             <Button size="sm" variant="secondary" onClick={collapseAll}>Collapse all</Button>
           </div>
         }
       />
 
+      <div className="th-alerts-toolbar">
+        <div ref={filterTabsRef} role="tablist" aria-label="Client access" className="th-tabs">
+          {ACCESS_FILTERS.map(({ id, label }) => (
+            <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => { setFilter(id); setPage(1); }} className="th-tab">
+              {label}
+              <span className="th-tab-count">{formatCount(accessCounts[id])}</span>
+            </button>
+          ))}
+        </div>
+        <div className="pb-2">
+          <label className="th-search th-search-sm w-[260px]">
+            <Search className="h-3.5 w-3.5 flex-none" />
+            <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search clients, groups, devices" aria-label="Search access" />
+            {search && <button type="button" onClick={() => { setSearch(""); setPage(1); }} className="th-explorer-clear" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
+          </label>
+        </div>
+      </div>
+
       <div className="th-team-summary">
         {[
-          { icon: Building2, label: "clients", value: selClients.size },
-          { icon: Layers, label: "groups", value: selGroups.size },
-          { icon: Monitor, label: "devices one by one", value: selDevices.size },
+          { key: "clients", icon: Building2, label: selClients.size === 1 ? "client" : "clients", value: selClients.size },
+          { key: "groups", icon: Layers, label: selGroups.size === 1 ? "group" : "groups", value: selGroups.size },
+          { key: "devices", icon: Monitor, label: selDevices.size === 1 ? "device one by one" : "devices one by one", value: selDevices.size },
         ].map((item) => (
-          <span key={item.label} className="th-status-chip" style={item.value ? undefined : { color: "var(--th-text-faint)" }}>
+          <span key={item.key} className="th-status-chip" style={item.value ? undefined : { color: "var(--th-text-faint)" }}>
             <item.icon className="h-3.5 w-3.5" />
             <span className="tabular-nums" style={{ color: item.value ? "var(--th-text-primary)" : undefined }}>{formatCount(item.value)}</span> {item.label}
           </span>
@@ -423,11 +458,11 @@ function AccessTab({
         </span>
       </div>
 
-      {filteredClients.length === 0 ? (
-        <EmptyState className="py-10" icon={<Building2 className="h-5 w-5" />} title="No clients match" />
+      {listedClients.length === 0 ? (
+        <EmptyState className="py-10" icon={<Building2 className="h-5 w-5" />} title={filter === "granted" && !normalizedSearch ? "No client has access yet" : "No clients match"} />
       ) : (
         <ul className="th-team-tree">
-          {filteredClients.map((client) => {
+          {pagedClients.map((client) => {
             const clientGroups = groupsFor(client.id);
             const isExC = exClients.has(client.id);
             const cState = clientCheckState(client.id);
@@ -492,6 +527,18 @@ function AccessTab({
             );
           })}
         </ul>
+      )}
+
+      {listedClients.length > 0 && (
+        <TablePagination
+          page={currentPage}
+          pageSize={pageSize}
+          total={listedClients.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          pageSizeOptions={[10, 25, 50]}
+          itemLabel="clients"
+        />
       )}
 
       <SaveFooter canManage={canManage} dirty={dirty} saving={loading} saved={saved ? "Device access saved" : null} error={error} label="Save access" onSave={() => void handleSave()} />
