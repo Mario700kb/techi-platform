@@ -1,66 +1,35 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, ChevronRight, Cpu, Pencil, Plus, RefreshCcw, Search, Trash2, Users, UsersRound, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronRight, Layers, Monitor, Pencil, Plus, RefreshCcw, Search, Trash2, UsersRound, X } from "lucide-react";
 import {
   TeamWithStats,
-  TeamCreate,
-  TeamUpdate,
   listTeams,
   createTeam,
   updateTeam,
   deleteTeam,
 } from "../api/teams";
 import { Button, EmptyState, PageHeader } from "../components/ui";
+import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
 import ConfirmationModal from "../components/ConfirmationModal";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
+import { formatLocalDateTime } from "../utils/time";
 
+// Team colours are user data, chosen from this fixed set and stored on the team.
 const COLOR_PRESETS = [
   "#E85A3C", "#7C9CBF", "#C77B93", "#5C8C6A",
   "#4E8E86", "#8E7CC3", "#F04A2A", "#C8A000",
   "#FF6B47", "#A0A0AA",
 ];
 
-const INPUT_CLS =
-  "th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none focus:border-techi-orange/60";
-const LABEL_CLS = "block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1";
-
-interface ModalProps {
-  onClose: () => void;
-  children: React.ReactNode;
-  title: string;
-}
-
-function Modal({ onClose, children, title }: ModalProps) {
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = prev; document.removeEventListener("keydown", onKey); };
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-      <div className="th-elevated w-full max-w-md rounded-xl border p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-white">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Team colour">
       {COLOR_PRESETS.map((c) => (
-        <button key={c} type="button" onClick={() => onChange(c)} className="h-7 w-7 rounded-full border-2 transition hover:scale-110"
-          style={{ background: c, borderColor: value === c ? "white" : "transparent", boxShadow: value === c ? `0 0 0 1px ${c}` : undefined }} title={c} />
+        <button key={c} type="button" role="radio" aria-checked={value === c} aria-label={c} onClick={() => onChange(c)} className="th-onb-swatch" style={{ "--swatch": c } as CSSProperties} />
       ))}
     </div>
   );
@@ -112,22 +81,13 @@ const PERMISSION_TEMPLATES: Record<string, { label: string; description: string;
 function TemplateSelector({ onSelect }: { onSelect: (perms: string[]) => void }) {
   const [active, setActive] = useState<string | null>(null);
   return (
-    <div>
-      <label className={LABEL_CLS}>Permission Template <span className="text-slate-600 normal-case font-medium">(optional)</span></label>
-      <div className="grid grid-cols-2 gap-1.5">
+    <div className="th-onb-field">
+      <span>Permission template <span style={{ color: "var(--th-text-faint)" }}>(optional)</span></span>
+      <div className="grid grid-cols-2 gap-2">
         {Object.entries(PERMISSION_TEMPLATES).map(([key, tmpl]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => { setActive(key); onSelect(tmpl.permissions); }}
-            className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
-              active === key
-                ? "border-techi-orange/40 bg-techi-orange/10 text-orange-200"
-                : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/15 hover:text-slate-200"
-            }`}
-          >
-            <p className="font-semibold">{tmpl.label}</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{tmpl.description}</p>
+          <button key={key} type="button" aria-pressed={active === key} onClick={() => { setActive(key); onSelect(tmpl.permissions); }} className="th-onb-option">
+            <span className="block text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{tmpl.label}</span>
+            <span className="mt-0.5 block text-[12px] leading-4" style={{ color: "var(--th-text-muted)" }}>{tmpl.description}</span>
           </button>
         ))}
       </div>
@@ -143,33 +103,24 @@ function TeamFormFields({
   error: string | null;
 }) {
   return (
-    <div className="space-y-3">
-      {error && <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2.5 text-xs font-medium text-red-100">{error}</div>}
-      <div>
-        <label className={LABEL_CLS}>Team name *</label>
-        <input value={form.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. IT Support" className={INPUT_CLS} />
-      </div>
-      <div>
-        <label className={LABEL_CLS}>Description</label>
-        <textarea value={form.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="What does this team manage?" rows={2} className={`${INPUT_CLS} resize-none`} />
-      </div>
-      <div>
-        <label className={LABEL_CLS}>Color</label>
-        <ColorPicker value={form.color} onChange={(c) => onChange({ color: c })} />
-      </div>
-    </div>
+    <>
+      {error && (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <span>{error}</span>
+        </div>
+      )}
+      <label className="th-onb-field">Name<input value={form.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. IT Support" /></label>
+      <label className="th-onb-field">Description<textarea value={form.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="What does this team look after?" rows={2} /></label>
+      <div className="th-onb-field">Colour<ColorPicker value={form.color} onChange={(c) => onChange({ color: c })} /></div>
+    </>
   );
 }
 
 const EMPTY_FORM = { name: "", description: "", color: "#E85A3C", permissions: [] as string[] };
 
-function StatPill({ icon, count, title }: { icon: React.ReactNode; count: number; title: string }) {
-  return (
-    <span title={title} className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-400">
-      {icon}
-      {count}
-    </span>
-  );
+function Count({ value, faintWhenZero = true }: { value: number; faintWhenZero?: boolean }) {
+  return <span className="th-alerts-primary tabular-nums" style={value === 0 && faintWhenZero ? { color: "var(--th-text-faint)" } : undefined}>{formatCount(value)}</span>;
 }
 
 export default function Teams() {
@@ -211,6 +162,13 @@ export default function Teams() {
   const filtered = teams.filter(
     (t) => search === "" || t.name.toLowerCase().includes(search.toLowerCase()) || (t.description ?? "").toLowerCase().includes(search.toLowerCase())
   );
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const memberSeats = teams.reduce((sum, t) => sum + t.member_count, 0);
+  const grantedClients = teams.reduce((sum, t) => sum + t.client_count, 0);
+  const grantedGroups = teams.reduce((sum, t) => sum + t.group_count, 0);
+  const widest = teams.reduce<TeamWithStats | null>((best, t) => (!best || t.effective_device_count > best.effective_device_count ? t : best), null);
 
   const handleCreate = async () => {
     const name = createForm.name.trim();
@@ -272,167 +230,210 @@ export default function Teams() {
   };
 
   return (
-    <section className="premium-page space-y-5">
-      {/* Header */}
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Teams"
-        description="Group operators into teams and grant each team visibility over specific clients, device groups, or individual devices."
+        description="Teams group operators and grant them visibility over clients, device groups or single devices."
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => void loadData()} disabled={loading}>
-              <RefreshCcw className="h-3.5 w-3.5" /> Refresh
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
             </Button>
             {canManage && (
               <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}>
-                <Plus className="h-3.5 w-3.5" /> New Team
+                <Plus className="h-3.5 w-3.5" />
+                New team
               </Button>
             )}
           </>
         }
       />
 
-      {error && <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">{error}</div>}
+      {error && (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="flex-1">{error}</span>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
 
-      {/* Table */}
-      <div className="premium-card-soft overflow-hidden">
-        <div className="border-b border-white/[0.08] px-5 py-3.5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <UsersRound className="h-4 w-4 text-techi-orange" />
-              <h2 className="text-sm font-semibold text-white">{teams.length} team{teams.length !== 1 ? "s" : ""}</h2>
+      {/* ── summary ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Teams", value: formatCount(teams.length), hint: `${formatCount(memberSeats)} memberships`, icon: UsersRound, tone: "var(--th-accent)" },
+          { label: "Clients granted", value: formatCount(grantedClients), hint: "Whole clients, across teams", icon: Building2, tone: TONE.info },
+          { label: "Groups granted", value: formatCount(grantedGroups), hint: "Device groups, across teams", icon: Layers, tone: TONE.maintenance },
+          { label: "Widest reach", value: widest ? formatCount(widest.effective_device_count) : "—", hint: widest ? `${widest.name} · devices` : "No teams yet", icon: Monitor, tone: TONE.online },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
             </div>
-            <label className="th-search max-w-xs">
-              <Search className="h-4 w-4 flex-none" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search teams…" />
-            </label>
           </div>
-        </div>
+        ))}
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Team</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Description</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Members</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Clients</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Groups</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Eff. Devices</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Created</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="p-0">
-                    {loading ? (
-                      <p className="px-5 py-10 text-center text-sm font-medium text-slate-500">Loading…</p>
-                    ) : search ? (
-                      <EmptyState icon={<Search className="h-5 w-5" />} title="No teams match your search" description="Try a different name." />
-                    ) : (
-                      <EmptyState
-                        icon={<UsersRound className="h-5 w-5" />}
-                        title="No teams yet"
-                        description="Teams give a group of operators access to specific clients, device groups or devices."
-                        action={canManage && (
-                          <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}>
-                            <Plus className="h-3.5 w-3.5" /> New Team
-                          </Button>
-                        )}
-                      />
-                    )}
-                  </td>
-                </tr>
+      {/* ── teams ───────────────────────────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+        <CardHead
+          icon={UsersRound}
+          tone="var(--th-accent)"
+          title="Teams"
+          subtitle={loading && teams.length === 0 ? "Loading…" : `${formatCount(teams.length)} team${teams.length === 1 ? "" : "s"} · open one to manage its members and access`}
+          aside={
+            <div className="w-[260px] flex-none">
+            <label className="th-search th-search-sm">
+              <Search className="h-3.5 w-3.5 flex-none" />
+              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search teams" aria-label="Search teams" />
+              {search && (
+                <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                  <X className="h-3.5 w-3.5" />
+                </button>
               )}
-              {filtered.map((team) => (
-                <tr key={team.id} className="group transition hover:bg-white/[0.02]">
-                  <td className="px-5 py-3.5">
-                    <button type="button" onClick={() => navigate(`/teams/${team.id}`)} className="flex items-center gap-2.5 text-left">
-                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: team.color ?? "#E85A3C" }} />
-                      <span className="font-semibold text-white group-hover:text-techi-orange transition-colors">{team.name}</span>
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                  </td>
-                  <td className="max-w-[180px] px-5 py-3.5">
-                    <span className="line-clamp-1 text-[12px] text-slate-400">{team.description ?? <span className="text-slate-600">—</span>}</span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatPill icon={<UsersRound className="h-2.5 w-2.5" />} count={team.member_count} title="Members" />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatPill icon={<Building2 className="h-2.5 w-2.5" />} count={team.client_count} title="Clients" />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatPill icon={<Users className="h-2.5 w-2.5" />} count={team.group_count} title="Groups" />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatPill icon={<Cpu className="h-2.5 w-2.5" />} count={team.effective_device_count} title={`Effective devices (${team.explicit_device_count} explicit)`} />
-                  </td>
-                  <td className="px-5 py-3.5 text-[12px] text-slate-400">
-                    {parseUTC(team.created_at).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" })}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center justify-end gap-1">
-                      <button type="button" onClick={() => navigate(`/teams/${team.id}`)} title="Open team" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200">
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                      {canManage && (
-                        <>
-                          <button type="button" onClick={() => openEdit(team)} title="Edit team" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-orange-200">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button type="button" onClick={() => setDeleteTarget(team)} title="Delete team" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-red-300">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
+            </label>
+            </div>
+          }
+        />
+
+        {loading && teams.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading teams">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          search ? (
+            <EmptyState className="th-fade-in py-10" icon={<Search className="h-5 w-5" />} title="No teams match your search" action={<Button size="sm" variant="secondary" onClick={() => setSearch("")}>Clear search</Button>} />
+          ) : (
+            <EmptyState
+              className="th-fade-in py-10"
+              icon={<UsersRound className="h-5 w-5" />}
+              title="No teams yet"
+              description="Teams give a group of operators access to specific clients, device groups or devices."
+              action={canManage ? <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}><Plus className="h-3.5 w-3.5" />New team</Button> : undefined}
+            />
+          )
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col />
+                <col className="w-[110px]" />
+                <col className="w-[110px]" />
+                <col className="w-[110px]" />
+                <col className="w-[150px]" />
+                <col className="w-[130px]" />
+                <col className="w-[112px]" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th className="text-right">Members</th>
+                  <th className="text-right">Clients</th>
+                  <th className="text-right">Groups</th>
+                  <th className="text-right">Devices reached</th>
+                  <th>Created</th>
+                  <th className="text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.map((team, index) => (
+                  <tr key={team.id} className="th-alerts-row" data-clickable="true" style={{ "--row": index, "--row-tone": team.color ?? undefined } as CSSProperties} onClick={() => navigate(`/teams/${team.id}`)}>
+                    <td>
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <span className="th-onb-dot" style={{ "--swatch": team.color ?? "var(--th-accent)" } as CSSProperties} aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="th-alerts-primary">{team.name}</span>
+                          <span className="th-alerts-secondary">{team.description || "No description"}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="text-right"><Count value={team.member_count} /></td>
+                    <td className="text-right"><Count value={team.client_count} /></td>
+                    <td className="text-right"><Count value={team.group_count} /></td>
+                    <td className="text-right">
+                      <Count value={team.effective_device_count} />
+                      {team.explicit_device_count > 0 && <span className="th-alerts-secondary">{formatCount(team.explicit_device_count)} granted one by one</span>}
+                    </td>
+                    <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(team.created_at, { day: "numeric", month: "short", year: "numeric" })}</span></td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="th-onb-actions">
+                        <button type="button" className="th-onb-action" onClick={() => navigate(`/teams/${team.id}`)} title="Open team" aria-label={`Open ${team.name}`}><ChevronRight className="h-4 w-4" /></button>
+                        {canManage && (
+                          <>
+                            <button type="button" className="th-onb-action" onClick={() => openEdit(team)} title="Edit" aria-label={`Edit ${team.name}`}><Pencil className="h-4 w-4" /></button>
+                            <button type="button" className="th-onb-action" data-tone="danger" onClick={() => setDeleteTarget(team)} title="Delete" aria-label={`Delete ${team.name}`}><Trash2 className="h-4 w-4" /></button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            pageSizeOptions={[25, 50, 100]}
+            itemLabel="teams"
+          />
+        )}
       </div>
 
       {showCreate && (
-        <Modal title="Create Team" onClose={() => setShowCreate(false)}>
-          <div className="space-y-4">
-            <TeamFormFields form={createForm} onChange={(u) => setCreateForm((f) => ({ ...f, ...u }))} error={createError} />
-            <TemplateSelector onSelect={(perms) => setCreateForm((f) => ({ ...f, permissions: perms }))} />
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]">Cancel</button>
-            <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>
-              {createLoading ? "Creating…" : "Create Team"}
-            </Button>
-          </div>
-        </Modal>
+        <ModalShell
+          title="New team"
+          subtitle="Add members and access after creating it"
+          icon={UsersRound}
+          width="max-w-xl"
+          onClose={() => setShowCreate(false)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>{createLoading ? "Creating…" : "Create team"}</Button>
+            </>
+          }
+        >
+          <TeamFormFields form={createForm} onChange={(u) => setCreateForm((f) => ({ ...f, ...u }))} error={createError} />
+          <TemplateSelector onSelect={(perms) => setCreateForm((f) => ({ ...f, permissions: perms }))} />
+        </ModalShell>
       )}
 
       {editTarget && (
-        <Modal title="Edit Team" onClose={() => setEditTarget(null)}>
+        <ModalShell
+          title="Edit team"
+          subtitle={editTarget.name}
+          icon={Pencil}
+          onClose={() => setEditTarget(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleEdit()} disabled={editLoading}>{editLoading ? "Saving…" : "Save changes"}</Button>
+            </>
+          }
+        >
           <TeamFormFields form={editForm} onChange={(u) => setEditForm((f) => ({ ...f, ...u }))} error={editError} />
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setEditTarget(null)} className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]">Cancel</button>
-            <Button type="button" onClick={() => void handleEdit()} disabled={editLoading}>
-              {editLoading ? "Saving…" : "Save Changes"}
-            </Button>
-          </div>
-        </Modal>
+        </ModalShell>
       )}
 
       {deleteTarget && (
         <ConfirmationModal
-          title="Delete Team"
+          title="Delete team"
           confirmLabel={deleteLoading ? "Deleting" : "Delete"}
           loading={deleteLoading}
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
-          Permanently delete team <span className="font-semibold text-white">{deleteTarget.name}</span>?{" "}
-          Operators will lose the access granted through this team.
+          Permanently delete team <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.name}</span>? Operators lose the access granted through it.
         </ConfirmationModal>
       )}
     </section>

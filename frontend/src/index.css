@@ -1875,6 +1875,27 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 .th-onb-maphead { padding-top: 8px; padding-bottom: 8px; background: var(--th-bg-table-head); font-size: 12px; font-weight: 500; color: var(--th-text-muted); }
 .th-onb-maprow.th-alerts-row:hover { background: var(--th-table-hover); }
 @media (max-width: 760px) { .th-onb-maprow { grid-template-columns: 1fr; } }
+.th-onb-dot { flex: none; width: 10px; height: 10px; border-radius: 999px; background: var(--swatch); box-shadow: 0 0 0 3px color-mix(in srgb, var(--swatch) 18%, transparent); }
+.th-onb-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--swatch);
+  box-shadow: 0 0 0 2px var(--th-bg-surface), 0 0 0 3px transparent;
+  transition: transform 160ms var(--th-ease-out), box-shadow 160ms var(--th-ease);
+}
+.th-onb-swatch:hover { transform: scale(1.08); }
+.th-onb-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--th-bg-surface), 0 0 0 4px var(--swatch); }
+.th-onb-option {
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-card);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.th-onb-option:hover { border-color: var(--th-border-strong); }
+.th-onb-option[aria-pressed="true"] { border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 7%, var(--th-bg-card)); }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
