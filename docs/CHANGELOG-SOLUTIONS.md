@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] CLIENTS-SYMMETRY-2026-10-11 — Clients page alignment pass
+
+Commit `1365ba5`; frontend only, deployed 2026-10-11 22:20. Rollback image
+`techi-platform-frontend:pre-clients-sym-d02fad0`.
+
+- **New client** has Name | Slug on one row, mirroring New group's
+  Client | Name. The slug placeholder shows what the backend will derive.
+- **Create client and Create group** use the same button.
+- **Domain mapping:** the add row, the header and every mapping share one
+  grid, so the columns line up top to bottom, and every client picker
+  spans its column.
+- **Switch:** the thumb is centred vertically.
+- **Verification:** 143 frontend tests, a screenshot check, and production
+  healthy with the new styles served.
+
 ## [2026-10-11] CLIENTS-UI-2026-10-11 — Clients page in the Onboarding design; real status; domain mappings always load
 
 Commit `d02fad0`; frontend only, deployed 2026-10-11 22:10. Rollback image
