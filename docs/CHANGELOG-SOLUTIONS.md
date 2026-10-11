@@ -7,7 +7,7 @@
 
 ## [2026-10-11] AGENT-2.1.24-PREP-2026-10-11 — MSI Remote Support guards fixed, RS no longer pointed at the platform, heartbeat jitter; CI-verified, not released
 
-Commits `7a01793`, `df91afc`, `d0d425e`. Built by CI run `38159540143`
+Commits `7a01793`, `df91afc`, `d0d425e`, `da5972a`. Built by CI run `38162961021`
 (artifacts `TECHI-Endpoint-Deployment-2.1.24`, `TECHI-Agent-Update-2.1.24`
 and `techi-agent-2.1.24-exe`, retained 30 days). **Nothing was uploaded or
 activated in the package manifest.**
@@ -40,8 +40,15 @@ The version moved to 2.1.24 because Linux 2.1.23 is already active from
   - a fresh install writes `api-server=''`;
   - an upgrade over 2.1.20 overwrites the old value with `''`.
 
-  Devices that take this release stop posting Remote Support telemetry to the
-  platform.
+  - `self_update` replaces only `techi-agent.exe`, so these MSI changes never
+    reach existing devices. The agent therefore also cleans the setting
+    itself, on every heartbeat: it removes `api-server` from each
+    `TECHI Remote Support2.toml` when the value names the platform's own
+    host. Other values, and `rustdesk_api_server`, are left alone.
+  - The agent restarts Remote Support to load the cleaned file only within
+    10 minutes of boot, with no session running (no `--cm` process), and at
+    most once per agent run. Otherwise the change applies at the next
+    restart, so no technician's session is cut.
 - **Heartbeat jitter.** Each wait is spread by up to ±10%
   (`jitteredInterval`).
 
@@ -63,6 +70,9 @@ The version moved to 2.1.24 because Linux 2.1.23 is already active from
     - both stops logged and the holder stopped;
     - the packaged DLL in place and the agent configuration kept;
     - api-server cleared.
+  - **Agent cleanup:** the platform api-server is put back in every
+    configuration, one `-once` agent cycle runs, and every file comes back
+    clean.
 
 ### Still open
 - A real shutdown / sleep / Fast Startup test of the power events on a physical
