@@ -1508,6 +1508,48 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-kpi-hint { font-size: 12px; color: var(--th-text-faint); }
 
+/* ── Table footer (TablePagination) ── one footer for every paginated table:
+   range and total on the left, page controls on the right, 32px controls. */
+.th-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-height: 52px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-table-head);
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-pagination-side { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.th-pagination-extra { font-weight: 600; color: var(--th-accent); }
+.th-pagination-pages { display: flex; align-items: center; gap: 4px; }
+.th-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-input);
+  background: var(--th-bg-input);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-text-secondary);
+  cursor: pointer;
+}
+.th-page-btn:hover:not(:disabled) { border-color: var(--th-border-strong); color: var(--th-text-primary); }
+.th-page-btn[aria-current="page"] {
+  border-color: var(--th-accent-border);
+  background: var(--th-accent-glow);
+  color: var(--th-accent-bright);
+}
+.th-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.th-page-gap { min-width: 20px; text-align: center; color: var(--th-text-faint); }
+
 /* ── Alerts table ── one grid, 16px gutters on both sides, a 3px severity
    edge per row, fixed column widths so the layout never shifts with content. */
 .th-alerts-card {
@@ -1580,17 +1622,6 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 .premium-page .th-alerts-table a.th-alerts-link { min-height: 0; }
 .th-alerts-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .th-alerts-value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.th-alerts-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 52px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--th-border-subtle);
-  font-size: 12px;
-  color: var(--th-text-muted);
-}
 .th-alerts-skeleton {
   height: 57px;
   margin: 0 16px;

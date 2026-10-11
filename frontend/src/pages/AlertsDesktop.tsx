@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, RefreshCcw, Search, X } from "lucide-react
 import { getAlertCount, getAlerts, resolveAlert } from "../api/alerts";
 import AlertKindIcon from "../components/AlertKindIcon";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { Button, EmptyState, PageHeader, Select, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
@@ -21,7 +21,7 @@ import { describeAlert } from "../utils/alertText";
 import { formatCount } from "../utils/number";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 type SeverityTab = "all" | AlertSeverity;
 
@@ -43,9 +43,10 @@ export default function AlertsDesktop() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [counts, setCounts] = useState<AlertCount | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
@@ -64,25 +65,32 @@ export default function AlertsDesktop() {
     search: search || undefined,
   }), [severity, kind, search]);
 
+  // Any filter change starts again from the first page.
+  useEffect(() => { setPage(1); }, [query, pageSize]);
+
   const load = useCallback(async () => {
     const requestId = ++requestRef.current;
     setFailed(false);
     try {
-      const [page, countResult] = await Promise.all([
-        getAlerts({ ...query, limit: PAGE_SIZE, offset: 0 }),
+      const [rows, countResult] = await Promise.all([
+        getAlerts({ ...query, limit: pageSize, offset: (page - 1) * pageSize }),
         getAlertCount(query.search),
       ]);
       if (requestRef.current !== requestId) return;
-      setAlerts(page);
+      setAlerts(rows);
       setCounts(countResult);
-      setHasMore(page.filter((a) => a.id > 0).length === PAGE_SIZE);
-      setSelected((prev) => new Set([...prev].filter((id) => page.some((a) => a.id === id))));
+      setSelected((prev) => new Set([...prev].filter((id) => rows.some((a) => a.id === id))));
     } catch {
       if (requestRef.current === requestId) setFailed(true);
     } finally {
       if (requestRef.current === requestId) setLoading(false);
     }
-  }, [query]);
+  }, [query, page, pageSize]);
+
+  const changePage = (next: number) => {
+    setPage(next);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -98,20 +106,6 @@ export default function AlertsDesktop() {
     reloadTimer.current = window.setTimeout(() => void load(), 1500);
   }, [latestEvent, load]);
   useEffect(() => () => window.clearTimeout(reloadTimer.current), []);
-
-  const loadMore = async () => {
-    setLoadingMore(true);
-    try {
-      const offset = alerts.filter((a) => a.id > 0).length;
-      const page = await getAlerts({ ...query, limit: PAGE_SIZE, offset });
-      setAlerts((prev) => [...prev, ...page.filter((a) => !prev.some((p) => p.id === a.id))]);
-      setHasMore(page.length === PAGE_SIZE);
-    } catch {
-      setFailed(true);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   const dismiss = async (ids: number[]) => {
     setBusyIds((prev) => new Set([...prev, ...ids]));
@@ -286,7 +280,7 @@ export default function AlertsDesktop() {
             action={filtered ? <Button size="sm" variant="secondary" onClick={resetFilters}>Clear filters</Button> : undefined}
           />
         ) : (
-          <div className="th-alerts-scroll th-table-scroll" data-loading={(loading && alerts.length > 0) || undefined}>
+          <div ref={scrollRef} className="th-alerts-scroll th-table-scroll" data-loading={(loading && alerts.length > 0) || undefined}>
           <table className="th-alerts-table">
             <colgroup>
               <col className="w-11" />
@@ -331,7 +325,7 @@ export default function AlertsDesktop() {
                     data-selected={selected.has(alert.id)}
                     data-clickable={isDevice}
                     onClick={openDevice}
-                    style={{ "--row-tone": tone, "--row": index % PAGE_SIZE } as React.CSSProperties}
+                    style={{ "--row-tone": tone, "--row": index } as React.CSSProperties}
                   >
                     <td onClick={(e) => e.stopPropagation()}>
                       {alert.id > 0 && (
@@ -400,19 +394,18 @@ export default function AlertsDesktop() {
           </div>
         )}
 
-        {alerts.length > 0 && (
-          <div className="th-alerts-footer">
-            <span className="tabular-nums">
-              Showing 1–{formatCount(alerts.length)} of {formatCount(Math.max(totalForView, alerts.length))}
-            </span>
-            {hasMore || alerts.length < totalForView ? (
-              <Button size="sm" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
-                {loadingMore ? "Loading…" : `Load ${Math.min(PAGE_SIZE, Math.max(totalForView - alerts.length, 0)) || PAGE_SIZE} more`}
-              </Button>
-            ) : (
-              <span>All alerts shown</span>
-            )}
-          </div>
+        {(alerts.length > 0 || page > 1) && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={Math.max(totalForView, alerts.length)}
+            itemLabel="alerts"
+            loading={loading && alerts.length > 0}
+            extra={selected.size > 0 ? `${formatCount(selected.size)} selected` : undefined}
+            onPageChange={changePage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+          />
         )}
       </div>
 

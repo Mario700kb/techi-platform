@@ -14,7 +14,7 @@ import { getConnectUrl } from "../api/remoteSupport";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { Badge, Button, ConnectButton, EmptyState, Select, SelectField } from "./ui";
+import { Badge, Button, ConnectButton, EmptyState, Select, SelectField, TablePagination } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
 import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
@@ -1600,67 +1600,17 @@ const DevicesTable = memo(function DevicesTable({
           </div>{/* end hidden md:block */}
 
           {/* Footer — hidden on mobile (Load More replaces pagination) */}
-          <div
-            className="hidden md:flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
-            style={{
-              borderTop: "1px solid var(--th-border-subtle)",
-              background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2%, transparent))",
-            }}
-          >
-            {/* Left: count + page size + loading */}
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-                {total > 0
-                  ? `Showing ${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total} devices`
-                  : `${displayDevices.length} devices`}
-                {selectedIds.size > 0 && (
-                  <span className="ml-2 font-semibold" style={{ color: "var(--th-accent)" }}>
-                    · {selectedIds.size} selected
-                  </span>
-                )}
-              </span>
-              {total > 0 && (
-                <SelectField
-                  value={limit}
-                  onChange={(e) => onLimitChange?.(Number(e.target.value))}
-                  id="rows-per-page"
-                  name="rows-per-page"
-                  aria-label="Rows per page"
-                  className="rounded border px-2 py-0.5 text-[11px] font-medium focus:outline-none"
-                  style={{
-                    borderColor: "var(--th-border-subtle)",
-                    background: "var(--th-bg-input)",
-                    color: "var(--th-text-secondary)",
-                  }}
-                >
-                  <option value={10}>10 / page</option>
-                  <option value={20}>20 / page</option>
-                  <option value={50}>50 / page</option>
-                </SelectField>
-              )}
-              {tableLoading && <Loader2 className="h-3 w-3 animate-spin text-orange-400/70" />}
-            </div>
-
-            {/* Right: pagination or Fleet active */}
-            {total > limit ? (
-              <PaginationControls
-                page={page}
-                total={total}
-                limit={limit}
-                onPageChange={onPageChange}
-              />
-            ) : (
-              <span
-                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider"
-                style={{ color: "var(--th-text-muted)", opacity: 0.6 }}
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-                  style={{ boxShadow: "0 0 4px color-mix(in srgb, var(--th-status-online) 50%, transparent)" }}
-                />
-                Fleet active
-              </span>
-            )}
+          <div className="hidden md:block">
+            <TablePagination
+              page={page}
+              pageSize={limit}
+              total={total}
+              itemLabel="devices"
+              loading={tableLoading}
+              extra={selectedIds.size > 0 ? `${selectedIds.size} selected` : undefined}
+              onPageChange={(next) => onPageChange?.(next)}
+              onPageSizeChange={onLimitChange}
+            />
           </div>
         </div>
       )}
@@ -1879,103 +1829,6 @@ const DevicesTable = memo(function DevicesTable({
 export default DevicesTable;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function PaginationControls({
-  page,
-  total,
-  limit,
-  onPageChange,
-}: {
-  page: number;
-  total: number;
-  limit: number;
-  onPageChange?: (page: number) => void;
-}) {
-  const totalPages = Math.ceil(total / limit);
-
-  const getPageNums = (): (number | null)[] => {
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
-    const nums: (number | null)[] = [1];
-    if (page > 3) nums.push(null);
-    const lo = Math.max(2, page - 1);
-    const hi = Math.min(totalPages - 1, page + 1);
-    for (let p = lo; p <= hi; p++) nums.push(p);
-    if (page < totalPages - 2) nums.push(null);
-    nums.push(totalPages);
-    return nums;
-  };
-
-  const btnBase: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: "1.5rem",
-    height: "1.5rem",
-    borderRadius: "0.25rem",
-    fontSize: "11px",
-    fontWeight: 600,
-    lineHeight: 1,
-    padding: "0 4px",
-    transition: "background 0.15s",
-    cursor: "pointer",
-  };
-
-  return (
-    <div className="flex items-center gap-0.5">
-      <button
-        type="button"
-        disabled={page <= 1}
-        onClick={() => onPageChange?.(page - 1)}
-        style={{
-          ...btnBase,
-          background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-          border: "1px solid var(--th-border-subtle)",
-          color: page <= 1 ? "var(--th-text-muted)" : "var(--th-text-secondary)",
-          opacity: page <= 1 ? 0.4 : 1,
-        }}
-      >
-        ‹
-      </button>
-
-      {getPageNums().map((p, i) =>
-        p === null ? (
-          <span key={`e-${i}`} className="px-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-            …
-          </span>
-        ) : (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onPageChange?.(p)}
-            style={{
-              ...btnBase,
-              background: p === page ? "color-mix(in srgb, var(--th-accent) 18%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-              border: `1px solid ${p === page ? "color-mix(in srgb, var(--th-accent) 40%, transparent)" : "var(--th-border-subtle)"}`,
-              color: p === page ? "var(--th-accent)" : "var(--th-text-secondary)",
-            }}
-          >
-            {p}
-          </button>
-        )
-      )}
-
-      <button
-        type="button"
-        disabled={page >= totalPages}
-        onClick={() => onPageChange?.(page + 1)}
-        style={{
-          ...btnBase,
-          background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-          border: "1px solid var(--th-border-subtle)",
-          color: page >= totalPages ? "var(--th-text-muted)" : "var(--th-text-secondary)",
-          opacity: page >= totalPages ? 0.4 : 1,
-        }}
-      >
-        ›
-      </button>
-    </div>
-  );
-}
 
 function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
   const isRunning = entry.status === "running";

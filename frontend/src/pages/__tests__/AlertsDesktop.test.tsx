@@ -80,4 +80,17 @@ describe("AlertsDesktop", () => {
     await waitFor(() => expect(within(screen.getByRole("table")).queryByText("K.Xhaferri-PC")).not.toBeInTheDocument());
     expect(reloadAlerts).toHaveBeenCalled();
   });
+
+  it("pages through on the server with the shared table footer", async () => {
+    const getAlerts = vi.spyOn(alertsApi, "getAlerts").mockResolvedValue([offline, cpu]);
+    renderPage();
+
+    expect(await screen.findByText("Showing 1–20 of 1,240 alerts")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() =>
+      expect(getAlerts).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, offset: 20 })),
+    );
+    expect(await screen.findByText("Showing 21–40 of 1,240 alerts")).toBeInTheDocument();
+  });
 });
