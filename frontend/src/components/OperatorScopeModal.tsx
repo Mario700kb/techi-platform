@@ -23,15 +23,10 @@ function SectionSearch({
   placeholder: string;
 }) {
   return (
-    <div className="relative mb-2">
-      <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="th-input w-full rounded-md border py-1.5 pl-7 pr-3 text-xs font-medium outline-none focus:border-techi-orange/40"
-      />
-    </div>
+    <label className="th-search th-search-sm mb-2">
+      <Search className="h-3.5 w-3.5 flex-none" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    </label>
   );
 }
 

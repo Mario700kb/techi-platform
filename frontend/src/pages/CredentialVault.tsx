@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   KeyRound, Plus, RefreshCcw, Trash2, Eye, Link2, PlayCircle, ShieldCheck, Globe, Building2,
   Server, Radio, Mail, Key, MonitorCog, Router, UserCog, FileKey, Terminal as TerminalIcon,
-  Webhook, AlertTriangle, PauseCircle, PlusCircle, Users,
+  Webhook, AlertTriangle, PauseCircle, PlusCircle, Search, Users,
 } from "lucide-react";
 
 import {
@@ -566,7 +566,10 @@ export default function CredentialVault() {
 
       {/* Filters */}
       <div className="premium-card grid gap-2 p-3 sm:grid-cols-2 md:grid-cols-5">
-        <input className={INPUT_CLS} placeholder="Search name/username/purpose" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <label className="th-search">
+          <Search className="h-4 w-4 flex-none" />
+          <input placeholder="Search name/username/purpose" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
         <SelectField className={INPUT_CLS} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
           <option value="">All types</option>
           {types.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}

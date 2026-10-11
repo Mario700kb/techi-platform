@@ -104,17 +104,15 @@ export function RemoteSupportMobileList({
 
   return (
     <div className="flex flex-col gap-[10px]">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--th-text-muted)" }} />
+      <label className="th-search" style={{ height: 40 }}>
+        <Search className="h-4 w-4 flex-none" />
         <input
           type="search"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search devices…"
-          className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-[13px] font-medium outline-none"
-          style={{ background: "var(--th-chip-bg)", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
         />
-      </div>
+      </label>
 
       {loading ? (
         <div className="flex flex-col gap-2">

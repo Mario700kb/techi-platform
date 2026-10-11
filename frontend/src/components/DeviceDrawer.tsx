@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
-import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Search, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
 import {
   getConnectUrl,
   getRemoteSupportDevice,
@@ -1673,13 +1673,15 @@ export default function DeviceDrawer({
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <>
-                  <input
-                    type="text"
-                    placeholder="Search by name or PID…"
-                    value={processSearch}
-                    onChange={(e) => setProcessSearch(e.target.value)}
-                    className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
-                  />
+                  <label className="th-search th-search-sm mb-3">
+                    <Search className="h-3.5 w-3.5 flex-none" />
+                    <input
+                      type="text"
+                      placeholder="Search by name or PID…"
+                      value={processSearch}
+                      onChange={(e) => setProcessSearch(e.target.value)}
+                    />
+                  </label>
                   <div className="max-h-60 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
@@ -1727,13 +1729,15 @@ export default function DeviceDrawer({
                 className="rounded-lg p-4"
                 style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
               >
-                <input
-                  type="text"
-                  placeholder="Search by name or status…"
-                  value={serviceSearch}
-                  onChange={(e) => setServiceSearch(e.target.value)}
-                  className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
-                />
+                <label className="th-search th-search-sm mb-3">
+                  <Search className="h-3.5 w-3.5 flex-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or status…"
+                    value={serviceSearch}
+                    onChange={(e) => setServiceSearch(e.target.value)}
+                  />
+                </label>
                 <div className="max-h-60 overflow-y-auto">
                   <table className="w-full text-[11px]">
                     <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
@@ -1795,13 +1799,15 @@ export default function DeviceDrawer({
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <>
-                  <input
-                    type="text"
-                    placeholder="Search by name, version, or publisher…"
-                    value={softwareSearch}
-                    onChange={(e) => setSoftwareSearch(e.target.value)}
-                    className="mb-3 w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder-slate-600 transition focus:border-techi-orange/60"
-                  />
+                  <label className="th-search th-search-sm mb-3">
+                    <Search className="h-3.5 w-3.5 flex-none" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, version, or publisher…"
+                      value={softwareSearch}
+                      onChange={(e) => setSoftwareSearch(e.target.value)}
+                    />
+                  </label>
                   <div className="max-h-72 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>

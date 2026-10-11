@@ -163,7 +163,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             <span>Clients</span>
             <span className="tabular-nums">{visibleClients.length}</span>
           </div>
-          <label className="th-search th-explorer-search">
+          <label className="th-search th-search-sm">
             <Search className="h-3.5 w-3.5 flex-none" />
             <input value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} placeholder="Filter clients" aria-label="Filter clients" />
             {clientQuery && (

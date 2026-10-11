@@ -390,7 +390,11 @@ Aliaset `--danger` / `--warning` / `--success` / `--info` tani janë
 | `--th-text-muted` | `#A0A0AA` | `#6B6B75` |
 | `--th-text-faint` (vetëm dekorativ) | `#606068` | `#8A8A94` |
 | `--th-border` | `rgba(255,255,255,.06)` | `rgba(19,19,22,.13)` |
-| `--th-border-strong` | `rgba(255,255,255,.10)` | `rgba(19,19,22,.24)` |
+| `--th-border-strong` | `rgba(255,255,255,.18)` | `rgba(19,19,22,.24)` |
+| `--th-bg-input` | `#202025` | `#FFFFFF` |
+| `--th-border-input` | `rgba(255,255,255,.12)` | `rgba(19,19,22,.18)` |
+
+Input-et dhe dropdown-et kanë sfond e kufi më të dukshëm se karta (`--th-bg-input` ≠ `--th-bg-card`). Hover-i përdor `--th-border-strong`, që duhet të mbetet më i fortë se `--th-border-input`.
 
 Rregull: komponentët mobile përdorin VETËM vars. Vars ekzistuese `--th-*`
 (bg/text/border) ruhen si emra — vlerat ndjekin Friday-n.

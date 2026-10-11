@@ -146,7 +146,7 @@ export default function Select<T extends string>({ value, options, onChange, id,
           {prefix && <span style={{ color: "var(--th-text-muted)" }}>{prefix} </span>}
           {selected ? selected.label : <span style={{ color: "var(--th-text-faint)" }}>{placeholder ?? "Select…"}</span>}
         </span>
-        <ChevronDown className={clsx("h-4 w-4 flex-none transition-transform", open && "rotate-180")} style={{ color: "var(--th-text-faint)" }} />
+        <ChevronDown className={clsx("h-4 w-4 flex-none transition-transform", open && "rotate-180")} style={{ color: "var(--th-text-muted)" }} />
       </button>
       {open && createPortal(
         <ul

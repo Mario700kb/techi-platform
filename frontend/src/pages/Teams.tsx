@@ -301,10 +301,10 @@ export default function Teams() {
               <UsersRound className="h-4 w-4 text-techi-orange" />
               <h2 className="text-sm font-semibold text-white">{teams.length} team{teams.length !== 1 ? "s" : ""}</h2>
             </div>
-            <div className="relative max-w-xs">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search teams…" className="th-input w-full rounded-lg border py-2 pl-8 pr-3 text-sm outline-none focus:border-techi-orange/60" />
-            </div>
+            <label className="th-search max-w-xs">
+              <Search className="h-4 w-4 flex-none" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search teams…" />
+            </label>
           </div>
         </div>
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Check, CheckSquare, ChevronDown, ChevronRight,
-  Cpu, Info, RefreshCcw, Save, Shield, Square, Users, UsersRound, X,
+  Cpu, Info, RefreshCcw, Save, Search, Shield, Square, Users, UsersRound, X,
 } from "lucide-react";
 import {
   TeamDetail,
@@ -319,7 +319,10 @@ function MembersTab({
           </button>
         )}
       </div>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search operators…" className="th-input w-full rounded-lg border py-2 px-3 text-sm outline-none focus:border-techi-orange/60" />
+      <label className="th-search">
+        <Search className="h-4 w-4 flex-none" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search operators…" />
+      </label>
       <div className="premium-card-soft overflow-hidden rounded-lg">
         {filtered.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-slate-500">No operators found.</p>
@@ -597,12 +600,14 @@ function AccessTab({
 
       {/* Search + Expand controls */}
       <div className="flex items-center gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients, groups, or devices…"
-          className="th-input flex-1 rounded-lg border py-2 px-3 text-sm outline-none focus:border-techi-orange/60"
-        />
+        <label className="th-search flex-1">
+          <Search className="h-4 w-4 flex-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search clients, groups, or devices…"
+          />
+        </label>
         <button
           type="button"
           onClick={expandAll}

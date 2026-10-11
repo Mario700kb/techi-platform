@@ -77,9 +77,9 @@ export default function EntitySearchSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="th-input flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="th-select w-full text-left"
       >
-        <Search className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+        <Search className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
         <span className={`flex-1 truncate ${displayLabel ? "" : "opacity-60"}`}>
           {displayLabel || placeholder}
         </span>
@@ -90,7 +90,7 @@ export default function EntitySearchSelect({
             onClick={(e) => { e.stopPropagation(); onChange(""); setQuery(""); }}
           />
         )}
-        <ChevronDown className={`h-3.5 w-3.5 flex-none transition-transform ${open ? "rotate-180" : ""}`} style={{ color: "var(--th-text-faint)" }} />
+        <ChevronDown className={`h-4 w-4 flex-none transition-transform ${open ? "rotate-180" : ""}`} style={{ color: "var(--th-text-muted)" }} />
       </button>
 
       {open && !disabled && (

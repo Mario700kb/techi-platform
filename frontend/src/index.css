@@ -55,7 +55,7 @@
   --th-bg-card-hover:        #22222A;
   --th-bg-card-soft:         rgba(26, 26, 30, 0.72);
   --th-bg-elevated:          #1A1A1E;
-  --th-bg-input:             #1A1A1E;
+  --th-bg-input:             #202025;
   --th-bg-table-head:        #131316;
   --th-bg-table-row:         rgba(26, 26, 30, 0.55);
   --th-bg-drawer:            linear-gradient(180deg, #1A1A1E 0%, #131316 100%);
@@ -76,8 +76,8 @@
   --th-border:                rgba(255, 255, 255, 0.06);
   --th-border-subtle:         rgba(255, 255, 255, 0.06);
   --th-border-card:           rgba(255, 255, 255, 0.06);
-  --th-border-input:          rgba(255, 255, 255, 0.06);
-  --th-border-strong:         rgba(255, 255, 255, 0.10);
+  --th-border-input:          rgba(255, 255, 255, 0.12);
+  --th-border-strong:         rgba(255, 255, 255, 0.18);
   --th-border-drawer:         rgba(255, 255, 255, 0.06);
   --th-border-drawer-section: rgba(255, 255, 255, 0.06);
   --th-border-hover:          rgba(232, 90, 60, 0.22);
@@ -1429,12 +1429,19 @@ textarea:focus-visible,
   color: var(--th-text-muted);
   transition: border-color 150ms ease;
 }
+.th-search:hover { border-color: var(--th-border-strong); }
 .th-search:focus-within { border-color: var(--th-accent-border); }
+/* The page-wide form rules give inputs 36px, a border and a fill; inside a
+   search the label draws the field, the input stays bare. */
 .th-search input {
   flex: 1;
   min-width: 0;
-  background: transparent;
-  border: 0;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
   outline: none;
   font-size: 13px;
   color: var(--th-text-primary);
@@ -1638,7 +1645,6 @@ tr:hover > .th-sticky-end { background: color-mix(in srgb, var(--th-text-primary
 
 /* ── Global search (command palette) ── */
 .th-search-trigger { cursor: text; text-align: left; font-size: 13px; color: var(--th-text-faint); }
-.th-search-trigger:hover { border-color: var(--th-border-strong); }
 
 .th-palette-scrim {
   position: fixed;
@@ -2143,17 +2149,7 @@ a.th-list-row:hover { background: var(--th-sidebar-nav-hover); }
   background: var(--th-bg-card);
   border-top: 1px solid var(--th-border-subtle);
 }
-.th-search.th-explorer-search { height: 32px; padding: 0 8px; }
-/* The page-wide form rules give inputs 36px, a border and a fill; inside
-   this compact search the label draws the field, the input stays bare. */
-.th-explorer-search input {
-  height: 100% !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
+.th-search.th-search-sm { height: 32px; padding: 0 8px; }
 .th-explorer-clear {
   display: inline-flex;
   flex: none;

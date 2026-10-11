@@ -568,19 +568,14 @@ export default function RemoteSupport() {
           })}
 
           {/* Search */}
-          <div className="relative ml-auto flex items-center">
-            <Search
-              className="pointer-events-none absolute left-2.5 h-3.5 w-3.5"
-              style={{ color: "var(--th-text-muted)" }}
-            />
+          <label className="th-search th-search-sm ml-auto" style={{ width: 260 }}>
+            <Search className="h-3.5 w-3.5 flex-none" />
             <input
-              className="th-input rounded-lg py-1.5 pl-8 pr-3 text-xs"
               placeholder="Search hostname, user, domain, ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 260 }}
             />
-          </div>
+          </label>
         </div>
       </div>
 

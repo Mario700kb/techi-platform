@@ -292,16 +292,14 @@ export default function Deployment() {
             <p className="mt-1 text-xs font-medium" style={{ color: "var(--th-text-muted)" }}>Persistent deployment workflow for technicians and per-company GPO tokens.</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative flex items-center">
-              <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
+            <label className="th-search th-search-sm" style={{ width: 220 }}>
+              <Search className="h-3.5 w-3.5 flex-none" />
               <input
-                className="th-input rounded-lg py-1.5 pl-8 pr-3 text-xs"
                 placeholder="Search tokens by name..."
                 value={tokenSearch}
                 onChange={(e) => setTokenSearch(e.target.value)}
-                style={{ width: 220 }}
               />
-            </div>
+            </label>
             <Button variant="secondary" type="button" size="sm" onClick={() => void loadTokens()} disabled={tableLoading}>
               {tableLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />}
               Refresh

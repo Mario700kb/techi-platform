@@ -215,8 +215,6 @@ export function hasStructuralConnectMethod(device: Device): boolean {
 
 const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[11px] !leading-3";
 const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
-const FILTER_INPUT_CLS =
-  "th-input rounded-lg border px-3 text-[13px] focus:border-techi-orange/50 focus:outline-none";
 const ACTION_MENU_WIDTH = 240;
 const ACTION_MENU_MAX_HEIGHT = 340;
 const ACTION_MENU_GAP = 6;
@@ -941,17 +939,16 @@ const DevicesTable = memo(function DevicesTable({
 
         {/* Search + refinements */}
         <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-          <div className="relative min-w-[240px] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--th-text-faint)" }} />
+          <label className="th-search min-w-[240px] flex-1">
+            <Search className="h-4 w-4 flex-none" />
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Search name, hostname, user, domain or IP…"
               aria-label="Search devices"
-              className={`${FILTER_INPUT_CLS} w-full pl-9 pr-3`}
             />
-          </div>
+          </label>
           <Select
             id="filter-lifecycle-state"
             aria-label="Filter by lifecycle state"
@@ -1040,25 +1037,16 @@ const DevicesTable = memo(function DevicesTable({
           style={{ background: "var(--th-bg-card)", borderBottom: "1px solid var(--th-border-subtle)" }}
         >
           <div className="flex items-center gap-2 p-3">
-            <div className="relative flex-1">
-              <Search
-                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-                style={{ color: "var(--th-text-muted)" }}
-              />
+            <label className="th-search flex-1" style={{ height: 40 }}>
+              <Search className="h-4 w-4 flex-none" />
               <input
                 type="search"
                 value={searchQuery}
                 onChange={(e) => onSearch(e.target.value)}
                 placeholder="Search devices..."
                 enterKeyHint="search"
-                className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-[13px] font-medium focus:outline-none"
-                style={{
-                  background: "var(--th-chip-bg)",
-                  borderColor: "var(--th-border-subtle)",
-                  color: "var(--th-text-primary)",
-                }}
               />
-            </div>
+            </label>
             <button
               type="button"
               onClick={() => setFilterSheetOpen(true)}

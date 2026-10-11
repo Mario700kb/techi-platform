@@ -873,7 +873,7 @@ export default function Devices() {
                   aria-label="Days offline before hiding"
                   value={hideOfflineDays}
                   onChange={(event) => setHideOfflineDays(Math.max(1, Number(event.target.value) || 1))}
-                  className="th-input w-16 px-2 py-1 text-[13px]"
+                  className="th-input !h-8 !min-h-8 w-16 rounded-md border px-2 text-[13px] tabular-nums"
                 />
                 days
               </label>
