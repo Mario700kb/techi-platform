@@ -29,12 +29,12 @@ describe("Settings — Connect Defaults", () => {
     vi.restoreAllMocks();
   });
 
-  it("is absent when the operator has no saved preferences", async () => {
+  it("shows an empty state when the operator has no saved preferences", async () => {
     mockShell();
     vi.spyOn(connectApi, "listConnectPreferences").mockResolvedValue([]);
     render(<Settings />);
     await waitFor(() => expect(screen.getByText("Preferences")).toBeInTheDocument());
-    expect(screen.queryByText("Connect Defaults")).not.toBeInTheDocument();
+    expect(screen.getByText("No saved connect methods")).toBeInTheDocument();
   });
 
   it("lists saved preferences with platform, device (if any), and method", async () => {
@@ -45,8 +45,7 @@ describe("Settings — Connect Defaults", () => {
     ]);
     render(<Settings />);
 
-    await waitFor(() => expect(screen.getByText("Connect Defaults")).toBeInTheDocument());
-    expect(screen.getByText("mikrotik")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("mikrotik")).toBeInTheDocument());
     expect(screen.getByText("ssh")).toBeInTheDocument();
     expect(screen.getByText("linux")).toBeInTheDocument();
     expect(screen.getByText("web_terminal")).toBeInTheDocument();
@@ -61,10 +60,10 @@ describe("Settings — Connect Defaults", () => {
     const resetSpy = vi.spyOn(connectApi, "resetConnectPreference").mockResolvedValue(undefined);
     render(<Settings />);
 
-    await waitFor(() => expect(screen.getByText("Connect Defaults")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("mikrotik")).toBeInTheDocument());
     fireEvent.click(screen.getByTitle("Reset to the platform default"));
 
     await waitFor(() => expect(resetSpy).toHaveBeenCalledWith("mikrotik", undefined));
-    await waitFor(() => expect(screen.queryByText("Connect Defaults")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("No saved connect methods")).toBeInTheDocument());
   });
 });
