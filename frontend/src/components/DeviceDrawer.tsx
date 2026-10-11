@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
 import {
   getConnectUrl,
@@ -224,6 +225,7 @@ export default function DeviceDrawer({
   const inventoryLoadedFor = useRef<number | null>(null);
   const platformFeatures = usePlatformFeatures();
   const [activeTab, setActiveTab] = useState<DrawerTab>("overview");
+  const drawerTabsRef = useTabIndicator<HTMLDivElement>(activeTab);
   const [notes, setNotes] = useState<DeviceNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -587,7 +589,7 @@ export default function DeviceDrawer({
 
       {/* Paneli */}
       <div
-        className={`th-drawer fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col shadow-2xl transition-transform duration-300 ease-out ${
+        className={`th-drawer fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col shadow-2xl ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         style={{
@@ -706,7 +708,7 @@ export default function DeviceDrawer({
             <ConnectButton className="ml-auto" disabled={!canConnectRs} onClick={() => void connectRemoteSupport()} title={connectRsTitle} />
           </div>
 
-          <div role="tablist" aria-label="Device sections" className="th-tabs mt-3 !flex-nowrap overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div ref={drawerTabsRef} role="tablist" aria-label="Device sections" className="th-tabs mt-3 !flex-nowrap overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {visibleDrawerTabs.map((tab) => (
               <button
                 key={tab.id}

@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Archive, AlertTriangle, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
@@ -841,12 +842,14 @@ const DevicesTable = memo(function DevicesTable({
     setPendingAction(null);
   };
 
+  const statusTabsRef = useTabIndicator<HTMLDivElement>(quickFilter);
+
   return (
     <div className="space-y-2.5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-2.5 xl:space-y-0">
       {/* ── Bulk Action Bar ── */}
       {selectedIds.size > 0 && canOperate && (
       <div
-        className="flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
+        className="th-bulk-bar flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
         style={{ background: "color-mix(in srgb, var(--th-accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)" }}
       >
         <span className="text-sm font-semibold" style={{ color: "var(--th-accent)" }}>
@@ -913,7 +916,7 @@ const DevicesTable = memo(function DevicesTable({
       >
         {/* Status tabs — fleet-wide counts for the current explorer scope */}
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 pt-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-          <div role="tablist" aria-label="Device status" className="th-tabs">
+          <div ref={statusTabsRef} role="tablist" aria-label="Device status" className="th-tabs">
             {STATUS_TABS.map(({ id, label, tone }) => {
               const count = statusCounts ? statusCounts[id] : pillCounts[id];
               return (
@@ -1274,6 +1277,7 @@ const DevicesTable = memo(function DevicesTable({
             ref={scrollRef}
             className="th-table-scroll overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto"
             data-overflow={hasOverflow}
+            data-loading={tableLoading || undefined}
             onScroll={(event) => {
               scrollPositionRef.current = {
                 left: event.currentTarget.scrollLeft,
@@ -1329,7 +1333,7 @@ const DevicesTable = memo(function DevicesTable({
 
               {/* ── Rows ── */}
               <tbody>
-                {displayDevices.map((device) => {
+                {displayDevices.map((device, rowIndex) => {
                   const health = healthMap[device.id];
                   const ls = getLastSeenDisplay(device.last_seen);
                   const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
@@ -1351,6 +1355,7 @@ const DevicesTable = memo(function DevicesTable({
                     <tr
                       key={device.id}
                       className="th-device-row group cursor-pointer"
+                      style={{ "--row": Math.min(rowIndex, 12) } as React.CSSProperties}
                       data-selected={selectedIds.has(device.id)}
                       onClick={() => onDeviceSelect?.(device)}
                     >

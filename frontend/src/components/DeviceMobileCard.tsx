@@ -219,7 +219,7 @@ export function DeviceMobileCard({
   return (
     <div
       onClick={onSelect}
-      className="cursor-pointer px-4 py-[13px] transition-colors active:bg-white/[0.04]"
+      className="th-device-card cursor-pointer px-4 py-[13px] transition-colors active:bg-white/[0.04]"
       style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
     >
       <div className="flex items-start gap-[11px]">

@@ -2505,6 +2505,42 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 .th-mix-bar > div { transition: width 700ms var(--th-ease-out); }
 .th-ring-value { transition: stroke-dasharray 900ms var(--th-ease-out), stroke 300ms var(--th-ease); }
 
+/* Tabs: one underline that glides to the selected tab (useTabIndicator).
+   Until it is placed, each tab keeps its own border, so nothing is lost
+   without JS or before the first measure. */
+.th-tabs[data-indicator] { position: relative; }
+.th-tabs[data-indicator] .th-tab[aria-selected="true"] { border-bottom-color: transparent; }
+.th-tabs[data-indicator]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ind-w, 0);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--th-accent);
+  transform: translate(var(--ind-x, 0), var(--ind-y, 0));
+  pointer-events: none;
+}
+.th-tabs[data-indicator="ready"]::after {
+  transition: transform 280ms var(--th-ease-out), width 280ms var(--th-ease-out);
+}
+
+/* Devices: rows that arrive (filter, tab, page, a new device) rise in a short
+   stagger; rows already on screen are keyed and stay still on live updates.
+   While a refresh is in flight the table dims instead of jumping. */
+.th-device-row > td { animation: th-rise 280ms var(--th-ease-out) backwards; animation-delay: calc(var(--row, 0) * 22ms); }
+.th-table-scroll tbody { transition: opacity 200ms var(--th-ease); }
+.th-table-scroll[data-loading="true"] tbody { opacity: 0.55; }
+.th-device-card { animation: th-rise 280ms var(--th-ease-out) backwards; }
+.th-device-card:nth-child(2) { animation-delay: 30ms; }
+.th-device-card:nth-child(3) { animation-delay: 60ms; }
+.th-device-card:nth-child(4) { animation-delay: 90ms; }
+.th-device-card:nth-child(n + 5) { animation-delay: 120ms; }
+.th-bulk-bar { animation: th-toast-in 220ms var(--th-ease-out); }
+/* Drawer: a decelerating slide; the backdrop already fades. */
+.th-drawer { transition: transform 360ms var(--th-ease-out); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important;
