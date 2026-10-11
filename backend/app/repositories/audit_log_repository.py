@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
@@ -80,3 +81,22 @@ class AuditLogRepository:
         if to_dt:
             q = q.filter(AuditLog.created_at <= to_dt)
         return q.count()
+
+    def facets(self) -> dict:
+        """Every action, entity type and operator present, with how often, so
+        the filters offer what the log really holds instead of a fixed list."""
+        def grouped(column):
+            rows = (
+                self.db.query(column, func.count(AuditLog.id))
+                .filter(column.isnot(None))
+                .group_by(column)
+                .order_by(func.count(AuditLog.id).desc(), column)
+                .all()
+            )
+            return [{"value": value, "count": count} for value, count in rows]
+
+        return {
+            "actions": grouped(AuditLog.action),
+            "entity_types": grouped(AuditLog.entity_type),
+            "operators": grouped(AuditLog.operator_username),
+        }

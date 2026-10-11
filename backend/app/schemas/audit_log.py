@@ -20,3 +20,14 @@ class AuditLogOut(BaseModel):
 class AuditLogPage(BaseModel):
     total: int
     items: List[AuditLogOut]
+
+
+class AuditFacet(BaseModel):
+    value: str
+    count: int
+
+
+class AuditFacets(BaseModel):
+    actions: List[AuditFacet]
+    entity_types: List[AuditFacet]
+    operators: List[AuditFacet]

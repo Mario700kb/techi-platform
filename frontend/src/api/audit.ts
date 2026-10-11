@@ -39,32 +39,78 @@ export async function getAuditLogs(filters: AuditFilters = {}): Promise<AuditLog
   return fetchJson<AuditLogPage>(`/api/v1/audit${qs ? `?${qs}` : ""}`);
 }
 
+export interface AuditFacet {
+  value: string;
+  count: number;
+}
+
+export interface AuditFacets {
+  actions: AuditFacet[];
+  entity_types: AuditFacet[];
+  operators: AuditFacet[];
+}
+
+/** What the log actually holds, with counts — the source for the filters. */
+export async function getAuditFacets(): Promise<AuditFacets> {
+  return fetchJson<AuditFacets>("/api/v1/audit/facets");
+}
+
 export const ACTION_LABELS: Record<string, string> = {
+  remote_connect: "Remote connect",
+  terminal_session_opened: "Terminal opened",
+  terminal_session_closed: "Terminal closed",
+  terminal_session_denied: "Terminal denied",
+  terminal_session_expired: "Terminal expired",
+  ssh_session_started: "SSH session started",
+  ssh_session_ended: "SSH session ended",
+  ssh_connection_failed: "SSH connection failed",
+  ssh_credential_resolved: "SSH credential used",
+  enrollment_token_deployment_viewed: "Token commands viewed",
+  enrollment_token_updated: "Token updated",
+  enrollment_token_deleted: "Token deleted",
+  enrollment_token_regenerated: "Token regenerated",
+  bootstrap_script_served: "Bootstrap served",
+  agent_package_activated: "Package activated",
+  agent_package_deactivated: "Package deactivated",
+  agent_package_deleted: "Package deleted",
+  report_generated: "Report generated",
+  report_downloaded: "Report downloaded",
+  report_run_deleted: "Report deleted",
+  team_updated: "Team updated",
+  team_access_updated: "Team access updated",
+  team_member_added: "Team member added",
+  device_deleted: "Device deleted",
+  nightly_cleanup: "Nightly cleanup",
   login: "Login",
-  operator_created: "Operator Created",
-  operator_updated: "Operator Updated",
-  operator_deleted: "Operator Deleted",
-  operator_password_reset: "Password Reset",
-  device_archived: "Device Archived",
-  device_restored: "Device Restored",
-  maintenance_entered: "Maintenance Enter",
-  maintenance_cleared: "Maintenance Clear",
-  note_created: "Note Created",
-  note_updated: "Note Updated",
-  note_deleted: "Note Deleted",
-  action_queued: "Action Queued",
-  action_cancelled: "Action Cancelled",
-  action_retried: "Action Retried",
-  scope_entry_added: "Scope Added",
-  scope_entry_removed: "Scope Removed",
-  scope_replaced: "Scope Replaced",
+  operator_created: "Operator created",
+  operator_updated: "Operator updated",
+  operator_deleted: "Operator deleted",
+  operator_password_reset: "Password reset",
+  device_archived: "Device archived",
+  device_restored: "Device restored",
+  maintenance_entered: "Maintenance started",
+  maintenance_cleared: "Maintenance cleared",
+  note_created: "Note created",
+  note_updated: "Note updated",
+  note_deleted: "Note deleted",
+  action_queued: "Action queued",
+  action_cancelled: "Action cancelled",
+  action_retried: "Action retried",
+  scope_entry_added: "Scope added",
+  scope_entry_removed: "Scope removed",
+  scope_replaced: "Scope replaced",
 };
 
 export const ENTITY_TYPE_LABELS: Record<string, string> = {
   operator: "Operator",
   device: "Device",
-  remote_action: "Remote Action",
+  remote_action: "Remote action",
+  terminal_session: "Terminal session",
+  enrollment_token: "Enrollment token",
+  vault_credential: "Vault credential",
+  agent_package: "Agent package",
+  team: "Team",
+  report_run: "Report",
+  report_schedule: "Report schedule",
+  bootstrap: "Bootstrap",
 };
-
-export const ALL_ACTIONS = Object.keys(ACTION_LABELS);
-export const ALL_ENTITY_TYPES = Object.keys(ENTITY_TYPE_LABELS);

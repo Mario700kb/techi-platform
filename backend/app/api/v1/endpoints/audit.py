@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_team_permission
 from app.db.session import get_db
 from app.repositories.audit_log_repository import AuditLogRepository
-from app.schemas.audit_log import AuditLogOut, AuditLogPage
+from app.schemas.audit_log import AuditFacets, AuditLogOut, AuditLogPage
 from app.services.permission_service import AUDIT_LOG
 
 router = APIRouter()
@@ -36,3 +36,11 @@ def list_audit_logs(
     total = repo.count(**filters)
     items = repo.get_multi(**filters, limit=limit, offset=offset)
     return AuditLogPage(total=total, items=[AuditLogOut.model_validate(e) for e in items])
+
+
+@router.get("/facets", response_model=AuditFacets)
+def audit_log_facets(
+    db: Session = Depends(get_db),
+    _: None = Depends(require_team_permission(AUDIT_LOG)),
+):
+    return AuditLogRepository(db).facets()
