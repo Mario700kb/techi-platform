@@ -16,11 +16,11 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-10-11-VAULT-SETTINGS-UI` |
-| Production baseline SHA | `9f29129` (see §3) |
+| Documentation revision | `DOC-2026-10-12-MOBILE-UI` |
+| Production baseline SHA | `0c064af` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`VAULT-SETTINGS-UI-2026-10-11`, `AGENT-CONFIG-UI-2026-10-11`, `MODAL-TEAMDETAIL-2026-10-11`, `TEAMS-UI-2026-10-11`, `OPERATORS-UI-2026-10-11`, `CLIENTS-UI-2026-10-11`, `AUDIT-UI-2026-10-11`, `REPORTS-UI-2026-10-11`, `ONBOARDING-TABS-2026-10-11`, `ONBOARDING-2026-10-11`, `LOG-SECRETS-2026-10-11`, `UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`MOBILE-UI-2026-10-12`, `VAULT-SETTINGS-UI-2026-10-11`, `AGENT-CONFIG-UI-2026-10-11`, `MODAL-TEAMDETAIL-2026-10-11`, `TEAMS-UI-2026-10-11`, `OPERATORS-UI-2026-10-11`, `CLIENTS-UI-2026-10-11`, `AUDIT-UI-2026-10-11`, `REPORTS-UI-2026-10-11`, `ONBOARDING-TABS-2026-10-11`, `ONBOARDING-2026-10-11`, `LOG-SECRETS-2026-10-11`, `UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
 | Release classification | **TIRANA TIME SYSTEM-WIDE + TOP BAR CLOCK DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `9f29129`: backend and frontend, deployed 2026-10-11 23:45. `GET /devices/directory` feeds the Device access tree, and Credential Vault and Settings are redesigned. Pre-deploy dump `/opt/backups/techi/pre-vault-settings-2026-10-11_23-44.sql.gz`. Previous runtime: `98f6589` |
+| Production SHA | `0c064af`: frontend deployed 2026-10-12, the mobile console redesign. Backend unchanged at `9f29129` (deployed 2026-10-11 23:45, `GET /devices/directory`). Pre-deploy dump for the last backend deploy: `/opt/backups/techi/pre-vault-settings-2026-10-11_23-44.sql.gz` |
 | Schema version | `e1f2a3b4c5d6` (was `d8e4f6a1b2c3`) — `report_schedules.hour_utc` renamed `hour_local` (Tirana hour). Pre-deploy dump: `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz` |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
 | Origin alignment | `af70d85` was pushed to origin; the server working tree already matched it (checksums of all 116 files) and was moved to it with `git fetch` + `git reset` |
@@ -54,7 +54,7 @@ The primary release identity is Git SHA, followed by a future immutable release 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
 | Backend | `1.0.0` metadata | Git SHA `9f29129`; rebuilt 2026-10-11 23:45 (`GET /devices/directory`, 905 entries in 0.13s; heartbeat ceiling 313s; capacity floor checked only on changed intervals; per-platform floors in `GET /agent-config`; rollback image `techi-platform-backend:pre-vault-settings-98f6589`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `9f29129`; rebuilt 2026-10-11 23:45 (Credential Vault and Settings redesign; audited reveal dialog; Device access from the device directory; Agent Configuration and Command Center redesign; Device access paged and filtered; one global Modal for every dialog; team detail redesign; Teams, Operators, Clients, Audit Log and Reports in the Onboarding design; boot preloader). Rollback image `techi-platform-frontend:pre-vault-settings-98f6589`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `0c064af`; rebuilt 2026-10-12 (mobile console redesign: shell, Dashboard, Devices, device details, Alerts, Remote Support, More; workspace tables as cards on phones; Credential Vault and Settings redesign; audited reveal dialog; Device access from the device directory; Agent Configuration and Command Center redesign; Device access paged and filtered; one global Modal for every dialog; team detail redesign; Teams, Operators, Clients, Audit Log and Reports in the Onboarding design; boot preloader). Rollback image `techi-platform-frontend:pre-mobile-ui-9f29129`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |

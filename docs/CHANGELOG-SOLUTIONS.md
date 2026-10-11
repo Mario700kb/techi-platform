@@ -5,6 +5,42 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] MOBILE-UI-2026-10-12 — the whole mobile console in the Onboarding design
+
+Commits `5202f7e`, `a0064ca`, `be32c67`, `63d285b`, `4a0d0b5` and `0c064af`.
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-mobile-ui-9f29129`. Every screen was checked
+at 390px; Dashboard, Devices and Alerts also in light theme.
+
+### What changed
+- **Shell:**
+  - translucent top bar showing the nav section on sub-pages;
+  - bottom nav with an active-tab pill and a ringed alert badge. The badge
+    used the undefined `var(--danger)` and `#fff`.
+- **More:** profile card, grouped lists with icon tiles, and "Desktop
+  only" chips.
+- **Dashboard:** health ring with an online/stale/offline legend, compact
+  stat tiles, Needs attention rows with count chips, and recent actions.
+- **Devices:**
+  - sticky toolbar with status chips carrying server counts;
+  - one card per device;
+  - Filter and Sort sheets restyled. Apply hard-coded `text-white`.
+- **Device details:**
+  - header card, CPU/RAM/disk tiles exposed as `role="meter"`;
+  - accordion sections that summarise their state while closed;
+  - restyled action bar and sheets.
+  - Fixed: the Timeline section called setState during render. It now
+    loads through `onFirstOpen`.
+- **Alerts:** severity stats, filter chips with counts, device groups with
+  Dismiss and Dismiss all, and Undo. New test `AlertsMobile.test.tsx`.
+- **Remote Support:** ready, issues and not-installed stats, and section
+  cards.
+- **Reports, Audit Log, Clients on a phone:**
+  - stat cards two per row;
+  - tables opted in with `data-mobile="cards"` render each row as a card.
+    Before, rows were clipped to two columns.
+  - Clients lists its clients before the create forms.
+
 ## [2026-10-11] VAULT-SETTINGS-UI-2026-10-11 — device directory endpoint; Credential Vault and Settings redesign
 
 Commits `b7ac23c`, `02cbf03` and `9f29129`; backend and frontend, deployed
