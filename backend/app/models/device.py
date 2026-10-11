@@ -136,11 +136,15 @@ class Device(Base):
 
     @property
     def freshness_state(self):
-        if not self.last_seen:
-            return DeviceFreshnessState.OFFLINE.value
-        age = ensure_utc(utcnow()) - ensure_utc(self.last_seen)
-        if age <= timedelta(minutes=6):
-            return DeviceFreshnessState.ONLINE.value
-        if age <= timedelta(minutes=25):
-            return DeviceFreshnessState.STALE.value
+        return freshness_for(self.last_seen)
+
+
+def freshness_for(last_seen) -> str:
+    if not last_seen:
         return DeviceFreshnessState.OFFLINE.value
+    age = ensure_utc(utcnow()) - ensure_utc(last_seen)
+    if age <= timedelta(minutes=6):
+        return DeviceFreshnessState.ONLINE.value
+    if age <= timedelta(minutes=25):
+        return DeviceFreshnessState.STALE.value
+    return DeviceFreshnessState.OFFLINE.value

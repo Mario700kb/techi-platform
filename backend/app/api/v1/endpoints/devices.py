@@ -14,6 +14,7 @@ from app.schemas.device import (
     Device as DeviceSchema,
     DeviceClientAssignment,
     DeviceCreate,
+    DeviceDirectoryEntry,
     DeviceGroupAssignment,
     DeviceFleetOverview,
     DeviceListResponse,
@@ -237,6 +238,14 @@ def read_device_tree(
     """Lightweight GROUP BY aggregation — returns device counts per client only.
     Used by the Device Tree sidebar to render immediately before the full summary loads."""
     return DeviceRepository(db).count_by_client(scope=scope)
+
+
+@router.get("/directory", response_model=List[DeviceDirectoryEntry])
+def read_device_directory(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    return DeviceRepository(db).directory(scope=scope)
 
 
 @router.get("/summary", response_model=DevicesSummary)

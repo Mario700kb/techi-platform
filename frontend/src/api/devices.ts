@@ -233,6 +233,20 @@ export async function getDevices(
   return fetchJson<DevicesResponse>(`/api/v1/devices/?${params.toString()}`, signal ? { signal } : undefined);
 }
 
+export interface DeviceDirectoryEntry {
+  id: number;
+  hostname: string | null;
+  rustdesk_id: string | null;
+  client_id: number | null;
+  group_id: number | null;
+  freshness_state: "online" | "stale" | "offline";
+}
+
+/** Every active device in scope, with only what a picker needs. */
+export async function getDeviceDirectory(): Promise<DeviceDirectoryEntry[]> {
+  return fetchJson<DeviceDirectoryEntry[]>("/api/v1/devices/directory");
+}
+
 export interface DeviceStats {
   total: number;
   online: number;

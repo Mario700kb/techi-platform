@@ -223,6 +223,15 @@ class Device(DeviceBase):
     freshness_state: DeviceFreshnessState = DeviceFreshnessState.OFFLINE
 
 
+class DeviceDirectoryEntry(BaseModel):
+    id: int
+    hostname: Optional[str] = None
+    rustdesk_id: Optional[str] = None
+    client_id: Optional[int] = None
+    group_id: Optional[int] = None
+    freshness_state: str
+
+
 class DeviceStats(BaseModel):
     total: int
     online: int

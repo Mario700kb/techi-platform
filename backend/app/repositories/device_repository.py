@@ -6,14 +6,14 @@ from sqlalchemy import and_, case, false, func, not_, or_
 
 from app.models.alert import DeviceAlert
 from app.models.client import Client
-from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
+from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType, freshness_for
 from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.device_inventory import DeviceInventory
 from app.models.device_status_history import DeviceStatusHistory
 from app.models.device_telemetry import DeviceTelemetry
 from app.platform_core import classification as clf
-from app.schemas.device import DeviceCreate, DeviceTreeCounts, DeviceUpdate
+from app.schemas.device import DeviceCreate, DeviceDirectoryEntry, DeviceTreeCounts, DeviceUpdate
 
 if TYPE_CHECKING:
     from app.core.scope import AllowedScope
@@ -618,6 +618,18 @@ class DeviceRepository:
                 by_client[client_id] = cnt
 
         return DeviceTreeCounts(total=total, unassigned=unassigned, by_client=by_client)
+
+    def directory(self, scope: Optional["AllowedScope"] = None) -> List[DeviceDirectoryEntry]:
+        """Every active device with only what a picker needs: no telemetry,
+        inventory or assignment resolution, so the fleet comes back in one
+        small response instead of megabytes of full device rows."""
+        q = self.db.query(Device.id, Device.hostname, Device.rustdesk_id, Device.client_id, Device.group_id, Device.last_seen)
+        q = self._apply_lifecycle_filter(q, "active")
+        q = self._apply_scope_filter(q, scope)
+        return [
+            DeviceDirectoryEntry(id=row.id, hostname=row.hostname, rustdesk_id=row.rustdesk_id, client_id=row.client_id, group_id=row.group_id, freshness_state=freshness_for(row.last_seen))
+            for row in q.order_by(Device.hostname, Device.id).all()
+        ]
 
     def count_by_client_category_platform(
         self, scope: Optional["AllowedScope"] = None

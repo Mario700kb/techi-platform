@@ -561,3 +561,32 @@ def test_overview_uses_two_queries_and_cache(db, monkeypatch):
     assert overview.tree_counts.by_client_category == {}
     assert cached == overview
     assert statements == 2
+
+
+class TestDeviceDirectory:
+    def test_directory_is_scoped_and_carries_only_picker_fields(self, db):
+        op = _operator(db, "op_directory")
+        _team_with_client(db, op, client_id=1)
+        online = _device(db, "RUST-DIR-1", client_id=1, hostname="alpha")
+        online.last_seen = utcnow() - timedelta(seconds=30)
+        archived = _device(db, "RUST-DIR-2", client_id=1, hostname="archived")
+        archived.is_archived = True
+        _device(db, "RUST-DIR-3", client_id=2, hostname="outside")
+        db.commit()
+
+        resp = _make_app(db, op).get("/devices/directory")
+        assert resp.status_code == 200
+        assert resp.json() == [{
+            "id": online.id, "hostname": "alpha", "rustdesk_id": "RUST-DIR-1",
+            "client_id": 1, "group_id": None, "freshness_state": "online",
+        }]
+
+    def test_admin_directory_lists_every_active_device(self, db):
+        admin = _operator(db, "admin_directory", role="admin")
+        _device(db, "RUST-A", client_id=1, hostname="b-host")
+        _device(db, "RUST-B", client_id=2, hostname="a-host")
+
+        resp = _make_app(db, admin).get("/devices/directory")
+        assert resp.status_code == 200
+        assert [d["hostname"] for d in resp.json()] == ["a-host", "b-host"]
+        assert {d["freshness_state"] for d in resp.json()} == {"offline"}

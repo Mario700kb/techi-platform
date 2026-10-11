@@ -17,7 +17,7 @@ import {
 } from "../api/teams";
 import { getOperators, OperatorRecord } from "../api/operators";
 import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
-import { getDevices, Device } from "../api/devices";
+import { getDeviceDirectory, DeviceDirectoryEntry as Device } from "../api/devices";
 import { Button, EmptyState } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
@@ -224,7 +224,7 @@ function TreeCheckbox({ state, onChange, disabled, label, inheritedFrom }: { sta
 }
 
 function DeviceStatusDot({ device }: { device: Device }) {
-  const state = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
+  const state = device.freshness_state;
   const color = state === "online" ? TONE.online : state === "stale" ? TONE.warning : TONE.neutral;
   return <span className="th-onb-dot !h-2 !w-2" style={{ "--swatch": color } as CSSProperties} title={state} />;
 }
@@ -716,20 +716,6 @@ function PermissionsTab({ team, canManage, onSaved }: { team: TeamDetail; canMan
 
 // ── Page ──────────────────────────────────────────────────────────────────── //
 
-async function loadAllDevices(): Promise<Device[]> {
-  // The list endpoint caps a page at 1,000; the tree needs every device, or
-  // anything past the first page drops out of it and of the reach count.
-  const PAGE = 1000;
-  const first = await getDevices({}, 0, PAGE);
-  const all = [...first.devices];
-  while (all.length < first.total) {
-    const next = await getDevices({}, all.length, PAGE);
-    if (next.devices.length === 0) break;
-    all.push(...next.devices);
-  }
-  return all;
-}
-
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -770,7 +756,7 @@ export default function TeamDetailPage() {
     }
     if (tab === "access" && clients.length === 0 && groups.length === 0 && devices.length === 0) {
       setTabLoading(true);
-      Promise.all([getClients(), getGroups(), loadAllDevices()])
+      Promise.all([getClients(), getGroups(), getDeviceDirectory()])
         .then(([nextClients, nextGroups, nextDevices]) => {
           setClients(nextClients);
           setGroups(nextGroups);
