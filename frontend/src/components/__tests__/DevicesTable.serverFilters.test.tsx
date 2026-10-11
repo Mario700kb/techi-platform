@@ -5,12 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { Device, DeviceQuickCounts } from "../../api/devices";
 import DevicesTable from "../DevicesTable";
 
-globalThis.ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as unknown as typeof ResizeObserver;
-
 vi.mock("../../hooks/usePlatformFeatures", () => ({
   usePlatformFeatures: () => ({ FEATURE_LINUX: false }),
 }));

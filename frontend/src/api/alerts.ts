@@ -1,9 +1,17 @@
 import { fetchJson } from "./client";
-import { Alert, AlertCount } from "../types/alert";
+import { Alert, AlertCount, AlertKind, AlertSeverity } from "../types/alert";
 
-export function getAlerts(params?: { state?: "open" | "resolved"; limit?: number; offset?: number }): Promise<Alert[]> {
+export function getAlerts(params?: {
+  state?: "open" | "resolved";
+  severity?: AlertSeverity;
+  kind?: AlertKind;
+  limit?: number;
+  offset?: number;
+}): Promise<Alert[]> {
   const qs = new URLSearchParams();
   if (params?.state) qs.set("state", params.state);
+  if (params?.severity) qs.set("severity", params.severity);
+  if (params?.kind) qs.set("kind", params.kind);
   if (params?.limit != null) qs.set("limit", String(params.limit));
   if (params?.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString() ? `?${qs.toString()}` : "";

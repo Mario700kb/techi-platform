@@ -20,8 +20,13 @@ class AlertOut(BaseModel):
     resolved_at: Optional[datetime] = None
     acknowledged_at: Optional[datetime] = None
     cooldown_until: Optional[datetime] = None
+    # The device's current name and client, so a list never fetches each
+    # device separately and never shows the hostname frozen into `message`.
+    device_name: Optional[str] = None
+    client_name: Optional[str] = None
 
 
 class AlertCountResponse(BaseModel):
     total_open: int
     by_severity: Dict[str, int]
+    by_kind: Dict[str, int] = {}

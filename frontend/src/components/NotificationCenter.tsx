@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Activity, ArrowRight, Bell, Check, CheckCircle2, Clock3, Cpu, HardDrive, KeyRound, LucideIcon, MemoryStick, MonitorX, RefreshCw, TriangleAlert, WifiOff } from "lucide-react";
-import { Alert, AlertKind } from "../types/alert";
+import { Alert, ALERT_KIND_LABELS, AlertKind } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
 import { timeAgo } from "../utils/time";
 
@@ -29,6 +29,8 @@ const KIND_ICON: Partial<Record<AlertKind, LucideIcon>> = {
 type SeverityFilter = "all" | "critical" | "warning";
 
 function kindLabel(kind: string): string {
+  const known = ALERT_KIND_LABELS[kind as AlertKind];
+  if (known) return known;
   const text = kind.replace(/_/g, " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -313,8 +315,10 @@ export default function NotificationCenter({
                         <Icon className="h-3.5 w-3.5" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{alert.message}</p>
-                        <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{kindLabel(alert.kind)}</p>
+                        <p className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                          {kindLabel(alert.kind)}{alert.device_name ? ` · ${alert.device_name}` : ""}
+                        </p>
+                        <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{alert.detail ?? alert.message}</p>
                       </div>
                       <div className="relative flex h-7 w-16 flex-none items-center justify-end">
                         <span className={`text-[12px] tabular-nums ${canResolve ? "group-hover:invisible" : ""}`} style={{ color: "var(--th-text-faint)" }}>

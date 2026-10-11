@@ -3,9 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChevronRight, WifiOff, Cpu, MemoryStick, HardDrive, Zap, Key } from "lucide-react";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
-import { getDevice } from "../api/devices";
-import { Alert, AlertKind, AlertSeverity } from "../types/alert";
-import { deviceDisplayName } from "../utils/deviceLabel";
+import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
 import { parseUTC } from "../utils/time";
 import { Pill } from "../components/mobile/primitives";
 import { Snackbar } from "../components/mobile/Snackbar";
@@ -29,25 +27,6 @@ function timeAgo(iso: string): string {
   if (hours < 24) return `${Math.floor(hours)}h ago`;
   return `${Math.floor(days)}d ago`;
 }
-
-const KIND_LABEL: Record<AlertKind, string> = {
-  device_offline: "Device Offline",
-  repeated_reconnects: "Repeated Reconnects",
-  high_cpu: "High CPU",
-  high_ram: "High RAM",
-  low_disk: "Low Disk",
-  rustdesk_sync_failure: "RS Sync Failure",
-  heartbeat_stale: "Heartbeat Stale",
-  telemetry_missing: "Telemetry Missing",
-  token_usage_warning: "Token Warning",
-  token_usage_critical: "Token Critical",
-};
-
-const SEVERITY_VAR: Record<AlertSeverity, string> = {
-  critical: "var(--th-status-critical)",
-  warning: "var(--th-status-warning)",
-  info: "var(--th-status-info)",
-};
 
 function KindIcon({ kind, className }: { kind: AlertKind; className?: string }) {
   const cls = className ?? "h-4 w-4";
@@ -87,7 +66,7 @@ interface DeviceLabel {
 }
 
 function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number) => void }) {
-  const color = SEVERITY_VAR[alert.severity] ?? SEVERITY_VAR.info;
+  const color = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
   return (
     <div className="flex items-start gap-[10px] px-4 py-[11px]" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
       <span className="mt-[2px] w-[3px] self-stretch flex-none rounded-full" style={{ background: color }} />
@@ -100,7 +79,7 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>
-            {KIND_LABEL[alert.kind] ?? alert.kind}
+            {ALERT_KIND_LABELS[alert.kind] ?? alert.kind}
           </span>
           <time className="ml-auto flex-none text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
             {timeAgo(alert.created_at)}
@@ -184,7 +163,6 @@ export default function AlertsMobile() {
   const { alerts, reloadAlerts } = useAppData();
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
-  const [deviceLabels, setDeviceLabels] = useState<Record<number, DeviceLabel>>({});
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
 
   const pendingRef = useRef<{ ids: number[]; timer: number } | null>(null);
@@ -193,32 +171,6 @@ export default function AlertsMobile() {
     () => applyFilter(alerts, activeFilter).filter((a) => !hiddenIds.has(a.id)),
     [alerts, activeFilter, hiddenIds],
   );
-
-  // Resolve device names for any device_id we haven't looked up yet.
-  useEffect(() => {
-    const missing = Array.from(new Set(alerts.map((a) => a.device_id).filter((id): id is number => id != null)))
-      .filter((id) => !deviceLabels[id]);
-    if (missing.length === 0) return;
-    let cancelled = false;
-    void Promise.all(
-      missing.map(async (id) => {
-        try {
-          const d = await getDevice(id);
-          return [id, { name: deviceDisplayName(d), client: d.client_name ?? null }] as const;
-        } catch {
-          return [id, { name: `Device #${id}`, client: null }] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setDeviceLabels((prev) => {
-        const next = { ...prev };
-        for (const [id, label] of entries) next[id] = label;
-        return next;
-      });
-    });
-    return () => { cancelled = true; };
-  }, [alerts, deviceLabels]);
 
   const flushPending = () => {
     const pending = pendingRef.current;
@@ -276,10 +228,11 @@ export default function AlertsMobile() {
         deviceId: key === "token" ? null : key,
         alerts: list.sort((a, b) => b.created_at.localeCompare(a.created_at)),
       }))
+      // Critical devices first, then the device whose latest alert is newest.
       .sort((a, b) => {
         const aWorst = a.alerts.some((x) => x.severity === "critical") ? 0 : 1;
         const bWorst = b.alerts.some((x) => x.severity === "critical") ? 0 : 1;
-        return aWorst - bWorst;
+        return aWorst - bWorst || b.alerts[0].created_at.localeCompare(a.alerts[0].created_at);
       });
   }, [filtered]);
 
@@ -336,7 +289,9 @@ export default function AlertsMobile() {
             <AlertGroup
               key={deviceId ?? "token"}
               deviceId={deviceId}
-              label={deviceId != null ? (deviceLabels[deviceId] ?? { name: `Device #${deviceId}`, client: null }) : { name: "Token usage", client: null }}
+              label={deviceId != null
+                ? { name: groupAlerts[0].device_name ?? `Device #${deviceId}`, client: groupAlerts[0].client_name ?? null }
+                : { name: "Enrollment tokens", client: null }}
               alerts={groupAlerts}
               onDismiss={(id) => dismissIds([id])}
               onDismissAll={dismissIds}

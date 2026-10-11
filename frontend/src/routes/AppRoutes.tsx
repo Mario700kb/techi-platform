@@ -11,7 +11,7 @@ import Teams from "../pages/Teams";
 import TeamDetailPage from "../pages/TeamDetail";
 import Login from "../pages/Login";
 import AgentConfigPage from "../pages/AgentConfig";
-import AlertsMobile from "../pages/AlertsMobile";
+import Alerts from "../pages/Alerts";
 import More from "../pages/More";
 import Settings from "../pages/Settings";
 import DeviceDetailsMobile from "../pages/DeviceDetailsMobile";
@@ -48,7 +48,7 @@ export default function AppRoutes() {
       <Route path="/vault" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_VAULT"><CredentialVault /></RequireFeature></RequirePermission></RequireAuth>} />
       <Route path="/notifications" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_NOTIFICATIONS"><NotificationSettings /></RequireFeature></RequirePermission></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><RequirePermission perm="view_devices"><RequireFeature flag="FEATURE_REPORTING"><Reports /></RequireFeature></RequirePermission></RequireAuth>} />
-      <Route path="/alerts" element={<RequireAuth><AlertsMobile /></RequireAuth>} />
+      <Route path="/alerts" element={<RequireAuth><Alerts /></RequireAuth>} />
       <Route path="/more" element={<RequireAuth><More /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
     </Routes>

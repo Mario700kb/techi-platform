@@ -1,12 +1,18 @@
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.models.alert import AlertKind, AlertSeverity, AlertState, DeviceAlert
+from app.models.client import Client
 from app.models.device import Device
+
+if TYPE_CHECKING:
+    from app.core.scope import AllowedScope
+
+AlertRow = Tuple[DeviceAlert, Optional[str], Optional[str], Optional[str]]
 
 
 class AlertRepository:
@@ -88,35 +94,50 @@ class AlertRepository:
             q = q.filter(DeviceAlert.state == state)
         return q.order_by(DeviceAlert.created_at.desc()).limit(limit).all()
 
-    def get_recent_open(self, limit: int = 50) -> List[DeviceAlert]:
-        return (
-            self.db.query(DeviceAlert)
-            .filter(DeviceAlert.state == AlertState.OPEN.value)
-            .order_by(DeviceAlert.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+    def _in_scope(self, query, scope: Optional["AllowedScope"]):
+        # Alerts belong to devices: an operator sees, counts and resolves only
+        # the alerts of devices inside their scope.
+        from app.repositories.device_repository import DeviceRepository
 
-    def get_recent_all(self, limit: int = 50, offset: int = 0) -> List[DeviceAlert]:
-        return (
-            self.db.query(DeviceAlert)
-            .order_by(DeviceAlert.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        query = query.join(Device, Device.id == DeviceAlert.device_id)
+        return DeviceRepository(self.db)._apply_scope_filter(query, scope)
 
-    def count_open(self) -> int:
-        return self.db.query(DeviceAlert).filter(DeviceAlert.state == AlertState.OPEN.value).count()
+    def list_with_device(
+        self,
+        scope: Optional["AllowedScope"] = None,
+        state: Optional[str] = None,
+        severity: Optional[str] = None,
+        kind: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[AlertRow]:
+        query = self._in_scope(
+            self.db.query(DeviceAlert, Device.hostname, Device.display_name, Client.name), scope,
+        ).outerjoin(Client, Client.id == Device.client_id)
+        if state == AlertState.OPEN.value:
+            query = query.filter(DeviceAlert.state == AlertState.OPEN.value)
+        if severity:
+            query = query.filter(DeviceAlert.severity == severity)
+        if kind:
+            query = query.filter(DeviceAlert.kind == kind)
+        return query.order_by(DeviceAlert.created_at.desc(), DeviceAlert.id.desc()).offset(offset).limit(limit).all()
 
-    def count_open_by_severity(self) -> Dict[str, int]:
-        rows = (
-            self.db.query(DeviceAlert.severity, func.count(DeviceAlert.id))
-            .filter(DeviceAlert.state == AlertState.OPEN.value)
-            .group_by(DeviceAlert.severity)
-            .all()
-        )
-        return {row[0].value: row[1] for row in rows}
+    def open_counts(self, scope: Optional["AllowedScope"] = None) -> Tuple[int, Dict[str, int], Dict[str, int]]:
+        query = self._in_scope(self.db.query(DeviceAlert.severity, DeviceAlert.kind, func.count(DeviceAlert.id)), scope)
+        rows = query.filter(DeviceAlert.state == AlertState.OPEN.value).group_by(DeviceAlert.severity, DeviceAlert.kind).all()
+        by_severity: Dict[str, int] = {}
+        by_kind: Dict[str, int] = {}
+        total = 0
+        for severity, kind, count in rows:
+            severity_value = getattr(severity, "value", severity)
+            kind_value = getattr(kind, "value", kind)
+            by_severity[severity_value] = by_severity.get(severity_value, 0) + count
+            by_kind[kind_value] = by_kind.get(kind_value, 0) + count
+            total += count
+        return total, by_severity, by_kind
+
+    def get_in_scope(self, alert_id: int, scope: Optional["AllowedScope"] = None) -> Optional[DeviceAlert]:
+        return self._in_scope(self.db.query(DeviceAlert), scope).filter(DeviceAlert.id == alert_id).first()
 
     def count_open_by_device_and_severity(self, device_ids: List[int]) -> Dict[int, Dict[str, int]]:
         if not device_ids:

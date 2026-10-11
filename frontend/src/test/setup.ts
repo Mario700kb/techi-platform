@@ -42,3 +42,11 @@ function ensureStorage(prop: "localStorage" | "sessionStorage"): void {
 
 ensureStorage("localStorage");
 ensureStorage("sessionStorage");
+
+// jsdom has no ResizeObserver; components that measure themselves (tab
+// indicators, overflow shadows) only need it to exist.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;

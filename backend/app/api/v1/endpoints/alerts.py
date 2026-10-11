@@ -19,34 +19,60 @@ from app.websocket.publisher import realtime_publisher
 router = APIRouter()
 
 
+def _alert_out(alert: DeviceAlert, hostname: Optional[str], display_name: Optional[str], client_name: Optional[str]) -> AlertOut:
+    out = AlertOut.model_validate(alert)
+    out.device_name = (display_name or "").strip() or hostname
+    out.client_name = client_name
+    return out
+
+
 @router.get("/", response_model=List[AlertOut])
 def list_alerts(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
     state: Optional[str] = Query(default=None, description="open | resolved | all"),
+    severity: Optional[str] = Query(default=None, pattern="^(info|warning|critical)$"),
+    kind: Optional[str] = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ):
     repo = AlertRepository(db)
+    rows = repo.list_with_device(
+        scope=scope,
+        state=AlertState.OPEN.value if state == "open" else None,
+        severity=severity,
+        kind=kind,
+        limit=limit,
+        offset=offset,
+    )
+    alerts = [_alert_out(*row) for row in rows]
     # Token usage alerts are synthetic (computed on read, negative ids) and
-    # always "open" — they resolve themselves once max_uses is raised.
-    token_alerts = build_token_usage_alerts(db) if offset == 0 else []
-    if state == "open":
-        return token_alerts + repo.get_recent_open(limit=limit)
-    return token_alerts + repo.get_recent_all(limit=limit, offset=offset)
+    # always "open" — they resolve themselves once max_uses is raised. They
+    # describe enrollment tokens, not devices, so only an unscoped operator
+    # sees them.
+    if offset == 0 and scope is None and kind in (None, "token_usage_warning", "token_usage_critical"):
+        token_alerts = [
+            alert for alert in build_token_usage_alerts(db)
+            if (severity is None or alert["severity"] == severity) and (kind is None or alert["kind"] == kind)
+        ]
+        return token_alerts + alerts
+    return alerts
 
 
 @router.get("/count", response_model=AlertCountResponse)
-def alert_count(db: Session = Depends(get_db), _: Operator = Depends(get_current_operator)):
-    repo = AlertRepository(db)
-    by_severity = repo.count_open_by_severity()
-    token_alerts = build_token_usage_alerts(db)
-    for alert in token_alerts:
-        by_severity[alert["severity"]] = by_severity.get(alert["severity"], 0) + 1
-    return AlertCountResponse(
-        total_open=repo.count_open() + len(token_alerts),
-        by_severity=by_severity,
-    )
+def alert_count(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    total, by_severity, by_kind = AlertRepository(db).open_counts(scope)
+    if scope is None:
+        for alert in build_token_usage_alerts(db):
+            by_severity[alert["severity"]] = by_severity.get(alert["severity"], 0) + 1
+            by_kind[alert["kind"]] = by_kind.get(alert["kind"], 0) + 1
+            total += 1
+    return AlertCountResponse(total_open=total, by_severity=by_severity, by_kind=by_kind)
 
 
 @router.get("/device/{device_id}", response_model=List[AlertOut])
@@ -68,9 +94,15 @@ def device_alerts(
 
 
 @router.put("/{alert_id}/resolve", response_model=AlertOut)
-def resolve_alert(alert_id: int, db: Session = Depends(get_db), _: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value))):
+def resolve_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
     repo = AlertRepository(db)
-    alert: Optional[DeviceAlert] = db.query(DeviceAlert).filter(DeviceAlert.id == alert_id).first()
+    # Out of scope reads as not found, so ids cannot be probed across clients.
+    alert: Optional[DeviceAlert] = repo.get_in_scope(alert_id, scope)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     if alert.state == AlertState.RESOLVED:

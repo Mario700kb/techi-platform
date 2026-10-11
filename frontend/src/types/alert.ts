@@ -27,9 +27,33 @@ export interface Alert {
   resolved_at?: string | null;
   acknowledged_at?: string | null;
   cooldown_until?: string | null;
+  // The device's current name and client (the message keeps the hostname it
+  // had when the alert opened).
+  device_name?: string | null;
+  client_name?: string | null;
 }
 
 export interface AlertCount {
   total_open: number;
   by_severity: Record<string, number>;
+  by_kind?: Record<string, number>;
 }
+
+export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
+  device_offline: "Device offline",
+  repeated_reconnects: "Repeated reconnects",
+  high_cpu: "High CPU",
+  high_ram: "High memory",
+  low_disk: "Low disk space",
+  rustdesk_sync_failure: "Remote Support sync failed",
+  heartbeat_stale: "Heartbeat stale",
+  telemetry_missing: "Telemetry missing",
+  token_usage_warning: "Enrollment token nearly used up",
+  token_usage_critical: "Enrollment token used up",
+};
+
+export const ALERT_SEVERITY_TONE: Record<AlertSeverity, string> = {
+  critical: "var(--th-status-critical)",
+  warning: "var(--th-status-warning)",
+  info: "var(--th-status-info)",
+};
