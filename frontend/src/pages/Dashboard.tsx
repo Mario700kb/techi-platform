@@ -362,7 +362,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-6 px-5 pb-4">
             <HealthRing value={loading ? null : averageHealth} />
             <div className="min-w-0 flex-1 space-y-3">
-              <div className="flex h-2 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }} aria-label="Device status mix">
+              <div className="th-mix-bar flex h-2 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }} aria-label="Device status mix">
                 <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: "var(--th-status-online)" }} />
                 <div style={{ width: loading ? "0%" : `${stalePct}%`, background: "var(--th-status-stale)" }} />
                 <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: "var(--th-status-offline)" }} />
@@ -617,7 +617,7 @@ function HealthRing({ value }: { value: number | null }) {
     <div className="relative h-[88px] w-[88px] flex-none" role="img" aria-label={value == null ? "No health score" : `Average health ${value} of 100`}>
       <svg viewBox="0 0 88 88" className="h-full w-full -rotate-90">
         <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" style={{ stroke: "var(--th-ring-track)" }} />
-        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} style={{ stroke: tone, transition: "stroke-dasharray 600ms ease" }} />
+        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} className="th-ring-value" style={{ stroke: tone }} />
       </svg>
       <span className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-[22px] font-semibold leading-none tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value ?? "—"}</span>

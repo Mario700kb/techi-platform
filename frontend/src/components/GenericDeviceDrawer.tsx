@@ -223,7 +223,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
         </div>
 
         {toast && (
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)", color: "var(--th-text-primary)" }}>{toast}</div>
+          <div className="th-fade-in pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)", color: "var(--th-text-primary)" }}>{toast}</div>
         )}
       </div>
 

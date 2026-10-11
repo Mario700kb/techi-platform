@@ -85,7 +85,7 @@ export function AvailabilityChart({ series }: { series: { date: string; availabi
           </g>
         ))}
         {areas.map((d, i) => <path key={i} d={d} className="th-chart-area" />)}
-        {segments.map((d, i) => <path key={i} d={d} className="th-chart-line" />)}
+        {segments.map((d, i) => <path key={i} d={d} pathLength={1} className="th-chart-line" />)}
         <text x={PAD.left} y={H - 4} className="th-chart-axis">{dayLabel(series[0].date)}</text>
         <text x={W - PAD.right} y={H - 4} textAnchor="end" className="th-chart-axis">Today</text>
         {hovered && index != null && (
@@ -148,7 +148,7 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
         {series.map((p, i) => {
           const left = PAD.left + i * band + (band - (barW * 2 + 2)) / 2;
           return (
-            <g key={p.date} opacity={index == null || index === i ? 1 : 0.45}>
+            <g key={p.date} opacity={index == null || index === i ? 1 : 0.45} style={{ "--i": i } as React.CSSProperties}>
               {bar(left, p.opened, "th-chart-bar-1")}
               {bar(left + barW + 2, p.resolved, "th-chart-bar-2")}
               <text x={PAD.left + i * band + band / 2} y={H - 4} textAnchor="middle" className="th-chart-axis">

@@ -737,7 +737,7 @@ export default function DeviceDrawer({
               {rsToast.message}
             </div>
           )}
-          <div className={activeTab === "overview" ? "" : "hidden"}>
+          <div className={activeTab === "overview" ? "th-tab-panel" : "hidden"}>
 
           {/* Paralajmerim per pajisje te arkivuar por aktive */}
           {device.is_archived && device.freshness_state !== "offline" && (
@@ -1249,7 +1249,7 @@ export default function DeviceDrawer({
 
           </div>
 
-          <div className={activeTab === "overview" ? "" : "hidden"}>
+          <div className={activeTab === "overview" ? "th-tab-panel" : "hidden"}>
           {/* Telemetria */}
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
@@ -1410,7 +1410,7 @@ export default function DeviceDrawer({
             </ConfirmationModal>
           )}
 
-          <div className={activeTab === "management" ? "" : "hidden"}>
+          <div className={activeTab === "management" ? "th-tab-panel" : "hidden"}>
           {/* Veprimet remote */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
@@ -1590,7 +1590,7 @@ export default function DeviceDrawer({
           </section>
           </div>
 
-          <div className={activeTab === "software" ? "" : "hidden"}>
+          <div className={activeTab === "software" ? "th-tab-panel" : "hidden"}>
           {/* Manual fetch control — see the loadInventory effect above for why
               this is not automatic. */}
           <section className="mb-4">
@@ -1831,7 +1831,7 @@ export default function DeviceDrawer({
           )}
           </div>
 
-          <div className={activeTab === "notes" ? "" : "hidden"}>
+          <div className={activeTab === "notes" ? "th-tab-panel" : "hidden"}>
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Notes</p>
@@ -1952,7 +1952,7 @@ export default function DeviceDrawer({
           </section>
           </div>
 
-          <div className={activeTab === "timeline" ? "" : "hidden"}>
+          <div className={activeTab === "timeline" ? "th-tab-panel" : "hidden"}>
           <section className="th-drawer-card">
             <ActivityTimeline events={events} loading={loading} onReload={reload} />
           </section>
@@ -1968,7 +1968,7 @@ export default function DeviceDrawer({
           )}
 
           {/* ── Remote Support tab ── */}
-          <div className={activeTab === "remote_support" ? "" : "hidden"}>
+          <div className={activeTab === "remote_support" ? "th-tab-panel" : "hidden"}>
 
             {/* Credentials + service */}
             <section className="mb-5">

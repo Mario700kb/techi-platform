@@ -43,7 +43,7 @@ export default function ConfirmationModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
+      className="th-modal-scrim fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirmation-modal-title"
@@ -53,7 +53,7 @@ export default function ConfirmationModal({
     >
       <div
         className={clsx(
-          "w-full max-w-md overflow-y-auto rounded-xl border p-5 shadow-2xl",
+          "th-modal w-full max-w-md overflow-y-auto rounded-xl border p-5 shadow-2xl",
           "max-h-[calc(100dvh-2rem)]",
           destructive ? "border-red-400/30 bg-red-950/40" : ""
         )}

@@ -1571,6 +1571,15 @@ tr:hover > .th-sticky-end { background: color-mix(in srgb, var(--th-text-primary
   font-family: inherit !important;
 }
 
+/* Fixed overlays (drawer, its backdrop, toasts) are page children but out of
+   flow: a space-y margin would shift them off the viewport edge. The legacy
+   "#root main .space-y-5" rule out-ranks Tailwind's responsive space-y-0, so
+   a page that switches to gap at a breakpoint resets the margins here too. */
+#root main [class*="space-y-"] > .fixed { margin-top: 0 !important; }
+@media (min-width: 1280px) {
+  #root main .xl\:space-y-0 > * { margin-top: 0 !important; }
+}
+
 /* Invisible leading children (fixed toast stacks, the mobile-only block on
    desktop) must not push the page header down via space-y margins. */
 .premium-page > .fixed:first-child + * { margin-top: 0 !important; }
@@ -2420,3 +2429,88 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 .th-connect[data-tone="muted"]:hover { background: var(--th-sidebar-nav-hover); color: var(--th-text-muted); box-shadow: none; }
 .th-connect-group > .th-connect-arrow[data-tone="muted"],
 .th-connect-group > .th-connect-arrow[data-tone="warning"] { border-left-color: color-mix(in srgb, var(--th-text-primary) 15%, transparent); }
+
+/* ══════════════════════════════════════════════════════
+   MOTION — one system for the whole app.
+   Short and decelerating: things arrive quickly and settle, nothing bounces
+   or loops. Low-specificity defaults (:where) so a component's own
+   transition still wins. Off under prefers-reduced-motion.
+   ══════════════════════════════════════════════════════ */
+:root {
+  --th-ease: cubic-bezier(0.2, 0, 0, 1);
+  --th-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --th-dur-fast: 120ms;
+  --th-dur: 180ms;
+  --th-dur-slow: 320ms;
+}
+
+/* Every interactive surface eases its colour, border, shadow, opacity and
+   transform (hover, focus, selected, open chevrons). */
+:where(button, a, input, select, textarea, summary, label, [role="button"], [role="tab"], [role="option"],
+       [role="menuitem"], [role="switch"], .premium-card, .premium-card-soft, .th-kpi, tr, td, svg, path, circle) {
+  transition-property: color, background-color, border-color, outline-color, box-shadow, opacity, transform, fill, stroke;
+  transition-duration: var(--th-dur);
+  transition-timing-function: var(--th-ease);
+}
+
+@keyframes th-page-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes th-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes th-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes th-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes th-dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes th-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes th-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes th-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes th-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* Page: the whole page fades in on navigation (main is keyed by path) and
+   its cards rise in a short stagger. The page itself only fades: a transform
+   there would re-anchor a fixed drawer opened by a deep link to the page box
+   for the duration. Fill mode "backwards" leaves nothing behind. */
+.th-main > * { animation: th-page-in var(--th-dur-slow) var(--th-ease-out) backwards; }
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi) {
+  animation: th-rise 420ms var(--th-ease-out) backwards;
+}
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi):nth-child(2) { animation-delay: 40ms; }
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi):nth-child(3) { animation-delay: 80ms; }
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi):nth-child(4) { animation-delay: 120ms; }
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi):nth-child(5) { animation-delay: 160ms; }
+.th-main :is(.premium-card, .premium-card-soft, .th-kpi):nth-child(n + 6) { animation-delay: 200ms; }
+
+/* Overlays: menus and dropdowns drop in, dialogs rise, scrims fade. */
+.th-menu { animation: th-pop-in 150ms var(--th-ease-out); transform-origin: top; }
+.th-select-list[data-up="true"] { transform-origin: bottom; }
+.th-palette-scrim { animation: th-fade var(--th-dur) var(--th-ease); }
+.th-palette { animation: th-dialog-in 220ms var(--th-ease-out); }
+.th-modal-scrim { animation: th-fade var(--th-dur) var(--th-ease); }
+.th-modal { animation: th-dialog-in 240ms var(--th-ease-out); }
+.th-toast { animation: th-toast-in 220ms var(--th-ease-out); }
+.th-fade-in { animation: th-fade var(--th-dur) var(--th-ease); }
+
+/* Panels that appear in place: drawer tabs (shown by un-hiding, which
+   restarts the animation) and opened explorer branches. */
+.th-tab-panel { animation: th-fade 200ms var(--th-ease); }
+.fleet-tree-child { animation: th-expand 180ms var(--th-ease-out); }
+
+/* Data: the availability line draws itself, alert bars grow from the axis
+   one day after another, status bars and the health ring fill. */
+.th-chart-line { stroke-dasharray: 1; animation: th-draw 900ms var(--th-ease-out) both; }
+.th-chart-area { animation: th-fade 600ms 250ms var(--th-ease) both; }
+:is(.th-chart-bar-1, .th-chart-bar-2) {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: th-grow-y 520ms var(--th-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.th-mix-bar > div { transition: width 700ms var(--th-ease-out); }
+.th-ring-value { transition: stroke-dasharray 900ms var(--th-ease-out), stroke 300ms var(--th-ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+}

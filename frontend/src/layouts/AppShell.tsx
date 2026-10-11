@@ -87,8 +87,11 @@ export default function AppShell({ children }: AppShellProps) {
               />
             )}
             <OfflineBanner lastFetchTime={lastFetchTime} />
+            {/* Keyed by path: each page enters with the shared page motion and
+                starts scrolled to the top. Search-param changes keep the page. */}
             <main
-              className={`min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "pb-16 md:pb-5"}`}
+              key={location.pathname}
+              className={`th-main min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "pb-16 md:pb-5"}`}
               style={{ background: "var(--th-bg-main)" }}
             >
               {children}
