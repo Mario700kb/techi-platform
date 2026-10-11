@@ -1,8 +1,8 @@
 <#
   Installs, removes and upgrades the Endpoint MSI on a throwaway Windows
   runner and fails on anything a field install would trip over:
-    1. fresh install: exit 0, agent service running, Remote Support stopped
-       by KillTechiRSBeforeInstall, no custom action failing to launch (1721),
+    1. fresh install: exit 0, agent service running, Remote Support stop
+       actions logged, no custom action failing to launch (1721),
        no api-server in the Remote Support configuration;
     2. uninstall: exit 0, service gone;
     3. upgrade over the baseline (2.1.20) while a process named like Remote
@@ -89,10 +89,12 @@ function Check-InstallLog([string]$Log) {
     Check ($text -match 'Doing action: BackupAgentConfigBeforeLegacyRemove') 'BackupAgentConfigBeforeLegacyRemove was sequenced'
 }
 
-function Check-RemoteSupportStopped([string[]]$Before) {
+function Check-RemoteSupportStopped([string[]]$Before, [string[]]$Actions) {
     $new = @(Get-DeployLogLines | Select-Object -Skip $Before.Count)
-    Check (@($new | Where-Object { $_ -like '*KillTechiRSBeforeInstall: start*' }).Count -gt 0) 'KillTechiRSBeforeInstall ran (start logged)'
-    Check (@($new | Where-Object { $_ -like '*KillTechiRSBeforeInstall: exit=0*' }).Count -gt 0) 'KillTechiRSBeforeInstall finished (exit=0 logged)'
+    foreach ($action in $Actions) {
+        Check (@($new | Where-Object { $_ -like "* ${action}: start*" }).Count -gt 0) "$action ran (start logged)"
+        Check (@($new | Where-Object { $_ -like "* ${action}: exit=0*" }).Count -gt 0) "$action finished (exit=0 logged)"
+    }
 }
 
 function Remove-RemoteSupportConfig {
@@ -106,7 +108,7 @@ $before = Get-DeployLogLines
 $r = Invoke-Msi (@('/i', "`"$NewMsi`"") + $Props) 'fresh-install'
 Check ($r.Code -eq 0) "fresh install exits 0 (got $($r.Code))"
 Check-InstallLog $r.Log
-Check-RemoteSupportStopped $before
+Check-RemoteSupportStopped $before @('StopTechiRSBeforeUpgrade', 'KillTechiRSBeforeInstall')
 Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running'
 Check ((Get-InstalledVersion) -eq $ExpectedVersion) "installed version is $ExpectedVersion (got '$(Get-InstalledVersion)')"
 $tomls = @(Get-ApiServers)
@@ -153,7 +155,7 @@ $before = Get-DeployLogLines
 $r = Invoke-Msi (@('/i', "`"$NewMsi`"") + $Props) 'upgrade'
 Check ($r.Code -eq 0) "upgrade exits 0, no 1603 and no reboot-deferred files (got $($r.Code))"
 Check-InstallLog $r.Log
-Check-RemoteSupportStopped $before
+Check-RemoteSupportStopped $before @('StopTechiRSBeforeUpgrade', 'KillTechiRSBeforeInstall')
 Check ($null -eq (Get-Process -Id $holder.Id -ErrorAction SilentlyContinue)) 'the MSI stopped the process holding Remote Support files'
 Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running after upgrade'
 Check ((Get-InstalledVersion) -eq $ExpectedVersion) "upgraded version is $ExpectedVersion (got '$(Get-InstalledVersion)')"

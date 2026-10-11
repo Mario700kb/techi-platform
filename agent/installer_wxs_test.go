@@ -67,6 +67,7 @@ func TestCustomActionsReferenceOnlyDefinedProperties(t *testing.T) {
 	standard := map[string]bool{"AppDataFolder": true}
 	definedRe := regexp.MustCompile(`<(?:Property|Directory|StandardDirectory|SetProperty|SetDirectory)\s[^>]*?Id="([^"]+)"`)
 	attrRe := regexp.MustCompile(`(?:ExeCommand|Value)="([^"]*)"`)
+	defineRe := regexp.MustCompile(`<\?define\s+\w+="([^"]*)"\?>`)
 	refRe := regexp.MustCompile(`\[([^\[\]]+)\]`)
 	for _, path := range installerSources {
 		wxs := readWxs(t, path)
@@ -74,7 +75,8 @@ func TestCustomActionsReferenceOnlyDefinedProperties(t *testing.T) {
 		for _, m := range definedRe.FindAllStringSubmatch(wxs, -1) {
 			defined[m[1]] = true
 		}
-		for _, attr := range attrRe.FindAllStringSubmatch(wxs, -1) {
+		formatted := append(attrRe.FindAllStringSubmatch(wxs, -1), defineRe.FindAllStringSubmatch(wxs, -1)...)
+		for _, attr := range formatted {
 			for _, ref := range refRe.FindAllStringSubmatch(attr[1], -1) {
 				name := ref[1]
 				if strings.ContainsAny(name[:1], `\#!%~$`) || defined[name] || standard[name] {
@@ -132,14 +134,28 @@ func TestRemoteSupportIsNeverPointedAtThePlatformAPI(t *testing.T) {
 
 // TestRemoteSupportStopsBeforeTheOldProductIsRemoved: the major upgrade removes
 // the previous product right after InstallInitialize, and the previous
-// product's own stop (KillTechiRS, 2.1.19-2.1.22) does nothing. Stopping Remote
-// Support only before InstallFiles left that removal facing locked DLLs.
+// product's own stop (KillTechiRS, 2.1.19-2.1.22) does nothing, so Remote
+// Support must already be stopped by then. Nothing may sit between
+// InstallInitialize and RemoveExistingProducts: Windows Installer refuses the
+// package with 2613, which is how the first attempt at this failed in CI.
 func TestRemoteSupportStopsBeforeTheOldProductIsRemoved(t *testing.T) {
 	wxs := readWxs(t, "installer/installer.wxs")
 	if !strings.Contains(wxs, `Schedule="afterInstallInitialize"`) {
 		t.Fatal("MajorUpgrade schedule changed; revisit where Remote Support must stop")
 	}
-	if !regexp.MustCompile(`<Custom Action="KillTechiRSBeforeInstall"\s+Before="RemoveExistingProducts"`).MatchString(wxs) {
-		t.Fatal(`KillTechiRSBeforeInstall must be scheduled Before="RemoveExistingProducts"`)
+	if regexp.MustCompile(`<Custom [^>]*(Before="RemoveExistingProducts"|After="InstallInitialize")`).MatchString(wxs) {
+		t.Fatal("no action may be sequenced between InstallInitialize and RemoveExistingProducts (Error 2613)")
+	}
+	if !regexp.MustCompile(`(?s)<CustomAction Id="StopTechiRSBeforeUpgrade"[^>]*Execute="immediate"`).MatchString(wxs) {
+		t.Fatal("StopTechiRSBeforeUpgrade must be an immediate action")
+	}
+	if !strings.Contains(wxs, `<Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry"`) {
+		t.Fatal("StopTechiRSBeforeUpgrade must run before InstallValidate, after the legacy cleanup")
+	}
+	for _, id := range []string{"KillTechiRS", "KillTechiRSBeforeInstall", "StopTechiRSBeforeUpgrade"} {
+		re := regexp.MustCompile(`(?s)<CustomAction Id="` + id + `"[^>]*ExeCommand="[^"]*\$\(var\.StopRemoteSupportScript\)`)
+		if !re.MatchString(wxs) {
+			t.Errorf("%s must run the shared StopRemoteSupportScript", id)
+		}
 	}
 }

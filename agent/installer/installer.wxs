@@ -14,6 +14,10 @@
 <?ifndef BuildCommit?>
 <?define BuildCommit="dev"?>
 <?endif?>
+<!-- Ndalon TECHI Remote Support: mbyll proceset RS me PID (path-validated), pastaj 'sc stop'
+     (JO fshirje). I kufizuar me Start-Job/Wait-Job -Timeout 45; logon ne deploy.log me tag-un $T.
+     Pa kllapa katrore: ExeCommand eshte MSI Formatted dhe [X] lexohet si property (RISK-MSI-002). -->
+<?define StopRemoteSupportScript="$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' '+$T+': '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
@@ -404,7 +408,7 @@
          e shendetshem). I kufizuar me Start-Job/Wait-Job -Timeout; logon start/done/timeout. -->
     <CustomAction Id="KillTechiRS"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' KillTechiRS: '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$T='KillTechiRS'; $(var.StopRemoteSupportScript)&quot;"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore"/>
@@ -422,9 +426,20 @@
          i ndalimit s'e ndal MSI-n (vazhdon i sigurt; InstallFiles ka FileInUse handling). -->
     <CustomAction Id="KillTechiRSBeforeInstall"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' KillTechiRSBeforeInstall: '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$T='KillTechiRSBeforeInstall'; $(var.StopRemoteSupportScript)&quot;"
                   Execute="deferred"
                   Impersonate="no"
+                  Return="ignore"/>
+
+    <!-- StopTechiRSBeforeUpgrade: e njejta ndalese, por immediate dhe PARA InstallValidate.
+         MajorUpgrade heq produktin e vjeter menjehere pas InstallInitialize, dhe KillTechiRS i
+         2.1.19-2.1.22 (qe do ta ndalte RS ne ate uninstall) eshte no-op (RISK-MSI-002), keshtu
+         qe RS i mbante DLL-te te bllokuara gjate heqjes. Nje CA deferred s'mund te vihet mes
+         InstallInitialize dhe RemoveExistingProducts (Error 2613), prandaj immediate. -->
+    <CustomAction Id="StopTechiRSBeforeUpgrade"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$T='StopTechiRSBeforeUpgrade'; $(var.StopRemoteSupportScript)&quot;"
+                  Execute="immediate"
                   Return="ignore"/>
 
     <!-- RemoveRustDeskTrayArtifacts: pastrim i plote ne uninstall te plote; heq Scheduled
@@ -493,12 +508,11 @@
       <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
       <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
       <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
-      <!-- KillTechiRSBeforeInstall: PARA RemoveExistingProducts (pra edhe para InstallFiles) —
-           file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te hiqen/mbishkruhen nese
-           RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim.
-           MajorUpgrade heq produktin e vjeter menjehere pas InstallInitialize, dhe KillTechiRS
-           i 2.1.19-2.1.22 (qe do ta ndalte RS ne ate uninstall) eshte no-op (RISK-MSI-002). -->
-      <Custom Action="KillTechiRSBeforeInstall" Before="RemoveExistingProducts" Condition="NOT REMOVE"/>
+      <Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry" Condition="NOT REMOVE"/>
+      <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
+           file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
+           RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
+      <Custom Action="KillTechiRSBeforeInstall" Before="InstallFiles" Condition="NOT REMOVE"/>
       <!-- Install (fresh + upgrade): NOT REMOVE siguron ekzekutim gjatë çdo install, jo gjatë uninstall.
            WriteAgentConfig: PS script-i brenda kontrollon vetë nëse config ekziston (idempotent).
            SetServiceRecovery: duhet gjithmonë pas upgrade — v1.0.4 nuk e kishte vendosur.
