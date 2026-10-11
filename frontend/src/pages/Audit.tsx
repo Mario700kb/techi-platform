@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import { AlertTriangle, ChevronRight, ClipboardList, Clock, Filter, LucideIcon, RefreshCcw, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, ChevronRight, ClipboardList, Clock, Filter, RefreshCcw, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 import {
   ACTION_LABELS,
   AuditFacets,
@@ -12,6 +12,7 @@ import {
 } from "../api/audit";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
+import { CardHead } from "../components/ui/PanelCard";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
@@ -347,20 +348,5 @@ export default function Audit() {
         )}
       </div>
     </section>
-  );
-}
-
-function CardHead({ icon: Icon, tone, title, subtitle, aside }: { icon: LucideIcon; tone: string; title: string; subtitle?: string; aside?: ReactNode }) {
-  return (
-    <div className="th-onb-card-head">
-      <div className="th-onb-card-title">
-        <span className="th-onb-icon" style={{ "--onb-tone": tone } as CSSProperties}><Icon className="h-4 w-4" /></span>
-        <span className="min-w-0">
-          <span className="block truncate">{title}</span>
-          {subtitle && <small className="truncate">{subtitle}</small>}
-        </span>
-      </div>
-      {aside}
-    </div>
   );
 }

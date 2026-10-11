@@ -1,10 +1,26 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, Building2, Globe2, Layers, Monitor, Pencil, Plus, RefreshCcw, Search, Trash2, Users, X } from "lucide-react";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Building2, Globe2, Pencil, Plus, RefreshCcw, Trash2, Users, X } from "lucide-react";
 import { Client, DeviceGroup, TrustedDomain, createClient, createGroup, createTrustedDomain, deleteClient, deleteGroup, deleteTrustedDomain, getClients, getGroups, getTrustedDomains, updateClient, updateGroup, updateTrustedDomain } from "../api/clients";
-import { Button, PageHeader, SelectField } from "../components/ui";
+import { getDeviceTree } from "../api/devices";
+import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
+import { formatLocalDateTime } from "../utils/time";
+
+type ClientFilter = "all" | "active" | "inactive";
+
+const CLIENT_FILTERS: { id: ClientFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "inactive", label: "Inactive" },
+];
 
 export default function Clients() {
   const { can } = useAuth();
@@ -12,6 +28,7 @@ export default function Clients() {
   const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
   const [groups, setGroups] = useState<DeviceGroup[]>(() => appCache.peek<DeviceGroup[]>(CACHE_KEYS.groupsList) ?? []);
   const [trustedDomains, setTrustedDomains] = useState<TrustedDomain[]>([]);
+  const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({});
   const [clientName, setClientName] = useState("");
   const [clientDescription, setClientDescription] = useState("");
   const [groupName, setGroupName] = useState("");
@@ -29,6 +46,11 @@ export default function Clients() {
   const [editGroupDescription, setEditGroupDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ClientFilter>("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
 
   const groupsByClient = useMemo(() => {
     return groups.reduce<Record<number, DeviceGroup[]>>((acc, group) => {
@@ -41,9 +63,31 @@ export default function Clients() {
     return trustedDomains.filter((domain) => domain.client_id);
   }, [trustedDomains]);
 
+  const clientOptions = useMemo(() => clients.map((c) => ({ value: String(c.id), label: c.name })), [clients]);
+  const counts = useMemo(() => ({
+    all: clients.length,
+    active: clients.filter((c) => c.is_active).length,
+    inactive: clients.filter((c) => !c.is_active).length,
+  }), [clients]);
+  const visibleClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return clients.filter((client) => {
+      if (filter === "active" && !client.is_active) return false;
+      if (filter === "inactive" && client.is_active) return false;
+      if (!q) return true;
+      const groupNames = (groupsByClient[client.id] ?? []).map((g) => g.name).join(" ");
+      return [client.name, client.slug, client.description ?? "", groupNames].some((v) => v.toLowerCase().includes(q));
+    });
+  }, [clients, filter, search, groupsByClient]);
+  const pagedClients = useMemo(() => visibleClients.slice((page - 1) * pageSize, page * pageSize), [visibleClients, page, pageSize]);
+
   const loadData = async (force = false) => {
     // Skip if cache is fresh and not forced (manual refresh)
-    if (!force && appCache.get(CACHE_KEYS.clientsList, CACHE_TTL.clientsList)) return;
+    if (!force && appCache.get(CACHE_KEYS.clientsList, CACHE_TTL.clientsList)) {
+      if (!trustedDomains.length) getTrustedDomains().then(setTrustedDomains).catch(() => undefined);
+      getDeviceTree().then((tree) => setDeviceCounts(tree.by_client)).catch(() => undefined);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -59,6 +103,7 @@ export default function Clients() {
       if (!domainClientId && clientData[0]) {
         setDomainClientId(String(clientData[0].id));
       }
+      getDeviceTree().then((tree) => setDeviceCounts(tree.by_client)).catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load clients");
     } finally {
@@ -68,7 +113,12 @@ export default function Clients() {
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!groupClientId && clients[0]) setGroupClientId(String(clients[0].id));
+    if (!domainClientId && clients[0]) setDomainClientId(String(clients[0].id));
+  }, [clients]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateClient = async () => {
     if (!clientName.trim()) return;
@@ -142,16 +192,16 @@ export default function Clients() {
 
   const handleDeleteTrustedDomain = (domain: TrustedDomain) => setPendingConfirm({
     title: "Delete domain mapping",
-    message: <>Delete the trusted domain mapping <strong>{domain.domain}</strong>?</>,
+    message: <>Delete the trusted domain mapping <strong style={{ color: "var(--th-text-primary)" }}>{domain.domain}</strong>?</>,
     confirmLabel: "Delete mapping",
     run: async () => {
-    try {
-      setError(null);
-      await deleteTrustedDomain(domain.id);
-      setTrustedDomains((items) => items.filter((item) => item.id !== domain.id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete domain mapping");
-    }
+      try {
+        setError(null);
+        await deleteTrustedDomain(domain.id);
+        setTrustedDomains((items) => items.filter((item) => item.id !== domain.id));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete domain mapping");
+      }
     },
   });
 
@@ -178,36 +228,36 @@ export default function Clients() {
 
   const handleDeleteClient = (client: Client) => setPendingConfirm({
     title: "Delete client",
-    message: <>Delete <strong>{client.name}</strong>? Its devices stay in the dashboard but are detached from this client and its groups.</>,
+    message: <>Delete <strong style={{ color: "var(--th-text-primary)" }}>{client.name}</strong>? Its devices stay in the dashboard but are detached from this client and its groups.</>,
     confirmLabel: "Delete client",
     run: async () => {
-    try {
-      setError(null);
-      await deleteClient(client.id);
-      setClients((items) => { const next = items.filter((item) => item.id !== client.id); appCache.set(CACHE_KEYS.clientsList, next); return next; });
-      setGroups((items) => { const next = items.filter((item) => item.client_id !== client.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
-      if (groupClientId === String(client.id)) {
-        const nextClient = clients.find((item) => item.id !== client.id);
-        setGroupClientId(nextClient ? String(nextClient.id) : "");
+      try {
+        setError(null);
+        await deleteClient(client.id);
+        setClients((items) => { const next = items.filter((item) => item.id !== client.id); appCache.set(CACHE_KEYS.clientsList, next); return next; });
+        setGroups((items) => { const next = items.filter((item) => item.client_id !== client.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
+        if (groupClientId === String(client.id)) {
+          const nextClient = clients.find((item) => item.id !== client.id);
+          setGroupClientId(nextClient ? String(nextClient.id) : "");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete client");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete client");
-    }
     },
   });
 
   const handleDeleteGroup = (group: DeviceGroup) => setPendingConfirm({
     title: "Delete group",
-    message: <>Delete <strong>{group.name}</strong>? Devices in this group are detached and remain in the dashboard.</>,
+    message: <>Delete <strong style={{ color: "var(--th-text-primary)" }}>{group.name}</strong>? Devices in this group are detached and remain in the dashboard.</>,
     confirmLabel: "Delete group",
     run: async () => {
-    try {
-      setError(null);
-      await deleteGroup(group.id);
-      setGroups((items) => { const next = items.filter((item) => item.id !== group.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete group");
-    }
+      try {
+        setError(null);
+        await deleteGroup(group.id);
+        setGroups((items) => { const next = items.filter((item) => item.id !== group.id); appCache.set(CACHE_KEYS.groupsList, next); return next; });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete group");
+      }
     },
   });
 
@@ -232,341 +282,354 @@ export default function Clients() {
     }
   };
 
+  const totalDevices = Object.values(deviceCounts).reduce((sum, n) => sum + n, 0);
+  const activeMappings = mappedTrustedDomains.filter((d) => d.is_active).length;
+
   return (
-    <section className="premium-page space-y-5">
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Clients"
-        description="Create customer records and lightweight groups used by device assignment and enrollment tokens."
+        description="Customer records and the groups that device assignment and enrollment tokens place devices into."
         actions={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
-              <RefreshCcw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         }
       />
 
       {error && (
-        <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
-          {error}
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="flex-1">{error}</span>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="premium-card-soft overflow-hidden">
-          <div className="border-b border-white/[0.08] px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-techi-orange" />
-              <h2 className="text-base font-semibold text-white">Client list</h2>
+      {/* ── summary ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Clients", value: formatCount(counts.all), hint: `${formatCount(counts.active)} active`, icon: Building2, tone: "var(--th-accent)" },
+          { label: "Groups", value: formatCount(groups.length), hint: "Client PC, Servers and custom", icon: Layers, tone: TONE.info },
+          { label: "Assigned devices", value: formatCount(totalDevices), hint: "Across every client", icon: Monitor, tone: TONE.online },
+          { label: "Domain mappings", value: formatCount(mappedTrustedDomains.length), hint: `${formatCount(activeMappings)} active`, icon: Globe2, tone: TONE.maintenance },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
             </div>
           </div>
-          <div className="divide-y divide-white/[0.06]">
-            {clients.length === 0 ? (
-              <div className="p-6 text-sm font-medium text-slate-400">No clients yet.</div>
-            ) : (
-              clients.map((client) => (
-                <div key={client.id} className="p-5">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-semibold text-white">{client.name}</h3>
-	                        {canManageClients && (
-	                        <button
-                          type="button"
-                          onClick={() => openEditClient(client)}
-                          className="text-slate-500 transition hover:text-orange-200"
-                          title="Edit client"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-	                        </button>
-	                        )}
-	                        {canManageClients && (
-	                        <button
-                          type="button"
-                          onClick={() => void handleDeleteClient(client)}
-                          className="text-slate-500 transition hover:text-red-300"
-                          title="Delete client"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-	                        </button>
-	                        )}
-                      </div>
-                      <p className="mt-1 text-xs font-medium text-slate-500">{client.slug}</p>
-                      {client.description && (
-                        <p className="mt-2 text-sm leading-6 text-slate-300">{client.description}</p>
-                      )}
-                    </div>
-                    <span className="rounded-full border border-emerald-400/25 bg-emerald-400/[0.08] px-2.5 py-1 text-xs font-semibold text-emerald-300">
-                      Active
-                    </span>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(groupsByClient[client.id] ?? []).map((group) => (
-                      <span key={group.id} className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-medium text-slate-200">
-                        {group.name}
-	                        {canManageClients && (
-	                        <button
-                          type="button"
-                          onClick={() => openEditGroup(group)}
-                          className="text-slate-500 transition hover:text-orange-200"
-                          title="Edit group"
-                        >
-                          <Pencil className="h-3 w-3" />
-	                        </button>
-	                        )}
-	                        {canManageClients && (
-	                        <button
-                          type="button"
-                          onClick={() => void handleDeleteGroup(group)}
-                          className="text-slate-500 transition hover:text-red-300"
-                          title="Delete group"
-                        >
-                          <Trash2 className="h-3 w-3" />
-	                        </button>
-	                        )}
-                      </span>
-                    ))}
-                    {(groupsByClient[client.id] ?? []).length === 0 && (
-                      <span className="text-xs font-medium text-slate-500">No groups</span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-	        {canManageClients && (
-	        <div className="space-y-5">
-          <div className="premium-card-soft p-5">
-	            <div className="mb-4 flex items-center gap-2">
-	              <Plus className="h-4 w-4 text-techi-orange" />
-	              <h2 className="text-base font-semibold text-white">Create client</h2>
-	            </div>
-            <div className="space-y-3">
-              <input
-                value={clientName}
-                onChange={(event) => setClientName(event.target.value)}
-                placeholder="Client name"
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <textarea
-                value={clientDescription}
-                onChange={(event) => setClientDescription(event.target.value)}
-                placeholder="Description"
-                rows={3}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <Button className="w-full" type="button" onClick={handleCreateClient}>
-                Create Client
-              </Button>
-	            </div>
-	          </div>
-
-          <div className="premium-card-soft p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Users className="h-4 w-4 text-techi-orange" />
-              <h2 className="text-base font-semibold text-white">Create group</h2>
-            </div>
-            <div className="space-y-3">
-              <SelectField
-                value={groupClientId}
-                onChange={(event) => setGroupClientId(event.target.value)}
-                id="group-client"
-                name="group-client"
-                aria-label="Client for new group"
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              >
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>{client.name}</option>
-                ))}
-              </SelectField>
-              <input
-                value={groupName}
-                onChange={(event) => setGroupName(event.target.value)}
-                placeholder="Group name"
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <textarea
-                value={groupDescription}
-                onChange={(event) => setGroupDescription(event.target.value)}
-                placeholder="Description"
-                rows={3}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <Button variant="secondary" className="w-full" type="button" onClick={handleCreateGroup} disabled={!clients.length}>
-                Create Group
-              </Button>
-	            </div>
-	          </div>
-
-          <div className="premium-card-soft p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Globe2 className="h-4 w-4 text-techi-orange" />
-              <h2 className="text-base font-semibold text-white">Domain mapping</h2>
-            </div>
-            <p className="mb-3 text-xs leading-5 text-slate-500">
-              Maps the domain value shown on devices, for example x, to the real client used by automatic enrollment.
-            </p>
-            <div className="space-y-3">
-              <input
-                value={domainName}
-                onChange={(event) => setDomainName(event.target.value)}
-                placeholder="x"
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <SelectField
-                value={domainClientId}
-                onChange={(event) => setDomainClientId(event.target.value)}
-                aria-label="Mapped client"
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              >
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>{client.name}</option>
-                ))}
-              </SelectField>
-              <Button variant="secondary" className="w-full" type="button" onClick={handleCreateTrustedDomain} disabled={!clients.length}>
-                Save Mapping
-              </Button>
-            </div>
-
-            <div className="mt-5 space-y-2">
-              {mappedTrustedDomains.length === 0 ? (
-                <p className="text-xs font-medium text-slate-500">No domain mappings configured.</p>
-              ) : (
-                mappedTrustedDomains.map((domain) => (
-                  <div key={domain.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-semibold text-slate-100">{domain.domain}</span>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteTrustedDomain(domain)}
-                        className="text-slate-500 transition hover:text-red-300"
-                        title="Delete mapping"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <SelectField
-                      value={domain.client_id ?? ""}
-                      onChange={(event) => void handleTrustedDomainClientChange(domain, event.target.value)}
-                      aria-label={`Client for ${domain.domain}`}
-                      className="mb-2 w-full rounded-md border border-white/10 bg-slate-950 px-2 py-2 text-xs font-medium text-white outline-none focus:border-techi-orange/60"
-                    >
-                      {clients.map((client) => (
-                        <option key={client.id} value={client.id}>{client.name}</option>
-                      ))}
-                    </SelectField>
-                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-400">
-                      <input
-                        type="checkbox"
-                        checked={domain.is_active}
-                        onChange={(event) => void handleTrustedDomainActiveChange(domain, event.target.checked)}
-                        className="h-3.5 w-3.5 rounded accent-orange-500"
-                      />
-                      Active
-                    </label>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-	        </div>
-	        )}
+        ))}
       </div>
 
-      {editingGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-950 p-5 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white">Edit group</h2>
-              <button
-                type="button"
-                onClick={() => setEditingGroup(null)}
-                className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      {/* ── create client · create group ────────────────────────────────── */}
+      {canManageClients && (
+        <div className="grid items-stretch gap-4 xl:grid-cols-2">
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+            <CardHead icon={Building2} tone="var(--th-accent)" title="New client" subtitle="A customer whose devices the platform manages" />
+            <div className="th-onb-body flex-1">
+              <label className="th-onb-field">
+                Name
+                <input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="e.g. Vasgroup" onKeyDown={(e) => e.key === "Enter" && void handleCreateClient()} />
+              </label>
+              <label className="th-onb-field">
+                Description
+                <textarea value={clientDescription} onChange={(event) => setClientDescription(event.target.value)} placeholder="Optional" rows={3} />
+              </label>
             </div>
-            <div className="space-y-3">
-              <input
-                value={editGroupName}
-                onChange={(event) => setEditGroupName(event.target.value)}
-                id="edit-group-name"
-                name="edit-group-name"
-                aria-label="Group name"
-                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <textarea
-                value={editGroupDescription}
-                onChange={(event) => setEditGroupDescription(event.target.value)}
-                rows={3}
-                placeholder="Description"
-                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingGroup(null)}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
-                >
-                  Cancel
-                </button>
-                <Button type="button" onClick={handleUpdateGroup}>
-                  Save Group
-                </Button>
+            <div className="th-onb-foot">
+              <Button className="w-full" type="button" onClick={() => void handleCreateClient()} disabled={!clientName.trim()}>
+                <Plus className="h-4 w-4" />
+                Create client
+              </Button>
+            </div>
+          </div>
+
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 5 } as CSSProperties}>
+            <CardHead icon={Users} tone="var(--th-status-info)" title="New group" subtitle="Groups sort a client's devices; Client PC and Servers exist by default" />
+            <div className="th-onb-body flex-1">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="th-onb-field">
+                  Client
+                  <Select id="group-client" aria-label="Client for new group" value={groupClientId} onChange={setGroupClientId} options={clientOptions} placeholder="Select client" />
+                </div>
+                <label className="th-onb-field">
+                  Name
+                  <input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="e.g. Reception" onKeyDown={(e) => e.key === "Enter" && void handleCreateGroup()} />
+                </label>
               </div>
+              <label className="th-onb-field">
+                Description
+                <textarea value={groupDescription} onChange={(event) => setGroupDescription(event.target.value)} placeholder="Optional" rows={3} />
+              </label>
+            </div>
+            <div className="th-onb-foot">
+              <Button className="w-full" variant="secondary" type="button" onClick={() => void handleCreateGroup()} disabled={!clients.length || !groupName.trim() || !groupClientId}>
+                <Plus className="h-4 w-4" />
+                Create group
+              </Button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── clients ─────────────────────────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
+        <CardHead icon={Building2} tone="var(--th-accent)" title="Clients" subtitle={loading && clients.length === 0 ? "Loading…" : `${formatCount(clients.length)} clients · ${formatCount(groups.length)} groups`} />
+        <div className="th-alerts-toolbar">
+          <div ref={filterTabsRef} role="tablist" aria-label="Client status" className="th-tabs">
+            {CLIENT_FILTERS.map(({ id, label }) => (
+              <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => { setFilter(id); setPage(1); }} className="th-tab">
+                {label}
+                <span className="th-tab-count">{formatCount(counts[id])}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pb-2">
+            <label className="th-search th-search-sm w-[260px]">
+              <Search className="h-3.5 w-3.5 flex-none" />
+              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search clients or groups" aria-label="Search clients" />
+              {search && (
+                <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
+          </div>
+        </div>
+
+        {loading && clients.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading clients">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />)}
+          </div>
+        ) : visibleClients.length === 0 ? (
+          <EmptyState
+            className="th-fade-in py-10"
+            icon={<Building2 className="h-5 w-5" />}
+            title={clients.length === 0 ? "No clients yet" : "No clients match these filters"}
+            action={clients.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setFilter("all"); setSearch(""); }}>Clear filters</Button> : undefined}
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[110px]" />
+                <col className="w-[100px]" />
+                <col />
+                <col className="w-[130px]" />
+                {canManageClients && <col className="w-[92px]" />}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Status</th>
+                  <th className="text-right">Devices</th>
+                  <th>Groups</th>
+                  <th>Created</th>
+                  {canManageClients && <th className="text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedClients.map((client, index) => {
+                  const clientGroups = groupsByClient[client.id] ?? [];
+                  const devices = deviceCounts[String(client.id)] ?? 0;
+                  return (
+                    <tr key={client.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                      <td>
+                        <span className="th-alerts-primary">{client.name}</span>
+                        <span className="th-alerts-secondary" title={client.description ?? undefined}>
+                          <span className="font-mono">{client.slug}</span>{client.description ? ` · ${client.description}` : ""}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="th-status-chip" style={{ "--chip-tone": client.is_active ? TONE.online : TONE.neutral } as CSSProperties}>
+                          <i />
+                          {client.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="text-right">
+                        <span className="th-alerts-primary tabular-nums" style={devices ? undefined : { color: "var(--th-text-faint)" }}>{formatCount(devices)}</span>
+                      </td>
+                      <td>
+                        {clientGroups.length === 0 ? (
+                          <span className="th-alerts-secondary">No groups</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {clientGroups.map((group) => (
+                              <span key={group.id} className="th-onb-group" title={group.description ?? undefined}>
+                                {group.name}
+                                {canManageClients && (
+                                  <>
+                                    <button type="button" onClick={() => openEditGroup(group)} aria-label={`Edit group ${group.name}`} title="Edit group"><Pencil className="h-3 w-3" /></button>
+                                    <button type="button" data-tone="danger" onClick={() => handleDeleteGroup(group)} aria-label={`Delete group ${group.name}`} title="Delete group"><Trash2 className="h-3 w-3" /></button>
+                                  </>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(client.created_at, { day: "numeric", month: "short", year: "numeric" })}</span></td>
+                      {canManageClients && (
+                        <td>
+                          <div className="th-onb-actions">
+                            <button type="button" className="th-onb-action" onClick={() => openEditClient(client)} title="Edit client" aria-label={`Edit ${client.name}`}><Pencil className="h-4 w-4" /></button>
+                            <button type="button" className="th-onb-action" data-tone="danger" onClick={() => handleDeleteClient(client)} title="Delete client" aria-label={`Delete ${client.name}`}><Trash2 className="h-4 w-4" /></button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {visibleClients.length > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={visibleClients.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            pageSizeOptions={[25, 50, 100]}
+            itemLabel="clients"
+          />
+        )}
+      </div>
+
+      {/* ── domain mappings ─────────────────────────────────────────────── */}
+      {canManageClients && (
+        <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 7 } as CSSProperties}>
+          <CardHead icon={Globe2} tone={TONE.maintenance} title="Domain mapping" subtitle="Maps the domain a device reports to the client that automatic enrollment places it in" />
+          <div className="th-onb-upload !grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <label className="th-onb-field">
+              Domain
+              <input value={domainName} onChange={(event) => setDomainName(event.target.value)} placeholder="e.g. VASGROUP" spellCheck={false} onKeyDown={(e) => e.key === "Enter" && void handleCreateTrustedDomain()} />
+            </label>
+            <div className="th-onb-field">
+              Client
+              <Select id="domain-client" aria-label="Mapped client" value={domainClientId} onChange={setDomainClientId} options={clientOptions} placeholder="Select client" />
+            </div>
+            <Button type="button" onClick={() => void handleCreateTrustedDomain()} disabled={!clients.length || !domainName.trim() || !domainClientId}>
+              <Plus className="h-4 w-4" />
+              Add mapping
+            </Button>
+          </div>
+          {mappedTrustedDomains.length === 0 ? (
+            <EmptyState className="py-8" icon={<Globe2 className="h-5 w-5" />} title="No domain mappings" description="Without one, domain-joined devices enroll through their token's client." />
+          ) : (
+            <div className="th-alerts-scroll th-table-scroll">
+              <table className="th-alerts-table">
+                <colgroup>
+                  <col className="w-[32%]" />
+                  <col />
+                  <col className="w-[120px]" />
+                  <col className="w-[72px]" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Domain</th>
+                    <th>Client</th>
+                    <th>Active</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappedTrustedDomains.map((domain, index) => (
+                    <tr key={domain.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                      <td><span className="th-alerts-primary font-mono !text-[12px]">{domain.domain}</span></td>
+                      <td>
+                        <div className="max-w-[320px]">
+                          <Select
+                            id={`domain-${domain.id}-client`}
+                            aria-label={`Client for ${domain.domain}`}
+                            value={domain.client_id ? String(domain.client_id) : ""}
+                            onChange={(value) => void handleTrustedDomainClientChange(domain, value)}
+                            options={clientOptions}
+                            className="w-full"
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={domain.is_active}
+                          aria-label={`${domain.domain} active`}
+                          className="th-onb-switch"
+                          onClick={() => void handleTrustedDomainActiveChange(domain, !domain.is_active)}
+                        >
+                          <i />
+                        </button>
+                      </td>
+                      <td>
+                        <div className="th-onb-actions">
+                          <button type="button" className="th-onb-action" data-tone="danger" onClick={() => handleDeleteTrustedDomain(domain)} title="Delete mapping" aria-label={`Delete mapping ${domain.domain}`}><Trash2 className="h-4 w-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {editingGroup && (
+        <ModalShell
+          title="Edit group"
+          subtitle={clients.find((c) => c.id === editingGroup.client_id)?.name}
+          icon={Users}
+          onClose={() => setEditingGroup(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setEditingGroup(null)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleUpdateGroup()} disabled={!editGroupName.trim()}>Save group</Button>
+            </>
+          }
+        >
+          <label className="th-onb-field">
+            Name
+            <input value={editGroupName} onChange={(event) => setEditGroupName(event.target.value)} id="edit-group-name" aria-label="Group name" />
+          </label>
+          <label className="th-onb-field">
+            Description
+            <textarea value={editGroupDescription} onChange={(event) => setEditGroupDescription(event.target.value)} rows={3} placeholder="Optional" />
+          </label>
+        </ModalShell>
       )}
 
       {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-950 p-5 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white">Edit client</h2>
-              <button
-                type="button"
-                onClick={() => setEditingClient(null)}
-                className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <input
-                value={editClientName}
-                onChange={(event) => setEditClientName(event.target.value)}
-                id="edit-client-name"
-                name="edit-client-name"
-                aria-label="Client name"
-                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <textarea
-                value={editClientDescription}
-                onChange={(event) => setEditClientDescription(event.target.value)}
-                rows={3}
-                placeholder="Description"
-                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-techi-orange/60"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingClient(null)}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/[0.04] hover:text-white"
-                >
-                  Cancel
-                </button>
-                <Button type="button" onClick={handleUpdateClient}>
-                  Save Client
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ModalShell
+          title="Edit client"
+          subtitle={editingClient.slug}
+          icon={Building2}
+          onClose={() => setEditingClient(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setEditingClient(null)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleUpdateClient()} disabled={!editClientName.trim()}>Save client</Button>
+            </>
+          }
+        >
+          <label className="th-onb-field">
+            Name
+            <input value={editClientName} onChange={(event) => setEditClientName(event.target.value)} id="edit-client-name" aria-label="Client name" />
+          </label>
+          <label className="th-onb-field">
+            Description
+            <textarea value={editClientDescription} onChange={(event) => setEditClientDescription(event.target.value)} rows={3} placeholder="Optional" />
+          </label>
+        </ModalShell>
       )}
+
       {pendingConfirm && (
         <ConfirmationModal
           title={pendingConfirm.title}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import { AlertTriangle, Building2, CalendarClock, CheckCircle2, Download, FileCheck2, FileSpreadsheet, History, Loader2, LucideIcon, Monitor, Pause, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, Building2, CalendarClock, CheckCircle2, Download, FileCheck2, FileSpreadsheet, History, Loader2, Monitor, Pause, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 
 import {
   createReportSchedule, deleteReportRun, deleteReportSchedule, downloadReport, generateReport,
@@ -14,6 +14,7 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
 import TablePagination from "../components/ui/TablePagination";
+import { CardHead } from "../components/ui/PanelCard";
 import { EmptyState, SelectField } from "../components/ui";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
@@ -528,20 +529,5 @@ export default function Reports() {
 
       {deleteRunTarget && <ConfirmationModal title="Delete report" confirmLabel="Delete report" loading={busy} onClose={() => setDeleteRunTarget(null)} onConfirm={() => void confirmDeleteRun()}><p>Permanently delete the <strong style={{ color: "var(--th-text-primary)" }}>{deleteRunTarget.device_name || deleteRunTarget.client_name}</strong> {deleteRunTarget.report_format.toUpperCase()} report from {formatDate(deleteRunTarget.created_at)}? This removes the stored file and cannot be undone. {deleteRunTarget.schedule_id ? "Its schedule is not affected." : ""}</p></ConfirmationModal>}
     </section>
-  );
-}
-
-function CardHead({ icon: Icon, tone, title, subtitle, aside }: { icon: LucideIcon; tone: string; title: string; subtitle?: string; aside?: ReactNode }) {
-  return (
-    <div className="th-onb-card-head">
-      <div className="th-onb-card-title">
-        <span className="th-onb-icon" style={{ "--onb-tone": tone } as CSSProperties}><Icon className="h-4 w-4" /></span>
-        <span className="min-w-0">
-          <span className="block truncate">{title}</span>
-          {subtitle && <small className="truncate">{subtitle}</small>}
-        </span>
-      </div>
-      {aside}
-    </div>
   );
 }

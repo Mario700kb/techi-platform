@@ -1813,6 +1813,53 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
   background: var(--th-chip-bg);
 }
 .th-alerts-table tbody tr.th-onb-detail-row > td { background: var(--th-bg-surface); }
+.th-onb-field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--th-border-input); resize: vertical; }
+.th-onb-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 4px 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-chip-bg);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+}
+.th-onb-group > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--th-text-faint);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.th-onb-group > button:hover { color: var(--th-text-primary); background: var(--th-sidebar-nav-hover); }
+.th-onb-group > button[data-tone="danger"]:hover { color: var(--th-status-critical); }
+.th-onb-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--th-border-default);
+  background: var(--th-chip-bg);
+  transition: background-color 200ms var(--th-ease), border-color 200ms var(--th-ease);
+}
+.th-onb-switch > i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--th-text-faint);
+  transition: transform 240ms var(--th-ease-out), background-color 200ms var(--th-ease);
+}
+.th-onb-switch[aria-checked="true"] { border-color: color-mix(in srgb, var(--th-status-online) 50%, transparent); background: color-mix(in srgb, var(--th-status-online) 22%, transparent); }
+.th-onb-switch[aria-checked="true"] > i { transform: translateX(14px); background: var(--th-status-online); }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
