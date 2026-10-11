@@ -101,6 +101,8 @@ func ensureRustDesk(cfg *Config, configPath string) {
 			cfg.RustDeskOptionsSchemaVer = rustDeskOptionsSchemaVersion
 		}
 
+		clearPlatformAPIServer(cfg)
+
 		// Service is the real connection daemon -- always ensured regardless
 		// of cooldown, same as the tray.
 		if changed, err := ensureRustDeskService(); err != nil {

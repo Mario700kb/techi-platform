@@ -413,6 +413,19 @@ func classifyRemoteSupportProcessArgs(brandedCmdlines []string, legacyPresent bo
 	return signals
 }
 
+// remoteSupportSessionActive reports whether any branded process looks like a
+// live remote session: RustDesk starts its connection manager ("--cm") for
+// each incoming session. An unreadable command line counts as a session, so
+// the agent never restarts Remote Support on a guess.
+func remoteSupportSessionActive(brandedCmdlines []string) bool {
+	for _, raw := range brandedCmdlines {
+		if raw == "" || strings.Contains(strings.ToLower(raw), "--cm") {
+			return true
+		}
+	}
+	return false
+}
+
 // remoteSupportManagedInstallDirs are the directories a MANAGED Remote Support
 // installation can live in (Program Files is the supported location; the others
 // are historical install paths still present in the fleet). Termination is

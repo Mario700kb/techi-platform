@@ -7,7 +7,9 @@
     2. uninstall: exit 0, service gone;
     3. upgrade over the baseline (2.1.20) while a process named like Remote
        Support holds librustdesk.dll open: exit 0 (no 1603, no 3010), holder
-       stopped by the MSI, new payload in place, agent configuration kept.
+       stopped by the MSI, new payload in place, agent configuration kept,
+       api-server cleared;
+    4. the agent itself removes an api-server that points at the platform.
   The agent and Remote Support are pointed at 127.0.0.1 so nothing reaches
   production. Runs under Windows PowerShell 5.1 (Add-Type -OutputType needs it).
 #>
@@ -163,13 +165,25 @@ $want = (Get-FileHash (Join-Path $PayloadDir 'librustdesk.dll')).Hash
 $got = if (Test-Path $locked) { (Get-FileHash $locked).Hash } else { 'missing' }
 Check ($got -eq $want) 'librustdesk.dll is the packaged one after upgrade'
 Check (Test-Path $AgentConfig) 'agent configuration kept across the upgrade'
-# The DLL only patches keys it is given, so a client the baseline pointed at
-# the platform may keep that api-server until the agent removes it. Reported,
-# not enforced: it measures what the fleet will carry after this release.
-Get-ApiServers | ForEach-Object {
-    Write-Host "  upgraded toml  $($_.Path) api-server='$($_.ApiServer)'"
-    if ($_.ApiServer -ne '') { Write-Host "::warning::api-server '$($_.ApiServer)' survived the upgrade in $($_.Path)" }
+$upgraded = @(Get-ApiServers)
+$upgraded | ForEach-Object { Write-Host "  upgraded toml  $($_.Path) api-server='$($_.ApiServer)'" }
+Check (@($upgraded | Where-Object { $_.ApiServer -ne '' }).Count -eq 0) 'the upgrade cleared api-server'
+
+Write-Host '== 4. the agent itself clears an api-server pointing at the platform'
+# self_update replaces only techi-agent.exe, so devices that still carry the
+# setting are cleaned by the agent, not the MSI. Put it back, run one cycle.
+foreach ($t in $upgraded) {
+    $content = (Get-Content -LiteralPath $t.Path -Raw) -replace "(?m)^\s*api-server\s*=.*\r?\n?", ''
+    $content = $content -replace '\[options\]\r?\n', "[options]`r`napi-server = 'http://127.0.0.1:9'`r`n"
+    Set-Content -LiteralPath $t.Path -Value $content -NoNewline
 }
+Check (@(Get-ApiServers | Where-Object { $_.ApiServer -eq 'http://127.0.0.1:9' }).Count -eq $upgraded.Count) 'platform api-server planted in every Remote Support configuration'
+$agentExe = Join-Path $env:ProgramData 'TechiAgent\techi-agent.exe'
+$agentOut = Join-Path $LogDir 'agent-once.log'
+Start-Process -FilePath $agentExe -ArgumentList '-once' -Wait -NoNewWindow -RedirectStandardError $agentOut -RedirectStandardOutput (Join-Path $LogDir 'agent-once.out') | Out-Null
+$after = @(Get-ApiServers)
+$after | ForEach-Object { Write-Host "  after agent  $($_.Path) api-server='$($_.ApiServer)'" }
+Check (@($after | Where-Object { $_.ApiServer -ne '' }).Count -eq 0) 'one agent cycle removed every platform api-server'
 
 Copy-Item $DeployLog $LogDir -ErrorAction SilentlyContinue
 if ($failures.Count -gt 0) {

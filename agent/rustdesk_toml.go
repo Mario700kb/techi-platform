@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 )
 
@@ -247,4 +248,74 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 	}
 
 	return strings.Join(lines, "\n"), changed
+}
+
+// removeTOMLOptionIf deletes key from the [options] section when drop accepts
+// its (unquoted) value. Everything else in the file is preserved verbatim.
+func removeTOMLOptionIf(content, key string, drop func(value string) bool) (string, bool) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	kept := lines[:0]
+	inOptions := false
+	changed := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inOptions = trimmed == "[options]"
+		} else if inOptions {
+			if idx := strings.IndexByte(trimmed, '='); idx > 0 && strings.TrimSpace(trimmed[:idx]) == key {
+				if drop(stripTOMLQuotes(strings.TrimSpace(trimmed[idx+1:]))) {
+					changed = true
+					continue
+				}
+			}
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n"), changed
+}
+
+// platformHosts are the hosts this agent reports to. A Remote Support
+// api-server naming one of them is the RISK-SUPPLY-002 setting the MSI used
+// to write: the client then posted its own telemetry to the platform every
+// 10-15 seconds, and the platform processed none of it.
+func platformHosts(cfg *Config) []string {
+	var hosts []string
+	for _, raw := range []string{cfg.APIURL, cfg.BackendURL} {
+		if host := urlHost(raw); host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
+}
+
+func urlHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// apiServerPointsAtPlatform reports whether a Remote Support api-server value
+// names one of the platform hosts. Any other value is someone's deliberate
+// choice and is left alone.
+func apiServerPointsAtPlatform(value string, hosts []string) bool {
+	host := urlHost(value)
+	if host == "" {
+		return false
+	}
+	for _, h := range hosts {
+		if host == h {
+			return true
+		}
+	}
+	return false
 }
