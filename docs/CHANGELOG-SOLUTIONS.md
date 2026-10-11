@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] UI-INPUTS-2026-10-11 — search fields and dropdowns visible, one search component
+
+Owner request: search fields and dropdown buttons should be more visible and
+consistent with the rest of the app. In the dark theme the input fill equalled
+the card (`#1A1A1E`) and the border was 6% white. Now `--th-bg-input` is
+`#202025`, `--th-border-input` is 12% and `--th-border-strong` (hover) is 18%.
+The light theme is unchanged. Every search uses `.th-search`, with the compact
+`.th-search-sm`, and `EntitySearchSelect` uses `.th-select`. Commit `41cd2e2`.
+
+Deployed 2026-10-11 14:10, frontend only, backend and PostgreSQL untouched.
+Rollback image `techi-platform-frontend:pre-ui-inputs-5718ab5`. Checks:
+`tsc` clean, frontend 92/92, build OK, and the dark/light theme renders were
+checked against the built CSS. After deploy: frontend healthy, HTTP 200 on
+`https://rdp.techi.com.al`, and the served CSS carries the new tokens.
+Authenticated browser smoke pending.
+
 ## [2026-10-11] HB-TIMEOUT-2026-10-11 — offline alerts were heartbeat-timeout flapping
 
 The baseline taken before the agent release showed that end-of-day shutdowns
