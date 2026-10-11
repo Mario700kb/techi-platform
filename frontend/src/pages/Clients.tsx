@@ -22,6 +22,12 @@ const CLIENT_FILTERS: { id: ClientFilter; label: string }[] = [
   { id: "inactive", label: "Inactive" },
 ];
 
+/** Mirrors ClientService._normalize_slug, so the placeholder is the slug the
+ *  backend will store. */
+function slugify(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 140);
+}
+
 export default function Clients() {
   const { can } = useAuth();
   const canManageClients = can("admin");
@@ -31,6 +37,7 @@ export default function Clients() {
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({});
   const [clientName, setClientName] = useState("");
   const [clientDescription, setClientDescription] = useState("");
+  const [clientSlug, setClientSlug] = useState("");
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [groupClientId, setGroupClientId] = useState("");
@@ -126,10 +133,12 @@ export default function Clients() {
       setError(null);
       const created = await createClient({
         name: clientName,
+        slug: clientSlug.trim() || undefined,
         description: clientDescription || undefined,
       });
       setClients((items) => { const next = [...items, created].sort((a, b) => a.name.localeCompare(b.name)); appCache.set(CACHE_KEYS.clientsList, next); return next; });
       setClientName("");
+      setClientSlug("");
       setClientDescription("");
       if (!groupClientId) setGroupClientId(String(created.id));
     } catch (err) {
@@ -331,10 +340,16 @@ export default function Clients() {
           <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
             <CardHead icon={Building2} tone="var(--th-accent)" title="New client" subtitle="A customer whose devices the platform manages" />
             <div className="th-onb-body flex-1">
-              <label className="th-onb-field">
-                Name
-                <input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="e.g. Vasgroup" onKeyDown={(e) => e.key === "Enter" && void handleCreateClient()} />
-              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="th-onb-field">
+                  Name
+                  <input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="e.g. Vasgroup" onKeyDown={(e) => e.key === "Enter" && void handleCreateClient()} />
+                </label>
+                <label className="th-onb-field">
+                  Slug
+                  <input value={clientSlug} onChange={(event) => setClientSlug(event.target.value)} placeholder={slugify(clientName) || "Derived from the name"} spellCheck={false} />
+                </label>
+              </div>
               <label className="th-onb-field">
                 Description
                 <textarea value={clientDescription} onChange={(event) => setClientDescription(event.target.value)} placeholder="Optional" rows={3} />
@@ -367,7 +382,7 @@ export default function Clients() {
               </label>
             </div>
             <div className="th-onb-foot">
-              <Button className="w-full" variant="secondary" type="button" onClick={() => void handleCreateGroup()} disabled={!clients.length || !groupName.trim() || !groupClientId}>
+              <Button className="w-full" type="button" onClick={() => void handleCreateGroup()} disabled={!clients.length || !groupName.trim() || !groupClientId}>
                 <Plus className="h-4 w-4" />
                 Create group
               </Button>
@@ -507,16 +522,16 @@ export default function Clients() {
       {canManageClients && (
         <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 7 } as CSSProperties}>
           <CardHead icon={Globe2} tone={TONE.maintenance} title="Domain mapping" subtitle="Maps the domain a device reports to the client that automatic enrollment places it in" />
-          <div className="th-onb-upload !grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="th-onb-maprow th-onb-mapadd">
             <label className="th-onb-field">
               Domain
               <input value={domainName} onChange={(event) => setDomainName(event.target.value)} placeholder="e.g. VASGROUP" spellCheck={false} onKeyDown={(e) => e.key === "Enter" && void handleCreateTrustedDomain()} />
             </label>
             <div className="th-onb-field">
               Client
-              <Select id="domain-client" aria-label="Mapped client" value={domainClientId} onChange={setDomainClientId} options={clientOptions} placeholder="Select client" />
+              <Select id="domain-client" aria-label="Mapped client" value={domainClientId} onChange={setDomainClientId} options={clientOptions} placeholder="Select client" className="w-full" />
             </div>
-            <Button type="button" onClick={() => void handleCreateTrustedDomain()} disabled={!clients.length || !domainName.trim() || !domainClientId}>
+            <Button className="w-full" type="button" onClick={() => void handleCreateTrustedDomain()} disabled={!clients.length || !domainName.trim() || !domainClientId}>
               <Plus className="h-4 w-4" />
               Add mapping
             </Button>
@@ -524,59 +539,40 @@ export default function Clients() {
           {mappedTrustedDomains.length === 0 ? (
             <EmptyState className="py-8" icon={<Globe2 className="h-5 w-5" />} title="No domain mappings" description="Without one, domain-joined devices enroll through their token's client." />
           ) : (
-            <div className="th-alerts-scroll th-table-scroll">
-              <table className="th-alerts-table">
-                <colgroup>
-                  <col className="w-[32%]" />
-                  <col />
-                  <col className="w-[120px]" />
-                  <col className="w-[72px]" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Domain</th>
-                    <th>Client</th>
-                    <th>Active</th>
-                    <th className="text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mappedTrustedDomains.map((domain, index) => (
-                    <tr key={domain.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
-                      <td><span className="th-alerts-primary font-mono !text-[12px]">{domain.domain}</span></td>
-                      <td>
-                        <div className="max-w-[320px]">
-                          <Select
-                            id={`domain-${domain.id}-client`}
-                            aria-label={`Client for ${domain.domain}`}
-                            value={domain.client_id ? String(domain.client_id) : ""}
-                            onChange={(value) => void handleTrustedDomainClientChange(domain, value)}
-                            options={clientOptions}
-                            className="w-full"
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={domain.is_active}
-                          aria-label={`${domain.domain} active`}
-                          className="th-onb-switch"
-                          onClick={() => void handleTrustedDomainActiveChange(domain, !domain.is_active)}
-                        >
-                          <i />
-                        </button>
-                      </td>
-                      <td>
-                        <div className="th-onb-actions">
-                          <button type="button" className="th-onb-action" data-tone="danger" onClick={() => handleDeleteTrustedDomain(domain)} title="Delete mapping" aria-label={`Delete mapping ${domain.domain}`}><Trash2 className="h-4 w-4" /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div role="table" aria-label="Domain mappings">
+              <div role="row" className="th-onb-maprow th-onb-maphead">
+                <span role="columnheader">Domain</span>
+                <span role="columnheader">Client</span>
+                <span role="columnheader" className="flex justify-between"><span>Active</span><span>Actions</span></span>
+              </div>
+              {mappedTrustedDomains.map((domain, index) => (
+                <div role="row" key={domain.id} className="th-onb-maprow th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                  <span role="cell" className="th-alerts-primary font-mono !text-[12px]">{domain.domain}</span>
+                  <span role="cell">
+                    <Select
+                      id={`domain-${domain.id}-client`}
+                      aria-label={`Client for ${domain.domain}`}
+                      value={domain.client_id ? String(domain.client_id) : ""}
+                      onChange={(value) => void handleTrustedDomainClientChange(domain, value)}
+                      options={clientOptions}
+                      className="w-full"
+                    />
+                  </span>
+                  <span role="cell" className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={domain.is_active}
+                      aria-label={`${domain.domain} active`}
+                      className="th-onb-switch"
+                      onClick={() => void handleTrustedDomainActiveChange(domain, !domain.is_active)}
+                    >
+                      <i />
+                    </button>
+                    <button type="button" className="th-onb-action" data-tone="danger" onClick={() => handleDeleteTrustedDomain(domain)} title="Delete mapping" aria-label={`Delete mapping ${domain.domain}`}><Trash2 className="h-4 w-4" /></button>
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>

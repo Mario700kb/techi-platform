@@ -1850,7 +1850,7 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-onb-switch > i {
   position: absolute;
-  top: 2px;
+  top: calc(50% - 7px);
   left: 2px;
   width: 14px;
   height: 14px;
@@ -1860,6 +1860,21 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-onb-switch[aria-checked="true"] { border-color: color-mix(in srgb, var(--th-status-online) 50%, transparent); background: color-mix(in srgb, var(--th-status-online) 22%, transparent); }
 .th-onb-switch[aria-checked="true"] > i { transform: translateX(14px); background: var(--th-status-online); }
+/* Domain mapping: the add row, the header and every mapping share one grid,
+   so the domain, client and controls columns line up top to bottom. */
+.th-onb-maprow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 168px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-onb-maprow:last-child { border-bottom: 0; }
+.th-onb-mapadd { align-items: end; padding-top: 14px; padding-bottom: 14px; background: var(--th-bg-surface); }
+.th-onb-maphead { padding-top: 8px; padding-bottom: 8px; background: var(--th-bg-table-head); font-size: 12px; font-weight: 500; color: var(--th-text-muted); }
+.th-onb-maprow.th-alerts-row:hover { background: var(--th-table-hover); }
+@media (max-width: 760px) { .th-onb-maprow { grid-template-columns: 1fr; } }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
