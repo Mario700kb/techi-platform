@@ -89,7 +89,7 @@ export default function AlertsDesktop() {
 
   const changePage = (next: number) => {
     setPage(next);
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    scrollRef.current?.scrollTo?.({ top: 0, behavior: "smooth" });
   };
 
   useEffect(() => {

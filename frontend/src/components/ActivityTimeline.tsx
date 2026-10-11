@@ -1,8 +1,10 @@
 import { Activity, AlertTriangle, Archive, CheckCircle, ClipboardList, FilePenLine, Monitor, RefreshCcw, RotateCcw, ShieldAlert, Wifi, WifiOff, Wrench } from "lucide-react";
 import type { ComponentType } from "react";
 import { ActivityEvent, ActivityEventType } from "../types/activity";
-import { timeAgo } from "../utils/time";
+import { formatDateTime, timeAgo } from "../utils/time";
 import { useNow } from "../hooks/useNow";
+import { TONE } from "../utils/deviceStatus";
+import { Button, EmptyState } from "./ui";
 
 interface ActivityTimelineProps {
   events: ActivityEvent[];
@@ -16,6 +18,8 @@ interface EventConfig {
   iconClass: string;
   bg: string;
   border: string;
+  /** Token colour for states without a Tailwind hue (e.g. maintenance); overrides the classes. */
+  tone?: string;
 }
 
 const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
@@ -35,7 +39,7 @@ const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
   assignment_changed:{ icon: ClipboardList,  color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
   device_archived:   { icon: Archive,        color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
   device_restored:   { icon: RotateCcw,      color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  maintenance_entered:{ icon: Wrench,        color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
+  maintenance_entered:{ icon: Wrench,        color: "",                 iconClass: "",                 bg: "",                       border: "",                       tone: TONE.maintenance },
   maintenance_cleared:{ icon: Wrench,        color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
   action_queued:     { icon: Activity,       color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
   action_completed:  { icon: CheckCircle,    color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
@@ -52,10 +56,6 @@ const FALLBACK_CONFIG: EventConfig = {
   icon: Activity, color: "text-slate-400", iconClass: "text-slate-600", bg: "bg-slate-700/15", border: "border-slate-700/25",
 };
 
-function formatActivityTime(occurredAt: string): string {
-  return timeAgo(occurredAt);
-}
-
 export default function ActivityTimeline({ events, loading, onReload }: ActivityTimelineProps) {
   useNow();
   return (
@@ -63,27 +63,21 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
       <div className="mb-3 flex items-center justify-between">
         <p className="premium-kicker">Activity</p>
         {onReload && (
-          <button
-            type="button"
-            onClick={onReload}
-            className="th-btn th-btn-secondary inline-flex min-h-8 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold"
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={onReload}>
             <RefreshCcw className="h-3.5 w-3.5" />
             Refresh
-          </button>
+          </Button>
         )}
       </div>
 
       {loading ? (
         <div className="py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading activity…</div>
       ) : events.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <Activity className="h-5 w-5 text-slate-500" />
-          <div>
-            <p className="text-xs font-semibold text-slate-300">No recent activity</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">Events will appear here as devices report in.</p>
-          </div>
-        </div>
+        <EmptyState
+          icon={<Activity className="h-5 w-5" />}
+          title="No activity yet"
+          description="Check-ins, status changes, actions and notes for this device will be listed here."
+        />
       ) : (
         <ul className="relative space-y-0">
           {events.map((event, idx) => {
@@ -103,6 +97,11 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                 {/* Icon circle */}
                 <div
                   className={`relative z-10 mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border ${config.bg} ${config.border}`}
+                  style={config.tone ? {
+                    color: config.tone,
+                    background: `color-mix(in srgb, ${config.tone} 8%, transparent)`,
+                    borderColor: `color-mix(in srgb, ${config.tone} 22%, transparent)`,
+                  } : undefined}
                 >
                   <Icon className={`h-3 w-3 ${config.iconClass}`} />
                 </div>
@@ -113,9 +112,14 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                     <span className="text-[13px] font-medium leading-snug" style={{ color: "var(--th-text-primary)" }}>
                       {event.summary}
                     </span>
-                    <span className="flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
-                      {formatActivityTime(event.occurred_at)}
-                    </span>
+                    <time
+                      dateTime={event.occurred_at}
+                      title={formatDateTime(event.occurred_at)}
+                      className="flex-none text-[12px] tabular-nums"
+                      style={{ color: "var(--th-text-faint)" }}
+                    >
+                      {timeAgo(event.occurred_at)}
+                    </time>
                   </div>
                   {event.detail && (
                     event.type === "device_offline" ? (

@@ -1,7 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import type { LucideIcon } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, Building2, Cpu, Fingerprint, HardDrive, Link2, Loader2, MemoryStick, Wrench, X, AlertTriangle, RefreshCcw,
+  AlertTriangle, Layers, Link2, Loader2, RefreshCcw, Save, StickyNote, Wrench, X,
 } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
@@ -15,13 +14,17 @@ import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useNow } from "../hooks/useNow";
-import { timeAgo } from "../utils/time";
+import { useTabIndicator } from "../hooks/useTabIndicator";
+import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
+import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
+import { formatDateTime, timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
 import HealthBadge from "./HealthBadge";
 import PlatformIcon from "./PlatformIcon";
+import ResourceBar from "./ResourceBar";
 import VersionBadge from "./VersionBadge";
 import { Button, EmptyState, SelectField } from "./ui";
 
@@ -31,9 +34,8 @@ const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 // every future platform). It renders ENTIRELY from GET /devices/{id}/drawer
 // (Platform + Capability + Action + Connect registries) — no per-platform code.
 // Windows devices (no reported capabilities) never reach here; the render site
-// selects the classic DeviceDrawer for them, so Windows stays byte-identical.
-// This IS the enterprise standard drawer for Linux/MikroTik/Synology/QNAP/
-// VMware/Proxmox/… — one polished layout, not a per-platform prototype.
+// selects the classic DeviceDrawer for them. Structure, classes and wording
+// follow DeviceDrawer so both drawers read as one product.
 interface Props {
   device: Device;
   isOpen: boolean;
@@ -52,6 +54,11 @@ const CAP_TAB_LABELS: Record<string, string> = {
   services: "Services", processes: "Processes", packages: "Packages",
   docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
 };
+const CAPABILITY_TABS = Object.keys(CAP_TAB_LABELS);
+
+const TABLE_ROW_LIMIT = 200;
+
+type InventoryState = "loading" | "error" | "ready";
 
 export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated, initialTab }: Props) {
   useNow();
@@ -59,25 +66,53 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   const [meta, setMeta] = useState<DrawerMeta | null>(null);
   const [metaFailed, setMetaFailed] = useState(false);
   const [tab, setTab] = useState<string>("overview");
+  const tabsRef = useTabIndicator<HTMLDivElement>(`${tab}:${meta ? "ready" : "loading"}`);
   const [inventory, setInventory] = useState<DeviceInventory | null>(null);
+  const [inventoryState, setInventoryState] = useState<InventoryState>("loading");
   const [notes, setNotes] = useState<DeviceNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
   const [confirm, setConfirm] = useState<DrawerAction | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const toastTimer = useRef<number | null>(null);
   const { events, loading: tlLoading, reload: reloadTimeline } = useDeviceActivity({
     deviceId: device.id, latestEvent, enabled: isOpen && tab === "timeline",
   });
   const { snapshot, healthScore, healthState } = useDeviceTelemetry({
     deviceId: isOpen ? device.id : null, latestEvent,
   });
+  const operate = canOperate !== false;
+  const displayName = deviceDisplayName(device);
+  const hostnameSubtitle = deviceHostnameSubtitle(device);
+  const freshness = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
+  const freshnessColor = freshnessTone(freshness);
 
   useEffect(() => {
     if (!isOpen) return;
     setTab(initialTab ?? "overview");
     loadMeta();
-    getDeviceInventory(device.id).then(setInventory).catch(() => setInventory(null));
+    loadInventory();
   }, [isOpen, device.id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !confirm) onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handler);
+    };
+  }, [isOpen, onClose, confirm]);
+
+  useEffect(() => () => {
+    if (toastTimer.current != null) window.clearTimeout(toastTimer.current);
+  }, []);
 
   function loadMeta() {
     setMetaFailed(false);
@@ -89,30 +124,52 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
       });
   }
 
+  function loadInventory() {
+    setInventoryState("loading");
+    getDeviceInventory(device.id)
+      .then((inv) => {
+        setInventory(inv);
+        setInventoryState("ready");
+      })
+      .catch(() => {
+        setInventory(null);
+        setInventoryState("error");
+      });
+  }
+
   useEffect(() => {
-    if (isOpen && tab === "notes") getDeviceNotes(device.id).then(setNotes).catch(() => setNotes([]));
+    if (!isOpen || tab !== "notes") return;
+    setNotesLoading(true);
+    getDeviceNotes(device.id)
+      .then(setNotes)
+      .catch(() => setNotes([]))
+      .finally(() => setNotesLoading(false));
   }, [isOpen, tab, device.id]);
 
   const tabs = useMemo(() => {
     const t: Array<{ id: string; label: string }> = [{ id: "overview", label: "Overview" }];
-    if (meta?.remote_support) t.push({ id: "remote_support", label: "Remote Support" });
+    if (meta?.remote_support) t.push({ id: "remote_support", label: TERMS.remoteSupport });
     if (meta?.terminal && features.FEATURE_TERMINAL) t.push({ id: "terminal", label: "Terminal" });
-    (meta?.capability_tabs ?? []).forEach((c) => t.push({ id: c, label: CAP_TAB_LABELS[c] ?? c }));
+    (meta?.capability_tabs ?? []).forEach((c) => t.push({ id: c, label: CAP_TAB_LABELS[c] ?? humanize(c) }));
     if (meta?.actions?.length) t.push({ id: "management", label: "Management" });
     t.push({ id: "notes", label: "Notes" });
     t.push({ id: "timeline", label: "Timeline" });
     return t;
   }, [meta, features.FEATURE_TERMINAL]);
 
-  const flash = (msg: string) => { setToast(msg); window.setTimeout(() => setToast(null), 2600); };
+  const flash = (message: string, ok: boolean) => {
+    if (toastTimer.current != null) window.clearTimeout(toastTimer.current);
+    setToast({ message, ok });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000);
+  };
 
   const runAction = async (a: DrawerAction) => {
     setBusy(a.id);
     try {
       await queueDeviceAction(device.id, { action_type: a.id as ActionType });
-      flash(`Queued: ${a.label}`);
+      flash(`${a.label} queued`, true);
     } catch (e) {
-      flash(e instanceof Error ? e.message : "Action failed");
+      flash(e instanceof Error ? e.message : "Action failed", false);
     } finally {
       setBusy(null);
       setConfirm(null);
@@ -127,69 +184,102 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   const addNote = async () => {
     const text = noteText.trim();
     if (!text) return;
+    setNoteBusy(true);
     try {
       await createDeviceNote(device.id, text);
       setNoteText("");
       setNotes(await getDeviceNotes(device.id));
     } catch (e) {
-      flash(e instanceof Error ? e.message : "Failed to add note");
+      flash(e instanceof Error ? e.message : "Failed to add note", false);
+    } finally {
+      setNoteBusy(false);
     }
   };
 
-  const isOnline = device.status === "online";
+  const openTerminal = meta?.terminal && features.FEATURE_TERMINAL ? () => setTab("terminal") : undefined;
 
   return (
     <>
       <div
-        className={`th-drawer-scrim fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`th-drawer-scrim fixed inset-0 z-40 backdrop-blur-[2px] ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        style={{ background: "var(--th-scrim)" }}
         data-open={isOpen}
         onClick={onClose}
       />
       <div
-        className={`th-drawer-panel fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+        className={`th-drawer th-drawer-panel fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col shadow-2xl ${isOpen ? "translate-x-0" : "translate-x-full"}`}
         data-open={isOpen}
         style={{ borderLeft: "1px solid var(--th-border-drawer)", background: "var(--th-bg-drawer)" }}
       >
-        {/* Header — device identity + health at a glance, before anything else */}
-        <div className="flex flex-none items-start gap-3 px-5 pb-4 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg" style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-            <PlatformIcon platform={meta?.platform ?? device.platform} size={20} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate text-[15px] font-bold leading-tight" style={{ color: "var(--th-text-primary)" }}>{device.display_name || device.hostname}</h2>
-              <span className="flex-none rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>{meta?.platform ?? device.platform}</span>
+        <header className="flex-none px-5 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
+          <div className="flex items-start gap-3">
+            <span className="th-palette-icon !h-10 !w-10 flex-none" aria-hidden="true">
+              <PlatformIcon platform={meta?.platform ?? device.platform} size={20} />
+              <i style={{ background: freshnessColor }} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="min-w-0 break-words text-[17px] font-semibold leading-snug" style={{ color: "var(--th-text-primary)" }} title={displayName}>
+                {displayName}
+              </h2>
+              <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {[
+                  humanize(meta?.platform ?? device.platform ?? ""),
+                  device.resolved_client_name || device.client_name || TERMS.noClient,
+                  device.resolved_group || device.group_name,
+                  hostnameSubtitle ? `host ${hostnameSubtitle}` : null,
+                  `#${device.id}`,
+                ].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-              <span className="flex items-center gap-1.5 font-semibold" style={{ color: isOnline ? "var(--th-status-online)" : "var(--th-text-muted)" }}>
-                <span className={`h-1.5 w-1.5 flex-none rounded-full ${isOnline ? "bg-[var(--th-status-online)] shadow-[0_0_5px_color-mix(in_srgb,var(--th-status-online)_60%,transparent)]" : "bg-slate-600"}`} />
-                {isOnline ? "Online" : "Offline"}
-              </span>
-              <span style={{ opacity: 0.35 }}>•</span>
-              <HealthBadge state={healthState} score={healthScore} showLabel size="xs" />
-              <span style={{ opacity: 0.35 }}>•</span>
-              <span className="truncate font-mono">{device.hostname}</span>
-            </div>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="ml-1 flex-none rounded p-1 hover:bg-white/10"><X className="h-4 w-4" style={{ color: "var(--th-text-secondary)" }} /></button>
-        </div>
-
-        {/* Tab bar */}
-        <div className="flex flex-none gap-1 overflow-x-auto px-3 py-2" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors ${tab === t.id ? "bg-techi-orange/15 text-techi-orange" : "hover:bg-white/5"}`}
-              style={tab === t.id ? undefined : { color: "var(--th-text-secondary)" }}
-            >
-              {t.label}
+            <button type="button" onClick={onClose} aria-label="Close" title="Close (Esc)" className="th-icon-btn th-icon-btn-ghost flex-none">
+              <X className="h-4 w-4" />
             </button>
-          ))}
-        </div>
+          </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="th-status-chip" style={{ "--chip-tone": freshnessColor } as React.CSSProperties}>
+              <i />
+              <span>{humanize(freshness)}</span>
+              <span style={{ color: "var(--th-text-faint)" }}>· {timeAgo(device.last_seen)}</span>
+            </span>
+            {healthScore != null && (
+              <span
+                className="th-status-chip"
+                style={{ "--chip-tone": healthState === "critical" ? TONE.critical : healthState === "warning" ? TONE.warning : TONE.online } as React.CSSProperties}
+                title="Health score of 100"
+              >
+                <i />Health {healthScore}
+              </span>
+            )}
+          </div>
+
+          <div ref={tabsRef} role="tablist" aria-label="Device sections" className="th-tabs mt-3 !flex-nowrap overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className="th-tab flex-none whitespace-nowrap !px-3"
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {toast && (
+          <div
+            role="status"
+            className="th-toast th-drawer-callout mx-5 mt-3 flex-none text-[13px] font-medium"
+            data-tone={toast.ok ? "online" : "critical"}
+          >
+            {toast.message}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {!meta && metaFailed ? (
             <EmptyState
               icon={<AlertTriangle className="h-5 w-5" />}
@@ -198,54 +288,69 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               action={<Button size="sm" variant="secondary" onClick={loadMeta}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
             />
           ) : !meta ? (
-            <div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
+            <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
           ) : (
             <>
               {tab === "overview" && (
-                <Overview
-                  device={device}
-                  meta={meta}
-                  snapshot={snapshot}
-                  clients={clients ?? []}
-                  groups={groups ?? []}
-                  canOperate={canOperate !== false}
-                  onDeviceUpdated={onDeviceUpdated}
-                  onOpenTerminal={meta.terminal && features.FEATURE_TERMINAL ? () => setTab("terminal") : undefined}
-                  onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
-                />
-              )}
-              {tab === "remote_support" && (
-                <div className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
-                  <p className="mb-3">Connect using this platform's native methods:</p>
-                  <ConnectMenu
-                    deviceId={device.id}
-                    hostname={device.hostname}
-                    onOpenTerminal={meta.terminal && features.FEATURE_TERMINAL ? () => setTab("terminal") : undefined}
+                <div className="th-tab-panel">
+                  <Overview
+                    device={device}
+                    meta={meta}
+                    snapshot={snapshot}
+                    healthState={healthState}
+                    healthScore={healthScore}
+                    clients={clients ?? []}
+                    groups={groups ?? []}
+                    canOperate={operate}
+                    onDeviceUpdated={onDeviceUpdated}
+                    onOpenTerminal={openTerminal}
+                    onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
                   />
                 </div>
               )}
-              {tab === "terminal" && (
-                <Suspense fallback={<div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading terminal…</div>}>
-                  <DeviceTerminal deviceId={device.id} />
-                </Suspense>
+              {tab === "remote_support" && (
+                <div className="th-tab-panel">
+                  <section className="mb-4">
+                    <p className="premium-kicker mb-2">Connection</p>
+                    <div className="th-drawer-card">
+                      <p className="mb-3 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>Connect using this platform's native methods.</p>
+                      <ConnectMenu deviceId={device.id} hostname={device.hostname} onOpenTerminal={openTerminal} />
+                    </div>
+                  </section>
+                </div>
               )}
-              {["services", "processes", "packages", "docker", "logs", "network", "storage"].includes(tab) && (
-                <CapabilityPanel tab={tab} inventory={inventory} />
+              {tab === "terminal" && (
+                <div className="th-tab-panel min-h-[340px]">
+                  <Suspense fallback={<div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading terminal…</div>}>
+                    <DeviceTerminal deviceId={device.id} />
+                  </Suspense>
+                </div>
+              )}
+              {CAPABILITY_TABS.includes(tab) && (
+                <div className="th-tab-panel">
+                  <CapabilityPanel tab={tab} inventory={inventory} state={inventoryState} onRetry={loadInventory} />
+                </div>
               )}
               {tab === "management" && (
-                <ManagementPanel meta={meta} busy={busy} canOperate={canOperate !== false} onAction={onAction} />
+                <div className="th-tab-panel">
+                  <ManagementPanel meta={meta} busy={busy} canOperate={operate} onAction={onAction} />
+                </div>
               )}
               {tab === "notes" && (
-                <NotesPanel notes={notes} noteText={noteText} setNoteText={setNoteText} onAdd={addNote} canOperate={canOperate !== false} />
+                <div className="th-tab-panel">
+                  <NotesPanel notes={notes} loading={notesLoading} busy={noteBusy} noteText={noteText} setNoteText={setNoteText} onAdd={addNote} canOperate={operate} />
+                </div>
               )}
-              {tab === "timeline" && <ActivityTimeline events={events} loading={tlLoading} onReload={() => void reloadTimeline()} />}
+              {tab === "timeline" && (
+                <div className="th-tab-panel">
+                  <section className="th-drawer-card">
+                    <ActivityTimeline events={events} loading={tlLoading} onReload={() => void reloadTimeline()} />
+                  </section>
+                </div>
+              )}
             </>
           )}
         </div>
-
-        {toast && (
-          <div className="th-fade-in pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-card)", color: "var(--th-text-primary)" }}>{toast}</div>
-        )}
       </div>
 
       {confirm && (
@@ -253,10 +358,11 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
           title={`${confirm.label}?`}
           confirmLabel={confirm.label}
           destructive
+          loading={busy === confirm.id}
           onConfirm={() => void runAction(confirm)}
           onClose={() => setConfirm(null)}
         >
-          This will {confirm.label.toLowerCase()} on {device.hostname}.
+          {confirm.label} will be queued for {displayName} and runs as soon as the device picks it up.
         </ConfirmationModal>
       )}
     </>
@@ -266,10 +372,10 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
 function Row({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
   if (!value) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[13px]">
-      <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>{label}</span>
-      <span className={`max-w-[62%] truncate text-right font-semibold ${mono ? "font-mono text-[12px]" : ""}`} style={{ color: "var(--th-text-primary)" }}>{value}</span>
-    </div>
+    <>
+      <dt>{label}</dt>
+      <dd className={`truncate ${mono ? "font-mono text-[12px]" : ""}`} title={value}>{value}</dd>
+    </>
   );
 }
 
@@ -312,81 +418,62 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
     }
   };
 
-  if (!editing) {
-    return (
-      <div className="flex items-baseline justify-between gap-3 py-[3px] text-[13px]">
-        <span className="flex-none font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</span>
-        <span className="flex items-baseline gap-2">
-          <span className="max-w-[62%] truncate text-right font-mono text-[12px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{current}</span>
-          {canOperate && (
-            <button type="button" onClick={() => setEditing(true)} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>edit</button>
-          )}
-        </span>
-      </div>
-    );
-  }
+  const cancel = () => {
+    setEditing(false);
+    setHost(device.connect_host ?? "");
+    setPort(device.connect_port ? String(device.connect_port) : "");
+    setError(null);
+  };
 
   return (
-    <div className="py-[3px] text-[13px]">
-      <div className="mb-1 font-medium" style={{ color: "var(--th-text-muted)" }}>Connect target</div>
-      <div className="flex items-center gap-2">
-        <input
-          value={host} onChange={(e) => setHost(e.target.value)} placeholder="Auto (reported IP)"
-          aria-label="Connect host"
-          className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[12px]"
-        />
-        <input
-          value={port} onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))} placeholder="port"
-          aria-label="Connect port" inputMode="numeric"
-          className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[12px]"
-        />
-      </div>
-      <div className="mt-1 flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => void save()} className="text-[11px] font-semibold underline" style={{ color: "var(--th-text-primary)" }}>{busy ? "Saving…" : "Save"}</button>
-        <button type="button" disabled={busy} onClick={() => { setEditing(false); setHost(device.connect_host ?? ""); setPort(device.connect_port ? String(device.connect_port) : ""); setError(null); }} className="text-[11px] underline" style={{ color: "var(--th-text-muted)" }}>Cancel</button>
-        {error && <span className="text-[11px]" style={{ color: "var(--th-status-critical)" }}>{error}</span>}
-      </div>
-    </div>
+    <>
+      <dt>Connect target</dt>
+      <dd>
+        {!editing ? (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-mono text-[12px]">{current}</span>
+            {canOperate && (
+              <button type="button" onClick={() => setEditing(true)} className="th-link-btn !h-6">Edit</button>
+            )}
+          </span>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                value={host} onChange={(e) => setHost(e.target.value)} placeholder="Auto (reported IP)"
+                aria-label="Connect host"
+                className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[12px]"
+              />
+              <input
+                value={port} onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Port"
+                aria-label="Connect port" inputMode="numeric"
+                className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[12px]"
+              />
+            </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <Button size="sm" disabled={busy} onClick={() => void save()}>
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button size="sm" variant="secondary" disabled={busy} onClick={cancel}>Cancel</Button>
+              {error && <span className="text-[12px]" style={{ color: TONE.critical }}>{error}</span>}
+            </div>
+          </div>
+        )}
+      </dd>
+    </>
   );
 }
 
-// Per-section accent — a quiet visual cue (icon chip only, never a filled
-// background) so the 5 Overview sections read as distinct at a glance
-// without turning the interface colorful. Connect uses the brand accent
-// (the primary action, not a "5th color").
-type Accent = "identity" | "status" | "resources" | "assignment" | "connect" | "neutral";
-const ACCENTS: Record<Accent, { icon: string; bg: string; border: string }> = {
-  identity:   { icon: "var(--th-status-info)", bg: "color-mix(in srgb, var(--th-status-info) 12%, transparent)",  border: "color-mix(in srgb, var(--th-status-info) 28%, transparent)" },
-  status:     { icon: "var(--th-status-online)", bg: "color-mix(in srgb, var(--th-status-online) 12%, transparent)",  border: "color-mix(in srgb, var(--th-status-online) 28%, transparent)" },
-  resources:  { icon: "var(--th-status-agent)", bg: "color-mix(in srgb, var(--th-status-agent) 12%, transparent)", border: "color-mix(in srgb, var(--th-status-agent) 28%, transparent)" },
-  assignment: { icon: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 12%, transparent)",  border: "color-mix(in srgb, var(--th-accent) 28%, transparent)" },
-  connect:    { icon: "var(--th-accent-bright)", bg: "var(--th-accent-dim-bg)", border: "var(--th-accent-border)" },
-  neutral:    { icon: "var(--th-text-muted)", bg: "var(--th-bg-card)", border: "var(--th-border-card)" },
-};
-
-function SectionIcon({ icon: Icon, accent }: { icon: LucideIcon; accent: Accent }) {
-  const theme = ACCENTS[accent];
+function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <span className="flex h-5 w-5 flex-none items-center justify-center rounded" style={{ background: theme.bg, border: `1px solid ${theme.border}` }}>
-      <Icon className="h-3 w-3" style={{ color: theme.icon }} />
-    </span>
-  );
-}
-
-function Section({ title, icon, accent = "neutral", action, children }: {
-  title: string; icon?: LucideIcon; accent?: Accent; action?: React.ReactNode; children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border px-3.5 py-3" style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-drawer-section)" }}>
+    <section className="mb-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {icon && <SectionIcon icon={icon} accent={accent} />}
-          <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-secondary)" }}>{title}</p>
-        </div>
-        {action}
+        <p className="premium-kicker">{title}</p>
+        {aside}
       </div>
-      {children}
-    </div>
+      <div className="th-drawer-card">{children}</div>
+    </section>
   );
 }
 
@@ -406,51 +493,20 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
     normalized === "enrollment_token" ? "token" :
     normalized === "auto_os" || normalized === "system_auto" ? "auto" :
     "unassigned";
-  return (
-    <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>
-      {label}
-    </span>
-  );
+  return <span className="th-status-chip !h-6">{label}</span>;
 }
 
-// Richer resource meter than the shared ResourceBar (which Windows also
-// uses) — icon + bold percentage + colored fill. Kept local to the Generic
-// Drawer so Windows' own Overview is never touched by this polish pass.
-function ResourceMeter({ icon: Icon, label, percent }: { icon: LucideIcon; label: string; percent: number | null }) {
-  const has = percent != null;
-  const clamped = has ? Math.min(100, Math.max(0, percent as number)) : 0;
-  const fill = !has ? "var(--th-border-card)" : clamped >= 90 ? "var(--th-status-critical)" : clamped >= 75 ? "var(--th-status-warning)" : ACCENTS.resources.icon;
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>
-          <Icon className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
-          {label}
-        </span>
-        <span className="text-[13px] font-bold tabular-nums" style={{ color: has ? "var(--th-text-primary)" : "var(--th-text-faint)" }}>
-          {has ? `${clamped.toFixed(0)}%` : "—"}
-        </span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--th-bg-card)" }}>
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${clamped}%`, background: fill }} />
-      </div>
-    </div>
-  );
-}
-
-// Enterprise operational overview — the standard for every non-Windows
-// platform drawer (Linux, MikroTik, Synology, QNAP, VMware, Proxmox, …).
-// Ordered by what an operator needs to know first: is it healthy (header,
-// above) → how do I reach it (Connect) → what is it (Identity/Status) →
-// how loaded is it (Resources) → who owns it (Assignment). Exactly 5
-// sections, nothing more — deeper detail either has its own capability tab
-// or belongs to Connect (Winbox/WebFig/SSH), never a config dump here.
+// Ordered by what an operator needs first: how do I reach it (Connect) → is it
+// alive (Status) → what is it (Identity) → how loaded is it (Resources) → who
+// owns it (Assignment). Deeper detail lives in its own capability tab.
 function Overview({
-  device, meta, snapshot, clients, groups, canOperate, onDeviceUpdated,
+  device, meta, snapshot, healthState, healthScore, clients, groups, canOperate, onDeviceUpdated,
   onOpenTerminal, onRemoteSupport,
 }: {
   device: Device; meta: DrawerMeta;
   snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
+  healthState: React.ComponentProps<typeof HealthBadge>["state"];
+  healthScore: number | null;
   clients: Client[]; groups: DeviceGroup[]; canOperate: boolean;
   onDeviceUpdated?: (device: Device) => void;
   onOpenTerminal?: () => void;
@@ -460,20 +516,18 @@ function Overview({
   const availableGroups = groups.filter((g) => g.client_id === device.client_id);
   const versionStatus = meta.version_status ?? (meta.reported_version ? "current" : "unknown");
   const versionTitle = meta.latest_version ? `Latest: ${meta.latest_version}` : undefined;
+  const methods = meta.connect_methods.length;
 
   return (
-    <div className="space-y-2.5">
-      {/* Connect — the primary entry point for managing this device */}
-      <div className="rounded-lg border px-4 py-3" style={{ borderColor: "var(--th-accent-border)", background: "var(--th-accent-glow)" }}>
-        <div className="flex items-center justify-between gap-3">
+    <>
+      <section className="mb-4">
+        <div className="th-drawer-card flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg" style={{ background: "var(--th-accent-dim-bg)", border: "1px solid var(--th-accent-border)" }}>
-              <Link2 className="h-4 w-4" style={{ color: "var(--th-accent-bright)" }} />
-            </span>
+            <span className="th-action-icon"><Link2 className="h-4 w-4" /></span>
             <div className="min-w-0">
-              <p className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>Connect</p>
-              <p className="truncate text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-                {meta.connect_methods.length} method{meta.connect_methods.length === 1 ? "" : "s"} available
+              <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Connect</p>
+              <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {methods} method{methods === 1 ? "" : "s"} available
               </p>
             </div>
           </div>
@@ -484,52 +538,69 @@ function Overview({
             onRemoteSupport={onRemoteSupport}
           />
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <Section title="Identity" icon={Fingerprint} accent="identity">
-          <Row label="Device ID" value={String(device.id)} mono />
-          <Row label="Hostname" value={device.hostname} />
-          <Row label="OS" value={device.os_name} />
-          <Row label="OS version" value={device.os_version} />
-          <Row label="Kernel" value={device.kernel_version} />
-          <Row label="Architecture" value={device.architecture} />
-          <Row label="Board" value={board} />
-        </Section>
-        <Section title="Status" icon={Activity} accent="status">
-          <Row label="Last seen" value={device.last_seen ? timeAgo(device.last_seen) : undefined} />
+      <Section title="Status">
+        <dl className="th-dl">
+          <dt>Last seen</dt>
+          <dd>
+            {device.last_seen ? (
+              <>
+                {formatDateTime(device.last_seen)}
+                <span style={{ color: "var(--th-text-muted)" }}> · {timeAgo(device.last_seen)}</span>
+              </>
+            ) : (
+              <span style={{ color: "var(--th-text-muted)" }}>Never</span>
+            )}
+          </dd>
+          <dt>Health</dt>
+          <dd><HealthBadge state={healthState} score={healthScore} showLabel /></dd>
           <Row label="Local IP" value={device.local_ip} mono />
           <Row label="Public IP" value={device.public_ip} mono />
           <ConnectTargetRow device={device} canOperate={canOperate} onDeviceUpdated={onDeviceUpdated} />
           <Row label="Current user" value={device.current_user ?? undefined} />
-          <div className="flex items-center justify-between gap-3 py-[3px] text-[13px]">
-            <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Connector</span>
-            <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
-          </div>
-        </Section>
-      </div>
-
-      <Section title="Resources" icon={Cpu} accent="resources">
-        <div className="grid grid-cols-3 gap-4 py-1">
-          <ResourceMeter icon={Cpu} label="CPU" percent={snapshot?.cpu_percent ?? null} />
-          <ResourceMeter icon={MemoryStick} label="Memory" percent={snapshot?.ram_percent ?? null} />
-          <ResourceMeter icon={HardDrive} label="Storage" percent={snapshot?.disk_percent ?? null} />
-        </div>
+          <dt>Connector</dt>
+          <dd><VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} /></dd>
+        </dl>
       </Section>
 
-      <Section title="Assignment" icon={Building2} accent="assignment">
-        <div className="grid grid-cols-2 gap-x-3">
-          <Row label="Client" value={device.resolved_client_name ?? undefined} />
-          <Row label="Group" value={device.resolved_group ?? undefined} />
-        </div>
-        <div className="mt-0.5 flex items-center justify-between gap-3 py-[3px] text-[13px]">
-          <span className="font-medium" style={{ color: "var(--th-text-muted)" }}>Source</span>
-          <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
-        </div>
+      <Section title="Identity">
+        <dl className="th-dl">
+          <Row label="Device ID" value={String(device.id)} mono />
+          <Row label="Hostname" value={device.hostname} />
+          <Row label="OS" value={device.os_name} />
+          <Row label="OS version" value={device.os_version} />
+          <Row label="Kernel" value={device.kernel_version} mono />
+          <Row label="Architecture" value={device.architecture} mono />
+          <Row label="Board" value={board} />
+        </dl>
+      </Section>
+
+      <Section title="Resources">
+        {snapshot ? (
+          <div className="space-y-3">
+            <ResourceBar label="CPU" metric="cpu" percent={snapshot.cpu_percent} />
+            <ResourceBar label="Memory" metric="ram" percent={snapshot.ram_percent} />
+            <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
+          </div>
+        ) : (
+          <p className="py-2 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>No telemetry yet</p>
+        )}
+      </Section>
+
+      <Section title="Client assignment">
+        <dl className="th-dl">
+          <dt>Client</dt>
+          <dd>{device.resolved_client_name || device.client_name || TERMS.noClient}</dd>
+          <dt>Group</dt>
+          <dd>{device.resolved_group || device.group_name || TERMS.noGroup}</dd>
+          <dt>Source</dt>
+          <dd><AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} /></dd>
+        </dl>
         {canOperate && (
-          <div className="mt-2.5 grid grid-cols-2 gap-2 border-t pt-2.5" style={{ borderColor: "var(--th-border-card)" }}>
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4" style={{ borderColor: "var(--th-border-drawer-section)" }}>
             <label className="block">
-              <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Client</span>
+              <span className="premium-kicker mb-1 block">Assign client</span>
               <SelectField
                 value={device.client_id ?? "none"}
                 onChange={async (e) => {
@@ -537,15 +608,14 @@ function Overview({
                   const updated = await assignDeviceClient(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1.5 text-[13px] font-medium outline-none"
-                style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                className="w-full"
               >
-                <option value="none">No client</option>
+                <option value="none">{TERMS.noClient}</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </SelectField>
             </label>
             <label className="block">
-              <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>Assign Group</span>
+              <span className="premium-kicker mb-1 block">Assign group</span>
               <SelectField
                 value={device.group_id ?? "none"}
                 disabled={!device.client_id}
@@ -554,10 +624,9 @@ function Overview({
                   const updated = await assignDeviceGroup(device.id, value);
                   onDeviceUpdated?.(updated);
                 }}
-                className="w-full rounded-md border px-2 py-1.5 text-[13px] font-medium outline-none disabled:opacity-50"
-                style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                className="w-full"
               >
-                <option value="none">No group</option>
+                <option value="none">{TERMS.noGroup}</option>
                 {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </SelectField>
             </label>
@@ -566,47 +635,89 @@ function Overview({
       </Section>
 
       <ComponentStatesPanel deviceId={device.id} />
-    </div>
+    </>
   );
 }
 
-function CapabilityPanel({ tab, inventory }: { tab: string; inventory: DeviceInventory | null }) {
+function CapabilityPanel({ tab, inventory, state, onRetry }: {
+  tab: string; inventory: DeviceInventory | null; state: InventoryState; onRetry: () => void;
+}) {
+  const title = CAP_TAB_LABELS[tab] ?? humanize(tab);
+  const table = (head: string[], rows: string[][], noun: string) => (
+    <SimpleTable title={title} head={head} rows={rows} noun={noun} state={state} onRetry={onRetry} />
+  );
   if (tab === "services") {
-    const rows = inventory?.services ?? [];
-    return <SimpleTable title="Services" empty="No services reported." head={["Name", "Status"]} rows={rows.map((s) => [s.display_name || s.name, s.status])} />;
+    return table(["Name", "Status"], (inventory?.services ?? []).map((s) => [s.display_name || s.name, humanize(s.status)]), "services");
   }
   if (tab === "processes") {
-    const rows = inventory?.processes ?? [];
-    return <SimpleTable title="Processes" empty="No processes reported." head={["Name", "PID"]} rows={rows.map((p) => [p.name, String(p.pid)])} />;
+    return table(["Name", "PID"], (inventory?.processes ?? []).map((p) => [p.name, String(p.pid)]), "processes");
   }
   if (tab === "packages") {
-    const rows = inventory?.software ?? [];
-    return <SimpleTable title="Packages" empty="No packages reported." head={["Name", "Version"]} rows={rows.map((s) => [s.name, s.version ?? "-"])} />;
+    return table(["Name", "Version"], (inventory?.software ?? []).map((s) => [s.name, s.version || "—"]), "packages");
   }
-  // docker / logs / network / storage — capability reported; detailed renderer optional/future.
   return (
-    <div className="rounded-lg border border-dashed p-4 text-sm" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-muted)" }}>
-      This device reports the <span className="font-semibold" style={{ color: "var(--th-text-secondary)" }}>{CAP_TAB_LABELS[tab] ?? tab}</span> capability. A detailed {tab} view is an optional capability renderer (coming); the tab is registry-driven and appears automatically for any platform that reports this capability.
-    </div>
+    <Section title={title}>
+      <EmptyState
+        className="!py-6"
+        icon={<Layers className="h-5 w-5" />}
+        title="Detailed view not available yet for this platform"
+        description={`This device reports ${title.toLowerCase()} data, but it cannot be shown here yet.`}
+      />
+    </Section>
   );
 }
 
-function SimpleTable({ title, head, rows, empty }: { title: string; head: string[]; rows: string[][]; empty: string }) {
+function SimpleTable({ title, head, rows, noun, state, onRetry }: {
+  title: string; head: string[]; rows: string[][]; noun: string; state: InventoryState; onRetry: () => void;
+}) {
+  const shown = rows.slice(0, TABLE_ROW_LIMIT);
+  const aside = state === "ready" && rows.length > 0
+    ? <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{rows.length} collected</span>
+    : undefined;
   return (
-    <Section title={title}>
-      {rows.length === 0 ? (
-        <p className="py-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>{empty}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--th-border-card)" }}>
-          <table className="min-w-full text-[13px]">
-            <thead><tr>{head.map((h) => <th key={h} className="px-3 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {rows.slice(0, 200).map((r, i) => (
-                <tr key={i} style={{ borderTop: "1px solid var(--th-border-card)" }}>{r.map((c, j) => <td key={j} className="px-3 py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>{c}</td>)}</tr>
-              ))}
-            </tbody>
-          </table>
+    <Section title={title} aside={aside}>
+      {state === "loading" ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+          <Loader2 className="h-4 w-4 animate-spin" />Loading {noun}…
         </div>
+      ) : state === "error" ? (
+        <EmptyState
+          className="!py-6"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          title={`Couldn't load ${noun}`}
+          description="The server did not answer. Try again."
+          action={<Button size="sm" variant="secondary" onClick={onRetry}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState className="!py-6" title={`No ${noun} reported`} description="This device has not reported any yet." />
+      ) : (
+        <>
+          <div className="max-h-[60vh] overflow-auto">
+            <table className="w-full text-[13px]">
+              <thead className="sticky top-0" style={{ background: "var(--th-bg-drawer-table-head)" }}>
+                <tr>
+                  {head.map((h) => (
+                    <th key={h} className="pb-1.5 pr-3 text-left text-[12px] font-semibold" style={{ color: "var(--th-text-muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r, i) => (
+                  <tr key={i} style={{ borderTop: "1px solid var(--th-border-drawer-section)" }}>
+                    {r.map((c, j) => (
+                      <td key={j} className="max-w-[260px] truncate py-1.5 pr-3" style={{ color: j === 0 ? "var(--th-text-primary)" : "var(--th-text-secondary)" }} title={c}>{c}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > shown.length && (
+            <p className="mt-2 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              Showing {shown.length} of {rows.length}
+            </p>
+          )}
+        </>
       )}
     </Section>
   );
@@ -614,44 +725,87 @@ function SimpleTable({ title, head, rows, empty }: { title: string; head: string
 
 function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMeta; busy: string | null; canOperate: boolean; onAction: (a: DrawerAction) => void }) {
   return (
-    <Section title="Actions" icon={Wrench}>
-      {!canOperate && <p className="mb-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>You have read-only access.</p>}
-      <div className="flex flex-wrap gap-2">
-        {meta.actions.map((a) => (
-          <button
-            key={a.id}
-            disabled={!canOperate || busy === a.id}
-            onClick={() => onAction(a)}
-            className={`rounded-md border px-3 py-1.5 text-[13px] font-semibold transition-colors disabled:opacity-50 ${a.confirm === "confirm" ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "hover:bg-white/5"}`}
-            style={a.confirm === "confirm" ? undefined : { borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}
-          >
-            {busy === a.id ? "…" : a.label}
-          </button>
-        ))}
+    <section className="mb-4">
+      <p className="premium-kicker mb-2">Remote actions</p>
+      {!canOperate && (
+        <div className="th-drawer-callout mb-3 text-[13px]" data-tone="neutral">You have read-only access.</div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {meta.actions.map((a) => {
+          const destructive = a.confirm === "confirm";
+          const isBusy = busy === a.id;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              className="th-action-tile"
+              data-destructive={destructive}
+              disabled={!canOperate || busy !== null}
+              aria-busy={isBusy}
+              onClick={() => onAction(a)}
+            >
+              <span className="th-action-icon">
+                {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : destructive ? <AlertTriangle className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-left text-[13px] font-medium">{a.label}</span>
+            </button>
+          );
+        })}
       </div>
-    </Section>
+    </section>
   );
 }
 
-function NotesPanel({ notes, noteText, setNoteText, onAdd, canOperate }: { notes: DeviceNote[]; noteText: string; setNoteText: (v: string) => void; onAdd: () => void; canOperate: boolean }) {
+function NotesPanel({ notes, loading, busy, noteText, setNoteText, onAdd, canOperate }: {
+  notes: DeviceNote[]; loading: boolean; busy: boolean; noteText: string; setNoteText: (v: string) => void; onAdd: () => void; canOperate: boolean;
+}) {
   return (
-    <>
+    <section className="mb-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="premium-kicker">Notes</p>
+        <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
+      </div>
       {canOperate && (
-        <div className="mb-4">
-          <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} placeholder="Add a note…" className="th-input w-full rounded-lg border px-3 py-2 text-sm" />
-          <div className="mt-2 flex justify-end"><button onClick={onAdd} disabled={!noteText.trim()} className="rounded-md border px-3 py-1.5 text-[13px] font-semibold disabled:opacity-50" style={{ borderColor: "var(--th-border-card)", color: "var(--th-text-secondary)" }}>Add note</button></div>
+        <div className="th-drawer-card">
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            rows={3}
+            placeholder="Add an internal note…"
+            className="th-input w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-5 outline-none"
+          />
+          <div className="mt-2 flex justify-end">
+            <Button size="sm" onClick={onAdd} disabled={busy || !noteText.trim()}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Add note
+            </Button>
+          </div>
         </div>
       )}
-      <div className="space-y-2">
-        {notes.length === 0 ? (
-          <p className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>No notes yet.</p>
-        ) : notes.map((n) => (
-          <div key={n.id} className="rounded-lg border p-3" style={{ borderColor: "var(--th-border-card)" }}>
-            <p className="text-[13px]" style={{ color: "var(--th-text-primary)" }}>{n.note}</p>
-            <p className="mt-1 text-[11px]" style={{ color: "var(--th-text-muted)" }}>{n.created_by ?? "system"} · {timeAgo(n.created_at)}</p>
-          </div>
-        ))}
+      <div className="mt-3 space-y-2">
+        {loading && notes.length === 0 ? (
+          <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading notes…</p>
+        ) : notes.length === 0 ? (
+          <EmptyState
+            className="!py-6"
+            icon={<StickyNote className="h-5 w-5" />}
+            title="No notes yet"
+            description="Internal notes are visible to every operator who can see this device."
+          />
+        ) : notes.map((n) => {
+          const author = n.created_by || "admin";
+          return (
+            <div key={n.id} className="th-drawer-card !p-3">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="th-avatar !h-6 !w-6 !text-[11px]">{author.charAt(0).toUpperCase()}</span>
+                <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{author}</span>
+                <span className="text-[12px]" style={{ color: "var(--th-text-faint)" }} title={formatDateTime(n.created_at)}>{timeAgo(n.created_at)}</span>
+              </div>
+              <p className="whitespace-pre-wrap pl-8 text-[13px] leading-5" style={{ color: "var(--th-text-secondary)" }}>{n.note}</p>
+            </div>
+          );
+        })}
       </div>
-    </>
+    </section>
   );
 }

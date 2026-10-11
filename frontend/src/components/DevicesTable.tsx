@@ -9,27 +9,43 @@ import { clearDeviceMaintenance, Device, DeviceFilters, DeviceQuickCounts, Devic
 import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
-import { ActionStatus, isActiveStatus, queueDeviceAction } from "../api/actions";
+import { ActionType, queueDeviceAction } from "../api/actions";
 import { getConnectUrl } from "../api/remoteSupport";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { Badge, Button, ConnectButton, EmptyState, Select, SelectField, TablePagination } from "./ui";
+import { Button, ConnectButton, EmptyState, Select, TablePagination } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
-import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
+import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
+import { formatCount } from "../utils/number";
+import { TERMS, TONE } from "../utils/deviceStatus";
+import {
+  ActionIndicator,
+  ActiveActionEntry,
+  AgentVersionSources,
+  BadgeView,
+  ClientOfflineSummary,
+  agentVersionView,
+  deviceTypeLabel,
+  duplicateBadge,
+  healthTone,
+  lastSeenView,
+  lifecycleBadges,
+  maintenanceBadge,
+  offlineReasonBadge,
+  patchBadge,
+  remoteSupportIssue,
+  userSourceBadge,
+} from "../utils/deviceBadges";
 import { DeviceMobileCard } from "./DeviceMobileCard";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
-import { compareVersions } from "../utils/version";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { detectOperatorOS } from "../utils/operatorOs";
 
-export interface ActiveActionEntry {
-  action_type: string;
-  status: ActionStatus;
-}
+export type { ActiveActionEntry };
 
 interface DevicesTableProps {
   devices: Device[];
@@ -110,7 +126,7 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "stale",             label: "Stale" },
   { id: "offline",           label: "Offline" },
   { id: "servers",           label: "Servers" },
-  { id: "workstations",      label: "Workstations" },
+  { id: "workstations",      label: TERMS.clientPcs },
   { id: "needs_updates",     label: "Needs updates" },
   { id: "reboot_required",   label: "Reboot required" },
   { id: "warnings",          label: "Warnings" },
@@ -121,78 +137,10 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "low_health",        label: "Low health" },
   { id: "rustdesk_issues",   label: "Remote Support issues" },
   { id: "needs_agent_update", label: "Agent update" },
-  { id: "favorites",         label: "★ Starred" },
+  { id: "favorites",         label: "Favorites" },
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
-export type HealthFilter = "all" | DeviceHealthSummary["health_state"];
-
-function isAgentOutdated(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
-  if (!activeVersion) return false;
-  if (!device.agent_version || device.agent_version !== activeVersion) return true;
-  if (activeSha256) return (device.agent_sha256 ?? "").toLowerCase() !== activeSha256.toLowerCase();
-  return false;
-}
-
-function agentVersionTitle(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
-  if (!activeVersion) return undefined;
-  const active = activeSha256 ? `${activeVersion} | ${activeSha256.slice(0, 8)}` : activeVersion;
-  const current = device.agent_sha256
-    ? `${device.agent_version ?? "unknown"} | ${device.agent_sha256.slice(0, 8)}`
-    : (device.agent_version ?? "unknown");
-  return `Installed: ${current} | Active: ${active}`;
-}
-
-// Version Service (Device List side): Windows rows resolve to the SAME
-// activePackageVersion/Sha256 as before — isAgentOutdated/agentVersionTitle
-// above are untouched, so Windows badges are byte-identical. Non-Windows
-// rows (MikroTik, future connectors) resolve against their OWN platform's
-// latest_connector_version instead — never the Windows fleet's version.
-// Agent platforms whose build is architecture-specific (Linux) resolve against
-// active_agent_versions, keyed "<platform>:<uname -m>" by the backend so the
-// arch->package mapping lives in exactly one place (version_service.py). A
-// Linux row previously fell straight through to the connector lookup, which
-// Linux never populates, so it resolved to null and the badge stayed grey no
-// matter how current the agent was (device 729 on 2.1.21, 2026-08-05).
-function resolveActiveVersion(
-  device: Device,
-  activePackageVersion?: string | null,
-  activeConnectorVersions?: Record<string, string>,
-  activeAgentVersions?: Record<string, string>,
-) {
-  const platform = (device.platform || "windows").toLowerCase();
-  if (platform === "windows") return activePackageVersion;
-  const architecture = (device.architecture || "").trim().toLowerCase();
-  if (architecture) {
-    const byArchitecture = activeAgentVersions?.[`${platform}:${architecture}`];
-    if (byArchitecture) return byArchitecture;
-  }
-  return activeConnectorVersions?.[platform] ?? null;
-}
-
-// Is THIS device behind the latest build for ITS platform?
-//
-// The AGENT UPDATE tile and the Needs Agent Update filter used to measure every
-// device against the Windows package version, so a MikroTik connector on 1.0.0
-// and a Linux agent on 2.1.21 both counted as outdated against Windows' 2.1.20
-// — the counts were inflated by the whole non-Windows fleet (reported
-// 2026-08-05). Windows keeps the original two-state check exactly.
-//
-// A platform with no known latest version is never called outdated: a device we
-// cannot measure is not a stale one.
-function isDeviceAgentOutdated(
-  device: Device,
-  activePackageVersion?: string | null,
-  activePackageSha256?: string | null,
-  activeConnectorVersions?: Record<string, string>,
-  activeAgentVersions?: Record<string, string>,
-) {
-  const platform = (device.platform || "windows").toLowerCase();
-  if (platform === "windows") return isAgentOutdated(device, activePackageVersion, activePackageSha256);
-  const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions, activeAgentVersions);
-  if (!active) return false;
-  return compareVersions(device.agent_version, active) === "outdated";
-}
 
 // Production bug fix (Device Catalog Connect button): this row action used
 // to be RustDesk-only (`isValidRustDeskId` + no conflict) regardless of
@@ -220,8 +168,6 @@ export function hasStructuralConnectMethod(device: Device): boolean {
 
 // ─── Visual constants ────────────────────────────────────────────────────────
 
-const compactBadgeClass = "!min-h-[1.35rem] !px-1.5 !py-0.5 !text-[11px] !leading-3";
-const subtleBadgeClass = `border-white/10 bg-white/[0.025] text-slate-400 ${compactBadgeClass}`;
 const ACTION_MENU_WIDTH = 240;
 const ACTION_MENU_MAX_HEIGHT = 340;
 const ACTION_MENU_GAP = 6;
@@ -229,220 +175,121 @@ const ACTION_MENU_MARGIN = 8;
 
 // ─── Cell helpers ────────────────────────────────────────────────────────────
 
-/** Lightweight client-side offline reason badge (no API call). */
-interface ClientOfflineSummary {
-  offlineCount: number;
-  inactiveLastSeen: number[];
+function CompactBadge({ view, icon: Icon }: { view: BadgeView; icon?: typeof Wrench }) {
+  const neutral = view.tone === TONE.neutral;
+  return (
+    <span
+      className="inline-flex min-h-[1.35rem] items-center rounded-full border px-1.5 py-0.5 text-[11px] font-semibold leading-3"
+      style={
+        neutral
+          ? { color: "var(--th-text-muted)", background: "var(--th-chip-bg)", borderColor: "var(--th-border-subtle)" }
+          : {
+              color: view.tone,
+              background: `color-mix(in srgb, ${view.tone} 10%, transparent)`,
+              borderColor: `color-mix(in srgb, ${view.tone} 28%, transparent)`,
+            }
+      }
+      title={view.title}
+    >
+      {Icon && <Icon className="mr-0.5 inline h-2 w-2" aria-hidden="true" />}
+      {view.label}
+    </span>
+  );
 }
 
-const getOfflineReasonBadge = (
-  device: Device,
-  clientSummary?: ClientOfflineSummary,
-) => {
-  const freshness = device.freshness_state ?? device.status;
-  if (freshness === "online") return null;
-  if (!device.last_seen) return null;
+/** Minutes from now until the next midnight in Tirana. */
+function minutesUntilTiranaMidnight(): number {
+  const today = utcToTiranaInput(new Date().toISOString()).slice(0, 10);
+  const [y, m, d] = today.split("-").map(Number);
+  const tomorrow = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  return Math.round((new Date(tiranaInputToUtcIso(`${tomorrow}T00:00`)).getTime() - Date.now()) / 60000);
+}
 
-  // RS stopped but device recently active
-  const rsStatus = (device.rustdesk_status ?? "").toLowerCase();
-  const rsInstall = (device.rustdesk_install_status ?? "").toLowerCase();
-  if (
-    ["stopped", "not_running", "offline"].includes(rsStatus) &&
-    !["not_installed", "unknown", ""].includes(rsInstall)
-  ) {
-    return { label: "RS stopped", color: "var(--th-accent)", bg: "color-mix(in srgb, var(--th-accent) 12%, transparent)", border: "color-mix(in srgb, var(--th-accent) 25%, transparent)" };
-  }
+type BulkActionType = "restart_device" | "restart_agent" | "sync_rustdesk" | "reinstall_rustdesk" | "maintenance_enter" | "maintenance_exit";
 
-  // Site outage: ≥2 peers from same client offline near same time
-  if (device.client_id && device.last_seen) {
-    const t = parseUTC(device.last_seen).getTime();
-    const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
-      (lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000
-    ).length ?? 0;
-    if (nearbyPeers >= 2)
-      return { label: "Site?", color: "var(--th-status-critical)", bg: "color-mix(in srgb, var(--th-status-critical) 12%, transparent)", border: "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" };
-  }
+const devicesPhrase = (n: number) => `${formatCount(n)} ${n === 1 ? "device" : "devices"}`;
 
-  // Single device offline (no other offline from same client)
-  if (freshness === "offline" && device.client_id) {
-    if ((clientSummary?.offlineCount ?? 0) <= 1)
-      return { label: "Power?", color: "var(--th-status-offline)", bg: "color-mix(in srgb, var(--th-status-offline) 8%, transparent)", border: "color-mix(in srgb, var(--th-status-offline) 20%, transparent)" };
-  }
-
-  // Has IP → network issue
-  if (device.public_ip || device.local_ip)
-    return { label: "Network", color: "var(--th-status-info)", bg: "color-mix(in srgb, var(--th-status-info) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-info) 22%, transparent)" };
-
-  // Stale only
-  if (freshness === "stale")
-    return { label: "Stale", color: "var(--th-status-warning)", bg: "color-mix(in srgb, var(--th-status-warning) 10%, transparent)", border: "color-mix(in srgb, var(--th-status-warning) 22%, transparent)" };
-
-  return null;
+const BULK_ACTIONS: Record<BulkActionType, {
+  button: string;
+  confirm: string;
+  destructive: boolean;
+  title: (devices: string) => string;
+  description: string;
+  done: (devices: string) => string;
+}> = {
+  restart_device: {
+    button: "Restart",
+    confirm: "Restart",
+    destructive: true,
+    title: (n) => `Restart ${n}?`,
+    description: "Each device restarts as soon as its agent picks up the request. Signed-in users may lose unsaved work.",
+    done: (n) => `Restart requested for ${n}`,
+  },
+  restart_agent: {
+    button: "Restart agent",
+    confirm: "Restart agent",
+    destructive: true,
+    title: (n) => `Restart the agent on ${n}?`,
+    description: "The devices drop out of monitoring for a few seconds while the agent restarts.",
+    done: (n) => `Agent restart requested for ${n}`,
+  },
+  sync_rustdesk: {
+    button: `Sync ${TERMS.remoteSupport}`,
+    confirm: "Sync",
+    destructive: false,
+    title: (n) => `Sync ${TERMS.remoteSupport} on ${n}?`,
+    description: `Each device reports its current ${TERMS.remoteSupport} ID and state again.`,
+    done: (n) => `${TERMS.remoteSupport} sync requested for ${n}`,
+  },
+  reinstall_rustdesk: {
+    button: `Reinstall ${TERMS.remoteSupport}`,
+    confirm: "Reinstall",
+    destructive: true,
+    title: (n) => `Reinstall ${TERMS.remoteSupport} on ${n}?`,
+    description: `Active ${TERMS.remoteSupport} sessions on these devices end while it reinstalls.`,
+    done: (n) => `${TERMS.remoteSupport} reinstall requested for ${n}`,
+  },
+  maintenance_enter: {
+    button: "Start maintenance",
+    confirm: "Start maintenance",
+    destructive: false,
+    title: (n) => `Put ${n} in maintenance?`,
+    description: "Alerts are paused for these devices until maintenance ends.",
+    done: (n) => `${n.charAt(0).toUpperCase()}${n.slice(1)} put in maintenance`,
+  },
+  maintenance_exit: {
+    button: "End maintenance",
+    confirm: "End maintenance",
+    destructive: false,
+    title: (n) => `End maintenance on ${n}?`,
+    description: "Alerts resume for these devices straight away.",
+    done: (n) => `Maintenance ended on ${n}`,
+  },
 };
 
-/** Server / Workstation pill badge. */
-const deviceTypeLabel = (device: Device): string => {
-  const cat = device.resolved_device_category;
-  if (cat === "servers" || device.device_type === "server") return "Server";
-  if (cat === "clientpc" || device.device_type === "client") return "Workstation";
-  if (cat === "network") return "Network device";
-  if (cat === "storage") return "Storage";
-  if (cat === "hypervisors") return "Hypervisor";
-  return "Unclassified";
-};
+type MaintenanceDuration = "1h" | "4h" | "8h" | "tomorrow" | "indefinite";
 
-/** Color-coded "last seen" display. */
-const getLastSeenDisplay = (lastSeen?: string): { text: string; cls: string } => {
-  if (!lastSeen) return { text: "Never", cls: "text-slate-600" };
-  const diffMs = Date.now() - parseUTC(lastSeen).getTime();
-  const mins = diffMs / 60_000;
-  const hours = diffMs / 3_600_000;
-  const days = diffMs / 86_400_000;
-  if (mins < 5) return { text: "Just now", cls: "text-emerald-400" };
-  if (hours < 1) return { text: `${Math.floor(mins)}m ago`, cls: "text-emerald-400" };
-  if (hours < 24) return { text: `${Math.floor(hours)}h ago`, cls: "text-slate-300" };
-  if (days < 7) return { text: `${Math.floor(days)}d ago`, cls: "text-amber-400" };
-  return { text: `${Math.floor(days)}d ago`, cls: "text-red-400" };
-};
+const MAINTENANCE_DURATIONS: { id: MaintenanceDuration; label: string; minutes: () => number | null }[] = [
+  { id: "1h", label: "1 hour", minutes: () => 60 },
+  { id: "4h", label: "4 hours", minutes: () => 240 },
+  { id: "8h", label: "8 hours", minutes: () => 480 },
+  { id: "tomorrow", label: "Until midnight", minutes: minutesUntilTiranaMidnight },
+  { id: "indefinite", label: "No end time", minutes: () => null },
+];
 
-const getUserSourceBadge = (device: Device) => {
-  if (
-    !device.user_source ||
-    device.user_source === "no_interactive_user" ||
-    device.user_source === "fallback"
-  )
-    return null;
-  const label = device.user_source === "rdp_session" ? "rdp" : "con";
-  const cls =
-    device.user_source === "rdp_session"
-      ? `border-purple-400/25 bg-purple-400/[0.08] text-purple-300 ${compactBadgeClass}`
-      : `border-sky-400/25 bg-sky-400/[0.08] text-sky-300 ${compactBadgeClass}`;
-  const stateLabel =
-    device.user_session_state && device.user_session_state !== "unknown"
-      ? ` · ${device.user_session_state}`
-      : "";
+const BULK_BAR_ACTIONS: BulkActionType[] = ["restart_device", "restart_agent", "sync_rustdesk", "reinstall_rustdesk", "maintenance_enter", "maintenance_exit"];
+
+const LifecycleSignals = ({ device }: { device: Device }) => {
+  const maintenance = maintenanceBadge(device);
+  const duplicate = duplicateBadge(device);
   return (
-    <Badge variant="ghost" className={cls} title={`${device.user_source}${stateLabel}`}>
-      {label}
-    </Badge>
+    <>
+      {lifecycleBadges(device).map((badge) => <CompactBadge key={badge.label} view={badge} />)}
+      {maintenance && <CompactBadge view={maintenance} icon={Wrench} />}
+      {duplicate && <CompactBadge view={duplicate} icon={AlertTriangle} />}
+    </>
   );
 };
-
-const getPatchBadge = (patch?: PatchStatus) => {
-  const state = patch?.patch_state ?? "unknown";
-  if (state === "up_to_date")
-    return (
-      <Badge variant="ghost" className={subtleBadgeClass}>
-        patched
-      </Badge>
-    );
-  if (state === "reboot_required")
-    return (
-      <Badge
-        variant="ghost"
-        className={`border-red-400/20 bg-red-400/[0.06] text-red-300 ${compactBadgeClass}`}
-      >
-        reboot
-      </Badge>
-    );
-  if (state === "updates_available") {
-    const count = patch?.pending_updates ?? 0;
-    return (
-      <Badge
-        variant="ghost"
-        className={`border-amber-400/20 bg-amber-400/[0.06] text-amber-300 ${compactBadgeClass}`}
-      >
-        {count > 0 ? `${count} upd` : "updates"}
-      </Badge>
-    );
-  }
-  return null; // skip "patch unknown" to reduce noise
-};
-
-const isSuggestedArchive = (device: Device) => {
-  if (device.is_archived || device.freshness_state !== "offline" || !device.last_seen)
-    return false;
-  const diffDays =
-    (Date.now() - parseUTC(device.last_seen).getTime()) / (1000 * 60 * 60 * 24);
-  return diffDays > 30;
-};
-
-const getMaintenanceBadge = (device: Device) => {
-  if (!device.is_in_maintenance) return null;
-  const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
-    : device.maintenance_note
-    ? `In maintenance: ${device.maintenance_note}`
-    : "In maintenance";
-  return (
-    <Badge
-      variant="ghost"
-      className={`border-sky-400/30 bg-sky-400/10 text-sky-200 ${compactBadgeClass}`}
-      title={title}
-    >
-      <Wrench className="mr-0.5 inline h-2 w-2" />
-      maint.
-    </Badge>
-  );
-};
-
-const getDuplicateBadge = (device: Device) => {
-  if (!device.duplicate_candidate) return null;
-  const scoreLabel =
-    device.duplicate_score != null ? ` ${Math.round(device.duplicate_score * 100)}%` : "";
-  return (
-    <Badge
-      variant="ghost"
-      className={`border-amber-400/30 bg-amber-400/10 text-amber-200 ${compactBadgeClass}`}
-      title={
-        device.duplicate_of_device_id
-          ? `Possible duplicate of Device #${device.duplicate_of_device_id} (similarity${scoreLabel})`
-          : "Possible duplicate detected"
-      }
-    >
-      <AlertTriangle className="mr-0.5 inline h-2 w-2" />
-      dupe
-    </Badge>
-  );
-};
-
-const getLifecycleSignals = (device: Device) => (
-  <>
-    {device.is_archived && (
-      <Badge
-        variant="neutral"
-        className={compactBadgeClass}
-        title={
-          device.archived_at
-            ? `Archived ${parseUTC(device.archived_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
-            : "Archived device"
-        }
-      >
-        archived
-      </Badge>
-    )}
-    {device.is_archived && device.freshness_state !== "offline" && (
-      <Badge
-        variant="ghost"
-        className={`border-orange-400/30 bg-orange-400/10 text-orange-200 ${compactBadgeClass}`}
-        title="This archived device is still sending heartbeats"
-      >
-        checked in
-      </Badge>
-    )}
-    {isSuggestedArchive(device) && (
-      <Badge
-        variant="ghost"
-        className={`border-amber-300/25 bg-amber-300/10 text-amber-100 ${compactBadgeClass}`}
-        title="Offline for more than 30 days"
-      >
-        archive?
-      </Badge>
-    )}
-    {getMaintenanceBadge(device)}
-    {getDuplicateBadge(device)}
-  </>
-);
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -522,12 +369,9 @@ const DevicesTable = memo(function DevicesTable({
     onQuickFilterChange(f === quickFilter ? "all" : f);
   };
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  // Bulk action state
-  type BulkActionType = "restart_device" | "restart_agent" | "sync_rustdesk" | "reinstall_rustdesk" | "maintenance_enter" | "maintenance_exit";
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [pendingBulkAction, setPendingBulkAction] = useState<{ action: BulkActionType; destructive: boolean } | null>(null);
-  const [bulkMaintMinutes, setBulkMaintMinutes] = useState<number | null>(60);
+  const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
+  const [bulkMaintDuration, setBulkMaintDuration] = useState<MaintenanceDuration>("1h");
   const [bulkToast, setBulkToast] = useState<{ message: string; ok: boolean } | null>(null);
   const bulkToastTimer = useRef<number | undefined>();
   const showBulkToast = (message: string, ok: boolean) => {
@@ -536,6 +380,10 @@ const DevicesTable = memo(function DevicesTable({
     bulkToastTimer.current = window.setTimeout(() => setBulkToast(null), 4000);
   };
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const agentSources = useMemo<AgentVersionSources>(
+    () => ({ activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions }),
+    [activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions],
+  );
   const scrollPositionRef = useRef({ left: 0, top: 0 });
 
 
@@ -626,7 +474,7 @@ const DevicesTable = memo(function DevicesTable({
     if (filters.client_id === -1) {
       chips.push({
         key: "client",
-        label: "No Client",
+        label: TERMS.noClient,
         onClear: () => {
           onFilterChange("client_id", undefined);
           onFilterChange("device_type", undefined);
@@ -648,7 +496,7 @@ const DevicesTable = memo(function DevicesTable({
     if (filters.device_type === "server" || filters.device_type === "client") {
       chips.push({
         key: "devtype",
-        label: filters.device_type === "server" ? "Servers" : "Client PC",
+        label: filters.device_type === "server" ? TERMS.servers : TERMS.clientPcs,
         onClear: () => onFilterChange("device_type", undefined),
       });
     }
@@ -786,6 +634,37 @@ const DevicesTable = memo(function DevicesTable({
     setPendingAction(null);
   };
 
+  const runBulkAction = async (action: BulkActionType) => {
+    const selectedDevices = devices.filter((d) => selectedIds.has(d.id));
+    const durationMinutes = MAINTENANCE_DURATIONS.find((opt) => opt.id === bulkMaintDuration)?.minutes() ?? null;
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    try {
+      for (const d of selectedDevices) {
+        try {
+          if (action === "maintenance_enter") {
+            await enterDeviceMaintenance(d.id, { duration_minutes: durationMinutes, started_by: currentUser ?? "operator" });
+          } else if (action === "maintenance_exit") {
+            await clearDeviceMaintenance(d.id);
+          } else {
+            await queueDeviceAction(d.id, { action_type: action as ActionType, created_by: currentUser ?? "operator" });
+          }
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      const failed = fail ? ` · ${devicesPhrase(fail)} failed` : "";
+      showBulkToast(ok ? `${BULK_ACTIONS[action].done(devicesPhrase(ok))}${failed}` : `${devicesPhrase(fail)} failed`, fail === 0);
+      setSelectedIds(new Set());
+      onBulkComplete?.();
+    } finally {
+      setBulkBusy(false);
+      setPendingBulkAction(null);
+    }
+  };
+
   const statusTabsRef = useTabIndicator<HTMLDivElement>(quickFilter);
 
   return (
@@ -795,62 +674,28 @@ const DevicesTable = memo(function DevicesTable({
       <div
         className="th-bulk-bar flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
         style={{ background: "color-mix(in srgb, var(--th-accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)" }}
+        role="region"
+        aria-label="Bulk actions"
       >
         <span className="text-sm font-semibold" style={{ color: "var(--th-accent)" }}>
-          {selectedIds.size} device{selectedIds.size !== 1 ? "s" : ""} selected
+          {devicesPhrase(selectedIds.size)} selected
         </span>
         <div className="ml-2 flex flex-wrap gap-1.5">
-          {([
-            { label: "Restart Device",    action: "restart_device"   as const, destructive: true  },
-            { label: "Restart Agent",     action: "restart_agent"    as const, destructive: true  },
-            { label: "Sync Remote Support", action: "sync_rustdesk"    as const, destructive: false },
-            { label: "Reinstall Remote Support", action: "reinstall_rustdesk" as const, destructive: true },
-          ] as const).map(btn => (
-            <button
-              key={btn.action}
-              type="button"
+          {BULK_BAR_ACTIONS.map((action) => (
+            <Button
+              key={action}
+              size="sm"
+              variant={BULK_ACTIONS[action].destructive ? "danger" : "secondary"}
               disabled={bulkBusy}
-              onClick={() => {
-                setPendingBulkAction({ action: btn.action, destructive: btn.destructive });
-                setBulkConfirmOpen(true);
-              }}
-              className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
-              style={{
-                background: btn.destructive ? "color-mix(in srgb, var(--th-status-critical) 12%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
-                border: `1px solid ${btn.destructive ? "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 12%, transparent)"}`,
-                color: btn.destructive ? "var(--th-status-critical)" : "var(--th-text-secondary)",
-              }}
+              onClick={() => setPendingBulkAction(action)}
             >
-              {btn.label}
-            </button>
+              {BULK_ACTIONS[action].button}
+            </Button>
           ))}
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => { setPendingBulkAction({ action: "maintenance_enter", destructive: false }); setBulkConfirmOpen(true); }}
-            className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
-            style={{ background: "color-mix(in srgb, var(--th-status-maint) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-maint) 25%, transparent)", color: "var(--th-status-maint)" }}
-          >
-            Enter Maintenance
-          </button>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => { setPendingBulkAction({ action: "maintenance_exit", destructive: false }); setBulkConfirmOpen(true); }}
-            className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40"
-            style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)", border: "1px solid color-mix(in srgb, var(--th-text-primary) 10%, transparent)", color: "var(--th-text-secondary)" }}
-          >
-            Exit Maintenance
-          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setSelectedIds(new Set())}
-          className="ml-auto text-[11px] font-medium transition hover:opacity-70"
-          style={{ color: "var(--th-text-muted)" }}
-        >
-          Clear
-        </button>
+        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>
+          Clear selection
+        </Button>
       </div>
       )}
 
@@ -989,7 +834,8 @@ const DevicesTable = memo(function DevicesTable({
                 type="search"
                 value={searchQuery}
                 onChange={(e) => onSearch(e.target.value)}
-                placeholder="Search devices..."
+                placeholder="Search devices…"
+                aria-label="Search devices"
                 enterKeyHint="search"
               />
             </label>
@@ -1104,9 +950,7 @@ const DevicesTable = memo(function DevicesTable({
                   }
                   canConnect={canConnect}
                   isFavorite={favorites.has(device.id)}
-                  activePackageVersion={activePackageVersion}
-                  activePackageSha256={activePackageSha256}
-                  agentOutdated={isDeviceAgentOutdated(device, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)}
+                  agentVersion={agentVersionView(device, agentSources)}
                   onSelect={() => navigate(`/devices/${device.id}`)}
                   onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
                   onConnect={
@@ -1117,7 +961,7 @@ const DevicesTable = memo(function DevicesTable({
                             launchConnect(
                               res.connect_url,
                               buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                              () => showBulkToast("Opening with RustDesk instead", true)
+                              () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
                             );
                           } catch (err) {
                             showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
@@ -1242,17 +1086,19 @@ const DevicesTable = memo(function DevicesTable({
               {/* ── Header ── */}
               <thead>
                 <tr style={{ background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2.5%, transparent))", borderBottom: "1px solid var(--th-border-subtle)" }}>
-                  {/* Checkbox */}
-                  <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
-                      onChange={toggleAll}
-                      className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
-                      title="Select all"
-                    />
-                  </th>
+                  {canOperate && (
+                    <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                        onChange={toggleAll}
+                        className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                        title="Select all on this page"
+                        aria-label="Select all devices on this page"
+                      />
+                    </th>
+                  )}
                   {[
                     { label: "Device",                         sortable: "hostname" as SortKey },
                     { label: "Status",                         sortable: "last_seen" as SortKey },
@@ -1283,22 +1129,22 @@ const DevicesTable = memo(function DevicesTable({
               {/* ── Rows ── */}
               <tbody>
                 {displayDevices.map((device, rowIndex) => {
-                  const health = healthMap[device.id];
-                  const ls = getLastSeenDisplay(device.last_seen);
+                  const lastSeen = lastSeenView(device.last_seen);
                   const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
                   const canConnect = isWindowsDevice
                     ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
                     : hasStructuralConnectMethod(device);
                   const devAlerts = alertsMap[device.id];
-                  const offlineBadge = getOfflineReasonBadge(
+                  const offlineBadge = offlineReasonBadge(
                     device,
                     device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined,
                   );
-                  const healthScore = healthMap[device.id]?.health_score;
-                  const isLowHealth = healthScore != null && healthScore < 60;
-                  const rsIssue =
-                    device.rustdesk_install_status !== "not_installed" &&
-                    (device.rustdesk_status ?? "") !== "running";
+                  const health = healthMap[device.id];
+                  const healthScore = health?.health_score;
+                  const rsIssue = remoteSupportIssue(device);
+                  const patchView = patchBadge(patchMap[device.id]);
+                  const userSource = userSourceBadge(device);
+                  const agentVersion = agentVersionView(device, agentSources);
 
                   return (
                     <tr
@@ -1308,18 +1154,19 @@ const DevicesTable = memo(function DevicesTable({
                       data-selected={selectedIds.has(device.id)}
                       onClick={() => onDeviceSelect?.(device)}
                     >
-                      {/* ── Checkbox ── */}
-                      <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(device.id)}
-                          onChange={() => toggleOne(device.id)}
-                          id={`select-device-${device.id}`}
-                          name="select-device"
-                          aria-label={`Select ${device.hostname}`}
-                          className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
-                        />
-                      </td>
+                      {canOperate && (
+                        <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(device.id)}
+                            onChange={() => toggleOne(device.id)}
+                            id={`select-device-${device.id}`}
+                            name="select-device"
+                            aria-label={`Select ${deviceDisplayName(device)}`}
+                            className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                          />
+                        </td>
+                      )}
 
                       {/* ── Hostname ── */}
                       <td className="min-w-[200px] max-w-[244px] px-2.5 py-1.5 align-middle">
@@ -1346,13 +1193,13 @@ const DevicesTable = memo(function DevicesTable({
                         })()}
                         <div className="mt-0.5 flex max-w-[220px] items-center gap-1.5 overflow-hidden whitespace-nowrap pl-[21px] text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                           <span>{deviceTypeLabel(device)}</span>
-                          {getPatchBadge(patchMap[device.id])}
-                          {getLifecycleSignals(device)}
+                          {patchView && <CompactBadge view={patchView} />}
+                          <LifecycleSignals device={device} />
                           {rsIssue && (
-                            <span className="inline-flex min-w-0 items-center gap-1" style={{ color: "var(--th-status-warning)" }} title={`TECHI Remote Support is ${device.rustdesk_status || "not running"} on this device`}>
+                            <span className="inline-flex min-w-0 items-center gap-1" style={{ color: rsIssue.tone }} title={rsIssue.title}>
                               <span aria-hidden="true">·</span>
                               <MonitorOff className="h-3 w-3 flex-none" />
-                              <span className="truncate">Remote off</span>
+                              <span className="truncate">{rsIssue.label}</span>
                             </span>
                           )}
                         </div>
@@ -1370,8 +1217,8 @@ const DevicesTable = memo(function DevicesTable({
                                 {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
                               </div>
                               <div className="mt-0.5 pl-4 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                                <span title="Last heartbeat">{ls.text}</span>
-                                {offlineBadge && <span title="Likely cause (inferred)"> · {offlineBadge.label}</span>}
+                                <span title="Last heartbeat">{lastSeen.text}</span>
+                                {offlineBadge && <span title={offlineBadge.title ?? "Likely cause (inferred)"}> · {offlineBadge.label}</span>}
                               </div>
                             </>
                           );
@@ -1383,7 +1230,7 @@ const DevicesTable = memo(function DevicesTable({
                         <div className="flex items-center gap-2">
                           <span
                             className="th-score"
-                            data-tone={healthScore == null ? "none" : healthScore < 50 ? "critical" : healthScore < 80 ? "warning" : "good"}
+                            data-tone={healthTone(health)}
                             title={healthScore == null ? "No health score yet" : `Health score ${healthScore} of 100`}
                           >
                             {healthScore ?? "—"}
@@ -1406,18 +1253,19 @@ const DevicesTable = memo(function DevicesTable({
                         <div
                           className="max-w-[160px] truncate text-[12px] font-semibold leading-[1.3]"
                           style={{ color: "var(--th-text-primary)" }}
-                          title={device.client_name || "No client"}
+                          title={device.client_name || TERMS.noClient}
                         >
                           {device.client_name || (
-                            <span style={{ color: "var(--th-text-muted)" }}>No client</span>
+                            <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>
                           )}
                         </div>
                         <div className="mt-0.5 flex items-center gap-1">
                           <span
                             className="max-w-[160px] truncate text-[12px]"
                             style={{ color: "var(--th-text-muted)" }}
+                            title={device.group_name || TERMS.noGroup}
                           >
-                            {device.group_name || "No group"}
+                            {device.group_name || TERMS.noGroup}
                           </span>
                         </div>
                       </td>
@@ -1428,10 +1276,11 @@ const DevicesTable = memo(function DevicesTable({
                           <span
                             className="max-w-[140px] truncate text-[12px] font-medium"
                             style={{ color: "var(--th-text-secondary)" }}
+                            title={device.current_user || undefined}
                           >
                             {device.current_user || "—"}
                           </span>
-                          {getUserSourceBadge(device)}
+                          {userSource && <CompactBadge view={userSource} />}
                         </div>
                         <div className="max-w-[160px] truncate text-[11px]" style={{ color: "var(--th-text-muted)" }} title={device.domain || undefined}>
                           {device.domain || "—"}
@@ -1453,28 +1302,7 @@ const DevicesTable = memo(function DevicesTable({
 
                       {/* ── Agent version ── */}
                       <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        {(() => {
-                          const platform = (device.platform || "windows").toLowerCase();
-                          if (platform === "windows") {
-                            // Byte-identical to the prior inline JSX: same 2-state
-                            // boolean, same colors, no "ahead" state.
-                            return (
-                              <VersionBadge
-                                version={device.agent_version}
-                                status={isAgentOutdated(device, activePackageVersion, activePackageSha256) ? "outdated" : "current"}
-                                title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
-                              />
-                            );
-                          }
-                          const active = resolveActiveVersion(device, activePackageVersion, activeConnectorVersions, activeAgentVersions);
-                          return (
-                            <VersionBadge
-                              version={device.agent_version}
-                              status={compareVersions(device.agent_version, active)}
-                              title={active ? `Latest: ${active}` : undefined}
-                            />
-                          );
-                        })()}
+                        <VersionBadge version={device.agent_version} status={agentVersion.status} title={agentVersion.title} />
                       </td>
 
                       {/* ── Actions ── */}
@@ -1519,7 +1347,7 @@ const DevicesTable = memo(function DevicesTable({
                                         launchConnect(
                                           res.connect_url,
                                           buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                          () => showBulkToast("Opening with RustDesk instead", true)
+                                          () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
                                         );
                                       } catch (err) {
                                         showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
@@ -1533,7 +1361,7 @@ const DevicesTable = memo(function DevicesTable({
                                     ? "Remote Support ID conflict"
                                     : canConnect
                                     ? "Open TECHI Remote Support"
-                                    : "Remote ID not resolved yet"
+                                    : `${TERMS.remoteSupportId} not resolved yet`
                                   : canConnect
                                   ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
                                   : "No Connect method available for this device yet"
@@ -1556,24 +1384,11 @@ const DevicesTable = memo(function DevicesTable({
                             <button
                               type="button"
                               data-action-trigger="true"
-                              className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors"
-                              style={{
-                                border: "1px solid var(--th-border-subtle)",
-                                background: "color-mix(in srgb, var(--th-text-primary) 3%, transparent)",
-                                color: "var(--th-text-muted)",
-                              }}
-                              onMouseEnter={(e) => {
-                                (e.currentTarget as HTMLElement).style.background =
-                                  "color-mix(in srgb, var(--th-text-primary) 7%, transparent)";
-                                (e.currentTarget as HTMLElement).style.color =
-                                  "var(--th-text-secondary)";
-                              }}
-                              onMouseLeave={(e) => {
-                                (e.currentTarget as HTMLElement).style.background =
-                                  "color-mix(in srgb, var(--th-text-primary) 3%, transparent)";
-                                (e.currentTarget as HTMLElement).style.color =
-                                  "var(--th-text-muted)";
-                              }}
+                              className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 h-7 w-7"
+                              data-active={openActionDeviceId === device.id}
+                              aria-label={`More actions for ${deviceDisplayName(device)}`}
+                              aria-haspopup="menu"
+                              aria-expanded={openActionDeviceId === device.id}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (openActionDeviceId === device.id) {
@@ -1586,7 +1401,7 @@ const DevicesTable = memo(function DevicesTable({
                               }}
                               title="More actions"
                             >
-                              <MoreHorizontal className="h-3 w-3" />
+                              <MoreHorizontal className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
@@ -1656,7 +1471,7 @@ const DevicesTable = memo(function DevicesTable({
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{deviceDisplayName(device)}</p>
                       <p className="truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
-                        {state} · {device.client_name || "No client"}
+                        {state} · {device.client_name || TERMS.noClient}
                       </p>
                     </div>
                   </div>
@@ -1724,94 +1539,35 @@ const DevicesTable = memo(function DevicesTable({
         </div>
       )}
 
-      {/* ── Bulk action confirmation modal ── */}
-      {bulkConfirmOpen && pendingBulkAction && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
-          onClick={() => !bulkBusy && setBulkConfirmOpen(false)}>
-          <div className="w-full max-w-[380px] rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}
-            style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}>
-            <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-              <p className="text-sm font-bold" style={{ color: "var(--th-text-primary)" }}>
-                {pendingBulkAction.action === "maintenance_enter" ? "Enter Maintenance" :
-                 pendingBulkAction.action === "maintenance_exit" ? "Exit Maintenance" :
-                 `Bulk: ${pendingBulkAction.action.replace(/_/g, " ")}`}
-              </p>
-              <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
-                Applies to {selectedIds.size} device{selectedIds.size !== 1 ? "s" : ""}.
-              </p>
-            </div>
-            <div className="px-5 py-4">
-              {pendingBulkAction.action === "maintenance_enter" && (
-                <div className="mb-4">
-                  <p className="mb-2 text-xs font-semibold" style={{ color: "var(--th-text-secondary)" }}>Duration</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { label: "1 hour",        mins: 60 },
-                      { label: "4 hours",       mins: 240 },
-                      { label: "8 hours",       mins: 480 },
-                      { label: "Tomorrow",      mins: Math.round(((new Date(new Date().setHours(24,0,0,0)).getTime() - Date.now()) / 60000)) },
-                      { label: "Indefinite",    mins: null },
-                    ].map(opt => (
-                      <button key={opt.label} type="button"
-                        onClick={() => setBulkMaintMinutes(opt.mins)}
-                        className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition"
-                        style={{
-                          background: bulkMaintMinutes === opt.mins ? "color-mix(in srgb, var(--th-status-maint) 15%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 4%, transparent)",
-                          border: `1px solid ${bulkMaintMinutes === opt.mins ? "color-mix(in srgb, var(--th-status-maint) 35%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 10%, transparent)"}`,
-                          color: bulkMaintMinutes === opt.mins ? "var(--th-status-maint)" : "var(--th-text-secondary)",
-                        }}>
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <button type="button" disabled={bulkBusy}
-                  onClick={() => setBulkConfirmOpen(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold"
-                  style={{ background: "color-mix(in srgb, var(--th-text-primary) 4%, transparent)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-muted)" }}>
-                  Cancel
-                </button>
-                <button type="button" disabled={bulkBusy}
-                  onClick={async () => {
-                    const action = pendingBulkAction.action;
-                    const selectedDevices = devices.filter(d => selectedIds.has(d.id));
-                    setBulkBusy(true);
-                    let ok = 0; let fail = 0;
-                    try {
-                      for (const d of selectedDevices) {
-                        try {
-                          if (action === "maintenance_enter") {
-                            await enterDeviceMaintenance(d.id, { duration_minutes: bulkMaintMinutes, started_by: currentUser ?? "operator" });
-                          } else if (action === "maintenance_exit") {
-                            await clearDeviceMaintenance(d.id);
-                          } else {
-                            await queueDeviceAction(d.id, { action_type: action as import("../api/actions").ActionType, created_by: currentUser ?? "operator" });
-                          }
-                          ok++;
-                        } catch { fail++; }
-                      }
-                      showBulkToast(`${action.replace(/_/g," ")}: ${ok} queued${fail ? `, ${fail} failed` : ""}`, fail === 0);
-                      setSelectedIds(new Set());
-                      onBulkComplete?.();
-                    } finally {
-                      setBulkBusy(false);
-                      setBulkConfirmOpen(false);
-                    }
-                  }}
-                  className="rounded-lg px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50"
-                  style={{
-                    background: pendingBulkAction.destructive ? "color-mix(in srgb, var(--th-status-critical) 15%, transparent)" : "color-mix(in srgb, var(--th-accent) 15%, transparent)",
-                    border: `1px solid ${pendingBulkAction.destructive ? "color-mix(in srgb, var(--th-status-critical) 35%, transparent)" : "color-mix(in srgb, var(--th-accent) 35%, transparent)"}`,
-                    color: pendingBulkAction.destructive ? "var(--th-status-critical)" : "var(--th-accent)",
-                  }}>
-                  {bulkBusy ? "Processing…" : `Confirm (${selectedIds.size})`}
-                </button>
+      {pendingBulkAction && (
+        <ConfirmationModal
+          title={BULK_ACTIONS[pendingBulkAction].title(devicesPhrase(selectedIds.size))}
+          confirmLabel={BULK_ACTIONS[pendingBulkAction].confirm}
+          destructive={BULK_ACTIONS[pendingBulkAction].destructive}
+          loading={bulkBusy}
+          onClose={() => setPendingBulkAction(null)}
+          onConfirm={() => void runBulkAction(pendingBulkAction)}
+        >
+          <p>{BULK_ACTIONS[pendingBulkAction].description}</p>
+          {pendingBulkAction === "maintenance_enter" && (
+            <fieldset className="mt-4">
+              <legend className="mb-2 text-[13px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>Duration</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {MAINTENANCE_DURATIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={bulkMaintDuration === opt.id}
+                    onClick={() => setBulkMaintDuration(opt.id)}
+                    className="th-filter-chip"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-            </div>
-          </div>
-        </div>
+            </fieldset>
+          )}
+        </ConfirmationModal>
       )}
 
       {pendingAction && (
@@ -1829,29 +1585,6 @@ const DevicesTable = memo(function DevicesTable({
 export default DevicesTable;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
-  const isRunning = entry.status === "running";
-  const isQueued =
-    entry.status === "queued" ||
-    entry.status === "sent" ||
-    entry.status === "acknowledged";
-  const title = `${entry.action_type.replace(/_/g, " ")} — ${entry.status}`;
-  if (isRunning)
-    return (
-      <span title={title}>
-        <Loader2 className="h-2.5 w-2.5 flex-none animate-spin text-sky-400" />
-      </span>
-    );
-  if (isQueued)
-    return (
-      <span
-        className="h-1.5 w-1.5 flex-none rounded-full bg-amber-400/80"
-        title={title}
-      />
-    );
-  return null;
-}
 
 function ConfirmDeviceAction({
   type,
@@ -1892,7 +1625,7 @@ function ConfirmDeviceAction({
       onClose={onCancel}
       onConfirm={onConfirm}
     >
-      <p className="font-medium text-slate-200">{device.hostname || device.rustdesk_id}</p>
+      <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>{deviceDisplayName(device)}</p>
       <p className="mt-3">{message}</p>
     </ConfirmationModal>
   );

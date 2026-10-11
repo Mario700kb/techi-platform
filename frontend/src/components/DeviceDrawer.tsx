@@ -12,7 +12,8 @@ import {
 } from "../api/remoteSupport";
 import { Client, DeviceGroup } from "../api/clients";
 import { archiveDevice, assignDeviceClient, assignDeviceGroup, clearDeviceMaintenance, Device, DeviceOfflineAnalysis, enterDeviceMaintenance, getDeviceOfflineAnalysis, updateDevice } from "../api/devices";
-import { APP_TIME_ZONE, parseUTC, timeAgo, DISPLAY_LOCALE } from "../utils/time";
+import { DISPLAY_LOCALE, formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
+import { freshnessTone, humanize, remoteSupportStatus, TERMS, TONE } from "../utils/deviceStatus";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
@@ -91,13 +92,16 @@ function DetailRow({ label, value, mono = false }: { label: string; value?: stri
 function AssignmentSourceBadge({ source }: { source?: string | null }) {
   const normalized = (source || "unassigned").toLowerCase();
   const label =
-    normalized === "manual" || normalized === "legacy_manual" ? "manual" :
-    normalized === "trusted_domain" ? "domain" :
-    normalized === "enrollment_token" ? "token" :
-    normalized === "auto_os" || normalized === "system_auto" ? "auto" :
-    "unassigned";
+    normalized === "manual" || normalized === "legacy_manual" ? "Manual" :
+    normalized === "trusted_domain" ? "Domain" :
+    normalized === "enrollment_token" ? "Token" :
+    normalized === "auto_os" || normalized === "system_auto" ? "Auto" :
+    "Unassigned";
   return (
-    <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+    <span
+      className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+      style={{ borderColor: "var(--th-border-default)", background: "var(--th-chip-bg)", color: "var(--th-text-secondary)" }}
+    >
       {label}
     </span>
   );
@@ -137,10 +141,6 @@ function alertSeverityDot(severity: AlertSeverity): string {
   return "bg-slate-500";
 }
 
-function alertTimeAgo(iso: string): string {
-  return timeAgo(iso);
-}
-
 function patchStateLabel(state?: string): string {
   if (state === "up_to_date") return "Up to date";
   if (state === "updates_available") return "Updates available";
@@ -160,11 +160,13 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
       <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${alertSeverityDot(alert.severity)}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className={`text-[11px] font-semibold uppercase tracking-wide ${alertSeverityColor(alert.severity)}`}>
+          <span className={`text-[12px] font-semibold capitalize ${alertSeverityColor(alert.severity)}`}>
             {alert.severity}
           </span>
-          {resolved && <span className="text-[11px] text-slate-500">resolved</span>}
-          <span className="ml-auto flex-none text-[11px] text-slate-500">{alertTimeAgo(alert.created_at)}</span>
+          {resolved && <span className="text-[12px] text-slate-500">Resolved</span>}
+          <time dateTime={alert.created_at} title={formatDateTime(alert.created_at)} className="ml-auto flex-none text-[12px] text-slate-500">
+            {timeAgo(alert.created_at)}
+          </time>
         </div>
         <p className="text-xs leading-5 text-slate-200">{alert.message}</p>
       </div>
@@ -180,12 +182,6 @@ const OFFLINE_REASON_LABELS: Record<string, string> = {
   stale_heartbeat:         "Stale heartbeat",
   possibly_power_off:      "Possibly powered off",
   unknown:                 "Unknown",
-};
-
-const CONFIDENCE_COLORS: Record<string, string> = {
-  high:   "text-emerald-300 bg-emerald-400/10 border-emerald-400/25",
-  medium: "text-amber-300 bg-amber-400/10 border-amber-400/25",
-  low:    "text-slate-400 bg-white/[0.05] border-white/10",
 };
 
 export default function DeviceDrawer({
@@ -223,6 +219,7 @@ export default function DeviceDrawer({
 
   const [inventory, setInventory] = useState<DeviceInventory | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [processSearch, setProcessSearch] = useState("");
   const [serviceSearch, setServiceSearch] = useState("");
   const [softwareSearch, setSoftwareSearch] = useState("");
@@ -248,17 +245,17 @@ export default function DeviceDrawer({
   const connectRsTitle = !hasPermission("remote_support_connect")
     ? "Permission required: remote_support_connect"
     : device.rustdesk_conflict_detected
-    ? "Remote Support ID conflict detected"
+    ? `${TERMS.remoteSupportId} conflict detected`
     : isValidRustDeskId(device.rustdesk_id)
-    ? "Open TECHI Remote Support"
-    : "Remote ID not resolved yet";
+    ? `Open ${TERMS.remoteSupport}`
+    : `${TERMS.remoteSupportId} not resolved yet`;
   const connectRemoteSupport = async () => {
     try {
       const res = await getConnectUrl(device.id);
       launchConnect(
         res.connect_url,
         buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-        () => { setRsToast({ message: "Opening with RustDesk instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
+        () => { setRsToast({ message: "Opening the Remote Support app instead", ok: true }); setTimeout(() => setRsToast(null), 3000); }
       );
     } catch (err) {
       setRsToast({ message: err instanceof Error ? err.message : "Connect failed", ok: false });
@@ -349,11 +346,12 @@ export default function DeviceDrawer({
 
   const loadInventory = useCallback(async () => {
     setInventoryLoading(true);
+    setInventoryError(null);
     try {
       const data = await getDeviceInventory(device.id);
       setInventory(data);
-    } catch {
-      // non-critical
+    } catch (err) {
+      setInventoryError(err instanceof Error ? err.message : "The inventory request failed.");
     } finally {
       setInventoryLoading(false);
     }
@@ -369,6 +367,7 @@ export default function DeviceDrawer({
     if (inventoryLoadedFor.current !== device.id) {
       inventoryLoadedFor.current = device.id;
       setInventory(null);
+      setInventoryError(null);
       setSoftwareSearch("");
       setProcessSearch("");
       setServiceSearch("");
@@ -585,9 +584,10 @@ export default function DeviceDrawer({
     <>
 	      {/* Shtresa mbyllese */}
 	      <div
-        className={`th-drawer-scrim fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] ${
+        className={`th-drawer-scrim fixed inset-0 z-40 backdrop-blur-[2px] ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
+        style={{ background: "var(--th-scrim)" }}
         data-open={isOpen}
         onClick={onClose}
       />
@@ -608,7 +608,7 @@ export default function DeviceDrawer({
           <div className="flex items-start gap-3">
             <span className="th-palette-icon !h-10 !w-10 flex-none" aria-hidden="true">
               {device.device_type === "server" ? <Server className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
-              <i style={{ background: device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" }} />
+              <i style={{ background: freshnessTone(device.freshness_state) }} />
             </span>
 
             <div className="min-w-0 flex-1">
@@ -665,7 +665,7 @@ export default function DeviceDrawer({
               <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                 {[
                   device.device_type === "server" ? "Server" : device.device_type === "client" ? "Workstation" : "Unclassified",
-                  device.resolved_client_name || device.client_name || "No client",
+                  device.resolved_client_name || device.client_name || TERMS.noClient,
                   device.resolved_group || device.group_name,
                   hostnameSubtitle ? `host ${hostnameSubtitle}` : null,
                   `#${device.id}`,
@@ -694,7 +694,7 @@ export default function DeviceDrawer({
 
           {/* Status strip + primary action */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="th-status-chip" style={{ "--chip-tone": device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" } as React.CSSProperties}>
+            <span className="th-status-chip" style={{ "--chip-tone": freshnessTone(device.freshness_state) } as React.CSSProperties}>
               <i />
               <span className="capitalize">{device.freshness_state ?? device.status}</span>
               <span style={{ color: "var(--th-text-faint)" }}>· {timeAgo(device.last_seen)}</span>
@@ -709,7 +709,7 @@ export default function DeviceDrawer({
               </span>
             )}
             {device.is_in_maintenance && (
-              <span className="th-status-chip" style={{ "--chip-tone": "var(--th-status-maint)" } as React.CSSProperties}><i />Maintenance</span>
+              <span className="th-status-chip" style={{ "--chip-tone": TONE.maintenance } as React.CSSProperties}><i />Maintenance</span>
             )}
             <ConnectButton className="ml-auto" disabled={!canConnectRs} onClick={() => void connectRemoteSupport()} title={connectRsTitle} />
           </div>
@@ -766,15 +766,12 @@ export default function DeviceDrawer({
 
           {/* Paralajmerim per duplikim */}
           {device.duplicate_candidate && (
-            <div
-              className="mb-4 rounded-lg px-4 py-3"
-              style={{ border: "1px solid color-mix(in srgb, var(--th-status-warning) 25%, transparent)", background: "color-mix(in srgb, var(--th-status-warning) 7%, transparent)" }}
-            >
+            <div className="th-drawer-callout mb-4" data-tone="warning">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-400" />
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-amber-300">Possible duplicate device</p>
-                  <p className="mt-0.5 text-[11px] leading-5 text-amber-200/70">
+                  <p className="text-[13px] font-semibold">Possible duplicate device</p>
+                  <p className="mt-0.5 text-[12px] leading-5" style={{ color: "var(--th-text-secondary)" }}>
                     {device.duplicate_of_device_id
                       ? `Fingerprint similarity with Device #${device.duplicate_of_device_id}${
                           device.duplicate_score != null
@@ -786,14 +783,16 @@ export default function DeviceDrawer({
                 </div>
               </div>
               {canOperate && !device.is_archived && (
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="secondary"
                   disabled={archiveBusy}
                   onClick={() => setArchiveConfirmOpen(true)}
-                  className="mt-3 w-full rounded-md border border-amber-400/25 bg-amber-400/10 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-3 w-full"
                 >
                   {archiveBusy ? "Archiving…" : "Archive this duplicate"}
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -807,7 +806,7 @@ export default function DeviceDrawer({
                 <dd>
                   {device.last_seen
                     ? <>
-                        {parseUTC(device.last_seen).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        {formatLocalDateTime(device.last_seen)}
                         <span style={{ color: "var(--th-text-muted)" }}> · <HeartbeatFreshness lastSeen={device.last_seen} /></span>
                       </>
                     : <span style={{ color: "var(--th-text-muted)" }}>Never</span>}
@@ -855,35 +854,34 @@ export default function DeviceDrawer({
             <p className="premium-kicker mb-2">Services</p>
             <div className="grid grid-cols-2 gap-2">
               {(() => {
-                const rsRunning = device.rustdesk_status === "running";
-                const rsMissing = device.rustdesk_install_status === "not_installed";
+                const rs = remoteSupportStatus(device);
                 const tiles: { label: string; value: string; tone: string; sub?: string; onClick?: () => void }[] = [
                   {
-                    label: "Remote Support",
-                    value: rsRunning ? "Running" : rsMissing ? "Not installed" : (device.rustdesk_status ?? "Unknown").replace(/_/g, " "),
-                    tone: rsRunning ? "var(--th-status-online)" : rsMissing ? "var(--th-text-faint)" : "var(--th-status-warning)",
+                    label: TERMS.remoteSupport,
+                    value: rs.label,
+                    tone: rs.tone,
                     sub: device.rustdesk_version ? `v${device.rustdesk_version}` : undefined,
                     onClick: () => setActiveTab("remote_support"),
                   },
                   {
                     label: "Updates",
                     value: "View software",
-                    tone: "var(--th-text-faint)",
+                    tone: TONE.neutral,
                     sub: "Patches and installed apps",
                     onClick: () => setActiveTab("software"),
                   },
                   {
                     label: "Maintenance",
                     value: device.is_in_maintenance ? "Active" : "Off",
-                    tone: device.is_in_maintenance ? "var(--th-status-maint)" : "var(--th-text-faint)",
+                    tone: device.is_in_maintenance ? TONE.maintenance : TONE.neutral,
                     sub: device.is_in_maintenance && device.maintenance_ends_at
-                      ? `until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                      ? `until ${formatLocalDateTime(device.maintenance_ends_at)}`
                       : undefined,
                   },
                   {
                     label: "Lifecycle",
                     value: device.is_archived ? "Archived" : "Active",
-                    tone: device.is_archived ? "var(--th-status-warning)" : "var(--th-status-online)",
+                    tone: device.is_archived ? TONE.warning : TONE.online,
                     sub: device.duplicate_candidate ? "Possible duplicate" : undefined,
                   },
                 ];
@@ -918,10 +916,7 @@ export default function DeviceDrawer({
                 </span>
               )}
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
                 <div className="flex items-center gap-2 py-1">
                   <CheckCircle className="h-4 w-4 text-emerald-500" />
@@ -930,15 +925,18 @@ export default function DeviceDrawer({
               ) : (
                 <>
                   {openAlerts.length > 0 && (
-                    <div className="divide-y divide-white/5">
+                    <div className="divide-y divide-[color:var(--th-border-drawer-section)]">
                       {openAlerts.map((a) => (
                         <AlertRow key={a.id} alert={a} />
                       ))}
                     </div>
                   )}
                   {resolvedAlerts.length > 0 && (
-                    <div className={`divide-y divide-white/5 ${openAlerts.length > 0 ? "mt-2 border-t border-white/5 pt-2" : ""}`}>
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
+                    <div
+                      className={`divide-y divide-[color:var(--th-border-drawer-section)] ${openAlerts.length > 0 ? "mt-2 border-t pt-2" : ""}`}
+                      style={{ borderColor: "var(--th-border-drawer-section)" }}
+                    >
+                      <p className="mb-1 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>Recently resolved</p>
                       {resolvedAlerts.map((a) => (
                         <AlertRow key={a.id} alert={a} resolved />
                       ))}
@@ -953,21 +951,18 @@ export default function DeviceDrawer({
             <div className="mb-2 flex items-center gap-2">
               <p className="premium-kicker">Maintenance</p>
               {device.is_in_maintenance && (
-                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-sky-400">
-                  active
+                <span className="th-status-chip !h-6" style={{ "--chip-tone": TONE.maintenance } as React.CSSProperties}>
+                  <i />Active
                 </span>
               )}
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               {device.is_in_maintenance ? (
                 <div className="space-y-3">
                   <div className="flex items-start gap-2">
-                    <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-400" />
+                    <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none" style={{ color: TONE.maintenance }} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-sky-300">Device is in maintenance</p>
+                      <p className="text-xs font-semibold" style={{ color: TONE.maintenance }}>Device is in maintenance</p>
                       {device.maintenance_note && (
                         <p className="mt-0.5 text-[11px] text-slate-400">{device.maintenance_note}</p>
                       )}
@@ -984,7 +979,7 @@ export default function DeviceDrawer({
                       <div>
                         <p className="premium-kicker mb-0.5">Started at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_started_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {formatLocalDateTime(device.maintenance_started_at)}
                         </p>
                       </div>
                     )}
@@ -992,7 +987,7 @@ export default function DeviceDrawer({
                       <div className="col-span-2">
                         <p className="premium-kicker mb-0.5">Ends at</p>
                         <p className="text-xs font-medium text-slate-200">
-                          {parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {formatLocalDateTime(device.maintenance_ends_at)}
                         </p>
                       </div>
                     )}
@@ -1004,8 +999,10 @@ export default function DeviceDrawer({
                     )}
                   </div>
                   {hasPermission("maintenance_mode") && (
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
+                    variant="secondary"
                     disabled={maintenanceBusy}
                     onClick={async () => {
                       setMaintenanceBusy(true);
@@ -1016,10 +1013,10 @@ export default function DeviceDrawer({
                         setMaintenanceBusy(false);
                       }
                     }}
-                    className="mt-1 w-full rounded-md border border-white/10 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-1 w-full"
                   >
                     Exit maintenance
-                  </button>
+                  </Button>
                   )}
                 </div>
               ) : (
@@ -1089,19 +1086,16 @@ export default function DeviceDrawer({
           {/* Identiteti */}
           <section className="mb-4">
             <p className="premium-kicker mb-2">Identity</p>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
               <div>
-                <p className="premium-kicker mb-1">Current User</p>
+                <p className="premium-kicker mb-1">Current user</p>
                 <div className="flex items-center gap-1.5">
                   <p className={`text-xs font-medium leading-5 ${device.current_user ? "text-slate-100" : "text-slate-500"}`}>
                     {device.current_user || "—"}
                   </p>
                   {device.user_source && device.user_source !== "no_interactive_user" && device.user_source !== "fallback" && (
                     <span
-                      className={`inline-flex items-center rounded px-1 py-0.5 text-[11px] font-semibold uppercase leading-3 ${
+                      className={`inline-flex items-center rounded px-1 py-0.5 text-[11px] font-semibold leading-3 ${
                         device.user_source === "rdp_session"
                           ? "border border-purple-400/25 bg-purple-400/[0.1] text-purple-300"
                           : "border border-sky-400/25 bg-sky-400/[0.1] text-sky-300"
@@ -1153,7 +1147,8 @@ export default function DeviceDrawer({
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(device.capabilities).map(([name, version]) => (
                       <span key={name}
-                        className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+                        style={{ borderColor: "var(--th-border-default)", background: "var(--th-chip-bg)", color: "var(--th-text-secondary)" }}>
                         {name}{version ? <span className="font-mono text-slate-500">{version}</span> : null}
                       </span>
                     ))}
@@ -1165,20 +1160,17 @@ export default function DeviceDrawer({
 
           {/* Caktimi */}
           <section className="mb-4">
-            <p className="premium-kicker mb-2">Client Assignment</p>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              <DetailRow label="Client" value={device.resolved_client_name || device.client_name || "No client"} />
-              <DetailRow label="Group" value={device.resolved_group || device.group_name || "No group"} />
+            <p className="premium-kicker mb-2">Client assignment</p>
+            <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
+              <DetailRow label="Client" value={device.resolved_client_name || device.client_name || TERMS.noClient} />
+              <DetailRow label="Group" value={device.resolved_group || device.group_name || TERMS.noGroup} />
               <div className="col-span-2">
-                <p className="premium-kicker mb-1">Assignment Source</p>
+                <p className="premium-kicker mb-1">Assignment source</p>
                 <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
               </div>
 	              {canOperate && (
 	              <label className="col-span-2 block">
-                <span className="premium-kicker mb-1 block">Assign Client</span>
+                <span className="premium-kicker mb-1 block">Assign client</span>
                 <SelectField
                   value={device.client_id ?? "none"}
                   onChange={async (event) => {
@@ -1186,9 +1178,9 @@ export default function DeviceDrawer({
                     const updated = await assignDeviceClient(device.id, value);
                     onDeviceUpdated?.(updated);
                   }}
-                  className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none transition focus:border-techi-orange/60"
+                  className="w-full"
                 >
-                  <option value="none">No client</option>
+                  <option value="none">{TERMS.noClient}</option>
                   {clients.map((client) => (
                     <option key={client.id} value={client.id}>{client.name}</option>
                   ))}
@@ -1197,7 +1189,7 @@ export default function DeviceDrawer({
 	              )}
 	              {canOperate && (
 	              <label className="col-span-2 block">
-                <span className="premium-kicker mb-1 block">Assign Group</span>
+                <span className="premium-kicker mb-1 block">Assign group</span>
                 <SelectField
                   value={device.group_id ?? "none"}
                   disabled={!assignmentClientId}
@@ -1206,9 +1198,9 @@ export default function DeviceDrawer({
                     const updated = await assignDeviceGroup(device.id, value);
                     onDeviceUpdated?.(updated);
                   }}
-                  className="w-full rounded-lg border border-white/[0.1] bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none transition focus:border-techi-orange/60 disabled:cursor-not-allowed disabled:text-slate-600"
+                  className="w-full"
                 >
-                  <option value="none">No group</option>
+                  <option value="none">{TERMS.noGroup}</option>
                   {availableGroups.map((group) => (
                     <option key={group.id} value={group.id}>{group.name}</option>
                   ))}
@@ -1221,10 +1213,7 @@ export default function DeviceDrawer({
           {/* Rrjeti */}
           <section className="mb-4">
             <p className="premium-kicker mb-2">Network</p>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
               <DetailRow label="Local IP" value={device.local_ip} mono />
               <DetailRow label="Public IP" value={device.public_ip} mono />
             </div>
@@ -1243,17 +1232,14 @@ export default function DeviceDrawer({
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Telemetry</p>
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               <div className="space-y-3">
                 {snapshot ? (
                   <>
                   <ResourceBar label="CPU" metric="cpu" percent={snapshot.cpu_percent} />
                   <ResourceBar label="Memory" metric="ram" percent={snapshot.ram_percent} />
                   <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
-                  <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-white/5 pt-3">
+                  <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 border-t pt-3" style={{ borderColor: "var(--th-border-drawer-section)" }}>
                     <div>
                       <p className="premium-kicker mb-1">Uptime</p>
                       <p className="text-xs font-medium text-slate-100">{formatUptime(snapshot.uptime_seconds)}</p>
@@ -1265,20 +1251,16 @@ export default function DeviceDrawer({
                       </p>
                     </div>
                     <div className="col-span-2">
-                      <p className="premium-kicker mb-1">Last Telemetry</p>
+                      <p className="premium-kicker mb-1">Last telemetry</p>
                       <p className="text-xs font-medium text-slate-300">
-                        {parseUTC(snapshot.created_at).toLocaleTimeString(undefined, { timeZone: APP_TIME_ZONE,
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
+                        {formatDateTime(snapshot.created_at)}
                       </p>
                     </div>
                   </div>
                   </>
                 ) : (
                   <p className="py-2 text-center text-xs font-medium text-slate-500">
-                    No telemetry yet — run the agent to collect metrics
+                    No telemetry yet. Metrics appear once the {TERMS.agent} reports in.
                   </p>
                 )}
               </div>
@@ -1336,16 +1318,16 @@ export default function DeviceDrawer({
             <ConfirmationModal
               title={
                 selectedActionType === "reinstall_rustdesk"
-                  ? "Reinstall TECHI Remote Support?"
+                  ? `Reinstall ${TERMS.remoteSupport}?`
                   : selectedActionType === "restart_agent"
-                  ? "Restart Agent service?"
+                  ? `Restart the ${TERMS.agent}?`
                   : "Restart device?"
               }
               confirmLabel={
                 selectedActionType === "reinstall_rustdesk"
                   ? "Confirm reinstall"
                   : selectedActionType === "restart_agent"
-                  ? "Restart Agent"
+                  ? "Restart agent"
                   : "Restart device"
               }
               destructive={true}
@@ -1366,9 +1348,9 @@ export default function DeviceDrawer({
               }}
             >
               {selectedActionType === "reinstall_rustdesk" ? (
-                <>This will download and silently reinstall TECHI Remote Support on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
+                <>This will download and silently reinstall {TERMS.remoteSupport} on <span className="font-semibold text-slate-200">{device.hostname}</span>. Remote access will be interrupted during reinstall.</>
               ) : selectedActionType === "restart_agent" ? (
-                <>This will stop and restart the <span className="font-semibold text-slate-200">TechiAgent</span> Windows service on <span className="font-semibold text-slate-200">{device.hostname}</span>. The agent will reconnect within ~15 seconds. Active actions will be re-queued on reconnect.</>
+                <>This will stop and restart the {TERMS.agent} (the <span className="font-mono">TechiAgent</span> Windows service) on <span className="font-semibold text-slate-200">{device.hostname}</span>. The agent will reconnect within ~15 seconds. Active actions will be re-queued on reconnect.</>
               ) : (
                 <>This will trigger an immediate OS-level restart on <span className="font-semibold text-slate-200">{device.hostname}</span>. The device will go offline and reconnect after boot. All unsaved work on the device will be lost.</>
               )}
@@ -1411,7 +1393,7 @@ export default function DeviceDrawer({
                   if (!RESTART_TYPES.has(a.action_type)) return false;
                   if (a.status !== "completed" && !isActiveStatus(a.status)) return false;
                   const ref = a.completed_at ?? a.sent_at ?? a.created_at;
-                  return ref ? Date.now() - new Date(ref).getTime() < 5 * 60 * 1000 : false;
+                  return ref ? Date.now() - parseUTC(ref).getTime() < 5 * 60 * 1000 : false;
                 });
                 if (recentRestart) {
                   return (
@@ -1496,7 +1478,7 @@ export default function DeviceDrawer({
                   </div>
                 );
               })() : (
-                <p className="mb-3 rounded-md bg-white/[0.03] px-3 py-2 text-[11px] font-medium text-slate-500">
+                <p className="th-drawer-callout mb-3 text-[13px]" data-tone="neutral">
                   Remote actions are read-only for this role.
                 </p>
               )}
@@ -1568,7 +1550,20 @@ export default function DeviceDrawer({
                 </Button>
               )}
             </div>
-            {!inventory && (
+            {inventoryError && (
+              <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="warning" role="alert">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">Inventory could not be loaded</p>
+                  <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-secondary)" }}>{inventoryError}</p>
+                </div>
+                <Button size="sm" variant="secondary" className="flex-none" onClick={() => void loadInventory()} disabled={inventoryLoading}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${inventoryLoading ? "animate-spin" : ""}`} />
+                  Retry
+                </Button>
+              </div>
+            )}
+            {!inventory && !inventoryError && (
               <div className="th-drawer-card">
                 <EmptyState
                   className="!py-6"
@@ -1590,38 +1585,35 @@ export default function DeviceDrawer({
           {inventory && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <p className="premium-kicker">Patch Status</p>
+              <p className="premium-kicker">Patch status</p>
               <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${patchStateClass(inventory?.patch_state)}`}>
                 {patchStateLabel(inventory?.patch_state)}
               </span>
             </div>
-            <div
-              className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
               <div>
-                <p className="premium-kicker mb-1">Pending Updates</p>
+                <p className="premium-kicker mb-1">Pending updates</p>
                 <p className="text-xs font-medium text-slate-100">
                   {inventory?.pending_updates != null ? inventory.pending_updates : "—"}
                 </p>
               </div>
               <div>
-                <p className="premium-kicker mb-1">Reboot Required</p>
+                <p className="premium-kicker mb-1">Reboot required</p>
                 <p className={`text-xs font-semibold ${inventory?.reboot_required ? "text-red-300" : "text-emerald-300"}`}>
                   {inventory ? (inventory.reboot_required ? "Yes" : "No") : "—"}
                 </p>
               </div>
               <div className="col-span-2">
-                <p className="premium-kicker mb-1">Last Update</p>
+                <p className="premium-kicker mb-1">Last update</p>
                 <p className="text-xs font-medium text-slate-300">
-                  {inventory?.last_update_at || "—"}
+                  {formatDateTime(inventory?.last_update_at)}
                 </p>
               </div>
             </div>
           </section>
           )}
 
-          {inventory && inventory.processes.length > 0 && (
+          {inventory && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Processes</p>
@@ -1629,11 +1621,9 @@ export default function DeviceDrawer({
                 {inventory.processes.length} collected
               </span>
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               <>
+                  {inventory.processes.length > 0 && (
                   <label className="th-search th-search-sm mb-3">
                     <Search className="h-3.5 w-3.5 flex-none" />
                     <input
@@ -1643,29 +1633,30 @@ export default function DeviceDrawer({
                       onChange={(e) => setProcessSearch(e.target.value)}
                     />
                   </label>
+                  )}
                   <div className="max-h-60 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                        <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr className="text-left text-[12px] font-medium text-slate-500">
                           <th className="pb-1.5 pr-3">PID</th>
                           <th className="pb-1.5 pr-3">Name</th>
-                          <th className="pb-1.5 text-right">Mem (MB)</th>
+                          <th className="pb-1.5 text-right">Memory</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/[0.04]">
+                      <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
                         {filteredProcesses.map((p) => (
-                          <tr key={p.pid} className="text-slate-300 hover:bg-white/[0.02]">
+                          <tr key={p.pid} className="text-slate-300 hover:bg-[var(--th-table-hover)]">
                             <td className="py-1 pr-3 font-mono text-[11px] text-slate-500">{p.pid}</td>
                             <td className="max-w-[200px] truncate py-1 pr-3 font-medium">{p.name}</td>
                             <td className="py-1 text-right text-slate-400">
-                              {p.memory_mb != null ? p.memory_mb.toFixed(1) : "—"}
+                              {formatMemoryMb(p.memory_mb)}
                             </td>
                           </tr>
                         ))}
                         {filteredProcesses.length === 0 && (
                           <tr>
                             <td colSpan={3} className="py-3 text-center text-slate-500">
-                              No matches
+                              {inventory.processes.length === 0 ? "None reported" : "No matches"}
                             </td>
                           </tr>
                         )}
@@ -1677,8 +1668,7 @@ export default function DeviceDrawer({
           </section>
           )}
 
-          {/* Sherbimet shfaqen vetem kur ka te dhena */}
-          {inventory && inventory.services.length > 0 && (
+          {inventory && (
             <section className="mb-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="premium-kicker">Services</p>
@@ -1686,10 +1676,8 @@ export default function DeviceDrawer({
                   {inventory.services.length} collected
                 </span>
               </div>
-              <div
-                className="rounded-lg p-4"
-                style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-              >
+              <div className="th-drawer-card">
+                {inventory.services.length > 0 && (
                 <label className="th-search th-search-sm mb-3">
                   <Search className="h-3.5 w-3.5 flex-none" />
                   <input
@@ -1699,18 +1687,19 @@ export default function DeviceDrawer({
                     onChange={(e) => setServiceSearch(e.target.value)}
                   />
                 </label>
+                )}
                 <div className="max-h-60 overflow-y-auto">
                   <table className="w-full text-[11px]">
                     <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr className="text-left text-[12px] font-medium text-slate-500">
                         <th className="pb-1.5 pr-3">Name</th>
                         <th className="pb-1.5 pr-3">Status</th>
                         <th className="pb-1.5 text-right">Startup</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.04]">
+                    <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
                       {filteredServices.map((s) => (
-                        <tr key={s.name} className="text-slate-300 hover:bg-white/[0.02]">
+                        <tr key={s.name} className="text-slate-300 hover:bg-[var(--th-table-hover)]">
                           <td className="py-1 pr-3">
                             <p className="max-w-[180px] truncate font-medium">{s.display_name || s.name}</p>
                             <p className="font-mono text-[11px] text-slate-600">{s.name}</p>
@@ -1725,7 +1714,7 @@ export default function DeviceDrawer({
                                   : "text-amber-400"
                               }`}
                             >
-                              {s.status}
+                              {humanize(s.status)}
                             </span>
                           </td>
                           <td className="py-1 text-right text-slate-500">
@@ -1736,7 +1725,7 @@ export default function DeviceDrawer({
                       {filteredServices.length === 0 && (
                         <tr>
                           <td colSpan={3} className="py-3 text-center text-slate-500">
-                            No matches
+                            {inventory.services.length === 0 ? "None reported" : "No matches"}
                           </td>
                         </tr>
                       )}
@@ -1747,7 +1736,7 @@ export default function DeviceDrawer({
             </section>
           )}
 
-          {inventory && (inventory.software ?? []).length > 0 && (
+          {inventory && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="premium-kicker">Software</p>
@@ -1755,11 +1744,9 @@ export default function DeviceDrawer({
                 {(inventory.software ?? []).length} collected
               </span>
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               <>
+                  {(inventory.software ?? []).length > 0 && (
                   <label className="th-search th-search-sm mb-3">
                     <Search className="h-3.5 w-3.5 flex-none" />
                     <input
@@ -1769,18 +1756,19 @@ export default function DeviceDrawer({
                       onChange={(e) => setSoftwareSearch(e.target.value)}
                     />
                   </label>
+                  )}
                   <div className="max-h-72 overflow-y-auto">
                     <table className="w-full text-[11px]">
                       <thead className="sticky top-0 drawer-table-head" style={{ background: "var(--th-bg-drawer-table-head)" }}>
-                        <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr className="text-left text-[12px] font-medium text-slate-500">
                           <th className="pb-1.5 pr-3">Name</th>
                           <th className="pb-1.5 pr-3">Version</th>
                           <th className="pb-1.5">Publisher</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/[0.04]">
+                      <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
                         {filteredSoftware.map((s, idx) => (
-                          <tr key={`${s.name}-${s.version ?? ""}-${idx}`} className="text-slate-300 hover:bg-white/[0.02]">
+                          <tr key={`${s.name}-${s.version ?? ""}-${idx}`} className="text-slate-300 hover:bg-[var(--th-table-hover)]">
                             <td className="max-w-[180px] truncate py-1 pr-3 font-medium">{s.name}</td>
                             <td className="max-w-[90px] truncate py-1 pr-3 text-slate-400">{s.version || "—"}</td>
                             <td className="max-w-[140px] truncate py-1 text-slate-500">{s.publisher || "—"}</td>
@@ -1789,7 +1777,7 @@ export default function DeviceDrawer({
                         {filteredSoftware.length === 0 && (
                           <tr>
                             <td colSpan={3} className="py-3 text-center text-slate-500">
-                              No matches
+                              {(inventory.software ?? []).length === 0 ? "None reported" : "No matches"}
                             </td>
                           </tr>
                         )}
@@ -1808,10 +1796,7 @@ export default function DeviceDrawer({
               <p className="premium-kicker">Notes</p>
               <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
             </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
+            <div className="th-drawer-card">
               <textarea
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
@@ -1820,15 +1805,10 @@ export default function DeviceDrawer({
                 className="th-input w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-5 outline-none"
               />
               <div className="mt-2 flex justify-end">
-                <button
-                  type="button"
-                  disabled={noteBusy || !noteText.trim()}
-                  onClick={addNote}
-                  className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px]"
-                >
+                <Button type="button" size="sm" disabled={noteBusy || !noteText.trim()} onClick={addNote}>
                   <Save className="h-3 w-3" />
                   Add note
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -1854,7 +1834,7 @@ export default function DeviceDrawer({
                       <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
                         {note.created_by || "admin"}
                       </span>
-                      <span className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>{actionTimeAgo(note.updated_at)}</span>
+                      <time dateTime={note.updated_at} title={formatDateTime(note.updated_at)} className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>{actionTimeAgo(note.updated_at)}</time>
 	                      {canOperate && (
 	                      <div className="ml-auto flex items-center gap-1">
                         <button
@@ -1892,25 +1872,21 @@ export default function DeviceDrawer({
                           className="th-input w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-5 outline-none"
                         />
                         <div className="mt-2 flex justify-end gap-2">
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
+                            variant="secondary"
                             onClick={() => {
                               setEditingNoteId(null);
                               setEditingText("");
                             }}
-                            className="th-btn th-btn-secondary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Cancel
-                          </button>
-                          <button
-                            type="button"
-                            disabled={noteBusy || !editingText.trim()}
-                            onClick={() => saveNote(note.id)}
-                            className="th-btn th-btn-primary inline-flex min-h-8 items-center gap-1 rounded-lg border px-3 text-[13px]"
-                          >
+                          </Button>
+                          <Button type="button" size="sm" disabled={noteBusy || !editingText.trim()} onClick={() => saveNote(note.id)}>
                             <Save className="h-3 w-3" />
                             Save
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ) : (
@@ -1945,13 +1921,13 @@ export default function DeviceDrawer({
             <section className="mb-5">
               <div className="mb-2 flex items-center justify-between">
                 <p className="premium-kicker">Connection</p>
-                <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} />
+                <RsServiceBadge status={rsDevice?.service_status ?? device.rustdesk_status} installStatus={device.rustdesk_install_status} />
               </div>
 
               <div className="th-drawer-card">
                 {/* Remote ID with copy */}
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
-                  <p className="mb-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Remote Support ID</p>
+                  <p className="mb-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>{TERMS.remoteSupportId}</p>
                   <div className="flex items-center gap-2">
                     {device.rustdesk_id && isValidRustDeskId(device.rustdesk_id) ? (
                       <span className="font-mono text-[22px] font-semibold tracking-wide" style={{ color: "var(--th-text-primary)" }}>
@@ -1973,8 +1949,8 @@ export default function DeviceDrawer({
                           }
                         }}
                         className="th-icon-btn th-icon-btn-ghost !min-h-8 !min-w-8"
-                        title="Copy Remote Support ID"
-                        aria-label="Copy Remote Support ID"
+                        title={`Copy ${TERMS.remoteSupportId}`}
+                        aria-label={`Copy ${TERMS.remoteSupportId}`}
                       >
                         {rsCopySuccess ? (
                           <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
@@ -1991,8 +1967,10 @@ export default function DeviceDrawer({
                 <div className="mb-4 pb-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
                   <p className="mb-1.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Password</p>
                   {rsPassword === null ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
+                      variant="secondary"
                       disabled={rsPasswordBusy}
                       onClick={async () => {
                         setRsPasswordBusy(true);
@@ -2006,11 +1984,10 @@ export default function DeviceDrawer({
                           setRsPasswordBusy(false);
                         }
                       }}
-                      className="th-btn th-btn-secondary inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px]"
                     >
                       <span className="font-mono tracking-[0.2em]" style={{ color: "var(--th-text-faint)" }}>••••••••</span>
                       {rsPasswordBusy ? "Loading…" : "Reveal"}
-                    </button>
+                    </Button>
                   ) : (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
@@ -2038,8 +2015,10 @@ export default function DeviceDrawer({
                       </div>
                       {hasPermission("remote_support_manage") && (
                         <div className="flex flex-wrap items-center gap-2">
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
+                            variant="secondary"
                             disabled={rsPasswordBusy}
                             onClick={async () => {
                               setRsPasswordBusy(true);
@@ -2055,10 +2034,9 @@ export default function DeviceDrawer({
                                 setRsPasswordBusy(false);
                               }
                             }}
-                            className="th-btn th-btn-secondary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Regenerate
-                          </button>
+                          </Button>
                           <input
                             type="text"
                             placeholder="Custom password (min 8)"
@@ -2067,8 +2045,9 @@ export default function DeviceDrawer({
                             onChange={(e) => setRsCustomPassword(e.target.value)}
                             className="th-input h-8 min-w-0 flex-1 rounded-lg border px-2.5 text-[13px] outline-none"
                           />
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
                             disabled={rsPasswordBusy || rsCustomPassword.trim().length < 8}
                             onClick={async () => {
                               setRsPasswordBusy(true);
@@ -2085,10 +2064,9 @@ export default function DeviceDrawer({
                                 setRsPasswordBusy(false);
                               }
                             }}
-                            className="th-btn th-btn-primary min-h-8 rounded-lg border px-3 text-[13px]"
                           >
                             Set
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -2102,7 +2080,7 @@ export default function DeviceDrawer({
                   <dd className="font-mono">{device.rustdesk_version ? `v${device.rustdesk_version}` : "—"}</dd>
                   <dt>ID sync</dt>
                   <dd>
-                    <span className={`${syncColor} inline-block first-letter:uppercase`}>{syncLabel}</span>
+                    <span className={syncColor}>{syncLabel ? humanize(syncLabel) : "Unknown"}</span>
                     {device.rustdesk_sync_message && <span className="block text-[12px]" style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_sync_message}</span>}
                   </dd>
                   <dt>Configuration</dt>
@@ -2115,12 +2093,12 @@ export default function DeviceDrawer({
                           ? <span className="text-amber-400">Degraded</span>
                           : device.rustdesk_sync_state === "failed"
                             ? <span className="text-red-400">Failed</span>
-                            : <span style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_sync_state || "Not synced"}</span>}
+                            : <span style={{ color: "var(--th-text-muted)" }}>{device.rustdesk_sync_state ? humanize(device.rustdesk_sync_state) : "Not synced"}</span>}
                   </dd>
                   <dt>Last heartbeat</dt>
                   <dd>
                     {device.last_seen
-                      ? parseUTC(device.last_seen).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      ? formatLocalDateTime(device.last_seen)
                       : <span style={{ color: "var(--th-text-muted)" }}>Never</span>}
                   </dd>
                   {rsDevice != null && (
@@ -2139,7 +2117,7 @@ export default function DeviceDrawer({
 
                 {!isValidRustDeskId(device.rustdesk_id) && (
                   <p className="mt-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                    TECHI Remote Support ID not resolved yet — Connect is disabled until a valid ID is confirmed.
+                    {TERMS.remoteSupportId} not resolved yet. Connect is disabled until a valid ID is confirmed.
                   </p>
                 )}
               </div>
@@ -2154,10 +2132,11 @@ export default function DeviceDrawer({
                   {(device.rustdesk_install_status === "not_installed" || !device.rustdesk_id) && hasPermission("deployment") && (
                     <div className="mb-3">
                       <p className="mb-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                        TECHI Remote Support does not appear to be installed on this device.
+                        {TERMS.remoteSupport} does not appear to be installed on this device. Sync asks the {TERMS.agent} to check again and report its ID.
                       </p>
-                      <button
+                      <Button
                         type="button"
+                        className="w-full"
                         disabled={rsBusyAction === "deploy"}
                         onClick={async () => {
                           setRsBusyAction("deploy");
@@ -2167,20 +2146,19 @@ export default function DeviceDrawer({
                               created_by: user?.username ?? "operator",
                             });
                             setActions((prev) => [created, ...prev]);
-                            setRsToast({ message: "Deploy queued", ok: true });
+                            setRsToast({ message: "Sync queued", ok: true });
                             setTimeout(() => setRsToast(null), 3000);
                           } catch (e: unknown) {
-                            setRsToast({ message: e instanceof Error ? e.message : "Deploy failed", ok: false });
+                            setRsToast({ message: e instanceof Error ? e.message : "Sync failed", ok: false });
                             setTimeout(() => setRsToast(null), 3000);
                           } finally {
                             setRsBusyAction(null);
                           }
                         }}
-                        className="th-btn th-btn-primary inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border text-[13px]"
                       >
                         {rsBusyAction === "deploy" ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
-                        Deploy TECHI Remote Support
-                      </button>
+                        Sync {TERMS.remoteSupport}
+                      </Button>
                     </div>
                   )}
 
@@ -2270,7 +2248,7 @@ export default function DeviceDrawer({
             )}
 
             {rsLoading && (
-              <p className="text-center text-xs text-slate-500">Loading remote support details…</p>
+              <p className="text-center text-xs text-slate-500">Loading {TERMS.remoteSupport} details…</p>
             )}
           </div>
         </div>
@@ -2322,6 +2300,16 @@ function DrawerActionTile({
       </span>
     </button>
   );
+}
+
+const MEMORY_FORMAT = new Intl.NumberFormat(DISPLAY_LOCALE, { maximumFractionDigits: 1 });
+
+/** Process memory arrives in MB; show it the way Task Manager would ("312 MB", "1.5 GB"). */
+function formatMemoryMb(mb: number | null | undefined): string {
+  if (mb == null || !Number.isFinite(mb)) return "—";
+  if (mb >= 1024) return `${MEMORY_FORMAT.format(mb / 1024)} GB`;
+  if (mb >= 1) return `${MEMORY_FORMAT.format(Math.round(mb))} MB`;
+  return `${MEMORY_FORMAT.format(Math.round(mb * 1024))} KB`;
 }
 
 function actionTimeAgo(iso?: string | null): string {
@@ -2379,9 +2367,14 @@ function ActionRow({
               {formatDuration(action.duration_seconds)}
             </span>
           )}
-          <span className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+          <time
+            dateTime={relevantTime ?? undefined}
+            title={relevantTime ? formatDateTime(relevantTime) : undefined}
+            className="ml-auto flex-none text-[12px] tabular-nums"
+            style={{ color: "var(--th-text-faint)" }}
+          >
             {actionTimeAgo(relevantTime)}
-          </span>
+          </time>
         </div>
         {action.created_by && (
           <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>by {action.created_by}</p>
@@ -2393,36 +2386,30 @@ function ActionRow({
           <p className="mt-0.5 text-[11px] text-red-400">{action.error_message}</p>
         )}
         {action.output && action.output !== action.result_message && (
-          <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap break-words rounded bg-white/[0.03] px-2 py-1 text-[11px] font-mono leading-4 text-slate-400">
+          <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap break-words rounded px-2 py-1 text-[11px] font-mono leading-4 text-slate-400" style={{ background: "var(--th-chip-bg)" }}>
             {action.output}
           </pre>
         )}
         {action.stderr_output && (
-          <pre className="mt-1 max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded bg-red-950/30 px-2 py-1 text-[11px] font-mono leading-4 text-red-300">
+          <pre className="mt-1 max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded px-2 py-1 text-[11px] font-mono leading-4 text-red-300" style={{ background: "color-mix(in srgb, var(--th-status-critical) 8%, transparent)" }}>
             {action.stderr_output}
           </pre>
         )}
-        <div className="mt-1 flex items-center gap-2">
-          {canCancel && (
-            <button
-              type="button"
-              onClick={() => onCancel?.(action.id)}
-              className="text-[11px] font-semibold text-slate-500 underline hover:text-slate-300"
-            >
-              Cancel
-            </button>
-          )}
-          {canRetry && (
-            <button
-              type="button"
-              onClick={() => onRetry?.(action.id)}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 underline hover:text-slate-300"
-            >
-              <RefreshCw className="h-2.5 w-2.5" />
-              Retry
-            </button>
-          )}
-        </div>
+        {(canCancel || canRetry) && (
+          <div className="-ml-2 mt-1 flex items-center gap-1">
+            {canCancel && (
+              <button type="button" onClick={() => onCancel?.(action.id)} className="th-link-btn">
+                Cancel
+              </button>
+            )}
+            {canRetry && (
+              <button type="button" onClick={() => onRetry?.(action.id)} className="th-link-btn gap-1">
+                <RefreshCw className="h-3 w-3" />
+                Retry
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2430,23 +2417,11 @@ function ActionRow({
 
 // ─── Remote Support tab helpers ────────────────────────────────────────────
 
-function RsServiceBadge({ status }: { status?: string }) {
-  const isRunning = status === "running";
-  const isStopped = status === "stopped" || status === "not_running";
-  const isNotInstalled = status === "not_installed";
+function RsServiceBadge({ status, installStatus }: { status?: string | null; installStatus?: string | null }) {
+  const view = remoteSupportStatus({ rustdesk_status: status, rustdesk_install_status: installStatus });
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-      style={{
-        color: isRunning ? "var(--th-status-online)" : isStopped || isNotInstalled ? "var(--th-text-faint)" : "var(--th-status-offline)",
-        background: isRunning ? "color-mix(in srgb, var(--th-status-online) 10%, transparent)" : "color-mix(in srgb, var(--th-text-primary) 5%, transparent)",
-      }}
-    >
-      <span
-        className="h-1.5 w-1.5 rounded-full"
-        style={{ background: isRunning ? "var(--th-status-online)" : "var(--th-text-faint)" }}
-      />
-      {isRunning ? "Running" : isStopped ? "Stopped" : isNotInstalled ? "Not installed" : (status ?? "Unknown")}
+    <span className="th-status-chip !h-6" style={{ "--chip-tone": view.tone } as React.CSSProperties}>
+      <i />{view.label}
     </span>
   );
 }

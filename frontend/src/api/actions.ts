@@ -1,4 +1,5 @@
 import { fetchJson } from "./client";
+import { TERMS } from "../utils/deviceStatus";
 
 export type ActionStatus =
   | "queued"
@@ -26,17 +27,17 @@ export type ActionType =
 
 export const ACTION_LABELS: Record<ActionType, string> = {
   ping: "Ping",
-  restart_device: "Restart Device",
-  refresh_inventory: "Refresh Inventory",
-  restart_agent: "Restart Agent",
-  sync_rustdesk: "Sync TECHI Remote Support",
-  restart_rustdesk: "Restart TECHI Remote Support",
-  reinstall_rustdesk: "Reinstall TECHI Remote Support",
-  reopen_rustdesk: "Reopen TECHI Remote Support",
-  repair_config_rustdesk: "Repair TECHI Remote Support Config",
-  sync_inventory: "Sync Inventory",
-  immediate_heartbeat: "Immediate Heartbeat",
-  apply_power_policy: "Apply Power Policy",
+  restart_device: "Restart device",
+  refresh_inventory: "Refresh inventory",
+  restart_agent: `Restart ${TERMS.agent}`,
+  sync_rustdesk: `Sync ${TERMS.remoteSupport}`,
+  restart_rustdesk: `Restart ${TERMS.remoteSupport}`,
+  reinstall_rustdesk: `Reinstall ${TERMS.remoteSupport}`,
+  reopen_rustdesk: `Reopen ${TERMS.remoteSupport}`,
+  repair_config_rustdesk: `Repair ${TERMS.remoteSupport} config`,
+  sync_inventory: "Sync inventory",
+  immediate_heartbeat: "Immediate heartbeat",
+  apply_power_policy: "Apply power policy",
 };
 
 export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
@@ -174,6 +175,6 @@ export function statusDotColor(status: ActionStatus): string {
     case "acknowledged": return "bg-sky-300";
     case "sent": return "bg-amber-400";
     case "queued": return "bg-amber-300";
-    default: return "bg-slate-600";
+    default: return "bg-slate-500";
   }
 }

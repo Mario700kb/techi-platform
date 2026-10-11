@@ -34,29 +34,20 @@ import {
   statusDotColor,
 } from "../api/actions";
 import { Button, EmptyState, PageHeader } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC, timeAgo, DISPLAY_LOCALE } from "../utils/time";
+import { formatLocalDateTime, timeAgo } from "../utils/time";
+import { formatCount } from "../utils/number";
+import { freshnessTone, TERMS, TONE } from "../utils/deviceStatus";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
-import { DashboardMobile } from "./DashboardMobile";
-
-const formatDate = (iso?: string) => {
-  if (!iso) return "Unknown";
-  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-};
-
-function actionTimeAgo(iso?: string | null): string {
-  return iso ? timeAgo(iso) : "—";
-}
+import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./DashboardMobile";
 
 const RECENT_DEVICES_LIMIT = 6;
+const OPERATORS_LIMIT = 6;
 
-const FRESHNESS_TONE: Record<string, string> = {
-  online: "var(--th-status-online)",
-  stale: "var(--th-status-stale)",
-  offline: "var(--th-status-offline)",
-};
+// Header chips sit next to a size="sm" Button, so they share its 32px height.
+const HEADER_CHIP = "th-status-chip !h-8";
 
 type ActivitySection = "devices" | "actions" | "operators";
 
@@ -234,7 +225,7 @@ export default function Dashboard() {
     ) {
       patchRecentDevice(event);
     }
-  }, [hasPermission, latestEvent, patchRecentAction, patchRecentDevice]);
+  }, [latestEvent, patchRecentAction, patchRecentDevice]);
 
   const { runNow: refreshDashboard } = usePollingRefresh(loadDashboard, {
     intervalMs: 120000,
@@ -258,14 +249,15 @@ export default function Dashboard() {
   const onlinePct = total > 0 ? (online / total) * 100 : 0;
   const stalePct = total > 0 ? (stale / total) * 100 : 0;
   const offlinePct = total > 0 ? (offline / total) * 100 : 0;
-  const healthTone =
+  const health =
     averageHealth == null
-      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+      ? { label: "No score", tone: TONE.neutral }
       : averageHealth < 50
-      ? "border-red-400/25 bg-red-400/10 text-red-200"
+      ? { label: "Critical", tone: TONE.critical }
       : averageHealth < 80
-      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
-      : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+      ? { label: "Warning", tone: TONE.warning }
+      : { label: "Healthy", tone: TONE.online };
+  const canManageOperators = hasPermission("manage_operators");
   // System status is for owner and admin only (the API enforces it too).
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   const onlineOperators = operators.filter((op) => op.is_online);
@@ -280,7 +272,7 @@ export default function Dashboard() {
     return [
       ...top,
       ...(rest > 0 ? [{ id: "other", name: `${rows.length - 4} more clients`, count: rest }] : []),
-      ...(unassigned > 0 ? [{ id: "none", name: "No client", count: unassigned }] : []),
+      ...(unassigned > 0 ? [{ id: "none", name: TERMS.noClient, count: unassigned }] : []),
     ];
   })();
 
@@ -310,15 +302,21 @@ export default function Dashboard() {
         description="Fleet health, open issues and recent activity across all clients."
         actions={
           <>
-            {onlineOperators.length > 0 && (
-              <Link to={hasPermission("manage_operators") ? "/operators" : "/"} className="th-status-chip" title={onlineOperators.map((op) => op.display_name ?? op.username).join(", ")}>
-                <Users className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
-                {onlineOperators.length} {onlineOperators.length === 1 ? "operator" : "operators"} online
-              </Link>
-            )}
+            {onlineOperators.length > 0 && (() => {
+              const content = (
+                <>
+                  <Users className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
+                  {formatCount(onlineOperators.length)} {onlineOperators.length === 1 ? "operator" : "operators"} online
+                </>
+              );
+              const title = onlineOperators.map((op) => op.display_name ?? op.username).join(", ");
+              return canManageOperators
+                ? <Link to="/operators" className={HEADER_CHIP} title={title}>{content}</Link>
+                : <span className={HEADER_CHIP} title={title}>{content}</span>;
+            })()}
             <span
-              className="th-status-chip"
-              style={{ "--chip-tone": realtimeStatus === "connected" ? "var(--th-status-online)" : "var(--th-status-warning)" } as React.CSSProperties}
+              className={HEADER_CHIP}
+              style={{ "--chip-tone": realtimeStatus === "connected" ? TONE.online : TONE.warning } as React.CSSProperties}
               title={realtimeStatus === "connected" ? "Live updates over WebSocket" : "WebSocket unavailable, refreshing by polling"}
             >
               <i />
@@ -344,48 +342,48 @@ export default function Dashboard() {
       {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         {([
-          { to: "/devices", label: "All devices", value: total, tone: "var(--th-text-faint)", hint: "Managed endpoints" },
-          { to: "/devices?filter=online", label: "Online", value: online, tone: "var(--th-status-online)", hint: `${availability}% available` },
-          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: "var(--th-status-stale)", hint: "Last heartbeat 6–25 min ago" },
-          { to: "/devices?filter=offline", label: "Offline", value: offline, tone: "var(--th-status-offline)", hint: "Not responding" },
-          { to: "/devices?filter=critical", label: "Critical health", value: criticalCount, tone: "var(--th-status-critical)", hint: "Health score below 50" },
-          { to: "/devices?filter=needs_updates", label: "Needs updates", value: patchCount, tone: "var(--th-status-warning)", hint: "Pending patches" },
+          { to: "/devices", label: "All devices", value: total, tone: TONE.neutral, hint: "Managed endpoints" },
+          { to: "/devices?filter=online", label: "Online", value: online, tone: TONE.online, hint: `${availability}% available` },
+          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: TONE.stale, hint: "Last heartbeat 6–25 min ago" },
+          { to: "/devices?filter=offline", label: "Offline", value: offline, tone: TONE.offline, hint: "Not responding" },
+          { to: "/devices?filter=critical", label: "Critical health", value: criticalCount, tone: TONE.critical, hint: "Health score below 50" },
+          { to: "/devices?filter=needs_updates", label: DASHBOARD_LABELS.needsUpdates, value: patchCount, tone: TONE.warning, hint: "Pending patches" },
         ]).map((kpi) => (
           <Link key={kpi.label} to={kpi.to} className="th-kpi" style={{ "--kpi-tone": kpi.tone } as React.CSSProperties}>
             <span className="th-kpi-label"><span className="th-kpi-dot" />{kpi.label}</span>
-            <span className="th-kpi-value">{loading ? "—" : kpi.value}</span>
+            <span className="th-kpi-value">{loading ? "—" : formatCount(kpi.value)}</span>
             <span className="th-kpi-hint">{kpi.hint}</span>
           </Link>
         ))}
       </div>
 
       {/* Health · attention · platform */}
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
           <div className="th-panel-head">
             <h2 id="fleet-health-title">Fleet health</h2>
-            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${healthTone}`}>
-              {averageHealth == null ? "No score" : averageHealth < 50 ? "Critical" : averageHealth < 80 ? "Warning" : "Healthy"}
+            <span className="th-status-chip" style={{ "--chip-tone": health.tone } as React.CSSProperties}>
+              <i />{health.label}
             </span>
           </div>
           <div className="flex items-center gap-6 px-5 pb-4">
             <HealthRing value={loading ? null : averageHealth} />
             <div className="min-w-0 flex-1 space-y-3">
               <div className="th-mix-bar flex h-2 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }} aria-label="Device status mix">
-                <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: "var(--th-status-online)" }} />
-                <div style={{ width: loading ? "0%" : `${stalePct}%`, background: "var(--th-status-stale)" }} />
-                <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: "var(--th-status-offline)" }} />
+                <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
+                <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />
+                <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: TONE.offline }} />
               </div>
               <ul className="space-y-2 text-[13px]">
                 {([
-                  ["Online", online, onlinePct, "var(--th-status-online)"],
-                  ["Stale", stale, stalePct, "var(--th-status-stale)"],
-                  ["Offline", offline, offlinePct, "var(--th-status-offline)"],
+                  ["Online", online, onlinePct, TONE.online],
+                  ["Stale", stale, stalePct, TONE.stale],
+                  ["Offline", offline, offlinePct, TONE.offline],
                 ] as const).map(([label, count, pct, tone]) => (
                   <li key={label} className="flex items-center gap-2">
                     <span className="h-2 w-2 flex-none rounded-full" style={{ background: tone }} />
                     <span style={{ color: "var(--th-text-secondary)" }}>{label}</span>
-                    <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{loading ? "—" : count}</span>
+                    <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{loading ? "—" : formatCount(count)}</span>
                     <span className="w-10 text-right tabular-nums" style={{ color: "var(--th-text-faint)" }}>{loading ? "" : `${Math.round(pct)}%`}</span>
                   </li>
                 ))}
@@ -406,10 +404,10 @@ export default function Dashboard() {
                     >
                     <div className="flex items-center justify-between gap-3">
                       <span className="truncate" style={{ color: row.id === "none" ? "var(--th-text-muted)" : "var(--th-text-secondary)" }}>{row.name}</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{row.count}</span>
+                      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{formatCount(row.count)}</span>
                     </div>
                     <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
-                      <div className="h-full rounded-full" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, background: row.id === "none" ? "var(--th-text-faint)" : "var(--th-accent)" }} />
+                      <div className="h-full rounded-full" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, background: row.id === "none" ? TONE.neutral : "var(--th-accent)" }} />
                     </div>
                     </Link>
                   </li>
@@ -427,20 +425,20 @@ export default function Dashboard() {
           </div>
           <ul className="flex-1 px-2 pb-2">
             {([
-              { to: "/alerts", label: "Open alerts", count: totalOpenAlerts, tone: "var(--th-status-critical)", icon: BellRing },
-              { to: "/devices?filter=offline", label: "Offline devices", count: offline, tone: "var(--th-status-offline)", icon: WifiOff },
-              { to: "/devices?filter=stale", label: "Stale devices", count: stale, tone: "var(--th-status-stale)", icon: Clock3 },
-              { to: "/devices?filter=critical", label: "Critical health", count: criticalCount, tone: "var(--th-status-critical)", icon: HeartPulse },
-              { to: "/devices?filter=needs_updates", label: "Pending updates", count: patchCount, tone: "var(--th-status-warning)", icon: Download },
-              { to: "/devices?filter=needs_agent_update", label: "Agent updates", count: fleetOverview?.agents_outdated ?? 0, tone: "var(--th-status-agent)", icon: Cpu },
-              { to: "/devices?folder=unassigned", label: "Devices without a client", count: fleetOverview?.tree_counts.unassigned ?? 0, tone: "var(--th-status-info)", icon: Building2 },
-              { to: "/devices?filter=favorites", label: "Starred devices", count: favoritesCount, tone: "var(--th-status-warning)", icon: Star },
+              { to: "/alerts", label: DASHBOARD_LABELS.openAlerts, count: totalOpenAlerts, tone: TONE.critical, icon: BellRing },
+              { to: "/devices?filter=offline", label: DASHBOARD_LABELS.offline, count: offline, tone: TONE.offline, icon: WifiOff },
+              { to: "/devices?filter=stale", label: DASHBOARD_LABELS.stale, count: stale, tone: TONE.stale, icon: Clock3 },
+              { to: "/devices?filter=critical", label: DASHBOARD_LABELS.critical, count: criticalCount, tone: TONE.critical, icon: HeartPulse },
+              { to: "/devices?filter=needs_updates", label: DASHBOARD_LABELS.needsUpdates, count: patchCount, tone: TONE.warning, icon: Download },
+              { to: "/devices?filter=needs_agent_update", label: DASHBOARD_LABELS.agentUpdates, count: fleetOverview?.agents_outdated ?? 0, tone: "var(--th-status-agent)", icon: Cpu },
+              { to: "/devices?folder=unassigned", label: "Devices without a client", count: fleetOverview?.tree_counts.unassigned ?? 0, tone: TONE.info, icon: Building2 },
+              { to: "/devices?filter=favorites", label: "Favorite devices", count: favoritesCount, tone: TONE.warning, icon: Star },
             ]).map(({ to, label, count, tone, icon: Icon }) => (
               <li key={label}>
                 <Link to={to} className="th-attention-row" data-empty={!loading && count === 0} style={{ "--row-tone": tone } as React.CSSProperties}>
                   <span className="th-attention-icon"><Icon className="h-3.5 w-3.5" /></span>
                   <span className="flex-1 truncate">{label}</span>
-                  <span className="th-attention-count">{loading ? "—" : count}</span>
+                  <span className="th-attention-count">{loading ? "—" : formatCount(count)}</span>
                   <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
                 </Link>
               </li>
@@ -448,11 +446,13 @@ export default function Dashboard() {
           </ul>
         </section>
 
-        {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={operators.length === 0 && !activityReady} failed={failed.operators} onRetry={retryActivity} currentUserId={user?.id} />}
+        <div className="grid lg:col-span-2 xl:col-span-1">
+          {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={operators.length === 0 && !activityReady} failed={failed.operators} onRetry={retryActivity} currentUserId={user?.id} canManage={canManageOperators} />}
+        </div>
       </div>
 
       {/* Trends */}
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <section className="premium-card flex h-full flex-col p-0" aria-labelledby="availability-title">
           <div className="th-panel-head">
             <h2 id="availability-title">Availability</h2>
@@ -483,12 +483,12 @@ export default function Dashboard() {
           <div className="flex flex-1 flex-col px-5 pb-4">
             <div className="mb-3 grid grid-cols-3 gap-3">
               {([
-                ["Opened", insights?.alerts.opened_total],
-                ["Resolved", insights?.alerts.resolved_total],
+                ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
+                ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
                 ["Avg. time to resolve", insights?.alerts.mean_time_to_resolve_hours != null ? `${insights.alerts.mean_time_to_resolve_hours} h` : undefined],
               ] as const).map(([label, value]) => (
                 <div key={label}>
-                  <p className="text-[20px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value ?? "—"}</p>
+                  <p className="th-metric-big">{value ?? "—"}</p>
                   <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{label}</p>
                 </div>
               ))}
@@ -497,10 +497,10 @@ export default function Dashboard() {
               {insights ? <AlertFlowChart series={insights.alerts.series} /> : insightsFailed ? <SectionError what="alert trends" onRetry={loadInsights} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
             </div>
           </div>
-          <p className="th-panel-foot">{insights ? `${insights.alerts.open_now} still open right now.` : insightsFailed ? "Trends unavailable." : "Loading…"}</p>
+          <p className="th-panel-foot">{insights ? `${formatCount(insights.alerts.open_now)} still open right now.` : insightsFailed ? "Trends unavailable." : "Loading…"}</p>
         </section>
 
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="problem-devices-title">
+        <section className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1" aria-labelledby="problem-devices-title">
           <div className="th-panel-head">
             <h2 id="problem-devices-title">Problem devices</h2>
             <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 7 days</span>
@@ -519,11 +519,11 @@ export default function Dashboard() {
                     <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums" style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}>{i + 1}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{d.name}</span>
-                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{d.client_name ?? "No client"}</span>
+                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{d.client_name ?? TERMS.noClient}</span>
                     </span>
                     <span className="text-right text-[12px] leading-5 tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
-                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{d.offline_events}</strong> offline</span>
-                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{d.alerts}</strong> alerts</span>
+                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{formatCount(d.offline_events)}</strong> offline</span>
+                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{formatCount(d.alerts)}</strong> alerts</span>
                     </span>
                   </Link>
                 </li>
@@ -535,7 +535,7 @@ export default function Dashboard() {
       </div>
 
       {/* Enrollments · activity */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
           <div className="th-panel-head">
             <h2 id="enrollments-title">Latest enrollments</h2>
@@ -551,7 +551,7 @@ export default function Dashboard() {
             <ul className="flex-1 px-2 pb-2">
               {recentDevices.slice(0, RECENT_DEVICES_LIMIT).map((device) => {
                 const state = device.freshness_state ?? device.status;
-                const tone = FRESHNESS_TONE[state] ?? FRESHNESS_TONE.offline;
+                const tone = freshnessTone(state);
                 return (
                 <li key={device.id}>
                   <Link to={`/devices?device=${device.id}`} className="th-list-row">
@@ -562,14 +562,14 @@ export default function Dashboard() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{device.hostname || "Unknown"}</span>
                       <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                        {[device.client_name || "No client", device.current_user, device.public_ip].filter(Boolean).join(" · ")}
+                        {[device.client_name || TERMS.noClient, device.current_user, device.public_ip].filter(Boolean).join(" · ")}
                       </span>
                     </span>
                     <span className="text-right">
                       <span className="th-status-chip capitalize" style={{ "--chip-tone": tone } as React.CSSProperties}>
                         <i />{state}
                       </span>
-                      <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{formatDate(device.registered_at)}</span>
+                      <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{formatLocalDateTime(device.registered_at)}</span>
                     </span>
                   </Link>
                 </li>
@@ -581,7 +581,7 @@ export default function Dashboard() {
 
         <section className="premium-card flex h-full flex-col p-0" aria-labelledby="activity-title">
           <div className="th-panel-head">
-            <h2 id="activity-title">Recent remote actions</h2>
+            <h2 id="activity-title">{DASHBOARD_LABELS.recentActions}</h2>
             {hasPermission("audit_log") && <Link to="/audit" className="th-link-btn">Audit log</Link>}
           </div>
           {recentActions.length === 0 && !activityReady ? (
@@ -594,7 +594,6 @@ export default function Dashboard() {
             <ul className="flex-1 px-2 pb-2">
               {recentActions.slice(0, 6).map((action) => {
                 const isRunning = action.status === "running";
-                const relevantTime = action.completed_at ?? action.failed_at ?? action.started_at ?? action.sent_at ?? action.created_at;
                 return (
                   <li key={action.id}>
                     <div className="th-list-row">
@@ -607,7 +606,7 @@ export default function Dashboard() {
                           <span style={{ color: "var(--th-text-muted)" }}> · {action.device_hostname ?? `Device #${action.device_id}`}</span>
                         </span>
                         <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                          {action.created_by ? `by ${action.created_by} · ` : ""}{actionTimeAgo(relevantTime)}
+                          {action.created_by ? `by ${action.created_by} · ` : ""}{timeAgo(actionRelevantTime(action))}
                         </span>
                       </span>
                       <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}>
@@ -631,7 +630,7 @@ function HealthRing({ value }: { value: number | null }) {
   const r = 34;
   const c = 2 * Math.PI * r;
   const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
-  const tone = value == null ? "var(--th-text-faint)" : value < 50 ? "var(--th-status-critical)" : value < 80 ? "var(--th-status-warning)" : "var(--th-status-online)";
+  const tone = value == null ? TONE.neutral : value < 50 ? TONE.critical : value < 80 ? TONE.warning : TONE.online;
   return (
     <div className="relative h-[88px] w-[88px] flex-none" role="img" aria-label={value == null ? "No health score" : `Average health ${value} of 100`}>
       <svg viewBox="0 0 88 88" className="h-full w-full -rotate-90">
@@ -639,19 +638,23 @@ function HealthRing({ value }: { value: number | null }) {
         <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} className="th-ring-value" style={{ stroke: tone }} />
       </svg>
       <span className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[22px] font-semibold leading-none tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value ?? "—"}</span>
+        <span className="th-metric-big" style={{ lineHeight: 1 }}>{value ?? "—"}</span>
         <span className="mt-1 text-[11px]" style={{ color: "var(--th-text-faint)" }}>of 100</span>
       </span>
     </div>
   );
 }
 
-function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId }: { operators: OperatorPresenceRecord[]; loading: boolean; failed: boolean; onRetry: () => void; currentUserId?: number }) {
+function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId, canManage }: { operators: OperatorPresenceRecord[]; loading: boolean; failed: boolean; onRetry: () => void; currentUserId?: number; canManage: boolean }) {
+  const onlineCount = operators.filter((op) => op.is_online).length;
   return (
     <section className="premium-card flex h-full flex-col p-0" aria-labelledby="operators-title">
       <div className="th-panel-head">
         <h2 id="operators-title">Operators</h2>
-        <span className="th-nav-badge">{operators.filter((op) => op.is_online).length} online</span>
+        <span className="flex items-center gap-3">
+          <span className="th-nav-badge">{formatCount(onlineCount)} online</span>
+          {canManage && <Link to="/operators" className="th-link-btn">View all</Link>}
+        </span>
       </div>
       {loading ? (
         <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
@@ -661,7 +664,7 @@ function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId }: 
         <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators yet" />
       ) : (
         <ul className="flex-1 px-2 pb-2">
-          {operators.map((op) => {
+          {[...operators].sort((a, b) => Number(b.is_online) - Number(a.is_online)).slice(0, OPERATORS_LIMIT).map((op) => {
             const label = op.display_name ?? op.username;
             return (
               <li key={op.id} className="th-list-row">
@@ -672,7 +675,7 @@ function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId }: 
                   </span>
                   <span className="block truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>{op.role}</span>
                 </span>
-                <span className="th-status-chip" style={{ "--chip-tone": op.is_online ? "var(--th-status-online)" : "var(--th-status-offline)" } as React.CSSProperties}>
+                <span className="th-status-chip" style={{ "--chip-tone": op.is_online ? TONE.online : TONE.offline } as React.CSSProperties}>
                   <i />{op.is_online ? "Online" : "Offline"}
                 </span>
               </li>

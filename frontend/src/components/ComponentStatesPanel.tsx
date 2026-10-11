@@ -170,10 +170,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
 
   return (
     <>
-    <section
-      className="rounded-xl border p-3"
-      style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-input, transparent)" }}
-    >
+    <section className="th-drawer-card">
       <div className="mb-2 flex items-center gap-2">
         <span
           className="flex h-5 w-5 items-center justify-center rounded-md"
@@ -181,9 +178,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
         >
           <Boxes className="h-3 w-3" />
         </span>
-        <h3 className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-          Components
-        </h3>
+        <h3 className="premium-kicker">Components</h3>
       </div>
 
       <div className="space-y-2.5">
@@ -258,7 +253,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                             ? setPendingOperation({ componentId: state.component_id, componentName: state.display_name, operation: entry.operation, label: entry.label })
                             : runOperation(state.component_id, entry.operation, entry.label)
                         }
-                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--th-table-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                         style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
                       >
                         {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin" />}

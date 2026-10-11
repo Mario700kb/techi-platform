@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSystemStatus, ServiceTile, TileState } from "../api/system";
 import { useAppData } from "../contexts/AppDataContext";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { APP_TIME_ZONE, DISPLAY_LOCALE, parseUTC } from "../utils/time";
 
 const POLL_MS = 30_000;
 const SAMPLES = 30;
 const SLOW_API_MS = 1500;
 
-const clock = new Intl.DateTimeFormat("en-GB", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-const hourMinute = new Intl.DateTimeFormat("en-GB", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-const dayMonth = new Intl.DateTimeFormat("en-GB", { timeZone: APP_TIME_ZONE, day: "numeric", month: "short" });
+const clock = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+const hourMinute = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const dayMonth = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, day: "numeric", month: "short" });
 
 const TITLES: Record<string, string> = {
   api: "API ↔ Web",
@@ -199,7 +199,7 @@ export default function SystemStatusCard({ compact = false }: { compact?: boolea
             {server === null && !apiError ? "Checking…" : overallText}
           </span>
           <span className="text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
-            {checkedAt ? `Updated ${clock.format(checkedAt)}` : "Updating…"} · auto 30s
+            {checkedAt ? `Updated ${clock.format(checkedAt)}` : "Updating…"} · refreshes every 30 s
           </span>
         </div>
       </div>

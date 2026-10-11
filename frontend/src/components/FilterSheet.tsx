@@ -33,7 +33,7 @@ const MOBILE_QUICK_FILTERS: { id: QuickFilter; label: string; color?: string }[]
   { id: "needs_attention", label: "Attention", color: "var(--th-accent)" },
   { id: "needs_updates", label: "Updates", color: "var(--th-status-warning)" },
   { id: "needs_agent_update", label: "Agent Update", color: "var(--th-status-agent)" },
-  { id: "favorites", label: "Starred" },
+  { id: "favorites", label: "Favorites" },
 ];
 
 const SUBGROUP_CONFIG: Record<string, { label: string; deviceType: "server" | "client" }> = {

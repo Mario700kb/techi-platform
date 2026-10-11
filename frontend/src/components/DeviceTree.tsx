@@ -1,9 +1,11 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { Building2, ChevronRight, LayoutGrid, Monitor, PackageX, RefreshCcw, Search, Server, X } from "lucide-react";
+import { Building2, ChevronRight, Folder, HardDrive, Layers, LayoutGrid, Monitor, Network, PackageX, RefreshCcw, Search, Server, X } from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
 import PlatformIcon from "./PlatformIcon";
+import { TERMS } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
 
 // Platform label for a sub-folder key (Platform Expansion). Extending to a new
 // platform is one entry here — the tree needs no other change.
@@ -20,18 +22,18 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const SHOW_EMPTY_STORAGE_KEY = "techi.deviceTree.showEmptyGroups";
 const CLIENT_FOLDERS = [
-  { id: "servers", label: "Servers", smartFolder: "windows_server" },
-  { id: "clientpc", label: "Client PC", smartFolder: "windows_workstation" },
+  { id: "servers", label: TERMS.servers, icon: Server },
+  { id: "clientpc", label: TERMS.clientPcs, icon: Monitor },
   // Platform-class categories (Phase 7). Shown only when they have devices
   // (folderCount > 0) → with all platform flags off they never appear, so the
   // tree is identical to today. Placement is automatic (backend classifies).
-  { id: "network", label: "Network", smartFolder: "" },
-  { id: "storage", label: "Storage", smartFolder: "" },
-  { id: "hypervisors", label: "Hypervisors", smartFolder: "" },
+  { id: "network", label: "Network", icon: Network },
+  { id: "storage", label: "Storage", icon: HardDrive },
+  { id: "hypervisors", label: "Hypervisors", icon: Layers },
   // Devices in a custom (non-standard) group. Shown only when non-empty, like
   // the platform-class folders — with today's fleet (0 custom groups) it never
   // appears. Category comes from the Unified Classification Engine.
-  { id: "other", label: "Other", smartFolder: "" },
+  { id: "other", label: "Other", icon: Folder },
 ] as const;
 
 const readShowEmptyGroups = () => {
@@ -61,8 +63,7 @@ interface DeviceTreeProps {
   onRefreshCounts: () => void;
 }
 
-const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, groups, treeCounts, showPlatformFolders = false, onRefreshCounts }: DeviceTreeProps) {
-  void groups;
+const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, treeCounts, showPlatformFolders = false, onRefreshCounts }: DeviceTreeProps) {
   const activeClientFolder = useMemo(() => {
     const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors|other)$/);
     if (!match) return null;
@@ -121,7 +122,11 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   }, [activeClientFolder, treeCounts, selectedKey, showEmptyGroups, sortedClients, clientQuery]);
 
   useEffect(() => {
-    window.localStorage.setItem(SHOW_EMPTY_STORAGE_KEY, String(showEmptyGroups));
+    try {
+      window.localStorage.setItem(SHOW_EMPTY_STORAGE_KEY, String(showEmptyGroups));
+    } catch {
+      // Storage blocked (private mode): the toggle still works for this visit.
+    }
   }, [showEmptyGroups]);
 
   const toggleClient = (clientId: number) => {
@@ -139,7 +144,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
       <header className="th-explorer-head">
         <div className="min-w-0">
           <h2>Explorer</h2>
-          <p>{allCount} devices · {sortedClients.length} clients</p>
+          <p>{formatCount(allCount)} {allCount === 1 ? "device" : "devices"} · {formatCount(sortedClients.length)} {sortedClients.length === 1 ? "client" : "clients"}</p>
         </div>
         <button type="button" onClick={onRefreshCounts} className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7" title="Refresh counts" aria-label="Refresh counts">
           <RefreshCcw className="h-3.5 w-3.5" />
@@ -153,7 +158,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
             <TreeButton active={selectedKey === "all"} icon={LayoutGrid} label="All devices" count={allCount} onClick={() => onSelect("all")} />
           </li>
           <li>
-            <TreeButton active={selectedKey === "unassigned"} icon={PackageX} label="No client" count={unassignedCount} onClick={() => onSelect("unassigned")} />
+            <TreeButton active={selectedKey === "unassigned"} icon={PackageX} label={TERMS.noClient} count={unassignedCount} onClick={() => onSelect("unassigned")} />
           </li>
         </ul>
 
@@ -161,7 +166,15 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         <div className="th-explorer-sticky">
           <div className="th-explorer-label !p-0">
             <span>Clients</span>
-            <span className="tabular-nums">{visibleClients.length}</span>
+            <span
+              className="tabular-nums"
+              aria-label={`Showing ${visibleClients.length} of ${sortedClients.length} clients`}
+              title={`Showing ${visibleClients.length} of ${sortedClients.length} clients`}
+            >
+              {visibleClients.length === sortedClients.length
+                ? formatCount(sortedClients.length)
+                : `${formatCount(visibleClients.length)} of ${formatCount(sortedClients.length)}`}
+            </span>
           </div>
           <label className="th-search th-search-sm">
             <Search className="h-3.5 w-3.5 flex-none" />
@@ -212,7 +225,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                           <TreeButton
                             active={selectedKey === `client-${client.id}-${folder.id}`}
                             child
-                            icon={folder.id === "servers" ? Server : Monitor}
+                            icon={folder.icon}
                             label={folder.label}
                             count={folderCount(client.id, folder.id)}
                             hasMaintenance={folderHasMaintenance(client.id, folder.id)}
@@ -301,7 +314,7 @@ function TreeButton({ active, withinActive = false, child = false, icon: Icon, p
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {hasMaintenance && <span className="th-tree-maint" title="Has devices in maintenance" />}
-      <span className="th-tree-count">{count}</span>
+      <span className="th-tree-count">{formatCount(count)}</span>
       <span className="th-tree-caret" aria-hidden="true">
         {hasChildren && <ChevronRight className={clsx("th-tree-chevron h-3.5 w-3.5", expanded && "rotate-90")} />}
       </span>

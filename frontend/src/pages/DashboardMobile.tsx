@@ -1,13 +1,31 @@
 import { CheckCircle2, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { ACTION_LABELS, RemoteActionWithDevice } from "../api/actions";
+import { ACTION_LABELS, RemoteAction, RemoteActionWithDevice } from "../api/actions";
+import { formatCount } from "../utils/number";
+import { TONE } from "../utils/deviceStatus";
 import { timeAgo } from "../utils/time";
 
 /**
  * Mobile Dashboard (MOBILE-DESIGN-SPEC.md — Dashboard).
  * Theme-aware (tokens only), stale as a normal attention row, and a
- * Recent-activity feed from the existing recent-actions API.
+ * recent remote actions feed from the existing recent-actions API.
  */
+
+/** Labels shared by the desktop and mobile dashboards, so a filter reads the same on both. */
+export const DASHBOARD_LABELS = {
+  openAlerts: "Open alerts",
+  offline: "Offline devices",
+  stale: "Stale devices",
+  critical: "Critical health",
+  needsUpdates: "Needs updates",
+  agentUpdates: "Agent updates",
+  recentActions: "Recent remote actions",
+} as const;
+
+/** The moment that matters for an action: when it finished, failed or started, else when it was created. */
+export function actionRelevantTime(action: RemoteAction): string {
+  return action.completed_at ?? action.failed_at ?? action.started_at ?? action.sent_at ?? action.created_at;
+}
 
 interface DashboardMobileProps {
   total: number;
@@ -37,13 +55,13 @@ function HealthRing({
   const dashOffset = circumference - (pct / 100) * circumference;
   const color =
     pct >= 90
-      ? "var(--th-status-online)"
+      ? TONE.online
       : pct >= 70
-      ? "var(--th-status-warning)"
-      : "var(--th-status-critical)";
+      ? TONE.warning
+      : TONE.critical;
 
   return (
-    <svg viewBox="0 0 140 140" className="h-36 w-36" role="img" aria-label={`${pct}% online — ${online} nga ${total}`}>
+    <svg viewBox="0 0 140 140" className="h-36 w-36" role="img" aria-label={`${pct}% online — ${formatCount(online)} of ${formatCount(total)}`}>
       <circle cx="70" cy="70" r={r} fill="none" stroke="var(--th-ring-track)" strokeWidth="10" />
       <circle
         cx="70"
@@ -79,7 +97,7 @@ function HealthRing({
         fill="var(--th-text-muted)"
         fontFamily="inherit"
       >
-        {online}/{total} online
+        {formatCount(online)}/{formatCount(total)} online
       </text>
     </svg>
   );
@@ -100,7 +118,7 @@ function CardHeader({ title }: { title: string }) {
   return (
     <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
       <p
-        className="text-[11px] font-extrabold uppercase tracking-[0.08em]"
+        className="text-[11px] font-bold uppercase tracking-[0.08em]"
         style={{ color: "var(--th-text-muted)" }}
       >
         {title}
@@ -126,37 +144,37 @@ export function DashboardMobile({
 
   const issues = [
     {
-      label: "Offline devices",
+      label: DASHBOARD_LABELS.offline,
       count: offline,
       to: "/devices?filter=offline",
-      color: "var(--th-status-offline)",
+      color: TONE.offline,
     },
     {
-      label: "Stale devices",
+      label: DASHBOARD_LABELS.stale,
       count: stale,
       to: "/devices?filter=stale",
-      color: "var(--th-status-stale)",
+      color: TONE.stale,
     },
     {
-      label: "Critical health",
+      label: DASHBOARD_LABELS.critical,
       count: criticalCount,
       to: "/devices?filter=critical",
-      color: "var(--th-status-critical)",
+      color: TONE.critical,
     },
     {
-      label: "Pending updates",
+      label: DASHBOARD_LABELS.needsUpdates,
       count: patchCount,
       to: "/devices?filter=needs_updates",
-      color: "var(--th-status-warning)",
+      color: TONE.warning,
     },
     {
-      label: "Active alerts",
+      label: DASHBOARD_LABELS.openAlerts,
       count: alertsTotal,
       to: "/alerts",
-      color: "var(--th-accent)",
+      color: TONE.critical,
     },
     {
-      label: "Agent updates pending",
+      label: DASHBOARD_LABELS.agentUpdates,
       count: agentsOutdated,
       to: "/devices?filter=needs_agent_update",
       color: "var(--th-status-agent)",
@@ -165,17 +183,17 @@ export function DashboardMobile({
 
   const tiles = [
     { label: "Total", value: total, color: "var(--th-text-primary)", to: "/devices" },
-    { label: "Online", value: online, color: "var(--th-status-online)", to: "/devices?filter=online" },
+    { label: "Online", value: online, color: TONE.online, to: "/devices?filter=online" },
     {
       label: "Critical",
       value: criticalCount,
-      color: criticalCount > 0 ? "var(--th-status-critical)" : "var(--th-text-primary)",
+      color: criticalCount > 0 ? TONE.critical : "var(--th-text-primary)",
       to: "/devices?filter=critical",
     },
     {
       label: "Alerts",
       value: alertsTotal,
-      color: alertsTotal > 0 ? "var(--th-status-warning)" : "var(--th-text-primary)",
+      color: alertsTotal > 0 ? TONE.critical : "var(--th-text-primary)",
       to: "/alerts",
     },
   ];
@@ -195,7 +213,7 @@ export function DashboardMobile({
       </div>
 
       {/* 2×2 stat tiles */}
-      <div className="grid w-full grid-cols-2 gap-[10px]">
+      <div className="grid w-full grid-cols-2 gap-3">
         {tiles.map(({ label, value, color, to }) => (
           <Link
             key={label}
@@ -207,7 +225,7 @@ export function DashboardMobile({
             }}
           >
             <p
-              className="text-[11px] font-extrabold uppercase tracking-[0.08em]"
+              className="text-[11px] font-bold uppercase tracking-[0.08em]"
               style={{ color: "var(--th-text-muted)" }}
             >
               {label}
@@ -219,7 +237,7 @@ export function DashboardMobile({
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {loading ? "—" : value}
+              {loading ? "—" : formatCount(value)}
             </p>
           </Link>
         ))}
@@ -239,8 +257,8 @@ export function DashboardMobile({
           </div>
         ) : issues.length === 0 ? (
           <div className="flex items-center gap-2 p-4">
-            <CheckCircle2 className="h-4 w-4 flex-none" style={{ color: "var(--th-status-online)" }} />
-            <span className="text-[13px] font-bold" style={{ color: "var(--th-status-online)" }}>
+            <CheckCircle2 className="h-4 w-4 flex-none" style={{ color: TONE.online }} />
+            <span className="text-[14px] font-bold" style={{ color: TONE.online }}>
               All systems healthy
             </span>
           </div>
@@ -256,7 +274,7 @@ export function DashboardMobile({
                     idx < issues.length - 1 ? "1px solid var(--th-border-subtle)" : undefined,
                 }}
               >
-                <span className="text-[13px] font-bold" style={{ color: "var(--th-text-primary)" }}>
+                <span className="text-[14px] font-bold" style={{ color: "var(--th-text-primary)" }}>
                   {label}
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -264,7 +282,7 @@ export function DashboardMobile({
                     className="text-[15px] font-extrabold"
                     style={{ color, fontVariantNumeric: "tabular-nums" }}
                   >
-                    {count}
+                    {formatCount(count)}
                   </span>
                   <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
                 </span>
@@ -274,9 +292,8 @@ export function DashboardMobile({
         )}
       </Card>
 
-      {/* Recent activity */}
       <Card>
-        <CardHeader title="Recent activity" />
+        <CardHeader title={DASHBOARD_LABELS.recentActions} />
         {actionsLoading ? (
           <div className="space-y-2 p-4">
             {[0, 1].map((i) => (
@@ -312,7 +329,7 @@ export function DashboardMobile({
                   className="flex-none text-[11px] font-semibold"
                   style={{ color: "var(--th-text-muted)" }}
                 >
-                  {a.created_at ? timeAgo(a.created_at) : "—"}
+                  {timeAgo(actionRelevantTime(a))}
                 </time>
               </div>
             ))}

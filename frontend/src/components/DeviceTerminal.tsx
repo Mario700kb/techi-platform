@@ -35,6 +35,12 @@ const NON_RETRYABLE_CODES = new Set([4001, 4003]);
 const MAX_AUTO_RECONNECTS = 2;
 const AUTO_RECONNECT_DELAY_MS = [1500, 3000];
 
+// xterm paints on a canvas, so it needs resolved colour values, not var().
+function themeToken(name: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || undefined;
+}
+
 export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, onSessionId }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>("connecting");
@@ -68,7 +74,11 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
           term = new Terminal({
             fontFamily: '"JetBrains Mono", monospace',
             fontSize: 13,
-            theme: { background: "#0B0B0D", foreground: "#F5F5F7" },
+            theme: {
+              background: themeToken("--th-bg-card"),
+              foreground: themeToken("--th-text-primary"),
+              cursor: themeToken("--th-accent"),
+            },
             cursorBlink: true,
           });
           fit = new FitAddon();
@@ -194,7 +204,7 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
               type="button"
               onClick={() => setAttempt((a) => a + 1)}
               className="rounded px-2 py-1 text-xs font-medium"
-              style={{ background: "var(--th-accent)", color: "#fff" }}
+              style={{ background: "var(--th-accent)", color: "var(--th-on-accent)" }}
             >
               Reconnect
             </button>
@@ -204,7 +214,7 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
       <div
         ref={containerRef}
         className="min-h-[300px] flex-1 overflow-hidden rounded-lg p-2"
-        style={{ background: "#0B0B0D", border: "1px solid var(--th-border-drawer-section)" }}
+        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-drawer-section)" }}
       />
     </div>
   );

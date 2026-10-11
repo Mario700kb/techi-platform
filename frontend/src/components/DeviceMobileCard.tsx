@@ -1,11 +1,25 @@
-import { ExternalLink, Star } from "lucide-react";
+import type { ReactNode } from "react";
+import { Star } from "lucide-react";
 import { Device } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
-import { ActiveActionEntry } from "./DevicesTable";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
-import { MBadge, MBadgeVariant, StatusDot, FreshnessState } from "./mobile/primitives";
+import { TERMS, TONE } from "../utils/deviceStatus";
+import {
+  ActionIndicator,
+  ActiveActionEntry,
+  BadgeView,
+  ClientOfflineSummary,
+  HEALTH_TONE_COLOR,
+  healthTone,
+  lastSeenView,
+  maintenanceBadge,
+  offlineReasonBadge,
+  patchBadge,
+  remoteSupportIssue,
+} from "../utils/deviceBadges";
+import type { VersionStatus } from "../utils/version";
+import { MBadge, StatusDot, FreshnessState } from "./mobile/primitives";
 import { ConnectButton } from "./ui";
 
 /**
@@ -13,13 +27,6 @@ import { ConnectButton } from "./ui";
  * "Rregulli i kartës LOCKED"): the device name is the dominant element on
  * its own line; health + type/state badges sit below it; client/meta follow.
  */
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface ClientOfflineSummary {
-  offlineCount: number;
-  inactiveLastSeen: number[];
-}
 
 export interface DeviceMobileCardProps {
   device: Device;
@@ -30,36 +37,15 @@ export interface DeviceMobileCardProps {
   offlineSummary?: ClientOfflineSummary;
   canConnect: boolean;
   isFavorite: boolean;
-  activePackageVersion?: string | null;
-  activePackageSha256?: string | null;
-  // Resolved by the table, which holds the per-platform version maps. The
-  // local Windows-only fallback below would call a MikroTik or Linux device
-  // outdated purely for not matching the Windows package version.
-  agentOutdated?: boolean;
+  // Resolved by the table against the device's own platform, so a MikroTik
+  // or Linux device is never measured against the Windows package.
+  agentVersion: { status: VersionStatus; title?: string };
   onSelect: () => void;
   onToggleFavorite?: () => void;
   onConnect: () => void;
-  // Non-Windows devices open the Drawer's Connect menu instead of RustDesk —
-  // the tooltip must say so, not the Windows-specific default.
+  // Non-Windows devices open the Drawer's Connect menu instead of Remote
+  // Support — the tooltip must say so, not the Windows-specific default.
   connectTitle?: string;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function isAgentOutdated(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
-  if (!activeVersion) return false;
-  if (!device.agent_version || device.agent_version !== activeVersion) return true;
-  if (activeSha256) return (device.agent_sha256 ?? "").toLowerCase() !== activeSha256.toLowerCase();
-  return false;
-}
-
-function agentVersionTitle(device: Device, activeVersion?: string | null, activeSha256?: string | null) {
-  if (!activeVersion) return undefined;
-  const active = activeSha256 ? `${activeVersion} | ${activeSha256.slice(0, 8)}` : activeVersion;
-  const current = device.agent_sha256
-    ? `${device.agent_version ?? "unknown"} | ${device.agent_sha256.slice(0, 8)}`
-    : (device.agent_version ?? "unknown");
-  return `Installed: ${current} | Active: ${active}`;
 }
 
 function freshnessOf(device: Device): FreshnessState {
@@ -69,77 +55,33 @@ function freshnessOf(device: Device): FreshnessState {
   return "offline";
 }
 
-function healthBadgeVariant(health?: DeviceHealthSummary): MBadgeVariant {
-  const state = health?.health_state ?? "healthy";
-  if (state === "critical") return "critical";
-  if (state === "warning") return "warning";
-  return "online";
-}
-
-function getDeviceTypeBadge(device: Device) {
-  const cat = device.resolved_device_category;
-  const dt = device.device_type;
-  if (cat === "servers" || dt === "server") return <MBadge variant="server">SERVER</MBadge>;
-  if (cat === "clientpc" || dt === "client") return <MBadge variant="ws">WS</MBadge>;
-  return null;
-}
-
-function getPatchBadge(patch?: PatchStatus) {
-  const state = patch?.patch_state ?? "unknown";
-  if (state === "up_to_date")
-    return (
-      <span
-        className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
-        style={{ color: "var(--th-text-muted)", background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }}
-      >
-        patched
-      </span>
-    );
-  if (state === "reboot_required") return <MBadge variant="critical">reboot</MBadge>;
-  if (state === "updates_available") {
-    const count = patch?.pending_updates ?? 0;
-    return <MBadge variant="warning">{count > 0 ? `${count} upd` : "updates"}</MBadge>;
-  }
-  return null;
-}
-
-function getMaintenanceBadge(device: Device) {
-  if (!device.is_in_maintenance) return null;
-  const title = device.maintenance_ends_at
-    ? `In maintenance until ${parseUTC(device.maintenance_ends_at).toLocaleString(DISPLAY_LOCALE, { ...DATE_TIME_FORMAT, timeZone: APP_TIME_ZONE })}`
-    : device.maintenance_note
-    ? `In maintenance: ${device.maintenance_note}`
-    : "In maintenance";
+function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode }) {
+  const tone = view?.tone ?? TONE.neutral;
+  const neutral = tone === TONE.neutral;
   return (
-    <MBadge variant="maint" title={title}>
-      maint.
-    </MBadge>
+    <span
+      title={view?.title}
+      className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
+      style={
+        neutral
+          ? { color: "var(--th-text-muted)", background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }
+          : {
+              color: tone,
+              background: `color-mix(in srgb, ${tone} 13%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${tone} 26%, transparent)`,
+            }
+      }
+    >
+      {children ?? view?.label}
+    </span>
   );
 }
 
-function getOfflineReasonBadge(device: Device, clientSummary?: ClientOfflineSummary) {
-  const freshness = device.freshness_state ?? device.status;
-  if (freshness === "online") return null;
-  if (!device.last_seen) return null;
-
-  const rsStatus = (device.rustdesk_status ?? "").toLowerCase();
-  const rsInstall = (device.rustdesk_install_status ?? "").toLowerCase();
-  if (["stopped", "not_running", "offline"].includes(rsStatus) && !["not_installed", "unknown", ""].includes(rsInstall))
-    return { label: "RS stopped", variant: "agent" as MBadgeVariant };
-
-  if (device.client_id && device.last_seen) {
-    const t = parseUTC(device.last_seen).getTime();
-    const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
-      (ls) => ls !== t && Math.abs(ls - t) < 10 * 60 * 1000
-    ).length ?? 0;
-    if (nearbyPeers >= 2) return { label: "Site?", variant: "critical" as MBadgeVariant };
-  }
-
-  if (freshness === "offline" && device.client_id && (clientSummary?.offlineCount ?? 0) <= 1)
-    return { label: "Power?", variant: "offline" as MBadgeVariant };
-
-  if (device.public_ip || device.local_ip) return { label: "Network", variant: "info" as MBadgeVariant };
-
+function DeviceTypeBadge({ device }: { device: Device }) {
+  const cat = device.resolved_device_category;
+  const dt = device.device_type;
+  if (cat === "servers" || dt === "server") return <MBadge variant="server">{TERMS.server}</MBadge>;
+  if (cat === "clientpc" || dt === "client") return <MBadge variant="ws">{TERMS.clientPc}</MBadge>;
   return null;
 }
 
@@ -156,37 +98,12 @@ function getOsShort(osName?: string): string | null {
   return null;
 }
 
-function getLastSeenDisplay(lastSeen?: string): { text: string; color: string } {
-  if (!lastSeen) return { text: "Never", color: "var(--th-text-faint)" };
-  const diffMs = Date.now() - parseUTC(lastSeen).getTime();
-  const mins = diffMs / 60_000;
-  const hours = diffMs / 3_600_000;
-  const days = diffMs / 86_400_000;
-  if (mins < 5) return { text: "Just now", color: "var(--th-status-online)" };
-  if (hours < 1) return { text: `${Math.floor(mins)}m ago`, color: "var(--th-status-online)" };
-  if (hours < 24) return { text: `${Math.floor(hours)}h ago`, color: "var(--th-text-secondary)" };
-  if (days < 7) return { text: `${Math.floor(days)}d ago`, color: "var(--th-status-stale)" };
-  return { text: `${Math.floor(days)}d ago`, color: "var(--th-status-critical)" };
-}
-
-function ActionDot({ entry }: { entry: ActiveActionEntry }) {
-  const isRunning = entry.status === "running";
-  const isQueued = ["queued", "sent", "acknowledged"].includes(entry.status);
-  const title = `${entry.action_type.replace(/_/g, " ")} — ${entry.status}`;
-  if (isRunning)
-    return (
-      <span
-        className="h-2 w-2 flex-none animate-spin rounded-full border border-t-transparent"
-        style={{ borderColor: "var(--th-status-info)" }}
-        title={title}
-      />
-    );
-  if (isQueued)
-    return <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: "var(--th-status-warning)" }} title={title} />;
-  return null;
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+const AGENT_VERSION_TONE: Record<VersionStatus, string> = {
+  current: TONE.online,
+  outdated: TONE.warning,
+  ahead: TONE.info,
+  unknown: "var(--th-text-muted)",
+};
 
 export function DeviceMobileCard({
   device,
@@ -197,29 +114,28 @@ export function DeviceMobileCard({
   offlineSummary,
   canConnect,
   isFavorite,
-  activePackageVersion,
-  activePackageSha256,
-  agentOutdated,
+  agentVersion,
   onSelect,
   onToggleFavorite,
   onConnect,
   connectTitle,
 }: DeviceMobileCardProps) {
-  const ls = getLastSeenDisplay(device.last_seen);
+  const lastSeen = lastSeenView(device.last_seen);
   const osShort = getOsShort(device.os_name);
-  const offlineBadge = getOfflineReasonBadge(device, offlineSummary);
+  const offlineBadge = offlineReasonBadge(device, offlineSummary);
   const healthScore = health?.health_score;
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const outdated = agentOutdated ?? isAgentOutdated(device, activePackageVersion, activePackageSha256);
-  const rsIssue =
-    device.rustdesk_install_status !== "not_installed" &&
-    (device.rustdesk_status ?? "") !== "running";
+  const outdated = agentVersion.status === "outdated";
+  const rsIssue = remoteSupportIssue(device);
+  const patchView = patchBadge(patch);
+  const maintenanceView = maintenanceBadge(device);
+  const groupLine = device.group_name ? ` · ${device.group_name}` : "";
 
   return (
     <div
       onClick={onSelect}
-      className="th-device-card cursor-pointer px-4 py-[13px] transition-colors active:bg-white/[0.04]"
+      className="th-device-card cursor-pointer px-4 py-[13px] transition-colors active:bg-[var(--th-sidebar-nav-hover)]"
       style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
     >
       <div className="flex items-start gap-[11px]">
@@ -251,35 +167,27 @@ export function DeviceMobileCard({
           {/* L2: health chip + type/state badges */}
           <div className="flex flex-wrap items-center gap-[5px]">
             {healthScore != null && (
-              <MBadge variant={healthBadgeVariant(health)}>{healthScore}</MBadge>
+              <ToneBadge view={{ label: String(healthScore), tone: HEALTH_TONE_COLOR[healthTone(health)], title: `Health score ${healthScore} of 100` }} />
             )}
-            {getDeviceTypeBadge(device)}
-            {getPatchBadge(patch)}
-            {getMaintenanceBadge(device)}
-            {activeAction && <ActionDot entry={activeAction} />}
-            {alerts?.critical ? <MBadge variant="critical">{alerts.critical} crit</MBadge> : null}
-            {alerts?.warning ? <MBadge variant="warning">{alerts.warning} warn</MBadge> : null}
-            {offlineBadge && <MBadge variant={offlineBadge.variant}>{offlineBadge.label}</MBadge>}
-            {rsIssue && !offlineBadge && (
-              <span
-                className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
-                style={{
-                  color: "var(--th-accent)",
-                  background: "var(--th-accent-glow)",
-                  border: "1px solid var(--th-accent-border)",
-                }}
-                title={`RS: ${device.rustdesk_status}`}
-              >
-                RS
-              </span>
-            )}
+            <DeviceTypeBadge device={device} />
+            {patchView && <ToneBadge view={patchView} />}
+            {maintenanceView && <ToneBadge view={maintenanceView} />}
+            {activeAction && <ActionIndicator entry={activeAction} />}
+            {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
+            {alerts?.warning ? <ToneBadge view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }} /> : null}
+            {offlineBadge && <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />}
+            {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
           </div>
 
           {/* L3: Client · Group · Domain */}
           <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-[12px] font-bold" style={{ color: "var(--th-text-secondary)" }}>
-              {device.client_name || <span style={{ color: "var(--th-text-muted)" }}>No client</span>}
-              {device.group_name && <span style={{ color: "var(--th-text-muted)" }}> · {device.group_name}</span>}
+            <span
+              className="min-w-0 truncate text-[12px] font-bold"
+              style={{ color: "var(--th-text-secondary)" }}
+              title={`${device.client_name || TERMS.noClient}${groupLine}`}
+            >
+              {device.client_name || <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>}
+              {groupLine && <span style={{ color: "var(--th-text-muted)" }}>{groupLine}</span>}
             </span>
             {device.domain && (
               <span className="flex-none text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
@@ -290,38 +198,35 @@ export function DeviceMobileCard({
 
           {/* L4: User · IP · OS · Agent version · Last seen */}
           <div className="flex flex-wrap items-center gap-x-3 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-            {device.current_user && <span>{device.current_user}</span>}
+            {device.current_user && <span className="max-w-[140px] truncate" title={device.current_user}>{device.current_user}</span>}
             {(device.public_ip || device.local_ip) && (
               <span className="font-mono">{device.public_ip || device.local_ip}</span>
             )}
             {osShort && <span>{osShort}</span>}
             {device.agent_version ? (
-              <span
-                style={{ color: outdated ? "var(--th-status-warning)" : "var(--th-status-online)" }}
-                title={agentVersionTitle(device, activePackageVersion, activePackageSha256)}
-              >
+              <span style={{ color: AGENT_VERSION_TONE[agentVersion.status] }} title={agentVersion.title}>
                 v{device.agent_version}
-                {outdated && " !"}
+                {outdated && " · update"}
               </span>
             ) : null}
-            <span className="ml-auto font-bold" style={{ color: ls.color, fontVariantNumeric: "tabular-nums" }}>
-              {ls.text}
+            <span className="ml-auto font-bold" style={{ color: lastSeen.tone, fontVariantNumeric: "tabular-nums" }}>
+              {lastSeen.text}
             </span>
           </div>
         </div>
 
-        {/* Actions cluster — favorites is existing functionality kept in the
-            top-right cluster for continuity (Implementation Note: the
-            mockup's device card does not depict the star; parity with
-            pre-2.0 behavior is preserved here). */}
+        {/* Favorites stay in the top-right cluster for continuity with the
+            pre-2.0 card (the mockup does not depict the star). */}
         <div className="flex flex-none items-center gap-1 self-center" onClick={(e) => e.stopPropagation()}>
           {onToggleFavorite && (
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors active:bg-white/10"
+              className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors active:bg-[var(--th-sidebar-nav-hover)]"
               style={{ color: isFavorite ? "var(--th-status-stale)" : "var(--th-text-muted)" }}
               title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+              aria-pressed={isFavorite}
             >
               <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
             </button>
@@ -330,7 +235,7 @@ export function DeviceMobileCard({
             size="lg"
             disabled={!canConnect}
             onClick={onConnect}
-            title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote ID not resolved yet")}
+            title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote Support ID not resolved yet")}
           />
         </div>
       </div>

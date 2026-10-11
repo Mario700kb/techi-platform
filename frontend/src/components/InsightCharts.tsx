@@ -1,17 +1,24 @@
-import { MouseEvent, useEffect, useRef, useState } from "react";
+import { MouseEvent, useEffect, useState } from "react";
 import { APP_TIME_ZONE, DISPLAY_LOCALE } from "../utils/time";
+import { formatCount } from "../utils/number";
 
 const dayLabel = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString(DISPLAY_LOCALE, { day: "numeric", month: "short", timeZone: APP_TIME_ZONE });
+
+const weekdayLabel = (iso: string) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString(DISPLAY_LOCALE, { weekday: "short", timeZone: APP_TIME_ZONE });
+
+function ChartEmpty({ chartRef, message }: { chartRef: React.Ref<HTMLDivElement>; message: string }) {
+  return <div ref={chartRef} className="flex h-full min-h-[120px] items-center justify-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>{message}</div>;
+}
 
 const PAD = { top: 10, right: 4, bottom: 20, left: 34 };
 
 /** Size of the element in CSS pixels, so the chart fills its card without distortion. */
 function useSize<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+  const [el, ref] = useState<T | null>(null);
   const [size, setSize] = useState({ w: 320, h: 140 });
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
@@ -19,7 +26,7 @@ function useSize<T extends HTMLElement>() {
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [el]);
   return { ref, ...size };
 }
 
@@ -49,7 +56,7 @@ export function AvailabilityChart({ series }: { series: { date: string; availabi
   const plotH = H - PAD.top - PAD.bottom;
   const values = series.map((p) => p.availability_pct).filter((v): v is number => v != null);
   if (values.length === 0) {
-    return <div ref={ref} className="flex h-full min-h-[120px] items-center justify-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>No status history yet.</div>;
+    return <ChartEmpty chartRef={ref} message="No status history yet." />;
   }
   // Change-over-time line: a focused domain shows the dips that matter near 100%.
   const floor = Math.max(0, Math.min(95, Math.floor((Math.min(...values) - 1) / 5) * 5));
@@ -116,10 +123,14 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
   const { ref, w: W, h: H } = useSize<HTMLDivElement>();
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
-  const max = Math.max(1, ...series.flatMap((p) => [p.opened, p.resolved]));
+  const peak = Math.max(0, ...series.flatMap((p) => [p.opened, p.resolved]));
+  if (peak === 0) {
+    return <ChartEmpty chartRef={ref} message="No alerts opened or resolved this week." />;
+  }
+  const max = Math.max(1, peak);
   const niceMax = max <= 4 ? 4 : Math.ceil(max / 4) * 4;
   const y = (v: number) => PAD.top + plotH - (v / niceMax) * plotH;
-  const band = plotW / series.length;
+  const band = plotW / Math.max(series.length, 1);
   const barW = Math.min(14, (band - 10) / 2);
   const hovered = index != null ? series[index] : null;
 
@@ -142,7 +153,7 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
         {[0, niceMax / 2, niceMax].map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="th-chart-grid" />
-            <text x={PAD.left - 6} y={y(t) + 3} textAnchor="end" className="th-chart-axis">{t}</text>
+            <text x={PAD.left - 6} y={y(t) + 3} textAnchor="end" className="th-chart-axis">{formatCount(t)}</text>
           </g>
         ))}
         {series.map((p, i) => {
@@ -152,7 +163,7 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
               {bar(left, p.opened, "th-chart-bar-1")}
               {bar(left + barW + 2, p.resolved, "th-chart-bar-2")}
               <text x={PAD.left + i * band + band / 2} y={H - 4} textAnchor="middle" className="th-chart-axis">
-                {new Date(`${p.date}T12:00:00Z`).toLocaleDateString(DISPLAY_LOCALE, { weekday: "narrow", timeZone: APP_TIME_ZONE })}
+                {weekdayLabel(p.date)}
               </text>
             </g>
           );
@@ -162,8 +173,8 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
       {hovered && index != null && (
         <Tooltip leftPct={((PAD.left + index * band + band / 2) / W) * 100}>
           <span style={{ color: "var(--th-text-muted)" }}>{dayLabel(hovered.date)}</span>
-          <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="1" />Opened <strong>{hovered.opened}</strong></span>
-          <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="2" />Resolved <strong>{hovered.resolved}</strong></span>
+          <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="1" />Opened <strong>{formatCount(hovered.opened)}</strong></span>
+          <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="2" />Resolved <strong>{formatCount(hovered.resolved)}</strong></span>
         </Tooltip>
       )}
       <div className="sr-only"><table>
