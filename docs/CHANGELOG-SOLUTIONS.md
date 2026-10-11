@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ALERTS-FIT-2026-10-11 — Alerts page fits the screen; smooth motion
+
+Owner request: make the page fit the screen, scroll the table inside itself,
+and add smooth animation across the page. Commit `c15b7ea`.
+
+Layout. The page fills the viewport the same way Devices does. The header,
+summary tiles, toolbar and footer stay in place. Only the rows scroll, under
+a sticky column header, and the scroll does not spill over to the page.
+
+Motion uses the existing motion system:
+
+- the card rises after the summary tiles;
+- arriving rows rise in a short stagger;
+- rows already on screen stay still during live updates;
+- the table dims while a refresh is in flight;
+- the bulk bar drops in;
+- empty and error states fade in.
+
+The global reduced-motion rule turns all of it off.
+
+Deployed 2026-10-11, frontend only, with no backend change since
+`3a83349`. Rollback image: `techi-platform-frontend:pre-alertsfit-3a83349`.
+Checks: frontend 109 tests, `tsc` clean, build OK, public HTTP 200, and the
+served CSS carries the new classes. The layout was checked by rendering the
+real component, 30 rows inside a 900 px viewport, against the built CSS.
+
 ## [2026-10-11] ALERTS-UI-2026-10-11 — Alerts page rebuilt as an enterprise table
 
 The owner asked for an enterprise, modern, symmetric Alerts page. Commit
