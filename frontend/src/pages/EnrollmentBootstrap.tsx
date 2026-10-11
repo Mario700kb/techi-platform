@@ -47,6 +47,7 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { API_BASE_URL } from "../api/client";
 import { Button, EmptyState, PageHeader, Select, SelectField } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
+import { TokenStatusChip, UsageMeter, TOKEN_FILTERS, TokenFilter, formatTokenPrefix, tokenState, usagePercent } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
@@ -60,53 +61,6 @@ async function validateBackendReachable(url: string): Promise<void> {
 }
 
 type Toast = { id: number; message: string; type: "success" | "error" };
-
-const TOKEN_STATE: Record<"active" | "unused" | "used" | "revoked" | "expired", { label: string; tone: string }> = {
-  active: { label: "Active", tone: TONE.online },
-  unused: { label: "Unused", tone: TONE.info },
-  used: { label: "Exhausted", tone: TONE.warning },
-  revoked: { label: "Revoked", tone: TONE.critical },
-  expired: { label: "Expired", tone: TONE.neutral },
-};
-
-function tokenState(token: EnrollmentToken): keyof typeof TOKEN_STATE {
-  if (token.status === "revoked" || token.status === "expired" || token.status === "used") return token.status;
-  return token.use_count === 0 ? "unused" : "active";
-}
-
-function TokenStatusChip({ token }: { token: EnrollmentToken }) {
-  const state = TOKEN_STATE[tokenState(token)];
-  return (
-    <span className="th-status-chip" style={{ "--chip-tone": state.tone } as React.CSSProperties}>
-      <i />
-      {state.label}
-    </span>
-  );
-}
-
-function UsageMeter({ token }: { token: EnrollmentToken }) {
-  const pct = usagePercent(token);
-  const tone = token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-accent)";
-  return (
-    <span className="inline-flex items-center gap-2.5" title={`${pct}% of max uses`}>
-      <span className="th-onb-meter" aria-hidden="true"><i style={{ width: `${Math.min(pct, 100)}%`, "--meter-tone": tone } as React.CSSProperties} /></span>
-      <span className="text-[12px] font-medium tabular-nums" style={{ color: token.usage_warning ? tone : "var(--th-text-secondary)" }}>
-        {formatCount(token.use_count)}/{formatCount(token.max_uses)}
-      </span>
-    </span>
-  );
-}
-
-type TokenFilter = "all" | keyof typeof TOKEN_STATE;
-
-const TOKEN_FILTERS: { id: TokenFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "active", label: "Active" },
-  { id: "unused", label: "Unused" },
-  { id: "used", label: "Exhausted" },
-  { id: "revoked", label: "Revoked" },
-  { id: "expired", label: "Expired" },
-];
 
 const PLATFORMS: { id: EnrollmentBootstrapPlatform; label: string }[] = [
   { id: "windows", label: "Windows" },
@@ -124,16 +78,7 @@ function isRevocable(token: EnrollmentToken): boolean {
   return token.status === "active" || token.status === "used";
 }
 
-function usagePercent(token: EnrollmentToken): number {
-  if (!token.max_uses) return 0;
-  return Math.round((100 * token.use_count) / token.max_uses);
-}
 
-function formatTokenPrefix(tokenPrefix: EnrollmentToken["token_prefix"]): string {
-  if (typeof tokenPrefix !== "string") return "legacy";
-  const prefix = tokenPrefix.trim();
-  return prefix ? `${prefix}…` : "legacy";
-}
 
 function downloadTextFile(content: string, filename: string) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });

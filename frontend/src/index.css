@@ -1746,6 +1746,51 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
   border-bottom: 1px solid var(--th-border-subtle);
   background: color-mix(in srgb, var(--th-status-warning) 7%, var(--th-bg-card));
 }
+.th-onb-action[data-active="true"] { color: var(--th-status-online); }
+/* Package summary: one card per package type, the selected one outlined. */
+.th-onb-summary { padding: 16px 18px 18px; cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
+.th-onb-summary:hover { border-color: var(--th-border-strong); }
+.th-onb-summary[aria-pressed="true"] { border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 5%, var(--th-bg-card)); }
+.th-onb-upload {
+  display: grid;
+  grid-template-columns: 160px 200px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-surface);
+}
+@media (max-width: 900px) { .th-onb-upload { grid-template-columns: 1fr 1fr; } }
+.th-onb-fixed,
+.th-onb-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  min-width: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-input);
+  background: var(--th-bg-input);
+  font-size: 13px;
+  color: var(--th-text-muted);
+}
+.th-onb-fixed { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.th-onb-file { position: relative; cursor: pointer; color: var(--th-text-secondary); transition: border-color 150ms ease; }
+.th-onb-file:hover { border-color: var(--th-border-strong); }
+.th-onb-file:focus-within { border-color: var(--th-accent-border); box-shadow: 0 0 0 4px var(--th-accent-glow); }
+.th-onb-file input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.th-onb-sha {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--th-text-secondary);
+}
+.th-onb-sha:hover { color: var(--th-text-primary); }
+.th-onb-sha svg { color: var(--th-text-faint); }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }

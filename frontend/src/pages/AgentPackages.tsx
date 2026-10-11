@@ -1,5 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import { Binary, CheckCircle2, Download, Package, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import {
+  AlertTriangle,
+  Binary,
+  Check,
+  Copy,
+  Download,
+  LifeBuoy,
+  Package,
+  Power,
+  RefreshCcw,
+  Terminal,
+  Trash2,
+  UploadCloud,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   AgentFileType,
   AgentPackage,
@@ -12,81 +28,116 @@ import {
 } from "../api/agentPackages";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Badge, Button, PageHeader, SelectField } from "../components/ui";
-import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE } from "../utils/time";
+import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
-import PlatformIcon from "../components/PlatformIcon";
-import LinuxPackagesPanel from "./LinuxPackagesPanel";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
+import { formatLocalDateTime } from "../utils/time";
 
-const PLATFORMS: AgentPackagePlatform[] = ["windows", "windows-amd64", "windows-arm64", "linux-amd64", "darwin-arm64"];
-const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
+type TypeId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi" | "linux_binary";
 
-function formatDate(iso: string): string {
-  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+interface PackageType {
+  id: TypeId;
+  label: string;
+  icon: LucideIcon;
+  fileType: AgentFileType;
+  hint: string;
+  /** Platforms an upload can target; one entry means it is fixed. */
+  platforms: AgentPackagePlatform[];
+  accept?: string;
+  matches: (pkg: AgentPackage) => boolean;
 }
 
-type TabId = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";
-
-const TABS: { id: TabId; label: string; fileType: AgentFileType; hint: string; fixedPlatform?: AgentPackagePlatform }[] = [
+// Linux agent binaries share file_type "agent_binary" with the Windows one, so
+// every type also filters by platform.
+const PACKAGE_TYPES: PackageType[] = [
   {
     id: "msi",
-    label: "MSI Packages",
+    label: "Endpoint MSI",
+    icon: Package,
     fileType: "msi",
-    hint: "For GPO, fresh installs and new PCs. Contains TECHI Remote Support + techi-agent.",
+    hint: "Agent and Remote Support together, for GPO, fresh installs and new PCs.",
+    platforms: ["windows-amd64", "windows-arm64", "windows"],
+    accept: ".msi",
+    matches: (p) => p.file_type === "msi",
   },
   {
     id: "agent_binary",
-    label: "Agent Binary",
+    label: "Agent binary",
+    icon: Binary,
     fileType: "agent_binary",
-    hint: "techi-agent.exe only. Used by the \"Update agent\" command — does not touch TECHI Remote Support.",
-    fixedPlatform: "windows-amd64",
+    hint: "techi-agent.exe alone. \"Update agent\" installs it; Remote Support is not touched.",
+    platforms: ["windows-amd64"],
+    accept: ".exe",
+    matches: (p) => p.file_type === "agent_binary" && p.platform.startsWith("windows"),
   },
   {
     id: "agent_update_msi",
-    label: "Update MSI (Bridge)",
+    label: "Update bridge",
+    icon: RefreshCcw,
     fileType: "agent_update_msi",
-    hint: "Agent-only bridge MSI (TECHI-Agent-Update-*.msi). Used by \"Update agent\" for legacy agents (< 2.1.1) — does not touch TECHI Remote Support and is not used for GPO/bootstrap.",
-    fixedPlatform: "windows-amd64",
+    hint: "Agent-only MSI used by \"Update agent\" for agents older than 2.1.1. Not used for GPO or bootstrap.",
+    platforms: ["windows-amd64"],
+    accept: ".msi",
+    matches: (p) => p.file_type === "agent_update_msi",
   },
   {
     id: "remote_support_msi",
-    label: "Remote Support Packages",
+    label: "Remote Support",
+    icon: LifeBuoy,
     fileType: "remote_support_msi",
-    hint: "TECHI Remote Support MSI, versioned separately from the agent. Used to install, update, repair and reinstall Remote Support.",
-    fixedPlatform: "windows-amd64",
+    hint: "Remote Support MSI, versioned apart from the agent. Used to install, update, repair and reinstall it.",
+    platforms: ["windows-amd64"],
+    accept: ".msi",
+    matches: (p) => p.file_type === "remote_support_msi",
+  },
+  {
+    id: "linux_binary",
+    label: "Linux agent",
+    icon: Terminal,
+    fileType: "agent_binary",
+    hint: "techi-agent for Linux, one binary per architecture. The active one per architecture is what \"Needs Agent Update\" compares against.",
+    platforms: ["linux-amd64", "linux-arm64", "linux-armhf"],
+    matches: (p) => p.file_type === "agent_binary" && p.platform.startsWith("linux"),
   },
 ];
+
+const ACTIVE_TONE = { "--chip-tone": TONE.online } as CSSProperties;
+const INACTIVE_TONE = { "--chip-tone": TONE.neutral } as CSSProperties;
 
 export default function AgentPackages() {
   const { can } = useAuth();
   const canManage = can("admin");
-  // Platform Expansion: a Windows|Linux scope toggle appears only when Linux
-  // is enabled. Default "windows" ⇒ flag-off UI is identical to today.
   const showLinux = usePlatformFeatures().FEATURE_LINUX;
-  const [platformScope, setPlatformScope] = useState<"windows" | "linux">("windows");
-  const [tab, setTab] = useState<TabId>("msi");
+  const types = useMemo(() => PACKAGE_TYPES.filter((t) => t.id !== "linux_binary" || showLinux), [showLinux]);
+
+  const [typeId, setTypeId] = useState<TypeId>("msi");
   const [packages, setPackages] = useState<AgentPackage[]>([]);
-  const [version, setVersion] = useState("");
-  const [platform, setPlatform] = useState<AgentPackagePlatform>("windows-amd64");
-  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentPackage | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const currentTab = TABS.find((t) => t.id === tab)!;
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [version, setVersion] = useState("");
+  const [platform, setPlatform] = useState<AgentPackagePlatform>("windows-amd64");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const visiblePackages = useMemo(
-    () => packages.filter((pkg) => pkg.file_type === currentTab.fileType),
-    [packages, currentTab.fileType],
-  );
-
-  const activeCount = useMemo(
-    () => visiblePackages.filter((pkg) => pkg.is_active).length,
-    [visiblePackages],
-  );
+  const type = types.find((t) => t.id === typeId) ?? types[0];
+  const byType = useMemo(() => {
+    const map = {} as Record<TypeId, AgentPackage[]>;
+    for (const t of PACKAGE_TYPES) {
+      map[t.id] = packages
+        .filter(t.matches)
+        .sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
+    }
+    return map;
+  }, [packages]);
+  const rows = byType[type.id];
 
   const load = async () => {
     try {
@@ -104,22 +155,28 @@ export default function AgentPackages() {
     void load();
   }, []);
 
+  const selectType = (id: TypeId) => {
+    const next = PACKAGE_TYPES.find((t) => t.id === id)!;
+    setTypeId(id);
+    setPlatform(next.platforms[0]);
+    setFile(null);
+    if (fileInput.current) fileInput.current.value = "";
+    setError(null);
+  };
+
   const handleUpload = async () => {
     if (!file || !version.trim()) {
-      setError("Version and package file are required");
+      setError("A version and a package file are required");
       return;
     }
     try {
       setUploading(true);
       setError(null);
-      await uploadAgentPackage({
-        version: version.trim(),
-        platform: currentTab.fixedPlatform ?? platform,
-        file,
-        file_type: currentTab.fileType,
-      });
+      await uploadAgentPackage({ version: version.trim(), platform, file, file_type: type.fileType });
       setVersion("");
       setFile(null);
+      if (fileInput.current) fileInput.current.value = "";
+      setUploadOpen(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -128,26 +185,14 @@ export default function AgentPackages() {
     }
   };
 
-  const handleActiveToggle = async (pkg: AgentPackage, isActive: boolean) => {
+  const run = async (pkg: AgentPackage, action: () => Promise<unknown>, failure: string, reload = true) => {
     try {
       setBusyId(pkg.id);
       setError(null);
-      await setAgentPackageActive(pkg.id, isActive);
-      await load();
+      await action();
+      if (reload) await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Package update failed");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleDownload = async (pkg: AgentPackage) => {
-    try {
-      setBusyId(pkg.id);
-      setError(null);
-      await downloadAgentPackage(pkg);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed");
+      setError(err instanceof Error ? err.message : failure);
     } finally {
       setBusyId(null);
     }
@@ -168,235 +213,240 @@ export default function AgentPackages() {
     }
   };
 
+  const copySha = async (pkg: AgentPackage) => {
+    if (!pkg.sha256) return;
+    await navigator.clipboard.writeText(pkg.sha256);
+    setCopiedId(pkg.id);
+    window.setTimeout(() => setCopiedId(null), 1600);
+  };
+
+  const showPlatformColumn = type.platforms.length > 1;
+
   return (
-    <section className="premium-page space-y-5">
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Agent Packages"
-        description="Manage downloadable Techi Agent packages for GPO deployments and binary-only updates."
+        description="Installers and binaries the platform hands out. Activating a package makes it the one new installs and updates use; nothing updates on its own."
         actions={
-          <>
-            <Badge variant="ghost">{activeCount} active</Badge>
-            <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
-              <RefreshCcw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </>
+          <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         }
       />
 
-      <div className="premium-card overflow-hidden px-5 pb-4 pt-1">
+      {/* ── what is live, per package type ──────────────────────────────── */}
+      <div className={`grid gap-4 sm:grid-cols-2 ${types.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
+        {types.map((t) => {
+          const active = byType[t.id].filter((p) => p.is_active);
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => selectType(t.id)}
+              aria-pressed={t.id === type.id}
+              className="th-onb-card th-onb-summary text-left"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="th-onb-icon" style={{ "--onb-tone": active.length ? "var(--th-accent)" : "var(--th-text-faint)" } as CSSProperties}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="th-status-chip" style={active.length ? ACTIVE_TONE : INACTIVE_TONE}>
+                  <i />
+                  {active.length ? "Active" : "None active"}
+                </span>
+              </div>
+              <div className="mt-4 text-[13px] font-medium" style={{ color: "var(--th-text-secondary)" }}>{t.label}</div>
+              <div className="mt-1 truncate text-[20px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+                {active.length === 0 ? "—" : active.length === 1 ? active[0].version : active.map((p) => p.version).filter((v, i, all) => all.indexOf(v) === i).join(" · ")}
+              </div>
+              <div className="mt-1 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {active.length === 0
+                  ? `${formatCount(byType[t.id].length)} uploaded`
+                  : active.length === 1
+                    ? `${active[0].platform} · ${formatLocalDateTime(active[0].uploaded_at)}`
+                    : active.map((p) => p.platform).join(", ")}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Platform scope toggle — only when Linux is enabled */}
-        {showLinux && (
-          <div className="mt-4 inline-flex rounded-lg border border-white/[0.08] p-0.5">
-            {(["windows", "linux"] as const).map((scope) => (
-              <button
-                key={scope}
-                type="button"
-                onClick={() => { setPlatformScope(scope); setError(null); }}
-                className={[
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors",
-                  platformScope === scope ? "bg-techi-accent-dim text-techi-orange" : "text-slate-400 hover:text-slate-200",
-                ].join(" ")}
-              >
-                <PlatformIcon platform={scope} size={13} />
-                {scope}
+      {error && (
+        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="flex-1">{error}</span>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
+
+      {/* ── packages of the selected type ───────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens">
+        <div className="th-onb-card-head">
+          <div className="th-onb-card-title">
+            <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as CSSProperties}>
+              <type.icon className="h-4 w-4" />
+            </span>
+            <span>
+              {type.label}
+              <small>{type.hint}</small>
+            </span>
+          </div>
+          {canManage && (
+            <Button size="sm" variant={uploadOpen ? "secondary" : "primary"} onClick={() => setUploadOpen((open) => !open)}>
+              {uploadOpen ? <X className="h-3.5 w-3.5" /> : <UploadCloud className="h-3.5 w-3.5" />}
+              {uploadOpen ? "Close" : "Upload"}
+            </Button>
+          )}
+        </div>
+
+        <div className="th-alerts-toolbar">
+          <div role="tablist" aria-label="Package type" className="th-tabs">
+            {types.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={t.id === type.id} onClick={() => selectType(t.id)} className="th-tab">
+                {t.label}
+                <span className="th-tab-count">{formatCount(byType[t.id].length)}</span>
               </button>
             ))}
           </div>
-        )}
+        </div>
 
-        {/* Windows tabs (unchanged) — only in the Windows scope */}
-        {platformScope === "windows" && (
-          <>
-            <div className="mt-4 flex gap-1 border-b border-white/[0.08]">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => { setTab(t.id); setError(null); }}
-                  className={[
-                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
-                    tab === t.id
-                      ? "border-b-2 border-techi-orange text-techi-orange"
-                      : "text-slate-400 hover:text-slate-200",
-                  ].join(" ")}
-                >
-                  {t.id === "msi" ? <Package className="h-3.5 w-3.5" /> : <Binary className="h-3.5 w-3.5" />}
-                  {t.label}
-                </button>
-              ))}
+        {canManage && uploadOpen && (
+          <div className="th-onb-upload th-fade-in">
+            <label className="th-onb-field">
+              Version
+              <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 2.1.24" spellCheck={false} autoComplete="off" />
+            </label>
+            <div className="th-onb-field">
+              {type.id === "linux_binary" ? "Architecture" : "Platform"}
+              {type.platforms.length > 1 ? (
+                <Select
+                  id="package-platform"
+                  aria-label="Platform"
+                  value={platform}
+                  onChange={(value) => setPlatform(value as AgentPackagePlatform)}
+                  options={type.platforms.map((p) => ({ value: p, label: p }))}
+                />
+              ) : (
+                <span className="th-onb-fixed">{type.platforms[0]}</span>
+              )}
             </div>
-            <p className="mt-3 text-xs text-slate-500">{currentTab.hint}</p>
-          </>
-        )}
-      </div>
-
-      {platformScope === "linux" && <LinuxPackagesPanel canManage={canManage} />}
-
-      {platformScope === "windows" && canManage && (
-        <div className="premium-card-soft p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <UploadCloud className="h-4 w-4 text-techi-orange" />
-            <h2 className="text-sm font-semibold text-white">
-              {tab === "msi"
-                ? "Upload MSI package"
-                : tab === "agent_update_msi"
-                  ? "Upload Agent Update Bridge MSI"
-                  : tab === "remote_support_msi"
-                    ? "Upload Remote Support MSI"
-                    : "Upload Agent Binary (techi-agent.exe)"}
-            </h2>
-          </div>
-          <div className="grid gap-2 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto]">
-            <input
-              value={version}
-              onChange={(event) => setVersion(event.target.value)}
-              placeholder="Version (e.g. 2.1.1)"
-              className={INPUT_CLS}
-            />
-            {currentTab.fixedPlatform ? (
-              <div className={`${INPUT_CLS} flex items-center text-slate-400`}>
-                {currentTab.fixedPlatform}
-              </div>
-            ) : (
-              <SelectField
-                value={platform}
-                onChange={(event) => setPlatform(event.target.value as AgentPackagePlatform)}
-                id="package-platform"
-                name="package-platform"
-                aria-label="Platform"
-                className={INPUT_CLS}
-              >
-                {PLATFORMS.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </SelectField>
-            )}
-            <input
-              type="file"
-              id="package-file"
-              name="package-file"
-              aria-label="Package file"
-              accept={tab === "agent_binary" ? ".exe" : ".msi"}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className={`${INPUT_CLS} file:mr-3 file:rounded-md file:border-0 file:bg-techi-orange/15 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-techi-orange`}
-            />
-            <Button onClick={handleUpload} disabled={uploading}>
+            <div className="th-onb-field">
+              File
+              <label className="th-onb-file">
+                <UploadCloud className="h-4 w-4 flex-none" />
+                <span className="truncate">{file ? file.name : `Choose ${type.accept ?? "a binary"}`}</span>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  aria-label="Package file"
+                  accept={type.accept}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+            <Button onClick={() => void handleUpload()} disabled={uploading || !file || !version.trim()}>
               <UploadCloud className="h-4 w-4" />
-              Upload
+              {uploading ? "Uploading…" : "Upload"}
             </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {error && (
-        <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
-          {error}
-        </div>
-      )}
-
-      {platformScope === "windows" && (
-      <div className="premium-card-soft overflow-hidden">
-        <div className="border-b border-white/[0.08] px-4 py-3">
-          <div className="flex items-center gap-2">
-            {tab === "msi" ? (
-              <Package className="h-4 w-4 text-techi-orange" />
-            ) : (
-              <Binary className="h-4 w-4 text-techi-orange" />
-            )}
-            <span className="text-sm font-semibold text-white">
-              {loading ? "Loading..." : `${visiblePackages.length} package${visiblePackages.length === 1 ? "" : "s"}`}
-            </span>
+        {loading && packages.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading packages">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />
+            ))}
           </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-950/80">
-              <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Version</th>
-                {tab === "msi" && <th className="px-4 py-3">Platform</th>}
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Uploaded</th>
-                <th className="px-4 py-3">Uploader</th>
-                <th className="px-4 py-3">File</th>
-                <th className="px-4 py-3">SHA256</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {visiblePackages.length === 0 && (
+        ) : rows.length === 0 ? (
+          <EmptyState
+            className="th-fade-in py-10"
+            icon={<type.icon className="h-5 w-5" />}
+            title={`No ${type.label.toLowerCase()} packages uploaded yet`}
+            action={canManage && !uploadOpen ? <Button size="sm" variant="secondary" onClick={() => setUploadOpen(true)}><UploadCloud className="h-3.5 w-3.5" />Upload</Button> : undefined}
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col />
+                {showPlatformColumn && <col className="w-[150px]" />}
+                <col className="w-[130px]" />
+                <col className="w-[190px]" />
+                <col className="w-[200px]" />
+                <col className="w-[132px]" />
+              </colgroup>
+              <thead>
                 <tr>
-                  <td colSpan={tab === "msi" ? 8 : 7} className="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                    {loading
-                      ? "Loading..."
-                      : `No ${tab === "msi"
-                        ? "MSI packages"
-                        : tab === "agent_update_msi"
-                          ? "bridge MSI packages"
-                          : tab === "remote_support_msi"
-                            ? "Remote Support packages"
-                            : "agent binaries"} uploaded yet.`}
-                  </td>
+                  <th>Version</th>
+                  {showPlatformColumn && <th>{type.id === "linux_binary" ? "Architecture" : "Platform"}</th>}
+                  <th>Status</th>
+                  <th>Uploaded</th>
+                  <th>SHA-256</th>
+                  <th className="text-right">Actions</th>
                 </tr>
-              )}
-              {visiblePackages.map((pkg) => (
-                <tr key={pkg.id} className="text-slate-300 hover:bg-white/[0.025]">
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">{pkg.version}</td>
-                  {tab === "msi" && <td className="whitespace-nowrap px-4 py-3 text-slate-300">{pkg.platform}</td>}
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {pkg.is_active ? (
-                      <Badge variant="ghost" className="border-emerald-400/25 bg-emerald-400/10 text-emerald-300">
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="neutral">Inactive</Badge>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">{formatDate(pkg.uploaded_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">{pkg.uploaded_by ?? "-"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">{pkg.filename}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500" title={pkg.sha256 ?? undefined}>
-                    {pkg.sha256 ? `${pkg.sha256.slice(0, 12)}…` : <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => void handleDownload(pkg)} disabled={busyId === pkg.id}>
-                        <Download className="h-3.5 w-3.5" />
-                        Download
-                      </Button>
-                      {canManage && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant={pkg.is_active ? "secondary" : "primary"}
-                            onClick={() => void handleActiveToggle(pkg, !pkg.is_active)}
-                            disabled={busyId === pkg.id}
-                          >
-                            {pkg.is_active ? "Deactivate" : "Activate"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => setDeleteTarget(pkg)}
-                            disabled={busyId === pkg.id || deleting}
-                            variant="danger"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </Button>
-                        </>
+              </thead>
+              <tbody>
+                {rows.map((pkg) => (
+                  <tr key={pkg.id} data-selected={pkg.is_active || undefined}>
+                    <td>
+                      <span className="th-alerts-primary tabular-nums">{pkg.version}</span>
+                      <span className="th-alerts-secondary font-mono" title={pkg.filename}>{pkg.filename}</span>
+                    </td>
+                    {showPlatformColumn && <td><span className="th-alerts-primary font-mono !text-[12px]">{pkg.platform}</span></td>}
+                    <td>
+                      <span className="th-status-chip" style={pkg.is_active ? ACTIVE_TONE : INACTIVE_TONE}>
+                        <i />
+                        {pkg.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="th-alerts-primary tabular-nums">{formatLocalDateTime(pkg.uploaded_at)}</span>
+                      <span className="th-alerts-secondary">{pkg.uploaded_by ?? "—"}</span>
+                    </td>
+                    <td>
+                      {pkg.sha256 ? (
+                        <button type="button" className="th-onb-sha" onClick={() => void copySha(pkg)} title={`${pkg.sha256}\nClick to copy`}>
+                          <span className="truncate">{pkg.sha256.slice(0, 16)}…</span>
+                          {copiedId === pkg.id ? <Check className="h-3.5 w-3.5 flex-none" /> : <Copy className="h-3.5 w-3.5 flex-none" />}
+                        </button>
+                      ) : (
+                        <span className="th-alerts-secondary">—</span>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td>
+                      <div className="th-onb-actions">
+                        <button type="button" className="th-onb-action" title="Download" aria-label={`Download ${pkg.filename}`} disabled={busyId === pkg.id} onClick={() => void run(pkg, () => downloadAgentPackage(pkg), "Download failed", false)}>
+                          <Download className="h-4 w-4" />
+                        </button>
+                        {canManage && (
+                          <>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-active={pkg.is_active || undefined}
+                              title={pkg.is_active ? "Deactivate" : "Activate"}
+                              aria-label={`${pkg.is_active ? "Deactivate" : "Activate"} ${pkg.version}`}
+                              disabled={busyId === pkg.id}
+                              onClick={() => void run(pkg, () => setAgentPackageActive(pkg.id, !pkg.is_active), "Package update failed")}
+                            >
+                              <Power className="h-4 w-4" />
+                            </button>
+                            <button type="button" className="th-onb-action" data-tone="danger" title="Delete" aria-label={`Delete ${pkg.filename}`} disabled={busyId === pkg.id || deleting} onClick={() => setDeleteTarget(pkg)}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-      )}
 
       {deleteTarget && (
         <ConfirmationModal
@@ -406,8 +456,8 @@ export default function AgentPackages() {
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
-          Permanently delete <span className="font-semibold text-white">{deleteTarget.filename}</span>?
-          {deleteTarget.is_active && " This package is active — deleting it removes the current active package for this type."}
+          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.filename}</span>?
+          {deleteTarget.is_active && " It is the active package for its type, so nothing will be served for that type until another is activated."}
         </ConfirmationModal>
       )}
     </section>
