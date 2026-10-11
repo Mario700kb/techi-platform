@@ -199,7 +199,11 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                   hasMaintenance={clientHasMaintenance(client.id)}
                   onClick={() => toggleClient(client.id)}
                 />
-                {expanded && childFolders.length > 0 && (
+                {childFolders.length > 0 && (
+                  // Always rendered so the branch can slide closed as well as
+                  // open; a closed branch is hidden from focus and the a11y tree.
+                  <div className="th-tree-collapse" data-open={expanded} aria-hidden={!expanded}>
+                  <div className="th-tree-collapse-inner">
                   <ul className="fleet-tree-child">
                     {childFolders.map((folder) => {
                       const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
@@ -237,6 +241,8 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                       );
                     })}
                   </ul>
+                  </div>
+                  </div>
                 )}
               </li>
             );
@@ -297,7 +303,7 @@ function TreeButton({ active, withinActive = false, child = false, icon: Icon, p
       {hasMaintenance && <span className="th-tree-maint" title="Has devices in maintenance" />}
       <span className="th-tree-count">{count}</span>
       <span className="th-tree-caret" aria-hidden="true">
-        {hasChildren && <ChevronRight className={clsx("h-3.5 w-3.5 transition-transform duration-150", expanded && "rotate-90")} />}
+        {hasChildren && <ChevronRight className={clsx("th-tree-chevron h-3.5 w-3.5", expanded && "rotate-90")} />}
       </span>
     </button>
   );

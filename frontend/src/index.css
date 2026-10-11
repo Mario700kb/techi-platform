@@ -2490,7 +2490,35 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 /* Panels that appear in place: drawer tabs (shown by un-hiding, which
    restarts the animation) and opened explorer branches. */
 .th-tab-panel { animation: th-fade 200ms var(--th-ease); }
-.fleet-tree-child { animation: th-expand 180ms var(--th-ease-out); }
+/* Explorer branches slide open and closed (grid rows 0fr <-> 1fr animates to
+   the content's real height). Visibility flips after the close, so a closed
+   branch cannot take keyboard focus. Children fade and settle as it opens. */
+.th-tree-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 220ms var(--th-ease), visibility 0s linear 220ms;
+}
+.th-tree-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 300ms var(--th-ease-out), visibility 0s;
+}
+.th-tree-collapse-inner { min-height: 0; overflow: hidden; }
+.th-tree-collapse .fleet-tree-child {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms var(--th-ease), transform 220ms var(--th-ease);
+}
+.th-tree-collapse[data-open="true"] .fleet-tree-child {
+  opacity: 1;
+  transform: none;
+  transition: opacity 240ms var(--th-ease) 60ms, transform 300ms var(--th-ease-out);
+}
+.th-tree-chevron { transition: transform 300ms var(--th-ease-out); }
+.th-tree-count, .th-tree-icon, .th-tree-caret {
+  transition: color var(--th-dur) var(--th-ease), background-color var(--th-dur) var(--th-ease);
+}
 
 /* Data: the availability line draws itself, alert bars grow from the axis
    one day after another, status bars and the health ring fill. */
