@@ -5,6 +5,50 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] LOG-REDACT-2026-10-11 — tokens carried in URLs no longer reach the backend logs
+
+Commit `357ab5d`, which closes the finding recorded in `ALERTS-SCOPE-2026-10-11`.
+
+**What was wrong.** uvicorn logs the full URL of every WebSocket connection
+and every request. That URL carries the operator's session JWT
+(`/ws/devices?...&token=`), and the install and bootstrap endpoints carry
+enrollment tokens the same way. Both the console and
+`/app/logs/techi.log*` (six files, 10 MB each) held them:
+
+- 1,411 WebSocket lines with session JWTs. These expire after 60 minutes,
+  so the ones already logged are dead.
+- 27 install/bootstrap URLs with enrollment tokens: 16
+  `/install/mikrotik`, 10 `/bootstrap/windows`, 1 `/bootstrap/gpo-deploy`.
+  These may still be valid.
+
+**The fix.** A filter on both log handlers (console and file) rewrites the
+`token`, `access_token` and `ticket` query values to `[redacted]`, for
+every logger.
+
+**Deploy (2026-10-11 15:12, backend only).** Rollback image:
+`techi-platform-backend:pre-logredact-fb02992`. Recreating the container
+also dropped the old container's Docker log. New WebSocket connections now
+log `token=[redacted]`. 7 new tests; backend suite at 1,230.
+
+**Existing log files.** Redacted in place at 15:13 with the same rule:
+
+- 1,442 matching lines before, 0 after.
+- No backup was kept, because a backup would have preserved the secrets
+  being removed.
+- The rotated files were edited directly. The active `techi.log` was
+  rewritten into the same inode, so the running handler kept appending to
+  it (verified).
+
+**Still open:**
+
+- nginx-proxy-manager's `proxy-host-2_access.log*` hold 224 lines with
+  these query tokens (112 in the active file, 112 in rotated ones). NPM
+  keeps logging them until its log format stops recording query strings
+  for these paths.
+- The enrollment tokens that appeared in logged install URLs should be
+  reviewed for rotation (revoke and reissue). Doing so affects any GPO or
+  script that embeds them.
+
 ## [2026-10-11] ALERTS-SCOPE-2026-10-11 — alerts scoped to the operator; desktop Alerts table
 
 Found while reviewing the Alerts page; commit `fb02992`.
