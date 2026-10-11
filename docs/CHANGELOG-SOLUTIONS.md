@@ -5,6 +5,50 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] UI-AUDIT-1-2026-10-11 — Dashboard, Devices and drawer stop showing wrong information
+
+The owner asked for an enterprise-grade review of the Dashboard and Devices.
+A code audit of three areas (Dashboard, the Devices page, the device drawer)
+found about 65 issues. They were split into four packages. Package 1 fixes
+the places where the UI told the operator something false. Commit `f60b03c`;
+details are in the commit message.
+
+- Dashboard:
+  - Cards no longer show "empty" before their data arrives.
+  - Failed requests show an error with Retry instead of an empty fleet or a
+    "Loading…" that never ends.
+  - The Stale hint now gives the real 6–25 min window.
+  - The status dot and badge come from one state.
+- Found while testing: the dashboard lists were loaded only by an effect that
+  also cleared their cache on every visit. Without that effect, arriving with
+  the WebSocket already connected loaded nothing, because polling is off
+  then. An explicit on-arrival load that respects the cache replaces it.
+- Devices:
+  - The load error now clears after a successful retry.
+  - Realtime heartbeats no longer wipe the row selection.
+  - A quick filter with no match shows a proper empty state.
+- Drawer:
+  - Overview no longer duplicates Alerts and the health score.
+  - "0h ago" is fixed.
+  - A shared 30 s clock (`hooks/useNow.ts`) refreshes relative labels.
+  - Archive duplicate, delete note and the interrupting component
+    operations now ask for confirmation.
+  - The platform drawer offers Retry instead of loading forever.
+
+Still open, planned as packages 2–4:
+
+- Package 2: health quick filters, sorting and "hide offline" still apply
+  only to the current page. Fixing this needs server-side filter parameters.
+- Package 3: light-theme hard-coded colours, status-colour and terminology
+  consistency, and the platform drawer's look.
+- Package 4: cleanup and accessibility.
+
+Deployed 2026-10-11, frontend only. Rollback image
+`techi-platform-frontend:pre-pkg1-41cd2e2`. Checks: `tsc` clean, frontend
+98/98 (6 new tests), build OK. After deploy: frontend healthy, public HTTP
+200, and the served bundle contains the new copy. Authenticated browser
+smoke pending.
+
 ## [2026-10-11] UI-INPUTS-2026-10-11 — search fields and dropdowns visible, one search component
 
 Owner request: search fields and dropdown buttons should be more visible and
