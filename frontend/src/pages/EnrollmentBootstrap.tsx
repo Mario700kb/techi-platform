@@ -49,6 +49,7 @@ import { Button, EmptyState, PageHeader, Select, SelectField } from "../componen
 import TablePagination from "../components/ui/TablePagination";
 import { TokenStatusChip, UsageMeter, TOKEN_FILTERS, TokenFilter, formatTokenPrefix, tokenState, usagePercent } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
 
@@ -191,6 +192,7 @@ export default function EnrollmentBootstrap() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [clientNames, setClientNames] = useState<Record<number, string>>({});
+  const statusTabsRef = useTabIndicator<HTMLDivElement>(statusFilter);
 
   // ── toasts ───────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -533,7 +535,7 @@ export default function EnrollmentBootstrap() {
 
       {/* ── default token · security model ──────────────────────────────── */}
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 0 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
               <span className="th-onb-icon" style={{ "--onb-tone": defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)" } as React.CSSProperties}>
@@ -581,7 +583,7 @@ export default function EnrollmentBootstrap() {
           </div>
         </div>
 
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 1 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
               <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
@@ -606,7 +608,7 @@ export default function EnrollmentBootstrap() {
 
       {/* ── generator · output ──────────────────────────────────────────── */}
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 2 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
               <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as React.CSSProperties}>
@@ -622,7 +624,7 @@ export default function EnrollmentBootstrap() {
           <div className="th-onb-body flex-1">
             <div className="th-onb-section">
               <span className="th-onb-label">Deployment mode</span>
-              <div className="th-segmented" role="radiogroup" aria-label="Deployment mode">
+              <div className="th-segmented" role="radiogroup" aria-label="Deployment mode" data-thumb style={{ "--seg-n": 2, "--seg-i": mode === "gpo" ? 1 : 0 } as React.CSSProperties}>
                 {(["token", "gpo"] as const).map((m) => (
                   <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}>
                     {m === "token" ? "Token enrollment" : "Trusted domain / GPO"}
@@ -631,7 +633,7 @@ export default function EnrollmentBootstrap() {
               </div>
 
               {mode === "gpo" && (
-                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
                   <Info className="h-4 w-4" />
                   <ul className="space-y-1">
                     <li><strong>Domain-joined PCs</strong> enroll without a token. The backend needs <code className="font-mono">TRUSTED_DOMAIN_AUTO_ENROLLMENT=true</code>.</li>
@@ -697,7 +699,7 @@ export default function EnrollmentBootstrap() {
               )}
               <div className="th-onb-field">
                 Platform
-                <div className="th-segmented" role="radiogroup" aria-label="Platform">
+                <div className="th-segmented" role="radiogroup" aria-label="Platform" data-thumb style={{ "--seg-n": 3, "--seg-i": PLATFORMS.findIndex((p) => p.id === platform) } as React.CSSProperties}>
                   {PLATFORMS.map((p) => (
                     <button key={p.id} type="button" role="radio" aria-checked={platform === p.id} onClick={() => setPlatform(p.id)}>
                       {p.label}
@@ -712,7 +714,7 @@ export default function EnrollmentBootstrap() {
                 <span className="th-onb-label">Device policy</span>
                 <div className="th-onb-field">
                   Availability profile
-                  <div className="th-segmented" role="radiogroup" aria-label="Availability profile">
+                  <div className="th-segmented" role="radiogroup" aria-label="Availability profile" data-thumb style={{ "--seg-n": 3, "--seg-i": ["server", "workstation", "custom"].indexOf(availProfile) } as React.CSSProperties}>
                     {(["server", "workstation", "custom"] as AvailabilityProfile[]).map((p) => (
                       <button key={p} type="button" role="radio" aria-checked={availProfile === p} onClick={() => setAvailProfile(p)}>
                         {PROFILE_INFO[p].label}
@@ -730,7 +732,7 @@ export default function EnrollmentBootstrap() {
                   </span>
                 </label>
                 {managePower && availProfile !== "server" && (
-                  <div className="th-onb-sub">
+                  <div className="th-onb-sub th-onb-reveal">
                     <label className="th-onb-check"><input type="checkbox" checked={preventSleepAC} onChange={(e) => setPreventSleepAC(e.target.checked)} /><span>Prevent sleep on AC power</span></label>
                     <label className="th-onb-check"><input type="checkbox" checked={preventHibernate} onChange={(e) => setPreventHibernate(e.target.checked)} /><span>Disable hibernate</span></label>
                     <label className="th-onb-check"><input type="checkbox" checked={allowDisplayOff} onChange={(e) => setAllowDisplayOff(e.target.checked)} /><span>Allow display off on AC <small>Recommended</small></span></label>
@@ -745,7 +747,7 @@ export default function EnrollmentBootstrap() {
                   </span>
                 </label>
                 {rustdeskEnabled && (
-                  <div className="th-onb-sub sm:grid-cols-2">
+                  <div className="th-onb-sub th-onb-reveal sm:grid-cols-2">
                     {(
                       [
                         { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "https://…/TECHI-Remote-Support.msi" },
@@ -781,7 +783,7 @@ export default function EnrollmentBootstrap() {
           </div>
         </div>
 
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
               <span className="th-onb-icon" style={{ "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)" } as React.CSSProperties}>
@@ -807,7 +809,7 @@ export default function EnrollmentBootstrap() {
           </div>
 
           {bootstrap ? (
-            <div className="th-onb-body flex-1 th-fade-in">
+            <div className="th-onb-body flex-1 th-onb-reveal">
               <dl className="th-onb-meta">
                 <div><dt>Target</dt><dd>{bootstrap.mode === "gpo" ? "Trusted domain / GPO" : bootstrap.platform === "windows" ? "Windows service" : `${bootstrap.platform} bootstrap`}</dd></div>
                 <div><dt>Platform</dt><dd className="capitalize">{bootstrap.platform}</dd></div>
@@ -860,7 +862,7 @@ export default function EnrollmentBootstrap() {
       </div>
 
       {/* ── tokens ──────────────────────────────────────────────────────── */}
-      <div className="th-alerts-card th-onb-tokens">
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as React.CSSProperties}>
         <div className="th-onb-card-head">
           <div className="th-onb-card-title">
             <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as React.CSSProperties}>
@@ -880,7 +882,7 @@ export default function EnrollmentBootstrap() {
         </div>
 
         {flashToken && (
-          <div className="th-onb-flash">
+          <div className="th-onb-flash th-onb-reveal">
             <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
             <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>Copy the token now; it is not shown again.</span>
             <code className="th-onb-code min-w-0 flex-1 truncate px-2.5 py-1">{flashToken.plaintext}</code>
@@ -895,7 +897,7 @@ export default function EnrollmentBootstrap() {
         )}
 
         <div className="th-alerts-toolbar">
-          <div role="tablist" aria-label="Token status" className="th-tabs">
+          <div ref={statusTabsRef} role="tablist" aria-label="Token status" className="th-tabs">
             {TOKEN_FILTERS.map(({ id, label }) => (
               <button key={id} type="button" role="tab" aria-selected={statusFilter === id} onClick={() => { setStatusFilter(id); setPage(1); }} className="th-tab">
                 {label}
@@ -955,8 +957,8 @@ export default function EnrollmentBootstrap() {
                 </tr>
               </thead>
               <tbody>
-                {pagedTokens.map((token) => (
-                  <tr key={token.id} data-selected={tokenId === String(token.id) || undefined}>
+                {pagedTokens.map((token, index) => (
+                  <tr key={token.id} className="th-alerts-row" style={{ "--row": index } as React.CSSProperties} data-selected={tokenId === String(token.id) || undefined}>
                     <td>
                       <span className="th-alerts-primary flex items-center gap-1.5">
                         {token.is_default && <Star className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }} aria-label="Default deployment token" />}

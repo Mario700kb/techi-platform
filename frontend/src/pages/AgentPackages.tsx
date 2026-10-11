@@ -30,6 +30,7 @@ import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime } from "../utils/time";
@@ -128,6 +129,7 @@ export default function AgentPackages() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const type = types.find((t) => t.id === typeId) ?? types[0];
+  const typeTabsRef = useTabIndicator<HTMLDivElement>(type.id);
   const byType = useMemo(() => {
     const map = {} as Record<TypeId, AgentPackage[]>;
     for (const t of PACKAGE_TYPES) {
@@ -237,7 +239,7 @@ export default function AgentPackages() {
 
       {/* ── what is live, per package type ──────────────────────────────── */}
       <div className={`grid gap-4 sm:grid-cols-2 ${types.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
-        {types.map((t) => {
+        {types.map((t, index) => {
           const active = byType[t.id].filter((p) => p.is_active);
           const Icon = t.icon;
           return (
@@ -246,7 +248,8 @@ export default function AgentPackages() {
               type="button"
               onClick={() => selectType(t.id)}
               aria-pressed={t.id === type.id}
-              className="th-onb-card th-onb-summary text-left"
+              className="th-onb-card th-onb-summary th-onb-enter text-left"
+              style={{ "--i": index } as CSSProperties}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="th-onb-icon" style={{ "--onb-tone": active.length ? "var(--th-accent)" : "var(--th-text-faint)" } as CSSProperties}>
@@ -282,9 +285,9 @@ export default function AgentPackages() {
       )}
 
       {/* ── packages of the selected type ───────────────────────────────── */}
-      <div className="th-alerts-card th-onb-tokens">
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": types.length } as CSSProperties}>
         <div className="th-onb-card-head">
-          <div className="th-onb-card-title">
+          <div key={type.id} className="th-onb-card-title th-fade-in">
             <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as CSSProperties}>
               <type.icon className="h-4 w-4" />
             </span>
@@ -302,7 +305,7 @@ export default function AgentPackages() {
         </div>
 
         <div className="th-alerts-toolbar">
-          <div role="tablist" aria-label="Package type" className="th-tabs">
+          <div ref={typeTabsRef} role="tablist" aria-label="Package type" className="th-tabs">
             {types.map((t) => (
               <button key={t.id} type="button" role="tab" aria-selected={t.id === type.id} onClick={() => selectType(t.id)} className="th-tab">
                 {t.label}
@@ -313,7 +316,7 @@ export default function AgentPackages() {
         </div>
 
         {canManage && uploadOpen && (
-          <div className="th-onb-upload th-fade-in">
+          <div className="th-onb-upload th-onb-reveal">
             <label className="th-onb-field">
               Version
               <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 2.1.24" spellCheck={false} autoComplete="off" />
@@ -388,8 +391,8 @@ export default function AgentPackages() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((pkg) => (
-                  <tr key={pkg.id} data-selected={pkg.is_active || undefined}>
+                {rows.map((pkg, index) => (
+                  <tr key={pkg.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties} data-selected={pkg.is_active || undefined}>
                     <td>
                       <span className="th-alerts-primary tabular-nums">{pkg.version}</span>
                       <span className="th-alerts-secondary font-mono" title={pkg.filename}>{pkg.filename}</span>

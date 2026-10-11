@@ -70,7 +70,7 @@ export default function Onboarding() {
       </div>
 
       <PageHeaderContext.Provider value={{ embedded: true }}>
-        <div role="tabpanel">
+        <div role="tabpanel" key={active} className="th-onb-panel">
           {active === "packages" && <AgentPackages />}
           {active === "tokens" && <Deployment />}
           {active === "installer" && <EnrollmentBootstrap />}

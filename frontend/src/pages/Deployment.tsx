@@ -28,6 +28,7 @@ import {
 } from "../api/enrollmentBootstrap";
 import { PlatformFeatures } from "../api/platform";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -139,6 +140,7 @@ export default function Deployment() {
   const [statusFilter, setStatusFilter] = useState<TokenFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const statusTabsRef = useTabIndicator<HTMLDivElement>(statusFilter);
 
   const bootstrapUrl = useMemo(() => token ? buildWindowsBootstrapUrl(token.token) : "", [token]);
   const bootstrapCommand = useMemo(() => token ? buildWindowsBootstrapCommand(token.token) : "", [token]);
@@ -225,7 +227,7 @@ export default function Deployment() {
 
       {/* ── new token · one-time command ────────────────────────────────── */}
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 0 } as CSSProperties}>
           <CardHead icon={KeyRound} tone="var(--th-accent)" title="New enrollment token" subtitle="One token per site or batch of PCs" />
           <div className="th-onb-body flex-1">
             <label className="th-onb-field">
@@ -246,7 +248,7 @@ export default function Deployment() {
           </div>
         </div>
 
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 1 } as CSSProperties}>
           <CardHead
             icon={Terminal}
             tone={token ? "var(--th-status-online)" : "var(--th-text-faint)"}
@@ -254,7 +256,7 @@ export default function Deployment() {
             subtitle={token ? `For ${token.name}` : "Appears once a token is generated"}
           />
           {token ? (
-            <div className="th-onb-body flex-1 th-fade-in">
+            <div className="th-onb-body flex-1 th-onb-reveal">
               <CommandBlock label="Run in an elevated PowerShell" value={bootstrapCommand} copied={copied === "new-command"} onCopy={() => void copy("new-command", bootstrapCommand)} />
               <CommandBlock label="Bootstrap URL" value={bootstrapUrl} copied={copied === "new-url"} onCopy={() => void copy("new-url", bootstrapUrl)} />
             </div>
@@ -272,7 +274,7 @@ export default function Deployment() {
 
       {/* ── active package · remote support ─────────────────────────────── */}
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 2 } as CSSProperties}>
           <CardHead
             icon={Package}
             tone={activePackage ? "var(--th-status-online)" : "var(--th-status-warning)"}
@@ -294,7 +296,7 @@ export default function Deployment() {
           </div>
         </div>
 
-        <div className="th-onb-card">
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as CSSProperties}>
           <CardHead icon={LifeBuoy} tone="var(--th-status-info)" title={`${TERMS.remoteSupport} configuration`} subtitle="Written to every device the agent installs" />
           <div className="th-onb-body flex-1">
             <dl className="th-onb-meta">
@@ -307,7 +309,7 @@ export default function Deployment() {
       </div>
 
       {/* ── tokens ──────────────────────────────────────────────────────── */}
-      <div className="th-alerts-card th-onb-tokens">
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
         <CardHead
           icon={KeyRound}
           tone="var(--th-accent)"
@@ -322,7 +324,7 @@ export default function Deployment() {
         />
 
         <div className="th-alerts-toolbar">
-          <div role="tablist" aria-label="Token status" className="th-tabs">
+          <div ref={statusTabsRef} role="tablist" aria-label="Token status" className="th-tabs">
             {TOKEN_FILTERS.map(({ id, label }) => (
               <button key={id} type="button" role="tab" aria-selected={statusFilter === id} onClick={() => { setStatusFilter(id); setPage(1); }} className="th-tab">
                 {label}
@@ -380,11 +382,11 @@ export default function Deployment() {
                 </tr>
               </thead>
               <tbody>
-                {pagedTokens.map((row) => {
+                {pagedTokens.map((row, index) => {
                   const client = clientName(row.client_id);
                   const group = groupName(row.group_id);
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
                       <td>
                         <button type="button" className="th-alerts-primary th-alerts-link max-w-full truncate text-left" onClick={async () => setViewDeployment(await getEnrollmentTokenDeployment(row.id))}>
                           {row.name}
@@ -720,7 +722,7 @@ function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatfo
       {meta.routerosVersions && (
         <div className="th-onb-field">
           RouterOS version
-          <div className="th-segmented" role="radiogroup" aria-label="RouterOS version">
+          <div className="th-segmented" role="radiogroup" aria-label="RouterOS version" data-thumb style={{ "--seg-n": meta.routerosVersions.length, "--seg-i": Math.max(0, meta.routerosVersions.findIndex((v) => v.value === routerosVersion)) } as CSSProperties}>
             {meta.routerosVersions.map((version) => (
               <button key={version.value} type="button" role="radio" aria-checked={routerosVersion === version.value} onClick={() => setRouterosVersion(version.value)}>
                 {version.label}
@@ -826,7 +828,7 @@ function EditTokenModal({ token, clients, groups, onClose, onSave }: { token: En
       </div>
       <div className="th-onb-field">
         Status
-        <div className="th-segmented" role="radiogroup" aria-label="Token status">
+        <div className="th-segmented" role="radiogroup" aria-label="Token status" data-thumb style={{ "--seg-n": 2, "--seg-i": status === "revoked" ? 1 : 0 } as CSSProperties}>
           {(["active", "revoked"] as const).map((value) => (
             <button key={value} type="button" role="radio" aria-checked={status === value} onClick={() => setStatus(value)} className="capitalize">{value}</button>
           ))}

@@ -2855,6 +2855,32 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 .th-device-card:nth-child(4) { animation-delay: 90ms; }
 .th-device-card:nth-child(n + 5) { animation-delay: 120ms; }
 .th-bulk-bar { animation: th-toast-in 220ms var(--th-ease-out); }
+/* Onboarding: a step switch fades the new panel in and its cards rise in
+   order (--i); arriving table rows rise like the alerts rows; panels shown by
+   a toggle drop open. Segmented controls marked data-thumb slide one thumb
+   to the chosen option (--seg-i of --seg-n). */
+.th-onb-panel { animation: th-fade 240ms var(--th-ease) backwards; }
+.th-onb-enter,
+.th-main .th-alerts-card.th-onb-enter { animation: th-rise 420ms var(--th-ease-out) backwards; animation-delay: calc(var(--i, 0) * 55ms); }
+.th-onb-reveal { animation: th-expand 260ms var(--th-ease-out) backwards; }
+.th-onb-summary { transition: border-color 200ms var(--th-ease), background-color 200ms var(--th-ease), transform 260ms var(--th-ease-out), box-shadow 260ms var(--th-ease-out); }
+.th-onb-summary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px -16px var(--th-scrim); }
+.th-segmented[data-thumb] { position: relative; isolation: isolate; }
+.th-segmented[data-thumb]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px - (var(--seg-n) - 1) * 2px) / var(--seg-n));
+  border-radius: 6px;
+  background: var(--th-bg-card-hover);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--th-border-strong);
+  transform: translateX(calc(var(--seg-i) * (100% + 2px)));
+  transition: transform 300ms var(--th-ease-out);
+}
+.th-segmented[data-thumb] > button[aria-checked="true"] { background: transparent; box-shadow: none; }
 /* Drawers: mounted already open, so the entrance is a keyframe (slide in from
    the edge, decelerating); closing is a quicker accelerating transition, and
    the page unmounts the drawer only after it (Devices.tsx closeDrawer).
