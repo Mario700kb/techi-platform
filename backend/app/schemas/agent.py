@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -111,6 +111,12 @@ class AgentHeartbeatResponse(BaseModel):
     # (>= 2.1.5). Replaces the fleet-wide default. Sent every heartbeat so a
     # wiped RS config self-heals to the server-authoritative value.
     remote_support_password: Optional[str] = None
+
+
+class AgentPowerEventPayload(BaseModel):
+    device_id: int
+    agent_id: str
+    state: Literal["shutdown", "sleep"]
 
 
 class AgentEnrollmentRequest(BaseModel):

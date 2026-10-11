@@ -12,6 +12,8 @@ from app.schemas.activity import ActivityEvent
 _REASON_LABELS: dict = {
     "heartbeat_received": "Heartbeat",
     "heartbeat_timeout_exceeded": "Timeout exceeded",
+    "agent_shutdown": "Shut down",
+    "agent_sleep": "Went to sleep",
     "manual": "Manual action",
 }
 
@@ -91,9 +93,9 @@ class DeviceActivityService:
 
         offline_reason = getattr(device, "offline_reason", None) if device else None
         offline_confidence = getattr(device, "offline_confidence", None) if device else None
-        for sh in status_history:
+        for index, sh in enumerate(status_history):
             is_online = sh.new_status.value == "online"
-            if not is_online and offline_reason:
+            if index == 0 and not is_online and offline_reason:
                 confidence_label = f" · Confidence: {offline_confidence.capitalize()}" if offline_confidence else ""
                 detail = f"Likely reason: {offline_reason.replace('_', ' ').title()}{confidence_label}"
             else:

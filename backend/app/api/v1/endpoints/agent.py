@@ -3,7 +3,7 @@ import secrets
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import enroll_limiter
@@ -15,10 +15,12 @@ from app.schemas.agent import (
     AgentEnrollmentResponse,
     AgentHeartbeatPayload,
     AgentHeartbeatResponse,
+    AgentPowerEventPayload,
 )
 from app.services import agent_config_service as _cfg_svc
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
+from app.services.device_status_service import DeviceStatusService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
 
@@ -175,3 +177,21 @@ def agent_heartbeat(
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
         "remote_support_password": rs_password,
     }
+
+
+@router.post("/power-event", status_code=status.HTTP_204_NO_CONTENT)
+def agent_power_event(payload: AgentPowerEventPayload, db: Session = Depends(get_db)):
+    """
+    Last message from an agent whose machine is shutting down or going to sleep.
+
+    Marks the device offline at once, recording why, so the stale-heartbeat
+    reconciliation never sees it and never raises a critical offline alert.
+    Unlike the heartbeat this requires a matching agent_id: an unauthenticated
+    caller could otherwise silence the offline alert of any device it names.
+    A missing device and a wrong agent_id get the same 403.
+    """
+    device = DeviceRepository(db).get(payload.device_id)
+    if device is None or not _agent_id_matches(payload.agent_id, device.agent_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown device or agent_id")
+    DeviceStatusService(db).mark_offline_from_power_event(device, payload.state)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

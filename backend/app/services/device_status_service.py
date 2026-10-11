@@ -44,6 +44,8 @@ class DeviceStatusService:
         previous_status = device.status
         if previous_status != DeviceStatus.ONLINE:
             device.status = DeviceStatus.ONLINE
+            device.offline_reason = None
+            device.offline_confidence = None
             self.db.add(device)
             self.db.commit()
             self.db.refresh(device)
@@ -77,35 +79,41 @@ class DeviceStatusService:
             if computed_status != DeviceStatus.OFFLINE or device.status == DeviceStatus.OFFLINE:
                 continue
 
-            previous_status = device.status
-            device.status = DeviceStatus.OFFLINE
-            self.db.add(device)
-            self.db.commit()
-            self.db.refresh(device)
-            self.history_repo.create(
-                device_id=device.id,
-                previous_status=previous_status,
-                new_status=DeviceStatus.OFFLINE,
-                reason="heartbeat_timeout_exceeded",
-            )
-            payload = device_payload(device)
-            realtime_publisher.publish_threadsafe(
-                build_event(
-                    RealtimeEventType.DEVICE_OFFLINE,
-                    data=payload,
-                    reason="heartbeat_timeout_exceeded",
-                ),
-                dedupe_key=f"device_offline:{device.id}",
-            )
-            realtime_publisher.publish_threadsafe(
-                build_event(
-                    RealtimeEventType.DEVICE_UPDATED,
-                    data=payload,
-                    reason="heartbeat_timeout_exceeded",
-                ),
-                dedupe_key=f"device_updated:{device.id}:{device.status.value}",
-            )
+            self._transition_offline(device, "heartbeat_timeout_exceeded")
             _get_alert_engine(self.db).evaluate_device_offline(device)
             transitioned += 1
 
         return transitioned
+
+    def mark_offline_from_power_event(self, device: Device, state: str) -> Device:
+        if device.status != DeviceStatus.ONLINE:
+            return device
+        device.offline_reason = state
+        device.offline_confidence = "high"
+        if state == "shutdown":
+            device.last_shutdown_time = utcnow()
+        self._transition_offline(device, f"agent_{state}")
+        _get_alert_engine(self.db).evaluate_device_power_off(device, state)
+        return device
+
+    def _transition_offline(self, device: Device, reason: str) -> None:
+        previous_status = device.status
+        device.status = DeviceStatus.OFFLINE
+        self.db.add(device)
+        self.db.commit()
+        self.db.refresh(device)
+        self.history_repo.create(
+            device_id=device.id,
+            previous_status=previous_status,
+            new_status=DeviceStatus.OFFLINE,
+            reason=reason,
+        )
+        payload = device_payload(device)
+        realtime_publisher.publish_threadsafe(
+            build_event(RealtimeEventType.DEVICE_OFFLINE, data=payload, reason=reason),
+            dedupe_key=f"device_offline:{device.id}",
+        )
+        realtime_publisher.publish_threadsafe(
+            build_event(RealtimeEventType.DEVICE_UPDATED, data=payload, reason=reason),
+            dedupe_key=f"device_updated:{device.id}:{device.status.value}",
+        )
