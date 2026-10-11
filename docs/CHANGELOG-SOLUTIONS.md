@@ -5,6 +5,58 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ONBOARDING-2026-10-11 — boot preloader; installer page redesign; correct default backend URL; real "Last used"
+
+Commits `cf3b37f`, `dc1b880`, `70ec491`; deployed 2026-10-11 20:48 (backend and
+frontend). Pre-deploy dump `/opt/backups/techi/pre-onboarding-2026-10-11_20-44.sql.gz`
+(gzip-tested, 150 MB). Rollback images `techi-platform-backend:pre-onboarding-2c83384`
+and `techi-platform-frontend:pre-onboarding-2c83384`.
+
+### Fixed
+- **Wrong default backend URL in the installer generator.** It proposed
+  `https://<console-host>:8000`. `https://rdp.techi.com.al:8000` does not
+  answer, so "Generate installer" failed its health check unless the operator
+  typed the API URL by hand. The default is now the API this console already
+  talks to (`https://api-rdp.techi.com.al`).
+- **"Last used" was empty for every token.** `used_at` only records when a token
+  runs out. The list now carries `last_used_at`: the latest successful
+  enrollment or re-enrollment in `enrollment_audit`, from one grouped query.
+  After the deploy, 38 of 42 tokens show a value.
+
+### Added / changed
+- **Boot preloader.** The page used to stay blank until the bundle loaded.
+  `index.html` now paints a minimal screen inline: the TECHI mark, a 2px
+  accent bar and the product name, coloured through tokens. React reuses the
+  same screen while a stored session is verified, and the hand-over neither
+  replays nor restarts the animation. Reduced motion is respected.
+- **Onboarding → Installer redesign.**
+  - Paired cards of equal height: default token next to the security model,
+    generator next to the output.
+  - The generator is grouped into Deployment / Connection / Device policy.
+  - The tokens table has:
+    - status tabs with counts, search, fixed columns, internal scroll and the
+      shared pagination footer;
+    - client names, a usage meter and labelled icon actions.
+  - The Unique / Duplicates / Failed columns were removed; they only filled
+    after a token's diagnostics were opened.
+- The MSI source tests now expand the WiX `StopRemoteSupportScript` define.
+  They had failed since `df91afc`, because the backend suite was not run for
+  that commit.
+
+### Verification
+- Frontend: 139 tests, typecheck and build pass. Screenshots of the real
+  component were checked in the dark and light themes.
+- Backend: 1,247 tests pass.
+- Production after the deploy:
+  - both containers healthy, `/health` 200, console 200;
+  - the preloader is present in `index.html`;
+  - no errors in the backend log.
+
+### Noted, not addressed
+- `enrollment_audit` holds 224,652 `failed` events, the latest minutes before
+  the deploy. This is consistent with the RISK-ENROL-001 retry loop and is
+  not yet attributed.
+
 ## [2026-10-11] AGENT-2.1.24-PREP-2026-10-11 — MSI Remote Support guards fixed, RS no longer pointed at the platform, heartbeat jitter; CI-verified, not released
 
 Commits `7a01793`, `df91afc`, `d0d425e`, `da5972a`. Built by CI run `38162961021`
