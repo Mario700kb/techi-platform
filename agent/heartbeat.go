@@ -163,14 +163,21 @@ func sendHeartbeat(cfg *Config, payload *HeartbeatPayload) (*HeartbeatResponse, 
 		}
 		req.Header.Set("Content-Type", "application/json")
 
+		if err := acquireHeartbeatSlot(); err != nil {
+			return nil, err
+		}
 		log.Printf("sending heartbeat attempt %d/%d to %s", attempt, cfg.Retries, cfg.BackendURL)
 		resp, err := client.Do(req)
+		var body []byte
+		if err == nil {
+			body, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		releaseHeartbeatSlot()
 		if err != nil {
 			log.Printf("heartbeat request error: %v", err)
 			lastErr = err
 		} else {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				log.Printf("heartbeat succeeded")
 				var hbResp HeartbeatResponse

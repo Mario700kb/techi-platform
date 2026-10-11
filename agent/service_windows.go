@@ -18,6 +18,23 @@ import (
 
 const serviceName = "TechiAgent"
 
+// Power broadcast event types (winuser.h); x/sys does not export them.
+const (
+	pbtAPMSuspend         = 0x4
+	pbtAPMResumeSuspend   = 0x7
+	pbtAPMResumeAutomatic = 0x12
+)
+
+// A suspending service gets about two seconds before the machine sleeps; a
+// shutting-down one can wait out the heartbeat attempt already in flight,
+// whose own timeout defaults to 10s.
+const (
+	sleepSlotWait       = 1 * time.Second
+	sleepSendTimeout    = 2 * time.Second
+	shutdownSlotWait    = 10 * time.Second
+	shutdownSendTimeout = 5 * time.Second
+)
+
 type techiService struct {
 	configPath      string
 	enrollmentToken string
@@ -67,15 +84,27 @@ func (s *techiService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 		}
 	}()
 
-	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPreShutdown | svc.AcceptPowerEvent}
 
 	for request := range requests {
 		switch request.Cmd {
 		case svc.Interrogate:
 			status <- request.CurrentStatus
-		case svc.Stop, svc.Shutdown:
+		case svc.PowerEvent:
+			switch request.EventType {
+			case pbtAPMSuspend:
+				reportPowerEvent(s.configPath, powerStateSleep, sleepSlotWait, sleepSendTimeout)
+			case pbtAPMResumeSuspend, pbtAPMResumeAutomatic:
+				resumeHeartbeats()
+			}
+		case svc.Stop, svc.Shutdown, svc.PreShutdown:
 			status <- svc.Status{State: svc.StopPending}
 			cancel()
+			// A plain Stop is an operator or an MSI upgrade stopping the agent
+			// on a running machine: that must still surface as offline.
+			if request.Cmd != svc.Stop {
+				reportPowerEvent(s.configPath, powerStateShutdown, shutdownSlotWait, shutdownSendTimeout)
+			}
 			select {
 			case <-done:
 			case <-time.After(20 * time.Second):
