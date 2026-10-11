@@ -129,11 +129,13 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`th-drawer-scrim fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        data-open={isOpen}
         onClick={onClose}
       />
       <div
-        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+        className={`th-drawer-panel fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col shadow-2xl ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+        data-open={isOpen}
         style={{ borderLeft: "1px solid var(--th-border-drawer)", background: "var(--th-bg-drawer)" }}
       >
         {/* Header — device identity + health at a glance, before anything else */}

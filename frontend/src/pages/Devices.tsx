@@ -257,7 +257,8 @@ export default function Devices() {
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
     window.clearTimeout(drawerCloseTimerRef.current);
-    drawerCloseTimerRef.current = window.setTimeout(() => setDrawerDeviceId(null), 310);
+    // Unmount only after the close slide (260ms in index.css) has finished.
+    drawerCloseTimerRef.current = window.setTimeout(() => setDrawerDeviceId(null), 300);
   }, []);
 
   // loadTableData fetches the paginated table data from the API (stale-while-revalidate cache)

@@ -2566,8 +2566,25 @@ button.th-drawer-tile:hover { border-color: var(--th-border-strong); background:
 .th-device-card:nth-child(4) { animation-delay: 90ms; }
 .th-device-card:nth-child(n + 5) { animation-delay: 120ms; }
 .th-bulk-bar { animation: th-toast-in 220ms var(--th-ease-out); }
-/* Drawer: a decelerating slide; the backdrop already fades. */
-.th-drawer { transition: transform 360ms var(--th-ease-out); }
+/* Drawers: mounted already open, so the entrance is a keyframe (slide in from
+   the edge, decelerating); closing is a quicker accelerating transition, and
+   the page unmounts the drawer only after it (Devices.tsx closeDrawer).
+   The backdrop fades both ways; the open tab's sections rise in a stagger,
+   which also replays on tab switches (panels are un-hidden). */
+@keyframes th-drawer-in { from { transform: translateX(100%); } }
+.th-drawer-panel { transition: transform 260ms cubic-bezier(0.4, 0, 1, 1); }
+.th-drawer-panel[data-open="true"] {
+  transition: transform 420ms var(--th-ease-out);
+  animation: th-drawer-in 420ms var(--th-ease-out) backwards;
+}
+.th-drawer-scrim { transition: opacity 260ms var(--th-ease); }
+.th-drawer-scrim[data-open="true"] { animation: th-fade 320ms var(--th-ease) backwards; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > * { animation: th-rise 360ms var(--th-ease-out) backwards; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > :nth-child(1) { animation-delay: 60ms; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > :nth-child(2) { animation-delay: 100ms; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > :nth-child(3) { animation-delay: 140ms; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > :nth-child(4) { animation-delay: 180ms; }
+.th-drawer-panel[data-open="true"] .th-tab-panel > :nth-child(n + 5) { animation-delay: 220ms; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
