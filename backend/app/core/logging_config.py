@@ -2,8 +2,34 @@ import logging
 import logging.config
 import logging.handlers
 import os
+import re
 import threading
 import time
+
+
+class _RedactSecrets(logging.Filter):
+    """
+    Mask credentials that travel in URLs before any line reaches a log.
+
+    The dashboard WebSocket carries the operator's session JWT as `?token=`,
+    and the install/bootstrap endpoints carry enrollment tokens the same way;
+    uvicorn logs the full URL on every connection and request, so the logs
+    held replayable sessions and usable enrollment tokens. Attached to the
+    handlers, not to one logger, so it covers every logger that writes.
+    """
+
+    _SECRET_QUERY = re.compile(r"([?&](?:token|access_token|ticket)=)[^&\s\"']+", re.IGNORECASE)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - a malformed record is not ours to fix
+            return True
+        redacted = self._SECRET_QUERY.sub(r"\1[redacted]", message)
+        if redacted != message:
+            record.msg = redacted
+            record.args = None
+        return True
 
 
 class _DropNoisyAccessLogs(logging.Filter):
@@ -88,12 +114,16 @@ def configure_logging() -> None:
             "drop_noisy_access": {
                 "()": _DropNoisyAccessLogs,
             },
+            "redact_secrets": {
+                "()": _RedactSecrets,
+            },
         },
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
                 "formatter": "default",
+                "filters": ["redact_secrets"],
             },
             "file": {
                 "class": "logging.handlers.RotatingFileHandler",
@@ -102,6 +132,7 @@ def configure_logging() -> None:
                 "backupCount": 5,
                 "formatter": "default",
                 "encoding": "utf-8",
+                "filters": ["redact_secrets"],
             },
         },
         "root": {
