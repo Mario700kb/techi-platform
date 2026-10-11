@@ -5,6 +5,61 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] UI-AUDIT-2-2026-10-11 — Devices filters, sorting and counts run on the server
+
+Package 2 of the UI audit, commit `71c3c65`. Several controls ran in the
+browser over the 20 rows of the current page:
+
+- the health quick filters;
+- favorites;
+- the agent-version filter;
+- "hide offline after N days";
+- column sorting.
+
+So "Critical 15" opened 0–2 rows under "Showing 1–20 of 700". The tabs, chips
+and explorer also counted from three different sources.
+
+What changed:
+
+- **Health index.** A per-device index holds score, state, patch status, open
+  critical alerts and whether the agent is outdated. It is built from the same
+  inputs and score engine as the overview and cached for 30 s per scope. The
+  overview reads it too.
+- **One condition per quick filter.** Each quick filter is a single SQL
+  condition used both for the list and for its count.
+- **API.** `GET /devices/` takes `quick_filter`, `ids`, `agent_version`,
+  `hide_offline_days`, `sort` and `order`. The new `GET /devices/quick-counts`
+  returns every tab and chip count, plus agent versions, for the same
+  selection.
+- **"Needs updates"** now means pending updates or a pending reboot. That is
+  the set the dashboard tile already counted.
+- **Health inputs** no longer load the process, service and software
+  snapshots.
+
+Measured in production right after deploy (905 devices, read-only, inside the
+backend container):
+
+- health index cold: 0.74 s (the previous overview took 1.22 s cold);
+- overview with a warm index: 0.13 s;
+- quick counts: 0.078 s;
+- a filtered page: 0.031 s;
+- sorting by health: 0.015 s.
+
+For all 15 quick filters, count equals list total, with zero mismatches. The
+overview tiles equal the filter counts: critical 448, warnings 329, needs
+updates 831, agent updates 23.
+
+Visible change: the default order is now by name across the whole selection.
+Before, it was the newest registered devices, sorted by name within the page.
+
+Deployed 2026-10-11 14:50 (backend) and 14:52 (frontend); no migration.
+Pre-deploy dump `/opt/backups/techi/pre-pkg2-2026-10-11_14-48.sql.gz`
+(gzip-tested, 147 MB). Rollback images
+`techi-platform-{backend,frontend}:pre-pkg2-f60b03c`. Tests: backend 1216
+(10 new), frontend 102 (4 new), `tsc` clean, build OK. After deploy: both
+containers healthy, public HTTP 200, and `/quick-counts` returns 401 without
+a session. Authenticated browser smoke pending.
+
 ## [2026-10-11] UI-AUDIT-1-2026-10-11 — Dashboard, Devices and drawer stop showing wrong information
 
 The owner asked for an enterprise-grade review of the Dashboard and Devices.
