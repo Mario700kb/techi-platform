@@ -5,6 +5,75 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] LOG-SECRETS-2026-10-11 — tokens and the DB password out of every log; disk hygiene
+
+Commit `2c83384`. This finishes the work that `LOG-REDACT-2026-10-11`
+started.
+
+### Fixed at the source
+
+- **Dashboard WebSocket token.** The dashboard WebSocket used to send the
+  operator's session JWT in its URL (`?token=`). It now sends it as a
+  WebSocket subprotocol (`techi.v1`, `techi.auth.<jwt>`). The server
+  answers with `techi.v1` and no longer reads the token from the URL. A tab
+  still running the old frontend is refused with 4001 and falls back to
+  polling until it reloads.
+- **Terminal page.** The terminal page added the JWT to its socket URL as
+  `&auth=`. The route authenticates with its one-time ticket and never read
+  that parameter, so it is gone.
+- **Startup log.** The "Database:" line printed `DATABASE_URL` with the
+  password. It now masks the password.
+- **Redaction filter.** The filter now also masks `auth=`.
+
+Verified in production with the invalid-token handshake: the server
+negotiates `techi.v1` and closes with 4001. The startup line shows `***`.
+Tests: backend 1,246 (4 new WebSocket tests) and frontend 133.
+
+### Existing logs redacted in place
+
+No backups were made, because a backup would keep the secrets.
+
+| Log | Item | Before | After |
+|---|---|---|---|
+| Backend | DB password occurrences | 19 | 0 |
+| Backend | `auth=` JWTs | 2 | 0 |
+| nginx-proxy-manager | token, auth and ticket query values, `.gz` rotations included | 259 lines | 0 |
+
+Active files were rewritten in place, so the writers kept appending.
+
+### Enrollment tokens seen in the proxy logs
+
+Matched by hash; the values were never printed.
+
+| Token | Status | Expiry | Uses |
+|---|---|---|---|
+| `ADPASCUCCI` (id 8) | active | none | 54 of 150 |
+| `Vanto` (id 53) | active | none | 8 of 100 |
+
+Rotating them is the owner's decision, because GPOs or scripts at those
+clients embed them.
+
+### Still open
+
+- **Install and bootstrap URLs** still carry their enrollment token as a
+  query parameter. That is inherent to one-line installers, so
+  nginx-proxy-manager keeps logging those requests. They are rare (27 lines
+  over the retained history).
+- **DB password.** It was in the logs, readable by root only. Rotating it is
+  optional.
+
+### Disk
+
+- Removed today's three intermediate pre-deploy dumps (`pre-power-event`,
+  `pre-pkg2`, `pre-alerts`, about 420 MB). The start-of-day dump and the
+  latest pre-deploy dump are kept.
+- Pruned the Docker build cache down to 1 GB.
+- Added a weekly root cron entry (`30 4 * * 0`) that runs
+  `docker builder prune --keep-storage 1GB` and `docker image prune`. It
+  logs to `/var/log/techi-docker-prune.log`. This host configuration is not
+  in Git.
+- Result: 84% → 71% used, 6.8 GB free.
+
 ## [2026-10-11] UI-AUDIT-3-2026-10-11 — light theme, one status vocabulary, Linux drawer parity
 
 Package 3 of the UI audit. Shared vocabulary in commit `b79b933`

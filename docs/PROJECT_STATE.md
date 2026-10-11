@@ -16,11 +16,11 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-10-11-UI-AUDIT-3` |
-| Production baseline SHA | `c428f0a` (see §3) |
+| Documentation revision | `DOC-2026-10-11-LOG-SECRETS` |
+| Production baseline SHA | `2c83384` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`LOG-SECRETS-2026-10-11`, `UI-AUDIT-3-2026-10-11`, `ALERT-NOISE-2026-10-11`, `ALERTS-UI-2026-10-11`, `LOG-REDACT-2026-10-11`, `ALERTS-SCOPE-2026-10-11`, `UI-AUDIT-2-2026-10-11`, `UI-AUDIT-1-2026-10-11`, `UI-INPUTS-2026-10-11`, `HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
 | Release classification | **TIRANA TIME SYSTEM-WIDE + TOP BAR CLOCK DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `c428f0a` checkout. Frontend built from `c428f0a` (UI audit package 3). Backend built from `bebe94f` (alert noise and stale-alert fixes); no backend change since then |
+| Production SHA | `2c83384`: backend and frontend, deployed 2026-10-11 16:51. Session tokens are kept out of every log, and the DB password is masked. Previous runtime: backend `bebe94f`, frontend `c428f0a` |
 | Schema version | `e1f2a3b4c5d6` (was `d8e4f6a1b2c3`) — `report_schedules.hour_utc` renamed `hour_local` (Tirana hour). Pre-deploy dump: `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz` |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
 | Origin alignment | `af70d85` was pushed to origin; the server working tree already matched it (checksums of all 116 files) and was moved to it with `git fetch` + `git reset` |
@@ -53,8 +53,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `bebe94f`; rebuilt 2026-10-11 15:50 (CPU/RAM alerts need sustained load; stale alerts close; rollback image `techi-platform-backend:pre-alertnoise-3a83349`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `c428f0a`; rebuilt 2026-10-11 (UI audit package 3: light theme, shared status vocabulary, Linux drawer parity). Rollback image `techi-platform-frontend:pre-pkg3-e9a8be6`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Backend | `1.0.0` metadata | Git SHA `2c83384`; rebuilt 2026-10-11 16:51 (session token out of URLs, DB password masked in logs; rollback image `techi-platform-backend:pre-logsec-bebe94f`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `2c83384`; rebuilt 2026-10-11 16:51 (WebSocket token sent as a subprotocol). Rollback image `techi-platform-frontend:pre-logsec-c428f0a`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
@@ -96,7 +96,7 @@ The edge absorption rule lives outside version control by necessity — nginx-pr
 | Repository heads | Match production head |
 | Schema residue | `device_repair_count_reset_20260702` |
 | Logical database size | `techi` 1496 MB (measured 2026-08-03, after the index removal and vacuum below; was 1623 MB on 2026-07-29) |
-| Volume size | Root filesystem 25 GB, **83% used, 4.1 GB free** (measured 2026-10-11 after the image cleanup, DISK-CLEANUP-2026-10-11; it had reached 91%) |
+| Volume size | Root filesystem 25 GB, **71% used, 6.8 GB free** (measured 2026-10-11 after LOG-SECRETS-2026-10-11; it had reached 91% earlier that day). A weekly root cron entry (`30 4 * * 0`) prunes the Docker build cache down to 1 GB and removes dangling images |
 | Largest tables | `device_heartbeats` 1,139,147 rows / 1035 MB; `device_telemetry` 1,138,897 / 437 MB; `device_alerts` 70 MB; `device_status_history` 46 MB; `enrollment_audit` 40 MB (measured 2026-08-03) |
 | Heartbeat retention | 7 days, enforced by `cleanup_old_heartbeats` / `cleanup_old_telemetry` (`app/tasks/cleanup.py`, `days=7`); oldest row in both tables 2026-07-27 at measurement — a seven-day steady state, not a growth curve |
 | Index posture | Eight redundant indexes removed on 2026-08-03 under one rule: an index that only shadows a PK/UNIQUE constraint, or that is a strict prefix of an existing composite, is dropped. `devices` 14 → 11 (`ix_devices_id`, `ix_devices_agent_id`, `ix_devices_rustdesk_id`). `device_heartbeats` and `device_telemetry` lost `ix_*_id` (PK shadows), `ix_*_device_id` (prefixes of the `(device_id, created_at)` composites) and `ix_device_heartbeats_rustdesk_status` (the column is written but never filtered — verified in code). Index footprint on the two hot tables 544 MB → **380 MB**; five fewer index writes per heartbeat cycle. The planner moved to the surviving indexes immediately in every case. Retained deliberately: both PKs, both composites, and `ix_*_created_at` (required by the retention DELETE). Rollback script: `/root/backups/db-index/restore-dropped-indexes-20260803.sql` |
