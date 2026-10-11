@@ -4,19 +4,26 @@ import { ChevronRight } from "lucide-react";
 /**
  * Device Details accordion section (MOBILE-DESIGN-SPEC.md — Device Details):
  * lazy-mounts its body only once opened (mirrors the lazy-tab behavior the
- * existing desktop DeviceDrawer already relies on for its tabs).
+ * desktop DeviceDrawer relies on for its tabs). `onFirstOpen` runs once,
+ * from the tap, for sections that load their data on demand.
  */
 export function AccordionSection({
   icon,
   title,
+  subtitle,
   badge,
+  tone = "var(--th-text-secondary)",
   defaultOpen = false,
+  onFirstOpen,
   children,
 }: {
   icon: ReactNode;
   title: string;
+  subtitle?: string;
   badge?: ReactNode;
+  tone?: string;
   defaultOpen?: boolean;
+  onFirstOpen?: () => void;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -24,37 +31,24 @@ export function AccordionSection({
 
   const toggle = () => {
     setOpen((v) => !v);
-    if (!everOpened) setEverOpened(true);
+    if (!everOpened) {
+      setEverOpened(true);
+      onFirstOpen?.();
+    }
   };
 
   return (
-    <div
-      className="overflow-hidden rounded-[14px]"
-      style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-    >
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="flex min-h-[48px] w-full items-center gap-[10px] px-4 py-[13px] text-left text-[14px] font-bold"
-        style={{ color: "var(--th-text-primary)" }}
-      >
-        <span className="flex-none" style={{ color: "var(--th-text-secondary)" }}>{icon}</span>
-        {title}
-        {badge && <span className="ml-1">{badge}</span>}
-        <ChevronRight
-          className="ml-auto h-[14px] w-[14px] flex-none transition-transform"
-          style={{ color: "var(--th-text-muted)", transform: open ? "rotate(90deg)" : undefined }}
-        />
+    <section className="th-onb-card th-macc">
+      <button type="button" onClick={toggle} aria-expanded={open} className="th-macc-head">
+        <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": tone } as React.CSSProperties}>{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{title}</span>
+          {subtitle && <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{subtitle}</span>}
+        </span>
+        {badge}
+        <ChevronRight className="th-onb-chevron h-4 w-4 flex-none" data-open={open || undefined} style={{ color: "var(--th-text-faint)" }} />
       </button>
-      {everOpened && (
-        <div
-          className={open ? "flex flex-col gap-[10px] px-4 pb-4 text-[13px]" : "hidden"}
-          style={{ borderTop: "1px solid var(--th-border-subtle)", paddingTop: 12, color: "var(--th-text-secondary)" }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
+      {everOpened && <div className={open ? "th-macc-body th-onb-reveal" : "hidden"}>{children}</div>}
+    </section>
   );
 }

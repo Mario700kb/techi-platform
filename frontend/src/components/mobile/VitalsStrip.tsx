@@ -11,38 +11,23 @@ function meterColor(pct: number | null): string {
 }
 
 function Vital({ label, pct }: { label: string; pct: number | null }) {
+  const tone = meterColor(pct);
   return (
-    <div
-      className="flex min-w-0 flex-1 flex-col gap-[7px] rounded-[14px] p-[10px_12px]"
-      style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-    >
-      <span className="text-[11px] font-extrabold uppercase tracking-[0.07em]" style={{ color: "var(--th-text-muted)" }}>
-        {label}
-      </span>
-      <span className="num text-[16px] font-extrabold" style={{ color: pct == null ? "var(--th-text-faint)" : "var(--th-text-primary)" }}>
+    <div className="th-onb-card th-mvital" style={{ "--meter-tone": tone } as React.CSSProperties}>
+      <span className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{label}</span>
+      <span className="text-[18px] font-semibold leading-6 tabular-nums" style={{ color: pct == null ? "var(--th-text-faint)" : "var(--th-text-primary)" }}>
         {pct == null ? "—" : `${Math.round(pct)}%`}
       </span>
-      <span className="block h-[5px] overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
-        <span
-          className="m-anim block h-full rounded-full"
-          style={{ width: `${pct ?? 0}%`, background: meterColor(pct), transition: "width 0.5s ease" }}
-        />
+      <span className="th-mvital-track" role="meter" aria-label={`${label} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct == null ? undefined : Math.round(pct)}>
+        <i className="m-anim" style={{ width: `${pct ?? 0}%` }} />
       </span>
     </div>
   );
 }
 
-export function VitalsStrip({
-  cpu,
-  ram,
-  disk,
-}: {
-  cpu: number | null;
-  ram: number | null;
-  disk: number | null;
-}) {
+export function VitalsStrip({ cpu, ram, disk }: { cpu: number | null; ram: number | null; disk: number | null }) {
   return (
-    <div className="flex gap-[8px]">
+    <div className="grid grid-cols-3 gap-2">
       <Vital label="CPU" pct={cpu} />
       <Vital label="RAM" pct={ram} />
       <Vital label="Disk" pct={disk} />

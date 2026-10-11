@@ -31,25 +31,10 @@ export function Snackbar({
   if (!open) return null;
 
   return (
-    <div
-      role="status"
-      className="fixed left-3 right-3 z-[80] flex items-center gap-[10px] rounded-xl px-[14px] py-[11px] text-[13px] font-semibold md:hidden"
-      style={{
-        bottom: "calc(64px + 12px + env(safe-area-inset-bottom))",
-        background: "var(--th-bg-elevated)",
-        border: "1px solid var(--th-border-strong)",
-        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.4)",
-        color: "var(--th-text-primary)",
-      }}
-    >
-      {message}
+    <div role="status" className="th-msnack md:hidden">
+      <span className="min-w-0 flex-1">{message}</span>
       {actionLabel && onAction && (
-        <button
-          type="button"
-          onClick={onAction}
-          className="ml-auto min-h-[32px] px-2 text-[13px] font-extrabold"
-          style={{ color: "var(--th-accent)" }}
-        >
+        <button type="button" onClick={onAction} className="th-msnack-action">
           {actionLabel}
         </button>
       )}

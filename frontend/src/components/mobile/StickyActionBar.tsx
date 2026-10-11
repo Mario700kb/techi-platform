@@ -14,87 +14,28 @@ import { ReactNode } from "react";
  * the Terminal slot is omitted.
  */
 export function StickyActionBar({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 z-50 flex gap-2 px-3 py-[10px] md:hidden"
-      style={{
-        background: "var(--th-bg-topbar)",
-        borderTop: "1px solid var(--th-border-default)",
-        paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="th-mactionbar md:hidden">{children}</div>;
 }
 
-export function ActionBarPrimary({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
+export function ActionBarPrimary({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-11 flex-[1.4] items-center justify-center gap-[7px] rounded-xl text-[14px] font-extrabold text-white disabled:opacity-45"
-      style={{ background: "var(--th-accent)" }}
-    >
+    <button type="button" onClick={onClick} disabled={disabled} className="th-mactionbar-btn" data-variant="primary">
       {children}
     </button>
   );
 }
 
-export function ActionBarSecondary({
-  onClick,
-  disabled,
-  children,
-  danger,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: ReactNode;
-  danger?: boolean;
-}) {
+export function ActionBarSecondary({ onClick, disabled, children, danger }: { onClick: () => void; disabled?: boolean; children: ReactNode; danger?: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-11 flex-1 items-center justify-center gap-[6px] rounded-xl text-[13px] font-bold disabled:opacity-45"
-      style={{
-        background: "var(--th-bg-card)",
-        border: `1px solid ${danger ? "color-mix(in srgb, var(--th-status-critical) 30%, transparent)" : "var(--th-border-subtle)"}`,
-        color: danger ? "var(--th-status-critical)" : "var(--th-text-primary)",
-      }}
-    >
+    <button type="button" onClick={onClick} disabled={disabled} className="th-mactionbar-btn" data-variant={danger ? "danger" : "secondary"}>
       {children}
     </button>
   );
 }
 
-export function ActionBarMore({
-  onClick,
-  ariaLabel = "More actions",
-  children,
-}: {
-  onClick: () => void;
-  ariaLabel?: string;
-  children: ReactNode;
-}) {
+export function ActionBarMore({ onClick, ariaLabel = "More actions", children }: { onClick: () => void; ariaLabel?: string; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      className="flex h-11 w-11 flex-none items-center justify-center rounded-xl"
-      style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-subtle)", color: "var(--th-text-primary)" }}
-    >
+    <button type="button" onClick={onClick} aria-label={ariaLabel} className="th-mactionbar-btn" data-variant="icon">
       {children}
     </button>
   );
