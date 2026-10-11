@@ -5,6 +5,51 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] VAULT-SETTINGS-UI-2026-10-11 — device directory endpoint; Credential Vault and Settings redesign
+
+Commits `b7ac23c`, `02cbf03` and `9f29129`; backend and frontend, deployed
+2026-10-11 23:45.
+Pre-deploy dump: `/opt/backups/techi/pre-vault-settings-2026-10-11_23-44.sql.gz`.
+Rollback images: `techi-platform-backend:pre-vault-settings-98f6589` and
+`techi-platform-frontend:pre-vault-settings-98f6589`.
+
+### Team detail, Device access: ~2s load (`GET /devices/directory`)
+- **Cause:** the access tree loaded the full device list, with telemetry,
+  inventory and assignment resolution for every row. For 905 devices that
+  is 2.1 MB of JSON and ~0.5s of server time before transfer and parsing.
+  The tree uses six fields.
+- **Fix:** `GET /devices/directory` returns id, hostname, rustdesk_id,
+  client_id, group_id and freshness_state for every active device in
+  scope, from one column query.
+- **Shared freshness:** `freshness_for()` computes freshness for both the
+  endpoint and `Device.freshness_state`.
+- **Verified after deploy:**
+  - 905 entries in 0.133s, about 115 KB;
+  - the backend answers 401 without a session.
+
+### Credential Vault (`/vault`)
+- **Reveal:** it no longer uses `window.prompt`. A dialog asks for a reason
+  (at least 5 characters, audited), then shows the secret with copy
+  buttons. Closing the dialog hides it.
+- **Redesign:**
+  - four stat cards: credentials, in use, needs attention, last used;
+  - tabs with counts;
+  - search and four equal-width filters, with paging;
+  - expiry under the status chip;
+  - attention rows edged red.
+- **Dialogs:** the create and edit form, and assignments, open in the
+  global Modal.
+- **Data:** all 5 production credentials show Expired because their
+  expiry was set to 13–29 Aug 2026. This is data, not a bug.
+
+### Settings (`/settings`)
+- **Profile card:** role chip, last sign-in and member since, with Change
+  password and Sign out side by side.
+- **Paired cards:** Appearance with Preferences, and Diagnostics with
+  Connect defaults. Choices are tiles with a check mark.
+- **Connect defaults:** without any saved method it shows an empty state
+  instead of disappearing.
+
 ## [2026-10-11] AGENT-CONFIG-UI-2026-10-11 — heartbeat limits that keep devices online; Agent Configuration and Device access redesign
 
 Commits `c46b589` and `98f6589`; backend and frontend, deployed 2026-10-11 23:14.
