@@ -5,6 +5,71 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] AGENT-2.1.24-PREP-2026-10-11 — MSI Remote Support guards fixed, RS no longer pointed at the platform, heartbeat jitter; CI-verified, not released
+
+Commits `7a01793`, `df91afc`, `d0d425e`. Built by CI run `38159540143`
+(artifacts `TECHI-Endpoint-Deployment-2.1.24`, `TECHI-Agent-Update-2.1.24`
+and `techi-agent-2.1.24-exe`, retained 30 days). **Nothing was uploaded or
+activated in the package manifest.**
+
+The version moved to 2.1.24 because Linux 2.1.23 is already active from
+`5bdcd01`. The release also carries the agent side of
+`POWER-EVENT-2026-10-11` (`26bcb4d`).
+
+### Fixed
+- **RISK-MSI-002.** `KillTechiRS` and `KillTechiRSBeforeInstall` logged a
+  literal `[ActionName]` tag inside a PowerShell function body. MSI Formatted
+  strings read that as an undefined property and drop the whole `{...}` group,
+  so the script never parsed.
+  - All three stop actions now share one bracket-free
+    `StopRemoteSupportScript` define, and the script creates its log folder
+    before it writes.
+  - `BackupAgentConfigBeforeLegacyRemove` runs from `SystemFolder`. It used to
+    fail with 1721 on every install.
+- **Upgrade removal.** The major upgrade (`afterInstallInitialize`) removes the
+  old product before `InstallFiles`, and the old product's own stop is the
+  same no-op.
+  - New immediate action `StopTechiRSBeforeUpgrade` runs before
+    InstallValidate, gated on `WIX_UPGRADE_DETECTED`.
+  - A first attempt placed the deferred kill before `RemoveExistingProducts`.
+    Windows Installer rejects that with 2613, and every install failed with
+    1603. The CI job caught it on its first run, and a guard test now rejects
+    that placement.
+- **RISK-SUPPLY-002.** The `EpCustomActDll` api-server field is empty in both
+  `installer.wxs` and `remote-support.wxs`. Measured in CI:
+  - a fresh install writes `api-server=''`;
+  - an upgrade over 2.1.20 overwrites the old value with `''`.
+
+  Devices that take this release stop posting Remote Support telemetry to the
+  platform.
+- **Heartbeat jitter.** Each wait is spread by up to ±10%
+  (`jitteredInterval`).
+
+### Verification
+- The Go suite passes on Linux and on the Windows runner. New guard tests
+  cover:
+  - undefined property references, in attributes and in defines;
+  - working folders of immediate actions;
+  - the empty api-server field;
+  - the stop scheduling and the 2613 rule.
+- New CI job `msi-lifecycle-test` (`agent/installer/ci/msi-lifecycle-test.ps1`).
+  It points the agent and Remote Support at 127.0.0.1 and checks:
+  - **Fresh install:** exit 0, service running, version 2.1.24.0, the stop
+    logged, no 1721, no api-server.
+  - **Uninstall:** exit 0, service and product gone.
+  - **Upgrade** over a 2.1.20 MSI built from `5b32c84`, while a process named
+    `TECHI Remote Support.exe` holds `librustdesk.dll` open:
+    - exit 0, with no 1603 and no 3010;
+    - both stops logged and the holder stopped;
+    - the packaged DLL in place and the agent configuration kept;
+    - api-server cleared.
+
+### Still open
+- A real shutdown / sleep / Fast Startup test of the power events on a physical
+  PC or VM.
+- Manifest activation and the ring rollout.
+- RISK-RS-001 (identity file locked read-only) is untouched.
+
 ## [2026-10-11] LOG-SECRETS-2026-10-11 — tokens and the DB password out of every log; disk hygiene
 
 Commit `2c83384`. This finishes the work that `LOG-REDACT-2026-10-11`
