@@ -1250,9 +1250,9 @@ export default function DeviceDrawer({
               <div className="space-y-3">
                 {snapshot ? (
                   <>
-                  <ResourceBar label="CPU" percent={snapshot.cpu_percent} warnAt={75} criticalAt={90} />
-                  <ResourceBar label="RAM" percent={snapshot.ram_percent} warnAt={80} criticalAt={90} />
-                  <ResourceBar label="Disk" percent={snapshot.disk_percent} warnAt={85} criticalAt={95} />
+                  <ResourceBar label="CPU" metric="cpu" percent={snapshot.cpu_percent} />
+                  <ResourceBar label="Memory" metric="ram" percent={snapshot.ram_percent} />
+                  <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
                   <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-white/5 pt-3">
                     <div>
                       <p className="premium-kicker mb-1">Uptime</p>
