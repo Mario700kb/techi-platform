@@ -5,6 +5,43 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] DISK-CLEANUP-2026-10-11 — old rollback image tags removed
+
+**Why.** The root filesystem had reached 91% (2.3 GB free) after a day with
+many deploys. Each deploy adds rollback tags.
+
+**What was removed.** 44 image tags:
+
+- old `techi-platform-{backend,frontend}` rollback tags;
+- the `root-*` images left over from the stale `/root` checkout (see
+  RISK-DEPLOY-001);
+- the `techi-*` images from the July rollback.
+
+The full list, with image ids, is in
+`/root/backups/image-cleanup-2026-10-11.txt`.
+
+**What was kept:**
+
+- the running `latest` images;
+- the two most recent rollbacks for each service:
+  - backend: `pre-alertnoise-3a83349` and `pre-alertsui-357ab5d`;
+  - frontend: `pre-pagination-c15b7ea` and `pre-alertsfit-3a83349`;
+- the start-of-day anchors `pre-power-5718ab5` (backend) and
+  `pre-ui-inputs-5718ab5` (frontend);
+- all base images, containers and volumes.
+
+**Result.** 1.86 GB freed. The disk is at 83% (4.1 GB free) and all three
+services are healthy.
+
+**Not touched:**
+
+- **Build cache, about 4 GB.** It was all used today, so the 24-hour filter
+  removed none of it. A full prune would free about 3 GB, but the next
+  builds would re-download their dependencies.
+- **Manual pre-deploy dumps** in `/opt/backups/techi` (2.4 GB in total).
+  Six of them are from today, at about 147 MB each.
+- **`/var/log`**, at 514 MB.
+
 ## [2026-10-11] ALERT-NOISE-2026-10-11 — sustained CPU/RAM alerts; alerts that never closed
 
 Commit `bebe94f`. The owner asked for two fixes: the RAM warning fired at
