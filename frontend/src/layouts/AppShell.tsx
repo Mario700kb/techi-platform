@@ -22,9 +22,6 @@ interface AppShellProps {
 // reached from More. Titles come from the shared navigation config.
 const TAB_ROOTS = new Set(["/", "/devices", "/alerts", "/more"]);
 
-function mobileTitleFor(pathname: string): string {
-  return locateNav(pathname).label;
-}
 
 // Device Details (MOBILE-DESIGN-SPEC.md — Device Details) renders its own
 // header and sticky action bar in place of the generic MobileTopBar and
@@ -81,7 +78,8 @@ export default function AppShell({ children }: AppShellProps) {
             {/* Mobile top bar — Device Details renders its own header instead */}
             {!isDeviceDetail && (
               <MobileTopBar
-                title={mobileTitleFor(location.pathname)}
+                title={locateNav(location.pathname).label}
+                section={isTabRoot ? undefined : locateNav(location.pathname).section || undefined}
                 showBack={!isTabRoot}
                 onBack={() => navigate(-1)}
               />
@@ -91,7 +89,7 @@ export default function AppShell({ children }: AppShellProps) {
                 starts scrolled to the top. Search-param changes keep the page. */}
             <main
               key={location.pathname}
-              className={`th-main min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "pb-16 md:pb-5"}`}
+              className={`th-main min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "th-main-mnav md:pb-5"}`}
               style={{ background: "var(--th-bg-main)" }}
             >
               {children}

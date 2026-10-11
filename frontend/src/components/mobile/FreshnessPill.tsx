@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { RefreshCw } from "lucide-react";
 import { useAppData } from "../../contexts/AppDataContext";
 
@@ -54,22 +55,10 @@ export function FreshnessPill() {
       type="button"
       onClick={() => void handleTap()}
       aria-label={live ? "Live data" : `${label} — tap to refresh`}
-      className="inline-flex min-h-[30px] flex-none items-center gap-[6px] rounded-full px-[10px] py-[5px] text-[11px] font-bold"
-      style={{
-        color,
-        background: `color-mix(in srgb, ${color} 10%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-      }}
+      className="th-status-chip flex-none"
+      style={{ "--chip-tone": color, color } as CSSProperties}
     >
-      {busy ? (
-        <RefreshCw className="h-3 w-3 animate-spin" />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={`h-[6px] w-[6px] rounded-full ${live ? "m-live-dot" : ""}`}
-          style={{ background: color }}
-        />
-      )}
+      {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <i aria-hidden="true" className={live ? "m-live-dot" : undefined} />}
       {label}
     </button>
   );

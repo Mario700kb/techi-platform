@@ -1,76 +1,47 @@
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { Info, LogOut, Monitor, Settings as SettingsIcon } from "lucide-react";
+import { ChevronRight, Info, LogOut, Monitor, Settings as SettingsIcon, Shield } from "lucide-react";
 import { ALL_NAV_ITEMS, NavItem } from "../components/navigation";
 import { useVisibleNav } from "../hooks/useNavigation";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
+import { TONE } from "../utils/deviceStatus";
 import pkg from "../../package.json";
 
 /**
  * More screen (MOBILE-DESIGN-SPEC.md — More). Replaces the mobile slide-in
- * sidebar. Sections: user, Workspace, Desktop console (dimmed, still
- * navigable — Implementation Note #3), App. Inventory is intentionally
- * absent (placeholder page — audit finding).
+ * sidebar: the signed-in user, Workspace, Desktop console (dimmed, still
+ * navigable) and App. Inventory is intentionally absent (placeholder page).
  */
 
-type Row = NavItem & { note?: string };
+const ROLE_TONE: Record<string, string> = { owner: "var(--th-accent)", admin: TONE.warning, operator: TONE.info, readonly: TONE.neutral };
 
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div
-      className="overflow-hidden rounded-[14px]"
-      style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-    >
-      <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-        <p
-          className="text-[11px] font-extrabold uppercase tracking-[0.08em]"
-          style={{ color: "var(--th-text-muted)" }}
-        >
-          {title}
-        </p>
-      </div>
-      {children}
-    </div>
+    <section className="th-mgroup th-onb-enter">
+      <h2 className="th-mgroup-title">{title}</h2>
+      <div className="th-onb-card overflow-hidden">{children}</div>
+    </section>
   );
 }
 
-function MoreRow({
-  row,
-  dim = false,
-  onNavigate,
-}: {
-  row: Row;
-  dim?: boolean;
-  onNavigate: (to: string) => void;
-}) {
-  const Icon = row.icon;
+function NavRow({ item, desktop = false, onNavigate }: { item: NavItem; desktop?: boolean; onNavigate: (to: string) => void }) {
+  const Icon = item.icon;
   return (
-    <button
-      type="button"
-      onClick={() => onNavigate(row.to)}
-      className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold transition-colors"
-      style={{
-        color: dim ? "var(--th-text-muted)" : "var(--th-text-primary)",
-        borderBottom: "1px solid var(--th-border-subtle)",
-      }}
-    >
-      <Icon className="h-[18px] w-[18px] flex-none" />
-      {row.label}
-      {row.note && (
-        <span
-          className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold"
-          style={{ color: "var(--th-text-muted)" }}
-        >
-          <Monitor className="h-3 w-3" />
-          {row.note}
-        </span>
-      )}
+    <button type="button" onClick={() => onNavigate(item.to)} className="th-mrow" data-dim={desktop || undefined}>
+      <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": desktop ? "var(--th-text-muted)" : "var(--th-accent)" } as CSSProperties}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="th-mrow-label"><strong>{item.label}</strong></span>
+      <span className="th-mrow-end">
+        {desktop && (
+          <span className="th-status-chip !h-6 !px-2 !text-[11px]">
+            <Monitor className="h-3 w-3" />
+            Desktop only
+          </span>
+        )}
+        <ChevronRight className="h-4 w-4" />
+      </span>
     </button>
   );
 }
@@ -81,103 +52,58 @@ export default function More() {
   const { fleetOverview } = useAppData();
   const { canSee } = useVisibleNav();
 
-  const workspace: Row[] = ALL_NAV_ITEMS.filter((i) => i.mobile === "workspace" && canSee(i));
-  const desktopConsole: Row[] = ALL_NAV_ITEMS
-    .filter((i) => i.mobile === "desktop" && canSee(i))
-    .map((i) => ({ ...i, note: "Desktop only" }));
-  const initial = user ? (user.display_name || user.username).charAt(0).toUpperCase() : "?";
+  const workspace = ALL_NAV_ITEMS.filter((i) => i.mobile === "workspace" && canSee(i));
+  const desktopConsole = ALL_NAV_ITEMS.filter((i) => i.mobile === "desktop" && canSee(i));
+  const displayName = user ? user.display_name || user.username : "";
+  const roleTone = ROLE_TONE[user?.role ?? ""] ?? TONE.neutral;
   const agentVersion = fleetOverview?.active_agent_version;
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-3 md:max-w-2xl">
-      {/* User */}
+    <div className="premium-page th-onb mx-auto flex w-full max-w-md flex-col gap-5 md:max-w-2xl">
       {user && (
-        <div
-          className="flex items-center gap-3 rounded-[14px] p-4"
-          style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
-        >
-          <span
-            className="flex h-11 w-11 flex-none items-center justify-center rounded-full text-[16px] font-extrabold"
-            style={{
-              background: "var(--th-accent-glow)",
-              border: "1px solid var(--th-accent-border)",
-              color: "var(--th-accent)",
-            }}
-          >
-            {initial}
+        <button type="button" onClick={() => navigate("/settings")} className="th-onb-card th-mprofile th-onb-enter" aria-label={`${displayName}, open settings`}>
+          <span className="th-settings-avatar !h-12 !w-12" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</span>
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-[16px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{displayName}</span>
+            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{user.email || user.username}</span>
           </span>
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
-              {user.display_name || user.username}
-            </p>
-            <p className="text-[12px] font-medium capitalize" style={{ color: "var(--th-text-muted)" }}>
-              {user.role}
-            </p>
-          </div>
-        </div>
+          <span className="th-status-chip !h-6 capitalize" style={{ "--chip-tone": roleTone } as CSSProperties}>
+            <Shield className="h-3 w-3" style={{ color: roleTone }} />
+            {user.role}
+          </span>
+        </button>
       )}
 
       {workspace.length > 0 && (
-        <SectionCard title="Workspace">
-          {workspace.map((row) => (
-            <MoreRow key={row.to} row={row} onNavigate={navigate} />
-          ))}
-        </SectionCard>
+        <Group title="Workspace">
+          {workspace.map((item) => <NavRow key={item.to} item={item} onNavigate={navigate} />)}
+        </Group>
       )}
 
       {desktopConsole.length > 0 && (
-        <SectionCard title="Desktop console">
-          {desktopConsole.map((row) => (
-            <MoreRow key={row.to} row={row} dim onNavigate={navigate} />
-          ))}
-        </SectionCard>
+        <Group title="Desktop console">
+          {desktopConsole.map((item) => <NavRow key={item.to} item={item} desktop onNavigate={navigate} />)}
+        </Group>
       )}
 
-      <SectionCard title="App">
-        <button
-          type="button"
-          onClick={() => navigate("/settings")}
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold"
-          style={{ color: "var(--th-text-primary)", borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <SettingsIcon className="h-[18px] w-[18px] flex-none" />
-          Settings
-          <span className="ml-auto text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
-            theme · account
-          </span>
+      <Group title="App">
+        <button type="button" onClick={() => navigate("/settings")} className="th-mrow">
+          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.info } as CSSProperties}><SettingsIcon className="h-4 w-4" /></span>
+          <span className="th-mrow-label"><strong>Settings</strong><small>Theme, account, diagnostics</small></span>
+          <span className="th-mrow-end"><ChevronRight className="h-4 w-4" /></span>
         </button>
-        <div
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-[14px] font-bold"
-          style={{ color: "var(--th-text-primary)", borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <Info className="h-[18px] w-[18px] flex-none" style={{ color: "var(--th-text-secondary)" }} />
-          Version
-          <span
-            className="ml-auto text-[11px] font-semibold"
-            style={{ color: "var(--th-text-muted)", fontFamily: '"JetBrains Mono", monospace' }}
-          >
-            v{pkg.version}
-            {agentVersion ? ` · agent ${agentVersion}` : ""}
-          </span>
+        <div className="th-mrow" data-static="true">
+          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.neutral } as CSSProperties}><Info className="h-4 w-4" /></span>
+          <span className="th-mrow-label"><strong>Version</strong></span>
+          <span className="th-mrow-end font-mono text-[12px]">v{pkg.version}{agentVersion ? ` · agent ${agentVersion}` : ""}</span>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="flex min-h-[48px] w-full items-center gap-3 px-4 py-[13px] text-left text-[14px] font-bold"
-          style={{ color: "var(--th-status-critical)" }}
-        >
-          <LogOut className="h-[18px] w-[18px] flex-none" />
-          Sign out
+        <button type="button" onClick={logout} className="th-mrow" data-tone="danger">
+          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.critical } as CSSProperties}><LogOut className="h-4 w-4" /></span>
+          <span className="th-mrow-label"><strong>Sign out</strong></span>
         </button>
-      </SectionCard>
+      </Group>
 
-      {/* subtle footer mark */}
-      <p
-        className="px-2 pb-2 text-center text-[11px] font-semibold"
-        style={{ color: "var(--th-text-faint)", fontFamily: '"JetBrains Mono", monospace' }}
-      >
-        TECHI Connect
-      </p>
+      <p className="pb-2 text-center font-mono text-[11px]" style={{ color: "var(--th-text-faint)" }}>TECHI Connect</p>
     </div>
   );
 }
