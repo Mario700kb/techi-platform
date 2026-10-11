@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
+  AlertTriangle,
   BellRing,
   Building2,
   ChevronRight,
@@ -35,6 +36,7 @@ import {
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { APP_TIME_ZONE, parseUTC, timeAgo, DISPLAY_LOCALE } from "../utils/time";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
+import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
 import { DashboardMobile } from "./DashboardMobile";
@@ -48,14 +50,30 @@ function actionTimeAgo(iso?: string | null): string {
   return iso ? timeAgo(iso) : "—";
 }
 
-const statusBadgeClass = (device: Device) => {
-  const state = device.freshness_state ?? device.status;
-  if (state === "online") return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-  if (state === "stale") return "border-amber-300/30 bg-amber-300/10 text-amber-100";
-  return "border-slate-500/20 bg-slate-500/10 text-slate-300";
+const RECENT_DEVICES_LIMIT = 6;
+
+const FRESHNESS_TONE: Record<string, string> = {
+  online: "var(--th-status-online)",
+  stale: "var(--th-status-stale)",
+  offline: "var(--th-status-offline)",
 };
 
+type ActivitySection = "devices" | "actions" | "operators";
+
+function SectionError({ what, onRetry }: { what: string; onRetry: () => void }) {
+  return (
+    <EmptyState
+      className="flex-1"
+      icon={<AlertTriangle className="h-5 w-5" />}
+      title={`Couldn't load ${what}`}
+      description="The server did not respond. Try again."
+      action={<Button size="sm" variant="secondary" onClick={onRetry}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+    />
+  );
+}
+
 export default function Dashboard() {
+  useNow();
   const { user, hasPermission } = useAuth();
   const {
     fleetOverview,
@@ -78,7 +96,6 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
-  const [enrollmentLimit] = useState(8);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
   const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
   const [clientNames, setClientNames] = useState<Record<number, string>>(() =>
@@ -93,17 +110,19 @@ export default function Dashboard() {
   // result at once while a fresh one loads.
   const insightsKey = `${CACHE_KEYS.dashboardInsights}.${user?.id ?? "anon"}`;
   const [insights, setInsights] = useState<FleetInsights | null>(() => appCache.peek<FleetInsights>(insightsKey));
+  const [insightsFailed, setInsightsFailed] = useState(false);
   const loadInsights = useCallback(() => {
+    setInsightsFailed(false);
     getFleetInsights(30)
       .then((data) => {
         appCache.set(insightsKey, data);
         setInsights(data);
       })
-      .catch(() => undefined);
+      .catch(() => setInsightsFailed(true));
   }, [insightsKey]);
   useEffect(() => { loadInsights(); }, [loadInsights]);
   const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Record<ActivitySection, boolean>>({ devices: false, actions: false, operators: false });
   const [activityReady, setActivityReady] = useState(
     () => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null,
   );
@@ -118,42 +137,31 @@ export default function Dashboard() {
       return;
     }
 
-    try {
-      setError(null);
+    const [devicesResult, actionsResult, presenceResult] = await Promise.allSettled([
+      devicesFresh ? Promise.resolve(null) : getDevices({}, 0, RECENT_DEVICES_LIMIT),
+      actionsFresh ? Promise.resolve(null) : getRecentActions(10),
+      presenceFresh ? Promise.resolve(null) : getOperatorPresence(),
+    ]);
 
-      const [deviceResponse, latestActions, presenceList] = await Promise.all([
-        devicesFresh
-          ? Promise.resolve({ devices: appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [] })
-          : getDevices({}, 0, enrollmentLimit).catch(() => ({ devices: [] as Device[], total: 0 })),
-        actionsFresh
-          ? Promise.resolve(appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [] as RemoteActionWithDevice[])
-          : getRecentActions(10).catch(() => [] as RemoteActionWithDevice[]),
-        presenceFresh
-          ? Promise.resolve(appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? [] as OperatorPresenceRecord[])
-          : getOperatorPresence().catch(() => [] as OperatorPresenceRecord[]),
-      ]);
-
-      if (!devicesFresh) {
-        appCache.set(CACHE_KEYS.dashboardRecentDevices, deviceResponse.devices);
-        setRecentDevices(deviceResponse.devices);
-      }
-      if (!actionsFresh) {
-        appCache.set(CACHE_KEYS.recentActions, latestActions);
-        setRecentActions(latestActions);
-      }
-      if (!presenceFresh) {
-        appCache.set(CACHE_KEYS.operatorPresence, presenceList);
-        setOperators(presenceList);
-      }
-
-      setActivityReady(true);
-    } catch (err) {
-      console.error('Dashboard load error:', err);
-      setError(err instanceof Error ? err.message : "Unable to load dashboard data");
-    } finally {
-      setActivityReady(true);
+    if (!devicesFresh && devicesResult.status === "fulfilled" && devicesResult.value) {
+      appCache.set(CACHE_KEYS.dashboardRecentDevices, devicesResult.value.devices);
+      setRecentDevices(devicesResult.value.devices);
     }
-  }, [hasPermission, enrollmentLimit]);
+    if (!actionsFresh && actionsResult.status === "fulfilled" && actionsResult.value) {
+      appCache.set(CACHE_KEYS.recentActions, actionsResult.value);
+      setRecentActions(actionsResult.value);
+    }
+    if (!presenceFresh && presenceResult.status === "fulfilled" && presenceResult.value) {
+      appCache.set(CACHE_KEYS.operatorPresence, presenceResult.value);
+      setOperators(presenceResult.value);
+    }
+    setFailed({
+      devices: devicesResult.status === "rejected",
+      actions: actionsResult.status === "rejected",
+      operators: presenceResult.status === "rejected",
+    });
+    setActivityReady(true);
+  }, []);
 
   const patchRecentDevice = useCallback((event: DeviceRealtimeEvent) => {
     const eventDevice = event.data;
@@ -234,11 +242,17 @@ export default function Dashboard() {
     immediate: !activityReady,
   });
 
-  // Re-fetch devices when limit selector changes
+  // Polling is off while the WebSocket is connected, so it cannot be the
+  // initial load: arriving from another page with a live socket would leave
+  // the lists empty. loadDashboard skips sections whose cache is still fresh.
   useEffect(() => {
-    appCache.invalidate(CACHE_KEYS.dashboardRecentDevices);
     void refreshDashboard();
-  }, [enrollmentLimit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refreshDashboard]);
+
+  const retryActivity = useCallback(() => {
+    setActivityReady(false);
+    void refreshDashboard();
+  }, [refreshDashboard]);
 
   const availability = total > 0 ? Math.round((online / total) * 100) : 0;
   const onlinePct = total > 0 ? (online / total) * 100 : 0;
@@ -284,6 +298,7 @@ export default function Dashboard() {
           alertsTotal={totalOpenAlerts}
           agentsOutdated={fleetOverview?.agents_outdated ?? 0}
           actions={recentActions}
+          actionsLoading={recentActions.length === 0 && !activityReady}
           loading={loading}
         />
       </div>
@@ -326,18 +341,12 @@ export default function Dashboard() {
         }
       />
 
-      {error && (
-        <div className="th-auth-notice" data-tone="error" role="alert">
-          {error}
-        </div>
-      )}
-
       {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         {([
           { to: "/devices", label: "All devices", value: total, tone: "var(--th-text-faint)", hint: "Managed endpoints" },
           { to: "/devices?filter=online", label: "Online", value: online, tone: "var(--th-status-online)", hint: `${availability}% available` },
-          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: "var(--th-status-stale)", hint: "No heartbeat for 15 min" },
+          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: "var(--th-status-stale)", hint: "Last heartbeat 6–25 min ago" },
           { to: "/devices?filter=offline", label: "Offline", value: offline, tone: "var(--th-status-offline)", hint: "Not responding" },
           { to: "/devices?filter=critical", label: "Critical health", value: criticalCount, tone: "var(--th-status-critical)", hint: "Health score below 50" },
           { to: "/devices?filter=needs_updates", label: "Needs updates", value: patchCount, tone: "var(--th-status-warning)", hint: "Pending patches" },
@@ -439,7 +448,7 @@ export default function Dashboard() {
           </ul>
         </section>
 
-        {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={loading} currentUserId={user?.id} />}
+        {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={operators.length === 0 && !activityReady} failed={failed.operators} onRetry={retryActivity} currentUserId={user?.id} />}
       </div>
 
       {/* Trends */}
@@ -453,7 +462,7 @@ export default function Dashboard() {
             <p className="th-metric-big">{insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}</p>
             <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Share of time managed devices were online</p>
             <div className="min-h-0 flex-1">
-              {insights ? <AvailabilityChart series={insights.availability.series} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
+              {insights ? <AvailabilityChart series={insights.availability.series} /> : insightsFailed ? <SectionError what="availability" onRetry={loadInsights} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
             </div>
           </div>
           <p className="th-panel-foot">
@@ -485,10 +494,10 @@ export default function Dashboard() {
               ))}
             </div>
             <div className="min-h-0 flex-1">
-              {insights ? <AlertFlowChart series={insights.alerts.series} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
+              {insights ? <AlertFlowChart series={insights.alerts.series} /> : insightsFailed ? <SectionError what="alert trends" onRetry={loadInsights} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
             </div>
           </div>
-          <p className="th-panel-foot">{insights ? `${insights.alerts.open_now} still open right now.` : "Loading…"}</p>
+          <p className="th-panel-foot">{insights ? `${insights.alerts.open_now} still open right now.` : insightsFailed ? "Trends unavailable." : "Loading…"}</p>
         </section>
 
         <section className="premium-card flex h-full flex-col p-0" aria-labelledby="problem-devices-title">
@@ -496,7 +505,9 @@ export default function Dashboard() {
             <h2 id="problem-devices-title">Problem devices</h2>
             <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 7 days</span>
           </div>
-          {!insights ? (
+          {!insights && insightsFailed ? (
+            <SectionError what="problem devices" onRetry={loadInsights} />
+          ) : !insights ? (
             <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
           ) : insights.problem_devices.length === 0 ? (
             <EmptyState className="flex-1" icon={<HeartPulse className="h-5 w-5" />} title="No repeat offenders" description="No device went offline or raised an alert this week." />
@@ -530,18 +541,23 @@ export default function Dashboard() {
             <h2 id="enrollments-title">Latest enrollments</h2>
             <Link to="/devices" className="th-link-btn">View all devices</Link>
           </div>
-          {loading ? (
+          {recentDevices.length === 0 && !activityReady ? (
             <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading devices…</p>
+          ) : recentDevices.length === 0 && failed.devices ? (
+            <SectionError what="devices" onRetry={retryActivity} />
           ) : recentDevices.length === 0 ? (
             <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices yet" description="Enrolled devices appear here as soon as their agent checks in." />
           ) : (
             <ul className="flex-1 px-2 pb-2">
-              {recentDevices.slice(0, 6).map((device) => (
+              {recentDevices.slice(0, RECENT_DEVICES_LIMIT).map((device) => {
+                const state = device.freshness_state ?? device.status;
+                const tone = FRESHNESS_TONE[state] ?? FRESHNESS_TONE.offline;
+                return (
                 <li key={device.id}>
                   <Link to={`/devices?device=${device.id}`} className="th-list-row">
                     <span className="th-palette-icon !h-8 !w-8">
                       <Monitor className="h-4 w-4" />
-                      <i style={{ background: device.freshness_state === "online" ? "var(--th-status-online)" : device.freshness_state === "stale" ? "var(--th-status-stale)" : "var(--th-status-offline)" }} />
+                      <i style={{ background: tone }} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{device.hostname || "Unknown"}</span>
@@ -550,14 +566,15 @@ export default function Dashboard() {
                       </span>
                     </span>
                     <span className="text-right">
-                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${statusBadgeClass(device)}`}>
-                        {device.freshness_state ?? device.status}
+                      <span className="th-status-chip capitalize" style={{ "--chip-tone": tone } as React.CSSProperties}>
+                        <i />{state}
                       </span>
                       <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{formatDate(device.registered_at)}</span>
                     </span>
                   </Link>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </section>
@@ -567,8 +584,10 @@ export default function Dashboard() {
             <h2 id="activity-title">Recent remote actions</h2>
             {hasPermission("audit_log") && <Link to="/audit" className="th-link-btn">Audit log</Link>}
           </div>
-          {loading ? (
+          {recentActions.length === 0 && !activityReady ? (
             <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading actions…</p>
+          ) : recentActions.length === 0 && failed.actions ? (
+            <SectionError what="remote actions" onRetry={retryActivity} />
           ) : recentActions.length === 0 ? (
             <EmptyState className="flex-1 justify-center" icon={<Terminal className="h-5 w-5" />} title="No remote actions yet" description="Restarts, syncs and scripts sent to devices show up here with their result." />
           ) : (
@@ -627,7 +646,7 @@ function HealthRing({ value }: { value: number | null }) {
   );
 }
 
-function OperatorsPanel({ operators, loading, currentUserId }: { operators: OperatorPresenceRecord[]; loading: boolean; currentUserId?: number }) {
+function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId }: { operators: OperatorPresenceRecord[]; loading: boolean; failed: boolean; onRetry: () => void; currentUserId?: number }) {
   return (
     <section className="premium-card flex h-full flex-col p-0" aria-labelledby="operators-title">
       <div className="th-panel-head">
@@ -636,8 +655,10 @@ function OperatorsPanel({ operators, loading, currentUserId }: { operators: Oper
       </div>
       {loading ? (
         <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+      ) : operators.length === 0 && failed ? (
+        <SectionError what="operators" onRetry={onRetry} />
       ) : operators.length === 0 ? (
-        <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators online" />
+        <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators yet" />
       ) : (
         <ul className="flex-1 px-2 pb-2">
           {operators.map((op) => {

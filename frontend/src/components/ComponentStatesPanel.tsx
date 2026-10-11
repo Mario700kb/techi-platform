@@ -9,11 +9,17 @@ import {
   queueComponentAction,
 } from "../api/platform";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
+import ConfirmationModal from "./ConfirmationModal";
 import type { DeviceRealtimeEvent } from "../services/deviceRealtime";
 
 // Live execution phase of a component action, derived from the realtime action
 // status (Operational M6). Pure + exported for direct unit testing.
 export type ActionPhase = "pending" | "running" | "success" | "failed";
+
+// Operations that interrupt the component on the device ask before queueing.
+const CONFIRM_OPERATIONS = new Set(["reinstall", "repair", "restart", "update"]);
+
+type PendingOperation = { componentId: string; componentName: string; operation: string; label: string };
 
 export function phaseForStatus(status?: string | null): ActionPhase | null {
   switch (status) {
@@ -140,6 +146,8 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
     return () => { alive = false; };
   }, [deviceId]);
 
+  const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
+
   async function runOperation(componentId: string, operation: string, label: string) {
     if (busy) return;
     const key = `${componentId}:${operation}`;
@@ -161,6 +169,7 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
   if (states === null || states.length === 0) return null;
 
   return (
+    <>
     <section
       className="rounded-xl border p-3"
       style={{ borderColor: "var(--th-border-card)", background: "var(--th-bg-input, transparent)" }}
@@ -244,7 +253,11 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
                         key={entry.operation}
                         type="button"
                         disabled={componentBusy}
-                        onClick={() => runOperation(state.component_id, entry.operation, entry.label)}
+                        onClick={() =>
+                          CONFIRM_OPERATIONS.has(entry.operation)
+                            ? setPendingOperation({ componentId: state.component_id, componentName: state.display_name, operation: entry.operation, label: entry.label })
+                            : runOperation(state.component_id, entry.operation, entry.label)
+                        }
                         className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                         style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
                       >
@@ -268,5 +281,21 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
         })}
       </div>
     </section>
+    {pendingOperation && (
+      <ConfirmationModal
+        title={`${pendingOperation.label} ${pendingOperation.componentName}?`}
+        confirmLabel={pendingOperation.label}
+        destructive={pendingOperation.operation !== "update"}
+        onClose={() => setPendingOperation(null)}
+        onConfirm={() => {
+          const { componentId, operation, label } = pendingOperation;
+          setPendingOperation(null);
+          void runOperation(componentId, operation, label);
+        }}
+      >
+        {pendingOperation.componentName} will be interrupted on this device while the {pendingOperation.label.toLowerCase()} runs.
+      </ConfirmationModal>
+    )}
+    </>
   );
 }

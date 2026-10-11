@@ -19,6 +19,7 @@ interface DashboardMobileProps {
   alertsTotal: number;
   agentsOutdated?: number;
   actions?: RemoteActionWithDevice[];
+  actionsLoading: boolean;
   loading: boolean;
 }
 
@@ -118,6 +119,7 @@ export function DashboardMobile({
   alertsTotal,
   agentsOutdated = 0,
   actions = [],
+  actionsLoading,
   loading,
 }: DashboardMobileProps) {
   const pct = total > 0 ? Math.round((online / total) * 100) : 0;
@@ -275,7 +277,7 @@ export function DashboardMobile({
       {/* Recent activity */}
       <Card>
         <CardHeader title="Recent activity" />
-        {loading && actions.length === 0 ? (
+        {actionsLoading ? (
           <div className="space-y-2 p-4">
             {[0, 1].map((i) => (
               <div key={i} className="h-3 w-48 animate-pulse rounded" style={{ background: "var(--th-ring-track)" }} />

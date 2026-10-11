@@ -40,6 +40,7 @@ import { useFavorites } from "../hooks/useFavorites";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
+import { useNow } from "../hooks/useNow";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { timeAgo } from "../utils/time";
 import { StatusDot, MBadge, FreshnessState } from "../components/mobile/primitives";
@@ -90,6 +91,7 @@ function formatUptime(seconds: number | null): string {
 }
 
 export default function DeviceDetailsMobile() {
+  useNow();
   const { id } = useParams<{ id: string }>();
   const deviceId = Number(id);
   const navigate = useNavigate();

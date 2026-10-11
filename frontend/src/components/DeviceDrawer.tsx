@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
+import { useNow } from "../hooks/useNow";
 import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Search, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
 import {
   getConnectUrl,
@@ -108,9 +109,9 @@ function HeartbeatFreshness({ lastSeen }: { lastSeen?: string }) {
   let label: string;
   let cls: string;
   if (diffSec < 90) { label = "Fresh"; cls = "text-emerald-400"; }
-  else if (diffSec < 300) { label = `${Math.floor(diffSec / 60)}m ago`; cls = "text-emerald-300"; }
-  else if (diffSec < 900) { label = `${Math.floor(diffSec / 60)}m ago`; cls = "text-amber-400"; }
-  else { label = `${Math.floor(diffSec / 3600)}h ago`; cls = "text-red-400"; }
+  else if (diffSec < 300) { label = timeAgo(lastSeen); cls = "text-emerald-300"; }
+  else if (diffSec < 900) { label = timeAgo(lastSeen); cls = "text-amber-400"; }
+  else { label = timeAgo(lastSeen); cls = "text-red-400"; }
   return <span className={`text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
@@ -200,11 +201,14 @@ export default function DeviceDrawer({
   isFavorite = false,
   onToggleFavorite,
 }: DeviceDrawerProps) {
+  useNow();
   const { user, hasPermission, can } = useAuth();
 
   const [maintenanceForm, setMaintenanceForm] = useState<{ duration: string; note: string }>({ duration: "", note: "" });
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [noteToDelete, setNoteToDelete] = useState<number | null>(null);
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(device.display_name ?? "");
   const [nameSaving, setNameSaving] = useState(false);
@@ -785,15 +789,7 @@ export default function DeviceDrawer({
                 <button
                   type="button"
                   disabled={archiveBusy}
-                  onClick={async () => {
-                    setArchiveBusy(true);
-                    try {
-                      const updated = await archiveDevice(device.id);
-                      onDeviceUpdated?.(updated);
-                    } finally {
-                      setArchiveBusy(false);
-                    }
-                  }}
+                  onClick={() => setArchiveConfirmOpen(true)}
                   className="mt-3 w-full rounded-md border border-amber-400/25 bg-amber-400/10 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {archiveBusy ? "Archiving…" : "Archive this duplicate"}
@@ -912,8 +908,7 @@ export default function DeviceDrawer({
             </div>
           </section>
 
-          {/* Alert Center */}
-          {(openAlerts.length > 0 || resolvedAlerts.length > 0) && (
+          {/* Sinjalizimet */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
               <p className="premium-kicker">Alerts</p>
@@ -924,46 +919,35 @@ export default function DeviceDrawer({
               )}
             </div>
             <div
-              className="rounded-lg p-3"
+              className="rounded-lg p-4"
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
-              {openAlerts.length === 0 ? (
+              {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
                 <div className="flex items-center gap-2 py-1">
                   <CheckCircle className="h-4 w-4 text-emerald-500" />
-                  <p className="text-xs font-medium text-slate-400">No active alerts</p>
+                  <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
                 </div>
               ) : (
-                <div className="space-y-0">
-                  {/* Group by severity */}
-                  {(["critical", "warning"] as const).map((sev) => {
-                    const group = openAlerts.filter(a => a.severity === sev);
-                    if (!group.length) return null;
-                    const isC = sev === "critical";
-                    return (
-                      <div key={sev} className="mb-2 last:mb-0">
-                        <p className={`mb-1 text-[11px] font-bold uppercase tracking-[0.1em] ${isC ? "text-red-500" : "text-amber-500"}`}>
-                          {sev} · {group.length}
-                        </p>
-                        <div className="space-y-1">
-                          {group.slice(0, 3).map(a => (
-                            <div key={a.id} className="flex items-start gap-1.5">
-                              <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${isC ? "bg-red-400" : "bg-amber-400"}`} />
-                              <p className="text-[11px] leading-4 text-slate-300">{a.message}</p>
-                            </div>
-                          ))}
-                          {group.length > 3 && (
-                            <p className="text-[11px] text-slate-500 pl-3">+{group.length - 3} more</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <>
+                  {openAlerts.length > 0 && (
+                    <div className="divide-y divide-white/5">
+                      {openAlerts.map((a) => (
+                        <AlertRow key={a.id} alert={a} />
+                      ))}
+                    </div>
+                  )}
+                  {resolvedAlerts.length > 0 && (
+                    <div className={`divide-y divide-white/5 ${openAlerts.length > 0 ? "mt-2 border-t border-white/5 pt-2" : ""}`}>
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
+                      {resolvedAlerts.map((a) => (
+                        <AlertRow key={a.id} alert={a} resolved />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </section>
-          )}
-
           {/* Mirembajtja */}
           <section className="mb-4">
             <div className="mb-2 flex items-center gap-2">
@@ -1257,33 +1241,13 @@ export default function DeviceDrawer({
           {/* Telemetria */}
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <p className="premium-kicker">Health &amp; Telemetry</p>
-              <HealthBadge state={healthState} score={healthScore} showLabel />
+              <p className="premium-kicker">Telemetry</p>
             </div>
             <div
               className="rounded-lg p-4"
               style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
             >
               <div className="space-y-3">
-                <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 border-b border-white/5 pb-3">
-                  <div
-                    className={`flex h-14 w-14 items-center justify-center rounded-lg border text-lg font-bold ${
-                      healthState === "critical"
-                        ? "border-red-400/30 bg-red-400/10 text-red-300"
-                        : healthState === "warning"
-                        ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                        : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                    }`}
-                  >
-                    {healthScore ?? "—"}
-                  </div>
-                  <div>
-                    <p className="premium-kicker mb-1">Health score</p>
-                    <p className="text-xs font-medium text-slate-300">
-                      Computed from telemetry, freshness, alerts, trust, and lifecycle signals.
-                    </p>
-                  </div>
-                </div>
                 {snapshot ? (
                   <>
                   <ResourceBar label="CPU" percent={snapshot.cpu_percent} warnAt={75} criticalAt={90} />
@@ -1311,13 +1275,6 @@ export default function DeviceDrawer({
                       </p>
                     </div>
                   </div>
-                  {healthReasons.length > 0 && (
-                    <div className="border-t border-white/5 pt-3">
-                      {healthReasons.map((r) => (
-                        <p key={r} className="text-[11px] font-medium text-amber-300">⚠ {r}</p>
-                      ))}
-                    </div>
-                  )}
                   </>
                 ) : (
                   <p className="py-2 text-center text-xs font-medium text-slate-500">
@@ -1328,47 +1285,51 @@ export default function DeviceDrawer({
             </div>
           </section>
 
-          {/* Sinjalizimet */}
-          <section className="mb-4">
-            <div className="mb-2 flex items-center gap-2">
-              <p className="premium-kicker">Alerts</p>
-              {openAlerts.length > 0 && (
-                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-400">
-                  {openAlerts.length} active
-                </span>
-              )}
-            </div>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-drawer-section)" }}
-            >
-              {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
-                <div className="flex items-center gap-2 py-1">
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
-                  <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
-                </div>
-              ) : (
-                <>
-                  {openAlerts.length > 0 && (
-                    <div className="divide-y divide-white/5">
-                      {openAlerts.map((a) => (
-                        <AlertRow key={a.id} alert={a} />
-                      ))}
-                    </div>
-                  )}
-                  {resolvedAlerts.length > 0 && (
-                    <div className={`divide-y divide-white/5 ${openAlerts.length > 0 ? "mt-2 border-t border-white/5 pt-2" : ""}`}>
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recently Resolved</p>
-                      {resolvedAlerts.map((a) => (
-                        <AlertRow key={a.id} alert={a} resolved />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </section>
           </div>
+
+          {archiveConfirmOpen && (
+            <ConfirmationModal
+              title="Archive this duplicate?"
+              confirmLabel="Archive device"
+              destructive
+              loading={archiveBusy}
+              onClose={() => setArchiveConfirmOpen(false)}
+              onConfirm={async () => {
+                setArchiveBusy(true);
+                try {
+                  const updated = await archiveDevice(device.id);
+                  onDeviceUpdated?.(updated);
+                  setArchiveConfirmOpen(false);
+                } catch {
+                  // The modal stays open so the operator can retry.
+                } finally {
+                  setArchiveBusy(false);
+                }
+              }}
+            >
+              <span className="font-semibold">{deviceDisplayName(device)}</span> leaves the active fleet and stops raising alerts. It stays in history and can be restored from Archived devices.
+            </ConfirmationModal>
+          )}
+
+          {noteToDelete !== null && (
+            <ConfirmationModal
+              title="Delete this note?"
+              confirmLabel="Delete note"
+              destructive
+              loading={noteBusy}
+              onClose={() => setNoteToDelete(null)}
+              onConfirm={async () => {
+                try {
+                  await removeNote(noteToDelete);
+                  setNoteToDelete(null);
+                } catch {
+                  // The modal stays open so the operator can retry.
+                }
+              }}
+            >
+              The note is removed for every operator. This cannot be undone.
+            </ConfirmationModal>
+          )}
 
           {/* Destructive action confirmation modal — rendered outside tab panels so it works from any tab */}
           {restartConfirmOpen && (
@@ -1912,7 +1873,7 @@ export default function DeviceDrawer({
                         <button
                           type="button"
                           disabled={noteBusy}
-                          onClick={() => removeNote(note.id)}
+                          onClick={() => setNoteToDelete(note.id)}
                           className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 hover:!text-[var(--th-status-critical)]"
                           title="Delete note"
                           aria-label="Delete note"

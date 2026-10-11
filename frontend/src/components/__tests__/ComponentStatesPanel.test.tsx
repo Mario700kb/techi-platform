@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ComponentStatesPanel from "../ComponentStatesPanel";
@@ -95,6 +95,8 @@ describe("ComponentStatesPanel", () => {
 
     const updateBtn = await screen.findByRole("button", { name: /Update/ });
     fireEvent.click(updateBtn);
+    expect(queueAction).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Update" }));
 
     await waitFor(() => expect(queueAction).toHaveBeenCalledWith(7, "agent", "update"));
     await waitFor(() => expect(screen.getByText("Update queued")).toBeInTheDocument());
@@ -108,10 +110,25 @@ describe("ComponentStatesPanel", () => {
 
     const restartBtn = await screen.findByRole("button", { name: /Restart/ });
     fireEvent.click(restartBtn);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restart" }));
 
     await waitFor(() =>
       expect(screen.getByText("Permission denied: deployment")).toBeInTheDocument(),
     );
+  });
+
+  it("asks before an interrupting operation and does nothing when cancelled", async () => {
+    getStates.mockResolvedValue(STATES);
+    getComponents.mockResolvedValue(COMPONENTS);
+    render(<ComponentStatesPanel deviceId={7} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Reinstall/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/Reinstall/, { selector: "h3" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(queueAction).not.toHaveBeenCalled();
   });
 
   it("renders out-of-band operations as non-interactive labels", async () => {

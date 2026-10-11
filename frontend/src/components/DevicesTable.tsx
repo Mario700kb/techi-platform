@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
+import { useNow } from "../hooks/useNow";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Archive, AlertTriangle, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
@@ -13,7 +14,7 @@ import { getConnectUrl } from "../api/remoteSupport";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { Badge, Button, ConnectButton, Select, SelectField } from "./ui";
+import { Badge, Button, ConnectButton, EmptyState, Select, SelectField } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
 import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE, DATE_TIME_FORMAT } from "../utils/time";
 import { DeviceMobileCard } from "./DeviceMobileCard";
@@ -486,6 +487,7 @@ const DevicesTable = memo(function DevicesTable({
   toolbarExtra,
   statusCounts,
 }: DevicesTableProps) {
+  useNow();
   const navigate = useNavigate();
   // Platform Expansion: show the platform icon only when Linux is enabled, so
   // with the flag off the catalog is visually identical to today.
@@ -536,8 +538,6 @@ const DevicesTable = memo(function DevicesTable({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef({ left: 0, top: 0 });
 
-  // Reset selection when device list changes (e.g. filter applied from parent)
-  useEffect(() => { setSelectedIds(new Set()); }, [devices]);
 
   // Per-pill counts (computed from the unfiltered devices prop)
   const pillCounts = useMemo(() => {
@@ -626,6 +626,18 @@ const DevicesTable = memo(function DevicesTable({
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions, sortKey, sortDir]);
+
+  // Realtime heartbeats replace the rows constantly; keep the selection and
+  // drop only rows that are no longer shown, so a bulk action never reaches a
+  // device the operator cannot see.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(displayDevices.map((d) => d.id));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [displayDevices]);
 
   // Approved V3 Connect mockup — the Catalog Connect button carries a real
   // per-row state (Ready / Credential required / Unavailable) for every
@@ -1238,22 +1250,37 @@ const DevicesTable = memo(function DevicesTable({
           ))}
         </div>
       ) : error ? (
-        <div className="hidden md:block premium-card-soft py-12 text-center">
-          <p className="text-[15px] font-semibold text-white">Unable to load devices</p>
-          <p className="mt-1 text-[13px] text-red-300">{error}</p>
-          <Button onClick={onRefresh} size="sm" className="mt-4">
-            Try again
-          </Button>
+        <div className="hidden md:block premium-card-soft">
+          <EmptyState
+            icon={<AlertTriangle className="h-5 w-5" />}
+            title="Unable to load devices"
+            description={error}
+            action={<Button variant="secondary" size="sm" onClick={onRefresh}>Try again</Button>}
+          />
         </div>
-      ) : devices.length === 0 ? (
-        <div className="hidden md:block premium-card-soft flex flex-col items-center gap-3 py-14 text-center">
-          <ServerOff className="h-8 w-8 text-slate-600" />
-          <div>
-            <p className="text-[15px] font-semibold text-slate-200">No devices found</p>
-            <p className="mt-1 text-[13px] text-slate-500">
-              Adjust filters or search terms to reveal devices.
-            </p>
-          </div>
+      ) : displayDevices.length === 0 ? (
+        <div className="hidden md:block premium-card-soft">
+          {searchQuery ? (
+            <EmptyState
+              icon={<ServerOff className="h-5 w-5" />}
+              title={`No results for "${searchQuery}"`}
+              description="Searched across name, hostname, user, domain and IP."
+              action={<Button variant="secondary" size="sm" onClick={() => onSearch("")}>Clear search</Button>}
+            />
+          ) : quickFilter !== "all" ? (
+            <EmptyState
+              icon={<ServerOff className="h-5 w-5" />}
+              title="No devices match this filter"
+              description="Nothing on this page matches the selected filter."
+              action={<Button variant="secondary" size="sm" onClick={() => onQuickFilterChange("all")}>Show all devices</Button>}
+            />
+          ) : (
+            <EmptyState
+              icon={<ServerOff className="h-5 w-5" />}
+              title="No devices found"
+              description="Adjust filters or search terms to reveal devices."
+            />
+          )}
         </div>
       ) : (
         <div

@@ -317,6 +317,7 @@ export default function Devices() {
         if (debouncedSearch) apiFilters.search = debouncedSearch;
         const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
         if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
+        setError(null);
         setTableDevices(result.devices);
         setTableTotal(result.total);
         appCache.set(cacheKey, { devices: result.devices, total: result.total });
@@ -330,6 +331,7 @@ export default function Devices() {
 
     // No cache → fetch with skeleton
     setTableLoading(true);
+    setError(null);
     try {
       const skip = (tablePage - 1) * tableLimit;
       const qfExtra = quickFilterToApiFilters(quickFilter);

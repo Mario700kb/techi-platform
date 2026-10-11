@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity, Building2, Cpu, Fingerprint, HardDrive, Link2, Loader2,
-  MemoryStick, Wrench, X,
+  Activity, Building2, Cpu, Fingerprint, HardDrive, Link2, Loader2, MemoryStick, Wrench, X, AlertTriangle, RefreshCcw,
 } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
@@ -15,6 +14,7 @@ import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import { useNow } from "../hooks/useNow";
 import { timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
@@ -23,7 +23,7 @@ import ConnectMenu from "./ConnectMenu";
 import HealthBadge from "./HealthBadge";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
-import { SelectField } from "./ui";
+import { Button, EmptyState, SelectField } from "./ui";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
@@ -54,8 +54,10 @@ const CAP_TAB_LABELS: Record<string, string> = {
 };
 
 export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated, initialTab }: Props) {
+  useNow();
   const features = usePlatformFeatures();
   const [meta, setMeta] = useState<DrawerMeta | null>(null);
+  const [metaFailed, setMetaFailed] = useState(false);
   const [tab, setTab] = useState<string>("overview");
   const [inventory, setInventory] = useState<DeviceInventory | null>(null);
   const [notes, setNotes] = useState<DeviceNote[]>([]);
@@ -73,9 +75,19 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   useEffect(() => {
     if (!isOpen) return;
     setTab(initialTab ?? "overview");
-    getDrawerMeta(device.id).then(setMeta).catch(() => setMeta(null));
+    loadMeta();
     getDeviceInventory(device.id).then(setInventory).catch(() => setInventory(null));
-  }, [isOpen, device.id, initialTab]);
+  }, [isOpen, device.id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function loadMeta() {
+    setMetaFailed(false);
+    getDrawerMeta(device.id)
+      .then(setMeta)
+      .catch(() => {
+        setMeta(null);
+        setMetaFailed(true);
+      });
+  }
 
   useEffect(() => {
     if (isOpen && tab === "notes") getDeviceNotes(device.id).then(setNotes).catch(() => setNotes([]));
@@ -178,7 +190,14 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
-          {!meta ? (
+          {!meta && metaFailed ? (
+            <EmptyState
+              icon={<AlertTriangle className="h-5 w-5" />}
+              title="Couldn't load this device"
+              description="The server did not answer. Try again."
+              action={<Button size="sm" variant="secondary" onClick={loadMeta}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+            />
+          ) : !meta ? (
             <div className="flex items-center gap-2 text-sm" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
           ) : (
             <>

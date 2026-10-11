@@ -2,6 +2,7 @@ import { Activity, AlertTriangle, Archive, CheckCircle, ClipboardList, FilePenLi
 import type { ComponentType } from "react";
 import { ActivityEvent, ActivityEventType } from "../types/activity";
 import { timeAgo } from "../utils/time";
+import { useNow } from "../hooks/useNow";
 
 interface ActivityTimelineProps {
   events: ActivityEvent[];
@@ -56,6 +57,7 @@ function formatActivityTime(occurredAt: string): string {
 }
 
 export default function ActivityTimeline({ events, loading, onReload }: ActivityTimelineProps) {
+  useNow();
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
