@@ -5,6 +5,81 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] UI-AUDIT-3-2026-10-11 — light theme, one status vocabulary, Linux drawer parity
+
+Package 3 of the UI audit. Shared vocabulary in commit `b79b933`
+(`utils/deviceStatus.ts`), the package itself in commit `c428f0a`. The
+commit message has the full list.
+
+**Light theme.** The device table, mobile cards, both drawers, the terminal
+and the component panel no longer use white or black overlays, hex values
+or slate surfaces. They now use `--th-*` tokens.
+
+**Status.**
+- Remote Support state uses one function everywhere. "Stopped" always
+  shows the warning tone and raw snake_case values are never shown.
+- Maintenance always uses the maintenance tone.
+- Health colour follows the server's `health_state`.
+- Usage bars turn amber or red at the same thresholds that open alerts.
+
+**Vocabulary.**
+- Server / Client PC, Remote Support, TECHI agent, No client and Favorites.
+- Badge jargon is spelled out.
+- Headings, buttons and action labels use sentence case.
+- "Deploy TECHI Remote Support" is now "Sync Remote Support".
+  `sync_rustdesk` only re-discovers the client; it never installed
+  anything.
+
+**Devices.**
+- Badge helpers are shared by the table and the mobile cards.
+- The bulk bar uses standard buttons and confirmation dialogs.
+- Row checkboxes are shown to operators only.
+- The row menu is accessible.
+- "Until midnight" means midnight in Tirana.
+
+**Linux drawer.** It now matches the Windows drawer: the same panel and
+width, tabs, sections, online/stale/offline chip, resource bars and action
+tiles, plus loading, error and empty states.
+
+**Windows drawer.**
+- Inventory shows "None reported" when a list is empty, and a retryable
+  error when loading fails.
+- Process memory is shown in bytes.
+- Times are in Tirana time, with a tooltip giving the exact time.
+
+**Dashboard.**
+- Numbers are grouped.
+- Each metric has one label and one tone on desktop and mobile.
+- The operators list is capped.
+- The alert chart has an empty state.
+- At lg widths the layout uses two columns.
+
+**How it was built.** I wrote the shared module. Four agents then worked
+in parallel on separate file sets: the Windows drawer; the Linux drawer;
+the table, cards and explorer; and the dashboard. I reviewed the result,
+re-ran every check and rendered it.
+
+The render review found and fixed two problems:
+
+- The row badge "Remote Support stopped" was too long for its space and
+  also appeared for an unknown state. It is now "Remote off", shown only
+  when the service is reported down.
+- "Starred" was replaced by "Favorites" everywhere.
+
+**Checks.**
+- Frontend 133 tests, about 15 of them new.
+- `tsc` clean and build OK.
+- No banned colour classes or literals in the 14 changed files.
+- Rendered in both themes: the Linux drawer, the Devices table and the
+  Dashboard.
+- The Windows drawer was not rendered (it needs too many mocks). An
+  authenticated browser check is pending.
+
+**Deploy.** 2026-10-11, frontend only. Rollback image
+`techi-platform-frontend:pre-pkg3-e9a8be6`. The oldest kept frontend
+rollback (`pre-alertsfit-3a83349`) was removed, so the two-most-recent rule
+still holds.
+
 ## [2026-10-11] DISK-CLEANUP-2026-10-11 — old rollback image tags removed
 
 **Why.** The root filesystem had reached 91% (2.3 GB free) after a day with
