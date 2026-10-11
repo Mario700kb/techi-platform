@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+import { AlertTriangle, KeySquare, Pencil, Plus, Power, RefreshCcw, Search, Shield, ShieldAlert, ShieldCheck, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
-import { KeySquare, Pencil, Plus, RefreshCcw, Shield, Trash2, Users, UsersRound, X } from "lucide-react";
 import {
   OperatorRecord,
   OperatorCreate,
@@ -13,90 +14,57 @@ import {
 } from "../api/operators";
 import { listTeams, TeamWithStats } from "../api/teams";
 import { UserRole } from "../api/auth";
-import { Button, PageHeader, SelectField } from "../components/ui";
+import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { CardHead, ModalShell } from "../components/ui/PanelCard";
+import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
-import { APP_TIME_ZONE, parseUTC } from "../utils/time";
+import { useTabIndicator } from "../hooks/useTabIndicator";
 import ConfirmationModal from "../components/ConfirmationModal";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
+import { formatLocalDateTime, timeAgo } from "../utils/time";
 
 const ROLES: UserRole[] = ["owner", "admin", "operator"];
 
-const roleBadgeClass: Record<UserRole, string> = {
-  owner: "th-btn-primary border-orange-300/25 bg-gradient-to-r from-techi-orange to-techi-pink text-white",
-  admin: "border-red-300/25 bg-techi-pink/15 text-red-100",
-  operator: "border-white/[0.12] bg-white/[0.07] text-slate-100",
-  readonly: "border-slate-500/50 bg-slate-500/10 text-slate-300",
+const ROLE_INFO: Record<UserRole, { label: string; tone: string; hint: string }> = {
+  owner: { label: "Owner", tone: "var(--th-accent)", hint: "Everything, including operators and teams" },
+  admin: { label: "Admin", tone: TONE.warning, hint: "Manages devices, clients and deployment" },
+  operator: { label: "Operator", tone: TONE.info, hint: "Works on the devices their teams reach" },
+  readonly: { label: "Read-only", tone: TONE.neutral, hint: "Views only" },
 };
 
-const statusBadgeClass = {
-  active: "border-emerald-400/25 bg-emerald-400/[0.08] text-emerald-300",
-  inactive: "border-slate-500/30 bg-slate-800/60 text-slate-400",
-};
+type OperatorFilter = "all" | "privileged" | "operator" | "inactive";
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return parseUTC(iso).toLocaleDateString("en-GB", { timeZone: APP_TIME_ZONE,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+const OPERATOR_FILTERS: { id: OperatorFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "privileged", label: "Owners & admins" },
+  { id: "operator", label: "Operators" },
+  { id: "inactive", label: "Inactive" },
+];
+
+function matchesFilter(op: OperatorRecord, filter: OperatorFilter): boolean {
+  if (filter === "privileged") return op.role === "owner" || op.role === "admin";
+  if (filter === "operator") return op.role === "operator" || op.role === "readonly";
+  if (filter === "inactive") return !op.is_active;
+  return true;
 }
 
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "Never";
-  return parseUTC(iso).toLocaleString("en-GB", { timeZone: APP_TIME_ZONE,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-const INPUT_CLS =
-  "th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none focus:border-techi-orange/60";
-const LABEL_CLS = "block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1";
-
-interface ModalProps {
-  onClose: () => void;
-  children: React.ReactNode;
-  title: string;
-}
-
-function Modal({ onClose, children, title }: ModalProps) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
+function RoleChip({ role }: { role: UserRole }) {
+  const info = ROLE_INFO[role];
   return (
-    <div
-      className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
-      onMouseDown={onClose}
-    >
-      <div
-        className="th-elevated w-full max-w-md rounded-xl border p-5 shadow-2xl"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-white">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {children}
-      </div>
+    <span className="th-status-chip" style={{ "--chip-tone": info.tone } as CSSProperties}>
+      <Shield className="h-3 w-3" style={{ color: info.tone }} />
+      {info.label}
+    </span>
+  );
+}
+
+function FormError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+      <AlertTriangle className="h-4 w-4" />
+      <span>{message}</span>
     </div>
   );
 }
@@ -137,6 +105,12 @@ export default function Operators() {
 
   const [deleteTarget, setDeleteTarget] = useState<OperatorRecord | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [filter, setFilter] = useState<OperatorFilter>("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
 
   const loadData = async (force = false) => {
     if (!force && appCache.get(CACHE_KEYS.operatorsList, CACHE_TTL.operatorsList)) return;
@@ -292,415 +266,337 @@ export default function Operators() {
   const availableRoles = (): UserRole[] => {
     return canManage ? ROLES : ["operator"];
   };
+  const roleOptions = availableRoles().map((r) => ({ value: r, label: ROLE_INFO[r].label, hint: ROLE_INFO[r].hint }));
+
+  const filterCounts = useMemo(() => {
+    const counts = { all: 0, privileged: 0, operator: 0, inactive: 0 } as Record<OperatorFilter, number>;
+    for (const op of operators) for (const f of OPERATOR_FILTERS) if (matchesFilter(op, f.id)) counts[f.id] += 1;
+    return counts;
+  }, [operators]);
+  const visibleOperators = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return operators.filter((op) => {
+      if (!matchesFilter(op, filter)) return false;
+      if (!q) return true;
+      const teamNames = teamsForOperator(op.id).map((t) => t.name).join(" ");
+      return [op.display_name ?? "", op.username, op.email, op.role, teamNames].some((v) => v.toLowerCase().includes(q));
+    });
+  }, [operators, filter, search, teams]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pagedOperators = useMemo(() => visibleOperators.slice((page - 1) * pageSize, page * pageSize), [visibleOperators, page, pageSize]);
+  const activeCount = operators.filter((op) => op.is_active).length;
+  const neverLoggedIn = operators.filter((op) => !op.last_login_at).length;
+  const denied = /Permission denied|Insufficient role/.test(error ?? "");
+
+  if (denied) {
+    return (
+      <section className="premium-page th-onb space-y-4">
+        <PageHeader title="Operators" description="Platform users, their roles and their access." />
+        <div className="th-onb-card th-onb-enter">
+          <EmptyState icon={<ShieldAlert className="h-5 w-5" />} title="Access denied" description="Your role does not include managing operators." />
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="premium-page space-y-5">
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Operators"
-        description="Manage platform users, roles, and access permissions."
+        description="Platform users, their roles and their access."
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
-              <RefreshCcw className="h-3.5 w-3.5" />
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             {canManage && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setCreateError(null);
-                  setShowCreate(true);
-                }}
-              >
+              <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}>
                 <Plus className="h-3.5 w-3.5" />
-                Add User
+                Add operator
               </Button>
             )}
           </>
         }
       />
 
-      {error && !/Permission denied|Insufficient role/.test(error) && (
-        <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
-          {error}
+      {error && (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="flex-1">{error}</span>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 
-      {error && /Permission denied|Insufficient role/.test(error) && (
-        <div className="rounded-lg border border-amber-400/15 bg-amber-500/[0.06] px-5 py-6 text-center">
-          <p className="text-sm font-semibold text-amber-300">Access Denied</p>
-          <p className="mt-1 text-xs text-slate-400">You don't have permission to manage operators.</p>
-        </div>
-      )}
+      {/* ── summary ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Operators", value: formatCount(operators.length), hint: `${formatCount(teams.length)} teams`, icon: Users, tone: "var(--th-accent)" },
+          { label: "Active", value: formatCount(activeCount), hint: `${formatCount(operators.length - activeCount)} inactive`, icon: UserCheck, tone: TONE.online },
+          { label: "Owners & admins", value: formatCount(filterCounts.privileged), hint: `${formatCount(activePrivilegedCount)} active`, icon: ShieldCheck, tone: TONE.warning },
+          { label: "Never signed in", value: formatCount(neverLoggedIn), hint: neverLoggedIn ? "Created but not used yet" : "Everyone has signed in", icon: UserPlus, tone: neverLoggedIn ? TONE.info : TONE.neutral },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
+            </div>
+          </div>
+        ))}
+      </div>
 
-      {!/Permission denied|Insufficient role/.test(error ?? "") && (
-      <div className="premium-card-soft overflow-hidden">
-        <div className="border-b border-white/[0.08] px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-techi-orange" />
-            <h2 className="text-sm font-semibold text-white">
-              {operators.length} operator{operators.length !== 1 ? "s" : ""}
-            </h2>
+      {/* ── operators ───────────────────────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+        <CardHead icon={Users} tone="var(--th-accent)" title="Operators" subtitle={loading && operators.length === 0 ? "Loading…" : `${formatCount(operators.length)} accounts`} />
+        <div className="th-alerts-toolbar">
+          <div ref={filterTabsRef} role="tablist" aria-label="Operator role" className="th-tabs">
+            {OPERATOR_FILTERS.map(({ id, label }) => (
+              <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => { setFilter(id); setPage(1); }} className="th-tab">
+                {label}
+                <span className="th-tab-count">{formatCount(filterCounts[id])}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pb-2">
+            <label className="th-search th-search-sm w-[260px]">
+              <Search className="h-3.5 w-3.5 flex-none" />
+              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search operators" aria-label="Search operators" />
+              {search && (
+                <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Name</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Username</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Role</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Status</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Teams</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Last Login</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">Created</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {operators.length === 0 && (
+        {loading && operators.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading operators">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />)}
+          </div>
+        ) : visibleOperators.length === 0 ? (
+          <EmptyState
+            className="th-fade-in py-10"
+            icon={<Users className="h-5 w-5" />}
+            title={operators.length === 0 ? "No operators yet" : "No operators match these filters"}
+            action={operators.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setFilter("all"); setSearch(""); }}>Clear filters</Button> : undefined}
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col />
+                <col className="w-[120px]" />
+                <col className="w-[110px]" />
+                <col className="w-[20%]" />
+                <col className="w-[160px]" />
+                <col className="w-[120px]" />
+                {canManage && <col className="w-[148px]" />}
+              </colgroup>
+              <thead>
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm font-medium text-slate-500">
-                    {loading ? "Loading…" : "No operators found."}
-                  </td>
+                  <th>Operator</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Teams</th>
+                  <th>Last sign-in</th>
+                  <th>Created</th>
+                  {canManage && <th className="text-right">Actions</th>}
                 </tr>
-              )}
-              {operators.map((op) => {
-                const isSelf = op.id === user?.id;
-                const canEdit = canEditRole(op.role);
-                const displayLabel = op.display_name || op.username;
-                return (
-                  <tr key={op.id} className={`transition hover:bg-white/[0.02] ${isSelf ? "bg-techi-orange/[0.03]" : ""}`}>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-white">{displayLabel}</span>
-                        {isSelf && (
-                          <span className="rounded-full border border-techi-orange/30 bg-techi-orange/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-techi-orange">
-                            you
-                          </span>
-                        )}
-                      </div>
-                      {op.display_name && (
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">{op.email}</p>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="font-mono text-[13px] text-slate-300">{op.username}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${roleBadgeClass[op.role]}`}
-                      >
-                        <Shield className="h-2.5 w-2.5" />
-                        {op.role}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
-                          op.is_active ? statusBadgeClass.active : statusBadgeClass.inactive
-                        }`}
-                      >
-                        {op.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex flex-wrap gap-1">
-                        {teamsForOperator(op.id).length === 0 ? (
-                          <span className="text-[11px] text-slate-600">—</span>
-                        ) : (
-                          teamsForOperator(op.id).map((team) => (
-                            <span key={team.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
-                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: team.color ?? "var(--th-accent)" }} />
-                              {team.name}
+              </thead>
+              <tbody>
+                {pagedOperators.map((op, index) => {
+                  const isSelf = op.id === user?.id;
+                  const lastPrivileged = isLastActivePrivileged(op);
+                  const displayLabel = op.display_name || op.username;
+                  const opTeams = teamsForOperator(op.id);
+                  const lockReason = isSelf ? "You cannot do this to your own account" : lastPrivileged ? "The last active owner or admin must stay" : undefined;
+                  return (
+                    <tr key={op.id} className="th-alerts-row" data-selected={isSelf || undefined} style={{ "--row": index } as CSSProperties}>
+                      <td>
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <span className="th-onb-avatar !h-8 !w-8 !text-[12px]" aria-hidden="true">{displayLabel.charAt(0).toUpperCase()}</span>
+                          <span className="min-w-0">
+                            <span className="th-alerts-primary flex items-center gap-1.5">
+                              <span className="truncate">{displayLabel}</span>
+                              {isSelf && <span className="th-status-chip !h-5 !px-2 !text-[11px]" style={{ "--chip-tone": "var(--th-accent)" } as CSSProperties}>You</span>}
                             </span>
-                          ))
+                            <span className="th-alerts-secondary"><span className="font-mono">{op.username}</span>{op.email ? ` · ${op.email}` : ""}</span>
+                          </span>
+                        </span>
+                      </td>
+                      <td><RoleChip role={op.role} /></td>
+                      <td>
+                        <span className="th-status-chip" style={{ "--chip-tone": op.is_active ? TONE.online : TONE.neutral } as CSSProperties}>
+                          <i />
+                          {op.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td>
+                        {opTeams.length === 0 ? (
+                          <span className="th-alerts-secondary">No team</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {opTeams.map((team) => (
+                              <span key={team.id} className="th-status-chip !h-6" style={{ "--chip-tone": team.color ?? "var(--th-accent)" } as CSSProperties}><i />{team.name}</span>
+                            ))}
+                          </div>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-[12px] text-slate-400">
-                      {formatDateTime(op.last_login_at)}
-                    </td>
-                    <td className="px-5 py-3.5 text-[12px] text-slate-400">
-                      {formatDate(op.created_at)}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center justify-end gap-1">
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={() => openEdit(op)}
-                            title="Edit operator"
-                            className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-orange-200"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                      </td>
+                      <td>
+                        {op.last_login_at ? (
+                          <>
+                            <span className="th-alerts-primary">{timeAgo(op.last_login_at)}</span>
+                            <span className="th-alerts-secondary tabular-nums">{formatLocalDateTime(op.last_login_at)}</span>
+                          </>
+                        ) : (
+                          <span className="th-alerts-secondary">Never</span>
                         )}
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPasswordTarget(op);
-                              setNewPassword("");
-                              setPasswordError(null);
-                            }}
-                            title="Reset password"
-                            className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-blue-300"
-                          >
-                            <KeySquare className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      {canEdit && !isSelf && (
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleActive(op)}
-                            title={op.is_active ? "Deactivate" : "Activate"}
-                            disabled={op.is_active && isLastActivePrivileged(op)}
-                            className={`rounded-md p-1.5 text-[11px] font-bold transition hover:bg-white/[0.06] ${
-                              op.is_active && isLastActivePrivileged(op)
-                              ? "cursor-not-allowed text-slate-500 opacity-60"
-                                : op.is_active
-                                ? "text-slate-500 hover:text-amber-300"
-                                : "text-emerald-500 hover:text-emerald-300"
-                            }`}
-                          >
-                            {op.is_active ? "Deact." : "Act."}
-                          </button>
-                        )}
-                        {canEdit && !isSelf && (
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(op)}
-                            title="Delete operator"
-                            disabled={isLastActivePrivileged(op)}
-                            className={`rounded-md p-1.5 transition hover:bg-white/[0.06] ${
-                              isLastActivePrivileged(op)
-                                ? "cursor-not-allowed text-slate-500 opacity-60"
-                                : "text-slate-500 hover:text-red-300"
-                            }`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(op.created_at, { day: "numeric", month: "short", year: "numeric" })}</span></td>
+                      {canManage && (
+                        <td>
+                          <div className="th-onb-actions">
+                            <button type="button" className="th-onb-action" onClick={() => openEdit(op)} title="Edit" aria-label={`Edit ${displayLabel}`}>
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button type="button" className="th-onb-action" onClick={() => { setPasswordTarget(op); setNewPassword(""); setPasswordError(null); }} title="Reset password" aria-label={`Reset password for ${displayLabel}`}>
+                              <KeySquare className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-active={op.is_active || undefined}
+                              onClick={() => void handleToggleActive(op)}
+                              disabled={isSelf || (op.is_active && lastPrivileged)}
+                              title={isSelf || (op.is_active && lastPrivileged) ? lockReason : op.is_active ? "Deactivate" : "Activate"}
+                              aria-label={`${op.is_active ? "Deactivate" : "Activate"} ${displayLabel}`}
+                            >
+                              <Power className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-tone="danger"
+                              onClick={() => setDeleteTarget(op)}
+                              disabled={isSelf || lastPrivileged}
+                              title={lockReason ?? "Delete"}
+                              aria-label={`Delete ${displayLabel}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {visibleOperators.length > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={visibleOperators.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            pageSizeOptions={[25, 50, 100]}
+            itemLabel="operators"
+          />
+        )}
       </div>
-      )}
 
       {showCreate && (
-        <Modal title="Add Operator" onClose={() => setShowCreate(false)}>
-          <div className="space-y-3">
-            {createError && (
-              <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2.5 text-xs font-medium text-red-100">
-                {createError}
-              </div>
-            )}
-            <div>
-              <label className={LABEL_CLS}>Display name *</label>
-              <input
-                value={createForm.display_name ?? ""}
-                onChange={(e) => setCreateForm((f) => ({ ...f, display_name: e.target.value }))}
-                placeholder="Full name"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Username *</label>
-              <input
-                value={createForm.username}
-                onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
-                placeholder="login_name"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Email *</label>
-              <input
-                type="email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="user@example.com"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Password *</label>
-              <input
-                type="password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Min. 8 characters"
-                className={INPUT_CLS}
-                autoComplete="new-password"
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Role *</label>
-              <SelectField
-                value={createForm.role}
-                onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value as UserRole }))}
-                id="create-role"
-                name="create-role"
-                aria-label="Role"
-                className={INPUT_CLS}
-              >
-                {availableRoles().map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </SelectField>
-            </div>
-            <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm font-semibold text-slate-200">
-              <span>Enabled</span>
-              <input
-                type="checkbox"
-                checked={createForm.is_active}
-                onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))}
-                className="h-4 w-4 rounded border-white/15 accent-orange-500"
-              />
-            </label>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowCreate(false)}
-                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
-              >
-                Cancel
-              </button>
-              <Button type="button" onClick={handleCreate} disabled={createLoading}>
-                {createLoading ? "Creating…" : "Create User"}
-              </Button>
-            </div>
+        <ModalShell
+          title="Add operator"
+          subtitle="They sign in with the username and password set here"
+          icon={UserPlus}
+          onClose={() => setShowCreate(false)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>{createLoading ? "Creating…" : "Create operator"}</Button>
+            </>
+          }
+        >
+          <FormError message={createError} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="th-onb-field">Display name<input value={createForm.display_name ?? ""} onChange={(e) => setCreateForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="Full name" /></label>
+            <label className="th-onb-field">Username<input value={createForm.username} onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))} placeholder="login name" spellCheck={false} autoComplete="off" /></label>
           </div>
-        </Modal>
+          <label className="th-onb-field">Email<input type="email" value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="user@example.com" /></label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="th-onb-field">Password<input type="password" value={createForm.password} onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))} placeholder="At least 8 characters" autoComplete="new-password" /></label>
+            <div className="th-onb-field">Role<Select id="create-role" aria-label="Role" value={createForm.role} onChange={(value) => setCreateForm((f) => ({ ...f, role: value as UserRole }))} options={roleOptions} /></div>
+          </div>
+          <label className="th-onb-check">
+            <input type="checkbox" checked={createForm.is_active} onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))} />
+            <span>Active<small>Inactive accounts cannot sign in</small></span>
+          </label>
+        </ModalShell>
       )}
 
       {editTarget && (
-        <Modal title="Edit Operator" onClose={() => setEditTarget(null)}>
-          <div className="space-y-3">
-            {editError && (
-              <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2.5 text-xs font-medium text-red-100">
-                {editError}
-              </div>
-            )}
-            <div>
-              <label className={LABEL_CLS}>Display name</label>
-              <input
-                value={editForm.display_name ?? ""}
-                onChange={(e) => setEditForm((f) => ({ ...f, display_name: e.target.value }))}
-                placeholder="Full name (optional)"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Username</label>
-              <input
-                value={editForm.username ?? ""}
-                onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
-                id="edit-username"
-                name="edit-username"
-                aria-label="Username"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Email</label>
-              <input
-                type="email"
-                value={editForm.email ?? ""}
-                onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
-                id="edit-email"
-                name="edit-email"
-                aria-label="Email"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>Role</label>
-              <SelectField
-                value={editForm.role ?? editTarget.role}
-                onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as UserRole }))}
-                id="edit-role"
-                name="edit-role"
-                aria-label="Role"
-                className={INPUT_CLS}
-                disabled={!canEditRole(editTarget.role)}
-              >
-                {availableRoles().map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </SelectField>
-            </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setEditTarget(null)}
-                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
-              >
-                Cancel
-              </button>
-              <Button type="button" onClick={handleEdit} disabled={editLoading}>
-                {editLoading ? "Saving…" : "Save Changes"}
-              </Button>
-            </div>
+        <ModalShell
+          title="Edit operator"
+          subtitle={editTarget.display_name ?? editTarget.username}
+          icon={Pencil}
+          onClose={() => setEditTarget(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
+              <Button type="button" onClick={() => void handleEdit()} disabled={editLoading}>{editLoading ? "Saving…" : "Save changes"}</Button>
+            </>
+          }
+        >
+          <FormError message={editError} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="th-onb-field">Display name<input value={editForm.display_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="Full name (optional)" /></label>
+            <label className="th-onb-field">Username<input value={editForm.username ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))} id="edit-username" aria-label="Username" spellCheck={false} /></label>
           </div>
-        </Modal>
+          <label className="th-onb-field">Email<input type="email" value={editForm.email ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} id="edit-email" aria-label="Email" /></label>
+          <div className="th-onb-field">
+            Role
+            <Select id="edit-role" aria-label="Role" value={editForm.role ?? editTarget.role} onChange={(value) => setEditForm((f) => ({ ...f, role: value as UserRole }))} options={roleOptions} disabled={!canEditRole(editTarget.role)} />
+            <span className="th-onb-hint">{ROLE_INFO[(editForm.role ?? editTarget.role) as UserRole].hint}.</span>
+          </div>
+        </ModalShell>
       )}
 
       {passwordTarget && (
-        <Modal title={`Reset password — ${passwordTarget.display_name ?? passwordTarget.username}`} onClose={() => setPasswordTarget(null)}>
-          <div className="space-y-3">
-            {passwordError && (
-              <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2.5 text-xs font-medium text-red-100">
-                {passwordError}
-              </div>
-            )}
-            <p className="text-xs text-slate-400">
-              Enter a new password for <span className="font-semibold text-slate-200">{passwordTarget.username}</span>.
-            </p>
-            <div>
-              <label className={LABEL_CLS}>New password *</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setPasswordTarget(null)}
-                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:bg-white/[0.04]"
-              >
-                Cancel
-              </button>
-              <Button type="button" onClick={handlePasswordReset} disabled={passwordLoading || newPassword.length < 8}>
-                {passwordLoading ? "Updating…" : "Update Password"}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+        <ModalShell
+          title="Reset password"
+          subtitle={passwordTarget.display_name ?? passwordTarget.username}
+          icon={KeySquare}
+          onClose={() => setPasswordTarget(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setPasswordTarget(null)}>Cancel</Button>
+              <Button type="button" onClick={() => void handlePasswordReset()} disabled={passwordLoading || newPassword.length < 8}>{passwordLoading ? "Updating…" : "Update password"}</Button>
+            </>
+          }
+        >
+          <FormError message={passwordError} />
+          <label className="th-onb-field">
+            New password for <span className="font-mono">{passwordTarget.username}</span>
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" />
+          </label>
+        </ModalShell>
       )}
 
       {deleteTarget && (
         <ConfirmationModal
-          title="Delete Operator"
+          title="Delete operator"
           confirmLabel={deleteLoading ? "Deleting" : "Delete"}
           loading={deleteLoading}
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
-          Permanently delete{" "}
-          <span className="font-semibold text-white">{deleteTarget.display_name ?? deleteTarget.username}</span>?
-          This action cannot be undone.
+          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.display_name ?? deleteTarget.username}</span>? This cannot be undone.
         </ConfirmationModal>
       )}
     </section>
