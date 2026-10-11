@@ -186,7 +186,7 @@ def test_pre_install_stop_is_self_contained_and_pid_targeted():
         if action.get("Id") == "KillTechiRSBeforeInstall"
     ]
     assert actions, "KillTechiRSBeforeInstall custom action must exist"
-    command = actions[0].get("ExeCommand", "")
+    command = _expand_wix_vars(actions[0].get("ExeCommand", ""))
     assert "techi-agent.exe" not in command          # no agent-binary dependency
     assert "if exist" not in command                 # no old-binary branch
     assert "Stop-Process -Id $_.ProcessId" in command
@@ -206,6 +206,16 @@ def _installer_wxs() -> str:
     return INSTALLER_WXS.read_text(encoding="utf-8")
 
 
+def _expand_wix_vars(command: str) -> str:
+    """Substitute $(var.X) with its <?define X="..."?> value, as the WiX
+    preprocessor does: the Remote Support stop script lives in one define
+    shared by every action that stops it."""
+    import re
+
+    defines = dict(re.findall(r'<\?define\s+(\w+)="([^"]*)"\?>', _installer_wxs()))
+    return re.sub(r"\$\(var\.(\w+)\)", lambda m: defines[m.group(1)], command)
+
+
 def test_kill_rs_custom_actions_do_not_invoke_the_agent_binary():
     """Root cause of the >1h msiexec hang: the KillTechiRS* custom actions invoked
     'techi-agent.exe stop-remote-support-runtime' on the PRE-EXISTING binary; an
@@ -216,12 +226,13 @@ def test_kill_rs_custom_actions_do_not_invoke_the_agent_binary():
 
     ns = {"w": "http://wixtoolset.org/schemas/v4/wxs"}
     root = ET.parse(INSTALLER_WXS).getroot()
+    stop_actions = ("KillTechiRS", "KillTechiRSBeforeInstall", "StopTechiRSBeforeUpgrade")
     actions = {
-        ca.get("Id"): ca.get("ExeCommand", "")
+        ca.get("Id"): _expand_wix_vars(ca.get("ExeCommand", ""))
         for ca in root.findall(".//w:CustomAction", ns)
-        if ca.get("Id") in ("KillTechiRS", "KillTechiRSBeforeInstall")
+        if ca.get("Id") in stop_actions
     }
-    assert set(actions) == {"KillTechiRS", "KillTechiRSBeforeInstall"}
+    assert set(actions) == set(stop_actions)
     for cmd in actions.values():
         assert "techi-agent.exe" not in cmd, "kill action must not invoke the agent binary"
         # Bounded: Start-Job + Wait-Job -Timeout, and logs to deploy.log.
