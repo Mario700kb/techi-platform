@@ -117,11 +117,32 @@ class TestPutAgentConfig:
         assert resp.status_code == 200
         assert resp.json()["heartbeat_interval_seconds"] == 60
 
-    def test_boundary_600_is_valid(self):
+    def test_interval_above_the_online_ceiling_is_rejected(self):
+        """600s against a 6-minute online threshold would let healthy devices
+        read as stale between heartbeats; the ceiling keeps room for jitter."""
         client = _make_client("admin")
-        resp = client.put("/agent-config", json={"heartbeat_interval_seconds": 600})
+        ceiling = svc.heartbeat_ceiling_seconds()
+        assert ceiling == 313
+        assert client.put("/agent-config", json={"heartbeat_interval_seconds": ceiling}).status_code == 200
+        resp = client.put("/agent-config", json={"platform_heartbeat_intervals": {"linux": 600}})
+        assert resp.status_code == 422
+        assert "stale" in resp.json()["detail"]
+
+    def test_an_unchanged_interval_below_a_grown_floor_does_not_block_other_platforms(self, monkeypatch):
+        """The editor sends every platform. Once the fleet outgrows Windows'
+        current interval, saving Linux must still work."""
+        client = _make_client("admin")
+        monkeypatch.setattr(svc, "capacity_floor_seconds", lambda count: 301)
+        resp = client.put("/agent-config", json={"platform_heartbeat_intervals": {"windows": 300, "linux": 305}})
         assert resp.status_code == 200
-        assert resp.json()["heartbeat_interval_seconds"] == 600
+        assert resp.json()["platform_heartbeat_intervals"]["linux"] == 305
+        rejected = client.put("/agent-config", json={"platform_heartbeat_intervals": {"windows": 299}})
+        assert rejected.status_code == 422
+
+    def test_get_reports_the_limits_per_platform(self):
+        body = _make_client("admin").get("/agent-config").json()
+        assert body["maximum_allowed_interval_seconds"] == svc.heartbeat_ceiling_seconds()
+        assert set(body["platform_minimum_intervals"]) == set(body["platform_heartbeat_intervals"])
 
     def test_below_minimum_is_rejected(self):
         client = _make_client("admin")

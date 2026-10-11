@@ -2146,6 +2146,38 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
   border: 1px solid var(--th-border-subtle);
   background: var(--th-bg-surface);
 }
+/* ── Agent config ── interval inputs with a unit suffix inside the field. */
+.th-policy-input {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  max-width: 150px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-input);
+  background: var(--th-bg-input);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.th-policy-input:focus-within { border-color: var(--th-accent-border); box-shadow: 0 0 0 4px var(--th-accent-glow); }
+.th-policy-input[data-invalid="true"] { border-color: color-mix(in srgb, var(--th-status-critical) 60%, transparent); }
+.premium-page .th-policy-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--th-text-primary);
+  outline: none;
+}
+.th-policy-input > span { padding: 0 10px; font-size: 12px; color: var(--th-text-faint); border-left: 1px solid var(--th-border-subtle); line-height: 34px; background: var(--th-bg-surface); }
+.th-batch-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; border-radius: 10px; border: 1px solid var(--th-border-subtle); }
+.th-batch-list > li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 12px; }
+.th-batch-list > li + li { border-top: 1px solid var(--th-border-subtle); }
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }

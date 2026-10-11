@@ -47,6 +47,11 @@ class AgentConfigResponse(BaseModel):
     active_device_count: int = 0
     projected_requests_per_second: float = 0.0
     minimum_allowed_interval_seconds: int = _svc.HEARTBEAT_INTERVAL_MIN
+    # Per platform: the capacity floor for the devices that interval governs,
+    # and the one ceiling every interval shares (it must stay inside the online
+    # threshold). The editor shows both, and PUT enforces both.
+    platform_minimum_intervals: Dict[str, int] = {}
+    maximum_allowed_interval_seconds: int = _svc.HEARTBEAT_INTERVAL_MAX
 
 
 class AgentConfigUpdate(BaseModel):
@@ -78,13 +83,19 @@ def _active_device_count(db: Session) -> int:
         return 0
 
 
-def _with_capacity_context(policy: dict, device_count: int) -> dict:
+def _with_capacity_context(policy: dict, device_count: int, db: Optional[Session] = None) -> dict:
     enriched = dict(policy)
     enriched["active_device_count"] = device_count
     enriched["projected_requests_per_second"] = _svc.projected_requests_per_second(
         device_count, policy.get("heartbeat_interval_seconds", 0)
     )
     enriched["minimum_allowed_interval_seconds"] = _svc.capacity_floor_seconds(device_count)
+    enriched["maximum_allowed_interval_seconds"] = _svc.heartbeat_ceiling_seconds()
+    if db is not None:
+        enriched["platform_minimum_intervals"] = {
+            platform: _svc.capacity_floor_seconds(_platform_device_count(db, platform, device_count))
+            for platform in policy.get("platform_heartbeat_intervals", {})
+        }
     return enriched
 
 
@@ -126,12 +137,27 @@ def _reject_below_capacity_floor(requested: Dict[str, int], db: Session, total: 
         )
 
 
+def _reject_above_online_ceiling(requested: Dict[str, int]) -> None:
+    """Raise 422 if an interval would let healthy devices read as stale."""
+    ceiling = _svc.heartbeat_ceiling_seconds()
+    for platform, seconds in requested.items():
+        if seconds is not None and seconds > ceiling:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"heartbeat interval {seconds}s for '{platform}' is above {ceiling}s: devices count as online "
+                    f"for {_svc.ONLINE_THRESHOLD_MINUTES} minutes after a heartbeat, and the interval must leave room "
+                    f"for jitter and network delay, or healthy devices show as stale between heartbeats."
+                ),
+            )
+
+
 @router.get("", response_model=AgentConfigResponse)
 def get_agent_config(
     db: Session = Depends(get_db),
     _: Operator = Depends(_require_admin),
 ):
-    return _with_capacity_context(_svc.get_policy(), _active_device_count(db))
+    return _with_capacity_context(_svc.get_policy(), _active_device_count(db), db)
 
 
 @router.put("", response_model=AgentConfigResponse)
@@ -147,7 +173,13 @@ def put_agent_config(
         requested["windows"] = body.heartbeat_interval_seconds
     if body.platform_heartbeat_intervals:
         requested.update(body.platform_heartbeat_intervals)
-    _reject_below_capacity_floor(requested, db, device_count)
+    # Only the intervals this request changes are held to the limits. The editor
+    # sends every platform; an unchanged one that the growing fleet has pushed
+    # below its floor must not block saving another platform.
+    current = _svc.get_policy().get("platform_heartbeat_intervals", {})
+    changed = {platform: seconds for platform, seconds in requested.items() if current.get(platform) != seconds}
+    _reject_below_capacity_floor(changed, db, device_count)
+    _reject_above_online_ceiling(changed)
 
     try:
         policy = _svc.set_policy(
@@ -158,7 +190,7 @@ def put_agent_config(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    return _with_capacity_context(policy, device_count)
+    return _with_capacity_context(policy, device_count, db)
 
 
 @router.get("/heartbeat-script", response_class=PlainTextResponse)

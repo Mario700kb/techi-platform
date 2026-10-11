@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ClipboardCopy, Info, RotateCcw, Save } from "lucide-react";
+import type { CSSProperties } from "react";
+import { Activity, Check, ClipboardCopy, Clock, Gauge, Info, KeyRound, Monitor, RotateCcw, ScrollText, Timer } from "lucide-react";
 import {
   AgentConfig,
   getAgentConfig,
@@ -7,7 +8,11 @@ import {
   putAgentConfig,
 } from "../api/agentConfig";
 import AgentCommandsPanel from "../components/AgentCommandsPanel";
-import { PageHeader } from "../components/ui";
+import { Button, EmptyState, PageHeader } from "../components/ui";
+import { CardHead } from "../components/ui/PanelCard";
+import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
 
 type CopyTarget = "rollout" | "rollback" | null;
 const PLATFORM_ROWS = [
@@ -21,6 +26,17 @@ const PLATFORM_ROWS = [
   ["vmware", "VMware"],
   ["proxmox", "Proxmox"],
 ] as const;
+const INVENTORY_MIN = 300;
+const INVENTORY_MAX = 86400;
+
+const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
+
+function intervalsFrom(cfg: AgentConfig) {
+  return {
+    heartbeat: Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_heartbeat_intervals[id] ?? cfg.heartbeat_interval_seconds)])),
+    inventory: Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_inventory_intervals[id] ?? 1800)])),
+  };
+}
 
 export default function AgentConfigPage() {
   const [config, setConfig] = useState<AgentConfig | null>(null);
@@ -28,425 +44,253 @@ export default function AgentConfigPage() {
   const [inventoryInputs, setInventoryInputs] = useState<Record<string, string>>({});
   const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [remoteSaving, setRemoteSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [remoteError, setRemoteError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [remoteSaved, setRemoteSaved] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [copying, setCopying] = useState<CopyTarget>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const remoteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const policyState = useSaveState();
+  const remoteState = useSaveState();
+
+  const apply = (cfg: AgentConfig) => {
+    setConfig(cfg);
+    const next = intervalsFrom(cfg);
+    setHeartbeatInputs(next.heartbeat);
+    setInventoryInputs(next.inventory);
+    setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
+  };
 
   useEffect(() => {
     setLoading(true);
     getAgentConfig()
-      .then((cfg) => {
-        setConfig(cfg);
-        setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_heartbeat_intervals[id] ?? cfg.heartbeat_interval_seconds)])));
-        setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(cfg.platform_inventory_intervals[id] ?? 1800)])));
-        setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
-      })
-      .catch((err) => setError(String(err)))
+      .then(apply)
+      .catch((err) => setLoadError(message(err, "Failed to load the agent configuration")))
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleSaveHeartbeat() {
-    const heartbeat: Record<string, number> = {};
-    const inventory: Record<string, number> = {};
-    for (const [id, label] of PLATFORM_ROWS) {
-      const hb = parseInt(heartbeatInputs[id], 10);
-      const inv = parseInt(inventoryInputs[id], 10);
-      if (isNaN(hb) || hb < 60 || hb > 600) {
-        setError(`${label} heartbeat must be between 60 and 600 seconds.`);
-        return;
-      }
-      if (isNaN(inv) || inv < 300 || inv > 86400) {
-        setError(`${label} inventory must be between 300 and 86400 seconds.`);
-        return;
-      }
-      heartbeat[id] = hb;
-      inventory[id] = inv;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const updated = await putAgentConfig({
-        platform_heartbeat_intervals: heartbeat,
-        platform_inventory_intervals: inventory,
-      });
-      setConfig(updated);
-      setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
-      setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
-      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
-      setSaved(true);
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => setSaved(false), 2500);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const ceiling = config?.maximum_allowed_interval_seconds ?? 600;
+  const floorFor = (id: string) => config?.platform_minimum_intervals?.[id] ?? config?.minimum_allowed_interval_seconds ?? 60;
 
-  async function handleSaveRemoteSupport() {
-    setRemoteSaving(true);
-    setRemoteError(null);
-    try {
-      const updated = await putAgentConfig({
-        remote_support_managed_password_enabled: managedPasswordEnabled,
-      });
-      setConfig(updated);
-      setHeartbeatInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_heartbeat_intervals[id] ?? updated.heartbeat_interval_seconds)])));
-      setInventoryInputs(Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, String(updated.platform_inventory_intervals[id] ?? 1800)])));
-      setManagedPasswordEnabled(updated.remote_support_managed_password_enabled);
-      setRemoteSaved(true);
-      if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
-      remoteSaveTimer.current = setTimeout(() => setRemoteSaved(false), 2500);
-    } catch (err) {
-      setRemoteError(String(err));
-    } finally {
-      setRemoteSaving(false);
-    }
-  }
+  const original = config ? intervalsFrom(config) : null;
+  // Only a changed value is held to the limits, as on the server: a platform
+  // the growing fleet has pushed below its floor must not block the others.
+  const heartbeatProblem = (id: string): "floor" | "ceiling" | null => {
+    if (!original || heartbeatInputs[id] === original.heartbeat[id]) return null;
+    const hb = Number(heartbeatInputs[id]);
+    if (!Number.isInteger(hb) || hb < floorFor(id)) return "floor";
+    if (hb > ceiling) return "ceiling";
+    return null;
+  };
+  const inventoryProblem = (id: string) => {
+    if (!original || inventoryInputs[id] === original.inventory[id]) return false;
+    const inv = Number(inventoryInputs[id]);
+    return !Number.isInteger(inv) || inv < INVENTORY_MIN || inv > INVENTORY_MAX;
+  };
+  // The first problem in the table, shown in the footer and blocking save.
+  const rowProblem = (id: string, label: string): string | null => {
+    const hb = heartbeatProblem(id);
+    if (hb === "floor") return `${label}: heartbeat must be at least ${floorFor(id)}s for the devices it covers.`;
+    if (hb === "ceiling") return `${label}: heartbeat above ${ceiling}s lets healthy devices show as stale between heartbeats.`;
+    if (inventoryProblem(id)) return `${label}: inventory must be between ${INVENTORY_MIN} and ${formatCount(INVENTORY_MAX)}s.`;
+    return null;
+  };
+  // A platform whose capacity floor is above the online ceiling has no valid
+  // interval left: that needs more host capacity or a longer online window.
+  const squeezed = config ? PLATFORM_ROWS.filter(([id]) => floorFor(id) > ceiling) : [];
+  const problems = PLATFORM_ROWS.map(([id, label]) => rowProblem(id, label)).filter(Boolean) as string[];
+
+  const policyDirty = original !== null && PLATFORM_ROWS.some(([id]) => heartbeatInputs[id] !== original.heartbeat[id] || inventoryInputs[id] !== original.inventory[id]);
+  const remoteDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
+
+  const savePolicy = () => {
+    if (problems.length) return;
+    void policyState.run(async () => {
+      apply(await putAgentConfig({
+        platform_heartbeat_intervals: Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, Number(heartbeatInputs[id])])),
+        platform_inventory_intervals: Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, Number(inventoryInputs[id])])),
+      }));
+    }, "Interval policy saved; devices pick it up on their next heartbeat", "Failed to save the interval policy");
+  };
+
+  const saveRemote = () => void remoteState.run(async () => {
+    apply(await putAgentConfig({ remote_support_managed_password_enabled: managedPasswordEnabled }));
+  }, "Remote Support setting saved", "Failed to save the Remote Support setting");
 
   async function copyScript(seconds: number, target: CopyTarget) {
     setCopying(target);
-    setError(null);
+    setCopyError(null);
     try {
-      const script = await getHeartbeatScript(seconds);
-      await navigator.clipboard.writeText(script);
+      await navigator.clipboard.writeText(await getHeartbeatScript(seconds));
       setCopied(target);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(null), 2500);
     } catch (err) {
-      setError(String(err));
+      setCopyError(message(err, "Couldn't copy the script"));
     } finally {
       setCopying(null);
     }
   }
 
-  const currentInterval = config?.platform_heartbeat_intervals?.windows ?? config?.heartbeat_interval_seconds ?? 300;
-  const heartbeatDirty = config !== null && PLATFORM_ROWS.some(([id]) => {
-    const hb = config.platform_heartbeat_intervals[id] ?? config.heartbeat_interval_seconds;
-    const inv = config.platform_inventory_intervals[id] ?? 1800;
-    return heartbeatInputs[id] !== String(hb) || inventoryInputs[id] !== String(inv);
-  });
-  const remoteSupportDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
+  const windowsInterval = config?.platform_heartbeat_intervals?.windows ?? config?.heartbeat_interval_seconds ?? 300;
+  const load = config?.projected_requests_per_second ?? 0;
 
   return (
-    <section className="premium-page space-y-5">
-      <PageHeader
-        title="Agent Configuration"
-        description="Platform-wide heartbeat policy and bulk command center."
-      />
-      <div className="gap-4 xl:columns-2 [&>*]:mb-4 [&>*]:break-inside-avoid">
+    <section className="premium-page th-onb space-y-4">
+      <PageHeader title="Agent Configuration" description="The heartbeat and inventory policy every agent follows, and the bulk command center." />
 
-      {/* How each column reaches the fleet.
-          Heartbeat is served on every heartbeat response (agent.py get_heartbeat_interval →
-          heartbeat_interval_seconds) and applied by the agent on the next cycle
-          (main.go pendingIntervalChange → agent.go ticker.Reset), so it needs no push channel.
-          Inventory is read only via get_inventory_interval("mikrotik") — the agent has no
-          inventory-interval code at all, so the other rows are stored but never applied. */}
-      <div
-        className="flex gap-3 rounded-lg p-4 text-sm"
-        style={{
-          background: "var(--th-bg-drawer-section)",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-      >
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
-        <div style={{ color: "var(--th-text-muted)" }}>
-          <p className="mb-1 font-semibold text-sky-400">How these settings reach the fleet</p>
-          <p>
-            <span style={{ color: "var(--th-text-primary)" }}>Heartbeat</span> applies
-            automatically — the new interval is returned on the next heartbeat and takes effect
-            within one cycle. No GPO or PowerShell needed; the scripts below are only for devices
-            that are not checking in.
-          </p>
-          <p className="mt-2">
-            <span style={{ color: "var(--th-text-primary)" }}>Inventory</span> is currently
-            applied for RouterOS only. Values saved for the other platforms are stored but not yet
-            honoured by the agent.
-          </p>
+      {loadError && (
+        <div className="th-onb-card">
+          <EmptyState icon={<Info className="h-5 w-5" />} title="Couldn't load the agent configuration" description={loadError} />
         </div>
-      </div>
+      )}
 
-      {/* Policy card */}
-      <div
-        className="rounded-xl p-5 space-y-5"
-        style={{
-          background: "var(--th-bg-drawer-section)",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-      >
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-          Heartbeat & Inventory Policy
-        </p>
-
-        {loading ? (
-          <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
-        ) : (
-          <div className="space-y-4">
-            <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--th-border-subtle)" }}>
-              <div className="grid grid-cols-[1fr_112px_112px] gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--th-text-muted)", background: "var(--th-bg-shell)" }}>
-                <span>Platform</span>
-                <span>Heartbeat</span>
-                <span>Inventory</span>
-              </div>
-              {PLATFORM_ROWS.map(([id, label]) => (
-                <div key={id} className="grid grid-cols-[1fr_112px_112px] items-center gap-2 border-t px-3 py-2" style={{ borderColor: "var(--th-border-subtle)" }}>
-                  <span className="text-sm font-medium" style={{ color: "var(--th-text-primary)" }}>{label}</span>
-                  <input
-                    type="number"
-                    min={60}
-                    max={600}
-                    aria-label={`${label} heartbeat interval`}
-                    value={heartbeatInputs[id] ?? ""}
-                    onChange={(e) => {
-                      setHeartbeatInputs((prev) => ({ ...prev, [id]: e.target.value }));
-                      setError(null);
-                    }}
-                    className="w-full rounded-md border px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
-                  />
-                  <input
-                    type="number"
-                    min={300}
-                    max={86400}
-                    aria-label={`${label} inventory interval`}
-                    value={inventoryInputs[id] ?? ""}
-                    onChange={(e) => {
-                      setInventoryInputs((prev) => ({ ...prev, [id]: e.target.value }));
-                      setError(null);
-                    }}
-                    className="w-full rounded-md border px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    style={{ background: "var(--th-bg-input, var(--th-bg-shell))", borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
-                  />
-                </div>
-              ))}
+      {/* ── summary ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Devices served", value: config ? formatCount(config.active_device_count) : "—", hint: "Active agents on this policy", icon: Monitor, tone: "var(--th-accent)" },
+          { label: "Heartbeat load", value: config ? `${load.toFixed(1)}/s` : "—", hint: `At ${windowsInterval}s for Windows`, icon: Gauge, tone: TONE.info },
+          { label: "Online for", value: config ? `${config.online_threshold_minutes} min` : "—", hint: "After the last heartbeat", icon: Activity, tone: TONE.online },
+          { label: "Stale after", value: config ? `${config.stale_threshold_minutes} min` : "—", hint: "Then offline once timed out", icon: Clock, tone: TONE.warning },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
             </div>
-
-            {/* Read-only thresholds */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-                  Online Threshold
-                </p>
-                <p className="text-sm font-medium text-emerald-400">
-                  {config?.online_threshold_minutes ?? 6} min
-                  <span className="ml-2 text-xs font-normal" style={{ color: "var(--th-text-muted)" }}>(read-only)</span>
-                </p>
-              </div>
-              <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--th-text-muted)" }}>
-                  Stale Threshold
-                </p>
-                <p className="text-sm font-medium text-amber-400">
-                  {config?.stale_threshold_minutes ?? 25} min
-                  <span className="ml-2 text-xs font-normal" style={{ color: "var(--th-text-muted)" }}>(read-only)</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
-                {error}
-              </p>
-            )}
-
-            {/* Save button */}
-            <button
-              type="button"
-              onClick={handleSaveHeartbeat}
-              disabled={saving || !heartbeatDirty}
-              className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
-              style={{
-                background: "var(--th-accent)",
-                color: "#fff",
-              }}
-            >
-              {saved ? (
-                <><Check className="h-3.5 w-3.5" /> Saved</>
-              ) : saving ? (
-                "Saving…"
-              ) : (
-                <><Save className="h-3.5 w-3.5" /> Save interval policy</>
-              )}
-            </button>
           </div>
-        )}
+        ))}
       </div>
 
-      {/* Remote Support card */}
-      <div
-        className="rounded-xl p-5 space-y-4"
-        style={{
-          background: "var(--th-bg-drawer-section)",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-      >
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-            TECHI Remote Support
-          </p>
-          <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
-            Controls whether Connect links include the global managed password for direct sessions.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="text-sm" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
-        ) : (
-          <label
-            className="flex cursor-pointer items-center justify-between gap-4 rounded-lg px-4 py-3"
-            style={{
-              background: "var(--th-bg-shell)",
-              border: "1px solid var(--th-border-subtle)",
-            }}
-          >
-            <span>
-              <span className="block text-sm font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                Auto-connect with managed password
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* ── interval policy ─────────────────────────────────────────────── */}
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+          <CardHead icon={Timer} tone="var(--th-accent)" title="Heartbeat & inventory policy" subtitle={config ? `Heartbeat allowed up to ${ceiling}s; the lower bound depends on how many devices each platform has` : "Loading…"} />
+          <div className="th-onb-note mx-5 mt-4" style={{ "--onb-tone": "var(--th-status-info)" } as CSSProperties}>
+            <Info className="h-4 w-4" />
+            <span><strong>Heartbeat</strong> reaches every agent on its next heartbeat, with no GPO or script. <strong>Inventory</strong> is applied for RouterOS only today; the other values are stored for when the agent supports them.</span>
+          </div>
+          {squeezed.length > 0 && (
+            <div className="th-onb-note mx-5 mt-3" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+              <Info className="h-4 w-4" />
+              <span>
+                <strong>{squeezed.map(([, label]) => label).join(", ")}</strong> has outgrown the heartbeat budget: its devices need at least {floorFor(squeezed[0][0])}s, but anything above {ceiling}s lets them show as stale. Raise <code className="font-mono">HEARTBEAT_RATE_BUDGET_PER_SEC</code> together with host capacity, or lengthen the online window.
               </span>
-              <span className="mt-0.5 block text-xs" style={{ color: "var(--th-text-muted)" }}>
-                When enabled, Connect uses the global password; unmatched devices will still ask manually.
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={managedPasswordEnabled}
-              onChange={(e) => {
-                setManagedPasswordEnabled(e.target.checked);
-                setRemoteError(null);
-              }}
-              className="h-5 w-5 shrink-0 rounded border-white/15 accent-orange-500"
-              aria-label="Auto-connect with managed password"
-            />
-          </label>
-        )}
-
-        {remoteError && (
-          <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
-            {remoteError}
-          </p>
-        )}
-
-        {!loading && (
-          <button
-            type="button"
-            onClick={handleSaveRemoteSupport}
-            disabled={remoteSaving || !remoteSupportDirty}
-            className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-40"
-            style={{
-              background: "var(--th-accent)",
-              color: "#fff",
-            }}
-          >
-            {remoteSaved ? (
-              <><Check className="h-3.5 w-3.5" /> Saved</>
-            ) : remoteSaving ? (
-              "Saving…"
-            ) : (
-              <><Save className="h-3.5 w-3.5" /> Save Remote Support</>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* Rollout scripts card */}
-      <div
-        className="rounded-xl p-5 space-y-4"
-        style={{
-          background: "var(--th-bg-drawer-section)",
-          border: "1px solid var(--th-border-drawer-section)",
-        }}
-      >
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--th-text-muted)" }}>
-            Rollout Scripts
-          </p>
-          <p className="mt-1 text-xs" style={{ color: "var(--th-text-muted)" }}>
-            Generated PowerShell. Run as Administrator on each endpoint, or deploy via GPO
-            Scheduled Task targeting the TECHI computers OU.
-          </p>
+            </div>
+          )}
+          {loading ? (
+            <div className="py-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />)}</div>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="th-alerts-table th-policy-table">
+                <colgroup>
+                  <col />
+                  <col className="w-[180px]" />
+                  <col className="w-[180px]" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Platform</th>
+                    <th>Heartbeat</th>
+                    <th>Inventory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PLATFORM_ROWS.map(([id, label], index) => {
+                    const hbBad = heartbeatProblem(id) !== null;
+                    const invBad = inventoryProblem(id);
+                    return (
+                      <tr key={id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                        <td>
+                          <span className="th-alerts-primary">{label}</span>
+                          <span className="th-alerts-secondary" style={floorFor(id) > ceiling ? { color: "var(--th-status-critical)" } : undefined}>
+                            {floorFor(id) > ceiling ? `Needs ${floorFor(id)}s, above the ${ceiling}s ceiling` : `Heartbeat ${floorFor(id)}–${ceiling}s`}
+                          </span>
+                        </td>
+                        <td>
+                          <label className="th-policy-input" data-invalid={hbBad || undefined}>
+                            <input type="number" min={floorFor(id)} max={ceiling} value={heartbeatInputs[id] ?? ""} aria-label={`${label} heartbeat interval`} onChange={(e) => setHeartbeatInputs((prev) => ({ ...prev, [id]: e.target.value }))} />
+                            <span>s</span>
+                          </label>
+                        </td>
+                        <td>
+                          <label className="th-policy-input" data-invalid={invBad || undefined}>
+                            <input type="number" min={INVENTORY_MIN} max={INVENTORY_MAX} value={inventoryInputs[id] ?? ""} aria-label={`${label} inventory interval`} onChange={(e) => setInventoryInputs((prev) => ({ ...prev, [id]: e.target.value }))} />
+                            <span>s</span>
+                          </label>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <SaveFooter
+            dirty={policyDirty && problems.length === 0}
+            saving={policyState.saving}
+            saved={policyState.saved}
+            error={policyState.error ?? (policyDirty ? problems[0] ?? null : null)}
+            label="Save interval policy"
+            onSave={savePolicy}
+          />
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          {/* Rollout */}
-          <button
-            type="button"
-            onClick={() => copyScript(currentInterval, "rollout")}
-            disabled={copying === "rollout"}
-            className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-50"
-            style={{
-              background: "var(--th-bg-shell)",
-              border: "1px solid var(--th-border-subtle)",
-              color: "var(--th-text-primary)",
-            }}
-          >
-            {copied === "rollout" ? (
-              <><Check className="h-3.5 w-3.5 text-emerald-400" /> Copied rollout</>
-            ) : (
-              <><ClipboardCopy className="h-3.5 w-3.5" /> Copy rollout script ({currentInterval}s)</>
-            )}
-          </button>
+        <div className="flex flex-col gap-4">
+          {/* ── remote support ─────────────────────────────────────────── */}
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 5 } as CSSProperties}>
+            <CardHead icon={KeyRound} tone={TONE.info} title="Remote Support" subtitle="What Connect links carry for direct sessions" />
+            <div className="th-onb-body flex-1">
+              <div className="flex items-start justify-between gap-4">
+                <span>
+                  <span className="block text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>Auto-connect with the managed password</span>
+                  <span className="mt-0.5 block text-[12px]" style={{ color: "var(--th-text-muted)" }}>Connect sends the managed password; devices whose password differs still ask for it.</span>
+                </span>
+                <button type="button" role="switch" aria-checked={managedPasswordEnabled} aria-label="Auto-connect with managed password" className="th-onb-switch mt-0.5 flex-none" disabled={loading} onClick={() => setManagedPasswordEnabled((v) => !v)}>
+                  <i />
+                </button>
+              </div>
+            </div>
+            <SaveFooter dirty={remoteDirty} saving={remoteState.saving} saved={remoteState.saved} error={remoteState.error} label="Save" onSave={saveRemote} />
+          </div>
 
-          {/* Rollback */}
-          <button
-            type="button"
-            onClick={() => copyScript(60, "rollback")}
-            disabled={copying === "rollback"}
-            className="flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-semibold transition disabled:opacity-50"
-            style={{
-              background: "var(--th-bg-shell)",
-              border: "1px solid var(--th-border-subtle)",
-              color: "var(--th-text-primary)",
-            }}
-          >
-            {copied === "rollback" ? (
-              <><Check className="h-3.5 w-3.5 text-emerald-400" /> Copied rollback</>
-            ) : (
-              <><RotateCcw className="h-3.5 w-3.5" /> Copy rollback script (60s)</>
-            )}
-          </button>
-        </div>
-
-        {/* GPO hint */}
-        <div
-          className="flex gap-2 rounded-md px-3 py-2 text-xs"
-          style={{
-            background: "var(--th-bg-shell)",
-            color: "var(--th-text-muted)",
-          }}
-        >
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            <strong style={{ color: "var(--th-text-primary)" }}>GPO deployment: </strong>
-            Computer Configuration → Preferences → Windows Settings → Files (deploy config) +
-            Scheduled Task (run script as SYSTEM). Agents re-read the config on next service start.
-          </span>
+          {/* ── rollout scripts ────────────────────────────────────────── */}
+          <div className="th-onb-card th-onb-enter flex-1" style={{ "--i": 6 } as CSSProperties}>
+            <CardHead icon={ScrollText} tone={TONE.maintenance} title="Rollout scripts" subtitle="Only for devices that are not checking in" />
+            <div className="th-onb-body flex-1">
+              <p className="th-onb-hint">PowerShell that writes the interval into the agent's config. Run it as Administrator, or deploy it through a GPO scheduled task on the TECHI computers OU.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="secondary" onClick={() => void copyScript(windowsInterval, "rollout")} disabled={copying === "rollout"}>
+                  {copied === "rollout" ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
+                  {copied === "rollout" ? "Copied" : `Rollout (${windowsInterval}s)`}
+                </Button>
+                <Button variant="secondary" onClick={() => void copyScript(60, "rollback")} disabled={copying === "rollback"}>
+                  {copied === "rollback" ? <Check className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                  {copied === "rollback" ? "Copied" : "Rollback (60s)"}
+                </Button>
+              </div>
+              {copyError && (
+                <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+                  <Info className="h-4 w-4" />
+                  <span>{copyError}</span>
+                </div>
+              )}
+              <div className="th-onb-note" style={{ "--onb-tone": "var(--th-text-faint)" } as CSSProperties}>
+                <Info className="h-4 w-4" />
+                <span><strong>GPO:</strong> Computer Configuration → Preferences → Windows Settings → Files (the config) and a Scheduled Task (the script, as SYSTEM). Agents read the config again when their service restarts.</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      </div>
 
-      {/* Command Center */}
-      <div>
-        <h2
-          className="mb-1 text-base font-bold tracking-tight"
-          style={{ color: "var(--th-text-primary)" }}
-        >
-          Command Center
-        </h2>
-        <p className="mb-4 text-xs" style={{ color: "var(--th-text-muted)" }}>
-          Send bulk commands to all devices or a specific target. Commands are delivered via the
-          next heartbeat and executed by agent v2.0+.
-        </p>
-        <AgentCommandsPanel />
+      {/* ── command center ───────────────────────────────────────────────── */}
+      <div className="pt-2">
+        <h2 className="text-[17px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Command Center</h2>
+        <p className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>Bulk commands for every device or a chosen target, delivered on the next heartbeat and run by agent 2.0 or later.</p>
       </div>
+      <AgentCommandsPanel />
     </section>
   );
 }

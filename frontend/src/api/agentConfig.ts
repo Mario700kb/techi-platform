@@ -7,6 +7,12 @@ export interface AgentConfig {
   online_threshold_minutes: number;
   stale_threshold_minutes: number;
   remote_support_managed_password_enabled: boolean;
+  /** Capacity context and the limits the PUT enforces. */
+  active_device_count: number;
+  projected_requests_per_second: number;
+  minimum_allowed_interval_seconds: number;
+  maximum_allowed_interval_seconds: number;
+  platform_minimum_intervals: Record<string, number>;
 }
 
 export interface AgentConfigUpdate {

@@ -54,6 +54,18 @@ def capacity_floor_seconds(active_device_count: int) -> int:
     return max(HEARTBEAT_INTERVAL_MIN, min(derived, HEARTBEAT_INTERVAL_MAX))
 
 
+# A device reads as online while its last heartbeat is newer than
+# ONLINE_THRESHOLD_MINUTES. The interval has to leave room for the agent's
+# ±10% jitter and network delay, or devices drop to stale between two healthy
+# heartbeats; 600s against a 6-minute threshold would do that every cycle.
+HEARTBEAT_HEADROOM: float = 1.15
+
+
+def heartbeat_ceiling_seconds() -> int:
+    """Longest heartbeat interval that keeps a healthy device online."""
+    return min(HEARTBEAT_INTERVAL_MAX, math.floor(ONLINE_THRESHOLD_MINUTES * 60 / HEARTBEAT_HEADROOM))
+
+
 def projected_requests_per_second(active_device_count: int, interval_seconds: int) -> float:
     if interval_seconds <= 0:
         return 0.0

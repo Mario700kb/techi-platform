@@ -20,6 +20,7 @@ import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
 import { getDevices, Device } from "../api/devices";
 import { Button, EmptyState } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
+import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
 import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
@@ -87,49 +88,6 @@ function ColorPicker({ value, onChange, disabled }: { value: string; onChange: (
       ))}
     </div>
   );
-}
-
-/** Every tab ends the same way: what changed, any error, and the one save action. */
-function SaveFooter({ dirty, saving, saved, error, label, onSave, canManage }: { dirty: boolean; saving: boolean; saved: string | null; error: string | null; label: string; onSave: () => void; canManage: boolean }) {
-  if (!canManage) return <div className="th-onb-foot th-onb-hint">You can view this team; changing it needs an admin.</div>;
-  return (
-    <div className="th-onb-foot th-team-foot">
-      <div className="min-w-0 flex-1">
-        {error ? (
-          <span className="th-team-state" style={tone("var(--th-status-critical)")} role="alert"><AlertTriangle className="h-3.5 w-3.5" />{error}</span>
-        ) : saved ? (
-          <span className="th-team-state th-fade-in" style={tone("var(--th-status-online)")} role="status"><CheckCircle2 className="h-3.5 w-3.5" />{saved}</span>
-        ) : dirty ? (
-          <span className="th-team-state" style={tone("var(--th-status-warning)")}><i />Unsaved changes</span>
-        ) : (
-          <span className="th-team-state" style={tone("var(--th-text-faint)")}><Check className="h-3.5 w-3.5" />Up to date</span>
-        )}
-      </div>
-      <Button onClick={onSave} disabled={saving || !dirty}>
-        <Save className="h-4 w-4" />
-        {saving ? "Saving…" : label}
-      </Button>
-    </div>
-  );
-}
-
-function useSaveState() {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
-  const run = async (action: () => Promise<void>, success: string, failure: string) => {
-    try {
-      setSaving(true); setError(null); setSaved(null);
-      await action();
-      setSaved(success);
-      window.setTimeout(() => setSaved(null), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : failure);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return { saving, error, saved, run };
 }
 
 const sameSet = <T,>(a: Set<T>, b: Set<T>) => a.size === b.size && [...a].every((x) => b.has(x));
