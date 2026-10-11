@@ -16,11 +16,11 @@
 
 | Field | Verified value |
 |---|---|
-| Documentation revision | `DOC-2026-10-11-UI-REDESIGN` |
-| Production baseline SHA | `af70d85` (see §3) |
+| Documentation revision | `DOC-2026-10-11-HB-TIMEOUT` |
+| Production baseline SHA | `25d38eb` (see §3) |
 | Production branch | `backport/platform-components-92a521c` |
 | Verified at | Palette/deployments/time deployment and service-level verification dated 2026-10-05; Reports evidence dated 2026-10-01; prior component evidence retains its original dates |
-| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
+| Evidence source | Production deploy checks recorded in [CHANGELOG-SOLUTIONS.md](CHANGELOG-SOLUTIONS.md) (`HB-TIMEOUT-2026-10-11`, `POWER-EVENT-2026-10-11`, `UI-REDESIGN-2026-10-11`, `DEPLOY-2026-10-05`, `DEPLOY-TIRANA-2026-10-05`) |
 | Release classification | **TIRANA TIME SYSTEM-WIDE + TOP BAR CLOCK DEPLOYED; BROWSER SMOKE PENDING** |
 | Clean immutable release baseline | **NO** |
 
@@ -40,7 +40,7 @@ It does not close the separate restore-proof or release-anchoring gaps.
 |---|---|
 | Repository path | `/opt/techi/techi-platform` |
 | Production branch | `backport/platform-components-92a521c` |
-| Production SHA | `af70d85` — TECHI Connect UI redesign, dashboard trends (`/devices/insights`), stale-while-revalidate dashboard caches; backend and frontend, deployed 2026-10-11; previous runtime SHA `8a05679` |
+| Production SHA | `25d38eb`: agent power-event endpoint (`POST /agent/power-event`), backend only, deployed 2026-10-11 13:07. The frontend runs the `5718ab5` build (UI motion/explorer commits after `af70d85`; image built 02:23:50, after that commit). Previous backend runtime `af70d85` code (checkout `5718ab5`) |
 | Schema version | `e1f2a3b4c5d6` (was `d8e4f6a1b2c3`) — `report_schedules.hour_utc` renamed `hour_local` (Tirana hour). Pre-deploy dump: `/opt/backups/techi/pre-tirana-global-2026-10-05_15-02.sql.gz` |
 | Working tree | No tracked changes at deployment verification; one pre-existing untracked artefact deliberately left: `.env.bak-terminal-scope-20260805-161934` |
 | Origin alignment | `af70d85` was pushed to origin; the server working tree already matched it (checksums of all 116 files) and was moved to it with `git fetch` + `git reset` |
@@ -53,8 +53,8 @@ The primary release identity is Git SHA, followed by a future immutable release 
 
 | Component | Active version | Release identity | Artifact status | Fleet status | Verification status |
 |---|---|---|---|---|---|
-| Backend | `1.0.0` metadata | Git SHA `af70d85`; rebuilt 2026-10-11 (rollback image `techi-platform-backend:pre-ui-8a05679`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
-| Frontend | `0.1.0` metadata | Git SHA `af70d85`; rebuilt 2026-10-11 (rollback image `techi-platform-frontend:pre-ui-8a05679`); runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
+| Backend | `1.0.0` metadata | Git SHA `25d38eb`; rebuilt 2026-10-11 13:07 (rollback image `techi-platform-backend:pre-power-5718ab5`); runs with `TZ=Europe/Tirane`; `/opt/backups/techi` mounted read-only at `/backups` | Running backend image | Service healthy after recreate | `/health` 200; dashboard endpoints measured against the live backend (overview 0.021 s, insights 0.016 s); authenticated browser smoke pending |
+| Frontend | `0.1.0` metadata | Git SHA `5718ab5`, inferred from build time (image built 2026-10-11 02:23:50, one minute after that commit); rollback image `techi-platform-frontend:pre-ui-8a05679`; runs with `TZ=Europe/Tirane` | Running frontend build | Service healthy | Public HTTP 200; authenticated browser smoke pending |
 | Windows Agent | `2.1.20` | Source version plus package manifest hash/version | MSI/EXE artifacts exist; available hashes match manifest evidence | Production rollout successful; approximately 95% coverage; remaining legacy versions expected | Verified production rollout |
 | Endpoint MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
 | Agent Update Bridge MSI | `2.1.20.0` | Package manifest hash/version | Artifact present and manifest-aligned | Installation count not separately verified | Verified artifact version |
@@ -69,6 +69,7 @@ Agent 2.1.20 is the production Agent version. The rollout is successful and the 
 | Area | Current state |
 |---|---|
 | Compose project | `techi-platform` |
+| Heartbeat timeout | `HEARTBEAT_TIMEOUT_SECONDS=600` (2× the 300 s interval) since 2026-10-11 13:46. At 300 it flapped about 11,000 offline alerts a day (HB-TIMEOUT-2026-10-11) |
 | Timezones | Host `Europe/Tirane` (set 2026-10-05; root cron backup `0 3 * * *` now runs 03:00 Tirana). Backend + frontend containers `TZ=Europe/Tirane` (log time only). PostgreSQL server **UTC — must stay UTC** (naive UTC columns). |
 | Backend | Healthy; zero restarts at audit time; source hash matches production SHA |
 | Frontend | Healthy; HTTP 200; zero restarts at audit time |

@@ -5,6 +5,103 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] HB-TIMEOUT-2026-10-11 — offline alerts were heartbeat-timeout flapping
+
+The baseline taken before the agent release showed that end-of-day shutdowns
+were not the main source of offline alerts. Measured read-only in production
+over 14 days:
+
+- About 11,000 `device_offline` alerts a day for 905 devices (about 9,000
+  from PCs and 2,300 from servers).
+- 91% of the alerts resolved within a minute (65,699 of ~72,000 in 7 days).
+  The hourly spread was flat, with no peak at the end of the working day.
+- 352 devices raised more than 100 alerts in a week.
+- Cause: `HEARTBEAT_TIMEOUT_SECONDS=300`, equal to the 300 s heartbeat
+  interval. Any heartbeat even slightly late (inventory cycle, network)
+  crossed the timeout, and the next heartbeat seconds later brought the
+  device back. In 24 h, 62,373 of 126,853 heartbeat gaps exceeded 300 s, 470
+  exceeded 600 s and 278 exceeded 900 s. `heartbeat-interval.md` already
+  required the timeout to be at least twice the interval.
+
+Fix: `HEARTBEAT_TIMEOUT_SECONDS=600` in `/opt/techi/techi-platform/.env`,
+applied 2026-10-11 13:46 Tirana with `docker compose up -d backend`. No code
+change and no migration. The setting is read only by the stale-device
+reconciliation and the System status "reporting" tile. Backup
+`.env.bak-hb-timeout-20261011-134618`. Verified: active value 600, backend
+healthy, `/health` 200, 190 devices reporting within 2 minutes. Expected
+result: about 470 offline alerts a day instead of about 11,000, with a dead
+server detected within 10 minutes instead of 5. Re-measure after 24 h.
+Rollback: set the value back to 300 and recreate the backend.
+
+## [2026-10-11] POWER-EVENT-2026-10-11 — switched-off PCs no longer have to raise offline alerts
+
+Owner report: many alerts come from staff switching their PCs off at the end
+of the day, which the platform reported as an offline device. Cause: the only
+offline path was the stale-heartbeat reconciliation, which opens a CRITICAL
+`device_offline` alert for every device and cannot tell a switched-off PC
+from a dead server. Commit `25d38eb`.
+
+- New `POST /api/v1/agent/power-event` `{device_id, agent_id, state}`, with
+  `state` either `shutdown` or `sleep`. The device moves offline at once
+  (status history reason `agent_shutdown` / `agent_sleep`), and
+  `offline_reason`, `offline_confidence` (`high`) and `last_shutdown_time`
+  are set. Those columns already existed and nothing wrote them before, so no
+  migration was needed. They are cleared when the device comes back online.
+- Reconciliation only selects online devices, so a device that reported a
+  power event never reaches the critical alert. A Client PC (by
+  `classify_category`) raises nothing. Every other category raises a WARNING
+  ("srv-01 was shut down") that resolves when the device returns.
+- A device that disappears without a power event (power cut, network loss,
+  crash) still raises the CRITICAL alert as before.
+- Requires a matching `agent_id`, otherwise it returns 403, and an unknown
+  device gets the same 403. The heartbeat endpoint is public (RISK-SEC-002),
+  and an open power event would let anyone silence the offline alert of any
+  device they can name.
+- Activity timeline: the stored `offline_reason` is applied only to the
+  latest transition. Previously, while a device was offline, every older
+  offline row showed it too.
+
+**No effect on alerts until the agent ships.** The Windows agent side is
+written and tested but not released (`agent/power_event.go`,
+`service_windows.go`):
+
+- The service now also accepts `PreShutdown` and `PowerEvent`.
+  `Shutdown`/`PreShutdown` report `shutdown`. `PBT_APMSUSPEND` reports
+  `sleep`, which Fast Startup "shutdowns" probably also arrive as, since
+  session 0 hibernates. A plain `Stop` (operator, MSI upgrade) reports
+  nothing, so it still surfaces as offline.
+- The backend marks a device online while it handles a heartbeat, so a
+  heartbeat landing after the event would undo it. Each heartbeat HTTP
+  attempt holds a one-slot gate. The power event pauses new attempts and
+  then takes the slot, so it waits only for the attempt already in flight
+  (bounded: 10 s on shutdown, 1 s on sleep) and never for a whole inventory
+  cycle. The send timeout is 5 s on shutdown and 2 s on sleep, because
+  Windows gives a suspending service about two seconds.
+- Heartbeats resume on `PBT_APMRESUMESUSPEND`/`PBT_APMRESUMEAUTOMATIC`. The
+  pause also lifts itself after 2 minutes of wall-clock time, so a missed
+  resume event cannot silence a device for good. Wall clock is used because
+  Go's monotonic clock on Windows stops while the machine is asleep.
+- Tests: 8 new agent tests (also under `-race`), full agent suite green,
+  `GOOS=windows` build and test compile OK. Still unverified on a real
+  machine: shutdown, sleep, and a Fast Startup shutdown, each confirmed in
+  `device_status_history` (`agent_shutdown` / `agent_sleep`).
+
+Deployed 2026-10-11 13:07 Tirana, backend only (`5718ab5` → `25d38eb`;
+PostgreSQL and frontend untouched). Pre-deploy dump
+`/opt/backups/techi/pre-power-event-2026-10-11_13-05.sql.gz` (gzip-tested,
+146 MB). Rollback image `techi-platform-backend:pre-power-5718ab5`. Tests:
+backend 1206 with flags OFF and ON, contract tests 15, `tsc` clean, frontend
+build OK. The preflight agent `go build` step could not run because Go is not
+installed on the deploying machine, and the agent is unchanged. After deploy:
+backend healthy, `/health` 200, power event returns 403 for a wrong
+`agent_id` and 422 for an unknown state, and heartbeats keep landing (180
+devices within 2 minutes of the restart).
+
+Also found: the server checkout had already been at `5718ab5` (six UI motion
+and explorer commits after `af70d85`), and the running frontend image was
+built at 02:23:50, one minute after `5718ab5`. That frontend deploy was never
+recorded in PROJECT_STATE.
+
 ## [2026-10-11] UI-REDESIGN-2026-10-11 — TECHI Connect redesign, dashboard trends, faster dashboard
 
 Owner request: an enterprise, modern, symmetric UI that stays easy to use,
