@@ -30,3 +30,5 @@ class AlertCountResponse(BaseModel):
     total_open: int
     by_severity: Dict[str, int]
     by_kind: Dict[str, int] = {}
+    devices_affected: int = 0
+    oldest_open_at: Optional[datetime] = None

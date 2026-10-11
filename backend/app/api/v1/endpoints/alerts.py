@@ -34,6 +34,7 @@ def list_alerts(
     state: Optional[str] = Query(default=None, description="open | resolved | all"),
     severity: Optional[str] = Query(default=None, pattern="^(info|warning|critical)$"),
     kind: Optional[str] = None,
+    search: Optional[str] = Query(default=None, max_length=100),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -43,6 +44,7 @@ def list_alerts(
         state=AlertState.OPEN.value if state == "open" else None,
         severity=severity,
         kind=kind,
+        search=search,
         limit=limit,
         offset=offset,
     )
@@ -51,7 +53,7 @@ def list_alerts(
     # always "open" — they resolve themselves once max_uses is raised. They
     # describe enrollment tokens, not devices, so only an unscoped operator
     # sees them.
-    if offset == 0 and scope is None and kind in (None, "token_usage_warning", "token_usage_critical"):
+    if offset == 0 and scope is None and not search and kind in (None, "token_usage_warning", "token_usage_critical"):
         token_alerts = [
             alert for alert in build_token_usage_alerts(db)
             if (severity is None or alert["severity"] == severity) and (kind is None or alert["kind"] == kind)
@@ -65,14 +67,23 @@ def alert_count(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    search: Optional[str] = Query(default=None, max_length=100),
 ):
-    total, by_severity, by_kind = AlertRepository(db).open_counts(scope)
-    if scope is None:
+    counts = AlertRepository(db).open_counts(scope, search)
+    by_severity, by_kind = counts["by_severity"], counts["by_kind"]
+    total = counts["total"]
+    if scope is None and not search:
         for alert in build_token_usage_alerts(db):
             by_severity[alert["severity"]] = by_severity.get(alert["severity"], 0) + 1
             by_kind[alert["kind"]] = by_kind.get(alert["kind"], 0) + 1
             total += 1
-    return AlertCountResponse(total_open=total, by_severity=by_severity, by_kind=by_kind)
+    return AlertCountResponse(
+        total_open=total,
+        by_severity=by_severity,
+        by_kind=by_kind,
+        devices_affected=counts["devices_affected"],
+        oldest_open_at=counts["oldest_open_at"],
+    )
 
 
 @router.get("/device/{device_id}", response_model=List[AlertOut])

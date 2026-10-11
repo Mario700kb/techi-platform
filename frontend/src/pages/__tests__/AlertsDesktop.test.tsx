@@ -46,9 +46,12 @@ describe("AlertsDesktop", () => {
     renderPage();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByRole("button", { name: "K.Xhaferri-PC" })).toBeInTheDocument();
+    expect(within(table).getByRole("link", { name: "K.Xhaferri-PC" })).toBeInTheDocument();
     expect(within(table).getByText("TECHI shpk")).toBeInTheDocument();
     expect(within(table).getByText("Device offline")).toBeInTheDocument();
+    expect(within(table).queryByText(/DESKTOP-UKPKR96/)).not.toBeInTheDocument();
+    expect(within(table).getByText("82.0%")).toBeInTheDocument();
+    expect(within(table).getByText("CPU usage elevated")).toBeInTheDocument();
   });
 
   it("shows the server's totals on the severity tabs and asks the server to filter", async () => {
@@ -70,7 +73,7 @@ describe("AlertsDesktop", () => {
     renderPage();
 
     const table = await screen.findByRole("table");
-    const row = within(table).getByRole("button", { name: "K.Xhaferri-PC" }).closest("tr")!;
+    const row = within(table).getByRole("link", { name: "K.Xhaferri-PC" }).closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: "Dismiss" }));
 
     await waitFor(() => expect(resolve).toHaveBeenCalledWith(11));

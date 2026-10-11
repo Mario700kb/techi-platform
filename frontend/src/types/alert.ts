@@ -37,6 +37,8 @@ export interface AlertCount {
   total_open: number;
   by_severity: Record<string, number>;
   by_kind?: Record<string, number>;
+  devices_affected?: number;
+  oldest_open_at?: string | null;
 }
 
 export const ALERT_KIND_LABELS: Record<AlertKind, string> = {

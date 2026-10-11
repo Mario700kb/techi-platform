@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChevronRight, WifiOff, Cpu, MemoryStick, HardDrive, Zap, Key } from "lucide-react";
+import { CheckCircle2, ChevronRight } from "lucide-react";
+import AlertKindIcon from "../components/AlertKindIcon";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
@@ -26,17 +27,6 @@ function timeAgo(iso: string): string {
   if (hours < 1) return `${Math.floor(mins)}m ago`;
   if (hours < 24) return `${Math.floor(hours)}h ago`;
   return `${Math.floor(days)}d ago`;
-}
-
-function KindIcon({ kind, className }: { kind: AlertKind; className?: string }) {
-  const cls = className ?? "h-4 w-4";
-  if (kind === "device_offline" || kind === "heartbeat_stale") return <WifiOff className={cls} />;
-  if (kind === "high_cpu") return <Cpu className={cls} />;
-  if (kind === "high_ram") return <MemoryStick className={cls} />;
-  if (kind === "low_disk") return <HardDrive className={cls} />;
-  if (kind === "repeated_reconnects") return <Zap className={cls} />;
-  if (kind === "token_usage_warning" || kind === "token_usage_critical") return <Key className={cls} />;
-  return <AlertTriangle className={cls} />;
 }
 
 type FilterId = "all" | "critical" | "warning" | "device_offline" | "high_cpu" | "high_ram" | "low_disk" | "token";
@@ -74,7 +64,7 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
         className="mt-[1px] flex h-8 w-8 flex-none items-center justify-center rounded-lg"
         style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 26%, transparent)`, color }}
       >
-        <KindIcon kind={alert.kind} className="h-4 w-4" />
+        <AlertKindIcon kind={alert.kind} className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">

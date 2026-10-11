@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
@@ -108,12 +108,14 @@ class AlertRepository:
         state: Optional[str] = None,
         severity: Optional[str] = None,
         kind: Optional[str] = None,
+        search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> List[AlertRow]:
-        query = self._in_scope(
-            self.db.query(DeviceAlert, Device.hostname, Device.display_name, Client.name), scope,
-        ).outerjoin(Client, Client.id == Device.client_id)
+        query = self._with_client(
+            self._in_scope(self.db.query(DeviceAlert, Device.hostname, Device.display_name, Client.name), scope),
+            search,
+        )
         if state == AlertState.OPEN.value:
             query = query.filter(DeviceAlert.state == AlertState.OPEN.value)
         if severity:
@@ -122,9 +124,31 @@ class AlertRepository:
             query = query.filter(DeviceAlert.kind == kind)
         return query.order_by(DeviceAlert.created_at.desc(), DeviceAlert.id.desc()).offset(offset).limit(limit).all()
 
-    def open_counts(self, scope: Optional["AllowedScope"] = None) -> Tuple[int, Dict[str, int], Dict[str, int]]:
-        query = self._in_scope(self.db.query(DeviceAlert.severity, DeviceAlert.kind, func.count(DeviceAlert.id)), scope)
-        rows = query.filter(DeviceAlert.state == AlertState.OPEN.value).group_by(DeviceAlert.severity, DeviceAlert.kind).all()
+    @staticmethod
+    def _with_client(query, search: Optional[str]):
+        query = query.outerjoin(Client, Client.id == Device.client_id)
+        term = (search or "").strip()
+        if term:
+            pattern = f"%{term}%"
+            query = query.filter(or_(
+                Device.hostname.ilike(pattern),
+                Device.display_name.ilike(pattern),
+                Client.name.ilike(pattern),
+                DeviceAlert.message.ilike(pattern),
+            ))
+        return query
+
+    def open_counts(self, scope: Optional["AllowedScope"] = None, search: Optional[str] = None) -> dict:
+        """Open alerts by severity and kind, the devices they touch and the
+        oldest one, over the same scope and search as the list."""
+        base = self._with_client(self._in_scope(self.db.query(DeviceAlert), scope), search).filter(
+            DeviceAlert.state == AlertState.OPEN.value
+        )
+        rows = (
+            base.with_entities(DeviceAlert.severity, DeviceAlert.kind, func.count(DeviceAlert.id))
+            .group_by(DeviceAlert.severity, DeviceAlert.kind)
+            .all()
+        )
         by_severity: Dict[str, int] = {}
         by_kind: Dict[str, int] = {}
         total = 0
@@ -134,7 +158,16 @@ class AlertRepository:
             by_severity[severity_value] = by_severity.get(severity_value, 0) + count
             by_kind[kind_value] = by_kind.get(kind_value, 0) + count
             total += count
-        return total, by_severity, by_kind
+        devices, oldest = base.with_entities(
+            func.count(func.distinct(DeviceAlert.device_id)), func.min(DeviceAlert.created_at)
+        ).one()
+        return {
+            "total": total,
+            "by_severity": by_severity,
+            "by_kind": by_kind,
+            "devices_affected": devices or 0,
+            "oldest_open_at": oldest,
+        }
 
     def get_in_scope(self, alert_id: int, scope: Optional["AllowedScope"] = None) -> Optional[DeviceAlert]:
         return self._in_scope(self.db.query(DeviceAlert), scope).filter(DeviceAlert.id == alert_id).first()

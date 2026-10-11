@@ -134,3 +134,25 @@ def test_severity_and_kind_filters(db, fleet, monkeypatch):
 
     assert [a["id"] for a in critical] == [fleet.acme_alert.id]
     assert [a["id"] for a in cpu] == [fleet.globex_alert.id]
+
+
+def test_search_filters_the_list_and_its_counts_on_the_server(db, fleet, monkeypatch):
+    client = _client(db, monkeypatch, None)
+
+    listed = client.get("/api/v1/alerts/", params={"state": "open", "search": "xhaferri"}).json()
+    by_client = client.get("/api/v1/alerts/", params={"state": "open", "search": "globex"}).json()
+    counts = client.get("/api/v1/alerts/count", params={"search": "xhaferri"}).json()
+
+    assert [a["id"] for a in listed] == [fleet.acme_alert.id]
+    assert [a["id"] for a in by_client] == [fleet.globex_alert.id]
+    assert counts["total_open"] == 1
+    assert counts["devices_affected"] == 1
+
+
+def test_counts_report_devices_affected_and_the_oldest_open_alert(db, fleet, monkeypatch):
+    client = _client(db, monkeypatch, AllowedScope(client_ids=frozenset({fleet.acme.id, fleet.globex.id})))
+
+    counts = client.get("/api/v1/alerts/count").json()
+
+    assert counts["devices_affected"] == 2
+    assert counts["oldest_open_at"] is not None

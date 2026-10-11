@@ -1508,6 +1508,92 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-kpi-hint { font-size: 12px; color: var(--th-text-faint); }
 
+/* ── Alerts table ── one grid, 16px gutters on both sides, a 3px severity
+   edge per row, fixed column widths so the layout never shifts with content. */
+.th-alerts-card {
+  overflow: clip;
+  border-radius: 12px;
+  border: 1px solid var(--th-border-card);
+  background: var(--th-bg-card);
+}
+.th-alerts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-alerts-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: color-mix(in srgb, var(--th-accent) 6%, var(--th-bg-card));
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-text-primary);
+}
+.th-alerts-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.premium-page .th-alerts-table th { text-align: left; border-bottom: 1px solid var(--th-border-subtle); }
+.premium-page .th-alerts-table th.text-right,
+.premium-page .th-alerts-table td.text-right { text-align: right; }
+.premium-page .th-alerts-table td { padding-top: 10px !important; padding-bottom: 10px !important; border-bottom: 1px solid var(--th-border-subtle); }
+.premium-page .th-alerts-table th:first-child,
+.premium-page .th-alerts-table td:first-child { padding-left: 16px !important; padding-right: 0 !important; }
+.premium-page .th-alerts-table th:last-child,
+.premium-page .th-alerts-table td:last-child { padding-right: 16px !important; }
+.th-alerts-table tbody tr:last-child td { border-bottom: 0; }
+.th-alerts-table tbody tr > td:first-child { box-shadow: inset 3px 0 0 var(--row-tone, transparent); }
+.th-alerts-table tbody tr[data-clickable="true"] { cursor: pointer; }
+.premium-page .th-alerts-table tbody tr:hover { background: transparent; }
+.th-alerts-table tbody tr:hover > td { background: var(--th-table-hover); }
+.th-alerts-table tbody tr[data-selected="true"] > td { background: color-mix(in srgb, var(--th-accent) 7%, var(--th-bg-card)); }
+.th-alerts-table input[type="checkbox"] { width: 16px; height: 16px; vertical-align: middle; accent-color: var(--th-accent); cursor: pointer; }
+.th-alerts-kind {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--th-text-muted);
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-chip-bg);
+}
+.th-alerts-primary,
+.th-alerts-secondary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-alerts-primary { font-size: 13px; font-weight: 500; line-height: 18px; color: var(--th-text-primary); }
+.th-alerts-secondary { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--th-text-muted); }
+.premium-page .th-alerts-table a.th-alerts-link { min-height: 0; }
+.th-alerts-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.th-alerts-value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.th-alerts-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--th-border-subtle);
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-alerts-skeleton {
+  height: 57px;
+  margin: 0 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: linear-gradient(90deg, transparent, var(--th-chip-bg), transparent);
+  background-size: 200% 100%;
+  animation: th-alerts-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes th-alerts-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .th-alerts-skeleton { animation: none; } }
+
 .th-status-chip {
   display: inline-flex;
   align-items: center;
