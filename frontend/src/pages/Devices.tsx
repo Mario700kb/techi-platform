@@ -8,10 +8,14 @@ import {
   deleteDevice,
   getDevice,
   getDevices,
+  getDeviceQuickCounts,
   getDeviceTableDetails,
   restoreDevice,
   Device,
   DeviceFilters,
+  DeviceQuickCounts,
+  DeviceQuickFilter,
+  DeviceSortKey,
 } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
@@ -28,7 +32,6 @@ import { isActiveStatus } from "../api/actions";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { appCache, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
-import { parseUTC } from "../utils/time";
 
 const DEVICE_PATCH_EVENTS = new Set([
   "device_online",
@@ -61,19 +64,12 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
   return { total: devices.length, unassigned, byClient, byClientCategory: new Map(), byClientCategoryPlatform: new Map() };
 }
 
-// Map quick filter pills to backend API params where possible.
-// Health-based pills (critical, warnings, etc.) remain client-side in DevicesTable.
-function quickFilterToApiFilters(qf: QuickFilter): Partial<DeviceFilters> {
-  switch (qf) {
-    case "online": return { freshness_state: "online" };
-    case "stale": return { freshness_state: "stale" };
-    case "offline": return { freshness_state: "offline" };
-    case "servers": return { smart_folder: "windows_server" };
-    case "workstations": return { smart_folder: "windows_workstation" };
-    case "maintenance": return { maintenance_state: "maintenance" };
-    case "needs_agent_update": return { agent_update_state: "outdated" };
-    default: return {};
-  }
+// Every quick filter runs on the server, over the whole selection — never on
+// the rows of the current page — and the counts use the same conditions.
+function quickFilterToApiFilters(qf: QuickFilter, favoriteIds: number[]): Partial<DeviceFilters> {
+  if (qf === "all") return {};
+  if (qf === "favorites") return { ids: favoriteIds };
+  return { quick_filter: qf as DeviceQuickFilter };
 }
 
 export default function Devices() {
@@ -164,6 +160,23 @@ export default function Devices() {
     });
   };
   const [hideOfflineDays, setHideOfflineDays] = useState(30);
+  const [sort, setSort] = useState<{ key: DeviceSortKey; dir: "asc" | "desc" }>({ key: "hostname", dir: "asc" });
+  const [agentVersionFilter, setAgentVersionFilter] = useState("all");
+  const favoriteIds = useMemo(() => [...favorites].sort((a, b) => a - b), [favorites]);
+  // The selection without the quick filter and sort: what the counts describe.
+  const baseFilters = useMemo<DeviceFilters>(() => ({
+    ...filters,
+    ...(agentVersionFilter !== "all" ? { agent_version: agentVersionFilter } : {}),
+    ...(hideOldOffline ? { hide_offline_days: hideOfflineDays } : {}),
+  }), [filters, agentVersionFilter, hideOldOffline, hideOfflineDays]);
+  const listFilters = useMemo<DeviceFilters>(() => ({
+    ...baseFilters,
+    ...quickFilterToApiFilters(quickFilter, favoriteIds),
+    sort: sort.key,
+    order: sort.dir,
+  }), [baseFilters, quickFilter, favoriteIds, sort]);
+  const [quickCounts, setQuickCounts] = useState<DeviceQuickCounts | null>(null);
+  const countsRequestRef = useRef(0);
   const snapshotLoading = fleetOverviewLoading && fleetOverview === null;
   const [error, setError] = useState<string | null>(null);
   const refreshTimerRef = useRef<number | undefined>();
@@ -209,7 +222,6 @@ export default function Devices() {
       ),
     };
   }, [fleetOverview]);
-  const snapshotStats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
   const [healthMap, setHealthMap] = useState<Record<number, DeviceHealthSummary>>({});
   const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
@@ -265,7 +277,7 @@ export default function Devices() {
   const loadTableData = useCallback(async () => {
     const cacheKey = deviceTableCacheKey(
       tablePage, tableLimit, debouncedSearch, quickFilter,
-      filters as Record<string, unknown>,
+      listFilters as Record<string, unknown>,
     );
     // Records the selection this call was made for; checked after each
     // await below so a response for an old client_id/folder is discarded.
@@ -312,8 +324,7 @@ export default function Devices() {
       void loadDetails(stale.devices);
       try {
         const skip = (tablePage - 1) * tableLimit;
-        const qfExtra = quickFilterToApiFilters(quickFilter);
-        const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
+        const apiFilters: DeviceFilters = { ...listFilters };
         if (debouncedSearch) apiFilters.search = debouncedSearch;
         const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
         if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
@@ -334,8 +345,7 @@ export default function Devices() {
     setError(null);
     try {
       const skip = (tablePage - 1) * tableLimit;
-      const qfExtra = quickFilterToApiFilters(quickFilter);
-      const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
+      const apiFilters: DeviceFilters = { ...listFilters };
       if (debouncedSearch) apiFilters.search = debouncedSearch;
       const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
       if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
@@ -349,7 +359,41 @@ export default function Devices() {
     } finally {
       if (tableRequestKeyRef.current === cacheKey) setTableLoading(false);
     }
-  }, [tablePage, tableLimit, quickFilter, filters, debouncedSearch]);
+  }, [tablePage, tableLimit, quickFilter, listFilters, debouncedSearch]);
+
+  const loadQuickCounts = useCallback(async () => {
+    const requestId = ++countsRequestRef.current;
+    const counted: DeviceFilters = { ...baseFilters };
+    if (debouncedSearch) counted.search = debouncedSearch;
+    try {
+      const result = await getDeviceQuickCounts(counted, favoriteIds);
+      if (countsRequestRef.current === requestId) setQuickCounts(result);
+    } catch {
+      // Counts are advisory; the list itself still loads and shows its total.
+    }
+  }, [baseFilters, debouncedSearch, favoriteIds]);
+
+  useEffect(() => {
+    void loadQuickCounts();
+  }, [loadQuickCounts]);
+
+  const resetToFirstPage = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleSortChange = useCallback((key: DeviceSortKey) => {
+    setSort((current) => (current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+    resetToFirstPage();
+  }, [resetToFirstPage]);
+
+  const handleAgentVersionFilterChange = useCallback((value: string) => {
+    setAgentVersionFilter(value);
+    resetToFirstPage();
+  }, [resetToFirstPage]);
 
   const loadOrgData = useCallback(async () => {
     try {
@@ -362,8 +406,8 @@ export default function Devices() {
   }, []);
 
   const refreshBoth = useCallback(async () => {
-    await Promise.all([refreshFleetOverview(true), loadTableData()]);
-  }, [refreshFleetOverview, loadTableData]);
+    await Promise.all([refreshFleetOverview(true), loadTableData(), loadQuickCounts()]);
+  }, [refreshFleetOverview, loadTableData, loadQuickCounts]);
   refreshBothRef.current = refreshBoth;
 
   const mergeDeviceEvent = useCallback(
@@ -710,8 +754,7 @@ export default function Devices() {
     const effectiveLimit = tableLimit + mobileExtraLimitRef.current;
     setMobileLoadingMore(true);
     try {
-      const qfExtra = quickFilterToApiFilters(quickFilter);
-      const apiFilters: DeviceFilters = { ...filters, ...qfExtra };
+      const apiFilters: DeviceFilters = { ...listFilters };
       if (debouncedSearch) apiFilters.search = debouncedSearch;
       const result = await getDevices(apiFilters, 0, effectiveLimit);
       setTableDevices(result.devices);
@@ -721,12 +764,12 @@ export default function Devices() {
     } finally {
       setMobileLoadingMore(false);
     }
-  }, [tableLimit, quickFilter, filters, debouncedSearch]);
+  }, [tableLimit, listFilters, debouncedSearch]);
 
   // Reset mobile extra limit when filters/search change
   useEffect(() => {
     mobileExtraLimitRef.current = 0;
-  }, [quickFilter, filters, debouncedSearch]);
+  }, [listFilters, debouncedSearch]);
 
   const alertsMap = useMemo(() => {
     const map: Record<number, { critical: number; warning: number }> = {};
@@ -740,15 +783,6 @@ export default function Devices() {
     return map;
   }, [alerts]);
 
-  const visibleDevices = useMemo(() => {
-    const cutoff = Date.now() - hideOfflineDays * 24 * 60 * 60 * 1000;
-    return tableDevices.filter((device) => {
-      if (!hideOldOffline) return true;
-      if (device.freshness_state !== "offline") return true;
-      if (!device.last_seen) return false;
-      return parseUTC(device.last_seen).getTime() >= cutoff;
-    });
-  }, [tableDevices, hideOldOffline, hideOfflineDays]);
 
   return (
     <section className="premium-page devices-premium min-w-0 space-y-5 xl:flex xl:h-full xl:flex-col xl:gap-5 xl:space-y-0">
@@ -795,7 +829,7 @@ export default function Devices() {
 
         <div className="min-w-0 space-y-4 xl:min-h-0">
           <DevicesTable
-            devices={visibleDevices}
+            devices={tableDevices}
             loading={tableLoading && tableDevices.length === 0}
             tableLoading={tableLoading}
             error={error}
@@ -820,7 +854,6 @@ export default function Devices() {
             onToggleFavorite={toggleFavorite}
             quickFilter={quickFilter}
             onQuickFilterChange={handleQuickFilterChange}
-            scopedDeviceCount={snapshotStats.total}
             page={tablePage}
             limit={tableLimit}
             total={tableTotal}
@@ -836,16 +869,14 @@ export default function Devices() {
             activePackageSha256={fleetOverview?.active_agent_sha256}
             activeConnectorVersions={fleetOverview?.active_connector_versions}
             activeAgentVersions={fleetOverview?.active_agent_versions}
-            agentsOutdated={fleetOverview?.agents_outdated ?? 0}
             onOpenDeviceTerminal={openDeviceTerminal}
-            statusCounts={{
-              all: snapshotStats.total,
-              online: snapshotStats.online,
-              stale: snapshotStats.stale,
-              offline: snapshotStats.offline,
-              critical: fleetOverview?.critical ?? 0,
-              warnings: fleetOverview?.warnings ?? 0,
-            }}
+            quickCounts={quickCounts?.counts}
+            agentVersionCounts={quickCounts?.agent_versions}
+            sortKey={sort.key}
+            sortDir={sort.dir}
+            onSortChange={handleSortChange}
+            agentVersionFilter={agentVersionFilter}
+            onAgentVersionFilterChange={handleAgentVersionFilterChange}
             toolbarExtra={
               <div className="flex items-center gap-3">
               <button
@@ -862,7 +893,7 @@ export default function Devices() {
                 <input
                   type="checkbox"
                   checked={hideOldOffline}
-                  onChange={(event) => setHideOldOffline(event.target.checked)}
+                  onChange={(event) => { setHideOldOffline(event.target.checked); resetToFirstPage(); }}
                   className="h-4 w-4 rounded accent-orange-500"
                 />
                 Hide devices offline more than

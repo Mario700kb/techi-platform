@@ -77,5 +77,7 @@ export function deviceTableCacheKey(
     // smart_folder/device_type to category/platform).
     filters.category ?? "", filters.platform ?? "",
     filters.duplicate_candidates ?? "", filters.lifecycle_state ?? "",
+    Array.isArray(filters.ids) ? filters.ids.join(",") : "", filters.agent_version ?? "",
+    filters.hide_offline_days ?? "", filters.sort ?? "", filters.order ?? "",
   ].join("|");
 }

@@ -280,6 +280,14 @@ class DeviceListResponse(BaseModel):
     total: int
 
 
+class DeviceQuickCounts(BaseModel):
+    """Counts for the Devices status tabs and quick filters over one selection,
+    plus how many devices of that selection run each agent version."""
+
+    counts: Dict[str, int]
+    agent_versions: Dict[str, int]
+
+
 class DeviceClientAssignment(BaseModel):
     client_id: Optional[int] = None
 

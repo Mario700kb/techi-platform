@@ -35,7 +35,7 @@ from app.core.config import settings
 from app.core.time import utcnow
 from app.api.v1.endpoints import devices as devices_module
 from app.services import device_service as device_service_module
-from app.services.device_overview_service import DeviceOverviewService, _overview_cache
+from app.services.device_overview_service import DeviceOverviewService, invalidate_overview_cache
 from app.services.device_summary_service import DeviceSummaryService
 
 # ── Tables needed ─────────────────────────────────────────────────────────── #
@@ -235,7 +235,7 @@ class TestDeviceScopeByClientId:
     def test_overview_is_scope_filtered_and_compact(self, db, monkeypatch):
         # Documents the flag-OFF production invariant (compact tree_counts).
         monkeypatch.setattr(settings, "FEATURE_LINUX", False)
-        _overview_cache.clear()
+        invalidate_overview_cache()
         op = _operator(db, "op_overview")
         _team_with_client(db, op, client_id=1)
         visible = _device(db, "RUST-OVERVIEW-IN", client_id=1, hostname="visible")
@@ -263,7 +263,7 @@ class TestDeviceScopeByClientId:
         assert len(response.content) < 5000
 
     def test_overview_agent_outdated_is_zero_when_versions_match(self, db, tmp_path, monkeypatch):
-        _overview_cache.clear()
+        invalidate_overview_cache()
         from app.core.config import settings
 
         package_dir = _write_agent_manifest(tmp_path, [
@@ -283,7 +283,7 @@ class TestDeviceScopeByClientId:
         assert overview.agents_outdated == 0
 
     def test_overview_agent_outdated_counts_mismatch_and_missing_versions(self, db, tmp_path, monkeypatch):
-        _overview_cache.clear()
+        invalidate_overview_cache()
         from app.core.config import settings
 
         package_dir = _write_agent_manifest(tmp_path, [
@@ -305,7 +305,7 @@ class TestDeviceScopeByClientId:
         assert overview.agents_outdated == 2
 
     def test_overview_agent_outdated_uses_agent_binary_sha_for_same_version_rebuild(self, db, tmp_path, monkeypatch):
-        _overview_cache.clear()
+        invalidate_overview_cache()
         from app.core.config import settings
 
         active_sha = "a" * 64
@@ -346,7 +346,7 @@ class TestDeviceScopeByClientId:
         assert overview.agents_outdated == 1
 
     def test_overview_active_agent_version_uses_active_windows_amd64_package(self, db, tmp_path, monkeypatch):
-        _overview_cache.clear()
+        invalidate_overview_cache()
         from app.core.config import settings
 
         package_dir = _write_agent_manifest(tmp_path, [
@@ -528,7 +528,7 @@ def test_overview_uses_two_queries_and_cache(db, monkeypatch):
     # The 2-query overview is a flag-OFF guarantee; with FEATURE_LINUX on the
     # tree adds one platform-aggregation query by design (see Phase 3e).
     monkeypatch.setattr(settings, "FEATURE_LINUX", False)
-    _overview_cache.clear()
+    invalidate_overview_cache()
     db.add_all([
         Device(
             rustdesk_id=f"OVERVIEW-{index:04d}",

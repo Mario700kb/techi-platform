@@ -1,6 +1,6 @@
 import threading
 import time
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Sequence
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_group_repository import DeviceGroupRepository
-from app.repositories.device_repository import DeviceRepository
+from app.repositories.device_repository import HEALTH_INDEX_FILTERS, DeviceRepository
 from app.schemas.device import DeviceCreate, DeviceUpdate, MaintenanceEnterRequest
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.device_assignment_service import DeviceAssignmentService
@@ -63,6 +63,12 @@ class DeviceService:
         platform: Optional[str] = None,
         category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
+        quick_filter: Optional[str] = None,
+        device_ids: Optional[Sequence[int]] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
+        sort: Optional[str] = None,
+        order: Optional[str] = None,
     ) -> List[Device]:
         active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
         devices = self.repository.get_multi(
@@ -84,8 +90,63 @@ class DeviceService:
             platform=platform,
             category=category,
             scope=scope,
+            quick_filter=quick_filter,
+            health_index=self._health_index_for(quick_filter, sort, scope),
+            device_ids=device_ids,
+            agent_version=agent_version,
+            hide_offline_days=hide_offline_days,
+            sort=sort,
+            order=order,
         )
         return self.assignment.apply_resolution_many(devices)
+
+    def _health_index_for(self, quick_filter: Optional[str], sort: Optional[str], scope):
+        if quick_filter in HEALTH_INDEX_FILTERS or (sort or "").strip().lower() == "health":
+            from app.services.device_overview_service import get_health_index
+            return get_health_index(self.repository.db, scope)
+        return None
+
+    def get_device_counts(
+        self,
+        status: Optional[DeviceStatus] = None,
+        device_type: Optional[DeviceType] = None,
+        freshness_state: Optional[DeviceFreshnessState] = None,
+        assignment_source: Optional[str] = None,
+        smart_folder: Optional[str] = None,
+        client_id: Optional[int] = None,
+        group_id: Optional[int] = None,
+        lifecycle_state: Optional[str] = "active",
+        search: Optional[str] = None,
+        duplicate_candidates: Optional[bool] = None,
+        maintenance_state: Optional[str] = None,
+        platform: Optional[str] = None,
+        category: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
+        favorite_ids: Optional[Sequence[int]] = None,
+        scope: Optional["AllowedScope"] = None,
+    ) -> dict:
+        """Counts for every status tab and quick filter over one base selection
+        (explorer scope, search, refinements), computed with the same conditions
+        the list uses, plus the agent versions present in that selection."""
+        from app.services.device_overview_service import get_health_index
+
+        base = dict(
+            status=status, device_type=device_type, freshness_state=freshness_state,
+            assignment_source=assignment_source, smart_folder=smart_folder,
+            client_id=client_id, group_id=group_id, lifecycle_state=lifecycle_state, search=search,
+            duplicate_candidates=duplicate_candidates, maintenance_state=maintenance_state,
+            platform=platform, category=category, hide_offline_days=hide_offline_days, scope=scope,
+        )
+        counts = self.repository.count_quick_filters(
+            get_health_index(self.repository.db, scope), agent_version=agent_version, **base,
+        )
+        counts["favorites"] = (
+            self.repository.count(device_ids=favorite_ids, agent_version=agent_version, **base)
+            if favorite_ids
+            else 0
+        )
+        return {"counts": counts, "agent_versions": self.repository.agent_version_counts(**base)}
 
     @staticmethod
     def _active_agent_package_for_filter(agent_update_state: Optional[str]) -> tuple[Optional[str], Optional[str]]:
@@ -173,6 +234,10 @@ class DeviceService:
         platform: Optional[str] = None,
         category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
+        quick_filter: Optional[str] = None,
+        device_ids: Optional[Sequence[int]] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
     ) -> int:
         active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
         return self.repository.count(
@@ -192,6 +257,11 @@ class DeviceService:
             platform=platform,
             category=category,
             scope=scope,
+            quick_filter=quick_filter,
+            health_index=self._health_index_for(quick_filter, None, scope),
+            device_ids=device_ids,
+            agent_version=agent_version,
+            hide_offline_days=hide_offline_days,
         )
 
     def get_devices_stats(self, scope: Optional["AllowedScope"] = None) -> dict:

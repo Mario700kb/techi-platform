@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Archive, AlertTriangle, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
-import { clearDeviceMaintenance, Device, DeviceFilters, enterDeviceMaintenance } from "../api/devices";
+import { clearDeviceMaintenance, Device, DeviceFilters, DeviceQuickCounts, DeviceSortKey, enterDeviceMaintenance } from "../api/devices";
 import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
@@ -56,7 +56,6 @@ interface DevicesTableProps {
   onToggleFavorite?: (deviceId: number) => void;
   quickFilter: QuickFilter;
   onQuickFilterChange: (filter: QuickFilter) => void;
-  scopedDeviceCount: number;
   tableLoading?: boolean;
   page?: number;
   limit?: number;
@@ -73,13 +72,20 @@ interface DevicesTableProps {
   activePackageSha256?: string | null;
   activeConnectorVersions?: Record<string, string>;
   activeAgentVersions?: Record<string, string>;
-  agentsOutdated?: number;
   // Connect ▸ Embedded Terminal from a Catalog row opens the device's
   // drawer directly on its Terminal tab (the terminal lives there).
   onOpenDeviceTerminal?: (device: Device) => void;
   toolbarExtra?: React.ReactNode;
-  /** Fleet-wide counts for the status tabs (the list itself is paginated). */
-  statusCounts?: Record<"all" | "online" | "stale" | "offline" | "critical" | "warnings", number>;
+  /** Server-side counts for every tab and quick filter over the current
+   *  selection; computed with the same conditions as the list. */
+  quickCounts?: DeviceQuickCounts["counts"];
+  /** Devices per agent version in the current selection ("unknown" = none). */
+  agentVersionCounts?: Record<string, number>;
+  sortKey: DeviceSortKey;
+  sortDir: "asc" | "desc";
+  onSortChange: (key: DeviceSortKey) => void;
+  agentVersionFilter: string;
+  onAgentVersionFilterChange: (value: string) => void;
 }
 
 export type QuickFilter =
@@ -465,7 +471,6 @@ const DevicesTable = memo(function DevicesTable({
   onToggleFavorite,
   quickFilter,
   onQuickFilterChange,
-  scopedDeviceCount,
   tableLoading = false,
   page = 1,
   limit = 20,
@@ -482,10 +487,15 @@ const DevicesTable = memo(function DevicesTable({
   activePackageSha256,
   activeConnectorVersions,
   activeAgentVersions,
-  agentsOutdated = 0,
   onOpenDeviceTerminal,
   toolbarExtra,
-  statusCounts,
+  quickCounts,
+  agentVersionCounts,
+  sortKey,
+  sortDir,
+  onSortChange,
+  agentVersionFilter,
+  onAgentVersionFilterChange,
 }: DevicesTableProps) {
   useNow();
   const navigate = useNavigate();
@@ -496,10 +506,7 @@ const DevicesTable = memo(function DevicesTable({
   const [openActionDeviceId, setOpenActionDeviceId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingAction; device: Device } | null>(null);
-  type SortKey = "hostname" | "client_name" | "last_seen" | "health";
-  const [sortKey, setSortKey] = useState<SortKey>("hostname");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [agentVersionFilter, setAgentVersionFilter] = useState<string>("all");
+  type SortKey = DeviceSortKey;
   // Mobile UI 2.0 (MOBILE-DESIGN-SPEC.md — Devices/Sort): sort sheet, mobile-only.
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
   const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -509,14 +516,7 @@ const DevicesTable = memo(function DevicesTable({
     { key: "health", label: "Health" },
   ];
 
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  };
+  const handleSort = onSortChange;
 
   const applyQuickFilter = (f: QuickFilter) => {
     onQuickFilterChange(f === quickFilter ? "all" : f);
@@ -539,93 +539,27 @@ const DevicesTable = memo(function DevicesTable({
   const scrollPositionRef = useRef({ left: 0, top: 0 });
 
 
-  // Per-pill counts (computed from the unfiltered devices prop)
   const pillCounts = useMemo(() => {
-    const counts: Record<QuickFilter, number> = Object.fromEntries(
-      QUICK_FILTERS.map(({ id }) => [id, 0])
-    ) as Record<QuickFilter, number>;
-    counts.all = devices.length;
-    for (const d of devices) {
-      const health = healthMap[d.id];
-      const patch = patchMap[d.id];
-      if (d.freshness_state === "online") counts.online++;
-      if (d.freshness_state === "stale") counts.stale++;
-      if (d.freshness_state === "offline") counts.offline++;
-      if (d.device_type === "server" || d.resolved_device_category === "servers") counts.servers++;
-      if (d.device_type === "client" || d.resolved_device_category === "clientpc") counts.workstations++;
-      if (patch?.patch_state === "updates_available") counts.needs_updates++;
-      if (patch?.patch_state === "reboot_required") counts.reboot_required++;
-      if (health?.health_state === "healthy") counts.healthy++;
-      if (health?.health_state === "warning") counts.warnings++;
-      if (health?.health_state === "critical") counts.critical++;
-      if (d.is_in_maintenance) counts.maintenance++;
-      if (d.freshness_state !== "online" || (alertsMap[d.id]?.critical ?? 0) > 0 || (health?.health_score ?? 100) < 60) counts.needs_attention++;
-      if ((health?.health_score ?? 100) < 60) counts.low_health++;
-      if (d.rustdesk_install_status !== "not_installed" && (d.rustdesk_status ?? "") !== "running") counts.rustdesk_issues++;
-      if (isDeviceAgentOutdated(d, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)) counts.needs_agent_update++;
-      if (favorites.has(d.id)) counts.favorites++;
+    const counts = Object.fromEntries(QUICK_FILTERS.map(({ id }) => [id, 0])) as Record<QuickFilter, number>;
+    if (!quickCounts) return counts;
+    for (const id of Object.keys(counts) as QuickFilter[]) {
+      counts[id] = quickCounts[id as keyof typeof quickCounts] ?? 0;
     }
+    counts.all = quickCounts.all;
     return counts;
-  }, [devices, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions]);
+  }, [quickCounts]);
 
-  // Distinct agent versions present in the current device list, newest first
-  const agentVersionOptions = useMemo(() => {
-    const versions = new Set<string>();
-    for (const d of devices) {
-      if (d.agent_version) versions.add(d.agent_version);
-    }
-    return Array.from(versions).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  }, [devices]);
+  // Agent versions present in the whole selection, newest first.
+  const agentVersionOptions = useMemo(
+    () => Object.keys(agentVersionCounts ?? {})
+      .filter((v) => v !== "unknown")
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
+    [agentVersionCounts],
+  );
 
-  // Apply quick filter on top of the parent-filtered list, then sort
-  const displayDevices = useMemo(() => {
-    const filtered = quickFilter === "all" ? devices : devices.filter(d => {
-      switch (quickFilter) {
-        case "online":          return d.freshness_state === "online";
-        case "stale":           return d.freshness_state === "stale";
-        case "offline":         return d.freshness_state === "offline";
-        case "servers":         return d.device_type === "server" || d.resolved_device_category === "servers";
-        case "workstations":    return d.device_type === "client" || d.resolved_device_category === "clientpc";
-        case "needs_updates":   return patchMap[d.id]?.patch_state === "updates_available";
-        case "reboot_required": return patchMap[d.id]?.patch_state === "reboot_required";
-        case "warnings":        return healthMap[d.id]?.health_state === "warning";
-        case "critical":        return healthMap[d.id]?.health_state === "critical";
-        case "healthy":         return healthMap[d.id]?.health_state === "healthy";
-        case "maintenance":     return d.is_in_maintenance === true;
-        case "needs_attention": return (
-          d.freshness_state !== "online" ||
-          (alertsMap[d.id]?.critical ?? 0) > 0 ||
-          (healthMap[d.id]?.health_score ?? 100) < 60
-        );
-        case "low_health":      return (healthMap[d.id]?.health_score ?? 100) < 60;
-        case "rustdesk_issues": return (
-          d.rustdesk_install_status !== "not_installed" &&
-          (d.rustdesk_status ?? "") !== "running"
-        );
-        case "needs_agent_update": return (
-          isDeviceAgentOutdated(d, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions)
-        );
-        case "favorites":       return favorites.has(d.id);
-        default:                return true;
-      }
-    });
-    const versionFiltered = agentVersionFilter === "all" ? filtered : filtered.filter(d =>
-      agentVersionFilter === "unknown" ? !d.agent_version : d.agent_version === agentVersionFilter
-    );
-    return [...versionFiltered].sort((a, b) => {
-      let cmp: number;
-      if (sortKey === "hostname") {
-        cmp = deviceDisplayName(a).localeCompare(deviceDisplayName(b));
-      } else if (sortKey === "client_name") {
-        cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
-      } else if (sortKey === "health") {
-        cmp = (healthMap[a.id]?.health_score ?? 100) - (healthMap[b.id]?.health_score ?? 100);
-      } else {
-        cmp = (a.last_seen ?? "").localeCompare(b.last_seen ?? "");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-  }, [devices, quickFilter, agentVersionFilter, patchMap, healthMap, alertsMap, favorites, activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions, sortKey, sortDir]);
+  // Filtering and sorting run on the server over the whole selection; the
+  // rows arrive already in order.
+  const displayDevices = devices;
 
   // Realtime heartbeats replace the rows constantly; keep the selection and
   // drop only rows that are no longer shown, so a bulk action never reaches a
@@ -928,7 +862,7 @@ const DevicesTable = memo(function DevicesTable({
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 pt-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
           <div ref={statusTabsRef} role="tablist" aria-label="Device status" className="th-tabs">
             {STATUS_TABS.map(({ id, label, tone }) => {
-              const count = statusCounts ? statusCounts[id] : pillCounts[id];
+              const count = pillCounts[id];
               return (
                 <button
                   key={id}
@@ -999,7 +933,7 @@ const DevicesTable = memo(function DevicesTable({
             aria-label="Filter by agent version"
             className="w-[160px]"
             value={agentVersionFilter}
-            onChange={setAgentVersionFilter}
+            onChange={onAgentVersionFilterChange}
             options={[
               { value: "all", label: "All versions" },
               ...agentVersionOptions.map((v) => ({ value: v, label: `Agent ${v}` })),
@@ -1012,7 +946,7 @@ const DevicesTable = memo(function DevicesTable({
         {(() => {
           const extras = QUICK_FILTERS.filter((f) => !STATUS_TAB_IDS.has(f.id)).map((f) => ({
             ...f,
-            count: f.id === "needs_agent_update" ? (agentsOutdated || pillCounts[f.id]) : pillCounts[f.id],
+            count: pillCounts[f.id],
           })).filter((f) => f.count > 0 || quickFilter === f.id);
           if (extras.length === 0) return null;
           return (
@@ -1271,7 +1205,7 @@ const DevicesTable = memo(function DevicesTable({
             <EmptyState
               icon={<ServerOff className="h-5 w-5" />}
               title="No devices match this filter"
-              description="Nothing on this page matches the selected filter."
+              description="No device in this selection matches the filter."
               action={<Button variant="secondary" size="sm" onClick={() => onQuickFilterChange("all")}>Show all devices</Button>}
             />
           ) : (

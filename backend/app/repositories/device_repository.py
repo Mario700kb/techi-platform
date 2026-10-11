@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 from app.core.time import utcnow
-from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy.orm import Session, joinedload
+from typing import TYPE_CHECKING, List, Mapping, Optional, Sequence
+from sqlalchemy.orm import Session, defer, joinedload
 from sqlalchemy import and_, case, false, func, not_, or_
 
 from app.models.alert import DeviceAlert
+from app.models.client import Client
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
@@ -16,6 +17,24 @@ from app.schemas.device import DeviceCreate, DeviceTreeCounts, DeviceUpdate
 
 if TYPE_CHECKING:
     from app.core.scope import AllowedScope
+
+ONLINE_WINDOW = timedelta(minutes=6)
+STALE_WINDOW = timedelta(minutes=25)
+
+# Quick filters of the Devices page. Each one is a single SQL condition used
+# both to filter the list and to count it, so a chip's number always equals
+# the rows it opens. The health-derived ones read the cached health index.
+QUICK_FILTERS = (
+    "online", "stale", "offline", "servers", "workstations", "maintenance",
+    "critical", "warnings", "healthy", "needs_updates", "reboot_required",
+    "needs_attention", "low_health", "rustdesk_issues", "needs_agent_update",
+)
+HEALTH_INDEX_FILTERS = frozenset({
+    "critical", "warnings", "healthy", "needs_updates", "reboot_required",
+    "needs_attention", "low_health", "needs_agent_update",
+})
+SORT_KEYS = ("hostname", "client_name", "last_seen", "health")
+LOW_HEALTH_SCORE = 60
 
 
 class DeviceRepository:
@@ -111,9 +130,96 @@ class DeviceRepository:
         platform: Optional[str] = None,
         category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
+        quick_filter: Optional[str] = None,
+        health_index: Optional[Mapping] = None,
+        device_ids: Optional[Sequence[int]] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
+        sort: Optional[str] = None,
+        order: Optional[str] = None,
     ) -> List[Device]:
-        query = self.db.query(Device).options(joinedload(Device.client), joinedload(Device.group))
-        if self._needs_group_join(category, smart_folder):
+        query = self._filtered_query(
+            self.db.query(Device),
+            status=status, device_type=device_type, freshness_state=freshness_state,
+            client_id=client_id, group_id=group_id, assignment_source=assignment_source,
+            lifecycle_state=lifecycle_state, search=search, duplicate_candidates=duplicate_candidates,
+            maintenance_state=maintenance_state, smart_folder=smart_folder,
+            active_agent_version=active_agent_version, active_agent_sha256=active_agent_sha256,
+            platform=platform, category=category, scope=scope, quick_filter=quick_filter,
+            health_index=health_index, device_ids=device_ids, agent_version=agent_version,
+            hide_offline_days=hide_offline_days,
+        )
+        descending = (order or "asc").strip().lower() == "desc"
+        sort_key = (sort or "").strip().lower()
+
+        if sort_key == "health" and health_index is not None:
+            # The score is computed in Python, so rank the matching ids here
+            # and page over that ranking; ties fall back to the id.
+            ids = [row[0] for row in query.with_entities(Device.id).all()]
+            ids.sort(key=lambda device_id: (_score(health_index, device_id), device_id), reverse=descending)
+            page = ids[skip: skip + limit]
+            if not page:
+                return []
+            rows = (
+                self.db.query(Device)
+                .options(joinedload(Device.client), joinedload(Device.group))
+                .filter(Device.id.in_(page))
+                .all()
+            )
+            position = {device_id: i for i, device_id in enumerate(page)}
+            return sorted(rows, key=lambda device: position[device.id])
+
+        if sort_key == "hostname":
+            name = func.lower(func.coalesce(func.nullif(func.trim(Device.display_name), ""), Device.hostname, ""))
+            ordering = [name.desc() if descending else name.asc(), Device.id.asc()]
+        elif sort_key == "client_name":
+            query = query.outerjoin(Client, Device.client_id == Client.id)
+            client_name = func.lower(func.coalesce(Client.name, ""))
+            ordering = [client_name.desc() if descending else client_name.asc(), Device.id.asc()]
+        elif sort_key == "last_seen":
+            ordering = [
+                Device.last_seen.desc().nullslast() if descending else Device.last_seen.asc().nullsfirst(),
+                Device.id.asc(),
+            ]
+        else:
+            ordering = [Device.registered_at.desc(), Device.id.desc()]
+
+        return (
+            query.options(joinedload(Device.client), joinedload(Device.group))
+            .order_by(*ordering)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def _filtered_query(
+        self,
+        query,
+        *,
+        status: Optional[DeviceStatus] = None,
+        device_type: Optional[DeviceType] = None,
+        freshness_state: Optional[DeviceFreshnessState] = None,
+        client_id: Optional[int] = None,
+        group_id: Optional[int] = None,
+        assignment_source: Optional[str] = None,
+        lifecycle_state: Optional[str] = "active",
+        search: Optional[str] = None,
+        duplicate_candidates: Optional[bool] = None,
+        maintenance_state: Optional[str] = None,
+        smart_folder: Optional[str] = None,
+        active_agent_version: Optional[str] = None,
+        active_agent_sha256: Optional[str] = None,
+        platform: Optional[str] = None,
+        category: Optional[str] = None,
+        scope: Optional["AllowedScope"] = None,
+        quick_filter: Optional[str] = None,
+        health_index: Optional[Mapping] = None,
+        device_ids: Optional[Sequence[int]] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
+        group_join: bool = False,
+    ):
+        if group_join or self._needs_group_join(category, smart_folder) or quick_filter in ("servers", "workstations"):
             query = self._ensure_group_join(query)
 
         if status:
@@ -146,9 +252,91 @@ class DeviceRepository:
                 Device.local_ip.ilike(f"%{search}%"),
             )
             query = query.filter(search_filter)
-        query = self._apply_scope_filter(query, scope)
+        if device_ids is not None:
+            query = query.filter(Device.id.in_(list(device_ids)) if device_ids else false())
+        if agent_version:
+            if agent_version.strip().lower() == "unknown":
+                query = query.filter(or_(Device.agent_version.is_(None), Device.agent_version == ""))
+            else:
+                query = query.filter(Device.agent_version == agent_version)
+        if hide_offline_days:
+            query = query.filter(Device.last_seen >= utcnow() - timedelta(days=hide_offline_days))
+        if quick_filter:
+            query = query.filter(self.quick_filter_clause(quick_filter, health_index or {}))
+        return self._apply_scope_filter(query, scope)
 
-        return query.order_by(Device.registered_at.desc(), Device.id.desc()).offset(skip).limit(limit).all()
+    def quick_filter_clause(self, key: str, health_index: Mapping):
+        now = utcnow()
+        online_cutoff = now - ONLINE_WINDOW
+        stale_cutoff = now - STALE_WINDOW
+        is_online = Device.last_seen >= online_cutoff
+
+        def ids_where(predicate):
+            ids = [device_id for device_id, entry in health_index.items() if predicate(entry)]
+            return Device.id.in_(ids) if ids else false()
+
+        if key == "online":
+            return is_online
+        if key == "stale":
+            return and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff)
+        if key == "offline":
+            return or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff)
+        if key == "servers":
+            return clf.category_case() == clf.CATEGORY_SERVERS
+        if key == "workstations":
+            return clf.category_case() == clf.CATEGORY_CLIENTPC
+        if key == "maintenance":
+            return Device.is_in_maintenance.is_(True)
+        if key == "critical":
+            return ids_where(lambda e: e.state == "critical")
+        if key == "warnings":
+            return ids_where(lambda e: e.state == "warning")
+        if key == "healthy":
+            return ids_where(lambda e: e.state == "healthy")
+        if key == "needs_updates":
+            # Pending updates or a pending reboot: the dashboard's "Needs
+            # updates" tile counts the same set, so the tile opens its rows.
+            return ids_where(lambda e: e.has_pending_patches)
+        if key == "reboot_required":
+            return ids_where(lambda e: e.patch_state == "reboot_required")
+        if key == "low_health":
+            return ids_where(lambda e: e.score < LOW_HEALTH_SCORE)
+        if key == "needs_attention":
+            return or_(
+                Device.last_seen.is_(None),
+                Device.last_seen < online_cutoff,
+                ids_where(lambda e: e.critical_alerts > 0 or e.score < LOW_HEALTH_SCORE),
+            )
+        if key == "rustdesk_issues":
+            return and_(
+                or_(Device.rustdesk_install_status.is_(None), Device.rustdesk_install_status != "not_installed"),
+                func.coalesce(Device.rustdesk_status, "") != "running",
+            )
+        if key == "needs_agent_update":
+            return ids_where(lambda e: e.agent_outdated)
+        raise ValueError(f"Unknown quick filter: {key}")
+
+    def count_quick_filters(self, health_index: Mapping, **filters) -> dict:
+        """Count every quick filter over the same base filters in one query."""
+        query = self._filtered_query(self.db.query(Device), group_join=True, health_index=health_index, **filters)
+        columns = [func.count(Device.id)] + [
+            func.count(case((self.quick_filter_clause(key, health_index), 1))) for key in QUICK_FILTERS
+        ]
+        row = query.with_entities(*columns).one()
+        return {"all": row[0], **dict(zip(QUICK_FILTERS, row[1:]))}
+
+    def agent_version_counts(self, **filters) -> dict:
+        query = self._filtered_query(self.db.query(Device), **filters)
+        rows = (
+            query.with_entities(Device.agent_version, func.count(Device.id))
+            .group_by(Device.agent_version)
+            .all()
+        )
+        counts: dict = {}
+        for version, count in rows:
+            key = version or "unknown"
+            counts[key] = counts.get(key, 0) + count
+        return counts
 
     def _apply_agent_update_filter(
         self,
@@ -371,44 +559,23 @@ class DeviceRepository:
         platform: Optional[str] = None,
         category: Optional[str] = None,
         scope: Optional["AllowedScope"] = None,
+        quick_filter: Optional[str] = None,
+        health_index: Optional[Mapping] = None,
+        device_ids: Optional[Sequence[int]] = None,
+        agent_version: Optional[str] = None,
+        hide_offline_days: Optional[int] = None,
     ) -> int:
-        query = self.db.query(Device)
-        if self._needs_group_join(category, smart_folder):
-            query = self._ensure_group_join(query)
-
-        if status:
-            query = query.filter(Device.status == status)
-        if device_type:
-            query = query.filter(Device.device_type == device_type)
-        query = self._apply_platform_filter(query, platform)
-        query = self._apply_category_filter(query, category)
-        query = self._apply_freshness_filter(query, freshness_state)
-        if client_id == -1:
-            query = query.filter(Device.client_id.is_(None))
-        elif client_id:
-            query = query.filter(Device.client_id == client_id)
-        if group_id:
-            query = query.filter(Device.group_id == group_id)
-        query = self._apply_assignment_filter(query, assignment_source)
-        query = self._apply_smart_folder_filter(query, smart_folder)
-        query = self._apply_agent_update_filter(query, active_agent_version, active_agent_sha256)
-        query = self._apply_lifecycle_filter(query, lifecycle_state)
-        if duplicate_candidates is True:
-            query = query.filter(Device.duplicate_candidate.is_(True))
-        query = self._apply_maintenance_filter(query, maintenance_state)
-        if search:
-            search_filter = or_(
-                Device.hostname.ilike(f"%{search}%"),
-                Device.display_name.ilike(f"%{search}%"),
-                Device.rustdesk_id.ilike(f"%{search}%"),
-                Device.current_user.ilike(f"%{search}%"),
-                Device.public_ip.ilike(f"%{search}%"),
-                Device.local_ip.ilike(f"%{search}%"),
-            )
-            query = query.filter(search_filter)
-        query = self._apply_scope_filter(query, scope)
-
-        return query.count()
+        return self._filtered_query(
+            self.db.query(Device),
+            status=status, device_type=device_type, freshness_state=freshness_state,
+            client_id=client_id, group_id=group_id, assignment_source=assignment_source,
+            lifecycle_state=lifecycle_state, search=search, duplicate_candidates=duplicate_candidates,
+            maintenance_state=maintenance_state, smart_folder=smart_folder,
+            active_agent_version=active_agent_version, active_agent_sha256=active_agent_sha256,
+            platform=platform, category=category, scope=scope, quick_filter=quick_filter,
+            health_index=health_index, device_ids=device_ids, agent_version=agent_version,
+            hide_offline_days=hide_offline_days,
+        ).count()
 
     def count_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
         """Return total/online/stale/offline in one query instead of four."""
@@ -456,7 +623,7 @@ class DeviceRepository:
         self, scope: Optional["AllowedScope"] = None
     ) -> dict[int, dict[str, dict[str, int]]]:
         """Additive tree aggregation: {client_id: {category: {platform: total}}}.
-        A separate lightweight GROUP BY — it does NOT touch get_overview_inputs
+        A separate lightweight GROUP BY — it does NOT touch get_fleet_counts
         (the sacred Windows path)."""
         category = clf.category_case()
         platform_class = clf.platform_case()
@@ -477,11 +644,11 @@ class DeviceRepository:
             result.setdefault(client_id, {}).setdefault(cat, {})[plat] = total
         return result
 
-    def get_overview_inputs(self, scope: Optional["AllowedScope"] = None):
-        """Return fleet counts and health inputs in two database queries."""
+    def get_fleet_counts(self, scope: Optional["AllowedScope"] = None):
+        """Active-device totals per client and category, by freshness."""
         now = utcnow()
-        online_cutoff = now - timedelta(minutes=6)
-        stale_cutoff = now - timedelta(minutes=25)
+        online_cutoff = now - ONLINE_WINDOW
+        stale_cutoff = now - STALE_WINDOW
         category = clf.category_case()
 
         counts_query = self.db.query(
@@ -498,8 +665,13 @@ class DeviceRepository:
         ).outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
         counts_query = self._apply_lifecycle_filter(counts_query, "active")
         counts_query = self._apply_scope_filter(counts_query, scope)
-        count_rows = counts_query.group_by(Device.client_id, category).all()
+        return counts_query.group_by(Device.client_id, category).all()
 
+    def get_health_inputs(self, scope: Optional["AllowedScope"] = None):
+        """Every device in scope, archived included, with its latest telemetry,
+        inventory and open alert counts — one row per (device, alert severity).
+        The large inventory snapshots are never loaded: scoring reads only the
+        patch status and the collection time."""
         latest_telemetry = (
             self.db.query(
                 DeviceTelemetry.device_id.label("device_id"),
@@ -530,11 +702,13 @@ class DeviceRepository:
             .outerjoin(DeviceTelemetry, DeviceTelemetry.id == latest_telemetry.c.telemetry_id)
             .outerjoin(DeviceInventory, DeviceInventory.device_id == Device.id)
             .outerjoin(alert_counts, alert_counts.c.device_id == Device.id)
+            .options(
+                defer(DeviceInventory.processes_json),
+                defer(DeviceInventory.services_json),
+                defer(DeviceInventory.software_json),
+            )
         )
-        health_query = self._apply_lifecycle_filter(health_query, "active")
-        health_query = self._apply_scope_filter(health_query, scope)
-
-        return count_rows, health_query.all()
+        return self._apply_scope_filter(health_query, scope).all()
 
     def _apply_scope_filter(self, query, scope: Optional["AllowedScope"]):
         """Restrict query to devices visible under *scope*.
@@ -553,3 +727,8 @@ class DeviceRepository:
         if not filters:
             return query.filter(false())   # no scope entries = nothing visible
         return query.filter(or_(*filters))
+
+
+def _score(health_index: Mapping, device_id: int) -> int:
+    entry = health_index.get(device_id)
+    return entry.score if entry is not None else 100

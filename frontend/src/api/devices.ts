@@ -118,6 +118,27 @@ export interface DeviceFilters {
   platform?: string;
   // Phase 7: platform-class tree category (network|storage|hypervisors).
   category?: string;
+  // Server-side quick filter: the list and its count use the same condition.
+  quick_filter?: DeviceQuickFilter;
+  // Restrict to these devices (the operator's favorites); [] matches none.
+  ids?: number[];
+  // "unknown" selects devices that report no agent version.
+  agent_version?: string;
+  hide_offline_days?: number;
+  sort?: DeviceSortKey;
+  order?: "asc" | "desc";
+}
+
+export type DeviceQuickFilter =
+  | "online" | "stale" | "offline" | "servers" | "workstations" | "maintenance"
+  | "critical" | "warnings" | "healthy" | "needs_updates" | "reboot_required"
+  | "needs_attention" | "low_health" | "rustdesk_issues" | "needs_agent_update";
+
+export type DeviceSortKey = "hostname" | "client_name" | "last_seen" | "health";
+
+export interface DeviceQuickCounts {
+  counts: Record<"all" | DeviceQuickFilter | "favorites", number>;
+  agent_versions: Record<string, number>;
 }
 
 const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
@@ -161,6 +182,12 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   appendIfAllowed(params, "agent_update_state", filters.agent_update_state, allowedAgentUpdateStates);
   if (filters.platform?.trim()) params.append("platform", filters.platform.trim().toLowerCase());
   if (filters.category?.trim()) params.append("category", filters.category.trim().toLowerCase());
+  if (filters.quick_filter) params.append("quick_filter", filters.quick_filter);
+  if (filters.ids) params.append("ids", filters.ids.join(","));
+  if (filters.agent_version?.trim()) params.append("agent_version", filters.agent_version.trim());
+  if (filters.hide_offline_days) params.append("hide_offline_days", String(filters.hide_offline_days));
+  if (filters.sort) params.append("sort", filters.sort);
+  if (filters.order) params.append("order", filters.order);
 }
 
 export interface DevicesResponse {
@@ -280,6 +307,20 @@ export interface FleetInsights {
 
 export async function getFleetInsights(days = 30): Promise<FleetInsights> {
   return fetchJson<FleetInsights>(`/api/v1/devices/insights?days=${days}`);
+}
+
+// Counts for every status tab and quick filter over one selection — the same
+// conditions the list uses, so a chip's number equals the rows it opens.
+export async function getDeviceQuickCounts(
+  filters: DeviceFilters = {},
+  favoriteIds: number[] = [],
+  signal?: AbortSignal,
+): Promise<DeviceQuickCounts> {
+  const params = new URLSearchParams();
+  const { quick_filter: _quick, ids: _ids, sort: _sort, order: _order, ...base } = filters;
+  appendDeviceFilterParams(params, base);
+  if (favoriteIds.length > 0) params.append("favorite_ids", favoriteIds.join(","));
+  return fetchJson<DeviceQuickCounts>(`/api/v1/devices/quick-counts?${params.toString()}`, { signal });
 }
 
 export async function getDevicesOverview(): Promise<DeviceFleetOverview> {

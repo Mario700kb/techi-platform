@@ -1,6 +1,7 @@
 import json
 from collections import defaultdict
-from typing import Optional
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
@@ -19,8 +20,85 @@ from app.services.device_health_score_service import compute_device_health_score
 _overview_cache: SWRCache[DeviceFleetOverview] = SWRCache("overview", ttl=30.0, max_age=300.0)
 
 
+@dataclass(frozen=True)
+class DeviceHealthIndexEntry:
+    """Per-device signals the score engine derives in Python, kept so list
+    filters and their counts can use them without recomputing per request."""
+
+    score: int
+    state: str
+    patch_state: str
+    has_pending_patches: bool
+    critical_alerts: int
+    agent_outdated: bool
+    archived: bool
+
+
+# One computation feeds the dashboard overview, the Devices quick filters and
+# their counts, so a tile, a filter and its count can never disagree.
+_health_index_cache: SWRCache[Dict[int, DeviceHealthIndexEntry]] = SWRCache("health_index", ttl=30.0, max_age=300.0)
+
+
+def get_health_index(db: Session, scope: Optional[AllowedScope] = None) -> Dict[int, DeviceHealthIndexEntry]:
+    return _health_index_cache.get(scope_cache_key(scope), db, lambda session: _compute_health_index(session, scope))
+
+
+def _compute_health_index(db: Session, scope: Optional[AllowedScope]) -> Dict[int, DeviceHealthIndexEntry]:
+    active_pkg = _active_agent_package()
+    active_agent_version = active_pkg.version if active_pkg else None
+    active_agent_sha256 = _active_agent_sha256(active_pkg)
+    agent_versions = _active_agent_versions()
+    connector_versions = _active_connector_versions()
+
+    inputs: dict = {}
+    for device, telemetry, inventory, severity, count in DeviceRepository(db).get_health_inputs(scope=scope):
+        entry = inputs.setdefault(
+            device.id,
+            {"device": device, "telemetry": telemetry, "inventory": inventory, "alerts": defaultdict(int)},
+        )
+        if severity is not None:
+            entry["alerts"][getattr(severity, "value", severity)] += count
+
+    index: Dict[int, DeviceHealthIndexEntry] = {}
+    for device_id, entry in inputs.items():
+        device = entry["device"]
+        alerts = dict(entry["alerts"])
+        score, state, _ = compute_device_health_score(device, entry["telemetry"], alerts, entry["inventory"])
+        patch = _parse_patch(entry["inventory"])
+        index[device_id] = DeviceHealthIndexEntry(
+            score=score,
+            state=state,
+            patch_state=str(patch.get("patch_state") or "unknown"),
+            has_pending_patches=bool(patch.get("reboot_required")) or _int(patch.get("pending_updates")) > 0,
+            critical_alerts=int(alerts.get("critical", 0)),
+            agent_outdated=_is_device_agent_outdated(
+                device, active_agent_version, active_agent_sha256, agent_versions, connector_versions,
+            ),
+            archived=bool(device.is_archived),
+        )
+    return index
+
+
+def _parse_patch(inventory) -> dict:
+    if inventory is None or not inventory.patch_json:
+        return {}
+    try:
+        patch = json.loads(inventory.patch_json)
+    except (TypeError, ValueError):
+        return {}
+    return patch if isinstance(patch, dict) else {}
+
+
+def _int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def invalidate_overview_cache() -> None:
     _overview_cache.clear()
+    _health_index_cache.clear()
 
 
 def warm_overview_cache(db: Session) -> None:
@@ -41,12 +119,10 @@ class DeviceOverviewService:
         active_pkg = _active_agent_package()
         active_agent_version = active_pkg.version if active_pkg else None
         active_agent_sha256 = _active_agent_sha256(active_pkg)
-        # Resolved once: both are cheap, query-free lookups, but the loop
-        # below runs per device.
         agent_versions = _active_agent_versions()
         connector_versions = _active_connector_versions()
 
-        count_rows, health_rows = self.repository.get_overview_inputs(scope=scope)
+        count_rows = self.repository.get_fleet_counts(scope=scope)
 
         stats = {"total": 0, "online": 0, "stale": 0, "offline": 0}
         by_client: dict[int, int] = {}
@@ -63,52 +139,12 @@ class DeviceOverviewService:
                 by_client[client_id] = by_client.get(client_id, 0) + total
                 by_client_category.setdefault(client_id, {})[category] = total
 
-        health_inputs = {}
-        for device, telemetry, inventory, severity, count in health_rows:
-            entry = health_inputs.setdefault(
-                device.id,
-                {
-                    "device": device,
-                    "telemetry": telemetry,
-                    "inventory": inventory,
-                    "alerts": defaultdict(int),
-                },
-            )
-            if severity is not None:
-                severity_value = getattr(severity, "value", severity)
-                entry["alerts"][severity_value] += count
-
-        critical = 0
-        warnings = 0
-        score_total = 0
-        needs_updates = 0
-        agents_outdated = 0
-        for entry in health_inputs.values():
-            score, state, _ = compute_device_health_score(
-                entry["device"],
-                entry["telemetry"],
-                dict(entry["alerts"]),
-                entry["inventory"],
-            )
-            score_total += score
-            if state == "critical":
-                critical += 1
-            elif state == "warning":
-                warnings += 1
-            inventory = entry["inventory"]
-            if inventory is not None and inventory.patch_json:
-                try:
-                    patch = json.loads(inventory.patch_json)
-                    if bool(patch.get("reboot_required")) or int(patch.get("pending_updates") or 0) > 0:
-                        needs_updates += 1
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    pass
-            device = entry["device"]
-            if _is_device_agent_outdated(
-                device, active_agent_version, active_agent_sha256,
-                agent_versions, connector_versions,
-            ):
-                agents_outdated += 1
+        active_entries = [entry for entry in get_health_index(self.db, scope).values() if not entry.archived]
+        critical = sum(1 for entry in active_entries if entry.state == "critical")
+        warnings = sum(1 for entry in active_entries if entry.state == "warning")
+        score_total = sum(entry.score for entry in active_entries)
+        needs_updates = sum(1 for entry in active_entries if entry.has_pending_patches)
+        agents_outdated = sum(1 for entry in active_entries if entry.agent_outdated)
 
         return DeviceFleetOverview(
             stats=DeviceStats(**stats),
@@ -127,7 +163,7 @@ class DeviceOverviewService:
             ),
             critical=critical,
             warnings=warnings,
-            average_health=round(score_total / len(health_inputs)) if health_inputs else None,
+            average_health=round(score_total / len(active_entries)) if active_entries else None,
             needs_updates=needs_updates,
             agents_outdated=agents_outdated,
             active_agent_version=active_agent_version,

@@ -8,8 +8,9 @@ from app.db.session import get_db
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.models.operator import Operator, OperatorRole
 from app.schemas.activity import ActivityEvent
-from app.repositories.device_repository import DeviceRepository
+from app.repositories.device_repository import QUICK_FILTERS, SORT_KEYS, DeviceRepository
 from app.schemas.device import (
+    DeviceQuickCounts,
     Device as DeviceSchema,
     DeviceClientAssignment,
     DeviceCreate,
@@ -106,6 +107,24 @@ def get_device_component_states(
 # List / count / bulk                                                  #
 # ------------------------------------------------------------------ #
 
+def _parse_ids(raw: Optional[str], name: str) -> Optional[List[int]]:
+    if raw is None:
+        return None
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw.split(",") if value.strip()))
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {name}")
+    if len(ids) > 1000:
+        raise HTTPException(status_code=400, detail=f"At most 1000 {name}")
+    return ids
+
+
+def _check_quick_filter(quick_filter: Optional[str]) -> Optional[str]:
+    if quick_filter is not None and quick_filter not in QUICK_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Unknown quick_filter: {quick_filter}")
+    return quick_filter
+
+
 @router.get("/", response_model=DeviceListResponse)
 def read_devices(
     db: Session = Depends(get_db),
@@ -126,6 +145,12 @@ def read_devices(
     agent_update_state: Optional[str] = None,
     platform: Optional[str] = None,
     category: Optional[str] = None,
+    quick_filter: Optional[str] = None,
+    ids: Optional[str] = None,
+    agent_version: Optional[str] = None,
+    hide_offline_days: Optional[int] = Query(default=None, ge=1, le=3650),
+    sort: Optional[str] = Query(default=None, pattern="^(" + "|".join(SORT_KEYS) + ")$"),
+    order: Optional[str] = Query(default=None, pattern="^(asc|desc)$"),
 ):
     svc = DeviceService(db)
     filter_kwargs = dict(
@@ -144,10 +169,56 @@ def read_devices(
         platform=platform,
         category=category,
         scope=scope,
+        quick_filter=_check_quick_filter(quick_filter),
+        device_ids=_parse_ids(ids, "ids"),
+        agent_version=agent_version,
+        hide_offline_days=hide_offline_days,
     )
-    devices = svc.get_devices(skip=skip, limit=limit, **filter_kwargs)
+    devices = svc.get_devices(skip=skip, limit=limit, sort=sort, order=order, **filter_kwargs)
     total = svc.get_devices_count(**filter_kwargs)
     return DeviceListResponse(devices=devices, total=total)
+
+
+@router.get("/quick-counts", response_model=DeviceQuickCounts)
+def read_device_quick_counts(
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    status: Optional[DeviceStatus] = None,
+    device_type: Optional[DeviceType] = None,
+    freshness_state: Optional[DeviceFreshnessState] = None,
+    assignment_source: Optional[str] = None,
+    smart_folder: Optional[str] = None,
+    client_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+    lifecycle_state: Optional[str] = "active",
+    search: Optional[str] = None,
+    duplicate_candidates: Optional[bool] = None,
+    maintenance_state: Optional[str] = None,
+    platform: Optional[str] = None,
+    category: Optional[str] = None,
+    agent_version: Optional[str] = None,
+    hide_offline_days: Optional[int] = Query(default=None, ge=1, le=3650),
+    favorite_ids: Optional[str] = None,
+):
+    return DeviceService(db).get_device_counts(
+        status=status,
+        device_type=device_type,
+        freshness_state=freshness_state,
+        assignment_source=assignment_source,
+        smart_folder=smart_folder,
+        client_id=client_id,
+        group_id=group_id,
+        lifecycle_state=lifecycle_state,
+        search=search,
+        duplicate_candidates=duplicate_candidates,
+        maintenance_state=maintenance_state,
+        platform=platform,
+        category=category,
+        agent_version=agent_version,
+        hide_offline_days=hide_offline_days,
+        favorite_ids=_parse_ids(favorite_ids, "favorite_ids"),
+        scope=scope,
+    )
 
 
 @router.get("/stats")

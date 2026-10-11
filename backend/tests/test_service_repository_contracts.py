@@ -75,12 +75,12 @@ class TestEndToEndContracts:
         assert svc.get_devices_count(platform="windows", category="network") == 0
 
     def test_device_overview_service(self):
-        from app.services.device_overview_service import DeviceOverviewService, _overview_cache
+        from app.services.device_overview_service import DeviceOverviewService, invalidate_overview_cache
         # The service memoizes by scope in a module-level cache; clear it so this
         # runs against our fresh DB regardless of test order. The contract here is
         # that the service → repository → SQL path executes without a signature
         # mismatch, not a specific count.
-        _overview_cache.clear()
+        invalidate_overview_cache()
         overview = DeviceOverviewService(_db()).get_overview()
         assert overview is not None and overview.stats is not None
 
