@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func
@@ -31,6 +32,18 @@ class EnrollmentAuditRepository:
             .limit(limit)
             .all()
         )
+
+    def last_success_by_token(self, token_ids: list[int]) -> dict[int, datetime]:
+        """When each token last enrolled (or re-enrolled) a device, in one query."""
+        if not token_ids:
+            return {}
+        rows = (
+            self.db.query(EnrollmentAudit.token_id, func.max(EnrollmentAudit.created_at))
+            .filter(EnrollmentAudit.token_id.in_(token_ids), EnrollmentAudit.result.in_(SUCCESS_RESULTS))
+            .group_by(EnrollmentAudit.token_id)
+            .all()
+        )
+        return {token_id: last for token_id, last in rows}
 
     def counts_by_token(self, token_id: int) -> dict:
         successful_events = (

@@ -1633,6 +1633,124 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 @keyframes th-alerts-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .th-alerts-skeleton { animation: none; } }
 
+/* ── Onboarding · Installer ── cards share one header height and one 20px
+   gutter, so paired cards line up edge to edge. */
+.th-onb-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 12px;
+  border: 1px solid var(--th-border-card);
+  background: var(--th-bg-card);
+}
+.th-onb-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-onb-card-title { display: flex; min-width: 0; align-items: center; gap: 12px; font-size: 14px; font-weight: 600; line-height: 18px; color: var(--th-text-primary); }
+.th-onb-card-title small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; line-height: 16px; color: var(--th-text-muted); }
+.th-onb-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--onb-tone, var(--th-text-muted));
+  border: 1px solid color-mix(in srgb, var(--onb-tone, var(--th-border-subtle)) 26%, transparent);
+  background: color-mix(in srgb, var(--onb-tone, transparent) 10%, transparent);
+}
+.th-onb-body { display: flex; flex-direction: column; gap: 20px; padding: 20px; }
+.th-onb-section { display: flex; flex-direction: column; gap: 12px; }
+.th-onb-section + .th-onb-section { padding-top: 20px; border-top: 1px solid var(--th-border-subtle); }
+.th-onb-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--th-text-faint); }
+.th-onb-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 500; color: var(--th-text-secondary); }
+.th-onb-field input:not([type="checkbox"]):not([type="radio"]) { width: 100%; padding: 0 12px; border: 1px solid var(--th-border-input); }
+.th-onb-field input:not([type="checkbox"]):not([type="radio"]):hover { border-color: var(--th-border-strong); }
+.th-onb-hint { font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--th-text-muted); }
+.th-onb-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--th-accent); }
+.th-onb-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.th-onb-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 18px; color: var(--th-text-primary); cursor: pointer; }
+.th-onb-check small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--th-text-muted); }
+.th-onb-check input { flex: none; width: 16px; height: 16px; margin-top: 1px; accent-color: var(--th-accent); cursor: pointer; }
+.th-onb-sub { display: grid; gap: 12px; padding: 14px; border-radius: 10px; border: 1px solid var(--th-border-subtle); background: var(--th-bg-surface); }
+.th-onb-foot { margin-top: auto; padding: 16px 20px 20px; border-top: 1px solid var(--th-border-subtle); }
+.th-onb-note {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--th-text-secondary);
+  border: 1px solid color-mix(in srgb, var(--onb-tone) 26%, transparent);
+  background: color-mix(in srgb, var(--onb-tone) 7%, transparent);
+}
+.th-onb-note > svg { flex: none; margin-top: 2px; color: var(--onb-tone); }
+.th-onb-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-border-subtle);
+}
+.th-onb-meta > div { min-width: 0; padding: 10px 14px; background: var(--th-bg-card); }
+.th-onb-meta dt { font-size: 11px; color: var(--th-text-faint); }
+.th-onb-meta dd { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--th-text-primary); }
+.th-onb-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--th-text-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-surface);
+}
+.th-onb-details { border-radius: 10px; border: 1px solid var(--th-border-subtle); }
+.th-onb-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 6px 14px; list-style: none; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--th-text-secondary); }
+.th-onb-details > summary::-webkit-details-marker { display: none; }
+.th-onb-details > summary:hover { color: var(--th-text-primary); }
+.th-onb-details[open] > summary { border-bottom: 1px solid var(--th-border-subtle); }
+.th-onb-details > pre { margin: 10px; }
+.th-onb-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 40px 24px; }
+.th-onb-meter { position: relative; width: 72px; height: 4px; overflow: hidden; border-radius: 2px; background: var(--th-ring-track); }
+.th-onb-meter > i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--meter-tone); }
+.th-onb-actions { display: flex; justify-content: flex-end; gap: 2px; }
+.th-onb-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--th-text-muted);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.th-onb-action:hover { color: var(--th-text-primary); background: var(--th-sidebar-nav-hover); }
+.th-onb-action[data-tone="danger"]:hover { color: var(--th-status-critical); background: color-mix(in srgb, var(--th-status-critical) 10%, transparent); }
+.th-onb-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.th-onb-flash {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: color-mix(in srgb, var(--th-status-warning) 7%, var(--th-bg-card));
+}
+/* The token list is part of a scrolling page, not a full-height view:
+   cap it so the header and footer stay in reach. */
+.th-onb-tokens { flex: none; }
+.th-onb-tokens .th-alerts-scroll { max-height: min(640px, 70vh); }
+
 .th-status-chip {
   display: inline-flex;
   align-items: center;

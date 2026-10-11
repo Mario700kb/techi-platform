@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.enrollment_token import EnrollmentToken, EnrollmentTokenStatus
+from app.repositories.enrollment_audit_repository import EnrollmentAuditRepository
 from app.repositories.enrollment_token_repository import EnrollmentTokenRepository
 from app.schemas.enrollment_token import (
     EnrollmentTokenCreate,
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class EnrollmentTokenService:
     def __init__(self, db: Session):
+        self.db = db
         self.repo = EnrollmentTokenRepository(db)
 
     @staticmethod
@@ -169,8 +171,12 @@ class EnrollmentTokenService:
 
     def list(self, *, limit: int = 100, offset: int = 0) -> List[EnrollmentToken]:
         tokens = self.repo.list(limit=limit, offset=offset)
+        # used_at only records when a token ran out; when it last enrolled a
+        # device comes from the enrollment audit.
+        last_used = EnrollmentAuditRepository(self.db).last_success_by_token([t.id for t in tokens])
         for token in tokens:
             self._refresh_status(token)
+            token.last_used_at = last_used.get(token.id)
         return tokens
 
     def get(self, token_id: int) -> EnrollmentToken:

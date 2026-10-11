@@ -11,6 +11,7 @@ export interface EnrollmentToken {
   created_at: string;
   expires_at?: string | null;
   used_at?: string | null;
+  last_used_at?: string | null;
   max_uses: number;
   use_count: number;
   client_id?: number | null;

@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
+  Ban,
   Check,
-  Clipboard,
   Copy,
   Download,
-  Eye,
+  FileCode2,
   Info,
+  KeyRound,
   LoaderCircle,
   Plus,
   RefreshCcw,
   RotateCcw,
-  Server,
-  Shield,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Star,
   Terminal,
   Trash2,
   X,
@@ -40,17 +44,12 @@ import {
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
-import { Badge, Button, EmptyState, PageHeader, SelectField } from "../components/ui";
+import { API_BASE_URL } from "../api/client";
+import { Button, EmptyState, PageHeader, Select, SelectField } from "../components/ui";
+import TablePagination from "../components/ui/TablePagination";
+import { TERMS, TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
-
-function getDefaultBackendUrl(): string {
-  if (typeof window === "undefined") return "http://localhost:8000";
-  const { protocol, hostname } = window.location;
-  if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
-    return `${protocol}//${hostname}:8000`;
-  }
-  return `${protocol}//${hostname}:8000`;
-}
 
 async function validateBackendReachable(url: string): Promise<void> {
   const base = url.trim().replace(/\/+$/, "");
@@ -62,17 +61,64 @@ async function validateBackendReachable(url: string): Promise<void> {
 
 type Toast = { id: number; message: string; type: "success" | "error" };
 
-function tokenStatusBadge(token: EnrollmentToken) {
-  if (token.status === "revoked")
-    return <Badge variant="neutral" className="border-red-400/25 bg-red-500/10 text-red-300">Revoked</Badge>;
-  if (token.status === "expired")
-    return <Badge variant="neutral" className="border-slate-600/30 text-slate-500">Expired</Badge>;
-  if (token.status === "used")
-    return <Badge variant="neutral" className="border-amber-400/25 bg-amber-400/10 text-amber-300">Exhausted</Badge>;
-  if (token.use_count === 0)
-    return <Badge variant="neutral" className="border-blue-400/25 bg-blue-400/10 text-blue-300">Unused</Badge>;
-  return <Badge variant="ghost" className="border-emerald-400/25 bg-emerald-400/10 text-emerald-300">Active</Badge>;
+const TOKEN_STATE: Record<"active" | "unused" | "used" | "revoked" | "expired", { label: string; tone: string }> = {
+  active: { label: "Active", tone: TONE.online },
+  unused: { label: "Unused", tone: TONE.info },
+  used: { label: "Exhausted", tone: TONE.warning },
+  revoked: { label: "Revoked", tone: TONE.critical },
+  expired: { label: "Expired", tone: TONE.neutral },
+};
+
+function tokenState(token: EnrollmentToken): keyof typeof TOKEN_STATE {
+  if (token.status === "revoked" || token.status === "expired" || token.status === "used") return token.status;
+  return token.use_count === 0 ? "unused" : "active";
 }
+
+function TokenStatusChip({ token }: { token: EnrollmentToken }) {
+  const state = TOKEN_STATE[tokenState(token)];
+  return (
+    <span className="th-status-chip" style={{ "--chip-tone": state.tone } as React.CSSProperties}>
+      <i />
+      {state.label}
+    </span>
+  );
+}
+
+function UsageMeter({ token }: { token: EnrollmentToken }) {
+  const pct = usagePercent(token);
+  const tone = token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-accent)";
+  return (
+    <span className="inline-flex items-center gap-2.5" title={`${pct}% of max uses`}>
+      <span className="th-onb-meter" aria-hidden="true"><i style={{ width: `${Math.min(pct, 100)}%`, "--meter-tone": tone } as React.CSSProperties} /></span>
+      <span className="text-[12px] font-medium tabular-nums" style={{ color: token.usage_warning ? tone : "var(--th-text-secondary)" }}>
+        {formatCount(token.use_count)}/{formatCount(token.max_uses)}
+      </span>
+    </span>
+  );
+}
+
+type TokenFilter = "all" | keyof typeof TOKEN_STATE;
+
+const TOKEN_FILTERS: { id: TokenFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "unused", label: "Unused" },
+  { id: "used", label: "Exhausted" },
+  { id: "revoked", label: "Revoked" },
+  { id: "expired", label: "Expired" },
+];
+
+const PLATFORMS: { id: EnrollmentBootstrapPlatform; label: string }[] = [
+  { id: "windows", label: "Windows" },
+  { id: "macos", label: "macOS" },
+  { id: "linux", label: "Linux" },
+];
+
+const SECURITY_POINTS = [
+  "The lock screen stays on. Remote access runs through the TechiAgent and Remote Support services, not a signed-in session.",
+  "A device that sleeps or hibernates is unreachable unless Wake-on-LAN is set up.",
+  "Choose the Server profile for machines that must stay reachable on AC power.",
+];
 
 function isRevocable(token: EnrollmentToken): boolean {
   return token.status === "active" || token.status === "used";
@@ -81,30 +127,6 @@ function isRevocable(token: EnrollmentToken): boolean {
 function usagePercent(token: EnrollmentToken): number {
   if (!token.max_uses) return 0;
   return Math.round((100 * token.use_count) / token.max_uses);
-}
-
-function usageWarningBadge(token: EnrollmentToken, onClick?: () => void) {
-  if (!token.usage_warning) return null;
-  const critical = token.usage_warning === "critical";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      title={
-        critical
-          ? `Token exhausted (${token.use_count}/${token.max_uses})${onClick ? " — click to raise max uses" : ""}`
-          : `Token at ${usagePercent(token)}% of max uses${onClick ? " — click to raise max uses" : ""}`
-      }
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${
-        critical
-          ? "border-red-400/30 bg-red-500/15 text-red-300"
-          : "border-amber-400/30 bg-amber-400/15 text-amber-300"
-      } ${onClick ? "cursor-pointer transition hover:brightness-125" : "cursor-default"}`}
-    >
-      {critical ? "🔴 FULL" : `⚠️ ${usagePercent(token)}%`}
-    </button>
-  );
 }
 
 function formatTokenPrefix(tokenPrefix: EnrollmentToken["token_prefix"]): string {
@@ -164,7 +186,7 @@ export default function EnrollmentBootstrap() {
   const [mode, setMode] = useState<EnrollmentBootstrapMode>("token");
   const [tokenId, setTokenId] = useState("");
   const [plaintextToken, setPlaintextToken] = useState("");
-  const [backendUrl, setBackendUrl] = useState(getDefaultBackendUrl);
+  const [backendUrl, setBackendUrl] = useState(API_BASE_URL);
   const [platform, setPlatform] = useState<EnrollmentBootstrapPlatform>("windows");
   const [rustdeskEnabled, setRustdeskEnabled] = useState(false);
   const [rustdeskMsiUrl, setRustdeskMsiUrl] = useState("");
@@ -218,6 +240,13 @@ export default function EnrollmentBootstrap() {
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
 
+  // ── token table view ─────────────────────────────────────────────────────
+  const [statusFilter, setStatusFilter] = useState<TokenFilter>("all");
+  const [tokenSearch, setTokenSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [clientNames, setClientNames] = useState<Record<number, string>>({});
+
   // ── toasts ───────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -236,6 +265,21 @@ export default function EnrollmentBootstrap() {
     () => activeTokens.find((t) => String(t.id) === tokenId) ?? null,
     [activeTokens, tokenId]
   );
+  const statusCounts = useMemo(() => {
+    const counts = { all: tokens.length, active: 0, unused: 0, used: 0, revoked: 0, expired: 0 } as Record<TokenFilter, number>;
+    for (const t of tokens) counts[tokenState(t)] += 1;
+    return counts;
+  }, [tokens]);
+  const visibleTokens = useMemo(() => {
+    const q = tokenSearch.trim().toLowerCase();
+    return tokens.filter((t) => {
+      if (statusFilter !== "all" && tokenState(t) !== statusFilter) return false;
+      if (!q) return true;
+      const client = t.client_id ? clientNames[t.client_id] ?? "" : "";
+      return [t.name, t.token_prefix ?? "", client].some((v) => v.toLowerCase().includes(q));
+    });
+  }, [tokens, statusFilter, tokenSearch, clientNames]);
+  const pagedTokens = useMemo(() => visibleTokens.slice((page - 1) * pageSize, page * pageSize), [visibleTokens, page, pageSize]);
   const isLocalhost = backendUrl.includes("localhost") || backendUrl.includes("127.0.0.1");
   const canGenerate = mode === "gpo" || (mode === "token" && activeTokens.length > 0 && !!tokenId);
 
@@ -299,6 +343,9 @@ export default function EnrollmentBootstrap() {
 
   useEffect(() => {
     void loadTokens();
+    getClients()
+      .then((list) => setClientNames(Object.fromEntries(list.map((c) => [c.id, c.name]))))
+      .catch(() => setClientNames({}));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── open create modal ────────────────────────────────────────────────────
@@ -499,744 +546,562 @@ export default function EnrollmentBootstrap() {
   };
 
   return (
-    <section className="premium-page space-y-5">
-      {/* ── header ───────────────────────────────────────────────────────── */}
+    <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Enrollment Bootstrap"
-        description={<>Generate a one-click PowerShell installer for Windows endpoints.
-              Use <strong>Token Enrollment</strong> for manual/test installs or
-              <strong> Trusted Domain / GPO</strong> for domain-joined PCs.</>}
+        description={<>Generate a one-click installer for new endpoints. Use <strong>Token enrollment</strong> for workgroup PCs and tests, <strong>Trusted domain / GPO</strong> for domain-joined fleets.</>}
         actions={
-          <>
-            <Button variant="secondary" size="sm" type="button" onClick={() => void loadTokens()} disabled={tokensLoading}>
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" type="button" onClick={() => void loadTokens()} disabled={tokensLoading}>
+            <RefreshCcw className={`h-3.5 w-3.5 ${tokensLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         }
       />
 
-      {/* ── token usage warnings ──────────────────────────────────────────── */}
       {warningTokens.length > 0 && (
-        <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-4">
-          <div className="flex gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-200">
-                {warningTokens.length} token{warningTokens.length === 1 ? "" : "s"} need
-                {warningTokens.length === 1 ? "s" : ""} attention
-                {canManage && " — click a token to raise its limit"}
-              </p>
-              <ul className="mt-2 space-y-1">
-                {warningTokens.map((token) => (
-                  <li key={token.id} className="flex flex-wrap items-center gap-2 text-xs text-amber-100/90">
-                    {usageWarningBadge(token, canManage ? () => openMaxUsesEditor(token) : undefined)}
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => openMaxUsesEditor(token)}
-                        className="font-semibold text-white transition hover:text-amber-200"
-                      >
-                        {token.name}
-                      </button>
-                    ) : (
-                      <span className="font-semibold text-white">{token.name}</span>
-                    )}
-                    <span className="font-mono text-amber-200/80">
-                      {token.use_count}/{token.max_uses} ({usagePercent(token)}%)
-                    </span>
-                  </li>
-                ))}
-              </ul>
+        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties} role="status">
+          <AlertTriangle className="h-4 w-4" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>
+              {warningTokens.length} token{warningTokens.length === 1 ? " is" : "s are"} close to the enrollment limit
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {warningTokens.map((token) => (
+                <button
+                  key={token.id}
+                  type="button"
+                  className="th-status-chip"
+                  disabled={!canManage}
+                  onClick={() => openMaxUsesEditor(token)}
+                  style={{ "--chip-tone": token.usage_warning === "critical" ? "var(--th-status-critical)" : "var(--th-status-warning)" } as React.CSSProperties}
+                  title={canManage ? "Raise max uses" : undefined}
+                >
+                  <i />
+                  {token.name}
+                  <span className="tabular-nums" style={{ color: "var(--th-text-muted)" }}>{token.use_count}/{token.max_uses}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── security model notice ─────────────────────────────────────────── */}
-      <div className="rounded-xl border border-blue-400/15 bg-blue-400/[0.05] p-4">
-        <div className="flex gap-3">
-          <Shield className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
-          <div className="text-sm text-blue-100">
-            <span className="font-semibold">Security model: </span>
-            Lock screen stays enabled at all times — remote access works through Windows services
-            (TechiAgent + TECHI Remote Support), not through logged-in user sessions.
-            Sleep / hibernate makes the device unreachable unless Wake-on-LAN is used.
-            Choose <strong>Server</strong> profile to prevent sleep on AC power.
-          </div>
-        </div>
-      </div>
-
-      {/* ── default token banner ──────────────────────────────────────────── */}
-      {defaultToken && (
-        <div className={`rounded-xl border p-4 ${
-          defaultToken.status === "active"
-            ? "border-emerald-400/20 bg-emerald-400/[0.06]"
-            : "border-amber-400/20 bg-amber-400/[0.06]"
-        }`}>
-          <div className="flex flex-wrap items-center gap-3">
-            <Shield className={`h-5 w-5 shrink-0 ${defaultToken.status === "active" ? "text-emerald-400" : "text-amber-400"}`} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-white">Default Deployment Token</span>
-                {tokenStatusBadge(defaultToken)}
-                <code className="rounded bg-slate-800/60 px-1.5 py-0.5 font-mono text-[11px] text-slate-300">
-                  {formatTokenPrefix(defaultToken.token_prefix)}
-                </code>
-              </div>
-              <p className="mt-0.5 text-xs text-slate-400">
-                {defaultToken.use_count}/{defaultToken.max_uses} uses
-                {defaultToken.status !== "active" && " · Token is inactive — regenerate to create a new one"}
-              </p>
+      {/* ── default token · security model ──────────────────────────────── */}
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <div className="th-onb-card">
+          <div className="th-onb-card-head">
+            <div className="th-onb-card-title">
+              <span className="th-onb-icon" style={{ "--onb-tone": defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)" } as React.CSSProperties}>
+                <KeyRound className="h-4 w-4" />
+              </span>
+              <span>
+                Default deployment token
+                <small>Used by installers that do not name a token</small>
+              </span>
             </div>
-            <div className="flex gap-2">
+            {defaultToken && <TokenStatusChip token={defaultToken} />}
+          </div>
+          <div className="th-onb-body flex-1 justify-between !gap-4">
+            {defaultToken ? (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                <div className="min-w-0">
+                  <div className="th-onb-label">Name</div>
+                  <div className="mt-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{defaultToken.name}</div>
+                </div>
+                <div>
+                  <div className="th-onb-label">Prefix</div>
+                  <code className="mt-1 block font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>{formatTokenPrefix(defaultToken.token_prefix)}</code>
+                </div>
+                <div>
+                  <div className="th-onb-label">Usage</div>
+                  <div className="mt-1.5"><UsageMeter token={defaultToken} /></div>
+                </div>
+              </div>
+            ) : (
+              <p className="th-onb-hint">No default deployment token exists. Regenerate to create one.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
               {activeDefault && mode === "token" && (
-                <Button size="sm" onClick={handleUseDefault} disabled={tokenId === String(activeDefault.id)}>
-                  {tokenId === String(activeDefault.id) ? (
-                    <><Check className="mr-1.5 h-3.5 w-3.5 text-emerald-300" />Selected</>
-                  ) : (
-                    <>Use Default</>
-                  )}
+                <Button size="sm" variant="secondary" onClick={handleUseDefault} disabled={tokenId === String(activeDefault.id)}>
+                  {tokenId === String(activeDefault.id) ? <><Check className="h-3.5 w-3.5" />Selected in generator</> : "Use in generator"}
                 </Button>
               )}
               {canManage && (
-                <Button
-                  size="sm"
-                  onClick={() => void handleRegenerateDefault()}
-                  disabled={regenerating}
-                  variant="secondary"
-                >
-                  <RotateCcw className={`mr-1.5 h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
+                <Button size="sm" variant="secondary" onClick={() => void handleRegenerateDefault()} disabled={regenerating}>
+                  <RotateCcw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
                   {regenerating ? "Regenerating…" : "Regenerate"}
                 </Button>
               )}
             </div>
           </div>
         </div>
-      )}
 
-      {/* ── generator + output ───────────────────────────────────────────── */}
-      <div className="grid items-start gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
-        {/* ── left: generator ─────────────────────────────────────────────── */}
-        <div className="premium-card-soft p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Terminal className="h-4 w-4 text-techi-orange" />
-            <h2 className="text-base font-semibold text-white">Generator</h2>
+        <div className="th-onb-card">
+          <div className="th-onb-card-head">
+            <div className="th-onb-card-title">
+              <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <span>
+                Security model
+                <small>How managed endpoints stay reachable</small>
+              </span>
+            </div>
+          </div>
+          <ul className="th-onb-body flex-1 !gap-3">
+            {SECURITY_POINTS.map((point) => (
+              <li key={point} className="flex gap-2.5 text-[13px] leading-5" style={{ color: "var(--th-text-secondary)" }}>
+                <Check className="mt-0.5 h-4 w-4 flex-none" style={{ color: "var(--th-status-info)" }} />
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* ── generator · output ──────────────────────────────────────────── */}
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+        <div className="th-onb-card">
+          <div className="th-onb-card-head">
+            <div className="th-onb-card-title">
+              <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as React.CSSProperties}>
+                <SlidersHorizontal className="h-4 w-4" />
+              </span>
+              <span>
+                Generator
+                <small>Deployment, connection and device policy</small>
+              </span>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Mode */}
-            <div>
-              <span className="mb-1.5 block text-xs font-semibold text-slate-200">Deployment mode</span>
-              <div className="grid grid-cols-2 gap-2">
+          <div className="th-onb-body flex-1">
+            <div className="th-onb-section">
+              <span className="th-onb-label">Deployment mode</span>
+              <div className="th-segmented" role="radiogroup" aria-label="Deployment mode">
                 {(["token", "gpo"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMode(m)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                      mode === m
-                        ? "border-techi-orange/60 bg-techi-orange/10 text-techi-orange"
-                        : "th-btn-secondary hover:border-white/20"
-                    }`}
-                  >
-                    {m === "token" ? "Token Enrollment" : "Trusted Domain / GPO"}
+                  <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}>
+                    {m === "token" ? "Token enrollment" : "Trusted domain / GPO"}
                   </button>
                 ))}
               </div>
+
+              {mode === "gpo" && (
+                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                  <Info className="h-4 w-4" />
+                  <ul className="space-y-1">
+                    <li><strong>Domain-joined PCs</strong> enroll without a token. The backend needs <code className="font-mono">TRUSTED_DOMAIN_AUTO_ENROLLMENT=true</code>.</li>
+                    <li><strong>WORKGROUP PCs</strong> do not enroll through GPO; use Token enrollment for them.</li>
+                    <li>The script is idempotent, so it is safe to run at every startup.</li>
+                  </ul>
+                </div>
+              )}
+
+              {mode === "token" && (
+                <>
+                  <div className="th-onb-field">
+                    <span className="flex items-center justify-between">
+                      Enrollment token
+                      {canManage && (
+                        <button type="button" onClick={() => void openCreateModal()} className="th-onb-link">
+                          <Plus className="h-3.5 w-3.5" />
+                          New token
+                        </button>
+                      )}
+                    </span>
+                    <Select
+                      id="deployment-token"
+                      aria-label="Deployment token"
+                      value={tokenId}
+                      onChange={(value) => { setTokenId(value); setPlaintextToken(""); }}
+                      placeholder={activeTokens.length === 0 ? "No active tokens: create one" : "Select a token"}
+                      options={activeTokens.map((t) => ({
+                        value: String(t.id),
+                        label: `${t.name}${t.is_default ? " · default" : ""}`,
+                        hint: `#${t.id} · ${t.use_count}/${t.max_uses} uses`,
+                      }))}
+                    />
+                  </div>
+                  <label className="th-onb-field">
+                    <span className="flex items-center gap-2">
+                      Plaintext token
+                      {plaintextToken && <span className="th-status-chip !h-5 !px-2 !text-[11px]" style={{ "--chip-tone": "var(--th-status-online)" } as React.CSSProperties}><i />Filled</span>}
+                    </span>
+                    <input
+                      value={plaintextToken}
+                      onChange={(e) => setPlaintextToken(e.target.value)}
+                      placeholder="Filled after New token, or paste it here"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </label>
+                </>
+              )}
             </div>
 
-            {/* GPO explanation */}
-            {mode === "gpo" && (
-              <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100 space-y-2">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  Domain vs WORKGROUP — important difference
-                </div>
-                <ul className="ml-5 list-disc space-y-1 font-medium">
-                  <li>
-                    <strong>Domain-joined PCs</strong> — enroll automatically. No token needed.
-                    Requires{" "}
-                    <code className="font-mono text-amber-200">TRUSTED_DOMAIN_AUTO_ENROLLMENT=true</code>{" "}
-                    on the backend.
-                  </li>
-                  <li>
-                    <strong>WORKGROUP PCs</strong> — will NOT enroll via GPO. Use{" "}
-                    <strong>Token Enrollment</strong> for these machines.
-                  </li>
-                  <li>Script is idempotent — safe to run at every startup via GPO.</li>
-                  <li>
-                    Backend URL must be reachable from every target PC — use a LAN IP or public
-                    domain, not localhost.
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Token mode fields */}
-            {mode === "token" && (
-              <>
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-200">Enrollment token</span>
-                    {canManage && (
-                      <button
-                        type="button"
-                        onClick={() => void openCreateModal()}
-                        className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-techi-orange/40 hover:text-techi-orange"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Create
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Default token quick-select */}
-                  {activeDefault && tokenId !== String(activeDefault.id) && (
-                    <button
-                      type="button"
-                      onClick={handleUseDefault}
-                      className="mb-2 w-full rounded-lg border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-2 text-left text-xs font-semibold text-emerald-300 transition hover:bg-emerald-400/[0.12]"
-                    >
-                      <Shield className="mr-1.5 inline h-3.5 w-3.5" />
-                      Use Default Deployment Token
-                    </button>
-                  )}
-
-                  <SelectField
-                    value={tokenId}
-                    onChange={(e) => { setTokenId(e.target.value); setPlaintextToken(""); }}
-                    id="deployment-token"
-                    name="deployment-token"
-                    aria-label="Deployment token"
-                    className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
-                  >
-                    {activeTokens.length === 0 && (
-                      <option value="">No active tokens — click Create above</option>
-                    )}
-                    {activeTokens.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.is_default ? "⭐ " : ""}#{t.id} · {t.name} ({t.use_count}/{t.max_uses} uses)
-                      </option>
-                    ))}
-                  </SelectField>
-                </div>
-
-                <label className="block">
-                  <span className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-slate-200">
-                    Plaintext token value
-                    {plaintextToken && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
-                        <Check className="h-2.5 w-2.5" /> auto-filled
-                      </span>
-                    )}
-                  </span>
-                  <input
-                    value={plaintextToken}
-                    onChange={(e) => setPlaintextToken(e.target.value)}
-                    placeholder="Auto-filled after Create, or paste manually"
-                    className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white placeholder:text-slate-500 outline-none transition focus:border-techi-orange/60"
-                  />
-                </label>
-              </>
-            )}
-
-            {/* Backend URL */}
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-200">Backend URL</span>
-              <input
-                value={backendUrl}
-                onChange={(e) => setBackendUrl(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
-              />
-              {isLocalhost && (
-                <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-300">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    <strong>Warning:</strong> localhost only works on this machine. For real devices use
-                    your server&apos;s IP or domain, e.g.{" "}
-                    <code className="font-mono text-amber-200">http://&lt;server-ip&gt;:8000</code>
-                  </span>
-                </p>
-              )}
-            </label>
-
-            {/* Platform */}
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-200">Platform</span>
-              <SelectField
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value as EnrollmentBootstrapPlatform)}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
-              >
-                <option value="windows">Windows</option>
-                <option value="macos">macOS</option>
-                <option value="linux">Linux</option>
-              </SelectField>
-            </label>
-
-            {/* ── Availability Profile ─────────────────────────────────────── */}
-            {platform === "windows" && (
-              <div>
-                <div className="mb-1.5 flex items-center gap-2">
-                  <Server className="h-3.5 w-3.5 text-techi-orange" />
-                  <span className="text-xs font-semibold text-slate-200">Availability profile</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5 mb-2">
-                  {(["server", "workstation", "custom"] as AvailabilityProfile[]).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setAvailProfile(p)}
-                      className={`th-btn min-h-9 rounded-lg border px-2 py-2 text-xs font-semibold capitalize transition ${
-                        availProfile === p
-                          ? "th-btn-primary"
-                          : "th-btn-secondary"
-                      }`}
-                    >
-                      {PROFILE_INFO[p].label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-400 leading-5 mb-2">
-                  {PROFILE_INFO[availProfile].description}
-                </p>
-
-                <label className="flex cursor-pointer items-center gap-2 mb-2">
-                  <input
-                    type="checkbox"
-                    checked={managePower}
-                    onChange={(e) => setManagePower(e.target.checked)}
-                    className="h-4 w-4 rounded accent-techi-orange"
-                  />
-                  <span className="text-xs font-semibold text-slate-200">
-                    Apply power policy on agent startup
-                  </span>
-                </label>
-
-                {managePower && (availProfile === "workstation" || availProfile === "custom") && (
-                  <div className="space-y-2 rounded-lg border border-white/10 bg-slate-950/50 p-3 mt-2">
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={preventSleepAC}
-                        onChange={(e) => setPreventSleepAC(e.target.checked)}
-                        className="h-4 w-4 rounded accent-techi-orange"
-                      />
-                      <span className="text-xs text-slate-300">Prevent sleep on AC power</span>
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={preventHibernate}
-                        onChange={(e) => setPreventHibernate(e.target.checked)}
-                        className="h-4 w-4 rounded accent-techi-orange"
-                      />
-                      <span className="text-xs text-slate-300">Disable hibernate</span>
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={allowDisplayOff}
-                        onChange={(e) => setAllowDisplayOff(e.target.checked)}
-                        className="h-4 w-4 rounded accent-techi-orange"
-                      />
-                      <span className="text-xs text-slate-300">Allow display off on AC (recommended)</span>
-                    </label>
-                  </div>
-                )}
-
-                {managePower && availProfile === "server" && (
-                  <div className="rounded-lg border border-emerald-400/15 bg-emerald-400/[0.06] p-2.5 text-xs text-emerald-300">
-                    <Check className="mr-1.5 inline h-3.5 w-3.5" />
-                    Server profile: sleep + hibernate will be disabled on AC. Lock screen stays enabled.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TECHI Remote Support */}
-            <div>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={rustdeskEnabled}
-                  onChange={(e) => setRustdeskEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded accent-techi-orange"
-                />
-                <span className="text-xs font-semibold text-slate-200">
-                  TECHI Remote Support self-healing (Windows)
-                </span>
+            <div className="th-onb-section">
+              <span className="th-onb-label">Connection</span>
+              <label className="th-onb-field">
+                Backend URL
+                <input value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} spellCheck={false} />
               </label>
-
-              {rustdeskEnabled && (
-                <div className="mt-3 space-y-3 rounded-lg border border-white/10 bg-slate-950/50 p-3">
-                  {(
-                    [
-                      { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "http://server:8081/TECHI-Remote-Support.msi" },
-                      { label: "Rendezvous server", value: rustdeskRendezvous, set: setRustdeskRendezvous, placeholder: "server IP or hostname" },
-                      { label: "Relay server", value: rustdeskRelay, set: setRustdeskRelay, placeholder: "relay IP or hostname" },
-                      { label: "API server", value: rustdeskApi, set: setRustdeskApi, placeholder: "http://server:21114" },
-                      { label: "Public key", value: rustdeskKey, set: setRustdeskKey, placeholder: "base64 key" },
-                      { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "initial TECHI Remote Support password" },
-                    ] as const
-                  ).map(({ label, value, set, placeholder }) => (
-                    <label key={label} className="block">
-                      <span className="mb-1 block text-xs text-slate-400">{label}</span>
-                      <input
-                        value={value}
-                        onChange={(e) => set(e.target.value)}
-                        placeholder={placeholder}
-                        className="w-full rounded-md border border-white/10 bg-slate-900 px-2.5 py-2 text-xs font-medium text-white placeholder:text-slate-500 outline-none transition focus:border-techi-orange/60"
-                      />
-                    </label>
-                  ))}
+              {isLocalhost && (
+                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>localhost only reaches this machine. Real devices need the server&apos;s public URL.</span>
                 </div>
               )}
+              <div className="th-onb-field">
+                Platform
+                <div className="th-segmented" role="radiogroup" aria-label="Platform">
+                  {PLATFORMS.map((p) => (
+                    <button key={p.id} type="button" role="radio" aria-checked={platform === p.id} onClick={() => setPlatform(p.id)}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
+            {platform === "windows" && (
+              <div className="th-onb-section">
+                <span className="th-onb-label">Device policy</span>
+                <div className="th-onb-field">
+                  Availability profile
+                  <div className="th-segmented" role="radiogroup" aria-label="Availability profile">
+                    {(["server", "workstation", "custom"] as AvailabilityProfile[]).map((p) => (
+                      <button key={p} type="button" role="radio" aria-checked={availProfile === p} onClick={() => setAvailProfile(p)}>
+                        {PROFILE_INFO[p].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="th-onb-hint">{PROFILE_INFO[availProfile].description}</p>
+                </div>
+
+                <label className="th-onb-check">
+                  <input type="checkbox" checked={managePower} onChange={(e) => setManagePower(e.target.checked)} />
+                  <span>
+                    Apply power policy on agent startup
+                    <small>{availProfile === "server" ? "Sleep and hibernate are disabled on AC power." : "Uses the switches below."}</small>
+                  </span>
+                </label>
+                {managePower && availProfile !== "server" && (
+                  <div className="th-onb-sub">
+                    <label className="th-onb-check"><input type="checkbox" checked={preventSleepAC} onChange={(e) => setPreventSleepAC(e.target.checked)} /><span>Prevent sleep on AC power</span></label>
+                    <label className="th-onb-check"><input type="checkbox" checked={preventHibernate} onChange={(e) => setPreventHibernate(e.target.checked)} /><span>Disable hibernate</span></label>
+                    <label className="th-onb-check"><input type="checkbox" checked={allowDisplayOff} onChange={(e) => setAllowDisplayOff(e.target.checked)} /><span>Allow display off on AC <small>Recommended</small></span></label>
+                  </div>
+                )}
+
+                <label className="th-onb-check">
+                  <input type="checkbox" checked={rustdeskEnabled} onChange={(e) => setRustdeskEnabled(e.target.checked)} />
+                  <span>
+                    {TERMS.remoteSupport} self-healing
+                    <small>The agent installs, configures and keeps {TERMS.remoteSupport} running.</small>
+                  </span>
+                </label>
+                {rustdeskEnabled && (
+                  <div className="th-onb-sub sm:grid-cols-2">
+                    {(
+                      [
+                        { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "https://…/TECHI-Remote-Support.msi" },
+                        { label: "Rendezvous server", value: rustdeskRendezvous, set: setRustdeskRendezvous, placeholder: "Host or IP" },
+                        { label: "Relay server", value: rustdeskRelay, set: setRustdeskRelay, placeholder: "Host or IP" },
+                        { label: "API server", value: rustdeskApi, set: setRustdeskApi, placeholder: "Leave empty unless you run one" },
+                        { label: "Public key", value: rustdeskKey, set: setRustdeskKey, placeholder: "Base64 key" },
+                        { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "Initial password" },
+                      ] as const
+                    ).map(({ label, value, set, placeholder }) => (
+                      <label key={label} className="th-onb-field">
+                        {label}
+                        <input value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} spellCheck={false} autoComplete="off" />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="th-onb-foot space-y-3">
             {error && (
-              <div className="flex gap-2 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm font-medium text-red-100">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as React.CSSProperties} role="alert">
+                <AlertTriangle className="h-4 w-4" />
                 <span>{error}</span>
               </div>
             )}
-
-            <Button
-              className="w-full"
-              type="button"
-              onClick={() => void handleGenerate()}
-              disabled={loading || !canGenerate || !backendUrl.trim()}
-            >
-              {loading ? "Generating…" : "Generate Installer"}
+            <Button className="w-full" type="button" onClick={() => void handleGenerate()} disabled={loading || !canGenerate || !backendUrl.trim()}>
+              {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+              {loading ? "Generating…" : "Generate installer"}
             </Button>
           </div>
         </div>
 
-        {/* ── right: output ─────────────────────────────────────────────────── */}
-        <div className="space-y-5">
-          {bootstrap && (
-            <>
-              {/* Summary card */}
-              <div className="premium-card-soft p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="premium-kicker">Generated Target</p>
-                    <p className="mt-1 text-sm font-semibold text-white">
-                      {bootstrap.mode === "gpo"
-                        ? "GPO / Trusted Domain deployment"
-                        : bootstrap.platform === "windows"
-                        ? "Windows Service install"
-                        : `${bootstrap.platform} bootstrap`}
-                    </p>
-                  </div>
-                  <div className="grid gap-2 text-xs font-medium text-slate-300 sm:grid-cols-2">
-                    <span className="rounded-md border border-white/10 bg-slate-950/60 px-2.5 py-1.5">
-                      backend_url: {bootstrap.backend_url}
-                    </span>
-                    {bootstrap.mode === "token" && (
-                      <span className="rounded-md border border-white/10 bg-slate-950/60 px-2.5 py-1.5">
-                        token:{" "}
-                        {selectedToken
-                          ? `#${selectedToken.id} ${selectedToken.name}`
-                          : bootstrap.enrollment_token_id
-                          ? `#${bootstrap.enrollment_token_id}`
-                          : "—"}
-                      </span>
-                    )}
-                    {bootstrap.mode === "gpo" && (
-                      <span className="rounded-md border border-white/10 bg-slate-950/60 px-2.5 py-1.5">
-                        mode: Trusted Domain / GPO
-                      </span>
-                    )}
-                  </div>
+        <div className="th-onb-card">
+          <div className="th-onb-card-head">
+            <div className="th-onb-card-title">
+              <span className="th-onb-icon" style={{ "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)" } as React.CSSProperties}>
+                <FileCode2 className="h-4 w-4" />
+              </span>
+              <span>
+                Installer
+                <small>{bootstrap ? "Ready to run as Administrator" : "Appears here once generated"}</small>
+              </span>
+            </div>
+            {bootstrap && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void copyText("script", bootstrap.bootstrap_script)}>
+                  {copied === "script" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied === "script" ? "Copied" : "Copy script"}
+                </Button>
+                <Button size="sm" onClick={handleDownloadScript}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download .ps1
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {bootstrap ? (
+            <div className="th-onb-body flex-1 th-fade-in">
+              <dl className="th-onb-meta">
+                <div><dt>Target</dt><dd>{bootstrap.mode === "gpo" ? "Trusted domain / GPO" : bootstrap.platform === "windows" ? "Windows service" : `${bootstrap.platform} bootstrap`}</dd></div>
+                <div><dt>Platform</dt><dd className="capitalize">{bootstrap.platform}</dd></div>
+                <div><dt>Backend</dt><dd title={bootstrap.backend_url}>{bootstrap.backend_url}</dd></div>
+                <div>
+                  <dt>{bootstrap.mode === "gpo" ? "Enrollment" : "Token"}</dt>
+                  <dd>{bootstrap.mode === "gpo" ? "Domain trust" : selectedToken ? selectedToken.name : bootstrap.enrollment_token_id ? `#${bootstrap.enrollment_token_id}` : "—"}</dd>
                 </div>
-                {bootstrap.platform === "windows" && (
-                  <div className="mt-3 flex gap-2 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm font-semibold text-amber-100">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      {bootstrap.mode === "gpo"
-                        ? "Deploy via GPO as Administrator. Domain-joined machines enroll automatically."
-                        : "Run as Administrator: powershell -ExecutionPolicy Bypass -File .\\techi-installer.ps1"}
-                    </span>
-                  </div>
-                )}
+              </dl>
+
+              <div className="th-onb-field">
+                Run command
+                <div className="flex items-stretch gap-2">
+                  <code className="th-onb-code min-w-0 flex-1 truncate px-3 py-2">{bootstrap.bootstrap_command}</code>
+                  <button type="button" className="th-onb-action !h-auto !w-9 border" style={{ borderColor: "var(--th-border-subtle)" }} onClick={() => void copyText("command", bootstrap.bootstrap_command)} aria-label="Copy run command">
+                    {copied === "command" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
 
-              {/* ── One-click installer section ─────────────────────────────── */}
-              <div className="premium-card-soft overflow-hidden">
-                <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-                  <h3 className="text-sm font-semibold text-white">
-                    One-click installer
-                  </h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void copyText("script", bootstrap.bootstrap_script)}
-                      className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/[0.08]"
-                    >
-                      {copied === "script" ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-300" />
-                      ) : (
-                        <Clipboard className="h-3.5 w-3.5" />
-                      )}
-                      {copied === "script" ? "Copied" : "Copy script"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadScript}
-                      className="inline-flex items-center gap-2 rounded-md border border-techi-orange/40 bg-techi-orange/10 px-3 py-1.5 text-xs font-semibold text-techi-orange transition hover:bg-techi-orange/20"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Download .ps1
-                    </button>
-                  </div>
-                </div>
-                <div className="border-b border-white/[0.06] bg-slate-950/60 px-4 py-3">
-                  <p className="text-[11px] font-semibold text-slate-400 mb-1">Run command (as Administrator):</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 rounded-md bg-slate-900 px-3 py-2 font-mono text-xs text-techi-orange">
-                      {bootstrap.bootstrap_command}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => void copyText("command", bootstrap.bootstrap_command)}
-                      className="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-2 text-xs text-slate-200 transition hover:bg-white/[0.08]"
-                    >
-                      {copied === "command" ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-                <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words p-4 text-[12px] leading-5 text-slate-200">
-                  {bootstrap.bootstrap_script}
-                </pre>
+              <div className="th-onb-field">
+                Script
+                <pre className="th-onb-code max-h-[320px] overflow-auto whitespace-pre-wrap break-words p-3">{bootstrap.bootstrap_script}</pre>
               </div>
-            </>
-          )}
 
-          {!bootstrap && (
-            <div className="premium-card-soft">
+              <OutputBlock
+                title="Config template (agent.config.json)"
+                value={bootstrap.config_template}
+                copied={copied === "config"}
+                onCopy={() => void copyText("config", bootstrap.config_template)}
+              />
+
+              {bootstrap.preproduction_notice && (
+                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
+                  <Info className="h-4 w-4" />
+                  <span>{bootstrap.preproduction_notice}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="th-onb-empty">
               <EmptyState
                 icon={<Terminal className="h-5 w-5" />}
-                title="No installer generated yet"
-                description="Pick the deployment mode, token and profile on the left, then select Generate Installer. The PowerShell script and copy-ready command appear here."
+                title="No installer yet"
+                description="Choose the deployment mode, token and device policy, then generate. The PowerShell script and a copy-ready command appear here."
               />
-            </div>
-          )}
-
-          {bootstrap && (
-            <OutputBlock
-              title="Config template (agent.config.json)"
-              value={bootstrap.config_template}
-              copied={copied === "config"}
-              onCopy={() => bootstrap && void copyText("config", bootstrap.config_template)}
-            />
-          )}
-
-          {bootstrap && (
-            <div className="rounded-lg border border-blue-400/15 bg-blue-400/[0.05] p-3 text-sm font-medium text-blue-100">
-              <Info className="mr-2 inline h-4 w-4 text-blue-400" />
-              {bootstrap.preproduction_notice}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── token table ──────────────────────────────────────────────────────── */}
-      <div className="premium-card-soft overflow-hidden">
-        <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-techi-orange" />
-            <span className="text-sm font-semibold text-white">
-              {tokensLoading ? "Loading tokens…" : `${tokens.length} enrollment token${tokens.length === 1 ? "" : "s"}`}
+      {/* ── tokens ──────────────────────────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens">
+        <div className="th-onb-card-head">
+          <div className="th-onb-card-title">
+            <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as React.CSSProperties}>
+              <KeyRound className="h-4 w-4" />
             </span>
-            <Badge variant="ghost">{activeTokens.length} active</Badge>
+            <span>
+              Enrollment tokens
+              <small>{tokensLoading && tokens.length === 0 ? "Loading…" : `${formatCount(tokens.length)} total · ${formatCount(activeTokens.length)} active`}</small>
+            </span>
           </div>
           {canManage && (
             <Button size="sm" onClick={() => void openCreateModal()}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Create token
+              <Plus className="h-3.5 w-3.5" />
+              New token
             </Button>
           )}
         </div>
 
-        {/* flash plaintext banner */}
         {flashToken && (
-          <div className="flex items-start gap-3 border-b border-amber-400/20 bg-amber-400/[0.08] px-4 py-3">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-amber-200">
-                Copy the plaintext token now — it will not be shown again after reload.
-              </p>
-              <div className="mt-1.5 flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-slate-900/80 px-2 py-1 font-mono text-[11px] text-amber-100">
-                  {flashToken.plaintext}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => void copyText("flash", flashToken.plaintext)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.12]"
-                >
-                  {copied === "flash" ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied === "flash" ? "Copied" : "Copy"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFlashToken(null)}
-                  className="rounded p-1 text-slate-500 transition hover:text-slate-300"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
+          <div className="th-onb-flash">
+            <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
+            <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>Copy the token now; it is not shown again.</span>
+            <code className="th-onb-code min-w-0 flex-1 truncate px-2.5 py-1">{flashToken.plaintext}</code>
+            <Button size="sm" variant="secondary" onClick={() => void copyText("flash", flashToken.plaintext)}>
+              {copied === "flash" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied === "flash" ? "Copied" : "Copy"}
+            </Button>
+            <button type="button" className="th-onb-action" onClick={() => setFlashToken(null)} aria-label="Dismiss">
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="th-table-head">
-              <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Prefix</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Uses</th>
-                {canManage && <th className="px-4 py-3">Unique</th>}
-                {canManage && <th className="px-4 py-3">Duplicates</th>}
-                {canManage && <th className="px-4 py-3">Failed</th>}
-                <th className="px-4 py-3">Assignment</th>
-                <th className="px-4 py-3">Expires</th>
-                <th className="px-4 py-3">Last used</th>
-                <th className="px-4 py-3">Created</th>
-                {canManage && <th className="th-sticky-end px-4 py-3 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {tokens.length === 0 && (
-                <tr>
-                  <td colSpan={canManage ? 12 : 8} className="px-4 py-10 text-center text-sm font-medium text-slate-500">
-                    {tokensLoading ? "Loading…" : "No enrollment tokens yet."}
-                  </td>
-                </tr>
+        <div className="th-alerts-toolbar">
+          <div role="tablist" aria-label="Token status" className="th-tabs">
+            {TOKEN_FILTERS.map(({ id, label }) => (
+              <button key={id} type="button" role="tab" aria-selected={statusFilter === id} onClick={() => { setStatusFilter(id); setPage(1); }} className="th-tab">
+                {label}
+                <span className="th-tab-count">{formatCount(statusCounts[id])}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pb-2">
+            <label className="th-search th-search-sm w-[260px]">
+              <Search className="h-3.5 w-3.5 flex-none" />
+              <input value={tokenSearch} onChange={(e) => { setTokenSearch(e.target.value); setPage(1); }} placeholder="Search tokens or clients" aria-label="Search tokens" />
+              {tokenSearch && (
+                <button type="button" onClick={() => setTokenSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                  <X className="h-3.5 w-3.5" />
+                </button>
               )}
-              {tokens.map((token) => (
-                <tr
-                  key={token.id}
-                  className={`text-slate-300 hover:bg-white/[0.025] ${tokenId === String(token.id) ? "bg-techi-orange/[0.04]" : ""}`}
-                >
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      {token.is_default && (
-                        <span title="Default Deployment Token" className="text-techi-orange">⭐</span>
-                      )}
-                      <code className="font-mono text-[11px] text-slate-400">
-                        {formatTokenPrefix(token.token_prefix)}
-                      </code>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-white">
-                    {canManage ? (
-                      <button type="button" onClick={() => void openDiagnostics(token)} className="hover:text-techi-orange">
-                        {token.name}
-                      </button>
-                    ) : token.name}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">{tokenStatusBadge(token)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-400">
-                    <span className="inline-flex items-center gap-1.5">
-                      {token.use_count}/{token.max_uses}
-                      {usageWarningBadge(token, canManage ? () => openMaxUsesEditor(token) : undefined)}
-                    </span>
-                  </td>
-                  {canManage && (
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
-                      {diagnosticsCache[token.id]?.unique_devices ?? "—"}
-                    </td>
-                  )}
-                  {canManage && (
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
-                      {diagnosticsCache[token.id]?.duplicate_enrollments ?? "—"}
-                    </td>
-                  )}
-                  {canManage && (
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
-                      {diagnosticsCache[token.id]?.failed_events ?? "—"}
-                    </td>
-                  )}
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">
-                    {token.client_id ? (
-                      <span className="rounded-md bg-slate-800 px-2 py-0.5 text-xs">
-                        Client #{token.client_id}
-                        {token.group_id ? ` / #${token.group_id}` : ""}
-                      </span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">
-                    {token.expires_at ? formatLocalDateTime(token.expires_at) : <span className="text-slate-600">Never</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-500">
-                    {token.used_at ? timeAgo(token.used_at) : <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-500">
-                    {formatLocalDateTime(token.created_at)}
-                  </td>
-                  {canManage && (
-                    <td className="th-sticky-end px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" onClick={() => void openDiagnostics(token)} variant="secondary">
-                          <Eye className="mr-1 h-3 w-3" />
-                          Diagnostics
-                        </Button>
-                        {flashToken?.id === token.id && (
-                          <button
-                            type="button"
-                            onClick={() => void copyText(`row-${token.id}`, flashToken.plaintext)}
-                            title="Copy plaintext token"
-                            className="flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-xs font-semibold text-amber-300 transition hover:bg-amber-400/20"
-                          >
-                            {copied === `row-${token.id}` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                            {copied === `row-${token.id}` ? "Copied" : "Copy token"}
-                          </button>
-                        )}
-                        {token.is_default && (
-                          <Button
-                            size="sm"
-                            onClick={() => void handleRegenerateDefault()}
-                            disabled={regenerating}
-                            variant="secondary"
-                          >
-                            <RotateCcw className={`mr-1 h-3 w-3 ${regenerating ? "animate-spin" : ""}`} />
-                            Regen
-                          </Button>
-                        )}
-                        {isRevocable(token) && (
-                          <Button
-                            size="sm"
-                            onClick={() => setRevokeTarget(token)}
-                            disabled={revoking.has(token.id)}
-                            variant="danger"
-                          >
-                            {revoking.has(token.id) ? "Revoking…" : "Revoke"}
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          onClick={() => setDeleteTarget(token)}
-                          disabled={deleting}
-                          variant="danger"
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" />
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </label>
+          </div>
         </div>
+
+        {tokensLoading && tokens.length === 0 ? (
+          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading tokens">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
+            ))}
+          </div>
+        ) : visibleTokens.length === 0 ? (
+          <EmptyState
+            className="th-fade-in py-10"
+            icon={<KeyRound className="h-5 w-5" />}
+            title={tokens.length === 0 ? "No enrollment tokens yet" : "No tokens match these filters"}
+            action={tokens.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setStatusFilter("all"); setTokenSearch(""); }}>Clear filters</Button> : undefined}
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll">
+            <table className="th-alerts-table">
+              <colgroup>
+                <col />
+                <col className="w-[120px]" />
+                <col className="w-[160px]" />
+                <col className="w-[18%]" />
+                <col className="w-[120px]" />
+                <col className="w-[120px]" />
+                <col className="w-[148px]" />
+                {canManage && <col className="w-[168px]" />}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Status</th>
+                  <th>Usage</th>
+                  <th>Client</th>
+                  <th>Last used</th>
+                  <th>Expires</th>
+                  <th>Created</th>
+                  {canManage && <th className="text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedTokens.map((token) => (
+                  <tr key={token.id} data-selected={tokenId === String(token.id) || undefined}>
+                    <td>
+                      <span className="th-alerts-primary flex items-center gap-1.5">
+                        {token.is_default && <Star className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }} aria-label="Default deployment token" />}
+                        {canManage ? (
+                          <button type="button" className="th-alerts-link truncate text-left" onClick={() => void openDiagnostics(token)}>{token.name}</button>
+                        ) : (
+                          <span className="truncate">{token.name}</span>
+                        )}
+                      </span>
+                      <span className="th-alerts-secondary font-mono">{formatTokenPrefix(token.token_prefix)}</span>
+                    </td>
+                    <td><TokenStatusChip token={token} /></td>
+                    <td>
+                      {canManage ? (
+                        <button type="button" className="text-left" onClick={() => openMaxUsesEditor(token)} title="Change max uses">
+                          <UsageMeter token={token} />
+                        </button>
+                      ) : (
+                        <UsageMeter token={token} />
+                      )}
+                    </td>
+                    <td>
+                      {token.client_id ? (
+                        <span className="th-alerts-primary" title={token.group_id ? `Group #${token.group_id}` : undefined}>
+                          {clientNames[token.client_id] ?? `Client #${token.client_id}`}
+                        </span>
+                      ) : (
+                        <span className="th-alerts-secondary">Any client</span>
+                      )}
+                    </td>
+                    <td>
+                      {token.last_used_at ? (
+                        <span className="th-alerts-primary" title={formatLocalDateTime(token.last_used_at)}>{timeAgo(token.last_used_at)}</span>
+                      ) : (
+                        <span className="th-alerts-secondary">Never</span>
+                      )}
+                    </td>
+                    <td>
+                      {token.expires_at ? (
+                        <span className="th-alerts-primary">{formatLocalDateTime(token.expires_at)}</span>
+                      ) : (
+                        <span className="th-alerts-secondary">Never</span>
+                      )}
+                    </td>
+                    <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(token.created_at)}</span></td>
+                    {canManage && (
+                      <td>
+                        <div className="th-onb-actions">
+                          <button type="button" className="th-onb-action" title="Diagnostics" aria-label={`Diagnostics for ${token.name}`} onClick={() => void openDiagnostics(token)}>
+                            <Activity className="h-4 w-4" />
+                          </button>
+                          {flashToken?.id === token.id && (
+                            <button type="button" className="th-onb-action" title="Copy plaintext token" aria-label={`Copy ${token.name}`} onClick={() => void copyText(`row-${token.id}`, flashToken.plaintext)}>
+                              {copied === `row-${token.id}` ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            </button>
+                          )}
+                          {token.is_default && (
+                            <button type="button" className="th-onb-action" title="Regenerate" aria-label="Regenerate default token" disabled={regenerating} onClick={() => void handleRegenerateDefault()}>
+                              <RotateCcw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
+                            </button>
+                          )}
+                          {isRevocable(token) && (
+                            <button type="button" className="th-onb-action" data-tone="danger" title="Revoke" aria-label={`Revoke ${token.name}`} disabled={revoking.has(token.id)} onClick={() => setRevokeTarget(token)}>
+                              <Ban className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button type="button" className="th-onb-action" data-tone="danger" title="Delete" aria-label={`Delete ${token.name}`} disabled={deleting} onClick={() => setDeleteTarget(token)}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {visibleTokens.length > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={visibleTokens.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            pageSizeOptions={[25, 50, 100]}
+            itemLabel="tokens"
+          />
+        )}
       </div>
 
       {diagnosticsToken && (
@@ -1259,64 +1124,62 @@ export default function EnrollmentBootstrap() {
 
       {/* ── Create Token Modal ────────────────────────────────────────────────── */}
       {createOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="premium-card w-full max-w-md p-5">
+        <div className="th-modal-scrim fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="th-modal w-full max-w-md rounded-xl p-5 shadow-2xl" style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-surface)" }}>
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-white">Create Enrollment Token</h3>
+              <h3 className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>New enrollment token</h3>
               <button
                 type="button"
                 onClick={() => setCreateOpen(false)}
-                className="rounded-md p-1 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+                className="th-onb-action" aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-200">Token name *</span>
+            <div className="space-y-4">
+              <label className="th-onb-field">
+                Token name *
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g. ADPascucci — Office PCs"
                   autoFocus
                   onKeyDown={(e) => e.key === "Enter" && void handleCreateToken()}
-                  className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white placeholder:text-slate-500 outline-none transition focus:border-techi-orange/60"
+                  className="w-full"
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-200">Max uses</span>
+              <label className="th-onb-field">
+                Max uses
                 <input
                   type="number"
                   min={1}
                   max={1000}
                   value={newMaxUses}
                   onChange={(e) => setNewMaxUses(Math.max(1, Number(e.target.value)))}
-                  className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                  className="w-full"
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-200">Expires at (optional)</span>
+              <label className="th-onb-field">
+                Expires (Tirana time, optional)
                 <input
                   type="datetime-local"
                   value={newExpiry}
                   onChange={(e) => setNewExpiry(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                  className="w-full"
                 />
               </label>
 
               {clients.length > 0 && (
                 <>
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-semibold text-slate-200">
-                      Assign to client (optional)
-                    </span>
+                  <label className="th-onb-field">
+                    Assign to client (optional)
                     <SelectField
                       value={newClientId}
                       onChange={(e) => setNewClientId(e.target.value === "" ? "" : Number(e.target.value))}
-                      className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                      className="w-full"
                     >
                       <option value="">— No assignment —</option>
                       {clients.map((c) => (
@@ -1326,14 +1189,12 @@ export default function EnrollmentBootstrap() {
                   </label>
 
                   {newClientId !== "" && groups.length > 0 && (
-                    <label className="block">
-                      <span className="mb-1.5 block text-xs font-semibold text-slate-200">
-                        Assign to group (optional)
-                      </span>
+                    <label className="th-onb-field">
+                      Assign to group (optional)
                       <SelectField
                         value={newGroupId}
                         onChange={(e) => setNewGroupId(e.target.value === "" ? "" : Number(e.target.value))}
-                        className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                        className="w-full"
                       >
                         <option value="">— No group —</option>
                         {groups.map((g) => (
@@ -1346,45 +1207,38 @@ export default function EnrollmentBootstrap() {
               )}
             </div>
 
-            <div className="mt-5 flex gap-2">
+            <div className="mt-5 flex flex-row-reverse gap-2">
               <Button
                 type="button"
-                className="flex-1"
+                
                 onClick={() => void handleCreateToken()}
                 disabled={!newName.trim() || creating}
               >
-                {creating ? "Creating…" : "Create & Select"}
+                {creating ? "Creating…" : "Create and select"}
               </Button>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                disabled={creating}
-                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:border-white/20 disabled:opacity-50"
-              >
-                Cancel
-              </button>
+              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Raise Max Uses Modal ─────────────────────────────────────────────── */}
+      {/* ── Change max uses Modal ─────────────────────────────────────────────── */}
       {editMaxUsesTarget && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="premium-card w-full max-w-md p-5">
+        <div className="th-modal-scrim fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="th-modal w-full max-w-md rounded-xl p-5 shadow-2xl" style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-surface)" }}>
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-white">Raise Max Uses</h3>
+              <h3 className="text-base font-semibold" style={{ color: "var(--th-text-primary)" }}>Change max uses</h3>
               <button
                 type="button"
                 onClick={() => setEditMaxUsesTarget(null)}
-                className="rounded-md p-1 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+                className="th-onb-action" aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <p className="mb-4 text-sm text-slate-300">
-              <span className="font-semibold text-white">{editMaxUsesTarget.name}</span> is at{" "}
+            <p className="mb-4 text-sm leading-6" style={{ color: "var(--th-text-secondary)" }}>
+              <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{editMaxUsesTarget.name}</span> is at{" "}
               <span className="font-mono">
                 {editMaxUsesTarget.use_count}/{editMaxUsesTarget.max_uses}
               </span>{" "}
@@ -1393,8 +1247,8 @@ export default function EnrollmentBootstrap() {
                 " Raising the limit above the current use count reactivates the token."}
             </p>
 
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-200">Max uses</span>
+            <label className="th-onb-field">
+              Max uses
               <input
                 type="number"
                 min={1}
@@ -1403,27 +1257,20 @@ export default function EnrollmentBootstrap() {
                 autoFocus
                 onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))}
                 onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()}
-                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm font-medium text-white outline-none transition focus:border-techi-orange/60"
+                className="w-full"
               />
             </label>
 
-            <div className="mt-5 flex gap-2">
+            <div className="mt-5 flex flex-row-reverse gap-2">
               <Button
                 type="button"
-                className="flex-1"
+                
                 onClick={() => void handleSaveMaxUses()}
                 disabled={savingMaxUses}
               >
                 {savingMaxUses ? "Saving…" : "Save"}
               </Button>
-              <button
-                type="button"
-                onClick={() => setEditMaxUsesTarget(null)}
-                disabled={savingMaxUses}
-                className="th-btn-secondary rounded-lg border px-4 py-2 text-sm font-semibold transition hover:border-white/20 disabled:opacity-50"
-              >
-                Cancel
-              </button>
+              <Button type="button" variant="secondary" onClick={() => setEditMaxUsesTarget(null)} disabled={savingMaxUses}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -1437,7 +1284,7 @@ export default function EnrollmentBootstrap() {
           onClose={() => setRevokeTarget(null)}
           onConfirm={() => void handleRevoke(revokeTarget)}
         >
-          Revoke <span className="font-semibold text-white">{revokeTarget.name}</span>? Existing installers with this token will stop enrolling new devices.
+          Revoke <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{revokeTarget.name}</span>? Existing installers with this token will stop enrolling new devices.
         </ConfirmationModal>
       )}
 
@@ -1449,29 +1296,27 @@ export default function EnrollmentBootstrap() {
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDeleteToken()}
         >
-          Permanently delete <span className="font-semibold text-white">{deleteTarget.name}</span>?
+          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.name}</span>?
           {deleteTarget.status === "active" && " This token is active and this action cannot be undone."}
           {deleteTarget.is_default && deleteTarget.status === "active" && " Regenerate or revoke the Default Deployment token first unless you are intentionally removing it."}
         </ConfirmationModal>
       )}
 
       {/* ── Toasts ───────────────────────────────────────────────────────────── */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold shadow-xl ${
-              toast.type === "success" ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
-            }`}
-          >
-            {toast.type === "success" ? (
-              <Check className="h-4 w-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-            )}
-            {toast.message}
-          </div>
-        ))}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[110] flex flex-col gap-2" aria-live="polite">
+        {toasts.map((toast) => {
+          const tone = toast.type === "success" ? TONE.online : TONE.critical;
+          return (
+            <div
+              key={toast.id}
+              className="th-toast flex items-center gap-2.5 rounded-lg px-4 py-3 text-[13px] font-medium shadow-xl"
+              style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-elevated)", color: "var(--th-text-primary)", boxShadow: `inset 3px 0 0 ${tone}` }}
+            >
+              {toast.type === "success" ? <Check className="h-4 w-4 flex-none" style={{ color: tone }} /> : <AlertTriangle className="h-4 w-4 flex-none" style={{ color: tone }} />}
+              {toast.message}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -1632,25 +1477,14 @@ interface OutputBlockProps {
 
 function OutputBlock({ title, value, copied, onCopy }: OutputBlockProps) {
   return (
-    <div className="premium-card-soft overflow-hidden">
-      <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/[0.08]"
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-emerald-300" />
-          ) : (
-            <Clipboard className="h-3.5 w-3.5" />
-          )}
-          {copied ? "Copied" : "Copy"}
+    <details className="th-onb-details">
+      <summary>
+        <span>{title}</span>
+        <button type="button" className="th-onb-action" onClick={(e) => { e.preventDefault(); onCopy(); }} aria-label={`Copy ${title}`}>
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
-      </div>
-      <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words p-4 text-[12px] leading-5 text-slate-200">
-        {value}
-      </pre>
-    </div>
+      </summary>
+      <pre className="th-onb-code max-h-[280px] overflow-auto whitespace-pre-wrap break-words p-3">{value}</pre>
+    </details>
   );
 }

@@ -18,6 +18,7 @@ from app.models.trusted_domain import TrustedDomain
 from app.schemas.agent import AgentEnrollmentRequest
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.enrollment_audit_service import EnrollmentAuditService
+from app.schemas.enrollment_token import EnrollmentTokenCreate
 from app.services.enrollment_token_service import EnrollmentTokenService
 
 
@@ -282,3 +283,25 @@ def test_diagnostics_permission_protection_remains_enforced():
 
     assert operator_response.status_code == 403
     assert admin_response.status_code == 200
+
+
+def test_token_list_reports_when_each_token_last_enrolled_a_device():
+    """used_at only marks exhaustion; the list's last_used_at comes from the audit."""
+    from datetime import datetime
+
+    db = _db()
+    service = EnrollmentTokenService(db)
+    used = service.create(EnrollmentTokenCreate(name="Office", max_uses=10))
+    idle = service.create(EnrollmentTokenCreate(name="Idle", max_uses=10))
+    for when, result in [
+        (datetime(2026, 10, 1, 9, 0), "success"),
+        (datetime(2026, 10, 3, 9, 0), "updated_existing"),
+        (datetime(2026, 10, 5, 9, 0), "failed"),
+    ]:
+        db.add(EnrollmentAudit(token_id=used.id, result=result, created_at=when))
+    db.commit()
+
+    by_id = {t.id: t for t in service.list()}
+
+    assert by_id[used.id].last_used_at == datetime(2026, 10, 3, 9, 0), "a failed attempt is not a use"
+    assert by_id[idle.id].last_used_at is None

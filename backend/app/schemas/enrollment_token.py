@@ -20,6 +20,7 @@ class EnrollmentTokenOut(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime]
     used_at: Optional[datetime]
+    last_used_at: Optional[datetime] = None
     max_uses: int
     use_count: int
     client_id: Optional[int]
