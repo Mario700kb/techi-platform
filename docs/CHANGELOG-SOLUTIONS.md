@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] REPORTS-UI-2026-10-11 — Reports page in the Onboarding design, with motion
+
+Commit `eb964dd`; frontend only, deployed 2026-10-11 21:20. Rollback image
+`techi-platform-frontend:pre-reports-aa77483`.
+
+- **Summary:** three equal stat cards.
+- **Paired cards of equal height:** Generate now and Client schedules. The
+  schedules are a compact list with pause/resume and delete icons and an
+  inline new-schedule form.
+- **Report history** became a table:
+  - All / Client / Device tabs with counts, and search;
+  - status chips, with failed runs showing their error and a red edge;
+  - the period as whole Tirana days, size in KB/MB, icon actions and the
+    shared pagination.
+- **Motion and colour:** the same motion as Onboarding; colours through
+  `--th-*` tokens only.
+- **Verification:** the generator keeps its labels and logic, and the
+  existing Reports tests pass unchanged (139 frontend tests). Production:
+  frontend healthy, console 200, and the new styles are served.
+
 ## [2026-10-11] ONBOARDING-TABS-2026-10-11 — Packages and Tokens & commands redesigned; motion on all three Onboarding tabs
 
 Commits `a63bdf2` and `aa77483`; frontend only, deployed 2026-10-11 21:10.
