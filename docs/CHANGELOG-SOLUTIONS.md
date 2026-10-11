@@ -5,6 +5,40 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] AUDIT-UI-2026-10-11 — Audit Log redesign; filters cover every action the log holds
+
+Commit `e6673af`; backend and frontend, deployed 2026-10-11 21:22.
+Pre-deploy dump `/opt/backups/techi/pre-audit-ui-2026-10-11_21-20.sql.gz`
+(gzip-tested, 150 MB). Rollback images `techi-platform-backend:pre-audit-ui-eb964dd`
+and `techi-platform-frontend:pre-audit-ui-eb964dd`.
+
+### Fixed
+- **Most of the log could not be filtered.** The action filter listed 18
+  hand-kept actions and the entity filter 3. Missing were:
+  - `remote_connect` (3,517);
+  - `enrollment_token_deployment_viewed` (506);
+  - terminal and ssh sessions, package, team, report and vault events.
+
+  The new `GET /audit/facets` (audit permission; 401 without auth) returns
+  every action, entity type and operator present, with counts. In
+  production: 54 actions, 11 entity types, 11 operators. The operator
+  filter is now a picker; before, it was free text that needed the exact
+  username.
+
+### Changed
+- **Audit Log in the Onboarding design:**
+  - stat cards and a labelled filter card (Tirana time, Apply only when
+    changed);
+  - an events table with action chips toned by family (red only for
+    failures), expandable details, server-side shared pagination and
+    motion.
+
+### Verification
+- Backend: 1,248 tests (new `tests/test_audit_facets.py`).
+- Frontend: 141 tests (new `Audit.test.tsx`).
+- Production: both containers healthy, `/health` 200, console 200, no
+  errors in the backend log.
+
 ## [2026-10-11] REPORTS-UI-2026-10-11 — Reports page in the Onboarding design, with motion
 
 Commit `eb964dd`; frontend only, deployed 2026-10-11 21:20. Rollback image
