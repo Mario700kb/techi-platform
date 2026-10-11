@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Building2, Check, CheckSquare, ChevronDown, ChevronRight,
-  Cpu, Info, RefreshCcw, Save, Search, Shield, Square, Users, UsersRound, X,
+  AlertTriangle, ArrowLeft, Building2, Check, CheckCircle2, ChevronRight, Info, KeyRound,
+  Layers, Monitor, RefreshCcw, Save, Search, Shield, ShieldCheck, Users, UsersRound, X,
 } from "lucide-react";
 import {
   TeamDetail,
@@ -17,11 +18,14 @@ import {
 import { getOperators, OperatorRecord } from "../api/operators";
 import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
 import { getDevices, Device } from "../api/devices";
-import { Button } from "../components/ui";
+import { Button, EmptyState } from "../components/ui";
+import { CardHead } from "../components/ui/PanelCard";
 import { useAuth } from "../auth/AuthContext";
+import { useTabIndicator } from "../hooks/useTabIndicator";
+import { TONE } from "../utils/deviceStatus";
+import { formatCount } from "../utils/number";
 
-// ── Color presets ────────────────────────────────────────────────────────── //
-
+// Team colours are user data, chosen from this fixed set and stored on the team.
 const COLOR_PRESETS = [
   "#E85A3C", "#7C9CBF", "#C77B93", "#5C8C6A",
   "#4E8E86", "#8E7CC3", "#F04A2A", "#C8A000",
@@ -59,364 +63,211 @@ export const TEAM_PERMISSION_DEFS: { key: string; label: string; description: st
 
 const PERM_CATEGORIES = ["Visibility", "Remote Support", "Device Actions", "Content", "Admin", "Vault"];
 
-// ── Role permission matrix (mirrors backend permission_service.py) ────────── //
-
-const ROLE_PERMS: Record<string, Set<string>> = {
-  owner: new Set(TEAM_PERMISSION_DEFS.map((d) => d.key)),
-  admin: new Set([
-    "view_devices", "remote_support_connect", "remote_support_manage",
-    "restart_device", "restart_agent", "reinstall_remote_support", "maintenance_mode",
-    "view_notes", "edit_notes", "view_inventory", "view_patch",
-    "deployment", "manage_clients", "manage_groups", "manage_operators", "audit_log",
-    "vault_view", "vault_create", "vault_edit", "vault_reveal", "vault_delete", "vault_test", "vault_assign",
-  ]),
-  operator: new Set([
-    "view_devices", "remote_support_connect", "restart_device", "restart_agent",
-    "reinstall_remote_support", "maintenance_mode", "view_notes", "edit_notes",
-    "view_inventory", "view_patch",
-  ]),
-  readonly: new Set(["view_devices", "view_notes", "view_inventory", "view_patch"]),
+const CATEGORY_TONE: Record<string, string> = {
+  Visibility: TONE.info,
+  "Remote Support": "var(--th-status-agent)",
+  "Device Actions": TONE.warning,
+  Content: TONE.online,
+  Admin: TONE.critical,
+  Vault: TONE.maintenance,
 };
 
-// ── Shared helpers ───────────────────────────────────────────────────────── //
-
-const INPUT_CLS =
-  "th-input w-full rounded-lg border px-3 py-2.5 text-sm font-medium outline-none focus:border-techi-orange/60";
-const LABEL_CLS = "block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1";
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", operator: "Operator", readonly: "Read-only" };
+const ROLE_TONE: Record<string, string> = { owner: "var(--th-accent)", admin: TONE.warning, operator: TONE.info, readonly: TONE.neutral };
 
 type Tab = "overview" | "members" | "access" | "permissions";
 
-function SaveBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300">
-      <Check className="h-3.5 w-3.5 shrink-0" />
-      {message}
-    </div>
-  );
-}
+const tone = (value: string) => ({ "--onb-tone": value }) as CSSProperties;
 
-function ErrorBanner({ message }: { message: string }) {
+function ColorPicker({ value, onChange, disabled }: { value: string; onChange: (c: string) => void; disabled?: boolean }) {
   return (
-    <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2.5 text-xs font-medium text-red-100">
-      {message}
-    </div>
-  );
-}
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Team colour">
       {COLOR_PRESETS.map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          className="h-7 w-7 rounded-full border-2 transition hover:scale-110"
-          style={{
-            background: c,
-            borderColor: value === c ? "white" : "transparent",
-            boxShadow: value === c ? `0 0 0 1px ${c}` : undefined,
-          }}
-          title={c}
-        />
+        <button key={c} type="button" role="radio" aria-checked={value === c} aria-label={c} disabled={disabled} onClick={() => onChange(c)} className="th-onb-swatch" style={{ "--swatch": c } as CSSProperties} />
       ))}
     </div>
   );
 }
 
-// ── Dashboard summary ────────────────────────────────────────────────────── //
-
-function DashboardSummary({
-  team,
-  memberCount,
-  effectiveDeviceCount,
-}: {
-  team: TeamDetail;
-  memberCount: number;
-  effectiveDeviceCount: number;
-}) {
-  const statBoxCls =
-    "flex flex-col gap-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3";
-
-  const permLabels = TEAM_PERMISSION_DEFS.filter((d) => team.permissions.includes(d.key)).map((d) => d.label);
-
+/** Every tab ends the same way: what changed, any error, and the one save action. */
+function SaveFooter({ dirty, saving, saved, error, label, onSave, canManage }: { dirty: boolean; saving: boolean; saved: string | null; error: string | null; label: string; onSave: () => void; canManage: boolean }) {
+  if (!canManage) return <div className="th-onb-foot th-onb-hint">You can view this team; changing it needs an admin.</div>;
   return (
-    <div className="space-y-4">
-      {/* Stat grid — 2 columns on mobile, 5 on sm+ */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div className={statBoxCls}>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Members</span>
-          <span className="text-2xl font-bold text-white">{memberCount}</span>
-        </div>
-        <div className={statBoxCls}>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Clients</span>
-          <span className="text-2xl font-bold text-white">{team.client_ids.length}</span>
-        </div>
-        <div className={statBoxCls}>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Groups</span>
-          <span className="text-2xl font-bold text-white">{team.group_ids.length}</span>
-        </div>
-        <div className={statBoxCls}>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Explicit Devices</span>
-          <span className="text-2xl font-bold text-white">{team.device_ids.length}</span>
-          <span className="text-[11px] text-slate-600">direct only</span>
-        </div>
-        <div className={`${statBoxCls} border-techi-orange/15 bg-techi-orange/[0.04]`}>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-orange-400/70">Effective Devices</span>
-          <span className="text-2xl font-bold text-orange-200">{effectiveDeviceCount}</span>
-          <span className="text-[11px] text-slate-600">via clients + groups</span>
-        </div>
-      </div>
-
-      {/* Assigned permissions summary */}
-      <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3">
-        <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-          Permissions Assigned ({permLabels.length})
-        </p>
-        {permLabels.length === 0 ? (
-          <p className="text-sm text-slate-500">No permissions set — operators use role defaults.</p>
+    <div className="th-onb-foot th-team-foot">
+      <div className="min-w-0 flex-1">
+        {error ? (
+          <span className="th-team-state" style={tone("var(--th-status-critical)")} role="alert"><AlertTriangle className="h-3.5 w-3.5" />{error}</span>
+        ) : saved ? (
+          <span className="th-team-state th-fade-in" style={tone("var(--th-status-online)")} role="status"><CheckCircle2 className="h-3.5 w-3.5" />{saved}</span>
+        ) : dirty ? (
+          <span className="th-team-state" style={tone("var(--th-status-warning)")}><i />Unsaved changes</span>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {permLabels.map((label) => (
-              <span
-                key={label}
-                className="rounded-full border border-techi-orange/20 bg-techi-orange/10 px-2.5 py-0.5 text-[11px] font-semibold text-orange-200"
-              >
-                {label}
-              </span>
-            ))}
-          </div>
+          <span className="th-team-state" style={tone("var(--th-text-faint)")}><Check className="h-3.5 w-3.5" />Up to date</span>
         )}
       </div>
+      <Button onClick={onSave} disabled={saving || !dirty}>
+        <Save className="h-4 w-4" />
+        {saving ? "Saving…" : label}
+      </Button>
     </div>
   );
 }
 
-// ── Overview tab ─────────────────────────────────────────────────────────── //
+function useSaveState() {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const run = async (action: () => Promise<void>, success: string, failure: string) => {
+    try {
+      setSaving(true); setError(null); setSaved(null);
+      await action();
+      setSaved(success);
+      window.setTimeout(() => setSaved(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : failure);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return { saving, error, saved, run };
+}
 
-function OverviewTab({
-  team,
-  canManage,
-  onSaved,
-}: {
-  team: TeamDetail;
-  canManage: boolean;
-  onSaved: (updated: TeamDetail) => void;
-}) {
+const sameSet = <T,>(a: Set<T>, b: Set<T>) => a.size === b.size && [...a].every((x) => b.has(x));
+
+// ── Overview ──────────────────────────────────────────────────────────────── //
+
+function OverviewTab({ team, canManage, onSaved }: { team: TeamDetail; canManage: boolean; onSaved: (updated: TeamDetail) => void }) {
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description ?? "");
-  const [color, setColor] = useState(team.color ?? "#E85A3C");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [color, setColor] = useState(team.color ?? COLOR_PRESETS[0]);
+  const state = useSaveState();
+  const dirty = name.trim() !== team.name || description.trim() !== (team.description ?? "") || color !== (team.color ?? COLOR_PRESETS[0]);
 
-  const handleSave = async () => {
-    if (!name.trim()) { setError("Team name is required"); return; }
-    try {
-      setLoading(true); setError(null); setSaved(false);
-      const updated = await updateTeam(team.id, { name: name.trim(), description: description.trim() || null, color });
-      onSaved(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setLoading(false);
-    }
+  const save = () => {
+    if (!name.trim()) return;
+    void state.run(async () => {
+      onSaved(await updateTeam(team.id, { name: name.trim(), description: description.trim() || null, color }));
+    }, "Team details saved", "Failed to save");
   };
 
   return (
-    <div className="space-y-4 max-w-lg">
-      {error && <ErrorBanner message={error} />}
-      {saved && <SaveBanner message="Team details saved." />}
-      <div>
-        <label className={LABEL_CLS}>Team name *</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} id="team-name" name="team-name" aria-label="Team name" className={INPUT_CLS} />
-      </div>
-      <div>
-        <label className={LABEL_CLS}>Description</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={!canManage} rows={3} className={`${INPUT_CLS} resize-none`} />
-      </div>
-      <div>
-        <label className={LABEL_CLS}>Color</label>
-        <ColorPicker value={color} onChange={setColor} />
-      </div>
-      {canManage && (
-        <div className="pt-2">
-          <Button onClick={() => void handleSave()} disabled={loading}>
-            <Save className="h-3.5 w-3.5" />
-            {loading ? "Saving…" : "Save Changes"}
-          </Button>
+    <div className="th-onb-card th-onb-enter">
+      <CardHead icon={Shield} tone="var(--th-accent)" title="Team details" subtitle="How the team appears across the console" />
+      <div className="th-onb-body">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="th-onb-field">
+            Name
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} id="team-name" aria-label="Team name" />
+            {!name.trim() && <span className="th-onb-hint" style={{ color: "var(--th-status-critical)" }}>A name is required</span>}
+          </label>
+          <div className="th-onb-field">
+            Colour
+            <div className="flex min-h-9 items-center"><ColorPicker value={color} onChange={setColor} disabled={!canManage} /></div>
+          </div>
         </div>
-      )}
+        <label className="th-onb-field">
+          Description
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={!canManage} rows={3} placeholder="What does this team look after?" />
+        </label>
+      </div>
+      <SaveFooter canManage={canManage} dirty={dirty && !!name.trim()} saving={state.saving} saved={state.saved} error={state.error} label="Save details" onSave={save} />
     </div>
   );
 }
 
-// ── Members tab ──────────────────────────────────────────────────────────── //
+// ── Members ───────────────────────────────────────────────────────────────── //
 
-function MembersTab({
-  team,
-  operators,
-  canManage,
-  onSaved,
-}: {
-  team: TeamDetail;
-  operators: OperatorRecord[];
-  canManage: boolean;
-  onSaved: (ids: number[]) => void;
-}) {
+function MembersTab({ team, operators, canManage, onSaved }: { team: TeamDetail; operators: OperatorRecord[]; canManage: boolean; onSaved: (ids: number[]) => void }) {
   const [selected, setSelected] = useState<Set<number>>(new Set(team.operator_ids));
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const state = useSaveState();
+  const original = useMemo(() => new Set(team.operator_ids), [team.operator_ids]);
+  const dirty = !sameSet(selected, original);
 
-  const filtered = operators.filter(
-    (op) =>
-      search === "" ||
-      (op.display_name ?? op.username).toLowerCase().includes(search.toLowerCase()) ||
-      op.email.toLowerCase().includes(search.toLowerCase())
-  );
-
+  const q = search.trim().toLowerCase();
+  const filtered = operators.filter((op) => !q || (op.display_name ?? op.username).toLowerCase().includes(q) || op.email.toLowerCase().includes(q) || op.username.toLowerCase().includes(q));
   const allSelected = filtered.length > 0 && filtered.every((op) => selected.has(op.id));
 
-  const toggle = (id: number) =>
-    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: number) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSelected((prev) => {
+    const n = new Set(prev);
+    for (const op of filtered) { if (allSelected) n.delete(op.id); else n.add(op.id); }
+    return n;
+  });
 
-  const toggleAll = () => {
-    const ids = filtered.map((op) => op.id);
-    setSelected((prev) => {
-      const n = new Set(prev);
-      if (allSelected) { ids.forEach((id) => n.delete(id)); } else { ids.forEach((id) => n.add(id)); }
-      return n;
-    });
-  };
-
-  const handleSave = async () => {
-    try {
-      setLoading(true); setError(null); setSaved(false);
-      await updateTeamMembers(team.id, Array.from(selected));
-      onSaved(Array.from(selected));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save members");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const save = () => void state.run(async () => {
+    await updateTeamMembers(team.id, Array.from(selected));
+    onSaved(Array.from(selected));
+  }, `${selected.size} member${selected.size === 1 ? "" : "s"} saved`, "Failed to save members");
 
   return (
-    <div className="space-y-4">
-      {error && <ErrorBanner message={error} />}
-      {saved && <SaveBanner message={`${selected.size} member${selected.size !== 1 ? "s" : ""} saved.`} />}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-400">Select which operators belong to this team.</p>
-        {canManage && (
-          <button type="button" onClick={toggleAll} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-            {allSelected ? <><CheckSquare className="h-3.5 w-3.5" /> Deselect all</> : <><Square className="h-3.5 w-3.5" /> Select all</>}
-          </button>
-        )}
-      </div>
-      <label className="th-search">
-        <Search className="h-4 w-4 flex-none" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search operators…" />
-      </label>
-      <div className="premium-card-soft overflow-hidden rounded-lg">
-        {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-slate-500">No operators found.</p>
-        ) : (
-          <ul className="divide-y divide-white/[0.04]">
-            {filtered.map((op) => (
-              <li key={op.id}>
-                <label className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-white/[0.03]">
-                  <input type="checkbox" checked={selected.has(op.id)} onChange={() => toggle(op.id)} disabled={!canManage} className="h-4 w-4 rounded border-white/15 accent-orange-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{op.display_name ?? op.username}</p>
-                    <p className="text-[11px] text-slate-500">{op.email}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${op.role === "owner" ? "border-orange-300/25 bg-techi-orange/15 text-orange-200" : op.role === "admin" ? "border-red-300/25 bg-red-500/10 text-red-200" : "border-white/[0.10] bg-white/[0.05] text-slate-400"}`}>
-                    {op.role}
+    <div className="th-onb-card th-onb-enter">
+      <CardHead
+        icon={Users}
+        tone={TONE.info}
+        title="Members"
+        subtitle={`${formatCount(selected.size)} of ${formatCount(operators.length)} operators belong to this team`}
+        aside={
+          <div className="flex items-center gap-2">
+            <div className="w-[240px]">
+              <label className="th-search th-search-sm">
+                <Search className="h-3.5 w-3.5 flex-none" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search operators" aria-label="Search operators" />
+                {search && <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
+              </label>
+            </div>
+            {canManage && <Button size="sm" variant="secondary" onClick={toggleAll} disabled={filtered.length === 0}>{allSelected ? "Clear all" : "Select all"}</Button>}
+          </div>
+        }
+      />
+      {filtered.length === 0 ? (
+        <EmptyState className="py-10" icon={<Users className="h-5 w-5" />} title="No operators match" />
+      ) : (
+        <ul className="th-team-list">
+          {filtered.map((op, index) => {
+            const label = op.display_name ?? op.username;
+            const checked = selected.has(op.id);
+            return (
+              <li key={op.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                <label className="th-team-row" data-checked={checked || undefined} data-disabled={!canManage || undefined}>
+                  <input type="checkbox" className="th-team-check" checked={checked} onChange={() => toggle(op.id)} disabled={!canManage} aria-label={`Member: ${label}`} />
+                  <span className="th-onb-avatar !h-8 !w-8 !text-[12px]" aria-hidden="true">{label.charAt(0).toUpperCase()}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="th-alerts-primary">{label}</span>
+                    <span className="th-alerts-secondary"><span className="font-mono">{op.username}</span> · {op.email}</span>
                   </span>
+                  {!op.is_active && <span className="th-status-chip" style={{ "--chip-tone": TONE.neutral } as CSSProperties}><i />Inactive</span>}
+                  <span className="th-status-chip" style={{ "--chip-tone": ROLE_TONE[op.role] ?? TONE.neutral } as CSSProperties}><Shield className="h-3 w-3" style={{ color: ROLE_TONE[op.role] }} />{ROLE_LABEL[op.role] ?? op.role}</span>
                 </label>
               </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {canManage && (
-        <Button onClick={() => void handleSave()} disabled={loading}>
-          <Save className="h-3.5 w-3.5" />
-          {loading ? "Saving…" : `Save Members (${selected.size})`}
-        </Button>
+            );
+          })}
+        </ul>
       )}
+      <SaveFooter canManage={canManage} dirty={dirty} saving={state.saving} saved={state.saved} error={state.error} label={`Save members (${selected.size})`} onSave={save} />
     </div>
   );
 }
 
-// ── Device Access tab — 3-level hierarchy ────────────────────────────────── //
+// ── Device access — client → group → device ───────────────────────────────── //
 
 type CheckState = "checked" | "indeterminate" | "unchecked" | "inherited";
 
-function TreeCheckbox({
-  state,
-  onChange,
-  disabled,
-  size = "md",
-  inheritedFrom,
-}: {
-  state: CheckState;
-  onChange?: () => void;
-  disabled?: boolean;
-  size?: "md" | "sm";
-  inheritedFrom?: string;
-}) {
+function TreeCheckbox({ state, onChange, disabled, label, inheritedFrom }: { state: CheckState; onChange?: () => void; disabled?: boolean; label: string; inheritedFrom?: string }) {
   const ref = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = state === "indeterminate";
-    }
+    if (ref.current) ref.current.indeterminate = state === "indeterminate";
   }, [state]);
-
   if (state === "inherited") {
-    return (
-      <span
-        className={`flex shrink-0 items-center justify-center ${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}`}
-        title={inheritedFrom ?? "Access inherited from parent"}
-      >
-        <span className="h-2 w-2 rounded-sm bg-orange-400/50" />
-      </span>
-    );
+    return <span className="th-team-inherited" title={inheritedFrom ?? "Access inherited from parent"} aria-label={`${label}: inherited`}><Check className="h-3 w-3" /></span>;
   }
-
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={state === "checked"}
-      onChange={onChange ?? (() => {})}
-      disabled={disabled}
-      name="toggle-access"
-      aria-label="Toggle access"
-      className={`shrink-0 rounded border-white/15 accent-orange-500 ${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}`}
-    />
-  );
+  return <input ref={ref} type="checkbox" className="th-team-check" checked={state === "checked"} onChange={onChange ?? (() => {})} disabled={disabled} aria-label={label} />;
 }
 
 function DeviceStatusDot({ device }: { device: Device }) {
   const state = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
-  const cls =
-    state === "online"  ? "bg-emerald-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-online)_50%,transparent)]"
-    : state === "stale" ? "bg-amber-400"
-    : "bg-slate-600";
-  return (
-    <span
-      className={`h-2 w-2 shrink-0 rounded-full ${cls}`}
-      title={state}
-    />
-  );
+  const color = state === "online" ? TONE.online : state === "stale" ? TONE.warning : TONE.neutral;
+  return <span className="th-onb-dot !h-2 !w-2" style={{ "--swatch": color } as CSSProperties} title={state} />;
 }
 
 function AccessTab({
@@ -549,7 +400,7 @@ function AccessTab({
       ]);
       onSaved(Array.from(selClients), Array.from(selGroups), Array.from(selDevices));
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      window.setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save access");
     } finally {
@@ -557,264 +408,140 @@ function AccessTab({
     }
   };
 
-  const selectedTotal = selClients.size + selGroups.size + selDevices.size;
+  const dirty = !sameSet(selClients, new Set(team.client_ids)) || !sameSet(selGroups, new Set(team.group_ids)) || !sameSet(selDevices, new Set(team.device_ids));
+
+  const deviceRow = (device: Device, dState: CheckState, inheritedFrom?: string) => {
+    const dInherited = dState === "inherited";
+    const name = device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`;
+    return (
+      <li key={device.id}>
+        <div className="th-team-node" data-level="3" data-inherited={dInherited || undefined} data-clickable={(!dInherited && canManage) || undefined} onClick={() => !dInherited && canManage && toggleD(device.id)}>
+          <span onClick={(e) => e.stopPropagation()}>
+            <TreeCheckbox state={dState} onChange={() => !dInherited && canManage && toggleD(device.id)} disabled={!canManage || dInherited} label={name} inheritedFrom={inheritedFrom} />
+          </span>
+          <DeviceStatusDot device={device} />
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{name}</span>
+        </div>
+      </li>
+    );
+  };
 
   return (
-    <div className="space-y-4">
-      {error && <ErrorBanner message={error} />}
-      {saved && <SaveBanner message="Device access saved." />}
+    <div className="th-onb-card th-onb-enter">
+      <CardHead
+        icon={Building2}
+        tone={TONE.online}
+        title="Device access"
+        subtitle="A client grants all its devices, a group all of its devices, a device only itself; access is the union"
+        aside={
+          <div className="flex items-center gap-2">
+            <div className="w-[260px]">
+              <label className="th-search th-search-sm">
+                <Search className="h-3.5 w-3.5 flex-none" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients, groups, devices" aria-label="Search access" />
+                {search && <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
+              </label>
+            </div>
+            <Button size="sm" variant="secondary" onClick={expandAll}>Expand all</Button>
+            <Button size="sm" variant="secondary" onClick={collapseAll}>Collapse all</Button>
+          </div>
+        }
+      />
 
-      <div className="rounded-lg border border-blue-400/10 bg-blue-500/[0.05] px-4 py-3 text-xs leading-5 text-slate-400">
-        <span className="font-semibold text-slate-300">Three levels of access:</span>{" "}
-        <span className="font-semibold text-white">Client</span> grants all devices for that client.{" "}
-        <span className="font-semibold text-white">Group</span> grants all devices in that group.{" "}
-        <span className="font-semibold text-white">Device</span> grants specific individual devices.{" "}
-        Access is the union of all selections.{" "}
-        <span className="font-semibold text-orange-200/80">
-          <span className="inline-block h-2 w-2 rounded-sm bg-orange-400/50 align-middle" />{" "}
-          Orange squares indicate inherited access.
+      <div className="th-team-summary">
+        {[
+          { icon: Building2, label: "clients", value: selClients.size },
+          { icon: Layers, label: "groups", value: selGroups.size },
+          { icon: Monitor, label: "devices one by one", value: selDevices.size },
+        ].map((item) => (
+          <span key={item.label} className="th-status-chip" style={item.value ? undefined : { color: "var(--th-text-faint)" }}>
+            <item.icon className="h-3.5 w-3.5" />
+            <span className="tabular-nums" style={{ color: item.value ? "var(--th-text-primary)" : undefined }}>{formatCount(item.value)}</span> {item.label}
+          </span>
+        ))}
+        <span className="ml-auto flex items-center gap-1.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+          <span className="th-team-inherited !h-4 !w-4" aria-hidden="true"><Check className="h-2.5 w-2.5" /></span>
+          Inherited from a client or group
         </span>
       </div>
 
-      {/* Selection summary */}
-      <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
-        {selClients.size > 0 && (
-          <span className="rounded-full border border-white/[0.10] bg-white/[0.05] px-2.5 py-1 text-slate-300">
-            <Building2 className="mr-1 inline h-3 w-3" />{selClients.size} client{selClients.size !== 1 ? "s" : ""}
-          </span>
-        )}
-        {selGroups.size > 0 && (
-          <span className="rounded-full border border-white/[0.10] bg-white/[0.05] px-2.5 py-1 text-slate-300">
-            <Users className="mr-1 inline h-3 w-3" />{selGroups.size} group{selGroups.size !== 1 ? "s" : ""}
-          </span>
-        )}
-        {selDevices.size > 0 && (
-          <span className="rounded-full border border-white/[0.10] bg-white/[0.05] px-2.5 py-1 text-slate-300">
-            <Cpu className="mr-1 inline h-3 w-3" />{selDevices.size} device{selDevices.size !== 1 ? "s" : ""}
-          </span>
-        )}
-        {selectedTotal === 0 && (
-          <span className="text-slate-600">No access assigned yet.</span>
-        )}
-      </div>
+      {filteredClients.length === 0 ? (
+        <EmptyState className="py-10" icon={<Building2 className="h-5 w-5" />} title="No clients match" />
+      ) : (
+        <ul className="th-team-tree">
+          {filteredClients.map((client) => {
+            const clientGroups = groupsFor(client.id);
+            const isExC = exClients.has(client.id);
+            const cState = clientCheckState(client.id);
+            const devCount = clientDeviceCount(client.id);
+            const ung = ungroupedDevicesFor(client.id);
+            const expandable = clientGroups.length > 0 || ung.length > 0;
+            return (
+              <li key={client.id}>
+                <div className="th-team-node" data-level="1" data-clickable="true" data-checked={cState === "checked" || undefined} onClick={() => toggleExC(client.id)} aria-expanded={expandable ? isExC : undefined}>
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <TreeCheckbox state={cState} onChange={() => canManage && toggleC(client.id)} disabled={!canManage} label={client.name} />
+                  </span>
+                  <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{client.name}</span>
+                  <span className="th-team-count">{formatCount(devCount)} device{devCount === 1 ? "" : "s"}</span>
+                  {expandable ? <ChevronRight className="th-onb-chevron h-4 w-4" data-open={isExC || undefined} style={{ color: "var(--th-text-faint)" }} /> : <span className="w-4" />}
+                </div>
 
-      {/* Search + Expand controls */}
-      <div className="flex items-center gap-2">
-        <label className="th-search flex-1">
-          <Search className="h-4 w-4 flex-none" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search clients, groups, or devices…"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={expandAll}
-          className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] font-semibold text-slate-400 transition hover:border-white/15 hover:text-slate-200"
-          title="Expand all"
-        >
-          Expand All
-        </button>
-        <button
-          type="button"
-          onClick={collapseAll}
-          className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] font-semibold text-slate-400 transition hover:border-white/15 hover:text-slate-200"
-          title="Collapse all"
-        >
-          Collapse
-        </button>
-      </div>
-
-      {/* Tree */}
-      <div className="premium-card-soft overflow-hidden rounded-lg">
-        {filteredClients.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No clients found.</p>
-        ) : (
-          <ul className="divide-y divide-white/[0.04]">
-            {filteredClients.map((client) => {
-              const clientGroups = groupsFor(client.id);
-              const isExC = exClients.has(client.id);
-              const cState = clientCheckState(client.id);
-              const devCount = clientDeviceCount(client.id);
-
-              return (
-                <li key={client.id}>
-                  {/* Client row — click anywhere to expand/collapse */}
-                  <div
-                    className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-white/[0.03]"
-                    onClick={() => toggleExC(client.id)}
-                  >
-                    <span onClick={(e) => e.stopPropagation()}>
-                      <TreeCheckbox
-                        state={cState}
-                        onChange={() => canManage && toggleC(client.id)}
-                        disabled={!canManage}
-                      />
-                    </span>
-                    <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                    <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                      <p className={`text-sm font-semibold ${cState === "checked" ? "text-white" : "text-slate-200"}`}>
-                        {client.name}
-                      </p>
-                      {devCount > 0 && (
-                        <span className="shrink-0 text-[11px] text-slate-600">
-                          {devCount} device{devCount !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-                    {clientGroups.length > 0 && (
-                      isExC
-                        ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                        : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                    )}
-                  </div>
-
-                  {/* Groups under client */}
-                  {isExC && clientGroups.length > 0 && (
-                    <ul className="border-t border-white/[0.04] bg-white/[0.015]">
-                      {clientGroups.map((group) => {
-                        const groupDevices = devicesFor(group.id);
-                        const isExG = exGroups.has(group.id);
-                        const gState = groupCheckState(group);
-                        const inherited = gState === "inherited";
-
-                        return (
-                          <li key={group.id}>
-                            {/* Group row — click anywhere to expand/collapse */}
-                            <div
-                              className={`flex cursor-pointer items-center gap-3 py-2.5 pl-9 pr-4 transition hover:bg-white/[0.02] ${inherited ? "opacity-60" : ""}`}
-                              onClick={() => groupDevices.length > 0 && toggleExG(group.id)}
-                            >
-                              <span onClick={(e) => e.stopPropagation()}>
-                                <TreeCheckbox
-                                  state={gState}
-                                  onChange={() => canManage && !inherited && toggleG(group.id)}
-                                  disabled={!canManage || inherited}
-                                  size="sm"
-                                  inheritedFrom="Inherited from client access"
-                                />
-                              </span>
-                              <Users className="h-3 w-3 shrink-0 text-slate-600" />
-                              <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                                <span className={`text-[13px] ${inherited ? "text-orange-200/70" : "text-slate-300"}`}>
-                                  {group.name}
-                                </span>
-                                <span className="shrink-0 text-[11px] text-slate-600">
-                                  ({groupDevices.length})
-                                </span>
-                              </div>
-                              {groupDevices.length > 0 && (
-                                isExG
-                                  ? <ChevronDown className="h-3 w-3 shrink-0 text-slate-600" />
-                                  : <ChevronRight className="h-3 w-3 shrink-0 text-slate-600" />
-                              )}
-                            </div>
-
-                            {/* Devices under group */}
-                            {isExG && groupDevices.length > 0 && (
-                              <ul className="border-t border-white/[0.03] bg-white/[0.01]">
-                                {groupDevices.map((device) => {
-                                  const dState = deviceCheckState(device);
-                                  const dInherited = dState === "inherited";
-                                  return (
-                                    <li key={device.id}>
-                                      <div
-                                        className={`flex items-center gap-3 py-2 pl-14 pr-4 transition ${!dInherited && canManage ? "cursor-pointer hover:bg-white/[0.02]" : ""} ${dInherited ? "opacity-55" : ""}`}
-                                        onClick={() => !dInherited && canManage && toggleD(device.id)}
-                                      >
-                                        <span onClick={(e) => e.stopPropagation()}>
-                                          <TreeCheckbox
-                                            state={dState}
-                                            onChange={() => !dInherited && canManage && toggleD(device.id)}
-                                            disabled={!canManage || dInherited}
-                                            size="sm"
-                                            inheritedFrom={
-                                              selClients.has(device.client_id ?? -1)
-                                                ? "Inherited from client access"
-                                                : "Inherited from group access"
-                                            }
-                                          />
-                                        </span>
-                                        <DeviceStatusDot device={device} />
-                                        <span className={`flex-1 font-mono text-[12px] ${dInherited ? "text-orange-200/60" : "text-slate-400"}`}>
-                                          {device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`}
-                                        </span>
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                          </li>
-                        );
-                      })}
-
-                      {/* Ungrouped devices under this client */}
-                      {(() => {
-                        const ung = ungroupedDevicesFor(client.id);
-                        if (ung.length === 0) return null;
-                        const clientInherited = selClients.has(client.id);
-                        return (
-                          <li>
-                            <div className="flex items-center gap-3 py-2.5 pl-9 pr-4">
-                              <span className="h-3.5 w-3.5 shrink-0" />
-                              <span className="h-3 w-3 shrink-0 text-slate-700">·</span>
-                              <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                                <span className="text-[12px] italic text-slate-600">(Ungrouped)</span>
-                                <span className="text-[11px] text-slate-700">{ung.length}</span>
-                              </div>
-                            </div>
-                            <ul className="border-t border-white/[0.03] bg-white/[0.01]">
-                              {ung.map((device) => {
-                                const dState = clientInherited ? "inherited" : (selDevices.has(device.id) ? "checked" : "unchecked");
-                                const dInherited = dState === "inherited";
-                                return (
-                                  <li key={device.id}>
-                                    <div
-                                      className={`flex items-center gap-3 py-2 pl-14 pr-4 transition ${!dInherited && canManage ? "cursor-pointer hover:bg-white/[0.02]" : ""} ${dInherited ? "opacity-55" : ""}`}
-                                      onClick={() => !dInherited && canManage && toggleD(device.id)}
-                                    >
-                                      <span onClick={(e) => e.stopPropagation()}>
-                                        <TreeCheckbox
-                                          state={dState}
-                                          onChange={() => !dInherited && canManage && toggleD(device.id)}
-                                          disabled={!canManage || dInherited}
-                                          size="sm"
-                                        />
-                                      </span>
-                                      <DeviceStatusDot device={device} />
-                                      <span className={`flex-1 font-mono text-[12px] ${dInherited ? "text-orange-200/60" : "text-slate-400"}`}>
-                                        {device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`}
-                                      </span>
-                                    </div>
-                                  </li>
-                                );
-                              })}
+                {isExC && expandable && (
+                  <ul className="th-onb-reveal">
+                    {clientGroups.map((group) => {
+                      const groupDevices = devicesFor(group.id);
+                      const isExG = exGroups.has(group.id);
+                      const gState = groupCheckState(group);
+                      const inherited = gState === "inherited";
+                      return (
+                        <li key={group.id}>
+                          <div className="th-team-node" data-level="2" data-inherited={inherited || undefined} data-clickable={groupDevices.length > 0 || undefined} onClick={() => groupDevices.length > 0 && toggleExG(group.id)} aria-expanded={groupDevices.length > 0 ? isExG : undefined}>
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <TreeCheckbox state={gState} onChange={() => canManage && !inherited && toggleG(group.id)} disabled={!canManage || inherited} label={`${client.name} / ${group.name}`} inheritedFrom="Inherited from client access" />
+                            </span>
+                            <Layers className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                            <span className="min-w-0 flex-1 truncate text-[13px]">{group.name}</span>
+                            <span className="th-team-count">{formatCount(groupDevices.length)}</span>
+                            {groupDevices.length > 0 ? <ChevronRight className="th-onb-chevron h-4 w-4" data-open={isExG || undefined} style={{ color: "var(--th-text-faint)" }} /> : <span className="w-4" />}
+                          </div>
+                          {isExG && groupDevices.length > 0 && (
+                            <ul className="th-onb-reveal">
+                              {groupDevices.map((device) => deviceRow(device, deviceCheckState(device), selClients.has(device.client_id ?? -1) ? "Inherited from client access" : "Inherited from group access"))}
                             </ul>
-                          </li>
-                        );
-                      })()}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {canManage && (
-        <Button onClick={() => void handleSave()} disabled={loading}>
-          <Save className="h-3.5 w-3.5" />
-          {loading ? "Saving…" : "Save Access"}
-        </Button>
+                          )}
+                        </li>
+                      );
+                    })}
+                    {ung.length > 0 && (
+                      <li>
+                        <div className="th-team-node" data-level="2">
+                          <span className="w-4" />
+                          <Monitor className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                          <span className="min-w-0 flex-1 truncate text-[13px] italic" style={{ color: "var(--th-text-muted)" }}>Not in a group</span>
+                          <span className="th-team-count">{formatCount(ung.length)}</span>
+                          <span className="w-4" />
+                        </div>
+                        <ul>
+                          {ung.map((device) => deviceRow(device, selClients.has(client.id) ? "inherited" : selDevices.has(device.id) ? "checked" : "unchecked", "Inherited from client access"))}
+                        </ul>
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
+
+      <SaveFooter canManage={canManage} dirty={dirty} saving={loading} saved={saved ? "Device access saved" : null} error={error} label="Save access" onSave={() => void handleSave()} />
     </div>
   );
 }
 
-// ── Permission templates & dependency helpers ────────────────────────────── //
+// ── Permissions ───────────────────────────────────────────────────────────── //
 
 const PERM_TEMPLATES: { name: string; perms: string[] }[] = [
   { name: "Read Only",           perms: ["view_devices", "view_notes", "view_inventory", "view_patch"] },
@@ -845,258 +572,158 @@ function resolvePermDeps(perms: Set<string>): { resolved: Set<string>; autoAdded
   return { resolved, autoAdded };
 }
 
-function catColor(cat: string): string {
-  const map: Record<string, string> = {
-    "Visibility":     "text-sky-400",
-    "Remote Support": "text-indigo-400",
-    "Device Actions": "text-amber-400",
-    "Content":        "text-emerald-400",
-    "Admin":          "text-red-400",
-  };
-  return map[cat] ?? "text-slate-400";
-}
-
-// ── Team Permissions editor ──────────────────────────────────────────────── //
-
-function PermissionsTab({
-  team,
-  canManage,
-  onSaved,
-}: {
-  team: TeamDetail;
-  canManage: boolean;
-  onSaved: (updated: TeamDetail) => void;
-}) {
+function PermissionsTab({ team, canManage, onSaved }: { team: TeamDetail; canManage: boolean; onSaved: (updated: TeamDetail) => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(team.permissions));
   const [autoAdded, setAutoAdded] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  const originalPerms = useMemo(() => new Set(team.permissions), [team.permissions]);
-  const isDirty = useMemo(() => {
-    if (selected.size !== originalPerms.size) return true;
-    return [...selected].some((p) => !originalPerms.has(p));
-  }, [selected, originalPerms]);
+  const state = useSaveState();
+  const original = useMemo(() => new Set(team.permissions), [team.permissions]);
+  const dirty = !sameSet(selected, original);
+  const activeTemplate = PERM_TEMPLATES.find((t) => sameSet(resolvePermDeps(new Set(t.perms)).resolved, selected))?.name ?? null;
 
   const toggle = (key: string) => {
     const n = new Set(selected);
-    n.has(key) ? n.delete(key) : n.add(key);
+    if (n.has(key)) n.delete(key); else n.add(key);
     const { resolved, autoAdded: added } = resolvePermDeps(n);
     setSelected(resolved);
     setAutoAdded(added);
   };
-
   const applyTemplate = (perms: string[]) => {
     const { resolved, autoAdded: added } = resolvePermDeps(new Set(perms));
     setSelected(resolved);
     setAutoAdded(added);
   };
+  const save = () => void state.run(async () => {
+    onSaved(await updateTeamPermissions(team.id, Array.from(selected)));
+    setAutoAdded([]);
+  }, "Team permissions saved", "Failed to save permissions");
 
-  const handleSave = async () => {
-    try {
-      setLoading(true); setError(null); setSaved(false);
-      const updated = await updateTeamPermissions(team.id, Array.from(selected));
-      onSaved(updated);
-      setAutoAdded([]);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save permissions");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const capabilities = ([
+    selected.has("view_devices") && "See devices in the fleet",
+    selected.has("remote_support_connect") && "Open Remote Support sessions",
+    selected.has("remote_support_manage") && "Manage and end remote sessions",
+    (selected.has("restart_device") || selected.has("restart_agent")) && "Restart devices and agents",
+    selected.has("reinstall_remote_support") && "Reinstall Remote Support",
+    selected.has("maintenance_mode") && "Put devices in maintenance",
+    selected.has("view_notes") && "Read device notes",
+    selected.has("edit_notes") && "Create and edit notes",
+    selected.has("view_inventory") && "View software inventory",
+    selected.has("view_patch") && "View patch compliance",
+    selected.has("deployment") && "Deploy software packages",
+    (selected.has("manage_clients") || selected.has("manage_groups")) && "Manage clients and groups",
+    selected.has("manage_operators") && "Manage operator accounts",
+    selected.has("audit_log") && "Read the audit log",
+    selected.has("system_settings") && "Change system settings",
+    [...selected].some((p) => p.startsWith("vault_")) && "Work with Credential Vault entries",
+  ] as (string | false)[]).filter(Boolean) as string[];
 
   return (
-    <div className="space-y-4">
-      {error && <ErrorBanner message={error} />}
-      {saved && <SaveBanner message="Team permissions saved." />}
+    <div className="th-onb-card th-onb-enter">
+      <CardHead icon={KeyRound} tone={TONE.warning} title="Permissions" subtitle={`${formatCount(selected.size)} of ${formatCount(TEAM_PERMISSION_DEFS.length)} granted to operator and read-only members`} />
+      <div className="th-onb-body">
+        <div className="th-onb-note" style={tone("var(--th-status-info)")}>
+          <Info className="h-4 w-4" />
+          <span>Enforced on the server for <strong>operator</strong> and <strong>read-only</strong> members. Owners and admins are not limited by team permissions.</span>
+        </div>
 
-      {/* Enforcement callout */}
-      <div className="rounded-lg border border-amber-400/15 bg-amber-500/[0.06] px-4 py-3 text-xs leading-5 text-slate-400">
-        <span className="font-semibold text-amber-300">Enforcement:</span>{" "}
-        These permissions are enforced server-side for{" "}
-        <span className="font-semibold text-white">operator</span> and{" "}
-        <span className="font-semibold text-white">readonly</span> users.{" "}
-        <span className="font-semibold text-orange-200">Owner and Admin bypass all team permission restrictions.</span>
-      </div>
-
-      {/* Quick templates */}
-      {canManage && (
-        <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Quick Templates</p>
-          <div className="flex flex-wrap gap-2">
-            {PERM_TEMPLATES.map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                onClick={() => applyTemplate(t.perms)}
-                className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white"
-              >
-                {t.name}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => { setSelected(new Set()); setAutoAdded([]); }}
-              className="rounded-md border border-red-400/15 bg-red-500/[0.05] px-2.5 py-1.5 text-[11px] font-semibold text-red-400/80 transition hover:border-red-400/25 hover:text-red-300"
-            >
-              Clear All
-            </button>
+        {canManage && (
+          <div className="th-onb-field">
+            Start from a template
+            <div className="flex flex-wrap gap-2">
+              {PERM_TEMPLATES.map((t) => (
+                <button key={t.name} type="button" className="th-team-template" aria-pressed={activeTemplate === t.name} onClick={() => applyTemplate(t.perms)}>{t.name}</button>
+              ))}
+              <button type="button" className="th-team-template" data-tone="danger" onClick={() => { setSelected(new Set()); setAutoAdded([]); }} disabled={selected.size === 0}>Clear all</button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Auto-dependency note */}
-      {autoAdded.length > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-sky-400/15 bg-sky-500/[0.05] px-3 py-2 text-[11px] font-semibold text-sky-300">
-          <Info className="h-3.5 w-3.5 shrink-0" />
-          Some required permissions were automatically selected:{" "}
-          {autoAdded.map((k) => TEAM_PERMISSION_DEFS.find((d) => d.key === k)?.label ?? k).join(", ")}
-        </div>
-      )}
+        {autoAdded.length > 0 && (
+          <div className="th-onb-note th-onb-reveal" style={tone("var(--th-status-info)")}>
+            <Info className="h-4 w-4" />
+            <span>Added because something you picked needs them: {autoAdded.map((k) => TEAM_PERMISSION_DEFS.find((d) => d.key === k)?.label ?? k).join(", ")}.</span>
+          </div>
+        )}
 
-      {/* Two-panel layout */}
-      <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
-
-        {/* LEFT: Permission groups */}
-        <div className="space-y-3">
-          {PERM_CATEGORIES.map((cat) => {
-            const rows = TEAM_PERMISSION_DEFS.filter((d) => d.category === cat);
-            const selectedCount = rows.filter((r) => selected.has(r.key)).length;
-            const color = catColor(cat);
-            return (
-              <div key={cat} className="overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]">
-                <div className={`flex items-center gap-2 border-b border-white/[0.06] px-3 py-2 ${color}`}>
-                  <span className="text-[11px] font-bold uppercase tracking-wide">{cat}</span>
-                  <span className="ml-auto text-[11px] font-semibold text-slate-600">
-                    {selectedCount}/{rows.length}
-                  </span>
-                </div>
-                <ul className="divide-y divide-white/[0.04]">
-                  {rows.map((row) => {
-                    const isSelected = selected.has(row.key);
-                    const wasAutoAdded = autoAdded.includes(row.key);
-                    return (
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div className="grid gap-3 md:grid-cols-2">
+            {PERM_CATEGORIES.map((cat) => {
+              const rows = TEAM_PERMISSION_DEFS.filter((d) => d.category === cat);
+              const count = rows.filter((r) => selected.has(r.key)).length;
+              return (
+                <section key={cat} className="th-team-perms" style={{ "--cat-tone": CATEGORY_TONE[cat] ?? TONE.neutral } as CSSProperties}>
+                  <header>
+                    <span className="th-onb-dot" style={{ "--swatch": CATEGORY_TONE[cat] ?? TONE.neutral } as CSSProperties} />
+                    <span className="flex-1">{cat}</span>
+                    <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>{count}/{rows.length}</span>
+                  </header>
+                  <ul>
+                    {rows.map((row) => (
                       <li key={row.key}>
-                        <label className={`flex items-center gap-3 px-3 py-2.5 transition ${canManage ? "cursor-pointer hover:bg-white/[0.03]" : ""}`}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => canManage && toggle(row.key)}
-                            disabled={!canManage}
-                            className="h-3.5 w-3.5 shrink-0 rounded border-white/15 accent-orange-500"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-slate-400"}`}>
-                                {row.label}
-                              </span>
-                              {wasAutoAdded && (
-                                <span className="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[11px] font-bold uppercase text-sky-400">
-                                  auto
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-600">{row.description}</p>
-                          </div>
+                        <label className="th-team-row !px-3 !py-2.5" data-checked={selected.has(row.key) || undefined} data-disabled={!canManage || undefined}>
+                          <input type="checkbox" className="th-team-check" checked={selected.has(row.key)} onChange={() => canManage && toggle(row.key)} disabled={!canManage} aria-label={row.label} />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5 text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                              {row.label}
+                              {autoAdded.includes(row.key) && <span className="th-status-chip !h-5 !px-1.5 !text-[11px]" style={{ "--chip-tone": TONE.info } as CSSProperties}>auto</span>}
+                            </span>
+                            <span className="block text-[12px]" style={{ color: "var(--th-text-muted)" }}>{row.description}</span>
+                          </span>
                         </label>
                       </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* RIGHT: Effective Preview */}
-        <div className="space-y-3">
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-4">
-            <div>
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                Selected Permissions ({selected.size})
-              </p>
-              {selected.size === 0 ? (
-                <p className="text-xs text-slate-600">No permissions selected. Operators rely on role defaults.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {TEAM_PERMISSION_DEFS.filter((d) => selected.has(d.key)).map((d) => (
-                    <span
-                      key={d.key}
-                      className="rounded-full border border-techi-orange/20 bg-techi-orange/10 px-2 py-0.5 text-[11px] font-semibold text-orange-200"
-                    >
-                      {d.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-white/[0.06] pt-3">
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                Operator Capabilities
-              </p>
-              {selected.size === 0 ? (
-                <p className="text-xs text-slate-600">Operators in this team will use their role defaults.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {(
-                    [
-                      selected.has("view_devices")             && "Can see devices in the fleet",
-                      selected.has("remote_support_connect")   && "Can open remote support sessions",
-                      selected.has("remote_support_manage")    && "Can manage and end remote sessions",
-                      (selected.has("restart_device") || selected.has("restart_agent")) && "Can restart devices and agents",
-                      selected.has("reinstall_remote_support") && "Can reinstall remote support",
-                      selected.has("maintenance_mode")         && "Can set devices to maintenance mode",
-                      selected.has("view_notes")               && "Can read device notes",
-                      selected.has("edit_notes")               && "Can create and edit notes",
-                      selected.has("view_inventory")           && "Can view software inventory",
-                      selected.has("view_patch")               && "Can view patch compliance",
-                      selected.has("deployment")               && "Can deploy software packages",
-                      (selected.has("manage_clients") || selected.has("manage_groups")) && "Can manage clients and groups",
-                      selected.has("manage_operators")         && "Can manage operator accounts",
-                      selected.has("audit_log")                && "Can view the audit log",
-                      selected.has("system_settings")          && "Can access system settings",
-                    ] as (string | false)[]
-                  ).filter(Boolean).map((line, i) => (
-                    <li key={i} className="flex items-center gap-1.5 text-xs text-slate-400">
-                      <Check className="h-3 w-3 shrink-0 text-emerald-500/70" />
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="rounded-md border border-orange-400/10 bg-orange-500/[0.05] px-3 py-2 text-[11px] leading-4 text-orange-200/70">
-              <span className="font-bold text-orange-300">Note:</span> Owner and Admin bypass all team permission restrictions regardless of this setting.
-            </div>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
           </div>
+
+          <aside className="th-team-preview">
+            <div className="th-onb-label">What members can do</div>
+            {capabilities.length === 0 ? (
+              <p className="th-onb-hint">Nothing selected: members fall back to their role's defaults.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {capabilities.map((line) => (
+                  <li key={line} className="flex items-start gap-2 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none" style={{ color: TONE.online }} />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="th-onb-label pt-2">Granted ({formatCount(selected.size)})</div>
+            {selected.size === 0 ? (
+              <p className="th-onb-hint">None.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {TEAM_PERMISSION_DEFS.filter((d) => selected.has(d.key)).map((d) => (
+                  <span key={d.key} className="th-status-chip !h-6" style={{ "--chip-tone": CATEGORY_TONE[d.category] ?? TONE.neutral } as CSSProperties}><i />{d.label}</span>
+                ))}
+              </div>
+            )}
+          </aside>
         </div>
       </div>
-
-      {/* Footer: unsaved indicator + save */}
-      {canManage && (
-        <div className="flex items-center gap-3 pt-1">
-          {isDirty && (
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              Unsaved changes
-            </span>
-          )}
-          <Button onClick={() => void handleSave()} disabled={loading || !isDirty}>
-            <Save className="h-3.5 w-3.5" />
-            {loading ? "Saving…" : `Save Permissions (${selected.size})`}
-          </Button>
-        </div>
-      )}
+      <SaveFooter canManage={canManage} dirty={dirty} saving={state.saving} saved={state.saved} error={state.error} label={`Save permissions (${selected.size})`} onSave={save} />
     </div>
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────── //
+// ── Page ──────────────────────────────────────────────────────────────────── //
+
+async function loadAllDevices(): Promise<Device[]> {
+  // The list endpoint caps a page at 1,000; the tree needs every device, or
+  // anything past the first page drops out of it and of the reach count.
+  const PAGE = 1000;
+  const first = await getDevices({}, 0, PAGE);
+  const all = [...first.devices];
+  while (all.length < first.total) {
+    const next = await getDevices({}, all.length, PAGE);
+    if (next.devices.length === 0) break;
+    all.push(...next.devices);
+  }
+  return all;
+}
 
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -1113,6 +740,7 @@ export default function TeamDetailPage() {
   const [tabLoading, setTabLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
+  const tabsRef = useTabIndicator<HTMLDivElement>(tab);
 
   const teamId = id ? parseInt(id, 10) : NaN;
 
@@ -1128,7 +756,7 @@ export default function TeamDetailPage() {
     }
   };
 
-  useEffect(() => { void loadTeam(); }, [teamId]);
+  useEffect(() => { void loadTeam(); }, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (tab === "members" && operators.length === 0) {
@@ -1137,121 +765,126 @@ export default function TeamDetailPage() {
     }
     if (tab === "access" && clients.length === 0 && groups.length === 0 && devices.length === 0) {
       setTabLoading(true);
-      Promise.all([getClients(), getGroups(), getDevices({}, 0, 1000)])
-        .then(([nextClients, nextGroups, nextDevicesResp]) => {
+      Promise.all([getClients(), getGroups(), loadAllDevices()])
+        .then(([nextClients, nextGroups, nextDevices]) => {
           setClients(nextClients);
           setGroups(nextGroups);
-          setDevices(nextDevicesResp.devices);
+          setDevices(nextDevices);
         })
         .catch((err) => setError(err instanceof Error ? err.message : "Failed to load device access"))
         .finally(() => setTabLoading(false));
     }
   }, [tab, operators.length, clients.length, groups.length, devices.length]);
 
-  // Effective device count: all non-archived devices reachable via client, group, or explicit assignment
+  // Reach: all non-archived devices granted through a client, a group or one by one.
   const effectiveDeviceCount = useMemo(() => {
     if (!team) return 0;
     if (devices.length === 0) return team.effective_device_count;
     const cIds = new Set(team.client_ids);
     const gIds = new Set(team.group_ids);
     const dIds = new Set(team.device_ids);
-    return devices.filter(
-      (d) =>
-        (d.client_id != null && cIds.has(d.client_id)) ||
-        (d.group_id != null && gIds.has(d.group_id)) ||
-        dIds.has(d.id)
-    ).length;
+    return devices.filter((d) => (d.client_id != null && cIds.has(d.client_id)) || (d.group_id != null && gIds.has(d.group_id)) || dIds.has(d.id)).length;
   }, [devices, team]);
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "overview",     label: "Overview",       icon: <Shield className="h-3.5 w-3.5" /> },
-    { key: "members",      label: "Members",        icon: <Users className="h-3.5 w-3.5" /> },
-    { key: "access",       label: "Device Access",  icon: <Building2 className="h-3.5 w-3.5" /> },
-    { key: "permissions",  label: "Permissions",    icon: <UsersRound className="h-3.5 w-3.5" /> },
-  ];
-
   if (loading) {
-    return <section className="premium-page"><p className="text-sm font-medium text-slate-400">Loading team…</p></section>;
-  }
-
-  if (error || !team) {
     return (
-      <section className="premium-page space-y-5">
-        <button type="button" onClick={() => navigate("/teams")} className="flex items-center gap-1.5 text-sm font-medium text-slate-400 transition hover:text-white">
-          <ArrowLeft className="h-4 w-4" /> Back to Teams
-        </button>
-        <ErrorBanner message={error ?? "Team not found."} />
+      <section className="premium-page th-onb space-y-4" aria-busy="true">
+        <div className="th-onb-card"><div className="th-alerts-skeleton !m-0 !h-28" /></div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="th-onb-card"><div className="th-alerts-skeleton !m-0 !h-20" /></div>)}</div>
       </section>
     );
   }
 
+  if (error || !team) {
+    return (
+      <section className="premium-page th-onb space-y-4">
+        <button type="button" onClick={() => navigate("/teams")} className="th-onb-link"><ArrowLeft className="h-4 w-4" />Back to teams</button>
+        <div className="th-onb-card">
+          <EmptyState icon={<AlertTriangle className="h-5 w-5" />} title="Couldn't open this team" description={error ?? "Team not found."} action={<Button size="sm" variant="secondary" onClick={() => void loadTeam()}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>} />
+        </div>
+      </section>
+    );
+  }
+
+  const teamColor = team.color ?? COLOR_PRESETS[0];
+  const TABS: { key: Tab; label: string; icon: typeof Shield; count?: number }[] = [
+    { key: "overview", label: "Overview", icon: Shield },
+    { key: "members", label: "Members", icon: Users, count: team.operator_ids.length },
+    { key: "access", label: "Device access", icon: Building2, count: team.client_ids.length + team.group_ids.length + team.device_ids.length },
+    { key: "permissions", label: "Permissions", icon: KeyRound, count: team.permissions.length },
+  ];
+
   return (
-    <section className="premium-page space-y-5">
-      {/* Header card */}
-      <div className="premium-card overflow-hidden p-5 md:p-6">
-        <div className="mb-4">
-          <button type="button" onClick={() => navigate("/teams")} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-300">
-            <ArrowLeft className="h-3.5 w-3.5" /> Teams
-          </button>
-        </div>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: team.color ?? "#E85A3C" }} />
-            <div>
-              <p className="premium-kicker">Team</p>
-              <h1 className="text-2xl font-semibold text-white">{team.name}</h1>
-              {team.description && <p className="mt-0.5 text-sm text-slate-400">{team.description}</p>}
-            </div>
+    <section className="premium-page th-onb space-y-4">
+      {/* ── identity ──────────────────────────────────────────────────── */}
+      <div className="th-onb-card th-team-hero th-onb-enter" style={{ "--team": teamColor } as CSSProperties}>
+        <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+          <button type="button" onClick={() => navigate("/teams")} className="th-onb-action" aria-label="Back to teams" title="Back to teams"><ArrowLeft className="h-4 w-4" /></button>
+          <span className="th-team-mark" aria-hidden="true">{team.name.charAt(0).toUpperCase()}</span>
+          <div className="min-w-0 flex-1">
+            <nav className="flex items-center gap-1 text-[12px]" style={{ color: "var(--th-text-muted)" }} aria-label="Breadcrumb">
+              <button type="button" className="hover:underline" onClick={() => navigate("/teams")}>Teams</button>
+              <ChevronRight className="h-3 w-3" />
+              <span>Team</span>
+            </nav>
+            <h1 className="truncate text-[22px] font-semibold leading-7" style={{ color: "var(--th-text-primary)" }}>{team.name}</h1>
+            <p className="truncate text-[13px]" style={{ color: "var(--th-text-muted)" }}>{team.description || "No description"}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => void loadTeam()}>
-            <RefreshCcw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
-
-        {/* Dashboard summary */}
-        <div className="mt-5">
-          <DashboardSummary team={team} memberCount={team.operator_ids.length} effectiveDeviceCount={effectiveDeviceCount} />
-        </div>
-
-        {/* Tab bar */}
-        <div className="mt-5 flex gap-1 border-b border-white/[0.06]">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 rounded-t-md px-3.5 py-2 text-[13px] font-semibold transition-all ${tab === t.key ? "border-b-2 border-techi-orange text-white" : "text-slate-500 hover:text-slate-300"}`}
-              style={tab === t.key ? { marginBottom: "-1px" } : undefined}
-            >
-              {t.icon}{t.label}
-            </button>
-          ))}
+          <Button variant="secondary" size="sm" onClick={() => void loadTeam()}><RefreshCcw className="h-3.5 w-3.5" />Refresh</Button>
         </div>
       </div>
 
-      {/* Tab content */}
-      <div className="premium-card-soft overflow-hidden p-5 md:p-6">
-        {tabLoading && <p className="text-sm font-medium text-slate-400">Loading tab data…</p>}
-        {!tabLoading && tab === "overview" && (
+      {/* ── summary ───────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          { label: "Members", value: team.operator_ids.length, hint: "Operators in the team", icon: UsersRound, tone: TONE.info },
+          { label: "Clients", value: team.client_ids.length, hint: "Granted whole", icon: Building2, tone: "var(--th-accent)" },
+          { label: "Groups", value: team.group_ids.length, hint: "Device groups granted", icon: Layers, tone: TONE.maintenance },
+          { label: "Devices one by one", value: team.device_ids.length, hint: "Granted directly", icon: Monitor, tone: TONE.neutral },
+          { label: "Devices reached", value: effectiveDeviceCount, hint: "Through every grant", icon: ShieldCheck, tone: TONE.online },
+        ].map((item, index) => (
+          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index + 1 } as CSSProperties}>
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="truncate text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
+              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{formatCount(item.value)}</div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── tabs ──────────────────────────────────────────────────────── */}
+      <div className="th-onb-card th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
+        <div className="th-alerts-toolbar !border-b-0">
+          <div ref={tabsRef} role="tablist" aria-label="Team sections" className="th-tabs">
+            {TABS.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className="th-tab">
+                <t.icon className="h-3.5 w-3.5" />
+                {t.label}
+                {t.count !== undefined && <span className="th-tab-count">{formatCount(t.count)}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div role="tabpanel" key={tab} className="th-onb-panel">
+        {tabLoading ? (
+          <div className="th-onb-card" aria-busy="true">
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />)}
+          </div>
+        ) : tab === "overview" ? (
           <OverviewTab team={team} canManage={canManage} onSaved={(u) => setTeam(u)} />
-        )}
-        {!tabLoading && tab === "members" && (
-          <MembersTab team={team} operators={operators} canManage={canManage} onSaved={(ids) => setTeam((p) => p ? { ...p, operator_ids: ids } : p)} />
-        )}
-        {!tabLoading && tab === "access" && (
-          <AccessTab
-            team={team}
-            clients={clients}
-            groups={groups}
-            devices={devices}
-            canManage={canManage}
-            onSaved={(c, g, d) => setTeam((p) => p ? { ...p, client_ids: c, group_ids: g, device_ids: d } : p)}
-          />
-        )}
-        {!tabLoading && tab === "permissions" && (
+        ) : tab === "members" ? (
+          <MembersTab team={team} operators={operators} canManage={canManage} onSaved={(ids) => setTeam((p) => (p ? { ...p, operator_ids: ids } : p))} />
+        ) : tab === "access" ? (
+          <AccessTab team={team} clients={clients} groups={groups} devices={devices} canManage={canManage} onSaved={(c, g, d) => setTeam((p) => (p ? { ...p, client_ids: c, group_ids: g, device_ids: d } : p))} />
+        ) : (
           <PermissionsTab team={team} canManage={canManage} onSaved={(u) => setTeam(u)} />
         )}
       </div>
     </section>
   );
 }
+

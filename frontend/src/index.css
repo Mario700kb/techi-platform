@@ -2033,6 +2033,119 @@ button.th-kpi:hover, a.th-kpi:hover { background: var(--th-bg-card-hover); }
 }
 .th-onb-alldevices > span { font-size: 28px; font-weight: 700; line-height: 32px; }
 .th-onb-alldevices > small { font-size: 12px; font-weight: 500; }
+/* ── Team detail ── identity hero in the team colour, one save footer per tab,
+   checkbox rows, the client → group → device tree, permission cards. */
+.th-team-hero { overflow: hidden; background: linear-gradient(100deg, color-mix(in srgb, var(--team) 9%, var(--th-bg-card)) 0%, var(--th-bg-card) 55%); }
+.th-team-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 650;
+  color: var(--th-on-accent);
+  background: var(--team);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--team) 18%, transparent);
+}
+.th-team-foot { display: flex; align-items: center; gap: 12px; }
+.th-team-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--onb-tone); }
+.th-team-state > i { width: 7px; height: 7px; border-radius: 999px; background: var(--onb-tone); }
+.th-team-check { flex: none; width: 16px; height: 16px; accent-color: var(--th-accent); cursor: pointer; }
+.th-team-check:disabled { cursor: not-allowed; }
+.th-team-list { display: flex; flex-direction: column; }
+.th-team-list > li + li { border-top: 1px solid var(--th-border-subtle); }
+.th-team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.th-team-row:hover { background: var(--th-table-hover); }
+.th-team-row[data-checked="true"] { background: color-mix(in srgb, var(--th-accent) 5%, transparent); }
+.th-team-row[data-disabled="true"] { cursor: default; }
+.th-team-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-surface);
+}
+.th-team-tree { display: flex; flex-direction: column; }
+.th-team-tree > li + li { border-top: 1px solid var(--th-border-subtle); }
+.th-team-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 20px;
+  color: var(--th-text-secondary);
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.th-team-node[data-level="2"] { min-height: 38px; padding-left: 48px; background: color-mix(in srgb, var(--th-bg-surface) 50%, transparent); }
+.th-team-node[data-level="3"] { min-height: 34px; padding-left: 76px; background: var(--th-bg-surface); }
+.th-team-node[data-clickable="true"] { cursor: pointer; }
+.th-team-node[data-clickable="true"]:hover { background: var(--th-table-hover); }
+.th-team-node[data-checked="true"] { box-shadow: inset 3px 0 0 var(--th-accent); }
+.th-team-node[data-inherited="true"] { color: var(--th-text-muted); }
+.th-team-count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--th-text-faint); }
+.th-team-inherited {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--th-accent);
+  border: 1px dashed color-mix(in srgb, var(--th-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--th-accent) 10%, transparent);
+}
+.th-team-perms { overflow: hidden; border-radius: 10px; border: 1px solid var(--th-border-subtle); background: var(--th-bg-card); }
+.th-team-perms > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--th-border-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+  background: color-mix(in srgb, var(--cat-tone) 6%, transparent);
+}
+.th-team-perms li + li { border-top: 1px solid var(--th-border-subtle); }
+.th-team-template {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+  border: 1px solid var(--th-border-default);
+  background: var(--th-chip-bg);
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+.th-team-template:hover:not(:disabled) { color: var(--th-text-primary); border-color: var(--th-border-strong); }
+.th-team-template[aria-pressed="true"] { color: var(--th-text-primary); border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 9%, var(--th-chip-bg)); }
+.th-team-template[data-tone="danger"]:hover:not(:disabled) { color: var(--th-status-critical); border-color: color-mix(in srgb, var(--th-status-critical) 45%, transparent); }
+.th-team-template:disabled { opacity: 0.45; cursor: not-allowed; }
+.th-team-preview {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-surface);
+}
 /* The token list is part of a scrolling page, not a full-height view:
    cap it so the header and footer stay in reach. */
 .th-onb-tokens { flex: none; }
