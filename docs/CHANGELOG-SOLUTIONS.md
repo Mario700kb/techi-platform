@@ -5,6 +5,45 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] ALERTS-UI-2026-10-11 — Alerts page rebuilt as an enterprise table
+
+The owner asked for an enterprise, modern, symmetric Alerts page. Commit
+`3a83349`.
+
+**Layout.**
+- A row of four equal summary tiles: open alerts with the age of the
+  oldest, critical, warning, and devices affected.
+- A toolbar with the severity tabs on the left, and on the right a
+  server-side search (device, client or message) and the type filter.
+- A fixed column grid with 16 px gutters on both sides: severity, alert,
+  device and client, value, opened, action.
+- A 3 px severity edge on every row. Clicking a row opens the device.
+
+**Alert text.** The stored message embeds the hostname the device had when
+the alert opened, so a renamed device showed the wrong name. For example,
+Salto-SRV appeared as "RAM elevated on DESKTOP-098OMH1". Alerts are now
+described without the hostname ("Memory usage elevated"), and the measured
+value moved to its own right-aligned column ("81.0%", "4×").
+
+**Backend.** The list and the count endpoints take a search term. The count
+now reports the number of devices affected and the oldest open alert.
+
+**Verified in production after deploy.** 324 open alerts across 268
+devices. A search for "srv" listed 17 alerts and counted 17. Counts take
+13 ms. The page was checked before deploy by rendering the real component,
+in both themes, against the built CSS.
+
+**Found, not fixed.** The oldest open alert dates from 2026-06-08: some
+alerts have stayed open for four months. Most likely they belong to
+conditions that never clear (a full disk, or an archived device), or to
+alerts that nothing auto-resolves. The age distribution of open alerts
+has not been measured yet.
+
+**Deploy.** 2026-10-11 15:25, backend and frontend, no migration. Rollback
+images: `pre-alertsui-357ab5d` (backend) and `pre-alertsui-fb02992`
+(frontend). No new dump, because no data changed; the latest is
+`pre-alerts-2026-10-11_15-02`. Tests: backend 1,232, frontend 109.
+
 ## [2026-10-11] LOG-REDACT-2026-10-11 — tokens carried in URLs no longer reach the backend logs
 
 Commit `357ab5d`, which closes the finding recorded in `ALERTS-SCOPE-2026-10-11`.
