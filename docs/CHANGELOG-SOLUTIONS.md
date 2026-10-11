@@ -5,6 +5,61 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-11] AGENT-CONFIG-UI-2026-10-11 — heartbeat limits that keep devices online; Agent Configuration and Device access redesign
+
+Commits `c46b589` and `98f6589`; backend and frontend, deployed 2026-10-11 23:14.
+Pre-deploy dump: `/opt/backups/techi/pre-agent-config-ui-2026-10-11_23-11.sql.gz`.
+Rollback images: `techi-platform-backend:pre-agent-config-ui-3f6cd58` and
+`techi-platform-frontend:pre-agent-config-ui-3f6cd58`.
+
+### Heartbeat policy (`agent_config_service.py`, `endpoints/agent_config.py`)
+- **Fixed: intervals up to 600s were accepted** while a device counts as
+  online for only 6 minutes. Any saved value above ~313s made healthy
+  devices show as stale between heartbeats, more so with the agent's ±10%
+  jitter.
+  - The new ceiling is `ONLINE_THRESHOLD_MINUTES * 60 / 1.15` = 313s.
+  - PUT rejects values above it with 422.
+  - GET returns it as `maximum_allowed_interval_seconds`.
+- **Fixed: one platform at its capacity floor blocked every save.**
+  - PUT checked every interval it was sent, and the editor sends all of
+    them.
+  - Windows has 900 devices, so its floor is exactly its 300s. One more
+    device would have rejected every save, even one that changed only
+    Linux.
+  - Limits now apply only to the intervals a request changes.
+- **New in GET:** `platform_minimum_intervals`, the capacity floor per
+  platform, so the editor shows each row's real range.
+- **Removed: the "Change heartbeat interval" bulk command.** The server
+  sends the platform interval on every heartbeat, so the command was undone
+  within one cycle while the UI said it "applies live".
+- **Verified after deploy:**
+  - ceiling 313 inside the running backend;
+  - 149 devices checked in within 2 minutes and 396 within 6.
+
+### Agent Configuration page (`/agent-config`)
+- Redesigned in the Onboarding design:
+  - stat cards: devices served, heartbeat load, and online and stale
+    windows;
+  - a policy table with the unit inside each field and the allowed range
+    per row;
+  - a Remote Support switch;
+  - the shared `SaveFooter`, moved from TeamDetail to `components/ui`.
+- A platform with no valid value left (floor above ceiling) is called out
+  with what to change.
+- **Command Center:**
+  - Send command and Batch progress are paired cards;
+  - status chips and a per-device list;
+  - the history is a table, with failed batches edged red.
+
+### Team detail, Device access
+- The client tree pages like the Clients table: 10, 25 or 50 per page.
+- Tabs filter it: All, With access, No access.
+- The summary says "1 group", not "1 groups".
+
+### Open
+- RISK-CAP-003: at about 940 Windows devices the capacity floor passes the
+  313s ceiling, and no valid interval remains.
+
 ## [2026-10-11] MODAL-TEAMDETAIL-2026-10-11 — one global Modal; team detail redesign
 
 Commits `05aac17` and `3f6cd58`; frontend only, deployed 2026-10-11 23:10.
