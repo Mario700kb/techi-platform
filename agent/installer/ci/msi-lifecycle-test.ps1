@@ -108,7 +108,7 @@ $before = Get-DeployLogLines
 $r = Invoke-Msi (@('/i', "`"$NewMsi`"") + $Props) 'fresh-install'
 Check ($r.Code -eq 0) "fresh install exits 0 (got $($r.Code))"
 Check-InstallLog $r.Log
-Check-RemoteSupportStopped $before @('StopTechiRSBeforeUpgrade', 'KillTechiRSBeforeInstall')
+Check-RemoteSupportStopped $before @('KillTechiRSBeforeInstall')
 Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running'
 Check ((Get-InstalledVersion) -eq $ExpectedVersion) "installed version is $ExpectedVersion (got '$(Get-InstalledVersion)')"
 $tomls = @(Get-ApiServers)

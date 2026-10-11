@@ -149,8 +149,8 @@ func TestRemoteSupportStopsBeforeTheOldProductIsRemoved(t *testing.T) {
 	if !regexp.MustCompile(`(?s)<CustomAction Id="StopTechiRSBeforeUpgrade"[^>]*Execute="immediate"`).MatchString(wxs) {
 		t.Fatal("StopTechiRSBeforeUpgrade must be an immediate action")
 	}
-	if !strings.Contains(wxs, `<Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry"`) {
-		t.Fatal("StopTechiRSBeforeUpgrade must run before InstallValidate, after the legacy cleanup")
+	if !strings.Contains(wxs, `<Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry" Condition="NOT REMOVE AND WIX_UPGRADE_DETECTED"/>`) {
+		t.Fatal("StopTechiRSBeforeUpgrade must run before InstallValidate, after the legacy cleanup, and only when an older product is there")
 	}
 	for _, id := range []string{"KillTechiRS", "KillTechiRSBeforeInstall", "StopTechiRSBeforeUpgrade"} {
 		re := regexp.MustCompile(`(?s)<CustomAction Id="` + id + `"[^>]*ExeCommand="[^"]*\$\(var\.StopRemoteSupportScript\)`)

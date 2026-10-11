@@ -15,9 +15,10 @@
 <?define BuildCommit="dev"?>
 <?endif?>
 <!-- Ndalon TECHI Remote Support: mbyll proceset RS me PID (path-validated), pastaj 'sc stop'
-     (JO fshirje). I kufizuar me Start-Job/Wait-Job -Timeout 45; logon ne deploy.log me tag-un $T.
+     (JO fshirje). I kufizuar me Start-Job/Wait-Job -Timeout 45; logon ne deploy.log me tag-un $T
+     (krijon dosjen: ne instalim te ri ajo s'ekziston ende para InstallFiles).
      Pa kllapa katrore: ExeCommand eshte MSI Formatted dhe [X] lexohet si property (RISK-MSI-002). -->
-<?define StopRemoteSupportScript="$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' '+$T+': '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0"?>
+<?define StopRemoteSupportScript="$ErrorActionPreference='SilentlyContinue'; $L=Join-Path $env:ProgramData 'TechiAgent\deploy.log'; New-Item -ItemType Directory -Force -Path (Split-Path $L) | Out-Null; function W($m){ Add-Content -LiteralPath $L -Value ((Get-Date).ToString('o')+' '+$T+': '+$m) }; W 'start'; $j=Start-Job { Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'TECHI Remote Support.exe' -or $_.Name -eq 'rustdesk.exe') -and $_.ExecutablePath -and ($_.ExecutablePath -like '*\TECHI Remote Support\*' -or $_.ExecutablePath -like '*\RustDesk\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath 'sc.exe' -ArgumentList @('stop','TECHI Remote Support') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue }; if(Wait-Job $j -Timeout 45){ W ('done state='+$j.State) } else { Stop-Job $j -ErrorAction SilentlyContinue; W 'TIMEOUT_45s' }; Remove-Job $j -Force -ErrorAction SilentlyContinue; W 'exit=0'; exit 0"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
@@ -508,7 +509,7 @@
       <Custom Action="RemoveLegacyEndpoint104B" After="RemoveLegacyEndpoint104A" Condition="NOT REMOVE"/>
       <Custom Action="RemoveLegacyEndpoint104C" After="RemoveLegacyEndpoint104B" Condition="NOT REMOVE"/>
       <Custom Action="CleanupLegacyEndpointInstallerRegistry" After="RemoveLegacyEndpoint104C" Condition="NOT REMOVE"/>
-      <Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry" Condition="NOT REMOVE"/>
+      <Custom Action="StopTechiRSBeforeUpgrade" After="CleanupLegacyEndpointInstallerRegistry" Condition="NOT REMOVE AND WIX_UPGRADE_DETECTED"/>
       <!-- KillTechiRSBeforeInstall: PARA InstallFiles, jo vetem PARA RemoveFiles te uninstall —
            file-at (librustdesk.dll, flutter_windows.dll, data\*) s'mund te mbishkruhen nese
            RS (e instaluar me herret nga Inno ose nga nje MSI i meparshem) eshte ne xhirim. -->
