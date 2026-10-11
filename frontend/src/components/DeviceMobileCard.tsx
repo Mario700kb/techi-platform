@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Star } from "lucide-react";
 import { Device } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
@@ -19,13 +19,14 @@ import {
   remoteSupportIssue,
 } from "../utils/deviceBadges";
 import type { VersionStatus } from "../utils/version";
-import { MBadge, StatusDot, FreshnessState } from "./mobile/primitives";
+import { StatusDot, FreshnessState } from "./mobile/primitives";
 import { ConnectButton } from "./ui";
 
 /**
- * Mobile UI 2.0 device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
+ * Mobile device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
  * "Rregulli i kartës LOCKED"): the device name is the dominant element on
- * its own line; health + type/state badges sit below it; client/meta follow.
+ * its own line with client and group under it; health and state badges
+ * follow, then user, IP, OS, agent and last seen in the footer.
  */
 
 export interface DeviceMobileCardProps {
@@ -57,21 +58,8 @@ function freshnessOf(device: Device): FreshnessState {
 
 function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode }) {
   const tone = view?.tone ?? TONE.neutral;
-  const neutral = tone === TONE.neutral;
   return (
-    <span
-      title={view?.title}
-      className="inline-flex items-center rounded-md px-[7px] py-[2.5px] text-[11px] font-bold"
-      style={
-        neutral
-          ? { color: "var(--th-text-muted)", background: "var(--th-chip-bg)", border: "1px solid var(--th-border-subtle)" }
-          : {
-              color: tone,
-              background: `color-mix(in srgb, ${tone} 13%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${tone} 26%, transparent)`,
-            }
-      }
-    >
+    <span title={view?.title} className="th-mdev-badge" style={{ "--chip-tone": tone } as CSSProperties} data-neutral={tone === TONE.neutral || undefined}>
       {children ?? view?.label}
     </span>
   );
@@ -80,8 +68,8 @@ function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode 
 function DeviceTypeBadge({ device }: { device: Device }) {
   const cat = device.resolved_device_category;
   const dt = device.device_type;
-  if (cat === "servers" || dt === "server") return <MBadge variant="server">{TERMS.server}</MBadge>;
-  if (cat === "clientpc" || dt === "client") return <MBadge variant="ws">{TERMS.clientPc}</MBadge>;
+  if (cat === "servers" || dt === "server") return <ToneBadge view={{ label: TERMS.server, tone: "var(--th-status-agent)" }} />;
+  if (cat === "clientpc" || dt === "client") return <ToneBadge view={{ label: TERMS.clientPc, tone: TONE.info }} />;
   return null;
 }
 
@@ -132,98 +120,46 @@ export function DeviceMobileCard({
   const maintenanceView = maintenanceBadge(device);
   const groupLine = device.group_name ? ` · ${device.group_name}` : "";
 
-  return (
-    <div
-      onClick={onSelect}
-      className="th-device-card cursor-pointer px-4 py-[13px] transition-colors active:bg-[var(--th-sidebar-nav-hover)]"
-      style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-    >
-      <div className="flex items-start gap-[11px]">
-        <div className="mt-[5px] flex-none">
-          <StatusDot state={freshnessOf(device)} />
-        </div>
+  const freshness = freshnessOf(device);
+  const meta = [
+    device.current_user ? { key: "user", node: <span className="max-w-[110px] truncate" title={device.current_user}>{device.current_user}</span> } : null,
+    osShort ? { key: "os", node: <span className="truncate">{osShort}</span> } : null,
+    device.public_ip || device.local_ip ? { key: "ip", node: <span className="font-mono">{device.public_ip || device.local_ip}</span> } : null,
+    device.agent_version
+      ? { key: "agent", node: <span style={{ color: AGENT_VERSION_TONE[agentVersion.status] }} title={agentVersion.title}>v{device.agent_version}{outdated && " · update"}</span> }
+      : null,
+  ].filter(Boolean) as { key: string; node: ReactNode }[];
 
-        <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-          {/* L1: device name (dominant) + hostname when it differs */}
+  return (
+    <div onClick={onSelect} className="th-onb-card th-mdev-card th-device-card" data-state={freshness}>
+      <div className="flex items-start gap-3">
+        <span className="th-mdev-status" aria-label={freshness} title={freshness}>
+          <StatusDot state={freshness} size={9} />
+        </span>
+        <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span
-              className="min-w-0 truncate text-[16px] font-extrabold tracking-[-0.015em]"
-              style={{ color: "var(--th-text-primary)" }}
-              title={displayName}
-            >
+            <span className="min-w-0 truncate text-[15px] font-semibold leading-5" style={{ color: "var(--th-text-primary)" }} title={displayName}>
               {displayName}
             </span>
             {hostnameSubtitle && (
-              <span
-                className="min-w-0 flex-1 truncate font-mono text-[11px]"
-                style={{ color: "var(--th-text-muted)" }}
-                title={device.hostname}
-              >
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
                 {hostnameSubtitle}
               </span>
             )}
           </div>
-
-          {/* L2: health chip + type/state badges */}
-          <div className="flex flex-wrap items-center gap-[5px]">
-            {healthScore != null && (
-              <ToneBadge view={{ label: String(healthScore), tone: HEALTH_TONE_COLOR[healthTone(health)], title: `Health score ${healthScore} of 100` }} />
-            )}
-            <DeviceTypeBadge device={device} />
-            {patchView && <ToneBadge view={patchView} />}
-            {maintenanceView && <ToneBadge view={maintenanceView} />}
-            {activeAction && <ActionIndicator entry={activeAction} />}
-            {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
-            {alerts?.warning ? <ToneBadge view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }} /> : null}
-            {offlineBadge && <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />}
-            {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
-          </div>
-
-          {/* L3: Client · Group · Domain */}
-          <div className="flex items-center justify-between gap-2">
-            <span
-              className="min-w-0 truncate text-[12px] font-bold"
-              style={{ color: "var(--th-text-secondary)" }}
-              title={`${device.client_name || TERMS.noClient}${groupLine}`}
-            >
-              {device.client_name || <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>}
-              {groupLine && <span style={{ color: "var(--th-text-muted)" }}>{groupLine}</span>}
-            </span>
-            {device.domain && (
-              <span className="flex-none text-[11px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-                {device.domain}
-              </span>
-            )}
-          </div>
-
-          {/* L4: User · IP · OS · Agent version · Last seen */}
-          <div className="flex flex-wrap items-center gap-x-3 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-            {device.current_user && <span className="max-w-[140px] truncate" title={device.current_user}>{device.current_user}</span>}
-            {(device.public_ip || device.local_ip) && (
-              <span className="font-mono">{device.public_ip || device.local_ip}</span>
-            )}
-            {osShort && <span>{osShort}</span>}
-            {device.agent_version ? (
-              <span style={{ color: AGENT_VERSION_TONE[agentVersion.status] }} title={agentVersion.title}>
-                v{device.agent_version}
-                {outdated && " · update"}
-              </span>
-            ) : null}
-            <span className="ml-auto font-bold" style={{ color: lastSeen.tone, fontVariantNumeric: "tabular-nums" }}>
-              {lastSeen.text}
-            </span>
-          </div>
+          <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-secondary)" }} title={`${device.client_name || TERMS.noClient}${groupLine}`}>
+            {device.client_name || <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>}
+            {groupLine && <span style={{ color: "var(--th-text-muted)" }}>{groupLine}</span>}
+            {device.domain && <span style={{ color: "var(--th-text-faint)" }}> · {device.domain}</span>}
+          </p>
         </div>
-
-        {/* Favorites stay in the top-right cluster for continuity with the
-            pre-2.0 card (the mockup does not depict the star). */}
-        <div className="flex flex-none items-center gap-1 self-center" onClick={(e) => e.stopPropagation()}>
+        <div className="-mr-1 -mt-1 flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           {onToggleFavorite && (
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors active:bg-[var(--th-sidebar-nav-hover)]"
-              style={{ color: isFavorite ? "var(--th-status-stale)" : "var(--th-text-muted)" }}
+              className="th-onb-action !h-9 !w-9"
+              style={{ color: isFavorite ? "var(--th-status-stale)" : undefined }}
               title={isFavorite ? "Remove from favorites" : "Add to favorites"}
               aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
               aria-pressed={isFavorite}
@@ -232,12 +168,40 @@ export function DeviceMobileCard({
             </button>
           )}
           <ConnectButton
-            size="lg"
+            size="md"
             disabled={!canConnect}
             onClick={onConnect}
             title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote Support ID not resolved yet")}
           />
         </div>
+      </div>
+
+      {(healthScore != null || device.resolved_device_category || device.device_type || patchView || maintenanceView || activeAction || alerts?.critical || alerts?.warning || offlineBadge || rsIssue) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[21px]">
+          {healthScore != null && (
+            <ToneBadge view={{ label: `Health ${healthScore}`, tone: HEALTH_TONE_COLOR[healthTone(health)], title: `Health score ${healthScore} of 100` }} />
+          )}
+          <DeviceTypeBadge device={device} />
+          {patchView && <ToneBadge view={patchView} />}
+          {maintenanceView && <ToneBadge view={maintenanceView} />}
+          {activeAction && <ActionIndicator entry={activeAction} />}
+          {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
+          {alerts?.warning ? <ToneBadge view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }} /> : null}
+          {offlineBadge && <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />}
+          {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
+        </div>
+      )}
+
+      <div className="th-mdev-meta">
+        <span className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden whitespace-nowrap">
+          {meta.map((m, i) => (
+            <span key={m.key} className={`flex items-center gap-x-2.5 ${m.key === "agent" ? "flex-none" : "min-w-0"}`}>
+              {i > 0 && <span aria-hidden="true" style={{ color: "var(--th-text-faint)" }}>·</span>}
+              {m.node}
+            </span>
+          ))}
+        </span>
+        <span className="flex-none font-medium tabular-nums" style={{ color: lastSeen.tone }}>{lastSeen.text}</span>
       </div>
     </div>
   );

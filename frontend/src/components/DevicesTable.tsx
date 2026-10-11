@@ -3,7 +3,7 @@ import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Archive, AlertTriangle, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
+import { Archive, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
 import { clearDeviceMaintenance, Device, DeviceFilters, DeviceQuickCounts, DeviceSortKey, enterDeviceMaintenance } from "../api/devices";
 import { Client } from "../api/clients";
@@ -503,6 +503,10 @@ const DevicesTable = memo(function DevicesTable({
     return chips;
   }, [quickFilter, filters.client_id, filters.device_type, clients, onQuickFilterChange, onFilterChange]);
 
+  // Status is chosen with the chips above the list; the rest of the
+  // filters show as removable chips under them.
+  const mobileRefinements = activeChips.filter((chip) => !(chip.key === "quick" && STATUS_TABS.some((tab) => tab.id === quickFilter)));
+
   const clearAllMobileFilters = () => {
     onQuickFilterChange("all");
     onFilterChange("client_id", undefined);
@@ -815,20 +819,13 @@ const DevicesTable = memo(function DevicesTable({
         })()}
       </div>
 
-      {/* ── Mobile (< 768px): sticky header ALWAYS visible + own state
-          handling (Mobile UI 2.0 — fixes the empty-search dead-end where
-          Search/Filters used to disappear entirely; MOBILE-DESIGN-SPEC.md
-          — Devices/Empty States). ── */}
-      <div
-        className="md:hidden overflow-hidden rounded-xl"
-        style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
-      >
-        <div
-          className="sticky top-0 z-10"
-          style={{ background: "var(--th-bg-card)", borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <div className="flex items-center gap-2 p-3">
-            <label className="th-search flex-1" style={{ height: 40 }}>
+      {/* ── Mobile (< 768px): the toolbar stays visible in every state, so
+          an empty search is never a dead end (MOBILE-DESIGN-SPEC.md —
+          Devices/Empty States). ── */}
+      <div className="th-onb md:hidden">
+        <div className="th-mdev-toolbar">
+          <div className="flex items-center gap-2">
+            <label className="th-search h-10 flex-1">
               <Search className="h-4 w-4 flex-none" />
               <input
                 type="search"
@@ -839,35 +836,35 @@ const DevicesTable = memo(function DevicesTable({
                 enterKeyHint="search"
               />
             </label>
-            <button
-              type="button"
-              onClick={() => setFilterSheetOpen(true)}
-              aria-label="Filters"
-              className="flex h-11 w-11 flex-none items-center justify-center rounded-lg"
-              style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", background: "var(--th-chip-bg)" }}
-            >
+            <button type="button" onClick={() => setFilterSheetOpen(true)} aria-label="Filters" className="th-mdev-tool" data-active={mobileRefinements.length > 0 || undefined}>
               <SlidersHorizontal className="h-4 w-4" />
+              {mobileRefinements.length > 0 && <i aria-hidden="true" />}
             </button>
-            <button
-              type="button"
-              onClick={() => setSortSheetOpen(true)}
-              aria-label="Sort"
-              className="flex h-11 w-11 flex-none items-center justify-center rounded-lg"
-              style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", background: "var(--th-chip-bg)" }}
-            >
+            <button type="button" onClick={() => setSortSheetOpen(true)} aria-label="Sort" className="th-mdev-tool">
               <ArrowUpDown className="h-4 w-4" />
             </button>
           </div>
-          {activeChips.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto px-3 pb-2.5" style={{ scrollbarWidth: "none" }}>
-              {activeChips.map((chip) => (
-                <button
-                  key={chip.key}
-                  type="button"
-                  onClick={chip.onClear}
-                  className="inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold"
-                  style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}
-                >
+          <div className="th-mdev-chips" role="tablist" aria-label="Status">
+            {STATUS_TABS.map(({ id, label, tone }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={quickFilter === id}
+                onClick={() => applyQuickFilter(quickFilter === id && id !== "all" ? "all" : id)}
+                className="th-mdev-chip"
+                style={{ "--chip-tone": tone } as React.CSSProperties}
+              >
+                {tone && <i aria-hidden="true" />}
+                {label}
+                <span className="tabular-nums">{formatCount(pillCounts[id])}</span>
+              </button>
+            ))}
+          </div>
+          {mobileRefinements.length > 0 && (
+            <div className="th-mdev-chips">
+              {mobileRefinements.map((chip) => (
+                <button key={chip.key} type="button" onClick={chip.onClear} className="th-mdev-chip" aria-selected="true" aria-label={`Clear ${chip.label}`}>
                   {chip.label}
                   <X className="h-3 w-3" />
                 </button>
@@ -876,116 +873,104 @@ const DevicesTable = memo(function DevicesTable({
           )}
         </div>
 
+        {!loading && !error && displayDevices.length > 0 && (
+          <p className="th-mdev-count tabular-nums">
+            {formatCount(total ?? displayDevices.length)} device{(total ?? displayDevices.length) === 1 ? "" : "s"}
+          </p>
+        )}
+
         {loading ? (
-          <div className="overflow-hidden">
+          <div className="th-mdev-list mt-3" aria-busy="true">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
-                style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.12 }}
-              >
-                <div className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: "var(--th-ring-track)" }} />
-                <div className="h-3 w-32 rounded" style={{ background: "var(--th-ring-track)" }} />
-                <div className="ml-auto h-3 w-16 rounded" style={{ background: "var(--th-ring-track)" }} />
+              <div key={i} className="th-onb-card th-mdev-card" style={{ opacity: 1 - i * 0.12 }}>
+                <div className="th-alerts-skeleton !m-0 !h-4 !w-40" />
+                <div className="th-alerts-skeleton !m-0 !mt-2 !h-3 !w-56" />
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-14 text-center">
-            <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>Unable to load devices</p>
-            <p className="text-[13px]" style={{ color: "var(--th-status-critical)" }}>{error}</p>
-            <Button variant="secondary" onClick={onRefresh} size="sm">Try again</Button>
+          <div className="th-onb-card mt-3">
+            <EmptyState className="py-10" icon={<ServerOff className="h-5 w-5" />} title="Unable to load devices" description={error} action={<Button variant="secondary" onClick={onRefresh} size="sm">Try again</Button>} />
           </div>
         ) : displayDevices.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
-            <ServerOff className="h-8 w-8" style={{ color: "var(--th-text-faint)" }} />
+          <div className="th-onb-card mt-3">
             {searchQuery ? (
-              <>
-                <div>
-                  <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>
-                    No results for "{searchQuery}"
-                  </p>
-                  <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                    Searched across name, hostname, user, domain and IP.
-                  </p>
-                </div>
-                <button type="button" onClick={() => onSearch("")} className="rounded-lg px-4 py-2 text-[13px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
-                  Clear search
-                </button>
-              </>
+              <EmptyState
+                className="py-10"
+                icon={<Search className="h-5 w-5" />}
+                title={`No results for "${searchQuery}"`}
+                description="Searched across name, hostname, user, domain and IP."
+                action={<Button size="sm" variant="secondary" onClick={() => onSearch("")}>Clear search</Button>}
+              />
             ) : activeChips.length > 0 ? (
-              <>
-                <div>
-                  <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>No devices match these filters</p>
-                  <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>Adjust or clear filters to see more devices.</p>
-                </div>
-                <button type="button" onClick={clearAllMobileFilters} className="rounded-lg px-4 py-2 text-[13px] font-bold" style={{ background: "var(--th-accent-glow)", border: "1px solid var(--th-accent-border)", color: "var(--th-accent)" }}>
-                  Clear filters
-                </button>
-              </>
+              <EmptyState
+                className="py-10"
+                icon={<SlidersHorizontal className="h-5 w-5" />}
+                title="No devices match these filters"
+                description="Adjust or clear filters to see more devices."
+                action={<Button size="sm" variant="secondary" onClick={clearAllMobileFilters}>Clear filters</Button>}
+              />
             ) : (
-              <div>
-                <p className="text-[15px] font-bold" style={{ color: "var(--th-text-primary)" }}>No devices found</p>
-                <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>Adjust filters or search terms to reveal devices.</p>
-              </div>
+              <EmptyState className="py-10" icon={<ServerOff className="h-5 w-5" />} title="No devices found" description="Adjust filters or search terms to reveal devices." />
             )}
           </div>
         ) : (
-          <>
-            {displayDevices.map((device) => {
-              const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-              const canConnect = isWindowsDevice
-                ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                : hasStructuralConnectMethod(device);
-              return (
-                <DeviceMobileCard
-                  key={device.id}
-                  device={device}
-                  health={healthMap[device.id]}
-                  patch={patchMap[device.id]}
-                  activeAction={activeActionMap[device.id]}
-                  alerts={alertsMap[device.id]}
-                  offlineSummary={
-                    device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined
-                  }
-                  canConnect={canConnect}
-                  isFavorite={favorites.has(device.id)}
-                  agentVersion={agentVersionView(device, agentSources)}
-                  onSelect={() => navigate(`/devices/${device.id}`)}
-                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
-                  onConnect={
-                    isWindowsDevice
-                      ? async () => {
-                          try {
-                            const res = await getConnectUrl(device.id);
-                            launchConnect(
-                              res.connect_url,
-                              buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                              () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
-                            );
-                          } catch (err) {
-                            showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+          <div className="th-mdev-list">
+              {displayDevices.map((device) => {
+                const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+                const canConnect = isWindowsDevice
+                  ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                  : hasStructuralConnectMethod(device);
+                return (
+                  <DeviceMobileCard
+                    key={device.id}
+                    device={device}
+                    health={healthMap[device.id]}
+                    patch={patchMap[device.id]}
+                    activeAction={activeActionMap[device.id]}
+                    alerts={alertsMap[device.id]}
+                    offlineSummary={
+                      device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined
+                    }
+                    canConnect={canConnect}
+                    isFavorite={favorites.has(device.id)}
+                    agentVersion={agentVersionView(device, agentSources)}
+                    onSelect={() => navigate(`/devices/${device.id}`)}
+                    onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
+                    onConnect={
+                      isWindowsDevice
+                        ? async () => {
+                            try {
+                              const res = await getConnectUrl(device.id);
+                              launchConnect(
+                                res.connect_url,
+                                buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                                () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
+                              );
+                            } catch (err) {
+                              showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                            }
                           }
-                        }
-                      : async () => navigate(`/devices/${device.id}`)
-                  }
-                  connectTitle={
-                    isWindowsDevice
-                      ? undefined
-                      : canConnect
-                      ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                      : "No Connect method available for this device yet"
-                  }
-                />
-              );
-            })}
+                        : async () => navigate(`/devices/${device.id}`)
+                    }
+                    connectTitle={
+                      isWindowsDevice
+                        ? undefined
+                        : canConnect
+                        ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                        : "No Connect method available for this device yet"
+                    }
+                  />
+                );
+              })}
+
 
             {mobileHasMore && (
               <div ref={loadMoreSentinelRef} className="flex items-center justify-center p-4">
                 {mobileLoadingMore && <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--th-accent)" }} />}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
@@ -998,11 +983,16 @@ const DevicesTable = memo(function DevicesTable({
                 key={opt.key}
                 type="button"
                 onClick={() => { handleSort(opt.key); setSortSheetOpen(false); }}
-                className="flex min-h-[48px] items-center justify-between rounded-lg px-3 text-[14px] font-bold"
-                style={{ color: active ? "var(--th-accent)" : "var(--th-text-primary)", background: active ? "var(--th-accent-glow)" : "transparent" }}
+                aria-pressed={active}
+                className="th-msheet-option"
               >
-                {opt.label}
-                {active && <span aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                <span>{opt.label}</span>
+                {active && (
+                  <span className="flex items-center gap-1 text-[12px]">
+                    {sortDir === "asc" ? "Ascending" : "Descending"}
+                    {sortDir === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                  </span>
+                )}
               </button>
             );
           })}

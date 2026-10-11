@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Box } from "lucide-react";
+import { Box, Check } from "lucide-react";
+import { Button } from "./ui";
 import { Client } from "../api/clients";
 import { DeviceFilters } from "../api/devices";
 import { QuickFilter } from "./DevicesTable";
@@ -108,34 +109,15 @@ export function FilterSheet({
       title="Filters"
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-none rounded-xl px-[18px] text-[13px] font-bold"
-            style={{ border: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)", minHeight: 44 }}
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            className="flex-1 rounded-xl text-[14px] font-extrabold text-white"
-            style={{ background: "var(--th-accent)", minHeight: 44 }}
-          >
-            Apply filters
-          </button>
+          <Button variant="secondary" type="button" onClick={onClose} className="min-h-[44px] px-5">Reset</Button>
+          <Button type="button" onClick={handleApply} className="min-h-[44px] flex-1">Apply filters</Button>
         </>
       }
     >
       <div className="flex flex-col gap-5">
         {/* Status */}
         <div>
-          <p
-            className="mb-[10px] text-[11px] font-extrabold uppercase tracking-[0.1em]"
-            style={{ color: "var(--th-text-muted)" }}
-          >
-            Status
-          </p>
+          <p className="th-msheet-label">Status</p>
           <div className="flex flex-wrap gap-2">
             {MOBILE_QUICK_FILTERS.map(({ id, label, color }) => {
               const active = draftQuickFilter === id;
@@ -144,13 +126,11 @@ export function FilterSheet({
                   key={id}
                   type="button"
                   onClick={() => setDraftQuickFilter(id)}
-                  className="rounded-full px-3 py-[7px] text-[12px] font-bold transition-colors"
-                  style={{
-                    background: active ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
-                    border: `1px solid ${active ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
-                    color: active ? (color ?? "var(--th-accent)") : (color ?? "var(--th-text-secondary)"),
-                  }}
+                  aria-selected={active}
+                  className="th-mdev-chip"
+                  style={{ "--chip-tone": color } as React.CSSProperties}
                 >
+                  {color && <i aria-hidden="true" />}
                   {label}
                 </button>
               );
@@ -161,12 +141,7 @@ export function FilterSheet({
         {/* Client + subgroups */}
         {(validClients.length > 0 || (unassignedCount ?? 0) > 0) && (
           <div>
-            <p
-              className="mb-[10px] text-[11px] font-extrabold uppercase tracking-[0.1em]"
-              style={{ color: "var(--th-text-muted)" }}
-            >
-              Client
-            </p>
+            <p className="th-msheet-label">Client</p>
             <div className="flex flex-col gap-1">
               <button
                 type="button"
@@ -174,14 +149,11 @@ export function FilterSheet({
                   setDraftClientId(undefined);
                   setDraftDeviceType(undefined);
                 }}
-                className="flex min-h-[44px] w-full items-center rounded-lg px-3 text-[13px] font-bold transition-colors"
-                style={{
-                  background: draftClientId === undefined ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
-                  border: `1px solid ${draftClientId === undefined ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
-                  color: draftClientId === undefined ? "var(--th-accent)" : "var(--th-text-primary)",
-                }}
+                aria-pressed={draftClientId === undefined}
+                className="th-msheet-option"
               >
-                All clients
+                <span>All clients</span>
+                <Check className="th-msheet-check h-4 w-4" />
               </button>
 
               <button
@@ -190,21 +162,15 @@ export function FilterSheet({
                   setDraftClientId(-1);
                   setDraftDeviceType(undefined);
                 }}
-                className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 text-[13px] font-bold transition-colors"
-                style={{
-                  background: draftClientId === -1 ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
-                  border: `1px solid ${draftClientId === -1 ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
-                  color: draftClientId === -1 ? "var(--th-accent)" : "var(--th-text-primary)",
-                }}
+                aria-pressed={draftClientId === -1}
+                className="th-msheet-option"
               >
                 <span className="flex items-center gap-2">
                   <Box className="h-4 w-4" />
                   No Client
                 </span>
                 {unassignedCount !== undefined && (
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
-                    {unassignedCount}
-                  </span>
+                  <span className="th-msheet-count">{unassignedCount}</span>
                 )}
               </button>
 
@@ -222,23 +188,17 @@ export function FilterSheet({
                         setDraftClientId(client.id);
                         setDraftDeviceType(undefined);
                       }}
-                      className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 text-[13px] font-bold transition-colors"
-                      style={{
-                        background: clientActive ? "var(--th-accent-glow)" : "var(--th-chip-bg)",
-                        border: `1px solid ${clientActive ? "var(--th-accent-border)" : "var(--th-border-subtle)"}`,
-                        color: clientActive ? "var(--th-accent)" : "var(--th-text-primary)",
-                      }}
+                      aria-pressed={clientActive}
+                      className="th-msheet-option"
                     >
                       <span>{client.name}</span>
                       {subgroups && (
-                        <span className="text-[11px] font-semibold" style={{ color: "var(--th-text-muted)" }}>
-                          {Object.values(subgroups).reduce((a, b) => a + b, 0)}
-                        </span>
+                        <span className="th-msheet-count">{Object.values(subgroups).reduce((a, b) => a + b, 0)}</span>
                       )}
                     </button>
 
                     {hasSubgroups && (
-                      <div className="ml-3 mt-[3px] flex flex-col gap-[3px] border-l-2 pl-3" style={{ borderColor: "var(--th-border-subtle)" }}>
+                      <div className="ml-3 mt-1 flex flex-col gap-1 border-l pl-3" style={{ borderColor: "var(--th-border-subtle)" }}>
                         {Object.entries(SUBGROUP_CONFIG).map(([catKey, { label, deviceType }]) => {
                           const count = subgroups?.[catKey] ?? 0;
                           if (count === 0) return null;
@@ -251,16 +211,12 @@ export function FilterSheet({
                                 setDraftClientId(client.id);
                                 setDraftDeviceType(deviceType);
                               }}
-                              className="flex min-h-[40px] w-full items-center justify-between rounded-md px-3 text-[12px] font-bold transition-colors"
-                              style={{
-                                background: subActive ? "var(--th-accent-glow)" : "transparent",
-                                color: subActive ? "var(--th-accent)" : "var(--th-text-secondary)",
-                              }}
+                              aria-pressed={subActive}
+                              className="th-msheet-option"
+                              data-sub="true"
                             >
                               <span>{label}</span>
-                              <span className="text-[11px]" style={{ color: subActive ? "var(--th-accent)" : "var(--th-text-muted)" }}>
-                                {count}
-                              </span>
+                              <span className="th-msheet-count">{count}</span>
                             </button>
                           );
                         })}

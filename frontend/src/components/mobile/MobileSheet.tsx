@@ -108,37 +108,22 @@ export function MobileSheet({
         tabIndex={-1}
         className="m-anim fixed bottom-0 left-0 right-0 z-[70] flex max-h-[78%] flex-col rounded-t-[20px] outline-none md:hidden"
         style={{
-          background: "var(--th-bg-surface)",
-          borderTop: "1px solid var(--th-border-strong)",
+          background: "var(--th-bg-card)",
+          borderTop: "1px solid var(--th-border-card)",
           boxShadow: "0 -10px 30px rgba(0, 0, 0, 0.4)",
           transform: open ? "translateY(0)" : "translateY(102%)",
           transition: "transform 260ms cubic-bezier(0.32, 0.72, 0, 1)",
           paddingBottom: footer ? undefined : "max(env(safe-area-inset-bottom), 12px)",
         }}
       >
-        <div
-          aria-hidden="true"
-          className="mx-auto mb-[2px] mt-[9px] h-1 w-9 flex-none rounded-full opacity-50"
-          style={{ background: "var(--th-text-muted)" }}
-        />
-        <div
-          className="flex flex-none items-center justify-between px-4 pb-[10px] pt-2"
-          style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
-        >
-          <span className="text-[14px] font-extrabold" style={{ color: "var(--th-text-primary)" }}>
-            {title}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-11 w-11 items-center justify-center rounded-xl"
-            style={{ color: "var(--th-text-muted)" }}
-          >
-            <X className="h-[18px] w-[18px]" />
+        <div aria-hidden="true" className="th-msheet-grip" />
+        <div className="th-msheet-head">
+          <span className="th-msheet-title">{title}</span>
+          <button type="button" onClick={onClose} aria-label="Close" className="th-onb-action">
+            <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-[14px]">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
         {footer && (
           <div
             className="flex flex-none gap-2 px-4 py-3"
