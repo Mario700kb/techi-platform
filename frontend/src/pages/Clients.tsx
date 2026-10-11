@@ -296,7 +296,7 @@ export default function Clients() {
   const activeMappings = mappedTrustedDomains.filter((d) => d.is_active).length;
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb flex flex-col gap-4">
       <PageHeader
         title="Clients"
         description="Customer records and the groups that device assignment and enrollment tokens place devices into."
@@ -337,7 +337,7 @@ export default function Clients() {
 
       {/* ── create client · create group ────────────────────────────────── */}
       {canManageClients && (
-        <div className="grid items-stretch gap-4 xl:grid-cols-2">
+        <div className="grid items-stretch gap-4 max-md:order-last xl:grid-cols-2">
           <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
             <CardHead icon={Building2} tone="var(--th-accent)" title="New client" subtitle="A customer whose devices the platform manages" />
             <div className="th-onb-body flex-1">
@@ -430,7 +430,7 @@ export default function Clients() {
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table">
+            <table className="th-alerts-table" data-mobile="cards">
               <colgroup>
                 <col className="w-[28%]" />
                 <col className="w-[110px]" />

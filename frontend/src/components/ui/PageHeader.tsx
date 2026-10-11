@@ -48,7 +48,7 @@ export default function PageHeader({ title, description, icon, actions, children
             {description && <p className="th-page-description">{description}</p>}
           </div>
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </header>

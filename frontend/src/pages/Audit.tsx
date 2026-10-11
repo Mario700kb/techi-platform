@@ -257,7 +257,7 @@ export default function Audit() {
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table">
+            <table className="th-alerts-table" data-mobile="cards">
               <colgroup>
                 <col className="w-11" />
                 <col className="w-[170px]" />
@@ -289,7 +289,7 @@ export default function Audit() {
                         style={{ "--row": index } as CSSProperties}
                         onClick={() => toggleExpand(entry.id)}
                       >
-                        <td>
+                        <td data-m="hide">
                           <ChevronRight className="th-onb-chevron h-4 w-4" data-open={open || undefined} style={{ color: "var(--th-text-faint)" }} />
                         </td>
                         <td>
@@ -318,7 +318,7 @@ export default function Audit() {
                       </tr>
                       {open && (
                         <tr className="th-onb-detail-row">
-                          <td />
+                          <td data-m="hide" />
                           <td colSpan={4}>
                             <div className="th-onb-reveal py-1">
                               <DetailsBlock json={entry.details_json} />
