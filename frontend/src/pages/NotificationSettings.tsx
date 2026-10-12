@@ -244,7 +244,7 @@ export default function NotificationSettings() {
         <div className="rounded-lg border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>
       )}
       {testResult && (
-        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200">
+        <div className="rounded-lg border border-[color:var(--th-border-default)] bg-[var(--th-chip-bg)] px-4 py-3 text-sm text-slate-200">
           {testResult}
         </div>
       )}
@@ -377,10 +377,10 @@ export default function NotificationSettings() {
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-white/5">
+        <div className="overflow-x-auto rounded-lg border border-[color:var(--th-border-subtle)]">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-[color:var(--th-border-subtle)] text-[11px] uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Enabled</th>
@@ -403,8 +403,8 @@ export default function NotificationSettings() {
                 </tr>
               ) : (
                 channels.map((c) => (
-                  <tr key={c.id} className="border-b border-white/5">
-                    <td className="px-4 py-3 font-semibold text-white">
+                  <tr key={c.id} className="border-b border-[color:var(--th-border-subtle)]">
+                    <td className="px-4 py-3 font-semibold text-slate-100">
                       <span className="inline-flex items-center gap-2">
                         {c.channel_type === "email" ? (
                           <Mail className="h-3.5 w-3.5" />
@@ -426,7 +426,7 @@ export default function NotificationSettings() {
                             <button
                               type="button"
                               onClick={() => void handleTestChannel(c)}
-                              className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06]"
+                              className="inline-flex items-center gap-1 rounded-md border border-[color:var(--th-border-default)] px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-[var(--th-chip-bg)]"
                             >
                               <Send className="h-3.5 w-3.5" />
                               Test
@@ -542,10 +542,10 @@ export default function NotificationSettings() {
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-white/5">
+        <div className="overflow-x-auto rounded-lg border border-[color:var(--th-border-subtle)]">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
-              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-[color:var(--th-border-subtle)] text-[11px] uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3">Event</th>
                 <th className="px-4 py-3">Scope</th>
                 <th className="px-4 py-3">Channel</th>
@@ -565,8 +565,8 @@ export default function NotificationSettings() {
                 </tr>
               ) : (
                 rules.map((r) => (
-                  <tr key={r.id} className="border-b border-white/5">
-                    <td className="px-4 py-3 font-mono text-xs text-white">{r.event_type}</td>
+                  <tr key={r.id} className="border-b border-[color:var(--th-border-subtle)]">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-100">{r.event_type}</td>
                     <td className="px-4 py-3 text-slate-300">
                       {r.scope_type === "client" ? `Client #${r.client_id}` : "Global"}
                     </td>
@@ -579,7 +579,7 @@ export default function NotificationSettings() {
                         <button
                           type="button"
                           onClick={() => void handleToggleRule(r)}
-                          className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.06]"
+                          className="inline-flex items-center gap-1 rounded-md border border-[color:var(--th-border-default)] px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-[var(--th-chip-bg)]"
                         >
                           {r.enabled ? "On" : "Off"}
                         </button>
@@ -616,7 +616,7 @@ export default function NotificationSettings() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
-              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-[color:var(--th-border-subtle)] text-[11px] uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3">When</th>
                 <th className="px-4 py-3">Event</th>
                 <th className="px-4 py-3">Channel</th>
@@ -635,9 +635,9 @@ export default function NotificationSettings() {
                 </tr>
               ) : (
                 deliveries.map((d) => (
-                  <tr key={d.id} className="border-b border-white/5">
+                  <tr key={d.id} className="border-b border-[color:var(--th-border-subtle)]">
                     <td className="px-4 py-3 text-slate-400">{formatDate(d.created_at)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-white">{d.event_type}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-100">{d.event_type}</td>
                     <td className="px-4 py-3 text-slate-300">{channelName(d.channel_id)}</td>
                     <td className="px-4 py-3 text-slate-300">{d.title}</td>
                     <td className="px-4 py-3">

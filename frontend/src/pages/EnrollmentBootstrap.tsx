@@ -1673,28 +1673,28 @@ function TokenDiagnosticsDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex justify-end bg-[var(--th-scrim)] backdrop-blur-sm"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <aside
-        className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[var(--th-bg-surface)] shadow-2xl"
+        className="flex h-full w-full max-w-6xl flex-col border-l border-[color:var(--th-border-default)] bg-[var(--th-bg-surface)] shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-label={`Token diagnostics: ${token.name}`}
       >
-        <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-4">
+        <div className="flex items-start justify-between border-b border-[color:var(--th-border-subtle)] px-5 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-techi-orange">Token Diagnostics</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">{token.name}</h2>
+            <h2 className="mt-1 text-lg font-semibold text-slate-100">{token.name}</h2>
             <p className="mt-1 font-mono text-xs text-slate-500">{formatTokenPrefix(token.token_prefix)}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white"
+            className="rounded-lg p-2 text-slate-500 hover:bg-[var(--th-chip-bg)] hover:text-slate-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -1718,7 +1718,7 @@ function TokenDiagnosticsDrawer({
                 {metrics.map(([label, value]) => (
                   <div key={label} className="premium-card-soft p-4">
                     <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-100">{value}</p>
                   </div>
                 ))}
               </div>
@@ -1733,9 +1733,9 @@ function TokenDiagnosticsDrawer({
                 </div>
               )}
 
-              <div className="mt-6 overflow-hidden rounded-xl border border-white/[0.08]">
-                <div className="border-b border-white/[0.08] px-4 py-3">
-                  <h3 className="text-sm font-semibold text-white">Enrollment History</h3>
+              <div className="mt-6 overflow-hidden rounded-xl border border-[color:var(--th-border-subtle)]">
+                <div className="border-b border-[color:var(--th-border-subtle)] px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-100">Enrollment History</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1050px] text-left text-xs">
@@ -1751,7 +1751,7 @@ function TokenDiagnosticsDrawer({
                         <th className="px-3 py-3">IP</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.05]">
+                    <tbody className="divide-y divide-[color:var(--th-border-subtle)]">
                       {!events.length && (
                         <tr>
                           <td colSpan={8} className="px-3 py-10 text-center text-slate-500">
@@ -1764,7 +1764,7 @@ function TokenDiagnosticsDrawer({
                           <td className="whitespace-nowrap px-3 py-3 text-slate-500">
                             {formatLocalDateTime(event.created_at)}
                           </td>
-                          <td className="px-3 py-3 font-semibold text-white">{event.hostname || "—"}</td>
+                          <td className="px-3 py-3 font-semibold text-slate-100">{event.hostname || "—"}</td>
                           <td className="px-3 py-3">{event.username || "—"}</td>
                           <td className="px-3 py-3">{event.device_id ? `#${event.device_id}` : "—"}</td>
                           <td className="px-3 py-3 font-mono">{event.rustdesk_id || "—"}</td>
@@ -1790,7 +1790,7 @@ function TokenDiagnosticsDrawer({
                   </table>
                 </div>
                 {events.length > 0 && events.length % 50 === 0 && (
-                  <div className="flex justify-center border-t border-white/[0.08] p-3">
+                  <div className="flex justify-center border-t border-[color:var(--th-border-subtle)] p-3">
                     <Button size="sm" onClick={onLoadMore} disabled={eventsLoading} variant="secondary">
                       {eventsLoading ? "Loading…" : "Load more"}
                     </Button>

@@ -8,6 +8,7 @@ const PAGES = [
   { path: "/teams", heading: /teams/i },
   { path: "/audit", heading: /audit/i },
   { path: "/settings", heading: /settings/i },
+  { path: "/notifications", heading: /notification/i },
 ];
 
 for (const { path, heading } of PAGES) {

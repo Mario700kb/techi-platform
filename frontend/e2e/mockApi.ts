@@ -18,6 +18,7 @@ import type {
   FleetInsights,
 } from "../src/api/devices";
 import type { OperatorPresenceRecord, OperatorRecord } from "../src/api/operators";
+import type { NotificationChannel, NotificationDeliveryList, NotificationRule } from "../src/api/notifications";
 import type { PlatformFeatures } from "../src/api/platform";
 import type { SystemStatus } from "../src/api/system";
 import type { TeamWithStats } from "../src/api/teams";
@@ -328,6 +329,55 @@ const sessions: OperatorSession[] = [
 ];
 const connectPreferences: ConnectPreference[] = [];
 
+const channels: NotificationChannel[] = [
+  {
+    id: 1,
+    name: "Ops email",
+    channel_type: "email",
+    enabled: true,
+    config: { to: ["ops@example.test"] },
+    has_secret: false,
+    created_by: "ana.owner",
+    created_at: "2025-06-01T00:00:00Z",
+    updated_at: "2025-06-01T00:00:00Z",
+  },
+];
+const rules: NotificationRule[] = [
+  {
+    id: 1,
+    event_type: "device_offline",
+    scope_type: "global",
+    client_id: null,
+    channel_id: 1,
+    enabled: true,
+    min_severity: null,
+    cooldown_seconds: 900,
+    rate_limit_per_hour: null,
+    created_by: "ana.owner",
+    created_at: "2025-06-01T00:00:00Z",
+    updated_at: "2025-06-01T00:00:00Z",
+  },
+];
+const deliveries: NotificationDeliveryList = {
+  total: 1,
+  items: [
+    {
+      id: 1,
+      rule_id: 1,
+      channel_id: 1,
+      event_type: "device_offline",
+      device_id: 4,
+      client_id: 2,
+      title: "BH-WH-SCANNER is offline",
+      status: "sent",
+      attempt_count: 1,
+      last_error: null,
+      created_at: iso(60 * 26),
+      sent_at: iso(60 * 26),
+    },
+  ],
+};
+
 function devicesPage(url: URL): DevicesResponse {
   const status = url.searchParams.get("freshness_state") ?? url.searchParams.get("quick_filter");
   const rows =
@@ -391,6 +441,9 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/audit/facets": (route) => json(route, auditFacets),
   "GET /api/v1/system/status": (route) => json(route, systemStatus),
   "GET /api/v1/connect-preferences": (route) => json(route, connectPreferences),
+  "GET /api/v1/notifications/channels": (route) => json(route, channels),
+  "GET /api/v1/notifications/rules": (route) => json(route, rules),
+  "GET /api/v1/notifications/deliveries": (route) => json(route, deliveries),
   "POST /api/v1/system/client-errors": (route) => route.fulfill({ status: 204 }),
 };
 

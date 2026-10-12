@@ -43,20 +43,7 @@ import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { toggled } from "../utils/sets";
 import { activateProps, stopRowClick } from "../utils/a11y";
-
-// Team colours are user data, chosen from this fixed set and stored on the team.
-const COLOR_PRESETS = [
-  "#E85A3C",
-  "#7C9CBF",
-  "#C77B93",
-  "#5C8C6A",
-  "#4E8E86",
-  "#8E7CC3",
-  "#F04A2A",
-  "#C8A000",
-  "#FF6B47",
-  "#A0A0AA",
-];
+import { TEAM_COLOR_PRESETS } from "../utils/teamColors";
 
 // ── Team permission definitions ──────────────────────────────────────────── //
 
@@ -196,7 +183,7 @@ function ColorPicker({
 }) {
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Team colour">
-      {COLOR_PRESETS.map((c) => (
+      {TEAM_COLOR_PRESETS.map((c) => (
         <button
           key={c}
           type="button"
@@ -228,12 +215,12 @@ function OverviewTab({
 }) {
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description ?? "");
-  const [color, setColor] = useState(team.color ?? COLOR_PRESETS[0]);
+  const [color, setColor] = useState(team.color ?? TEAM_COLOR_PRESETS[0]);
   const state = useSaveState();
   const dirty =
     name.trim() !== team.name ||
     description.trim() !== (team.description ?? "") ||
-    color !== (team.color ?? COLOR_PRESETS[0]);
+    color !== (team.color ?? TEAM_COLOR_PRESETS[0]);
 
   const save = () => {
     if (!name.trim()) return;
@@ -1425,7 +1412,7 @@ export default function TeamDetailPage() {
     );
   }
 
-  const teamColor = team.color ?? COLOR_PRESETS[0];
+  const teamColor = team.color ?? TEAM_COLOR_PRESETS[0];
   const TABS: { key: Tab; label: string; icon: typeof Shield; count?: number }[] = [
     { key: "overview", label: "Overview", icon: Shield },
     { key: "members", label: "Members", icon: Users, count: team.operator_ids.length },
