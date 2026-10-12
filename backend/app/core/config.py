@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./techi.db"  # Use SQLite for local development
 
     SECRET_KEY: str = ""
+    # Server-side limits on every request connection (PostgreSQL). Maintenance
+    # work — nightly cleanup, VACUUM, reports — uses a separate engine
+    # without the statement limit (app/db/session.py).
+    DB_STATEMENT_TIMEOUT_MS: int = 60_000
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = 120_000
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     # Browser sessions (HttpOnly cookies). The access token is short and is
     # renewed by a rotating refresh token; the session itself ends after

@@ -11,7 +11,7 @@ import logging
 import time
 
 from app.core.time import utcnow
-from app.db.session import SessionLocal
+from app.db.session import MaintenanceSessionLocal as SessionLocal  # scheduled reports may run long
 from app.repositories.report_repository import ReportScheduleRepository
 from app.services.audit_service import system_audit_log
 from app.services.report_service import ReportService, next_schedule_time

@@ -38,7 +38,8 @@ logger = logging.getLogger("techi.startup")
 
 
 def _run_heartbeat_cleanup() -> None:
-    from app.db.session import SessionLocal
+    # Bulk DELETEs and VACUUM run longer than a request is allowed to.
+    from app.db.session import MaintenanceSessionLocal as SessionLocal
     from app.tasks.cleanup import (
         cleanup_old_heartbeats,
         cleanup_old_telemetry,
