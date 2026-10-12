@@ -2426,8 +2426,11 @@ textarea:focus-visible,
   transform: translate(35%, -35%);
   pointer-events: none;
 }
+/* White on the critical fill (4.8:1); the base warning badge keeps dark text,
+   since white on the yellow is 2.5:1. */
 .th-count-badge[data-tone="critical"] {
-  background: var(--th-status-critical);
+  color: var(--th-on-accent);
+  background: var(--th-critical-fill);
 }
 
 .th-clock {
