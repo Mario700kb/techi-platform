@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] TREND-INDEXES-2026-10-12 — dashboard trends measured incrementally; trend indexes (`2a6c027`)
+
+Backend and migration `b1c2d3e4f5a6` → `c3d4e5f6a7b8`, deployed 2026-10-12
+14:17–14:20. Pre-deploy dump
+`/opt/backups/techi/pre-trend-indexes-2026-10-12_14-17.sql.gz`; rollback
+image `techi-platform-backend:pre-trend-indexes-7c34536`.
+
+After DB-ENTERPRISE-A the 30-day trends were ~57 of 101 s of statement time
+per 10 minutes. Days that are over are now measured once per day per device
+set and only today is recomputed; the state before a window is one index
+probe per device; the alert trend is counted in PostgreSQL instead of
+returning ~370k rows to Python; trends are fresh for 30 minutes (was 5).
+Indexes: device_status_history (device_id, created_at) replacing its prefix,
+device_alerts created_at and resolved_at — built CONCURRENTLY in 14 s, all
+valid, no write blocked. Output verified identical to the previous code on
+a production-sized synthetic set with a fixed clock.
+
+Deploy: guard; dump (`gzip -t` OK); rollback tag; pull; build; migration
+(as techi_app); backend recreated; healthy; guard and smoke passed.
+
+Measured (10-minute window after the deploy, pg_stat_statements reset):
+total statement time 101 s → 40 s; trend statements 57 s → 13.7 s, of which
+7.3 s are the two once-a-day full computations that ran because the cache
+was empty after the restart; load average 1.3. 0 tracebacks.
+
 ## [2026-10-12] DB-ENTERPRISE-B — the backend connects as techi_app, not the superuser
 
 Database role change, deployed 2026-10-12 13:58–14:02. No code change
