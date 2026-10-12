@@ -378,6 +378,32 @@ const deliveries: NotificationDeliveryList = {
   ],
 };
 
+// Resolved history of NW-DOCTOR-02 (id 2): every kind and severity, newest
+// resolved first is what the drawer must show.
+const DEVICE_2_RESOLVED: Alert[] = (
+  [
+    ["high_cpu", "critical", 30, 25, "CPU at 97% for 10 minutes"],
+    ["low_disk", "warning", 300, 120, "C: has 8% free"],
+    ["device_offline", "critical", 600, 590, "NW-DOCTOR-02 went offline"],
+    ["high_ram", "warning", 900, 880, "Memory at 92%"],
+    ["rustdesk_sync_failure", "warning", 1500, 1400, "Remote Support ID did not sync"],
+    ["repeated_reconnects", "warning", 2000, 1990, "Reconnected 6 times in an hour"],
+    ["device_offline", "critical", 3000, 2900, "NW-DOCTOR-02 went offline"],
+  ] as const
+).map(([kind, severity, openedMin, resolvedMin, message], i) => ({
+  id: 100 + i,
+  device_id: 2,
+  kind,
+  severity,
+  state: "resolved",
+  message,
+  created_at: iso(openedMin),
+  updated_at: iso(resolvedMin),
+  resolved_at: iso(resolvedMin),
+  device_name: "NW-DOCTOR-02",
+  client_name: "Northwind Clinic",
+}));
+
 function devicesPage(url: URL): DevicesResponse {
   const status = url.searchParams.get("freshness_state") ?? url.searchParams.get("quick_filter");
   const rows =
@@ -455,6 +481,18 @@ export async function mockApi(page: Page, initial: Partial<Omit<MockState, "unha
     const key = `${route.request().method()} ${url.pathname}`;
     const handler = HANDLERS[key];
     if (handler) return handler(route, state, url);
+    const deviceAlerts = url.pathname.match(/^\/api\/v1\/alerts\/device\/(\d+)$/);
+    if (deviceAlerts && route.request().method() === "GET") {
+      const id = Number(deviceAlerts[1]);
+      const wanted = url.searchParams.get("state");
+      const rows =
+        wanted === "resolved"
+          ? id === 2
+            ? DEVICE_2_RESOLVED
+            : []
+          : ALERTS.filter((a) => a.device_id === id && a.state === "open");
+      return json(route, rows);
+    }
     state.unhandled.push(key);
     return json(route, { detail: "Not mocked" }, 404);
   });

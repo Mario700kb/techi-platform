@@ -78,7 +78,8 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { Button, ConnectButton, EmptyState, SelectField } from "./ui";
-import { Alert, AlertSeverity } from "../types/alert";
+import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertSeverity } from "../types/alert";
+import AlertKindIcon from "./AlertKindIcon";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
@@ -184,18 +185,6 @@ function formatUptime(seconds: number | null): string {
   return `${m}m`;
 }
 
-function alertSeverityColor(severity: AlertSeverity): string {
-  if (severity === "critical") return "text-red-400";
-  if (severity === "warning") return "text-amber-400";
-  return "text-slate-400";
-}
-
-function alertSeverityDot(severity: AlertSeverity): string {
-  if (severity === "critical") return "bg-red-400";
-  if (severity === "warning") return "bg-amber-400";
-  return "bg-slate-500";
-}
-
 function patchStateLabel(state?: string): string {
   if (state === "up_to_date") return "Up to date";
   if (state === "updates_available") return "Updates available";
@@ -229,20 +218,42 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
     resolved && alert.resolved_at
       ? `Opened ${formatDateTime(alert.created_at)} · resolved ${formatDateTime(alert.resolved_at)}${duration ? ` · lasted ${duration}` : ""}`
       : formatDateTime(alert.created_at);
+  const tone = ALERT_SEVERITY_TONE[alert.severity as AlertSeverity] ?? "var(--th-text-muted)";
   return (
-    <div className={`flex items-start gap-2 py-2 ${resolved ? "opacity-65" : ""}`}>
-      <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${alertSeverityDot(alert.severity)}`} />
+    <div className={`flex items-start gap-2.5 py-2 ${resolved ? "opacity-80" : ""}`}>
+      {/* The kind says what happened; the colour says how serious it was. */}
+      <span className="mt-0.5 flex-none" style={{ color: tone }} aria-hidden="true">
+        <AlertKindIcon kind={alert.kind} className="h-3.5 w-3.5" />
+      </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={`text-[12px] font-semibold capitalize ${alertSeverityColor(alert.severity)}`}>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {ALERT_KIND_LABELS[alert.kind] ?? alert.kind}
+          </span>
+          <span
+            className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px] capitalize"
+            style={{ "--chip-tone": tone } as React.CSSProperties}
+          >
+            <i />
             {alert.severity}
           </span>
-          {resolved && <span className="text-[12px] text-slate-500">Resolved</span>}
-          <time dateTime={at} title={title} className="ml-auto flex-none text-[12px] text-slate-500">
+          {resolved && (
+            <span className="flex-none text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              Resolved
+            </span>
+          )}
+          <time
+            dateTime={at}
+            title={title}
+            className="ml-auto flex-none text-[12px]"
+            style={{ color: "var(--th-text-muted)" }}
+          >
             {timeAgo(at)}
           </time>
         </div>
-        <p className="text-xs leading-5 text-slate-200">{alert.message}</p>
+        <p className="text-xs leading-5" style={{ color: "var(--th-text-secondary)" }}>
+          {alert.message}
+        </p>
       </div>
     </div>
   );
@@ -364,6 +375,8 @@ export default function DeviceDrawer({
     deviceId: device.id,
     latestEvent,
   });
+  const [showAllResolved, setShowAllResolved] = useState(false);
+  useEffect(() => setShowAllResolved(false), [device.id]);
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
 
@@ -1119,9 +1132,19 @@ export default function DeviceDrawer({
                         <p className="mb-1 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
                           Recently resolved
                         </p>
-                        {resolvedAlerts.map((a) => (
+                        {(showAllResolved ? resolvedAlerts : resolvedAlerts.slice(0, 5)).map((a) => (
                           <AlertRow key={a.id} alert={a} resolved />
                         ))}
+                        {resolvedAlerts.length > 5 && (
+                          <button
+                            type="button"
+                            className="th-link-btn -ml-2 mt-1"
+                            onClick={() => setShowAllResolved((v) => !v)}
+                            aria-expanded={showAllResolved}
+                          >
+                            {showAllResolved ? "Show fewer" : `Show ${resolvedAlerts.length - 5} more`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </>

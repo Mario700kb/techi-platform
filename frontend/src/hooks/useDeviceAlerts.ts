@@ -9,7 +9,8 @@ interface UseDeviceAlertsOptions {
   latestEvent?: DeviceRealtimeEvent | null;
 }
 
-const RESOLVED_SHOWN = 5;
+/** Every kind and severity; the view shows five and expands to the rest. */
+const RESOLVED_KEPT = 20;
 /**
  * Realtime events keep the lists current; this re-reads them as a backstop
  * for anything a socket missed (a reconnect, a laptop waking up). Two small
@@ -22,7 +23,7 @@ function newestResolvedFirst(alerts: Alert[]): Alert[] {
     .sort(
       (a, b) => parseUTC(b.resolved_at ?? b.updated_at).getTime() - parseUTC(a.resolved_at ?? a.updated_at).getTime(),
     )
-    .slice(0, RESOLVED_SHOWN);
+    .slice(0, RESOLVED_KEPT);
 }
 
 export function useDeviceAlerts({ deviceId, latestEvent }: UseDeviceAlertsOptions) {

@@ -24,6 +24,9 @@ export function useDeviceTelemetry({ deviceId, latestEvent }: UseDeviceTelemetry
       setHealthScore(health.health_score);
       setHealthState(health.health_state);
       setHealthReasons(health.reasons);
+    } catch {
+      // A failed refresh (timeout, network, 5xx) keeps the last known health;
+      // it was an unhandled rejection before, reported as a page error.
     } finally {
       setLoading(false);
     }
