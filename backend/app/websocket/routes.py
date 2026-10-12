@@ -1,9 +1,8 @@
 from typing import Optional, Tuple, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jose import JWTError
 
-from app.core.security import decode_access_token
+from app.core.security import JWTError, decode_access_token
 from app.db.session import SessionLocal
 from app.repositories.operator_repository import OperatorRepository
 from app.websocket.manager import realtime_manager

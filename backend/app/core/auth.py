@@ -7,11 +7,10 @@ from typing import FrozenSet, Iterable, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token, decode_access_token
+from app.core.security import JWTError, create_access_token, decode_access_token
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
 from app.repositories.operator_repository import OperatorRepository

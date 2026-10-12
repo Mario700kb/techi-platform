@@ -3,7 +3,6 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import _SlidingWindowRateLimiter, login_limiter
@@ -16,7 +15,7 @@ from app.core.auth import (
     verify_password,
 )
 from app.core.config import settings
-from app.core.security import create_access_token, decode_access_token
+from app.core.security import JWTError, create_access_token, decode_access_token
 from app.db.session import get_db
 from app.models.operator import Operator as OperatorModel
 from app.repositories.operator_repository import OperatorRepository

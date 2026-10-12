@@ -2,7 +2,11 @@ from datetime import datetime, timedelta
 from app.core.time import utcnow
 from typing import Any, Dict, Optional
 
-from jose import JWTError, jwt
+import jwt
+# PyJWT replaced python-jose (unmaintained; its ecdsa dependency has an
+# advisory with no fix). Same HS256 tokens, so sessions survive the switch.
+# Exported under the old name so callers catch one exception type.
+from jwt import PyJWTError as JWTError
 
 from app.core.config import settings
 
