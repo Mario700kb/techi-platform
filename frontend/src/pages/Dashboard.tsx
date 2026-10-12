@@ -439,7 +439,12 @@ export default function Dashboard() {
                 <div
                   className="th-mix-bar flex h-2 overflow-hidden rounded-full"
                   style={{ background: "var(--th-ring-track)" }}
-                  aria-label="Device status mix"
+                  role="img"
+                  aria-label={
+                    loading
+                      ? "Device status mix, loading"
+                      : `Device status mix: ${Math.round(onlinePct)}% online, ${Math.round(stalePct)}% stale, ${Math.round(offlinePct)}% offline`
+                  }
                 >
                   <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
                   <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />

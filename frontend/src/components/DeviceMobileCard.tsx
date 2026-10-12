@@ -21,7 +21,6 @@ import {
 import type { VersionStatus } from "../utils/version";
 import { StatusDot, FreshnessState } from "./mobile/primitives";
 import { ConnectButton } from "./ui";
-import { activateProps, stopRowClick } from "../utils/a11y";
 
 /**
  * Mobile device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
@@ -157,25 +156,25 @@ export function DeviceMobileCard({
   ].filter(Boolean) as { key: string; node: ReactNode }[];
 
   return (
-    <div
-      {...activateProps(onSelect)}
-      aria-label={`Open ${displayName}`}
-      className="th-onb-card th-mdev-card th-device-card"
-      data-state={freshness}
-    >
+    <div className="th-onb-card th-mdev-card th-device-card" data-state={freshness}>
       <div className="flex items-start gap-3">
-        <span className="th-mdev-status" aria-label={freshness} title={freshness}>
+        <span className="th-mdev-status" role="img" aria-label={freshness} title={freshness}>
           <StatusDot state={freshness} size={9} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span
-              className="min-w-0 truncate text-[15px] font-semibold leading-5"
+            {/* The whole card opens the device: this button's hit area is stretched
+                over the card (th-stretched-button), while Favorite and Connect sit
+                above it. A card that was itself a button could not contain them. */}
+            <button
+              type="button"
+              onClick={onSelect}
+              className="th-stretched-button min-w-0 truncate text-left text-[15px] font-semibold leading-5"
               style={{ color: "var(--th-text-primary)" }}
               title={displayName}
             >
               {displayName}
-            </span>
+            </button>
             {hostnameSubtitle && (
               <span
                 className="min-w-0 flex-1 truncate font-mono text-[11px]"
@@ -196,7 +195,7 @@ export function DeviceMobileCard({
             {device.domain && <span style={{ color: "var(--th-text-faint)" }}> · {device.domain}</span>}
           </p>
         </div>
-        <div className="-mr-1 -mt-1 flex flex-none items-center gap-0.5" {...stopRowClick}>
+        <div className="relative z-[1] -mr-1 -mt-1 flex flex-none items-center gap-0.5">
           {onToggleFavorite && (
             <button
               type="button"
