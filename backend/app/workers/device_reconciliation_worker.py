@@ -5,6 +5,7 @@ from contextlib import suppress
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.device_status_service import DeviceStatusService
+from app.services.offline_alerts import OfflineAlertSweep
 from app.core import worker_health
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,13 @@ class DeviceReconciliationWorker:
         db = SessionLocal()
         try:
             service = DeviceStatusService(db)
-            return service.reconcile_stale_devices()
+            transitioned = service.reconcile_stale_devices()
+            try:
+                OfflineAlertSweep(db).run()
+            except Exception:
+                db.rollback()
+                logger.exception("Offline alert sweep failed")
+            return transitioned
         finally:
             db.close()
 

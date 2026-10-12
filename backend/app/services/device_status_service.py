@@ -79,8 +79,8 @@ class DeviceStatusService:
             if computed_status != DeviceStatus.OFFLINE or device.status == DeviceStatus.OFFLINE:
                 continue
 
+            # No alert here: OfflineAlertSweep decides when one is due.
             self._transition_offline(device, "heartbeat_timeout_exceeded")
-            _get_alert_engine(self.db).evaluate_device_offline(device)
             transitioned += 1
 
         return transitioned
@@ -93,7 +93,6 @@ class DeviceStatusService:
         if state == "shutdown":
             device.last_shutdown_time = utcnow()
         self._transition_offline(device, f"agent_{state}")
-        _get_alert_engine(self.db).evaluate_device_power_off(device, state)
         return device
 
     def _transition_offline(self, device: Device, reason: str) -> None:

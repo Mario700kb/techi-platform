@@ -4,9 +4,10 @@ Staff switching their PCs off at the end of the day used to surface as a
 CRITICAL "went offline" alert per workstation, because the only offline path
 was the stale-heartbeat reconciliation, which cannot tell a switched-off PC
 from a dead server. The power event moves the device offline at once with the
-reason recorded, so reconciliation never selects it. A Client PC raises
-nothing; anything else (servers above all) still raises a WARNING, because a
-server being switched off is worth knowing even when it was done cleanly.
+reason recorded, so reconciliation never selects it. Whether an alert follows
+is OfflineAlertSweep's call (tests/test_offline_alerts.py): a Client PC raises
+nothing; a server that stays down past the grace period raises a WARNING, not
+a CRITICAL, because it was switched off cleanly.
 
 The endpoint must stay closed to callers that cannot prove the device's
 agent_id: the heartbeat endpoint is public, and an open power event would let
@@ -32,6 +33,7 @@ from app.models.device_status_history import DeviceStatusHistory
 from app.services.device_activity_service import DeviceActivityService
 from app.services.device_status_service import DeviceStatusService
 from app.services.notification_service import NotificationService
+from app.services.offline_alerts import OfflineAlertSweep
 
 AGENT_ID = "agent_HnW3xK9pQ2rLmT7vZaB4cD6e"
 
@@ -130,10 +132,16 @@ def test_client_pc_sleep_is_recorded_as_sleep(client, db, notifications):
     assert _alerts(db, device.id) == []
 
 
+def _sweep(db, minutes_later):
+    OfflineAlertSweep(db).run(now=utcnow() + timedelta(minutes=minutes_later))
+
+
 def test_server_shutdown_raises_a_warning_not_a_critical(client, db, notifications):
     device = _server(db)
 
     assert _post(client, device.id).status_code == 204
+    assert _alerts(db, device.id) == []  # a reboot comes back within the grace period
+    _sweep(db, 11)
 
     alerts = _alerts(db, device.id)
     assert len(alerts) == 1
@@ -148,6 +156,7 @@ def test_server_shutdown_raises_a_warning_not_a_critical(client, db, notificatio
 def test_server_warning_resolves_when_it_comes_back(client, db, notifications):
     device = _server(db)
     _post(client, device.id)
+    _sweep(db, 11)
 
     DeviceStatusService(db).mark_online_from_heartbeat(device)
 
@@ -166,9 +175,10 @@ def test_reconciliation_skips_a_device_that_reported_shutdown(client, db, notifi
     assert _history_reasons(db, device.id) == ["agent_shutdown"]
 
 
-def test_silent_disappearance_still_raises_the_critical_alert(db, notifications):
-    """Unchanged behaviour: a PC that vanishes without a power event (power cut,
-    network loss, crash) still goes through reconciliation as before."""
+def test_silent_disappearance_goes_offline_through_reconciliation(db, notifications):
+    """A PC that vanishes without a power event (power cut, network loss,
+    crash) still goes offline through reconciliation; the alert, if any, is
+    the sweep's decision."""
     device = _device(db, last_seen=utcnow() - timedelta(hours=2))
 
     assert DeviceStatusService(db).reconcile_stale_devices() == 1
@@ -177,8 +187,21 @@ def test_silent_disappearance_still_raises_the_critical_alert(db, notifications)
     assert device.status == DeviceStatus.OFFLINE
     assert device.offline_reason is None
     assert _history_reasons(db, device.id) == ["heartbeat_timeout_exceeded"]
-    alerts = _alerts(db, device.id)
-    assert [a.severity for a in alerts] == [AlertSeverity.CRITICAL]
+    assert _alerts(db, device.id) == []
+
+
+def test_silent_server_disappearance_raises_the_critical_alert(db, notifications):
+    device = _device(
+        db,
+        hostname="srv-02",
+        device_type=DeviceType.SERVER,
+        os_name="Windows Server 2022 Standard",
+        last_seen=utcnow() - timedelta(hours=2),
+    )
+    DeviceStatusService(db).reconcile_stale_devices()
+    _sweep(db, 0)
+
+    assert [a.severity for a in _alerts(db, device.id)] == [AlertSeverity.CRITICAL]
 
 
 def test_already_offline_device_is_left_alone(client, db, notifications):

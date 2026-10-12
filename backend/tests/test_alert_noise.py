@@ -118,7 +118,7 @@ def test_reconnect_alert_closes_once_reconnects_settle(db, device):
     assert _open(db, device, AlertKind.REPEATED_RECONNECTS) is None
 
 
-def test_going_offline_closes_readings_alerts_but_raises_the_offline_one(db, device):
+def test_going_offline_closes_readings_alerts(db, device):
     _samples(db, device, ram=[96.0, 97.0, 98.0])
     _evaluate(db, device, ram=98.0)
     assert _open(db, device, AlertKind.HIGH_RAM) is not None
@@ -128,11 +128,12 @@ def test_going_offline_closes_readings_alerts_but_raises_the_offline_one(db, dev
     DeviceStatusService(db).reconcile_stale_devices()
 
     assert _open(db, device, AlertKind.HIGH_RAM) is None
-    assert _open(db, device, AlertKind.DEVICE_OFFLINE) is not None
+    # The offline alert, if one is due, comes from OfflineAlertSweep.
+    assert _open(db, device, AlertKind.DEVICE_OFFLINE) is None
 
 
 def test_archiving_a_device_closes_its_alerts(db, device):
-    AlertEngine(db).evaluate_device_offline(device)
+    AlertEngine(db).open_offline_alert(device, severity=AlertSeverity.CRITICAL, message="ws-01 went offline")
     assert _open(db, device, AlertKind.DEVICE_OFFLINE) is not None
 
     DeviceService(db).archive_device(device.id, archived_by="op")

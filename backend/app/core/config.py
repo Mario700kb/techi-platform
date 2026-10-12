@@ -71,6 +71,20 @@ class Settings(BaseSettings):
     RECONCILIATION_INTERVAL_SECONDS: int = 30
     RECONCILIATION_BATCH_SIZE: int = 500
     STALE_DEVICE_CLEANUP_DAYS: int = 0
+    # Offline alerts (app/services/offline_alerts.py). Always-on devices
+    # (servers, network, storage, hypervisors) alert around the clock once out
+    # of contact this long; workstations only when contact is lost inside
+    # working hours and stays lost this long; any device unseen for
+    # OFFLINE_ALERT_ABSENT_DAYS (0 = never) raises one warning.
+    OFFLINE_ALERT_ALWAYS_ON_MINUTES: int = 10
+    # 120 min: measured on production 6–9 Oct, 30 min would still raise ~185
+    # warnings a workday (lunch, leaving early, laptops); 120 min ~40.
+    OFFLINE_ALERT_WORKSTATION_MINUTES: int = 120
+    OFFLINE_ALERT_ABSENT_DAYS: int = 7
+    # Working hours in DISPLAY_TIMEZONE: ISO weekdays (1 = Monday) and HH:MM.
+    WORK_DAYS: Annotated[List[int], NoDecode] = [1, 2, 3, 4, 5]
+    WORK_START: str = "08:00"
+    WORK_END: str = "17:00"
     AGENT_PACKAGE_STORAGE_DIR: str = "agent_packages"
     RUSTDESK_SERVER_HOST: str = "139.162.158.208"
     RUSTDESK_RELAY_HOST: str = "139.162.158.208"
@@ -168,6 +182,20 @@ class Settings(BaseSettings):
     def assemble_mfa_roles(cls, value):
         roles = _string_list(value)
         return [str(role).strip().lower() for role in roles] if isinstance(roles, list) else roles
+
+    @field_validator("WORK_DAYS", mode="before")
+    @classmethod
+    def assemble_work_days(cls, value):
+        days = _string_list(value)
+        return [int(day) for day in days] if isinstance(days, list) else days
+
+    @field_validator("WORK_START", "WORK_END")
+    @classmethod
+    def check_clock_time(cls, value: str) -> str:
+        hours, _, minutes = value.partition(":")
+        if not (hours.isdigit() and minutes.isdigit() and 0 <= int(hours) <= 23 and 0 <= int(minutes) <= 59):
+            raise ValueError("expected HH:MM, e.g. 08:00")
+        return f"{int(hours):02d}:{int(minutes):02d}"
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

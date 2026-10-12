@@ -4,7 +4,6 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.alert import AlertKind, AlertSeverity, DeviceAlert
-from app.platform_core.classification import CATEGORY_CLIENTPC, classify_category
 from app.repositories.alert_repository import AlertRepository
 from app.services.device_maintenance_service import is_maintenance_active
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
@@ -131,27 +130,17 @@ class AlertEngine:
             )
         return resolved
 
-    def evaluate_device_offline(self, device) -> None:
-        hostname = device.hostname or device.rustdesk_id or f"device-{device.id}"
-        self._open_alert(
+    def open_offline_alert(
+        self, device, *, severity: AlertSeverity, message: str, detail: Optional[str] = None
+    ) -> Optional[DeviceAlert]:
+        """Opens a device-offline alert. When one is due is decided by
+        app/services/offline_alerts.py, not by the offline transition."""
+        return self._open_alert(
             device_id=device.id,
             kind=AlertKind.DEVICE_OFFLINE,
-            severity=AlertSeverity.CRITICAL,
-            message=f"{hostname} went offline",
-            device=device,
-        )
-
-    def evaluate_device_power_off(self, device, state: str) -> None:
-        if classify_category(device) == CATEGORY_CLIENTPC:
-            return
-        hostname = device.hostname or device.rustdesk_id or f"device-{device.id}"
-        verb = "was shut down" if state == "shutdown" else "went to sleep"
-        self._open_alert(
-            device_id=device.id,
-            kind=AlertKind.DEVICE_OFFLINE,
-            severity=AlertSeverity.WARNING,
-            message=f"{hostname} {verb}",
-            detail=f"The agent reported a graceful {state} before going offline.",
+            severity=severity,
+            message=message,
+            detail=detail,
             device=device,
         )
 

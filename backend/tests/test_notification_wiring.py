@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
 from app.db.base import Base
+from app.models.alert import AlertSeverity
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.schemas.agent import AgentEnrollmentRequest
 from app.schemas.remote_action import ActionType, RemoteActionCreate
@@ -62,7 +63,7 @@ def _device(db, **overrides):
 def test_alert_engine_device_offline_fires_both_events(spy):
     db = _db()
     device = _device(db)
-    AlertEngine(db).evaluate_device_offline(device)
+    AlertEngine(db).open_offline_alert(device, severity=AlertSeverity.CRITICAL, message="host-1 went offline")
     event_types = {c["event_type"] for c in spy}
     assert "device_offline" in event_types
     assert "critical_alert" in event_types
@@ -71,7 +72,7 @@ def test_alert_engine_device_offline_fires_both_events(spy):
 def test_alert_engine_resolve_device_offline_fires_device_online(spy):
     db = _db()
     device = _device(db)
-    AlertEngine(db).evaluate_device_offline(device)
+    AlertEngine(db).open_offline_alert(device, severity=AlertSeverity.CRITICAL, message="host-1 went offline")
     spy.clear()
     AlertEngine(db).resolve_device_offline(device)
     assert any(c["event_type"] == "device_online" for c in spy)
