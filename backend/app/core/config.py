@@ -32,6 +32,19 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    # Browser sessions (HttpOnly cookies). The access token is short and is
+    # renewed by a rotating refresh token; the session itself ends after
+    # SESSION_MAX_HOURS no matter what, and after SESSION_IDLE_MINUTES with
+    # no refresh (a closed laptop, an abandoned tab).
+    SESSION_ACCESS_MINUTES: int = 15
+    SESSION_IDLE_MINUTES: int = 120
+    SESSION_MAX_HOURS: int = 12
+    # False only for a plain-http dev setup that is not localhost.
+    SESSION_COOKIE_SECURE: bool = True
+    # Comma-separated roles that must use two-factor authentication, e.g.
+    # "owner,admin". Empty = MFA is optional for everyone.
+    MFA_REQUIRED_ROLES: List[str] = []
+    MFA_ISSUER: str = "TECHI Connect"
     BOOTSTRAP_OWNER_USERNAME: str = "owner"
     BOOTSTRAP_OWNER_EMAIL: str = "owner@localhost"
     BOOTSTRAP_OWNER_PASSWORD: str = ""
@@ -130,6 +143,13 @@ class Settings(BaseSettings):
             "JWT_SECRET must be explicitly set in production. "
             "Set the JWT_SECRET environment variable, or set DEV_ALLOW_RANDOM_SECRET=true for development."
         )
+
+    @field_validator("MFA_REQUIRED_ROLES", mode="before")
+    @classmethod
+    def assemble_mfa_roles(cls, value):
+        if isinstance(value, str):
+            return [role.strip().lower() for role in value.split(",") if role.strip()]
+        return value
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

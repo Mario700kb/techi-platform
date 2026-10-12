@@ -12,6 +12,7 @@ from app.schemas.operator import Operator, OperatorCreate, OperatorPasswordReset
 from app.services.audit_service import AuditAction, audit_log
 from app.services.operator_service import OperatorService
 from app.services.permission_service import MANAGE_OPERATORS
+from app.services.session_service import SessionService
 
 router = APIRouter()
 
@@ -130,5 +131,25 @@ def reset_operator_password(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if operator_id != current.id:
+        # Whoever knew the old password must not stay signed in.
+        SessionService(db).revoke_all(operator_id)
     audit_log(db, operator=current, action=AuditAction.OPERATOR_PASSWORD_RESET, entity_type="operator", entity_id=operator_id)
     return result
+
+
+@router.post("/{operator_id}/mfa/reset", response_model=Operator)
+def reset_operator_mfa(
+    operator_id: int,
+    db: Session = Depends(get_db),
+    current: OperatorModel = Depends(get_current_operator),
+):
+    try:
+        target = OperatorService(db).reset_mfa(operator_id, current)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    SessionService(db).revoke_all(operator_id)
+    audit_log(db, operator=current, action=AuditAction.MFA_RESET, entity_type="operator", entity_id=operator_id, details={"target_username": target.username})
+    return target

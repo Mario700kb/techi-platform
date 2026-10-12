@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 
 class AuditAction:
     LOGIN = "login"
+    LOGOUT = "logout"
+    SESSION_REVOKED = "session_revoked"
+    MFA_ENABLED = "mfa_enabled"
+    MFA_DISABLED = "mfa_disabled"
+    MFA_RESET = "mfa_reset"
+    MFA_RECOVERY_CODES_REGENERATED = "mfa_recovery_codes_regenerated"
     OPERATOR_CREATED = "operator_created"
     OPERATOR_UPDATED = "operator_updated"
     OPERATOR_DELETED = "operator_deleted"

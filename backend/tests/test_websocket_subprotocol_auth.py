@@ -61,3 +61,62 @@ def test_an_invalid_token_is_rejected(client):
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.code == 4001
+
+
+# -- cookie sessions -------------------------------------------------------------
+
+
+def _session_cookie(client) -> str:
+    """A live session for operator 1, as the browser would hold it."""
+    from app.services.session_service import SessionService, access_token_for
+
+    db = ws_routes.SessionLocal()
+    try:
+        operator = db.get(Operator, 1)
+        session, _refresh = SessionService(db).create(operator, mfa_verified=False)
+        return access_token_for(operator, session), session.id
+    finally:
+        db.close()
+
+
+def test_session_cookie_from_an_allowed_origin_opens_the_socket(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "BACKEND_CORS_ALLOW_ALL", False)
+    monkeypatch.setattr(settings, "BACKEND_CORS_ORIGINS", ["https://rdp.techi.com.al"])
+    token, _sid = _session_cookie(client)
+    client.cookies.set("techi_access", token)
+    with client.websocket_connect("/ws/devices", subprotocols=["techi.v1"], headers={"origin": "https://rdp.techi.com.al"}) as ws:
+        assert ws.receive_json()["type"] == "connection_ready"
+
+
+def test_session_cookie_from_another_site_is_ignored(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "BACKEND_CORS_ALLOW_ALL", False)
+    monkeypatch.setattr(settings, "BACKEND_CORS_ORIGINS", ["https://rdp.techi.com.al"])
+    token, _sid = _session_cookie(client)
+    client.cookies.set("techi_access", token)
+    with client.websocket_connect("/ws/devices", subprotocols=["techi.v1"], headers={"origin": "https://evil.example"}) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert closed.value.code == 4001
+
+
+def test_revoked_session_cannot_open_the_socket(client, monkeypatch):
+    from app.core.config import settings
+    from app.services.session_service import SessionService
+
+    monkeypatch.setattr(settings, "BACKEND_CORS_ALLOW_ALL", True)
+    token, sid = _session_cookie(client)
+    db = ws_routes.SessionLocal()
+    try:
+        service = SessionService(db)
+        service.revoke(service.get_live(sid))
+    finally:
+        db.close()
+    client.cookies.set("techi_access", token)
+    with client.websocket_connect("/ws/devices", subprotocols=["techi.v1"], headers={"origin": "https://rdp.techi.com.al"}) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert closed.value.code == 4001

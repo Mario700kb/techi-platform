@@ -105,6 +105,20 @@ class OperatorService:
         target.hashed_password = hash_password(payload.new_password)
         return self.repo.save(target)
 
+    def reset_mfa(self, operator_id: int, caller: Operator) -> Operator:
+        """Turns off someone else's two-factor authentication (a lost phone).
+        Their own disable flow needs a code; this one needs owner/admin."""
+        target = self.repo.get(operator_id)
+        if not target:
+            raise ValueError("Operator not found")
+        if target.id == caller.id:
+            raise ValueError("Turn off your own two-factor authentication from Settings")
+        self._assert_can_manage_role(caller, target.role, "reset two-factor authentication for")
+        from app.services.mfa_service import MfaService
+
+        MfaService(self.repo.db).disable(target)
+        return target
+
     def _assert_not_last_active_admin_capable(self, target: Operator, action: str) -> None:
         if target.role in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value) and target.is_active:
             if self.repo.count_active_admins() <= 1:

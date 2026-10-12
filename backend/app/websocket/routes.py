@@ -13,11 +13,11 @@ router = APIRouter()
 # Sentinel returned when WebSocket authentication fails.
 _AUTH_FAILED = object()
 
-# The dashboard sends its session token as a WebSocket subprotocol
-# ("techi.auth.<jwt>") next to "techi.v1", never in the URL: a URL lands in
-# every proxy and server access log, a subprotocol header does not. The
-# server answers with "techi.v1", which browsers require when protocols
-# were offered.
+# The dashboard authenticates with its HttpOnly session cookie, which the
+# browser sends on the handshake. Older clients may instead offer the token
+# as a subprotocol ("techi.auth.<jwt>") next to "techi.v1" — never in the
+# URL, which lands in every proxy and server access log. The server answers
+# with "techi.v1", which browsers require when protocols were offered.
 WS_SUBPROTOCOL = "techi.v1"
 _AUTH_PREFIX = "techi.auth."
 
@@ -31,6 +31,32 @@ def _token_from_subprotocols(websocket: WebSocket) -> Optional[str]:
     for item in _offered_subprotocols(websocket):
         if item.startswith(_AUTH_PREFIX):
             return item[len(_AUTH_PREFIX):] or None
+    return None
+
+
+def _origin_allowed(websocket: WebSocket) -> bool:
+    """WebSockets have no CORS: without this a page on any site could open a
+    socket that the browser authenticates with the operator's cookie."""
+    from app.core.config import settings
+
+    if settings.BACKEND_CORS_ALLOW_ALL:
+        return True
+    origin = websocket.headers.get("origin", "") if hasattr(websocket, "headers") else ""
+    return origin.rstrip("/") in {allowed.rstrip("/") for allowed in settings.BACKEND_CORS_ORIGINS}
+
+
+def _ws_token(websocket: WebSocket) -> Optional[str]:
+    """The browser's session cookie, or — for older clients — a token offered
+    as a subprotocol. A cookie only counts from an allowed Origin."""
+    from app.services.session_service import ACCESS_COOKIE
+
+    token = _token_from_subprotocols(websocket)
+    if token:
+        return token
+    cookies = getattr(websocket, "cookies", None) or {}
+    cookie_token = cookies.get(ACCESS_COOKIE)
+    if cookie_token and _origin_allowed(websocket):
+        return cookie_token
     return None
 
 
@@ -66,10 +92,21 @@ async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
     try:
         try:
             payload = decode_access_token(token)
+            if payload.get("purpose"):
+                raise JWTError("not an access token")
             operator_id = int(payload.get("sub"))
         except (JWTError, TypeError, ValueError):
             await _reject_ws(websocket)
             return _AUTH_FAILED
+
+        session_id = payload.get("sid")
+        if session_id:
+            from app.services.session_service import SessionService
+
+            session = SessionService(db).get_live(session_id)
+            if session is None or session.operator_id != operator_id:
+                await _reject_ws(websocket)
+                return _AUTH_FAILED
 
         operator = OperatorRepository(db).get(operator_id)
         if operator is None or not operator.is_active:
@@ -89,7 +126,7 @@ async def _authenticate_ws(websocket: WebSocket, token: Optional[str]) -> Any:
 
 @router.websocket("/ws/devices")
 async def devices_websocket(websocket: WebSocket, tenant_id: str = "default"):
-    scope = await _authenticate_ws(websocket, _token_from_subprotocols(websocket))
+    scope = await _authenticate_ws(websocket, _ws_token(websocket))
     if scope is _AUTH_FAILED:
         return
     connection_id = await realtime_manager.connect(
@@ -108,7 +145,7 @@ async def devices_websocket(websocket: WebSocket, tenant_id: str = "default"):
 
 @router.websocket("/ws/deployments")
 async def deployments_websocket(websocket: WebSocket, tenant_id: str = "default"):
-    scope = await _authenticate_ws(websocket, _token_from_subprotocols(websocket))
+    scope = await _authenticate_ws(websocket, _ws_token(websocket))
     if scope is _AUTH_FAILED:
         return
     connection_id = await realtime_manager.connect(

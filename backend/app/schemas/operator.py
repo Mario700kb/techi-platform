@@ -65,3 +65,4 @@ class Operator(OperatorBase):
     created_at: datetime
     last_login_at: Optional[datetime] = None
     last_active_at: Optional[datetime] = None
+    mfa_enabled: bool = False

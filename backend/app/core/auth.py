@@ -3,9 +3,9 @@ import hmac
 import hashlib
 import secrets
 from datetime import timedelta
-from typing import FrozenSet, Iterable
+from typing import FrozenSet, Iterable, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -16,7 +16,8 @@ from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
 from app.repositories.operator_repository import OperatorRepository
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/login")
+# auto_error=False: a browser authenticates with the session cookie instead.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/login", auto_error=False)
 
 ROLE_ORDER = {
     OperatorRole.READONLY.value: 0,
@@ -56,25 +57,83 @@ def create_operator_token(operator: Operator) -> str:
     )
 
 
-def get_current_operator(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Operator:
-    credentials_error = HTTPException(
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _credentials_error() -> HTTPException:
+    return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _mfa_exempt_path(path: str) -> bool:
+    """What an operator who still has to enrol in MFA may reach: the auth
+    endpoints (session, MFA setup, sign-out) and error reporting."""
+    prefix = settings.API_PREFIX
+    return path.startswith(f"{prefix}/auth/") or path == f"{prefix}/system/client-errors"
+
+
+def get_current_operator(
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> Operator:
+    """The signed-in operator, from the session cookie or a Bearer header.
+
+    Browsers authenticate with the HttpOnly session cookie; scripts and the
+    smoke test may still send `Authorization: Bearer`. A cookie-authenticated
+    write must carry the CSRF header. A token tied to a session (`sid`) is
+    only valid while that session row is live.
+    """
+    from app.services.session_service import ACCESS_COOKIE, CSRF_HEADER, SessionService
+
+    token = bearer_token
+    via_cookie = False
+    if not token:
+        token = request.cookies.get(ACCESS_COOKIE)
+        via_cookie = bool(token)
+    if not token:
+        raise _credentials_error()
+    if via_cookie and request.method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing CSRF header")
+
     try:
         payload = decode_access_token(token)
-        subject = payload.get("sub")
-        operator_id = int(subject)
+        # An MFA challenge token proves a password, not a sign-in.
+        if payload.get("purpose"):
+            raise JWTError("not an access token")
+        operator_id = int(payload.get("sub"))
     except (JWTError, TypeError, ValueError):
-        raise credentials_error
+        raise _credentials_error()
+
+    session_id = payload.get("sid")
+    if via_cookie and not session_id:
+        raise _credentials_error()
+    if session_id:
+        session = SessionService(db).get_live(session_id)
+        if session is None or session.operator_id != operator_id:
+            raise _credentials_error()
+        request.state.session_id = session_id
 
     operator = OperatorRepository(db).get(operator_id)
     if operator is None or not operator.is_active:
-        raise credentials_error
+        raise _credentials_error()
+
+    if mfa_enrollment_required(operator) and not _mfa_exempt_path(request.url.path):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "mfa_enrollment_required", "detail": "Set up two-factor authentication to continue."},
+        )
+
     from app.core import presence
     presence.touch(operator.id)
     return operator
+
+
+def mfa_enrollment_required(operator: Operator) -> bool:
+    return operator.role in settings.MFA_REQUIRED_ROLES and not operator.mfa_enabled
 
 
 def require_roles(*roles: str):
