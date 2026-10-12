@@ -13,7 +13,15 @@ describe("ActivityTimeline", () => {
     render(
       <ActivityTimeline
         loading={false}
-        events={[{ id: "1", type: "maintenance_entered", occurred_at: "2026-10-05T14:00:00", summary: "Maintenance started", device_id: 7 }]}
+        events={[
+          {
+            id: "1",
+            type: "maintenance_entered",
+            occurred_at: "2026-10-05T14:00:00",
+            summary: "Maintenance started",
+            device_id: 7,
+          },
+        ]}
       />,
     );
     const time = screen.getByText("1h ago");

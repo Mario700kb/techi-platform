@@ -22,24 +22,14 @@ import {
   RotateCcw,
   Wrench,
 } from "lucide-react";
-import {
-  clearDeviceMaintenance,
-  Device,
-  enterDeviceMaintenance,
-  getDevice,
-  updateDevice,
-} from "../api/devices";
+import { clearDeviceMaintenance, Device, enterDeviceMaintenance, getDevice, updateDevice } from "../api/devices";
 import { getDeviceInventory, DeviceInventory } from "../api/inventory";
 import { getDeviceTelemetryHistory } from "../api/telemetry";
 import { TelemetrySnapshot } from "../types/telemetry";
 import { createDeviceNote, getDeviceNotes, DeviceNote } from "../api/notes";
 import { queueDeviceAction } from "../api/actions";
 import { getConnectUrl } from "../api/remoteSupport";
-import {
-  isValidRustDeskId,
-  buildRustDeskFallbackUrlFromTechiUrl,
-  launchConnect,
-} from "../services/rustdeskLaunch";
+import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import { useFavorites } from "../hooks/useFavorites";
@@ -55,7 +45,12 @@ import { TERMS, TONE } from "../utils/deviceStatus";
 import { VitalsStrip } from "../components/mobile/VitalsStrip";
 import { AccordionSection } from "../components/mobile/AccordionSection";
 import { Sparkline } from "../components/mobile/Sparkline";
-import { StickyActionBar, ActionBarPrimary, ActionBarSecondary, ActionBarMore } from "../components/mobile/StickyActionBar";
+import {
+  StickyActionBar,
+  ActionBarPrimary,
+  ActionBarSecondary,
+  ActionBarMore,
+} from "../components/mobile/StickyActionBar";
 import { MobileSheet } from "../components/mobile/MobileSheet";
 import { Snackbar } from "../components/mobile/Snackbar";
 
@@ -77,7 +72,11 @@ function freshnessOf(device: Device): FreshnessState {
   return "offline";
 }
 
-const FRESHNESS_TONE: Record<FreshnessState, string> = { online: TONE.online, stale: TONE.stale, offline: TONE.offline };
+const FRESHNESS_TONE: Record<FreshnessState, string> = {
+  online: TONE.online,
+  stale: TONE.stale,
+  offline: TONE.offline,
+};
 const HEALTH_TONE = { online: TONE.online, warning: TONE.warning, critical: TONE.critical } as const;
 
 const MORE_ACTIONS = [
@@ -153,10 +152,14 @@ export default function DeviceDetailsMobile() {
   useEffect(() => {
     if (!Number.isFinite(deviceId)) return;
     let cancelled = false;
-    void getDeviceTelemetryHistory(deviceId, 20).then((rows) => {
-      if (!cancelled) setTelemetryHistory(rows);
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
+    void getDeviceTelemetryHistory(deviceId, 20)
+      .then((rows) => {
+        if (!cancelled) setTelemetryHistory(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [deviceId]);
 
   const loadDevice = async () => {
@@ -266,8 +269,14 @@ export default function DeviceDetailsMobile() {
     return (
       <div className="th-onb flex flex-col gap-3 pb-24" aria-busy="true">
         <div className="th-onb-card h-[116px] animate-pulse" />
-        <div className="grid grid-cols-3 gap-2">{[0, 1, 2].map((i) => <div key={i} className="th-onb-card h-[78px] animate-pulse" />)}</div>
-        {[0, 1, 2, 3].map((i) => <div key={i} className="th-onb-card h-14 animate-pulse" style={{ opacity: 1 - i * 0.15 }} />)}
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="th-onb-card h-[78px] animate-pulse" />
+          ))}
+        </div>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="th-onb-card h-14 animate-pulse" style={{ opacity: 1 - i * 0.15 }} />
+        ))}
       </div>
     );
   }
@@ -275,11 +284,26 @@ export default function DeviceDetailsMobile() {
   if (error || !device) {
     return (
       <div className="th-onb flex flex-col gap-3">
-        <button type="button" onClick={() => navigate("/devices")} aria-label="Back to Devices" className="th-mtop-back !ml-0">
+        <button
+          type="button"
+          onClick={() => navigate("/devices")}
+          aria-label="Back to Devices"
+          className="th-mtop-back !ml-0"
+        >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <div className="th-onb-card">
-          <EmptyState className="py-10" icon={<AlertTriangle className="h-5 w-5" />} title="Unable to load device" description={error ?? undefined} action={<Button size="sm" variant="secondary" onClick={() => void loadDevice()}>Try again</Button>} />
+          <EmptyState
+            className="py-10"
+            icon={<AlertTriangle className="h-5 w-5" />}
+            title="Unable to load device"
+            description={error ?? undefined}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => void loadDevice()}>
+                Try again
+              </Button>
+            }
+          />
         </div>
       </div>
     );
@@ -301,7 +325,12 @@ export default function DeviceDetailsMobile() {
     <div className="th-onb flex flex-col gap-3 pb-24">
       <div className="th-onb-card th-mdetail-hero th-onb-enter">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => navigate("/devices")} aria-label="Back to Devices" className="th-mtop-back">
+          <button
+            type="button"
+            onClick={() => navigate("/devices")}
+            aria-label="Back to Devices"
+            className="th-mtop-back"
+          >
             <ChevronLeft className="h-5 w-5" />
           </button>
           {nameEditing ? (
@@ -320,18 +349,43 @@ export default function DeviceDetailsMobile() {
                 className="th-input h-9 min-w-0 flex-1 rounded-lg border px-3 text-[16px] font-semibold outline-none"
                 style={{ borderColor: "var(--th-accent-border)" }}
               />
-              <button type="button" onClick={() => void saveDisplayName()} disabled={nameSaving} aria-label="Save name" className="th-onb-action !h-9 !w-9" style={{ color: TONE.online }}>
+              <button
+                type="button"
+                onClick={() => void saveDisplayName()}
+                disabled={nameSaving}
+                aria-label="Save name"
+                className="th-onb-action !h-9 !w-9"
+                style={{ color: TONE.online }}
+              >
                 {nameSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               </button>
-              <button type="button" onClick={() => setNameEditing(false)} aria-label="Cancel rename" className="th-onb-action !h-9 !w-9">
+              <button
+                type="button"
+                onClick={() => setNameEditing(false)}
+                aria-label="Cancel rename"
+                className="th-onb-action !h-9 !w-9"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
           ) : (
             <div className="flex min-w-0 flex-1 items-center gap-1">
-              <h1 className="min-w-0 truncate text-[18px] font-semibold tracking-[-0.01em]" style={{ color: "var(--th-text-primary)" }}>{displayName}</h1>
+              <h1
+                className="min-w-0 truncate text-[18px] font-semibold tracking-[-0.01em]"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                {displayName}
+              </h1>
               {canOperate && (
-                <button type="button" onClick={() => { setNameDraft(device.display_name ?? ""); setNameEditing(true); }} aria-label="Rename device" className="th-onb-action !h-8 !w-8 flex-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameDraft(device.display_name ?? "");
+                    setNameEditing(true);
+                  }}
+                  aria-label="Rename device"
+                  className="th-onb-action !h-8 !w-8 flex-none"
+                >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -352,44 +406,98 @@ export default function DeviceDetailsMobile() {
         <p className="mt-1 truncate pl-1 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
           {device.client_name ?? "No client"}
           {device.group_name && <span style={{ color: "var(--th-text-muted)" }}> · {device.group_name}</span>}
-          {hostnameSubtitle && <span className="font-mono text-[12px]" style={{ color: "var(--th-text-muted)" }}> · {hostnameSubtitle}</span>}
+          {hostnameSubtitle && (
+            <span className="font-mono text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              {" "}
+              · {hostnameSubtitle}
+            </span>
+          )}
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-1">
-          <span className="th-status-chip !h-6 capitalize" style={{ "--chip-tone": freshnessTone, color: freshnessTone } as CSSProperties}>
+          <span
+            className="th-status-chip !h-6 capitalize"
+            style={{ "--chip-tone": freshnessTone, color: freshnessTone } as CSSProperties}
+          >
             <i />
             {freshness}
           </span>
-          {typeLabel && <span className="th-mdev-badge !h-6" style={{ "--chip-tone": typeLabel.tone } as CSSProperties}>{typeLabel.label}</span>}
-          {healthScore != null && <span className="th-mdev-badge !h-6" style={{ "--chip-tone": healthTone } as CSSProperties}>Health {healthScore}</span>}
-          {device.is_in_maintenance && <span className="th-mdev-badge !h-6" style={{ "--chip-tone": TONE.maintenance } as CSSProperties}>Maintenance</span>}
-          <span className="ml-auto text-[12px] tabular-nums" style={{ color: freshness === "online" ? TONE.online : "var(--th-text-muted)" }}>
+          {typeLabel && (
+            <span className="th-mdev-badge !h-6" style={{ "--chip-tone": typeLabel.tone } as CSSProperties}>
+              {typeLabel.label}
+            </span>
+          )}
+          {healthScore != null && (
+            <span className="th-mdev-badge !h-6" style={{ "--chip-tone": healthTone } as CSSProperties}>
+              Health {healthScore}
+            </span>
+          )}
+          {device.is_in_maintenance && (
+            <span className="th-mdev-badge !h-6" style={{ "--chip-tone": TONE.maintenance } as CSSProperties}>
+              Maintenance
+            </span>
+          )}
+          <span
+            className="ml-auto text-[12px] tabular-nums"
+            style={{ color: freshness === "online" ? TONE.online : "var(--th-text-muted)" }}
+          >
             {device.last_seen ? `Seen ${timeAgo(device.last_seen)}` : "Never seen"}
           </span>
         </div>
       </div>
 
-      <VitalsStrip cpu={telemetry.snapshot?.cpu_percent ?? null} ram={telemetry.snapshot?.ram_percent ?? null} disk={telemetry.snapshot?.disk_percent ?? null} />
+      <VitalsStrip
+        cpu={telemetry.snapshot?.cpu_percent ?? null}
+        ram={telemetry.snapshot?.ram_percent ?? null}
+        disk={telemetry.snapshot?.disk_percent ?? null}
+      />
 
       <AccordionSection
         icon={<AlertTriangle className="h-4 w-4" />}
         tone={criticalCount ? TONE.critical : warningCount ? TONE.warning : TONE.online}
         title="Alerts"
-        subtitle={deviceAlerts.loading ? "Loading…" : deviceAlerts.openAlerts.length === 0 ? "No active alerts" : [criticalCount && `${criticalCount} critical`, warningCount && `${warningCount} warning${warningCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
-        badge={deviceAlerts.openAlerts.length > 0 ? <CountBadge tone={criticalCount ? TONE.critical : TONE.warning}>{deviceAlerts.openAlerts.length}</CountBadge> : undefined}
+        subtitle={
+          deviceAlerts.loading
+            ? "Loading…"
+            : deviceAlerts.openAlerts.length === 0
+              ? "No active alerts"
+              : [
+                  criticalCount && `${criticalCount} critical`,
+                  warningCount && `${warningCount} warning${warningCount === 1 ? "" : "s"}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+        }
+        badge={
+          deviceAlerts.openAlerts.length > 0 ? (
+            <CountBadge tone={criticalCount ? TONE.critical : TONE.warning}>
+              {deviceAlerts.openAlerts.length}
+            </CountBadge>
+          ) : undefined
+        }
         defaultOpen={deviceAlerts.openAlerts.length > 0}
       >
         {deviceAlerts.loading ? (
           <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>
         ) : deviceAlerts.openAlerts.length === 0 ? (
-          <p className="flex items-center gap-2" style={{ color: TONE.online }}><CheckCircle2 className="h-4 w-4" />No active alerts</p>
+          <p className="flex items-center gap-2" style={{ color: TONE.online }}>
+            <CheckCircle2 className="h-4 w-4" />
+            No active alerts
+          </p>
         ) : (
           deviceAlerts.openAlerts.map((a) => (
             <div key={a.id} className="th-mitem">
-              <span className="mt-[5px] h-2 w-2 flex-none rounded-full" style={{ background: a.severity === "critical" ? TONE.critical : TONE.warning }} />
+              <span
+                className="mt-[5px] h-2 w-2 flex-none rounded-full"
+                style={{ background: a.severity === "critical" ? TONE.critical : TONE.warning }}
+              />
               <div className="min-w-0 flex-1">
-                <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>{a.message}</p>
-                <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>{timeAgo(a.created_at)}</p>
+                <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>
+                  {a.message}
+                </p>
+                <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  {timeAgo(a.created_at)}
+                </p>
               </div>
             </div>
           ))
@@ -400,7 +508,9 @@ export default function DeviceDetailsMobile() {
         icon={<TrendingUp className="h-4 w-4" />}
         tone={healthScore == null ? TONE.neutral : healthTone}
         title="Performance"
-        subtitle={telemetry.loading ? "Loading…" : healthScore == null ? "No health score yet" : `Health ${healthScore} of 100`}
+        subtitle={
+          telemetry.loading ? "Loading…" : healthScore == null ? "No health score yet" : `Health ${healthScore} of 100`
+        }
       >
         {telemetry.loading ? (
           <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>
@@ -418,20 +528,41 @@ export default function DeviceDetailsMobile() {
             )}
             {telemetryHistory.length >= 2 && (
               <div className="th-mitem flex-col !gap-2">
-                <Sparkline cpu={telemetryHistory.map((t) => t.cpu_percent ?? 0)} ram={telemetryHistory.map((t) => t.ram_percent ?? 0)} />
+                <Sparkline
+                  cpu={telemetryHistory.map((t) => t.cpu_percent ?? 0)}
+                  ram={telemetryHistory.map((t) => t.ram_percent ?? 0)}
+                />
                 <div className="flex w-full items-center gap-3 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-                  <span className="flex items-center gap-1"><span className="inline-block h-[2px] w-3 rounded-full" style={{ background: "var(--th-status-online)" }} />CPU</span>
-                  <span className="flex items-center gap-1"><span className="inline-block h-[2px] w-3 rounded-full" style={{ background: "var(--th-status-agent)", opacity: 0.5 }} />RAM</span>
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="inline-block h-[2px] w-3 rounded-full"
+                      style={{ background: "var(--th-status-online)" }}
+                    />
+                    CPU
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="inline-block h-[2px] w-3 rounded-full"
+                      style={{ background: "var(--th-status-agent)", opacity: 0.5 }}
+                    />
+                    RAM
+                  </span>
                   <span className="ml-auto">Last {telemetryHistory.length} heartbeats</span>
                 </div>
               </div>
             )}
             <dl className="th-mfacts">
-              <div><dt>Uptime</dt><dd className="tabular-nums">{formatUptime(telemetry.snapshot?.uptime_seconds ?? null)}</dd></div>
+              <div>
+                <dt>Uptime</dt>
+                <dd className="tabular-nums">{formatUptime(telemetry.snapshot?.uptime_seconds ?? null)}</dd>
+              </div>
               <div>
                 <dt>Latency</dt>
                 <dd className="tabular-nums">
-                  {telemetry.snapshot?.heartbeat_latency_ms !== null && telemetry.snapshot?.heartbeat_latency_ms !== undefined ? `${telemetry.snapshot.heartbeat_latency_ms} ms` : "—"}
+                  {telemetry.snapshot?.heartbeat_latency_ms !== null &&
+                  telemetry.snapshot?.heartbeat_latency_ms !== undefined
+                    ? `${telemetry.snapshot.heartbeat_latency_ms} ms`
+                    : "—"}
                 </dd>
               </div>
             </dl>
@@ -439,15 +570,41 @@ export default function DeviceDetailsMobile() {
         )}
       </AccordionSection>
 
-      <AccordionSection icon={<Cpu className="h-4 w-4" />} tone={TONE.info} title="System" subtitle={device.os_name ?? "Operating system unknown"}>
+      <AccordionSection
+        icon={<Cpu className="h-4 w-4" />}
+        tone={TONE.info}
+        title="System"
+        subtitle={device.os_name ?? "Operating system unknown"}
+      >
         <dl className="th-mfacts">
-          <div data-wide="true"><dt>Operating system</dt><dd>{device.os_name ?? "—"}</dd></div>
-          <div><dt>Domain</dt><dd>{device.domain ?? "—"}</dd></div>
-          <div><dt>Signed-in user</dt><dd>{device.current_user ?? "—"}</dd></div>
-          <div><dt>Public IP</dt><dd className="font-mono">{device.public_ip ?? "—"}</dd></div>
-          <div><dt>Local IP</dt><dd className="font-mono">{device.local_ip ?? "—"}</dd></div>
-          <div><dt>Agent</dt><dd className="font-mono">{device.agent_version ? `v${device.agent_version}` : "—"}</dd></div>
-          <div><dt>Hostname</dt><dd className="font-mono">{device.hostname ?? "—"}</dd></div>
+          <div data-wide="true">
+            <dt>Operating system</dt>
+            <dd>{device.os_name ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Domain</dt>
+            <dd>{device.domain ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Signed-in user</dt>
+            <dd>{device.current_user ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Public IP</dt>
+            <dd className="font-mono">{device.public_ip ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Local IP</dt>
+            <dd className="font-mono">{device.local_ip ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Agent</dt>
+            <dd className="font-mono">{device.agent_version ? `v${device.agent_version}` : "—"}</dd>
+          </div>
+          <div>
+            <dt>Hostname</dt>
+            <dd className="font-mono">{device.hostname ?? "—"}</dd>
+          </div>
         </dl>
       </AccordionSection>
 
@@ -455,12 +612,24 @@ export default function DeviceDetailsMobile() {
         icon={<Package className="h-4 w-4" />}
         tone={software?.pending_updates ? TONE.warning : TONE.maintenance}
         title="Software"
-        subtitle={!softwareRequested ? "Loads on request" : softwareLoading || !software ? "Loading…" : `${software.software.length} packages`}
-        badge={software?.pending_updates ? <CountBadge tone={TONE.warning}>{software.pending_updates} updates</CountBadge> : undefined}
+        subtitle={
+          !softwareRequested
+            ? "Loads on request"
+            : softwareLoading || !software
+              ? "Loading…"
+              : `${software.software.length} packages`
+        }
+        badge={
+          software?.pending_updates ? (
+            <CountBadge tone={TONE.warning}>{software.pending_updates} updates</CountBadge>
+          ) : undefined
+        }
       >
         {!softwareRequested ? (
           <>
-            <p style={{ color: "var(--th-text-muted)" }}>Not loaded automatically, to spare a large request. Patch and reboot status are already under Performance.</p>
+            <p style={{ color: "var(--th-text-muted)" }}>
+              Not loaded automatically, to spare a large request. Patch and reboot status are already under Performance.
+            </p>
             <Button variant="secondary" onClick={() => void loadSoftware()} className="min-h-[40px] w-full">
               <Package className="h-4 w-4" />
               Load software list
@@ -470,14 +639,34 @@ export default function DeviceDetailsMobile() {
           <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>
         ) : (
           <>
-            <p className="font-medium" style={{ color: software.patch_state === "up_to_date" ? TONE.online : software.patch_state === "reboot_required" || software.patch_state === "updates_available" ? TONE.warning : "var(--th-text-primary)" }}>
-              {software.patch_state === "up_to_date" ? "Up to date" : software.patch_state === "reboot_required" ? "Reboot required" : software.patch_state === "updates_available" ? `${software.pending_updates ?? 0} update(s) pending` : "Patch status unknown"}
+            <p
+              className="font-medium"
+              style={{
+                color:
+                  software.patch_state === "up_to_date"
+                    ? TONE.online
+                    : software.patch_state === "reboot_required" || software.patch_state === "updates_available"
+                      ? TONE.warning
+                      : "var(--th-text-primary)",
+              }}
+            >
+              {software.patch_state === "up_to_date"
+                ? "Up to date"
+                : software.patch_state === "reboot_required"
+                  ? "Reboot required"
+                  : software.patch_state === "updates_available"
+                    ? `${software.pending_updates ?? 0} update(s) pending`
+                    : "Patch status unknown"}
             </p>
             <ul className="th-batch-list !max-h-[240px]">
               {software.software.slice(0, 30).map((sw, i) => (
                 <li key={i}>
-                  <span className="min-w-0 flex-1 truncate" style={{ color: "var(--th-text-secondary)" }}>{sw.name}</span>
-                  <span className="flex-none font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>{sw.version ?? "—"}</span>
+                  <span className="min-w-0 flex-1 truncate" style={{ color: "var(--th-text-secondary)" }}>
+                    {sw.name}
+                  </span>
+                  <span className="flex-none font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+                    {sw.version ?? "—"}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -493,10 +682,24 @@ export default function DeviceDetailsMobile() {
         badge={rsRunning ? <CountBadge tone={TONE.online}>Running</CountBadge> : undefined}
       >
         <dl className="th-mfacts">
-          <div><dt>Status</dt><dd>{device.rustdesk_status ?? "—"}</dd></div>
-          <div><dt>Version</dt><dd className="font-mono">{device.rustdesk_version ?? "—"}</dd></div>
-          <div><dt>Sync</dt><dd style={{ color: device.rustdesk_sync_state === "synced" ? TONE.online : undefined }}>{device.rustdesk_sync_state ?? "—"}</dd></div>
-          <div><dt>ID</dt><dd className="font-mono">{device.rustdesk_id ?? "—"}</dd></div>
+          <div>
+            <dt>Status</dt>
+            <dd>{device.rustdesk_status ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd className="font-mono">{device.rustdesk_version ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Sync</dt>
+            <dd style={{ color: device.rustdesk_sync_state === "synced" ? TONE.online : undefined }}>
+              {device.rustdesk_sync_state ?? "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>ID</dt>
+            <dd className="font-mono">{device.rustdesk_id ?? "—"}</dd>
+          </div>
         </dl>
       </AccordionSection>
 
@@ -505,18 +708,30 @@ export default function DeviceDetailsMobile() {
         tone={TONE.info}
         title="Timeline & notes"
         subtitle="Operator notes and recent activity"
-        onFirstOpen={() => { setTimelineOpen(true); void loadNotes(); }}
+        onFirstOpen={() => {
+          setTimelineOpen(true);
+          void loadNotes();
+        }}
       >
         <div className="flex gap-2">
           <input
             value={noteDraft}
             onChange={(e) => setNoteDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void handleAddNote(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleAddNote();
+            }}
             placeholder="Add a note…"
             aria-label="New note"
             className="th-input h-10 min-w-0 flex-1 rounded-lg border px-3 text-[13px] outline-none"
           />
-          <Button variant="secondary" onClick={() => void handleAddNote()} disabled={!noteDraft.trim()} className="h-10">Add</Button>
+          <Button
+            variant="secondary"
+            onClick={() => void handleAddNote()}
+            disabled={!noteDraft.trim()}
+            className="h-10"
+          >
+            Add
+          </Button>
         </div>
         {notesLoading ? (
           <p style={{ color: "var(--th-text-muted)" }}>Loading…</p>
@@ -524,7 +739,9 @@ export default function DeviceDetailsMobile() {
           notes.slice(0, 10).map((n) => (
             <div key={n.id} className="th-mitem flex-col !gap-0.5">
               <p style={{ color: "var(--th-text-primary)" }}>{n.note}</p>
-              <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{n.created_by ?? "operator"} · {timeAgo(n.created_at)}</p>
+              <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {n.created_by ?? "operator"} · {timeAgo(n.created_at)}
+              </p>
             </div>
           ))
         )}
@@ -537,8 +754,12 @@ export default function DeviceDetailsMobile() {
           <ul className="th-mtimeline">
             {activity.events.slice(0, 15).map((e) => (
               <li key={e.id}>
-                <span className="min-w-0 flex-1" style={{ color: "var(--th-text-secondary)" }}>{e.summary}</span>
-                <span className="flex-none text-[11px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>{timeAgo(e.occurred_at)}</span>
+                <span className="min-w-0 flex-1" style={{ color: "var(--th-text-secondary)" }}>
+                  {e.summary}
+                </span>
+                <span className="flex-none text-[11px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+                  {timeAgo(e.occurred_at)}
+                </span>
               </li>
             ))}
           </ul>
@@ -555,7 +776,13 @@ export default function DeviceDetailsMobile() {
             onClick={() =>
               setConfirmAction({
                 label: `Restart ${displayName}?`,
-                run: () => runAction("Restart", () => queueDeviceAction(device.id, { action_type: "restart_device", created_by: user?.display_name ?? user?.username })),
+                run: () =>
+                  runAction("Restart", () =>
+                    queueDeviceAction(device.id, {
+                      action_type: "restart_device",
+                      created_by: user?.display_name ?? user?.username,
+                    }),
+                  ),
               })
             }
           >
@@ -577,7 +804,14 @@ export default function DeviceDetailsMobile() {
               key={a.type}
               type="button"
               disabled={actionBusy}
-              onClick={() => void runAction(a.label, () => queueDeviceAction(device.id, { action_type: a.type, created_by: user?.display_name ?? user?.username }))}
+              onClick={() =>
+                void runAction(a.label, () =>
+                  queueDeviceAction(device.id, {
+                    action_type: a.type,
+                    created_by: user?.display_name ?? user?.username,
+                  }),
+                )
+              }
               className="th-msheet-option !justify-start disabled:opacity-50"
             >
               <a.icon className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
@@ -588,7 +822,11 @@ export default function DeviceDetailsMobile() {
             <button
               type="button"
               disabled={actionBusy}
-              onClick={() => void runAction("Exit maintenance", async () => { setDevice(await clearDeviceMaintenance(device.id)); })}
+              onClick={() =>
+                void runAction("Exit maintenance", async () => {
+                  setDevice(await clearDeviceMaintenance(device.id));
+                })
+              }
               className="th-msheet-option !justify-start disabled:opacity-50"
               style={{ color: TONE.maintenance }}
             >
@@ -599,7 +837,16 @@ export default function DeviceDetailsMobile() {
             <button
               type="button"
               disabled={actionBusy}
-              onClick={() => void runAction("Enter maintenance", async () => { setDevice(await enterDeviceMaintenance(device.id, { duration_minutes: 60, started_by: user?.display_name ?? user?.username })); })}
+              onClick={() =>
+                void runAction("Enter maintenance", async () => {
+                  setDevice(
+                    await enterDeviceMaintenance(device.id, {
+                      duration_minutes: 60,
+                      started_by: user?.display_name ?? user?.username,
+                    }),
+                  );
+                })
+              }
               className="th-msheet-option !justify-start disabled:opacity-50"
               style={{ color: TONE.maintenance }}
             >
@@ -616,14 +863,23 @@ export default function DeviceDetailsMobile() {
         title="Confirm"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setConfirmAction(null)} className="min-h-[44px] px-5">Cancel</Button>
-            <Button variant="danger" disabled={actionBusy} onClick={() => confirmAction && void confirmAction.run()} className="min-h-[44px] flex-1">
+            <Button variant="secondary" onClick={() => setConfirmAction(null)} className="min-h-[44px] px-5">
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={actionBusy}
+              onClick={() => confirmAction && void confirmAction.run()}
+              className="min-h-[44px] flex-1"
+            >
               {actionBusy ? "Working…" : "Confirm"}
             </Button>
           </>
         }
       >
-        <p className="text-[14px]" style={{ color: "var(--th-text-primary)" }}>{confirmAction?.label}</p>
+        <p className="text-[14px]" style={{ color: "var(--th-text-primary)" }}>
+          {confirmAction?.label}
+        </p>
       </MobileSheet>
 
       <Snackbar open={snack !== null} message={snack ?? ""} onClose={() => setSnack(null)} />
@@ -632,7 +888,11 @@ export default function DeviceDetailsMobile() {
 }
 
 function CountBadge({ tone, children }: { tone: string; children: React.ReactNode }) {
-  return <span className="th-mdev-badge flex-none tabular-nums" style={{ "--chip-tone": tone } as CSSProperties}>{children}</span>;
+  return (
+    <span className="th-mdev-badge flex-none tabular-nums" style={{ "--chip-tone": tone } as CSSProperties}>
+      {children}
+    </span>
+  );
 }
 
 function deviceTypeLabel(device: Device): { label: string; tone: string } | null {

@@ -1,11 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
 import { AuthUser, UserRole } from "../api/auth";
-import {
-  bootstrapSession,
-  clearSession,
-  loginSession,
-  useSessionStore,
-} from "../store/sessionStore";
+import { bootstrapSession, clearSession, loginSession, useSessionStore } from "../store/sessionStore";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -44,22 +39,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession();
   }, []);
 
-  const can = useCallback((role: UserRole) => {
-    if (!user) return false;
-    return roleRank[user.role] >= roleRank[role];
-  }, [user]);
+  const can = useCallback(
+    (role: UserRole) => {
+      if (!user) return false;
+      return roleRank[user.role] >= roleRank[role];
+    },
+    [user],
+  );
 
-  const hasAnyRole = useCallback((roles: UserRole[]) => {
-    if (!user) return false;
-    return user.role === "owner" || roles.includes(user.role);
-  }, [user]);
+  const hasAnyRole = useCallback(
+    (roles: UserRole[]) => {
+      if (!user) return false;
+      return user.role === "owner" || roles.includes(user.role);
+    },
+    [user],
+  );
 
-  const hasPermission = useCallback((perm: string) => {
-    if (!user) return false;
-    if (user.role === "owner" || user.role === "admin") return true;
-    if (permissions === null) return false;
-    return permissions.includes(perm);
-  }, [user, permissions]);
+  const hasPermission = useCallback(
+    (perm: string) => {
+      if (!user) return false;
+      if (user.role === "owner" || user.role === "admin") return true;
+      if (permissions === null) return false;
+      return permissions.includes(perm);
+    },
+    [user, permissions],
+  );
 
   const value = useMemo(
     () => ({ user, token, loading, permissions, login, logout, can, hasAnyRole, hasPermission }),

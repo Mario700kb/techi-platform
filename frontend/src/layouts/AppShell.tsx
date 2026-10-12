@@ -22,7 +22,6 @@ interface AppShellProps {
 // reached from More. Titles come from the shared navigation config.
 const TAB_ROOTS = new Set(["/", "/devices", "/alerts", "/more"]);
 
-
 // Device Details (MOBILE-DESIGN-SPEC.md — Device Details) renders its own
 // header and sticky action bar in place of the generic MobileTopBar and
 // BottomNav.

@@ -150,7 +150,9 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
                 const friendly = SSH_FAILURE_MESSAGES[detail.disconnect_reason];
                 if (friendly) setMessage(friendly);
               })
-              .catch(() => { /* best-effort only */ });
+              .catch(() => {
+                /* best-effort only */
+              });
           }
         };
         ws.onerror = () => {
@@ -176,8 +178,16 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
     return () => {
       disposed = true;
       if (onResize) window.removeEventListener("resize", onResize);
-      try { ws?.close(); } catch { /* noop */ }
-      try { term?.dispose(); } catch { /* noop */ }
+      try {
+        ws?.close();
+      } catch {
+        /* noop */
+      }
+      try {
+        term?.dispose();
+      } catch {
+        /* noop */
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId, attempt]);

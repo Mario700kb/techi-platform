@@ -37,8 +37,22 @@ export default function ConfirmationModal({
       footer={
         <>
           {/* A destructive question starts on Cancel, so Enter never deletes by accident. */}
-          <Button variant="secondary" type="button" onClick={onClose} disabled={loading} data-autofocus={destructive || undefined}>{cancelLabel}</Button>
-          <Button variant={destructive ? "danger" : "primary"} type="button" onClick={onConfirm} disabled={loading} data-autofocus={!destructive || undefined}>
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            data-autofocus={destructive || undefined}
+          >
+            {cancelLabel}
+          </Button>
+          <Button
+            variant={destructive ? "danger" : "primary"}
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            data-autofocus={!destructive || undefined}
+          >
             {loading ? `${confirmLabel}…` : confirmLabel}
           </Button>
         </>

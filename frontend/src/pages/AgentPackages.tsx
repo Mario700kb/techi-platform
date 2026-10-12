@@ -67,7 +67,7 @@ const PACKAGE_TYPES: PackageType[] = [
     label: "Agent binary",
     icon: Binary,
     fileType: "agent_binary",
-    hint: "techi-agent.exe alone. \"Update agent\" installs it; Remote Support is not touched.",
+    hint: 'techi-agent.exe alone. "Update agent" installs it; Remote Support is not touched.',
     platforms: ["windows-amd64"],
     accept: ".exe",
     matches: (p) => p.file_type === "agent_binary" && p.platform.startsWith("windows"),
@@ -77,7 +77,7 @@ const PACKAGE_TYPES: PackageType[] = [
     label: "Update bridge",
     icon: RefreshCcw,
     fileType: "agent_update_msi",
-    hint: "Agent-only MSI used by \"Update agent\" for agents older than 2.1.1. Not used for GPO or bootstrap.",
+    hint: 'Agent-only MSI used by "Update agent" for agents older than 2.1.1. Not used for GPO or bootstrap.',
     platforms: ["windows-amd64"],
     accept: ".msi",
     matches: (p) => p.file_type === "agent_update_msi",
@@ -97,7 +97,7 @@ const PACKAGE_TYPES: PackageType[] = [
     label: "Linux agent",
     icon: Terminal,
     fileType: "agent_binary",
-    hint: "techi-agent for Linux, one binary per architecture. The active one per architecture is what \"Needs Agent Update\" compares against.",
+    hint: 'techi-agent for Linux, one binary per architecture. The active one per architecture is what "Needs Agent Update" compares against.',
     platforms: ["linux-amd64", "linux-arm64", "linux-armhf"],
     matches: (p) => p.file_type === "agent_binary" && p.platform.startsWith("linux"),
   },
@@ -133,9 +133,7 @@ export default function AgentPackages() {
   const byType = useMemo(() => {
     const map = {} as Record<TypeId, AgentPackage[]>;
     for (const t of PACKAGE_TYPES) {
-      map[t.id] = packages
-        .filter(t.matches)
-        .sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
+      map[t.id] = packages.filter(t.matches).sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
     }
     return map;
   }, [packages]);
@@ -252,7 +250,10 @@ export default function AgentPackages() {
               style={{ "--i": index } as CSSProperties}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="th-onb-icon" style={{ "--onb-tone": active.length ? "var(--th-accent)" : "var(--th-text-faint)" } as CSSProperties}>
+                <span
+                  className="th-onb-icon"
+                  style={{ "--onb-tone": active.length ? "var(--th-accent)" : "var(--th-text-faint)" } as CSSProperties}
+                >
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="th-status-chip" style={active.length ? ACTIVE_TONE : INACTIVE_TONE}>
@@ -260,9 +261,21 @@ export default function AgentPackages() {
                   {active.length ? "Active" : "None active"}
                 </span>
               </div>
-              <div className="mt-4 text-[13px] font-medium" style={{ color: "var(--th-text-secondary)" }}>{t.label}</div>
-              <div className="mt-1 truncate text-[20px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
-                {active.length === 0 ? "—" : active.length === 1 ? active[0].version : active.map((p) => p.version).filter((v, i, all) => all.indexOf(v) === i).join(" · ")}
+              <div className="mt-4 text-[13px] font-medium" style={{ color: "var(--th-text-secondary)" }}>
+                {t.label}
+              </div>
+              <div
+                className="mt-1 truncate text-[20px] font-semibold tabular-nums"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                {active.length === 0
+                  ? "—"
+                  : active.length === 1
+                    ? active[0].version
+                    : active
+                        .map((p) => p.version)
+                        .filter((v, i, all) => all.indexOf(v) === i)
+                        .join(" · ")}
               </div>
               <div className="mt-1 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                 {active.length === 0
@@ -277,10 +290,16 @@ export default function AgentPackages() {
       </div>
 
       {error && (
-        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+        <div
+          className="th-onb-note"
+          style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}
+          role="alert"
+        >
           <AlertTriangle className="h-4 w-4" />
           <span className="flex-1">{error}</span>
-          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
@@ -297,7 +316,11 @@ export default function AgentPackages() {
             </span>
           </div>
           {canManage && (
-            <Button size="sm" variant={uploadOpen ? "secondary" : "primary"} onClick={() => setUploadOpen((open) => !open)}>
+            <Button
+              size="sm"
+              variant={uploadOpen ? "secondary" : "primary"}
+              onClick={() => setUploadOpen((open) => !open)}
+            >
               {uploadOpen ? <X className="h-3.5 w-3.5" /> : <UploadCloud className="h-3.5 w-3.5" />}
               {uploadOpen ? "Close" : "Upload"}
             </Button>
@@ -307,7 +330,14 @@ export default function AgentPackages() {
         <div className="th-alerts-toolbar">
           <div ref={typeTabsRef} role="tablist" aria-label="Package type" className="th-tabs">
             {types.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={t.id === type.id} onClick={() => selectType(t.id)} className="th-tab">
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={t.id === type.id}
+                onClick={() => selectType(t.id)}
+                className="th-tab"
+              >
                 {t.label}
                 <span className="th-tab-count">{formatCount(byType[t.id].length)}</span>
               </button>
@@ -319,7 +349,13 @@ export default function AgentPackages() {
           <div className="th-onb-upload th-onb-reveal">
             <label className="th-onb-field">
               Version
-              <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="e.g. 2.1.24" spellCheck={false} autoComplete="off" />
+              <input
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="e.g. 2.1.24"
+                spellCheck={false}
+                autoComplete="off"
+              />
             </label>
             <div className="th-onb-field">
               {type.id === "linux_binary" ? "Architecture" : "Platform"}
@@ -367,7 +403,14 @@ export default function AgentPackages() {
             className="th-fade-in py-10"
             icon={<type.icon className="h-5 w-5" />}
             title={`No ${type.label.toLowerCase()} packages uploaded yet`}
-            action={canManage && !uploadOpen ? <Button size="sm" variant="secondary" onClick={() => setUploadOpen(true)}><UploadCloud className="h-3.5 w-3.5" />Upload</Button> : undefined}
+            action={
+              canManage && !uploadOpen ? (
+                <Button size="sm" variant="secondary" onClick={() => setUploadOpen(true)}>
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  Upload
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
@@ -392,12 +435,23 @@ export default function AgentPackages() {
               </thead>
               <tbody>
                 {rows.map((pkg, index) => (
-                  <tr key={pkg.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties} data-selected={pkg.is_active || undefined}>
+                  <tr
+                    key={pkg.id}
+                    className="th-alerts-row"
+                    style={{ "--row": index } as CSSProperties}
+                    data-selected={pkg.is_active || undefined}
+                  >
                     <td>
                       <span className="th-alerts-primary tabular-nums">{pkg.version}</span>
-                      <span className="th-alerts-secondary font-mono" title={pkg.filename}>{pkg.filename}</span>
+                      <span className="th-alerts-secondary font-mono" title={pkg.filename}>
+                        {pkg.filename}
+                      </span>
                     </td>
-                    {showPlatformColumn && <td><span className="th-alerts-primary font-mono !text-[12px]">{pkg.platform}</span></td>}
+                    {showPlatformColumn && (
+                      <td>
+                        <span className="th-alerts-primary font-mono !text-[12px]">{pkg.platform}</span>
+                      </td>
+                    )}
                     <td>
                       <span className="th-status-chip" style={pkg.is_active ? ACTIVE_TONE : INACTIVE_TONE}>
                         <i />
@@ -410,9 +464,18 @@ export default function AgentPackages() {
                     </td>
                     <td>
                       {pkg.sha256 ? (
-                        <button type="button" className="th-onb-sha" onClick={() => void copySha(pkg)} title={`${pkg.sha256}\nClick to copy`}>
+                        <button
+                          type="button"
+                          className="th-onb-sha"
+                          onClick={() => void copySha(pkg)}
+                          title={`${pkg.sha256}\nClick to copy`}
+                        >
                           <span className="truncate">{pkg.sha256.slice(0, 16)}…</span>
-                          {copiedId === pkg.id ? <Check className="h-3.5 w-3.5 flex-none" /> : <Copy className="h-3.5 w-3.5 flex-none" />}
+                          {copiedId === pkg.id ? (
+                            <Check className="h-3.5 w-3.5 flex-none" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 flex-none" />
+                          )}
                         </button>
                       ) : (
                         <span className="th-alerts-secondary">—</span>
@@ -420,7 +483,14 @@ export default function AgentPackages() {
                     </td>
                     <td>
                       <div className="th-onb-actions">
-                        <button type="button" className="th-onb-action" title="Download" aria-label={`Download ${pkg.filename}`} disabled={busyId === pkg.id} onClick={() => void run(pkg, () => downloadAgentPackage(pkg), "Download failed", false)}>
+                        <button
+                          type="button"
+                          className="th-onb-action"
+                          title="Download"
+                          aria-label={`Download ${pkg.filename}`}
+                          disabled={busyId === pkg.id}
+                          onClick={() => void run(pkg, () => downloadAgentPackage(pkg), "Download failed", false)}
+                        >
                           <Download className="h-4 w-4" />
                         </button>
                         {canManage && (
@@ -432,11 +502,25 @@ export default function AgentPackages() {
                               title={pkg.is_active ? "Deactivate" : "Activate"}
                               aria-label={`${pkg.is_active ? "Deactivate" : "Activate"} ${pkg.version}`}
                               disabled={busyId === pkg.id}
-                              onClick={() => void run(pkg, () => setAgentPackageActive(pkg.id, !pkg.is_active), "Package update failed")}
+                              onClick={() =>
+                                void run(
+                                  pkg,
+                                  () => setAgentPackageActive(pkg.id, !pkg.is_active),
+                                  "Package update failed",
+                                )
+                              }
                             >
                               <Power className="h-4 w-4" />
                             </button>
-                            <button type="button" className="th-onb-action" data-tone="danger" title="Delete" aria-label={`Delete ${pkg.filename}`} disabled={busyId === pkg.id || deleting} onClick={() => setDeleteTarget(pkg)}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-tone="danger"
+                              title="Delete"
+                              aria-label={`Delete ${pkg.filename}`}
+                              disabled={busyId === pkg.id || deleting}
+                              onClick={() => setDeleteTarget(pkg)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </>
@@ -459,8 +543,13 @@ export default function AgentPackages() {
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
-          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.filename}</span>?
-          {deleteTarget.is_active && " It is the active package for its type, so nothing will be served for that type until another is activated."}
+          Permanently delete{" "}
+          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {deleteTarget.filename}
+          </span>
+          ?
+          {deleteTarget.is_active &&
+            " It is the active package for its type, so nothing will be served for that type until another is activated."}
         </ConfirmationModal>
       )}
     </section>

@@ -2,16 +2,53 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  KeyRound, Plus, RefreshCcw, Trash2, Eye, Link2, PlayCircle, Globe, Pencil, Power,
-  Mail, Key, MonitorCog, Router, UserCog, FileKey, Terminal as TerminalIcon, Radio,
-  Webhook, AlertTriangle, Search, X, Copy, Check, ShieldAlert, ShieldCheck, History, Lock,
+  KeyRound,
+  Plus,
+  RefreshCcw,
+  Trash2,
+  Eye,
+  Link2,
+  PlayCircle,
+  Globe,
+  Pencil,
+  Power,
+  Mail,
+  Key,
+  MonitorCog,
+  Router,
+  UserCog,
+  FileKey,
+  Terminal as TerminalIcon,
+  Radio,
+  Webhook,
+  AlertTriangle,
+  Search,
+  X,
+  Copy,
+  Check,
+  ShieldAlert,
+  ShieldCheck,
+  History,
+  Lock,
 } from "lucide-react";
 
 import {
-  VaultAssignment, VaultCredential, VaultCredentialCreate, VaultCredentialType,
-  VaultCredentialTypeDescriptor, VaultScopeType, addVaultAssignment, createVaultCredential,
-  deleteVaultCredential, listVaultAssignments, listVaultCredentialTypes, listVaultCredentials,
-  removeVaultAssignment, revealVaultCredential, setVaultCredentialStatus, testVaultCredential,
+  VaultAssignment,
+  VaultCredential,
+  VaultCredentialCreate,
+  VaultCredentialType,
+  VaultCredentialTypeDescriptor,
+  VaultScopeType,
+  addVaultAssignment,
+  createVaultCredential,
+  deleteVaultCredential,
+  listVaultAssignments,
+  listVaultCredentialTypes,
+  listVaultCredentials,
+  removeVaultAssignment,
+  revealVaultCredential,
+  setVaultCredentialStatus,
+  testVaultCredential,
   updateVaultCredential,
 } from "../api/vault";
 import { getClients, getGroups, Client, DeviceGroup } from "../api/clients";
@@ -31,7 +68,17 @@ import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  Terminal: TerminalIcon, KeyRound, MonitorCog, Router, Globe, Key, Mail, Webhook, Radio, UserCog, FileKey,
+  Terminal: TerminalIcon,
+  KeyRound,
+  MonitorCog,
+  Router,
+  Globe,
+  Key,
+  Mail,
+  Webhook,
+  Radio,
+  UserCog,
+  FileKey,
 };
 
 type Category = VaultCredentialTypeDescriptor["category"];
@@ -46,7 +93,12 @@ const CATEGORY_TONE: Record<Category, string> = {
   generic: TONE.neutral,
 };
 
-const SCOPE_LABEL: Record<VaultScopeType, string> = { global: "Global", client: "Client", group: "Group", device: "Device" };
+const SCOPE_LABEL: Record<VaultScopeType, string> = {
+  global: "Global",
+  client: "Client",
+  group: "Group",
+  device: "Device",
+};
 
 type ViewTab = "all" | Exclude<Category, "generic"> | "unused" | "attention";
 
@@ -85,9 +137,9 @@ interface FormState {
   name: string;
   credential_type: VaultCredentialType;
   scope_type: VaultScopeType;
-  client_id: string;   // submitted only when scope_type === "client"
-  group_id: string;    // submitted only when scope_type === "group"
-  device_id: string;   // submitted only when scope_type === "device"
+  client_id: string; // submitted only when scope_type === "client"
+  group_id: string; // submitted only when scope_type === "group"
+  device_id: string; // submitted only when scope_type === "device"
   // Narrows the Group/Device pickers and is never submitted: reusing it as
   // client_id is what made the backend reject device-scoped credentials
   // ("scope 'device' must not set client_id").
@@ -104,18 +156,37 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  name: "", credential_type: "generic_username_password", scope_type: "global",
-  client_id: "", group_id: "", device_id: "", scope_client_filter: "",
-  group_label: "", device_label: "",
-  purpose: "", username: "", secret_fields: {}, metadata: {}, notes: "", expires_at: "",
+  name: "",
+  credential_type: "generic_username_password",
+  scope_type: "global",
+  client_id: "",
+  group_id: "",
+  device_id: "",
+  scope_client_filter: "",
+  group_label: "",
+  device_label: "",
+  purpose: "",
+  username: "",
+  secret_fields: {},
+  metadata: {},
+  notes: "",
+  expires_at: "",
 };
 
 function Note({ tone, children, onDismiss }: { tone: string; children: React.ReactNode; onDismiss?: () => void }) {
   return (
-    <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": tone } as CSSProperties} role={tone === TONE.critical ? "alert" : "status"}>
+    <div
+      className="th-onb-note th-onb-reveal"
+      style={{ "--onb-tone": tone } as CSSProperties}
+      role={tone === TONE.critical ? "alert" : "status"}
+    >
       <AlertTriangle className="h-4 w-4" />
       <span className="flex-1">{children}</span>
-      {onDismiss && <button type="button" className="th-onb-action !h-5 !w-5" onClick={onDismiss} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>}
+      {onDismiss && (
+        <button type="button" className="th-onb-action !h-5 !w-5" onClick={onDismiss} aria-label="Dismiss">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -132,8 +203,16 @@ function SecretValue({ label, value }: { label: string; value: string }) {
     <div className="th-onb-field">
       {label}
       <div className="th-onb-code flex items-start gap-2 px-3 py-2">
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-all" style={{ color: "var(--th-text-primary)" }}>{value}</span>
-        <button type="button" className="th-onb-action !h-6 !w-6 flex-none" onClick={copy} aria-label={`Copy ${label}`} title="Copy">
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-all" style={{ color: "var(--th-text-primary)" }}>
+          {value}
+        </span>
+        <button
+          type="button"
+          className="th-onb-action !h-6 !w-6 flex-none"
+          onClick={copy}
+          aria-label={`Copy ${label}`}
+          title="Copy"
+        >
           {copied ? <Check className="h-3.5 w-3.5" style={{ color: TONE.online }} /> : <Copy className="h-3.5 w-3.5" />}
         </button>
       </div>
@@ -193,7 +272,10 @@ export default function CredentialVault() {
     setError(null);
     try {
       const [credentials, typeList, clientList, groupList] = await Promise.all([
-        listVaultCredentials(), listVaultCredentialTypes(), getClients(), getGroups(),
+        listVaultCredentials(),
+        listVaultCredentialTypes(),
+        getClients(),
+        getGroups(),
       ]);
       setItems(credentials);
       setTypes(typeList);
@@ -206,7 +288,9 @@ export default function CredentialVault() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -256,13 +340,20 @@ export default function CredentialVault() {
   // A device- or group-scoped credential never stores client_id/group_id
   // itself; the backend joins them at read time as context_*_name.
   function scopeTarget(c: VaultCredential): { primary: string; secondary?: string } {
-    if (c.scope_type === "client") return { primary: c.client_id ? (clientById[c.client_id] ?? `Client #${c.client_id}`) : "—" };
+    if (c.scope_type === "client")
+      return { primary: c.client_id ? (clientById[c.client_id] ?? `Client #${c.client_id}`) : "—" };
     if (c.scope_type === "group") {
-      return { primary: c.context_group_name ?? (c.group_id ? `Group #${c.group_id}` : "—"), secondary: c.context_client_name ?? undefined };
+      return {
+        primary: c.context_group_name ?? (c.group_id ? `Group #${c.group_id}` : "—"),
+        secondary: c.context_client_name ?? undefined,
+      };
     }
     if (c.scope_type === "device") {
       const context = [c.context_client_name, c.context_group_name].filter(Boolean).join(" · ");
-      return { primary: c.device_hostname ?? (c.device_id ? `Device #${c.device_id}` : "—"), secondary: context || undefined };
+      return {
+        primary: c.device_hostname ?? (c.device_id ? `Device #${c.device_id}` : "—"),
+        secondary: context || undefined,
+      };
     }
     return { primary: "Every device" };
   }
@@ -285,25 +376,35 @@ export default function CredentialVault() {
       return res.devices.map((d) => ({
         value: String(d.id),
         label: d.display_name || d.hostname || `Device #${d.id}`,
-        sublabel: `${d.client_id ? clientById[d.client_id] ?? `Client #${d.client_id}` : "No client"}` +
+        sublabel:
+          `${d.client_id ? (clientById[d.client_id] ?? `Client #${d.client_id}`) : "No client"}` +
           `${d.group_id ? ` · ${groupById[d.group_id]?.name ?? `Group #${d.group_id}`}` : ""}` +
           ` · ${d.platform ?? "windows"} · #${d.id}`,
       }));
     };
   }, [form.scope_client_filter, clientById, groupById]);
 
-  const categoryOf = useCallback((item: VaultCredential): Category | undefined => typeById[item.credential_type]?.category, [typeById]);
+  const categoryOf = useCallback(
+    (item: VaultCredential): Category | undefined => typeById[item.credential_type]?.category,
+    [typeById],
+  );
 
-  const matchesView = useCallback((item: VaultCredential, tab: ViewTab) => {
-    if (tab === "all") return true;
-    if (tab === "unused") return !item.is_referenced;
-    if (tab === "attention") return ATTENTION.includes(item.lifecycle_status);
-    return categoryOf(item) === tab;
-  }, [categoryOf]);
+  const matchesView = useCallback(
+    (item: VaultCredential, tab: ViewTab) => {
+      if (tab === "all") return true;
+      if (tab === "unused") return !item.is_referenced;
+      if (tab === "attention") return ATTENTION.includes(item.lifecycle_status);
+      return categoryOf(item) === tab;
+    },
+    [categoryOf],
+  );
 
   const summary = useMemo(() => {
     const scopes = { global: 0, client: 0, group: 0, device: 0 };
-    let inUse = 0, expired = 0, expiring = 0, failed = 0;
+    let inUse = 0,
+      expired = 0,
+      expiring = 0,
+      failed = 0;
     let lastUsed: VaultCredential | null = null;
     for (const item of items) {
       scopes[item.scope_type] += 1;
@@ -317,7 +418,10 @@ export default function CredentialVault() {
   }, [items]);
 
   const viewCounts = useMemo(
-    () => Object.fromEntries(VIEW_TABS.map((tab) => [tab.id, items.filter((item) => matchesView(item, tab.id)).length])) as Record<ViewTab, number>,
+    () =>
+      Object.fromEntries(
+        VIEW_TABS.map((tab) => [tab.id, items.filter((item) => matchesView(item, tab.id)).length]),
+      ) as Record<ViewTab, number>,
     [items, matchesView],
   );
   const shownTabs = VIEW_TABS.filter((tab) => !tab.category || viewCounts[tab.id] > 0 || view === tab.id);
@@ -330,7 +434,8 @@ export default function CredentialVault() {
       if (filterScope && item.scope_type !== filterScope) return false;
       if (filterClient && String(item.client_id ?? item.context_client_id ?? "") !== filterClient) return false;
       if (filterStatus && item.lifecycle_status !== filterStatus) return false;
-      if (needle && !`${item.name} ${item.username ?? ""} ${item.purpose ?? ""}`.toLowerCase().includes(needle)) return false;
+      if (needle && !`${item.name} ${item.username ?? ""} ${item.purpose ?? ""}`.toLowerCase().includes(needle))
+        return false;
       return true;
     });
   }, [items, view, filterType, filterScope, filterClient, filterStatus, search, matchesView]);
@@ -338,12 +443,25 @@ export default function CredentialVault() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const hasFilters = Boolean(search.trim() || filterType || filterScope || filterClient || filterStatus || view !== "all");
+  const hasFilters = Boolean(
+    search.trim() || filterType || filterScope || filterClient || filterStatus || view !== "all",
+  );
 
   const clearFilters = () => {
-    setView("all"); setSearch(""); setFilterType(""); setFilterScope(""); setFilterClient(""); setFilterStatus(""); setPage(1);
+    setView("all");
+    setSearch("");
+    setFilterType("");
+    setFilterScope("");
+    setFilterClient("");
+    setFilterStatus("");
+    setPage(1);
   };
-  const withPageReset = <T,>(setter: (value: T) => void) => (value: T) => { setter(value); setPage(1); };
+  const withPageReset =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(1);
+    };
 
   function closeForm() {
     setForm(EMPTY_FORM);
@@ -361,15 +479,20 @@ export default function CredentialVault() {
 
   function startEdit(item: VaultCredential) {
     setForm({
-      name: item.name, credential_type: item.credential_type, scope_type: item.scope_type,
+      name: item.name,
+      credential_type: item.credential_type,
+      scope_type: item.scope_type,
       client_id: item.scope_type === "client" && item.client_id ? String(item.client_id) : "",
       group_id: item.scope_type === "group" && item.group_id ? String(item.group_id) : "",
       device_id: item.scope_type === "device" && item.device_id ? String(item.device_id) : "",
       scope_client_filter: item.context_client_id ? String(item.context_client_id) : "",
       group_label: item.context_group_name ?? "",
       device_label: item.device_hostname ?? "",
-      purpose: item.purpose ?? "", username: item.username ?? "", secret_fields: {},
-      metadata: item.credential_metadata ?? {}, notes: item.notes ?? "",
+      purpose: item.purpose ?? "",
+      username: item.username ?? "",
+      secret_fields: {},
+      metadata: item.credential_metadata ?? {},
+      notes: item.notes ?? "",
       expires_at: utcToTiranaInput(item.expires_at).slice(0, 10),
     });
     setEditingId(item.id);
@@ -534,7 +657,11 @@ export default function CredentialVault() {
       <section className="premium-page th-onb space-y-4">
         <PageHeader title="Credential Vault" description="Encrypted credentials for Connect, SSH and integrations." />
         <div className="th-onb-card th-onb-enter">
-          <EmptyState icon={<ShieldAlert className="h-5 w-5" />} title="Access denied" description="You do not have permission to view the Credential Vault." />
+          <EmptyState
+            icon={<ShieldAlert className="h-5 w-5" />}
+            title="Access denied"
+            description="You do not have permission to view the Credential Vault."
+          />
         </div>
       </section>
     );
@@ -543,21 +670,42 @@ export default function CredentialVault() {
   const lastUsed = summary.lastUsed;
   const stats = [
     {
-      label: "Credentials", value: formatCount(items.length), icon: KeyRound, tone: "var(--th-accent)",
+      label: "Credentials",
+      value: formatCount(items.length),
+      icon: KeyRound,
+      tone: "var(--th-accent)",
       hint: `${summary.scopes.global} global · ${summary.scopes.client} client · ${summary.scopes.group} group · ${summary.scopes.device} device`,
     },
     {
-      label: "In use", value: formatCount(summary.inUse), icon: Link2, tone: TONE.online,
-      hint: items.length - summary.inUse ? `${formatCount(items.length - summary.inUse)} not referenced anywhere` : "Every credential is referenced",
+      label: "In use",
+      value: formatCount(summary.inUse),
+      icon: Link2,
+      tone: TONE.online,
+      hint:
+        items.length - summary.inUse
+          ? `${formatCount(items.length - summary.inUse)} not referenced anywhere`
+          : "Every credential is referenced",
     },
     {
-      label: "Needs attention", value: formatCount(summary.attention), icon: AlertTriangle, tone: summary.attention ? TONE.critical : TONE.neutral,
+      label: "Needs attention",
+      value: formatCount(summary.attention),
+      icon: AlertTriangle,
+      tone: summary.attention ? TONE.critical : TONE.neutral,
       hint: summary.attention
-        ? [summary.expired && `${summary.expired} expired`, summary.expiring && `${summary.expiring} expiring soon`, summary.failed && `${summary.failed} failed validation`].filter(Boolean).join(" · ")
+        ? [
+            summary.expired && `${summary.expired} expired`,
+            summary.expiring && `${summary.expiring} expiring soon`,
+            summary.failed && `${summary.failed} failed validation`,
+          ]
+            .filter(Boolean)
+            .join(" · ")
         : "Nothing expired or failing",
     },
     {
-      label: "Last used", value: lastUsed ? timeAgo(lastUsed.last_used_at) : "Never", icon: History, tone: lastUsed ? TONE.info : TONE.neutral,
+      label: "Last used",
+      value: lastUsed ? timeAgo(lastUsed.last_used_at) : "Never",
+      icon: History,
+      tone: lastUsed ? TONE.info : TONE.neutral,
       hint: lastUsed ? lastUsed.name : "No credential has been used yet",
     },
   ];
@@ -583,16 +731,35 @@ export default function CredentialVault() {
         }
       />
 
-      {error && <Note tone={TONE.critical} onDismiss={() => setError(null)}>{error}</Note>}
+      {error && (
+        <Note tone={TONE.critical} onDismiss={() => setError(null)}>
+          {error}
+        </Note>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((item, index) => (
-          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
-            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+          <div
+            key={item.label}
+            className="th-onb-card th-onb-stat th-onb-enter"
+            style={{ "--i": index } as CSSProperties}
+          >
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}>
+              <item.icon className="h-4 w-4" />
+            </span>
             <div className="min-w-0">
-              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
-              <div className="truncate text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
-              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }} title={item.hint}>{item.hint}</div>
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                {item.label}
+              </div>
+              <div
+                className="truncate text-[24px] font-semibold leading-8 tabular-nums"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                {item.value}
+              </div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }} title={item.hint}>
+                {item.hint}
+              </div>
             </div>
           </div>
         ))}
@@ -603,13 +770,29 @@ export default function CredentialVault() {
           icon={Lock}
           tone="var(--th-accent)"
           title="Credentials"
-          subtitle={loading && items.length === 0 ? "Loading…" : `${formatCount(items.length)} stored · ${formatCount(filtered.length)} shown`}
+          subtitle={
+            loading && items.length === 0
+              ? "Loading…"
+              : `${formatCount(items.length)} stored · ${formatCount(filtered.length)} shown`
+          }
         />
         <div className="th-alerts-toolbar">
           <div ref={viewTabsRef} role="tablist" aria-label="Credential view" className="th-tabs">
             {shownTabs.map(({ id, label }) => (
-              <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => { setView(id); setPage(1); }} className="th-tab">
-                {id === "attention" && viewCounts.attention > 0 && <span className="th-tab-dot" style={{ "--tab-tone": TONE.critical } as CSSProperties} />}
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => {
+                  setView(id);
+                  setPage(1);
+                }}
+                className="th-tab"
+              >
+                {id === "attention" && viewCounts.attention > 0 && (
+                  <span className="th-tab-dot" style={{ "--tab-tone": TONE.critical } as CSSProperties} />
+                )}
                 {label}
                 <span className="th-tab-count">{formatCount(viewCounts[id])}</span>
               </button>
@@ -618,9 +801,25 @@ export default function CredentialVault() {
           <div className="pb-2">
             <label className="th-search th-search-sm w-[280px]">
               <Search className="h-3.5 w-3.5 flex-none" />
-              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search name or username" aria-label="Search credentials" />
+              <input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search name or username"
+                aria-label="Search credentials"
+              />
               {search && (
-                <button type="button" onClick={() => { setSearch(""); setPage(1); }} className="th-explorer-clear" aria-label="Clear search">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  className="th-explorer-clear"
+                  aria-label="Clear search"
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -629,22 +828,46 @@ export default function CredentialVault() {
         </div>
 
         <div className="th-vault-filters">
-          <SelectField aria-label="Type" value={filterType} onChange={(e) => withPageReset(setFilterType)(e.target.value)}>
+          <SelectField
+            aria-label="Type"
+            value={filterType}
+            onChange={(e) => withPageReset(setFilterType)(e.target.value)}
+          >
             <option value="">All types</option>
-            {types.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
           </SelectField>
-          <SelectField aria-label="Scope filter" value={filterScope} onChange={(e) => withPageReset(setFilterScope)(e.target.value)}>
+          <SelectField
+            aria-label="Scope filter"
+            value={filterScope}
+            onChange={(e) => withPageReset(setFilterScope)(e.target.value)}
+          >
             <option value="">All scopes</option>
             <option value="global">Global</option>
             <option value="client">Client</option>
             <option value="group">Group</option>
             <option value="device">Device</option>
           </SelectField>
-          <SelectField aria-label="Client" value={filterClient} onChange={(e) => withPageReset(setFilterClient)(e.target.value)}>
+          <SelectField
+            aria-label="Client"
+            value={filterClient}
+            onChange={(e) => withPageReset(setFilterClient)(e.target.value)}
+          >
             <option value="">All clients</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </SelectField>
-          <SelectField aria-label="Status" value={filterStatus} onChange={(e) => withPageReset(setFilterStatus)(e.target.value)}>
+          <SelectField
+            aria-label="Status"
+            value={filterStatus}
+            onChange={(e) => withPageReset(setFilterStatus)(e.target.value)}
+          >
             <option value="">All statuses</option>
             <option value="active">Active</option>
             <option value="disabled">Disabled</option>
@@ -656,15 +879,27 @@ export default function CredentialVault() {
 
         {loading && items.length === 0 ? (
           <div className="th-alerts-scroll" aria-busy="true">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
             className="th-fade-in py-10"
             icon={<KeyRound className="h-5 w-5" />}
             title={items.length === 0 ? "The vault is empty" : "No credentials match these filters"}
-            description={items.length === 0 ? "Stored credentials let Connect, SSH and integrations sign in without anyone seeing the secret." : undefined}
-            action={hasFilters && items.length > 0 ? <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button> : undefined}
+            description={
+              items.length === 0
+                ? "Stored credentials let Connect, SSH and integrations sign in without anyone seeing the secret."
+                : undefined
+            }
+            action={
+              hasFilters && items.length > 0 ? (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
@@ -701,38 +936,73 @@ export default function CredentialVault() {
                   const testResult = testResults[c.id];
                   const needsAttention = ATTENTION.includes(c.lifecycle_status);
                   return (
-                    <tr key={c.id} className="th-alerts-row" style={{ "--row": index, "--row-tone": needsAttention ? lifecycle.tone : undefined } as CSSProperties}>
+                    <tr
+                      key={c.id}
+                      className="th-alerts-row"
+                      style={
+                        { "--row": index, "--row-tone": needsAttention ? lifecycle.tone : undefined } as CSSProperties
+                      }
+                    >
                       <td>
                         <span className="flex min-w-0 items-center gap-2.5">
-                          <span className="th-onb-icon !h-8 !w-8 flex-none" style={{ "--onb-tone": tone } as CSSProperties}><Icon className="h-4 w-4" /></span>
+                          <span
+                            className="th-onb-icon !h-8 !w-8 flex-none"
+                            style={{ "--onb-tone": tone } as CSSProperties}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
                           <span className="min-w-0">
                             <span className="th-alerts-primary truncate">{c.name}</span>
                             {c.used_by && c.used_by.length > 0 ? (
-                              <span className="th-alerts-secondary truncate" style={{ color: TONE.online }} title="Authenticated a live connection">Used by: {c.used_by.join(", ")}</span>
+                              <span
+                                className="th-alerts-secondary truncate"
+                                style={{ color: TONE.online }}
+                                title="Authenticated a live connection"
+                              >
+                                Used by: {c.used_by.join(", ")}
+                              </span>
                             ) : (
-                              <span className="th-alerts-secondary truncate">{CONSUMER_LABEL[c.consumer_status] ?? CONSUMER_LABEL.no_active_consumer}</span>
+                              <span className="th-alerts-secondary truncate">
+                                {CONSUMER_LABEL[c.consumer_status] ?? CONSUMER_LABEL.no_active_consumer}
+                              </span>
                             )}
                           </span>
                         </span>
                       </td>
                       <td>
-                        <span className="th-status-chip max-w-full" style={{ "--chip-tone": tone } as CSSProperties} title={descriptor?.label ?? c.credential_type}>
+                        <span
+                          className="th-status-chip max-w-full"
+                          style={{ "--chip-tone": tone } as CSSProperties}
+                          title={descriptor?.label ?? c.credential_type}
+                        >
                           <span className="truncate">{descriptor?.label ?? c.credential_type}</span>
                         </span>
                       </td>
                       <td>
                         <span className="th-alerts-primary flex min-w-0 items-center gap-1.5">
-                          <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">{SCOPE_LABEL[c.scope_type]}</span>
+                          <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">
+                            {SCOPE_LABEL[c.scope_type]}
+                          </span>
                           <span className="truncate">{target.primary}</span>
                         </span>
-                        {target.secondary && <span className="th-alerts-secondary truncate" title="Derived from the device or group">{target.secondary}</span>}
+                        {target.secondary && (
+                          <span className="th-alerts-secondary truncate" title="Derived from the device or group">
+                            {target.secondary}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span className="th-alerts-primary truncate font-mono !text-[12px]">{c.username || "—"}</span>
                         {c.purpose && <span className="th-alerts-secondary truncate">{c.purpose}</span>}
                       </td>
                       <td>
-                        <button type="button" className="th-onb-link tabular-nums" onClick={() => void openAssignments(c)} title="Show assignments" aria-label={`${c.reference_count} references for ${c.name}`}>
+                        <button
+                          type="button"
+                          className="th-onb-link tabular-nums"
+                          onClick={() => void openAssignments(c)}
+                          title="Show assignments"
+                          aria-label={`${c.reference_count} references for ${c.name}`}
+                        >
                           <Link2 className="h-3.5 w-3.5" />
                           {formatCount(c.reference_count)}
                         </button>
@@ -741,45 +1011,111 @@ export default function CredentialVault() {
                         {c.last_used_at ? (
                           <>
                             <span className="th-alerts-primary">{timeAgo(c.last_used_at)}</span>
-                            <span className="th-alerts-secondary tabular-nums">{formatLocalDateTime(c.last_used_at)}</span>
+                            <span className="th-alerts-secondary tabular-nums">
+                              {formatLocalDateTime(c.last_used_at)}
+                            </span>
                           </>
                         ) : (
                           <span className="th-alerts-secondary !mt-0">Never</span>
                         )}
                       </td>
                       <td>
-                        <span className="th-status-chip" style={{ "--chip-tone": lifecycle.tone } as CSSProperties}><i />{lifecycle.label}</span>
+                        <span className="th-status-chip" style={{ "--chip-tone": lifecycle.tone } as CSSProperties}>
+                          <i />
+                          {lifecycle.label}
+                        </span>
                         {testResult ? (
-                          <span className="th-alerts-secondary truncate" style={{ color: testResult.status === "success" ? TONE.online : testResult.status === "failed" ? TONE.critical : undefined }} title={testResult.message}>
+                          <span
+                            className="th-alerts-secondary truncate"
+                            style={{
+                              color:
+                                testResult.status === "success"
+                                  ? TONE.online
+                                  : testResult.status === "failed"
+                                    ? TONE.critical
+                                    : undefined,
+                            }}
+                            title={testResult.message}
+                          >
                             {testResult.message}
                           </span>
                         ) : c.expires_at && c.lifecycle_status !== "disabled" ? (
-                          <span className="th-alerts-secondary tabular-nums">{c.lifecycle_status === "expired" ? "Expired" : "Expires"} {formatLocalDateTime(c.expires_at, DAY)}</span>
+                          <span className="th-alerts-secondary tabular-nums">
+                            {c.lifecycle_status === "expired" ? "Expired" : "Expires"}{" "}
+                            {formatLocalDateTime(c.expires_at, DAY)}
+                          </span>
                         ) : null}
                       </td>
                       <td>
                         <div className="th-onb-actions">
                           {canReveal && (
-                            <button type="button" className="th-onb-action" onClick={() => openReveal(c)} title="Reveal" aria-label={`Reveal ${c.name}`}><Eye className="h-4 w-4" /></button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => openReveal(c)}
+                              title="Reveal"
+                              aria-label={`Reveal ${c.name}`}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
                           )}
                           {canTest && (
-                            <button type="button" className="th-onb-action" onClick={() => void handleTest(c)} disabled={testing === c.id} title="Test connection" aria-label={`Test ${c.name}`}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => void handleTest(c)}
+                              disabled={testing === c.id}
+                              title="Test connection"
+                              aria-label={`Test ${c.name}`}
+                            >
                               <PlayCircle className={`h-4 w-4 ${testing === c.id ? "animate-pulse" : ""}`} />
                             </button>
                           )}
                           {canEdit && (
-                            <button type="button" className="th-onb-action" onClick={() => startEdit(c)} title="Edit" aria-label={`Edit ${c.name}`}><Pencil className="h-4 w-4" /></button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => startEdit(c)}
+                              title="Edit"
+                              aria-label={`Edit ${c.name}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
                           )}
                           {canEdit && (
-                            <button type="button" className="th-onb-action" data-active={c.status === "active" || undefined} onClick={() => void handleToggleStatus(c)} title={c.status === "active" ? "Disable" : "Enable"} aria-label={`${c.status === "active" ? "Disable" : "Enable"} ${c.name}`}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-active={c.status === "active" || undefined}
+                              onClick={() => void handleToggleStatus(c)}
+                              title={c.status === "active" ? "Disable" : "Enable"}
+                              aria-label={`${c.status === "active" ? "Disable" : "Enable"} ${c.name}`}
+                            >
                               <Power className="h-4 w-4" />
                             </button>
                           )}
                           {canAssign && (
-                            <button type="button" className="th-onb-action" onClick={() => void openAssignments(c)} title="Assignments" aria-label={`Assignments for ${c.name}`}><Link2 className="h-4 w-4" /></button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => void openAssignments(c)}
+                              title="Assignments"
+                              aria-label={`Assignments for ${c.name}`}
+                            >
+                              <Link2 className="h-4 w-4" />
+                            </button>
                           )}
                           {canDelete && (
-                            <button type="button" className="th-onb-action" data-tone="danger" onClick={() => setDeleteTarget(c)} title="Delete" aria-label={`Delete ${c.name}`}><Trash2 className="h-4 w-4" /></button>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-tone="danger"
+                              onClick={() => setDeleteTarget(c)}
+                              title="Delete"
+                              aria-label={`Delete ${c.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           )}
                         </div>
                       </td>
@@ -797,7 +1133,10 @@ export default function CredentialVault() {
             pageSize={pageSize}
             total={filtered.length}
             onPageChange={setPage}
-            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
             pageSizeOptions={[25, 50, 100]}
             itemLabel="credentials"
           />
@@ -807,14 +1146,20 @@ export default function CredentialVault() {
       {showForm && canCreate && (
         <Modal
           title={editingId ? "Edit credential" : "Add a credential"}
-          subtitle={editingId ? "Leave a secret field blank to keep the stored value" : "Encrypted at rest; only its use and reveals are recorded"}
+          subtitle={
+            editingId
+              ? "Leave a secret field blank to keep the stored value"
+              : "Encrypted at rest; only its use and reveals are recorded"
+          }
           icon={editingId ? Pencil : KeyRound}
           size="lg"
           busy={saving}
           onClose={closeForm}
           footer={
             <>
-              <Button variant="secondary" type="button" onClick={closeForm} disabled={saving}>Cancel</Button>
+              <Button variant="secondary" type="button" onClick={closeForm} disabled={saving}>
+                Cancel
+              </Button>
               <Button type="button" onClick={() => void handleSave()} disabled={saving || !form.name.trim()}>
                 {editingId ? <ShieldCheck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                 {saving ? "Saving…" : editingId ? "Save changes" : "Add credential"}
@@ -825,14 +1170,37 @@ export default function CredentialVault() {
           {formError && <Note tone={TONE.critical}>{formError}</Note>}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="th-onb-field">Name<input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-autofocus /></label>
+            <label className="th-onb-field">
+              Name
+              <input
+                placeholder="Name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                data-autofocus
+              />
+            </label>
             <div className="th-onb-field">
               Type
               <SelectField
-                aria-label="Credential type" value={form.credential_type} disabled={!!editingId}
-                onChange={(e) => setForm({ ...form, credential_type: e.target.value as VaultCredentialType, secret_fields: {}, metadata: {} })}
+                aria-label="Credential type"
+                value={form.credential_type}
+                disabled={!!editingId}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    credential_type: e.target.value as VaultCredentialType,
+                    secret_fields: {},
+                    metadata: {},
+                  })
+                }
               >
-                {types.filter((t) => !t.legacy).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                {types
+                  .filter((t) => !t.legacy)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
               </SelectField>
             </div>
           </div>
@@ -841,13 +1209,22 @@ export default function CredentialVault() {
             <div className="th-onb-field">
               Scope
               <SelectField
-                aria-label="Scope" value={form.scope_type} disabled={!!editingId}
-                onChange={(e) => setForm({
-                  ...form, scope_type: e.target.value as VaultScopeType,
-                  // A new scope clears every other scope's target, so none leaks into the payload.
-                  client_id: "", group_id: "", device_id: "", scope_client_filter: "",
-                  group_label: "", device_label: "",
-                })}
+                aria-label="Scope"
+                value={form.scope_type}
+                disabled={!!editingId}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    scope_type: e.target.value as VaultScopeType,
+                    // A new scope clears every other scope's target, so none leaks into the payload.
+                    client_id: "",
+                    group_id: "",
+                    device_id: "",
+                    scope_client_filter: "",
+                    group_label: "",
+                    device_label: "",
+                  })
+                }
               >
                 <option value="global">Global</option>
                 <option value="client">Client</option>
@@ -855,14 +1232,23 @@ export default function CredentialVault() {
                 <option value="device">Device</option>
               </SelectField>
             </div>
-            <label className="th-onb-field">Purpose<input placeholder="Purpose (e.g. embedded_terminal)" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} /></label>
+            <label className="th-onb-field">
+              Purpose
+              <input
+                placeholder="Purpose (e.g. embedded_terminal)"
+                value={form.purpose}
+                onChange={(e) => setForm({ ...form, purpose: e.target.value })}
+              />
+            </label>
           </div>
 
           {form.scope_type === "client" && (
             <div className="th-onb-field th-onb-reveal">
               Client
               <EntitySearchSelect
-                value={form.client_id} disabled={!!editingId} placeholder="Select client"
+                value={form.client_id}
+                disabled={!!editingId}
+                placeholder="Select client"
                 options={clientOptions}
                 onChange={(v) => setForm({ ...form, client_id: v })}
               />
@@ -874,7 +1260,9 @@ export default function CredentialVault() {
               <div className="th-onb-field">
                 Client
                 <EntitySearchSelect
-                  value={form.scope_client_filter} disabled={!!editingId} placeholder="Filter by client (optional)"
+                  value={form.scope_client_filter}
+                  disabled={!!editingId}
+                  placeholder="Filter by client (optional)"
                   options={clientOptions}
                   onChange={(v) => setForm({ ...form, scope_client_filter: v, group_id: "", group_label: "" })}
                 />
@@ -882,8 +1270,11 @@ export default function CredentialVault() {
               <div className="th-onb-field">
                 Group
                 <EntitySearchSelect
-                  value={form.group_id} disabled={!!editingId} placeholder="Select group"
-                  options={groupOptions} selectedLabel={form.group_label}
+                  value={form.group_id}
+                  disabled={!!editingId}
+                  placeholder="Select group"
+                  options={groupOptions}
+                  selectedLabel={form.group_label}
                   onChange={(v, label) => setForm({ ...form, group_id: v, group_label: label ?? form.group_label })}
                 />
               </div>
@@ -895,7 +1286,9 @@ export default function CredentialVault() {
               <div className="th-onb-field">
                 Client
                 <EntitySearchSelect
-                  value={form.scope_client_filter} disabled={!!editingId} placeholder="Filter by client (optional)"
+                  value={form.scope_client_filter}
+                  disabled={!!editingId}
+                  placeholder="Filter by client (optional)"
                   options={clientOptions}
                   onChange={(v) => setForm({ ...form, scope_client_filter: v, device_id: "", device_label: "" })}
                 />
@@ -903,8 +1296,11 @@ export default function CredentialVault() {
               <div className="th-onb-field">
                 Device
                 <EntitySearchSelect
-                  value={form.device_id} disabled={!!editingId} placeholder="Search device by hostname…"
-                  loadOptions={loadDeviceOptions} selectedLabel={form.device_label}
+                  value={form.device_id}
+                  disabled={!!editingId}
+                  placeholder="Search device by hostname…"
+                  loadOptions={loadDeviceOptions}
+                  selectedLabel={form.device_label}
                   onChange={(v, label) => setForm({ ...form, device_id: v, device_label: label ?? form.device_label })}
                 />
               </div>
@@ -913,26 +1309,54 @@ export default function CredentialVault() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             {selectedType?.requires_username && (
-              <label className="th-onb-field">Username<input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} autoComplete="off" spellCheck={false} /></label>
+              <label className="th-onb-field">
+                Username
+                <input
+                  placeholder="Username"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
             )}
             {selectedType?.secret_fields.map((f) => (
               <FieldInput
-                key={f.key} spec={f} value={form.secret_fields[f.key] ?? ""}
+                key={f.key}
+                spec={f}
+                value={form.secret_fields[f.key] ?? ""}
                 placeholder={editingId ? "Leave blank to keep current secret" : undefined}
                 onChange={(value) => setForm({ ...form, secret_fields: { ...form.secret_fields, [f.key]: value } })}
               />
             ))}
             {selectedType?.metadata_fields.map((f) => (
               <FieldInput
-                key={f.key} spec={f} value={form.metadata[f.key] ?? f.default ?? ""}
+                key={f.key}
+                spec={f}
+                value={form.metadata[f.key] ?? f.default ?? ""}
                 onChange={(value) => setForm({ ...form, metadata: { ...form.metadata, [f.key]: value } })}
               />
             ))}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="th-onb-field">Expires<input type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} aria-label="Expires at" /></label>
-            <label className="th-onb-field">Notes<input placeholder="Notes (optional)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
+            <label className="th-onb-field">
+              Expires
+              <input
+                type="date"
+                value={form.expires_at}
+                onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+                aria-label="Expires at"
+              />
+            </label>
+            <label className="th-onb-field">
+              Notes
+              <input
+                placeholder="Notes (optional)"
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </label>
           </div>
         </Modal>
       )}
@@ -945,17 +1369,27 @@ export default function CredentialVault() {
           tone="warning"
           busy={revealing}
           onClose={closeReveal}
-          footer={revealed ? (
-            <Button type="button" onClick={closeReveal}>Done</Button>
-          ) : (
-            <>
-              <Button variant="secondary" type="button" onClick={closeReveal} disabled={revealing}>Cancel</Button>
-              <Button type="button" onClick={() => void handleReveal()} disabled={revealing || revealReason.trim().length < 5}>
-                <Eye className="h-4 w-4" />
-                {revealing ? "Revealing…" : "Reveal"}
+          footer={
+            revealed ? (
+              <Button type="button" onClick={closeReveal}>
+                Done
               </Button>
-            </>
-          )}
+            ) : (
+              <>
+                <Button variant="secondary" type="button" onClick={closeReveal} disabled={revealing}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleReveal()}
+                  disabled={revealing || revealReason.trim().length < 5}
+                >
+                  <Eye className="h-4 w-4" />
+                  {revealing ? "Revealing…" : "Reveal"}
+                </Button>
+              </>
+            )
+          }
         >
           {revealed ? (
             Object.keys(revealed).length === 0 ? (
@@ -969,11 +1403,18 @@ export default function CredentialVault() {
               <label className="th-onb-field">
                 Reason
                 <textarea
-                  rows={3} value={revealReason} onChange={(e) => setRevealReason(e.target.value)} data-autofocus
+                  rows={3}
+                  value={revealReason}
+                  onChange={(e) => setRevealReason(e.target.value)}
+                  data-autofocus
                   placeholder="Why the secret is needed, e.g. ticket number"
-                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void handleReveal(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void handleReveal();
+                  }}
                 />
-                <span className="th-onb-hint">At least 5 characters. It is written to the audit log with your name.</span>
+                <span className="th-onb-hint">
+                  At least 5 characters. It is written to the audit log with your name.
+                </span>
               </label>
             </>
           )}
@@ -981,7 +1422,12 @@ export default function CredentialVault() {
       )}
 
       {deleteTarget && (
-        <ConfirmationModal title="Delete credential" confirmLabel="Delete" onConfirm={() => void handleDelete()} onClose={() => setDeleteTarget(null)}>
+        <ConfirmationModal
+          title="Delete credential"
+          confirmLabel="Delete"
+          onConfirm={() => void handleDelete()}
+          onClose={() => setDeleteTarget(null)}
+        >
           <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
             Permanently delete <strong>{deleteTarget.name}</strong>? This cannot be undone.
           </p>
@@ -989,8 +1435,15 @@ export default function CredentialVault() {
       )}
 
       {blockedDelete && (
-        <ConfirmationModal title="Credential still in use" confirmLabel="Delete anyway" onConfirm={() => void handleForceDelete()} onClose={() => setBlockedDelete(null)}>
-          <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>{blockedDelete.message}</p>
+        <ConfirmationModal
+          title="Credential still in use"
+          confirmLabel="Delete anyway"
+          onConfirm={() => void handleForceDelete()}
+          onClose={() => setBlockedDelete(null)}
+        >
+          <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
+            {blockedDelete.message}
+          </p>
         </ConfirmationModal>
       )}
 
@@ -1000,18 +1453,38 @@ export default function CredentialVault() {
           subtitle={assignmentsTarget.name}
           icon={Link2}
           onClose={() => setAssignmentsTarget(null)}
-          footer={<Button type="button" variant="secondary" onClick={() => setAssignmentsTarget(null)}>Close</Button>}
+          footer={
+            <Button type="button" variant="secondary" onClick={() => setAssignmentsTarget(null)}>
+              Close
+            </Button>
+          }
         >
           {assignments.length === 0 ? (
-            <EmptyState className="py-6" icon={<Link2 className="h-5 w-5" />} title="No explicit assignments" description="Not assigned to any client or device." />
+            <EmptyState
+              className="py-6"
+              icon={<Link2 className="h-5 w-5" />}
+              title="No explicit assignments"
+              description="Not assigned to any client or device."
+            />
           ) : (
             <ul className="th-batch-list">
               {assignments.map((a) => (
                 <li key={a.id}>
-                  <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">{a.client_name ? "Client" : a.device_name ? "Device" : "Other"}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: "var(--th-text-primary)" }}>{a.client_name ?? a.device_name ?? `#${a.id}`}</span>
+                  <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">
+                    {a.client_name ? "Client" : a.device_name ? "Device" : "Other"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: "var(--th-text-primary)" }}>
+                    {a.client_name ?? a.device_name ?? `#${a.id}`}
+                  </span>
                   {canAssign && (
-                    <button type="button" className="th-onb-action" data-tone="danger" onClick={() => void handleRemoveAssignment(a.id)} aria-label={`Remove assignment ${a.client_name ?? a.device_name ?? a.id}`} title="Remove">
+                    <button
+                      type="button"
+                      className="th-onb-action"
+                      data-tone="danger"
+                      onClick={() => void handleRemoveAssignment(a.id)}
+                      aria-label={`Remove assignment ${a.client_name ?? a.device_name ?? a.id}`}
+                      title="Remove"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
@@ -1024,12 +1497,23 @@ export default function CredentialVault() {
               Assign to a client
               <div className="flex gap-2">
                 <div className="min-w-0 flex-1">
-                  <SelectField aria-label="Client to assign" value={assignClientId} onChange={(e) => setAssignClientId(e.target.value)}>
+                  <SelectField
+                    aria-label="Client to assign"
+                    value={assignClientId}
+                    onChange={(e) => setAssignClientId(e.target.value)}
+                  >
                     <option value="">Select client…</option>
-                    {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </SelectField>
                 </div>
-                <Button type="button" onClick={() => void handleAddAssignment()} disabled={!assignClientId}><Plus className="h-4 w-4" />Add</Button>
+                <Button type="button" onClick={() => void handleAddAssignment()} disabled={!assignClientId}>
+                  <Plus className="h-4 w-4" />
+                  Add
+                </Button>
               </div>
             </div>
           )}
@@ -1040,9 +1524,19 @@ export default function CredentialVault() {
 }
 
 function FieldInput({
-  spec, value, onChange, placeholder,
+  spec,
+  value,
+  onChange,
+  placeholder,
 }: {
-  spec: { key: string; label: string; required: boolean; kind: string; options: string[] | null; default: string | null };
+  spec: {
+    key: string;
+    label: string;
+    required: boolean;
+    kind: string;
+    options: string[] | null;
+    default: string | null;
+  };
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -1053,7 +1547,11 @@ function FieldInput({
       <div className="th-onb-field">
         {label}
         <SelectField aria-label={spec.label} value={value} onChange={(e) => onChange(e.target.value)}>
-          {spec.options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {spec.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
         </SelectField>
       </div>
     );
@@ -1062,7 +1560,14 @@ function FieldInput({
     return (
       <label className="th-onb-field sm:col-span-2">
         {label}
-        <textarea rows={4} className="font-mono" placeholder={placeholder ?? label} value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+        <textarea
+          rows={4}
+          className="font-mono"
+          placeholder={placeholder ?? label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+        />
       </label>
     );
   }
@@ -1072,7 +1577,8 @@ function FieldInput({
       <input
         type={spec.kind === "password" ? "password" : spec.kind === "number" ? "number" : "text"}
         placeholder={placeholder ?? label}
-        value={value} onChange={(e) => onChange(e.target.value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         autoComplete={spec.kind === "password" ? "new-password" : "off"}
       />
     </label>

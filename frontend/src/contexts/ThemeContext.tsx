@@ -67,9 +67,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setThemeMode = (mode: ThemePreference) => setThemePreference(mode);
 
   return (
-    <ThemeContext.Provider value={{ theme, themePreference, toggle, setThemeMode }}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, themePreference, toggle, setThemeMode }}>{children}</ThemeContext.Provider>
   );
 }
 

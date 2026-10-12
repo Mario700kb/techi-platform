@@ -9,7 +9,11 @@ import pkg from "../../package.json";
 
 const HIGHLIGHTS = [
   { icon: Activity, title: "Live fleet health", text: "Status, alerts and health scores for every managed client." },
-  { icon: MonitorSmartphone, title: "One-click remote support", text: "Open TECHI Remote Support sessions straight from the console." },
+  {
+    icon: MonitorSmartphone,
+    title: "One-click remote support",
+    text: "Open TECHI Remote Support sessions straight from the console.",
+  },
   { icon: ShieldCheck, title: "Audited access", text: "Every sign-in and operator action is recorded." },
 ];
 
@@ -76,31 +80,52 @@ export default function Login() {
       <aside className="th-auth-brand">
         <img src={logo} alt="TECHI Connect" className="h-7 w-auto self-start object-contain" />
         <div className="max-w-md">
-          <h2 className="th-enter text-[28px] font-semibold leading-tight tracking-tight" style={{ color: "var(--th-text-primary)", animationDelay: "80ms" }}>
+          <h2
+            className="th-enter text-[28px] font-semibold leading-tight tracking-tight"
+            style={{ color: "var(--th-text-primary)", animationDelay: "80ms" }}
+          >
             Run every managed device from one console.
           </h2>
           <ul className="mt-8 space-y-5">
             {HIGHLIGHTS.map(({ icon: Icon, title, text }, i) => (
               <li key={title} className="th-enter flex gap-3" style={{ animationDelay: `${180 + i * 90}ms` }}>
-                <span className="th-auth-feature-icon"><Icon className="h-4 w-4" /></span>
+                <span className="th-auth-feature-icon">
+                  <Icon className="h-4 w-4" />
+                </span>
                 <span>
-                  <span className="block text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{title}</span>
-                  <span className="mt-0.5 block text-[13px]" style={{ color: "var(--th-text-muted)" }}>{text}</span>
+                  <span className="block text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                    {title}
+                  </span>
+                  <span className="mt-0.5 block text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                    {text}
+                  </span>
                 </span>
               </li>
             ))}
           </ul>
         </div>
-        <p className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>TECHI Connect · v{pkg.version}</p>
+        <p className="text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+          TECHI Connect · v{pkg.version}
+        </p>
       </aside>
 
       {/* Sign-in form */}
       <main className="th-auth-main">
-        <form key={shakeKey} onSubmit={submit} className={`th-enter relative w-full max-w-[360px] ${shakeKey ? "th-shake" : ""}`} noValidate aria-busy={busy}>
+        <form
+          key={shakeKey}
+          onSubmit={submit}
+          className={`th-enter relative w-full max-w-[360px] ${shakeKey ? "th-shake" : ""}`}
+          noValidate
+          aria-busy={busy}
+        >
           <span className="th-auth-progress" aria-hidden="true" data-active={phase === "submitting"} />
           <img src={logo} alt="TECHI Connect" className="mb-10 h-7 w-auto object-contain lg:hidden" />
-          <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: "var(--th-text-primary)" }}>Sign in to TECHI Connect</h1>
-          <p className="mt-1.5 text-[14px]" style={{ color: "var(--th-text-muted)" }}>Use your operator account to continue.</p>
+          <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: "var(--th-text-primary)" }}>
+            Sign in to TECHI Connect
+          </h1>
+          <p className="mt-1.5 text-[14px]" style={{ color: "var(--th-text-muted)" }}>
+            Use your operator account to continue.
+          </p>
 
           {(error || sessionExpired) && (
             <div className="th-auth-notice mt-6" data-tone={error ? "error" : "info"} role={error ? "alert" : "status"}>
@@ -149,7 +174,9 @@ export default function Login() {
                 </button>
               </span>
               {capsLock && (
-                <span className="mt-1.5 block text-[12px]" style={{ color: "var(--th-status-warning)" }}>Caps Lock is on</span>
+                <span className="mt-1.5 block text-[12px]" style={{ color: "var(--th-status-warning)" }}>
+                  Caps Lock is on
+                </span>
               )}
             </label>
           </div>
@@ -161,7 +188,9 @@ export default function Login() {
             data-phase={phase}
             style={{ minHeight: 40 }}
           >
-            {phase === "submitting" && <span className="th-spinner" style={{ borderTopColor: "var(--th-on-accent)" }} aria-hidden="true" />}
+            {phase === "submitting" && (
+              <span className="th-spinner" style={{ borderTopColor: "var(--th-on-accent)" }} aria-hidden="true" />
+            )}
             {phase === "success" && <Check className="th-pop h-4 w-4" aria-hidden="true" />}
             {phase === "submitting" ? "Signing in…" : phase === "success" ? "Signed in" : "Sign in"}
           </button>

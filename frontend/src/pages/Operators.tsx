@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { AlertTriangle, KeySquare, Pencil, Plus, Power, RefreshCcw, Search, Shield, ShieldAlert, ShieldCheck, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
+import {
+  AlertTriangle,
+  KeySquare,
+  Pencil,
+  Plus,
+  Power,
+  RefreshCcw,
+  Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
   OperatorRecord,
@@ -63,7 +79,11 @@ function RoleChip({ role }: { role: UserRole }) {
 function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+    <div
+      className="th-onb-note th-onb-reveal"
+      style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}
+      role="alert"
+    >
       <AlertTriangle className="h-4 w-4" />
       <span>{message}</span>
     </div>
@@ -74,13 +94,14 @@ export default function Operators() {
   const { user, can } = useAuth();
   const canManage = can("admin");
 
-  const [operators, setOperators] = useState<OperatorRecord[]>(() => appCache.peek<OperatorRecord[]>(CACHE_KEYS.operatorsList) ?? []);
+  const [operators, setOperators] = useState<OperatorRecord[]>(
+    () => appCache.peek<OperatorRecord[]>(CACHE_KEYS.operatorsList) ?? [],
+  );
   const [teams, setTeams] = useState<TeamWithStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const teamsForOperator = (opId: number): TeamWithStats[] =>
-    teams.filter((t) => t.operator_ids?.includes(opId));
+  const teamsForOperator = (opId: number): TeamWithStats[] => teams.filter((t) => t.operator_ids?.includes(opId));
 
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState<OperatorCreate>({
@@ -133,7 +154,9 @@ export default function Operators() {
     void loadData();
   }, []);
 
-  const activePrivilegedCount = operators.filter((op) => op.is_active && (op.role === "owner" || op.role === "admin")).length;
+  const activePrivilegedCount = operators.filter(
+    (op) => op.is_active && (op.role === "owner" || op.role === "admin"),
+  ).length;
 
   const isLastActivePrivileged = (op: OperatorRecord) =>
     op.is_active && (op.role === "owner" || op.role === "admin") && activePrivilegedCount <= 1;
@@ -170,7 +193,11 @@ export default function Operators() {
         email,
         display_name: displayName,
       });
-      setOperators((prev) => { const next = [...prev, created]; appCache.set(CACHE_KEYS.operatorsList, next); return next; });
+      setOperators((prev) => {
+        const next = [...prev, created];
+        appCache.set(CACHE_KEYS.operatorsList, next);
+        return next;
+      });
       setShowCreate(false);
       setCreateForm({ username: "", email: "", display_name: "", password: "", role: "operator", is_active: true });
     } catch (err) {
@@ -206,7 +233,11 @@ export default function Operators() {
         ...editForm,
         display_name: editForm.display_name || null,
       });
-      setOperators((prev) => { const next = prev.map((o) => (o.id === updated.id ? updated : o)); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
+      setOperators((prev) => {
+        const next = prev.map((o) => (o.id === updated.id ? updated : o));
+        appCache.set(CACHE_KEYS.operatorsList, next);
+        return next;
+      });
       setEditTarget(null);
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Failed to update operator");
@@ -223,7 +254,11 @@ export default function Operators() {
     try {
       setError(null);
       const updated = await updateOperator(op.id, { is_active: !op.is_active });
-      setOperators((prev) => { const next = prev.map((o) => (o.id === updated.id ? updated : o)); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
+      setOperators((prev) => {
+        const next = prev.map((o) => (o.id === updated.id ? updated : o));
+        appCache.set(CACHE_KEYS.operatorsList, next);
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");
     }
@@ -254,7 +289,11 @@ export default function Operators() {
     try {
       setDeleteLoading(true);
       await deleteOperator(deleteTarget.id);
-      setOperators((prev) => { const next = prev.filter((o) => o.id !== deleteTarget.id); appCache.set(CACHE_KEYS.operatorsList, next); return next; });
+      setOperators((prev) => {
+        const next = prev.filter((o) => o.id !== deleteTarget.id);
+        appCache.set(CACHE_KEYS.operatorsList, next);
+        return next;
+      });
       setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete operator");
@@ -279,11 +318,18 @@ export default function Operators() {
     return operators.filter((op) => {
       if (!matchesFilter(op, filter)) return false;
       if (!q) return true;
-      const teamNames = teamsForOperator(op.id).map((t) => t.name).join(" ");
-      return [op.display_name ?? "", op.username, op.email, op.role, teamNames].some((v) => v.toLowerCase().includes(q));
+      const teamNames = teamsForOperator(op.id)
+        .map((t) => t.name)
+        .join(" ");
+      return [op.display_name ?? "", op.username, op.email, op.role, teamNames].some((v) =>
+        v.toLowerCase().includes(q),
+      );
     });
   }, [operators, filter, search, teams]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pagedOperators = useMemo(() => visibleOperators.slice((page - 1) * pageSize, page * pageSize), [visibleOperators, page, pageSize]);
+  const pagedOperators = useMemo(
+    () => visibleOperators.slice((page - 1) * pageSize, page * pageSize),
+    [visibleOperators, page, pageSize],
+  );
   const activeCount = operators.filter((op) => op.is_active).length;
   const neverLoggedIn = operators.filter((op) => !op.last_login_at).length;
   const denied = /Permission denied|Insufficient role/.test(error ?? "");
@@ -293,7 +339,11 @@ export default function Operators() {
       <section className="premium-page th-onb space-y-4">
         <PageHeader title="Operators" description="Platform users, their roles and their access." />
         <div className="th-onb-card th-onb-enter">
-          <EmptyState icon={<ShieldAlert className="h-5 w-5" />} title="Access denied" description="Your role does not include managing operators." />
+          <EmptyState
+            icon={<ShieldAlert className="h-5 w-5" />}
+            title="Access denied"
+            description="Your role does not include managing operators."
+          />
         </div>
       </section>
     );
@@ -311,7 +361,13 @@ export default function Operators() {
               Refresh
             </Button>
             {canManage && (
-              <Button size="sm" onClick={() => { setCreateError(null); setShowCreate(true); }}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateError(null);
+                  setShowCreate(true);
+                }}
+              >
                 <Plus className="h-3.5 w-3.5" />
                 Add operator
               </Button>
@@ -321,27 +377,72 @@ export default function Operators() {
       />
 
       {error && (
-        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+        <div
+          className="th-onb-note th-onb-reveal"
+          style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}
+          role="alert"
+        >
           <AlertTriangle className="h-4 w-4" />
           <span className="flex-1">{error}</span>
-          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
       {/* ── summary ─────────────────────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Operators", value: formatCount(operators.length), hint: `${formatCount(teams.length)} teams`, icon: Users, tone: "var(--th-accent)" },
-          { label: "Active", value: formatCount(activeCount), hint: `${formatCount(operators.length - activeCount)} inactive`, icon: UserCheck, tone: TONE.online },
-          { label: "Owners & admins", value: formatCount(filterCounts.privileged), hint: `${formatCount(activePrivilegedCount)} active`, icon: ShieldCheck, tone: TONE.warning },
-          { label: "Never signed in", value: formatCount(neverLoggedIn), hint: neverLoggedIn ? "Created but not used yet" : "Everyone has signed in", icon: UserPlus, tone: neverLoggedIn ? TONE.info : TONE.neutral },
+          {
+            label: "Operators",
+            value: formatCount(operators.length),
+            hint: `${formatCount(teams.length)} teams`,
+            icon: Users,
+            tone: "var(--th-accent)",
+          },
+          {
+            label: "Active",
+            value: formatCount(activeCount),
+            hint: `${formatCount(operators.length - activeCount)} inactive`,
+            icon: UserCheck,
+            tone: TONE.online,
+          },
+          {
+            label: "Owners & admins",
+            value: formatCount(filterCounts.privileged),
+            hint: `${formatCount(activePrivilegedCount)} active`,
+            icon: ShieldCheck,
+            tone: TONE.warning,
+          },
+          {
+            label: "Never signed in",
+            value: formatCount(neverLoggedIn),
+            hint: neverLoggedIn ? "Created but not used yet" : "Everyone has signed in",
+            icon: UserPlus,
+            tone: neverLoggedIn ? TONE.info : TONE.neutral,
+          },
         ].map((item, index) => (
-          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
-            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+          <div
+            key={item.label}
+            className="th-onb-card th-onb-stat th-onb-enter"
+            style={{ "--i": index } as CSSProperties}
+          >
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}>
+              <item.icon className="h-4 w-4" />
+            </span>
             <div className="min-w-0">
-              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
-              <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
-              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                {item.label}
+              </div>
+              <div
+                className="text-[24px] font-semibold leading-8 tabular-nums"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                {item.value}
+              </div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                {item.hint}
+              </div>
             </div>
           </div>
         ))}
@@ -349,11 +450,26 @@ export default function Operators() {
 
       {/* ── operators ───────────────────────────────────────────────────── */}
       <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
-        <CardHead icon={Users} tone="var(--th-accent)" title="Operators" subtitle={loading && operators.length === 0 ? "Loading…" : `${formatCount(operators.length)} accounts`} />
+        <CardHead
+          icon={Users}
+          tone="var(--th-accent)"
+          title="Operators"
+          subtitle={loading && operators.length === 0 ? "Loading…" : `${formatCount(operators.length)} accounts`}
+        />
         <div className="th-alerts-toolbar">
           <div ref={filterTabsRef} role="tablist" aria-label="Operator role" className="th-tabs">
             {OPERATOR_FILTERS.map(({ id, label }) => (
-              <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => { setFilter(id); setPage(1); }} className="th-tab">
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={filter === id}
+                onClick={() => {
+                  setFilter(id);
+                  setPage(1);
+                }}
+                className="th-tab"
+              >
                 {label}
                 <span className="th-tab-count">{formatCount(filterCounts[id])}</span>
               </button>
@@ -362,9 +478,22 @@ export default function Operators() {
           <div className="pb-2">
             <label className="th-search th-search-sm w-[260px]">
               <Search className="h-3.5 w-3.5 flex-none" />
-              <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search operators" aria-label="Search operators" />
+              <input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search operators"
+                aria-label="Search operators"
+              />
               {search && (
-                <button type="button" onClick={() => setSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="th-explorer-clear"
+                  aria-label="Clear search"
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -374,14 +503,29 @@ export default function Operators() {
 
         {loading && operators.length === 0 ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading operators">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />)}
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
+            ))}
           </div>
         ) : visibleOperators.length === 0 ? (
           <EmptyState
             className="th-fade-in py-10"
             icon={<Users className="h-5 w-5" />}
             title={operators.length === 0 ? "No operators yet" : "No operators match these filters"}
-            action={operators.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setFilter("all"); setSearch(""); }}>Clear filters</Button> : undefined}
+            action={
+              operators.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setFilter("all");
+                    setSearch("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
@@ -412,24 +556,50 @@ export default function Operators() {
                   const lastPrivileged = isLastActivePrivileged(op);
                   const displayLabel = op.display_name || op.username;
                   const opTeams = teamsForOperator(op.id);
-                  const lockReason = isSelf ? "You cannot do this to your own account" : lastPrivileged ? "The last active owner or admin must stay" : undefined;
+                  const lockReason = isSelf
+                    ? "You cannot do this to your own account"
+                    : lastPrivileged
+                      ? "The last active owner or admin must stay"
+                      : undefined;
                   return (
-                    <tr key={op.id} className="th-alerts-row" data-selected={isSelf || undefined} style={{ "--row": index } as CSSProperties}>
+                    <tr
+                      key={op.id}
+                      className="th-alerts-row"
+                      data-selected={isSelf || undefined}
+                      style={{ "--row": index } as CSSProperties}
+                    >
                       <td>
                         <span className="flex min-w-0 items-center gap-2.5">
-                          <span className="th-onb-avatar !h-8 !w-8 !text-[12px]" aria-hidden="true">{displayLabel.charAt(0).toUpperCase()}</span>
+                          <span className="th-onb-avatar !h-8 !w-8 !text-[12px]" aria-hidden="true">
+                            {displayLabel.charAt(0).toUpperCase()}
+                          </span>
                           <span className="min-w-0">
                             <span className="th-alerts-primary flex items-center gap-1.5">
                               <span className="truncate">{displayLabel}</span>
-                              {isSelf && <span className="th-status-chip !h-5 !px-2 !text-[11px]" style={{ "--chip-tone": "var(--th-accent)" } as CSSProperties}>You</span>}
+                              {isSelf && (
+                                <span
+                                  className="th-status-chip !h-5 !px-2 !text-[11px]"
+                                  style={{ "--chip-tone": "var(--th-accent)" } as CSSProperties}
+                                >
+                                  You
+                                </span>
+                              )}
                             </span>
-                            <span className="th-alerts-secondary"><span className="font-mono">{op.username}</span>{op.email ? ` · ${op.email}` : ""}</span>
+                            <span className="th-alerts-secondary">
+                              <span className="font-mono">{op.username}</span>
+                              {op.email ? ` · ${op.email}` : ""}
+                            </span>
                           </span>
                         </span>
                       </td>
-                      <td><RoleChip role={op.role} /></td>
                       <td>
-                        <span className="th-status-chip" style={{ "--chip-tone": op.is_active ? TONE.online : TONE.neutral } as CSSProperties}>
+                        <RoleChip role={op.role} />
+                      </td>
+                      <td>
+                        <span
+                          className="th-status-chip"
+                          style={{ "--chip-tone": op.is_active ? TONE.online : TONE.neutral } as CSSProperties}
+                        >
                           <i />
                           {op.is_active ? "Active" : "Inactive"}
                         </span>
@@ -440,7 +610,14 @@ export default function Operators() {
                         ) : (
                           <div className="flex flex-wrap gap-1.5">
                             {opTeams.map((team) => (
-                              <span key={team.id} className="th-status-chip !h-6" style={{ "--chip-tone": team.color ?? "var(--th-accent)" } as CSSProperties}><i />{team.name}</span>
+                              <span
+                                key={team.id}
+                                className="th-status-chip !h-6"
+                                style={{ "--chip-tone": team.color ?? "var(--th-accent)" } as CSSProperties}
+                              >
+                                <i />
+                                {team.name}
+                              </span>
                             ))}
                           </div>
                         )}
@@ -449,20 +626,42 @@ export default function Operators() {
                         {op.last_login_at ? (
                           <>
                             <span className="th-alerts-primary">{timeAgo(op.last_login_at)}</span>
-                            <span className="th-alerts-secondary tabular-nums">{formatLocalDateTime(op.last_login_at)}</span>
+                            <span className="th-alerts-secondary tabular-nums">
+                              {formatLocalDateTime(op.last_login_at)}
+                            </span>
                           </>
                         ) : (
                           <span className="th-alerts-secondary">Never</span>
                         )}
                       </td>
-                      <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(op.created_at, { day: "numeric", month: "short", year: "numeric" })}</span></td>
+                      <td>
+                        <span className="th-alerts-secondary !mt-0 tabular-nums">
+                          {formatLocalDateTime(op.created_at, { day: "numeric", month: "short", year: "numeric" })}
+                        </span>
+                      </td>
                       {canManage && (
                         <td>
                           <div className="th-onb-actions">
-                            <button type="button" className="th-onb-action" onClick={() => openEdit(op)} title="Edit" aria-label={`Edit ${displayLabel}`}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => openEdit(op)}
+                              title="Edit"
+                              aria-label={`Edit ${displayLabel}`}
+                            >
                               <Pencil className="h-4 w-4" />
                             </button>
-                            <button type="button" className="th-onb-action" onClick={() => { setPasswordTarget(op); setNewPassword(""); setPasswordError(null); }} title="Reset password" aria-label={`Reset password for ${displayLabel}`}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              onClick={() => {
+                                setPasswordTarget(op);
+                                setNewPassword("");
+                                setPasswordError(null);
+                              }}
+                              title="Reset password"
+                              aria-label={`Reset password for ${displayLabel}`}
+                            >
                               <KeySquare className="h-4 w-4" />
                             </button>
                             <button
@@ -471,7 +670,13 @@ export default function Operators() {
                               data-active={op.is_active || undefined}
                               onClick={() => void handleToggleActive(op)}
                               disabled={isSelf || (op.is_active && lastPrivileged)}
-                              title={isSelf || (op.is_active && lastPrivileged) ? lockReason : op.is_active ? "Deactivate" : "Activate"}
+                              title={
+                                isSelf || (op.is_active && lastPrivileged)
+                                  ? lockReason
+                                  : op.is_active
+                                    ? "Deactivate"
+                                    : "Activate"
+                              }
                               aria-label={`${op.is_active ? "Deactivate" : "Activate"} ${displayLabel}`}
                             >
                               <Power className="h-4 w-4" />
@@ -504,7 +709,10 @@ export default function Operators() {
             pageSize={pageSize}
             total={visibleOperators.length}
             onPageChange={setPage}
-            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
             pageSizeOptions={[25, 50, 100]}
             itemLabel="operators"
           />
@@ -519,24 +727,76 @@ export default function Operators() {
           onClose={() => setShowCreate(false)}
           footer={
             <>
-              <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
-              <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>{createLoading ? "Creating…" : "Create operator"}</Button>
+              <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleCreate()} disabled={createLoading}>
+                {createLoading ? "Creating…" : "Create operator"}
+              </Button>
             </>
           }
         >
           <FormError message={createError} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="th-onb-field">Display name<input value={createForm.display_name ?? ""} onChange={(e) => setCreateForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="Full name" /></label>
-            <label className="th-onb-field">Username<input value={createForm.username} onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))} placeholder="login name" spellCheck={false} autoComplete="off" /></label>
+            <label className="th-onb-field">
+              Display name
+              <input
+                value={createForm.display_name ?? ""}
+                onChange={(e) => setCreateForm((f) => ({ ...f, display_name: e.target.value }))}
+                placeholder="Full name"
+              />
+            </label>
+            <label className="th-onb-field">
+              Username
+              <input
+                value={createForm.username}
+                onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="login name"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </label>
           </div>
-          <label className="th-onb-field">Email<input type="email" value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="user@example.com" /></label>
+          <label className="th-onb-field">
+            Email
+            <input
+              type="email"
+              value={createForm.email}
+              onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+              placeholder="user@example.com"
+            />
+          </label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="th-onb-field">Password<input type="password" value={createForm.password} onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))} placeholder="At least 8 characters" autoComplete="new-password" /></label>
-            <div className="th-onb-field">Role<Select id="create-role" aria-label="Role" value={createForm.role} onChange={(value) => setCreateForm((f) => ({ ...f, role: value as UserRole }))} options={roleOptions} /></div>
+            <label className="th-onb-field">
+              Password
+              <input
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+              />
+            </label>
+            <div className="th-onb-field">
+              Role
+              <Select
+                id="create-role"
+                aria-label="Role"
+                value={createForm.role}
+                onChange={(value) => setCreateForm((f) => ({ ...f, role: value as UserRole }))}
+                options={roleOptions}
+              />
+            </div>
           </div>
           <label className="th-onb-check">
-            <input type="checkbox" checked={createForm.is_active} onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))} />
-            <span>Active<small>Inactive accounts cannot sign in</small></span>
+            <input
+              type="checkbox"
+              checked={createForm.is_active}
+              onChange={(e) => setCreateForm((f) => ({ ...f, is_active: e.target.checked }))}
+            />
+            <span>
+              Active<small>Inactive accounts cannot sign in</small>
+            </span>
           </label>
         </Modal>
       )}
@@ -549,20 +809,56 @@ export default function Operators() {
           onClose={() => setEditTarget(null)}
           footer={
             <>
-              <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
-              <Button type="button" onClick={() => void handleEdit()} disabled={editLoading}>{editLoading ? "Saving…" : "Save changes"}</Button>
+              <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleEdit()} disabled={editLoading}>
+                {editLoading ? "Saving…" : "Save changes"}
+              </Button>
             </>
           }
         >
           <FormError message={editError} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="th-onb-field">Display name<input value={editForm.display_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="Full name (optional)" /></label>
-            <label className="th-onb-field">Username<input value={editForm.username ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))} id="edit-username" aria-label="Username" spellCheck={false} /></label>
+            <label className="th-onb-field">
+              Display name
+              <input
+                value={editForm.display_name ?? ""}
+                onChange={(e) => setEditForm((f) => ({ ...f, display_name: e.target.value }))}
+                placeholder="Full name (optional)"
+              />
+            </label>
+            <label className="th-onb-field">
+              Username
+              <input
+                value={editForm.username ?? ""}
+                onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+                id="edit-username"
+                aria-label="Username"
+                spellCheck={false}
+              />
+            </label>
           </div>
-          <label className="th-onb-field">Email<input type="email" value={editForm.email ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} id="edit-email" aria-label="Email" /></label>
+          <label className="th-onb-field">
+            Email
+            <input
+              type="email"
+              value={editForm.email ?? ""}
+              onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+              id="edit-email"
+              aria-label="Email"
+            />
+          </label>
           <div className="th-onb-field">
             Role
-            <Select id="edit-role" aria-label="Role" value={editForm.role ?? editTarget.role} onChange={(value) => setEditForm((f) => ({ ...f, role: value as UserRole }))} options={roleOptions} disabled={!canEditRole(editTarget.role)} />
+            <Select
+              id="edit-role"
+              aria-label="Role"
+              value={editForm.role ?? editTarget.role}
+              onChange={(value) => setEditForm((f) => ({ ...f, role: value as UserRole }))}
+              options={roleOptions}
+              disabled={!canEditRole(editTarget.role)}
+            />
             <span className="th-onb-hint">{ROLE_INFO[(editForm.role ?? editTarget.role) as UserRole].hint}.</span>
           </div>
         </Modal>
@@ -576,15 +872,29 @@ export default function Operators() {
           onClose={() => setPasswordTarget(null)}
           footer={
             <>
-              <Button variant="secondary" type="button" onClick={() => setPasswordTarget(null)}>Cancel</Button>
-              <Button type="button" onClick={() => void handlePasswordReset()} disabled={passwordLoading || newPassword.length < 8}>{passwordLoading ? "Updating…" : "Update password"}</Button>
+              <Button variant="secondary" type="button" onClick={() => setPasswordTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handlePasswordReset()}
+                disabled={passwordLoading || newPassword.length < 8}
+              >
+                {passwordLoading ? "Updating…" : "Update password"}
+              </Button>
             </>
           }
         >
           <FormError message={passwordError} />
           <label className="th-onb-field">
             New password for <span className="font-mono">{passwordTarget.username}</span>
-            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+            />
           </label>
         </Modal>
       )}
@@ -597,7 +907,11 @@ export default function Operators() {
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDelete()}
         >
-          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.display_name ?? deleteTarget.username}</span>? This cannot be undone.
+          Permanently delete{" "}
+          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {deleteTarget.display_name ?? deleteTarget.username}
+          </span>
+          ? This cannot be undone.
         </ConfirmationModal>
       )}
     </section>

@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Activity, ArrowRight, Bell, Check, CheckCircle2, Clock3, Cpu, HardDrive, KeyRound, LucideIcon, MemoryStick, MonitorX, RefreshCw, TriangleAlert, WifiOff } from "lucide-react";
+import {
+  Activity,
+  ArrowRight,
+  Bell,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Cpu,
+  HardDrive,
+  KeyRound,
+  LucideIcon,
+  MemoryStick,
+  MonitorX,
+  RefreshCw,
+  TriangleAlert,
+  WifiOff,
+} from "lucide-react";
 import { Alert, ALERT_KIND_LABELS, AlertKind } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
 import { timeAgo } from "../utils/time";
@@ -92,7 +108,9 @@ export default function NotificationCenter({
   // ESC
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
@@ -105,18 +123,9 @@ export default function NotificationCenter({
     const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
     const width = Math.min(PANEL_MAX_WIDTH, Math.max(240, viewportWidth - PANEL_MARGIN * 2));
-    const panelHeight = Math.min(
-      panelRef.current?.offsetHeight ?? 430,
-      viewportHeight - PANEL_MARGIN * 2
-    );
-    const left = Math.min(
-      Math.max(PANEL_MARGIN, r.right - width),
-      viewportWidth - width - PANEL_MARGIN
-    );
-    const top = Math.min(
-      Math.max(PANEL_MARGIN, r.bottom + PANEL_GAP),
-      viewportHeight - panelHeight - PANEL_MARGIN
-    );
+    const panelHeight = Math.min(panelRef.current?.offsetHeight ?? 430, viewportHeight - PANEL_MARGIN * 2);
+    const left = Math.min(Math.max(PANEL_MARGIN, r.right - width), viewportWidth - width - PANEL_MARGIN);
+    const top = Math.min(Math.max(PANEL_MARGIN, r.bottom + PANEL_GAP), viewportHeight - panelHeight - PANEL_MARGIN);
     const nextPosition = {
       width,
       top,
@@ -183,9 +192,14 @@ export default function NotificationCenter({
       try {
         await resolveAlert(alert.id);
         onAlertResolved?.(alert.id);
-      } catch { /* silent */ }
-      finally {
-        setResolving((prev) => { const n = new Set(prev); n.delete(alert.id); return n; });
+      } catch {
+        /* silent */
+      } finally {
+        setResolving((prev) => {
+          const n = new Set(prev);
+          n.delete(alert.id);
+          return n;
+        });
       }
     }
   };
@@ -196,9 +210,14 @@ export default function NotificationCenter({
     try {
       await resolveAlert(alertId);
       onAlertResolved?.(alertId);
-    } catch { /* silent */ }
-    finally {
-      setResolving((prev) => { const n = new Set(prev); n.delete(alertId); return n; });
+    } catch {
+      /* silent */
+    } finally {
+      setResolving((prev) => {
+        const n = new Set(prev);
+        n.delete(alertId);
+        return n;
+      });
     }
   };
 
@@ -236,126 +255,157 @@ export default function NotificationCenter({
           }}
           className="th-menu"
         >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-3.5">
-          <div className="flex items-center gap-2">
-            <h2 className="text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Alerts</h2>
-            {totalOpen > 0 && <span className="th-nav-badge">{totalOpen}</span>}
-          </div>
-          {resolvable.length > 0 && (
-            confirmResolveAll ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Resolve {resolvable.length}?</span>
-                <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(false)}>Cancel</button>
-                <button
-                  type="button"
-                  className="th-link-btn th-link-btn-primary"
-                  onClick={() => { setConfirmResolveAll(false); void handleResolveAll(); }}
-                >
-                  Confirm
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-3.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                Alerts
+              </h2>
+              {totalOpen > 0 && <span className="th-nav-badge">{totalOpen}</span>}
+            </div>
+            {resolvable.length > 0 &&
+              (confirmResolveAll ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                    Resolve {resolvable.length}?
+                  </span>
+                  <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="th-link-btn th-link-btn-primary"
+                    onClick={() => {
+                      setConfirmResolveAll(false);
+                      void handleResolveAll();
+                    }}
+                  >
+                    Confirm
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(true)}>
+                  Resolve all
                 </button>
+              ))}
+          </div>
+
+          {alerts.length > 0 && (
+            <div className="th-segmented mx-4 mb-2" role="radiogroup" aria-label="Filter alerts by severity">
+              {(
+                [
+                  ["all", "All", alerts.length],
+                  ["critical", "Critical", criticalCount],
+                  ["warning", "Warning", warningCount],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button key={id} type="button" role="radio" aria-checked={filter === id} onClick={() => setFilter(id)}>
+                  {label}
+                  <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+                    {count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Body */}
+          <div className="max-h-[360px] overflow-y-auto" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
+            {visibleAlerts.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-full"
+                  style={{
+                    background: "color-mix(in srgb, var(--th-status-online) 12%, transparent)",
+                    color: "var(--th-status-online)",
+                  }}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  {alerts.length === 0 ? "All clear" : `No ${filter} alerts`}
+                </p>
+                <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  {alerts.length === 0
+                    ? "No open alerts across the fleet."
+                    : "Other severities still have open alerts."}
+                </p>
               </div>
             ) : (
-              <button type="button" className="th-link-btn" onClick={() => setConfirmResolveAll(true)}>
-                Resolve all
-              </button>
-            )
-          )}
-        </div>
-
-        {alerts.length > 0 && (
-          <div className="th-segmented mx-4 mb-2" role="radiogroup" aria-label="Filter alerts by severity">
-            {([
-              ["all", "All", alerts.length],
-              ["critical", "Critical", criticalCount],
-              ["warning", "Warning", warningCount],
-            ] as const).map(([id, label, count]) => (
-              <button key={id} type="button" role="radio" aria-checked={filter === id} onClick={() => setFilter(id)}>
-                {label}
-                <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>{count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Body */}
-        <div className="max-h-[360px] overflow-y-auto" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
-          {visibleAlerts.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--th-status-online) 12%, transparent)", color: "var(--th-status-online)" }}>
-                <CheckCircle2 className="h-4 w-4" />
-              </span>
-              <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                {alerts.length === 0 ? "All clear" : `No ${filter} alerts`}
-              </p>
-              <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                {alerts.length === 0 ? "No open alerts across the fleet." : "Other severities still have open alerts."}
-              </p>
-            </div>
-          ) : (
-            <ul className="py-1">
-              {visibleAlerts.map((alert) => {
-                const Icon = KIND_ICON[alert.kind] ?? TriangleAlert;
-                const canResolve = !isTokenUsageAlert(alert);
-                return (
-                  <li key={alert.id}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="th-alert-row group"
-                      onClick={() => {
-                        if (isTokenUsageAlert(alert)) navigate("/onboarding?tab=installer");
-                        else if (alert.device_id != null) onDeviceJump?.(alert.device_id);
-                        setOpen(false);
-                      }}
-                      onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLElement).click(); }}
-                      title={`${alert.severity} · ${kindLabel(alert.kind)}`}
-                    >
-                      <span className="th-alert-icon" data-severity={alert.severity} aria-label={alert.severity}>
-                        <Icon className="h-3.5 w-3.5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-                          {kindLabel(alert.kind)}{alert.device_name ? ` · ${alert.device_name}` : ""}
-                        </p>
-                        <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{alert.detail ?? alert.message}</p>
-                      </div>
-                      <div className="relative flex h-7 w-16 flex-none items-center justify-end">
-                        <span className={`text-[12px] tabular-nums ${canResolve ? "group-hover:invisible" : ""}`} style={{ color: "var(--th-text-faint)" }}>
-                          {timeAgo(alert.created_at)}
+              <ul className="py-1">
+                {visibleAlerts.map((alert) => {
+                  const Icon = KIND_ICON[alert.kind] ?? TriangleAlert;
+                  const canResolve = !isTokenUsageAlert(alert);
+                  return (
+                    <li key={alert.id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="th-alert-row group"
+                        onClick={() => {
+                          if (isTokenUsageAlert(alert)) navigate("/onboarding?tab=installer");
+                          else if (alert.device_id != null) onDeviceJump?.(alert.device_id);
+                          setOpen(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") (e.currentTarget as HTMLElement).click();
+                        }}
+                        title={`${alert.severity} · ${kindLabel(alert.kind)}`}
+                      >
+                        <span className="th-alert-icon" data-severity={alert.severity} aria-label={alert.severity}>
+                          <Icon className="h-3.5 w-3.5" />
                         </span>
-                        {canResolve && (
-                          <button
-                            type="button"
-                            title="Resolve alert"
-                            aria-label="Resolve alert"
-                            onClick={(e) => void handleResolve(e, alert.id)}
-                            disabled={resolving.has(alert.id)}
-                            className="th-icon-btn th-icon-btn-ghost invisible absolute right-0 top-0 !min-h-7 !min-w-7 group-hover:visible disabled:opacity-40"
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                            {kindLabel(alert.kind)}
+                            {alert.device_name ? ` · ${alert.device_name}` : ""}
+                          </p>
+                          <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                            {alert.detail ?? alert.message}
+                          </p>
+                        </div>
+                        <div className="relative flex h-7 w-16 flex-none items-center justify-end">
+                          <span
+                            className={`text-[12px] tabular-nums ${canResolve ? "group-hover:invisible" : ""}`}
+                            style={{ color: "var(--th-text-faint)" }}
                           >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                            {timeAgo(alert.created_at)}
+                          </span>
+                          {canResolve && (
+                            <button
+                              type="button"
+                              title="Resolve alert"
+                              aria-label="Resolve alert"
+                              onClick={(e) => void handleResolve(e, alert.id)}
+                              disabled={resolving.has(alert.id)}
+                              className="th-icon-btn th-icon-btn-ghost invisible absolute right-0 top-0 !min-h-7 !min-w-7 group-hover:visible disabled:opacity-40"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-        {/* Footer */}
-        <button
-          type="button"
-          className="th-menu-item justify-center gap-1.5 py-2.5 text-[12px]"
-          style={{ borderTop: "1px solid var(--th-border-subtle)" }}
-          onClick={() => { setOpen(false); navigate("/alerts"); }}
-        >
-          View all alerts <ArrowRight className="h-3.5 w-3.5" />
-        </button>
+          {/* Footer */}
+          <button
+            type="button"
+            className="th-menu-item justify-center gap-1.5 py-2.5 text-[12px]"
+            style={{ borderTop: "1px solid var(--th-border-subtle)" }}
+            onClick={() => {
+              setOpen(false);
+              navigate("/alerts");
+            }}
+          >
+            View all alerts <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>,
-        document.body
+        document.body,
       )}
     </div>
   );

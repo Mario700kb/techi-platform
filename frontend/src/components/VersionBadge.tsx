@@ -9,9 +9,21 @@ import { VersionStatus } from "../utils/version";
 const STYLES: Record<VersionStatus, React.CSSProperties> = {
   // Current is the normal case: plain text, so only versions needing action stand out.
   current: { color: "var(--th-text-secondary)", background: "transparent", border: "1px solid transparent" },
-  outdated: { color: "var(--th-accent)", background: "color-mix(in srgb, var(--th-accent) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 35%, transparent)" },
-  ahead: { color: "var(--th-status-info)", background: "color-mix(in srgb, var(--th-status-info) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-info) 35%, transparent)" },
-  unknown: { color: "var(--th-text-muted)", background: "color-mix(in srgb, var(--th-status-offline) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--th-status-offline) 22%, transparent)" },
+  outdated: {
+    color: "var(--th-accent)",
+    background: "color-mix(in srgb, var(--th-accent) 20%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--th-accent) 35%, transparent)",
+  },
+  ahead: {
+    color: "var(--th-status-info)",
+    background: "color-mix(in srgb, var(--th-status-info) 20%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--th-status-info) 35%, transparent)",
+  },
+  unknown: {
+    color: "var(--th-text-muted)",
+    background: "color-mix(in srgb, var(--th-status-offline) 12%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--th-status-offline) 22%, transparent)",
+  },
 };
 
 interface Props {

@@ -30,11 +30,7 @@ export default function TerminalWindow() {
   }, [name]);
 
   if (!Number.isFinite(deviceId) || deviceId <= 0) {
-    return (
-      <div className="flex h-screen items-center justify-center text-sm th-text-muted">
-        Invalid device.
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center text-sm th-text-muted">Invalid device.</div>;
   }
 
   return (
@@ -44,9 +40,7 @@ export default function TerminalWindow() {
         <div className="text-[11px] th-text-muted">Web Terminal</div>
       </div>
       <div className="min-h-0 flex-1">
-        <Suspense
-          fallback={<div className="py-8 text-center text-sm th-text-muted">Loading terminal…</div>}
-        >
+        <Suspense fallback={<div className="py-8 text-center text-sm th-text-muted">Loading terminal…</div>}>
           <DeviceTerminal deviceId={deviceId} mode="agent" />
         </Suspense>
       </div>

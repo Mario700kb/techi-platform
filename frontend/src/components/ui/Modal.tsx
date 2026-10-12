@@ -30,7 +30,8 @@ export interface ModalProps {
   children: ReactNode;
 }
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * The one dialog. Every modal in the console renders through it, so they
@@ -38,7 +39,18 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
  * right-aligned footer, open and close the same way, trap focus, and give
  * focus back to whatever opened them.
  */
-export default function Modal({ title, subtitle, icon: Icon, tone = "accent", size = "md", onClose, footer, busy = false, flush = false, children }: ModalProps) {
+export default function Modal({
+  title,
+  subtitle,
+  icon: Icon,
+  tone = "accent",
+  size = "md",
+  onClose,
+  footer,
+  busy = false,
+  flush = false,
+  children,
+}: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -52,7 +64,9 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
     document.body.style.overflow = "hidden";
 
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>("[data-autofocus]") ?? panel?.querySelector<HTMLElement>(`.th-modal-body ${FOCUSABLE}`);
+    const first =
+      panel?.querySelector<HTMLElement>("[data-autofocus]") ??
+      panel?.querySelector<HTMLElement>(`.th-modal-body ${FOCUSABLE}`);
     (first ?? panel)?.focus({ preventScroll: true });
 
     const onKey = (event: KeyboardEvent) => {
@@ -62,7 +76,9 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
         return;
       }
       if (event.key !== "Tab" || !panel) return;
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
       if (items.length === 0) return;
       const firstItem = items[0];
       const lastItem = items[items.length - 1];
@@ -86,7 +102,9 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
     <div
       className="th-modal-scrim"
       role="presentation"
-      onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
     >
       <div
         ref={panelRef}
@@ -105,7 +123,9 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <h3 id={titleId} className="th-modal-title">{title}</h3>
+            <h3 id={titleId} className="th-modal-title">
+              {title}
+            </h3>
             {subtitle && <p className="th-modal-subtitle">{subtitle}</p>}
           </div>
           <button type="button" className="th-onb-action" onClick={onClose} disabled={busy} aria-label="Close">

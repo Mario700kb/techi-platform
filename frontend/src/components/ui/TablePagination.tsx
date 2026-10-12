@@ -71,7 +71,13 @@ export default function TablePagination({
             options={pageSizeOptions.map((size) => ({ value: String(size), label: `${size} / page` }))}
           />
         )}
-        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "var(--th-text-muted)" }} aria-label="Loading" />}
+        {loading && (
+          <Loader2
+            className="h-3.5 w-3.5 animate-spin"
+            style={{ color: "var(--th-text-muted)" }}
+            aria-label="Loading"
+          />
+        )}
       </div>
 
       <div className="th-pagination-pages">
@@ -86,7 +92,9 @@ export default function TablePagination({
         </button>
         {pageNumbers(current, totalPages).map((p, i) =>
           p === null ? (
-            <span key={`gap-${i}`} className="th-page-gap" aria-hidden="true">…</span>
+            <span key={`gap-${i}`} className="th-page-gap" aria-hidden="true">
+              …
+            </span>
           ) : (
             <button
               key={p}

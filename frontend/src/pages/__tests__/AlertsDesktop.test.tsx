@@ -12,14 +12,28 @@ vi.mock("../../contexts/AppDataContext", () => ({
 }));
 
 const offline: Alert = {
-  id: 11, device_id: 774, kind: "device_offline", severity: "critical", state: "open",
-  message: "DESKTOP-UKPKR96 went offline", created_at: "2026-10-11T10:00:00Z", updated_at: "2026-10-11T10:00:00Z",
-  device_name: "K.Xhaferri-PC", client_name: "TECHI shpk",
+  id: 11,
+  device_id: 774,
+  kind: "device_offline",
+  severity: "critical",
+  state: "open",
+  message: "DESKTOP-UKPKR96 went offline",
+  created_at: "2026-10-11T10:00:00Z",
+  updated_at: "2026-10-11T10:00:00Z",
+  device_name: "K.Xhaferri-PC",
+  client_name: "TECHI shpk",
 };
 const cpu: Alert = {
-  id: 12, device_id: 81, kind: "high_cpu", severity: "warning", state: "open",
-  message: "CPU elevated on ARCH-02: 82.0%", created_at: "2026-10-11T09:00:00Z", updated_at: "2026-10-11T09:00:00Z",
-  device_name: "ARCH-02", client_name: "Deval-ARCH",
+  id: 12,
+  device_id: 81,
+  kind: "high_cpu",
+  severity: "warning",
+  state: "open",
+  message: "CPU elevated on ARCH-02: 82.0%",
+  created_at: "2026-10-11T09:00:00Z",
+  updated_at: "2026-10-11T09:00:00Z",
+  device_name: "ARCH-02",
+  client_name: "Deval-ARCH",
 };
 
 function renderPage() {
@@ -63,7 +77,9 @@ describe("AlertsDesktop", () => {
     fireEvent.click(within(tabs).getByRole("tab", { name: /Critical/ }));
 
     await waitFor(() =>
-      expect(getAlerts).toHaveBeenLastCalledWith(expect.objectContaining({ state: "open", severity: "critical", offset: 0 })),
+      expect(getAlerts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: "open", severity: "critical", offset: 0 }),
+      ),
     );
   });
 
@@ -88,9 +104,7 @@ describe("AlertsDesktop", () => {
     expect(await screen.findByText("Showing 1–20 of 1,240 alerts")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
-    await waitFor(() =>
-      expect(getAlerts).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, offset: 20 })),
-    );
+    await waitFor(() => expect(getAlerts).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, offset: 20 })));
     expect(await screen.findByText("Showing 21–40 of 1,240 alerts")).toBeInTheDocument();
   });
 });

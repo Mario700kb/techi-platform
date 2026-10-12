@@ -55,10 +55,14 @@ export interface StatusView {
 }
 
 /** Remote Support (RustDesk service) state, the same on every screen. */
-export function remoteSupportStatus(device: { rustdesk_status?: string | null; rustdesk_install_status?: string | null }): StatusView {
+export function remoteSupportStatus(device: {
+  rustdesk_status?: string | null;
+  rustdesk_install_status?: string | null;
+}): StatusView {
   const install = (device.rustdesk_install_status ?? "").toLowerCase();
   const status = (device.rustdesk_status ?? "").toLowerCase();
-  if (["not_installed", "not installed", "missing", "absent"].includes(install)) return { label: "Not installed", tone: TONE.neutral };
+  if (["not_installed", "not installed", "missing", "absent"].includes(install))
+    return { label: "Not installed", tone: TONE.neutral };
   if (status === "running") return { label: "Running", tone: TONE.online };
   if (["stopped", "not_running", "offline"].includes(status)) return { label: "Stopped", tone: TONE.warning };
   if (!status || status === "unknown") return { label: "Unknown", tone: TONE.neutral };

@@ -57,7 +57,10 @@ export interface BulkCommandCategory {
 /** Visual grouping only — command values/payloads below are untouched. */
 export const BULK_COMMAND_CATEGORIES: BulkCommandCategory[] = [
   { label: "Diagnostics", commands: ["ping", "collect_inventory"] },
-  { label: "Agent", commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "run_command", "self_update"] },
+  {
+    label: "Agent",
+    commands: ["restart_agent", "change_heartbeat_interval", "run_powershell", "run_command", "self_update"],
+  },
   { label: "Device", commands: ["reboot_pc", "restart_device"] },
   {
     label: "Remote Support",
@@ -188,25 +191,39 @@ export async function cancelBatch(batchId: string): Promise<{ cancelled: number 
 
 export function commandStatusColor(status: CommandStatus): string {
   switch (status) {
-    case "completed": return "text-emerald-400";
-    case "failed": return "text-red-400";
-    case "timeout": return "text-slate-500";
-    case "executing": return "text-sky-400";
-    case "delivered": return "text-amber-400";
-    case "queued": return "text-amber-300";
-    default: return "text-slate-400";
+    case "completed":
+      return "text-emerald-400";
+    case "failed":
+      return "text-red-400";
+    case "timeout":
+      return "text-slate-500";
+    case "executing":
+      return "text-sky-400";
+    case "delivered":
+      return "text-amber-400";
+    case "queued":
+      return "text-amber-300";
+    default:
+      return "text-slate-400";
   }
 }
 
 export function commandStatusDot(status: CommandStatus): string {
   switch (status) {
-    case "completed": return "bg-emerald-400";
-    case "failed": return "bg-red-400";
-    case "executing": return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
-    case "delivered": return "bg-amber-400";
-    case "queued": return "bg-amber-300";
-    case "timeout": return "bg-slate-500";
-    default: return "bg-slate-600";
+    case "completed":
+      return "bg-emerald-400";
+    case "failed":
+      return "bg-red-400";
+    case "executing":
+      return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
+    case "delivered":
+      return "bg-amber-400";
+    case "queued":
+      return "bg-amber-300";
+    case "timeout":
+      return "bg-slate-500";
+    default:
+      return "bg-slate-600";
   }
 }
 

@@ -31,7 +31,9 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
     const onDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -60,12 +62,18 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
         {!compact && (
           <>
             <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{name}</span>
-              <span className="block truncate text-[12px] font-normal" style={{ color: "var(--th-text-muted)" }}>{user.email || user.username}</span>
+              <span className="block truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                {name}
+              </span>
+              <span className="block truncate text-[12px] font-normal" style={{ color: "var(--th-text-muted)" }}>
+                {user.email || user.username}
+              </span>
             </span>
-            {open
-              ? <ChevronDown className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
-              : <ChevronUp className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />}
+            {open ? (
+              <ChevronDown className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
+            ) : (
+              <ChevronUp className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+            )}
           </>
         )}
       </button>
@@ -79,19 +87,40 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
           <div className="flex items-center gap-2.5 px-2.5 py-2.5">
             <span className="th-avatar">{initial}</span>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              <p
+                className="flex items-center gap-1.5 text-[13px] font-semibold"
+                style={{ color: "var(--th-text-primary)" }}
+              >
                 <span className="truncate">{name}</span>
                 <span className="th-role-chip">{user.role}</span>
               </p>
-              <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{user.email || user.username}</p>
+              <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {user.email || user.username}
+              </p>
             </div>
           </div>
 
           <div className="th-menu-group">
-            <NavLink to="/settings" role="menuitem" className="th-menu-item" onClick={() => { close(); onNavigate?.(); }}>
+            <NavLink
+              to="/settings"
+              role="menuitem"
+              className="th-menu-item"
+              onClick={() => {
+                close();
+                onNavigate?.();
+              }}
+            >
               <Settings className="h-4 w-4" /> Settings
             </NavLink>
-            <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); setShowChangePwd(true); }}>
+            <button
+              type="button"
+              role="menuitem"
+              className="th-menu-item"
+              onClick={() => {
+                close();
+                setShowChangePwd(true);
+              }}
+            >
               <KeyRound className="h-4 w-4" /> Change password
             </button>
           </div>
@@ -115,12 +144,23 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
           </div>
 
           <div className="th-menu-group">
-            <button type="button" role="menuitem" className="th-menu-item th-menu-item-danger" onClick={() => { close(); logout(); }}>
+            <button
+              type="button"
+              role="menuitem"
+              className="th-menu-item th-menu-item-danger"
+              onClick={() => {
+                close();
+                logout();
+              }}
+            >
               <LogOut className="h-4 w-4" /> Sign out
             </button>
           </div>
 
-          <p className="flex items-center justify-between px-2.5 py-1.5 text-[11px]" style={{ color: "var(--th-text-faint)", borderTop: "1px solid var(--th-border-subtle)" }}>
+          <p
+            className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
+            style={{ color: "var(--th-text-faint)", borderTop: "1px solid var(--th-border-subtle)" }}
+          >
             <span>TECHI Connect</span>
             <span className="tabular-nums">v{pkg.version}</span>
           </p>

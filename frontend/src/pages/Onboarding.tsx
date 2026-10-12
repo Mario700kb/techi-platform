@@ -23,11 +23,14 @@ export default function Onboarding() {
   const active: OnboardingTab = TABS.some((t) => t.id === requested) ? (requested as OnboardingTab) : "tokens";
 
   const select = (tab: OnboardingTab) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", tab);
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", tab);
+        return next;
+      },
+      { replace: true },
+    );
   };
 
   return (
@@ -55,14 +58,22 @@ export default function Onboarding() {
                 style={
                   selected
                     ? { background: "var(--th-accent)", color: "var(--th-on-accent)" }
-                    : { background: "var(--th-chip-bg)", color: "var(--th-text-muted)", border: "1px solid var(--th-border-default)" }
+                    : {
+                        background: "var(--th-chip-bg)",
+                        color: "var(--th-text-muted)",
+                        border: "1px solid var(--th-border-default)",
+                      }
                 }
               >
                 {tab.step}
               </span>
               <span className="min-w-0">
-                <span className="block text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{tab.label}</span>
-                <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{tab.hint}</span>
+                <span className="block text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  {tab.label}
+                </span>
+                <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  {tab.hint}
+                </span>
               </span>
             </button>
           );

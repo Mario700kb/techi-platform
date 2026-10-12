@@ -46,7 +46,14 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { API_BASE_URL } from "../api/client";
 import { Button, EmptyState, Modal, PageHeader, Select } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
-import { TokenStatusChip, UsageMeter, TOKEN_FILTERS, TokenFilter, formatTokenPrefix, tokenState } from "../components/EnrollmentTokenBits";
+import {
+  TokenStatusChip,
+  UsageMeter,
+  TOKEN_FILTERS,
+  TokenFilter,
+  formatTokenPrefix,
+  tokenState,
+} from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { formatCount } from "../utils/number";
@@ -78,8 +85,6 @@ function isRevocable(token: EnrollmentToken): boolean {
   return token.status === "active" || token.status === "used";
 }
 
-
-
 function downloadTextFile(content: string, filename: string) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -110,11 +115,13 @@ function validateBootstrapScript(script: string): string | null {
 const PROFILE_INFO: Record<AvailabilityProfile, { label: string; description: string }> = {
   server: {
     label: "Server",
-    description: "Sleep and hibernate disabled on AC. Lock screen stays enabled. TECHI Remote Support works on lock screen via service.",
+    description:
+      "Sleep and hibernate disabled on AC. Lock screen stays enabled. TECHI Remote Support works on lock screen via service.",
   },
   workstation: {
     label: "Workstation",
-    description: "Sleep/hibernate follow your explicit settings below. Lock screen stays enabled. Device goes offline when it sleeps.",
+    description:
+      "Sleep/hibernate follow your explicit settings below. Lock screen stays enabled. Device goes offline when it sleeps.",
   },
   custom: {
     label: "Custom",
@@ -208,10 +215,13 @@ export default function EnrollmentBootstrap() {
   const activeDefault = useMemo(() => tokens.find((t) => t.is_default && t.status === "active") ?? null, [tokens]);
   const selectedToken = useMemo(
     () => activeTokens.find((t) => String(t.id) === tokenId) ?? null,
-    [activeTokens, tokenId]
+    [activeTokens, tokenId],
   );
   const statusCounts = useMemo(() => {
-    const counts = { all: tokens.length, active: 0, unused: 0, used: 0, revoked: 0, expired: 0 } as Record<TokenFilter, number>;
+    const counts = { all: tokens.length, active: 0, unused: 0, used: 0, revoked: 0, expired: 0 } as Record<
+      TokenFilter,
+      number
+    >;
     for (const t of tokens) counts[tokenState(t)] += 1;
     return counts;
   }, [tokens]);
@@ -220,11 +230,14 @@ export default function EnrollmentBootstrap() {
     return tokens.filter((t) => {
       if (statusFilter !== "all" && tokenState(t) !== statusFilter) return false;
       if (!q) return true;
-      const client = t.client_id ? clientNames[t.client_id] ?? "" : "";
+      const client = t.client_id ? (clientNames[t.client_id] ?? "") : "";
       return [t.name, t.token_prefix ?? "", client].some((v) => v.toLowerCase().includes(q));
     });
   }, [tokens, statusFilter, tokenSearch, clientNames]);
-  const pagedTokens = useMemo(() => visibleTokens.slice((page - 1) * pageSize, page * pageSize), [visibleTokens, page, pageSize]);
+  const pagedTokens = useMemo(
+    () => visibleTokens.slice((page - 1) * pageSize, page * pageSize),
+    [visibleTokens, page, pageSize],
+  );
   const isLocalhost = backendUrl.includes("localhost") || backendUrl.includes("127.0.0.1");
   const canGenerate = mode === "gpo" || (mode === "token" && activeTokens.length > 0 && !!tokenId);
 
@@ -389,7 +402,11 @@ export default function EnrollmentBootstrap() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Revoke failed", "error");
     } finally {
-      setRevoking((prev) => { const n = new Set(prev); n.delete(token.id); return n; });
+      setRevoking((prev) => {
+        const n = new Set(prev);
+        n.delete(token.id);
+        return n;
+      });
     }
   };
 
@@ -445,8 +462,7 @@ export default function EnrollmentBootstrap() {
         enrollment_token_id: mode === "token" ? Number(tokenId) : undefined,
         backend_url: backendUrl,
         platform,
-        enrollment_token:
-          mode === "token" && plaintextToken.trim() ? plaintextToken.trim() : undefined,
+        enrollment_token: mode === "token" && plaintextToken.trim() ? plaintextToken.trim() : undefined,
         rustdesk_manage_enabled: rustdeskEnabled,
         rustdesk_msi_url: rustdeskMsiUrl,
         rustdesk_rendezvous_server: rustdeskRendezvous,
@@ -485,7 +501,8 @@ export default function EnrollmentBootstrap() {
 
   const handleDownloadScript = () => {
     if (!bootstrap) return;
-    const filename = bootstrap.installer_filename || (bootstrap.mode === "gpo" ? "techi-gpo-bootstrap.ps1" : "techi-installer.ps1");
+    const filename =
+      bootstrap.installer_filename || (bootstrap.mode === "gpo" ? "techi-gpo-bootstrap.ps1" : "techi-installer.ps1");
     downloadTextFile(bootstrap.bootstrap_script, filename);
   };
 
@@ -493,9 +510,20 @@ export default function EnrollmentBootstrap() {
     <section className="premium-page th-onb space-y-4">
       <PageHeader
         title="Enrollment Bootstrap"
-        description={<>Generate a one-click installer for new endpoints. Use <strong>Token enrollment</strong> for workgroup PCs and tests, <strong>Trusted domain / GPO</strong> for domain-joined fleets.</>}
+        description={
+          <>
+            Generate a one-click installer for new endpoints. Use <strong>Token enrollment</strong> for workgroup PCs
+            and tests, <strong>Trusted domain / GPO</strong> for domain-joined fleets.
+          </>
+        }
         actions={
-          <Button variant="secondary" size="sm" type="button" onClick={() => void loadTokens()} disabled={tokensLoading}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            onClick={() => void loadTokens()}
+            disabled={tokensLoading}
+          >
             <RefreshCcw className={`h-3.5 w-3.5 ${tokensLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -503,7 +531,11 @@ export default function EnrollmentBootstrap() {
       />
 
       {warningTokens.length > 0 && (
-        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties} role="status">
+        <div
+          className="th-onb-note"
+          style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}
+          role="status"
+        >
           <AlertTriangle className="h-4 w-4" />
           <div className="min-w-0 flex-1">
             <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>
@@ -517,12 +549,19 @@ export default function EnrollmentBootstrap() {
                   className="th-status-chip"
                   disabled={!canManage}
                   onClick={() => openMaxUsesEditor(token)}
-                  style={{ "--chip-tone": token.usage_warning === "critical" ? "var(--th-status-critical)" : "var(--th-status-warning)" } as React.CSSProperties}
+                  style={
+                    {
+                      "--chip-tone":
+                        token.usage_warning === "critical" ? "var(--th-status-critical)" : "var(--th-status-warning)",
+                    } as React.CSSProperties
+                  }
                   title={canManage ? "Raise max uses" : undefined}
                 >
                   <i />
                   {token.name}
-                  <span className="tabular-nums" style={{ color: "var(--th-text-muted)" }}>{token.use_count}/{token.max_uses}</span>
+                  <span className="tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+                    {token.use_count}/{token.max_uses}
+                  </span>
                 </button>
               ))}
             </div>
@@ -535,7 +574,15 @@ export default function EnrollmentBootstrap() {
         <div className="th-onb-card th-onb-enter" style={{ "--i": 0 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
-              <span className="th-onb-icon" style={{ "--onb-tone": defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)" } as React.CSSProperties}>
+              <span
+                className="th-onb-icon"
+                style={
+                  {
+                    "--onb-tone":
+                      defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)",
+                  } as React.CSSProperties
+                }
+              >
                 <KeyRound className="h-4 w-4" />
               </span>
               <span>
@@ -550,15 +597,21 @@ export default function EnrollmentBootstrap() {
               <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                 <div className="min-w-0">
                   <div className="th-onb-label">Name</div>
-                  <div className="mt-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{defaultToken.name}</div>
+                  <div className="mt-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                    {defaultToken.name}
+                  </div>
                 </div>
                 <div>
                   <div className="th-onb-label">Prefix</div>
-                  <code className="mt-1 block font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>{formatTokenPrefix(defaultToken.token_prefix)}</code>
+                  <code className="mt-1 block font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>
+                    {formatTokenPrefix(defaultToken.token_prefix)}
+                  </code>
                 </div>
                 <div>
                   <div className="th-onb-label">Usage</div>
-                  <div className="mt-1.5"><UsageMeter token={defaultToken} /></div>
+                  <div className="mt-1.5">
+                    <UsageMeter token={defaultToken} />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -566,12 +619,29 @@ export default function EnrollmentBootstrap() {
             )}
             <div className="flex flex-wrap gap-2">
               {activeDefault && mode === "token" && (
-                <Button size="sm" variant="secondary" onClick={handleUseDefault} disabled={tokenId === String(activeDefault.id)}>
-                  {tokenId === String(activeDefault.id) ? <><Check className="h-3.5 w-3.5" />Selected in generator</> : "Use in generator"}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleUseDefault}
+                  disabled={tokenId === String(activeDefault.id)}
+                >
+                  {tokenId === String(activeDefault.id) ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      Selected in generator
+                    </>
+                  ) : (
+                    "Use in generator"
+                  )}
                 </Button>
               )}
               {canManage && (
-                <Button size="sm" variant="secondary" onClick={() => void handleRegenerateDefault()} disabled={regenerating}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void handleRegenerateDefault()}
+                  disabled={regenerating}
+                >
                   <RotateCcw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
                   {regenerating ? "Regenerating…" : "Regenerate"}
                 </Button>
@@ -594,7 +664,11 @@ export default function EnrollmentBootstrap() {
           </div>
           <ul className="th-onb-body flex-1 !gap-3">
             {SECURITY_POINTS.map((point) => (
-              <li key={point} className="flex gap-2.5 text-[13px] leading-5" style={{ color: "var(--th-text-secondary)" }}>
+              <li
+                key={point}
+                className="flex gap-2.5 text-[13px] leading-5"
+                style={{ color: "var(--th-text-secondary)" }}
+              >
                 <Check className="mt-0.5 h-4 w-4 flex-none" style={{ color: "var(--th-status-info)" }} />
                 {point}
               </li>
@@ -621,7 +695,13 @@ export default function EnrollmentBootstrap() {
           <div className="th-onb-body flex-1">
             <div className="th-onb-section">
               <span className="th-onb-label">Deployment mode</span>
-              <div className="th-segmented" role="radiogroup" aria-label="Deployment mode" data-thumb style={{ "--seg-n": 2, "--seg-i": mode === "gpo" ? 1 : 0 } as React.CSSProperties}>
+              <div
+                className="th-segmented"
+                role="radiogroup"
+                aria-label="Deployment mode"
+                data-thumb
+                style={{ "--seg-n": 2, "--seg-i": mode === "gpo" ? 1 : 0 } as React.CSSProperties}
+              >
                 {(["token", "gpo"] as const).map((m) => (
                   <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}>
                     {m === "token" ? "Token enrollment" : "Trusted domain / GPO"}
@@ -630,11 +710,19 @@ export default function EnrollmentBootstrap() {
               </div>
 
               {mode === "gpo" && (
-                <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                <div
+                  className="th-onb-note th-onb-reveal"
+                  style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}
+                >
                   <Info className="h-4 w-4" />
                   <ul className="space-y-1">
-                    <li><strong>Domain-joined PCs</strong> enroll without a token. The backend needs <code className="font-mono">TRUSTED_DOMAIN_AUTO_ENROLLMENT=true</code>.</li>
-                    <li><strong>WORKGROUP PCs</strong> do not enroll through GPO; use Token enrollment for them.</li>
+                    <li>
+                      <strong>Domain-joined PCs</strong> enroll without a token. The backend needs{" "}
+                      <code className="font-mono">TRUSTED_DOMAIN_AUTO_ENROLLMENT=true</code>.
+                    </li>
+                    <li>
+                      <strong>WORKGROUP PCs</strong> do not enroll through GPO; use Token enrollment for them.
+                    </li>
                     <li>The script is idempotent, so it is safe to run at every startup.</li>
                   </ul>
                 </div>
@@ -656,7 +744,10 @@ export default function EnrollmentBootstrap() {
                       id="deployment-token"
                       aria-label="Deployment token"
                       value={tokenId}
-                      onChange={(value) => { setTokenId(value); setPlaintextToken(""); }}
+                      onChange={(value) => {
+                        setTokenId(value);
+                        setPlaintextToken("");
+                      }}
                       placeholder={activeTokens.length === 0 ? "No active tokens: create one" : "Select a token"}
                       options={activeTokens.map((t) => ({
                         value: String(t.id),
@@ -668,7 +759,15 @@ export default function EnrollmentBootstrap() {
                   <label className="th-onb-field">
                     <span className="flex items-center gap-2">
                       Plaintext token
-                      {plaintextToken && <span className="th-status-chip !h-5 !px-2 !text-[11px]" style={{ "--chip-tone": "var(--th-status-online)" } as React.CSSProperties}><i />Filled</span>}
+                      {plaintextToken && (
+                        <span
+                          className="th-status-chip !h-5 !px-2 !text-[11px]"
+                          style={{ "--chip-tone": "var(--th-status-online)" } as React.CSSProperties}
+                        >
+                          <i />
+                          Filled
+                        </span>
+                      )}
                     </span>
                     <input
                       value={plaintextToken}
@@ -689,16 +788,33 @@ export default function EnrollmentBootstrap() {
                 <input value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} spellCheck={false} />
               </label>
               {isLocalhost && (
-                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+                <div
+                  className="th-onb-note"
+                  style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}
+                >
                   <AlertTriangle className="h-4 w-4" />
                   <span>localhost only reaches this machine. Real devices need the server&apos;s public URL.</span>
                 </div>
               )}
               <div className="th-onb-field">
                 Platform
-                <div className="th-segmented" role="radiogroup" aria-label="Platform" data-thumb style={{ "--seg-n": 3, "--seg-i": PLATFORMS.findIndex((p) => p.id === platform) } as React.CSSProperties}>
+                <div
+                  className="th-segmented"
+                  role="radiogroup"
+                  aria-label="Platform"
+                  data-thumb
+                  style={
+                    { "--seg-n": 3, "--seg-i": PLATFORMS.findIndex((p) => p.id === platform) } as React.CSSProperties
+                  }
+                >
                   {PLATFORMS.map((p) => (
-                    <button key={p.id} type="button" role="radio" aria-checked={platform === p.id} onClick={() => setPlatform(p.id)}>
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={platform === p.id}
+                      onClick={() => setPlatform(p.id)}
+                    >
                       {p.label}
                     </button>
                   ))}
@@ -711,9 +827,26 @@ export default function EnrollmentBootstrap() {
                 <span className="th-onb-label">Device policy</span>
                 <div className="th-onb-field">
                   Availability profile
-                  <div className="th-segmented" role="radiogroup" aria-label="Availability profile" data-thumb style={{ "--seg-n": 3, "--seg-i": ["server", "workstation", "custom"].indexOf(availProfile) } as React.CSSProperties}>
+                  <div
+                    className="th-segmented"
+                    role="radiogroup"
+                    aria-label="Availability profile"
+                    data-thumb
+                    style={
+                      {
+                        "--seg-n": 3,
+                        "--seg-i": ["server", "workstation", "custom"].indexOf(availProfile),
+                      } as React.CSSProperties
+                    }
+                  >
                     {(["server", "workstation", "custom"] as AvailabilityProfile[]).map((p) => (
-                      <button key={p} type="button" role="radio" aria-checked={availProfile === p} onClick={() => setAvailProfile(p)}>
+                      <button
+                        key={p}
+                        type="button"
+                        role="radio"
+                        aria-checked={availProfile === p}
+                        onClick={() => setAvailProfile(p)}
+                      >
                         {PROFILE_INFO[p].label}
                       </button>
                     ))}
@@ -725,19 +858,50 @@ export default function EnrollmentBootstrap() {
                   <input type="checkbox" checked={managePower} onChange={(e) => setManagePower(e.target.checked)} />
                   <span>
                     Apply power policy on agent startup
-                    <small>{availProfile === "server" ? "Sleep and hibernate are disabled on AC power." : "Uses the switches below."}</small>
+                    <small>
+                      {availProfile === "server"
+                        ? "Sleep and hibernate are disabled on AC power."
+                        : "Uses the switches below."}
+                    </small>
                   </span>
                 </label>
                 {managePower && availProfile !== "server" && (
                   <div className="th-onb-sub th-onb-reveal">
-                    <label className="th-onb-check"><input type="checkbox" checked={preventSleepAC} onChange={(e) => setPreventSleepAC(e.target.checked)} /><span>Prevent sleep on AC power</span></label>
-                    <label className="th-onb-check"><input type="checkbox" checked={preventHibernate} onChange={(e) => setPreventHibernate(e.target.checked)} /><span>Disable hibernate</span></label>
-                    <label className="th-onb-check"><input type="checkbox" checked={allowDisplayOff} onChange={(e) => setAllowDisplayOff(e.target.checked)} /><span>Allow display off on AC <small>Recommended</small></span></label>
+                    <label className="th-onb-check">
+                      <input
+                        type="checkbox"
+                        checked={preventSleepAC}
+                        onChange={(e) => setPreventSleepAC(e.target.checked)}
+                      />
+                      <span>Prevent sleep on AC power</span>
+                    </label>
+                    <label className="th-onb-check">
+                      <input
+                        type="checkbox"
+                        checked={preventHibernate}
+                        onChange={(e) => setPreventHibernate(e.target.checked)}
+                      />
+                      <span>Disable hibernate</span>
+                    </label>
+                    <label className="th-onb-check">
+                      <input
+                        type="checkbox"
+                        checked={allowDisplayOff}
+                        onChange={(e) => setAllowDisplayOff(e.target.checked)}
+                      />
+                      <span>
+                        Allow display off on AC <small>Recommended</small>
+                      </span>
+                    </label>
                   </div>
                 )}
 
                 <label className="th-onb-check">
-                  <input type="checkbox" checked={rustdeskEnabled} onChange={(e) => setRustdeskEnabled(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={rustdeskEnabled}
+                    onChange={(e) => setRustdeskEnabled(e.target.checked)}
+                  />
                   <span>
                     {TERMS.remoteSupport} self-healing
                     <small>The agent installs, configures and keeps {TERMS.remoteSupport} running.</small>
@@ -747,17 +911,48 @@ export default function EnrollmentBootstrap() {
                   <div className="th-onb-sub th-onb-reveal sm:grid-cols-2">
                     {(
                       [
-                        { label: "MSI URL", value: rustdeskMsiUrl, set: setRustdeskMsiUrl, placeholder: "https://…/TECHI-Remote-Support.msi" },
-                        { label: "Rendezvous server", value: rustdeskRendezvous, set: setRustdeskRendezvous, placeholder: "Host or IP" },
-                        { label: "Relay server", value: rustdeskRelay, set: setRustdeskRelay, placeholder: "Host or IP" },
-                        { label: "API server", value: rustdeskApi, set: setRustdeskApi, placeholder: "Leave empty unless you run one" },
+                        {
+                          label: "MSI URL",
+                          value: rustdeskMsiUrl,
+                          set: setRustdeskMsiUrl,
+                          placeholder: "https://…/TECHI-Remote-Support.msi",
+                        },
+                        {
+                          label: "Rendezvous server",
+                          value: rustdeskRendezvous,
+                          set: setRustdeskRendezvous,
+                          placeholder: "Host or IP",
+                        },
+                        {
+                          label: "Relay server",
+                          value: rustdeskRelay,
+                          set: setRustdeskRelay,
+                          placeholder: "Host or IP",
+                        },
+                        {
+                          label: "API server",
+                          value: rustdeskApi,
+                          set: setRustdeskApi,
+                          placeholder: "Leave empty unless you run one",
+                        },
                         { label: "Public key", value: rustdeskKey, set: setRustdeskKey, placeholder: "Base64 key" },
-                        { label: "Default password", value: rustdeskPassword, set: setRustdeskPassword, placeholder: "Initial password" },
+                        {
+                          label: "Default password",
+                          value: rustdeskPassword,
+                          set: setRustdeskPassword,
+                          placeholder: "Initial password",
+                        },
                       ] as const
                     ).map(({ label, value, set, placeholder }) => (
                       <label key={label} className="th-onb-field">
                         {label}
-                        <input value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} spellCheck={false} autoComplete="off" />
+                        <input
+                          value={value}
+                          onChange={(e) => set(e.target.value)}
+                          placeholder={placeholder}
+                          spellCheck={false}
+                          autoComplete="off"
+                        />
                       </label>
                     ))}
                   </div>
@@ -768,12 +963,21 @@ export default function EnrollmentBootstrap() {
 
           <div className="th-onb-foot space-y-3">
             {error && (
-              <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as React.CSSProperties} role="alert">
+              <div
+                className="th-onb-note"
+                style={{ "--onb-tone": "var(--th-status-critical)" } as React.CSSProperties}
+                role="alert"
+              >
                 <AlertTriangle className="h-4 w-4" />
                 <span>{error}</span>
               </div>
             )}
-            <Button className="w-full" type="button" onClick={() => void handleGenerate()} disabled={loading || !canGenerate || !backendUrl.trim()}>
+            <Button
+              className="w-full"
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={loading || !canGenerate || !backendUrl.trim()}
+            >
               {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
               {loading ? "Generating…" : "Generate installer"}
             </Button>
@@ -783,7 +987,14 @@ export default function EnrollmentBootstrap() {
         <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as React.CSSProperties}>
           <div className="th-onb-card-head">
             <div className="th-onb-card-title">
-              <span className="th-onb-icon" style={{ "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)" } as React.CSSProperties}>
+              <span
+                className="th-onb-icon"
+                style={
+                  {
+                    "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)",
+                  } as React.CSSProperties
+                }
+              >
                 <FileCode2 className="h-4 w-4" />
               </span>
               <span>
@@ -793,7 +1004,11 @@ export default function EnrollmentBootstrap() {
             </div>
             {bootstrap && (
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => void copyText("script", bootstrap.bootstrap_script)}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void copyText("script", bootstrap.bootstrap_script)}
+                >
                   {copied === "script" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   {copied === "script" ? "Copied" : "Copy script"}
                 </Button>
@@ -808,12 +1023,35 @@ export default function EnrollmentBootstrap() {
           {bootstrap ? (
             <div className="th-onb-body flex-1 th-onb-reveal">
               <dl className="th-onb-meta">
-                <div><dt>Target</dt><dd>{bootstrap.mode === "gpo" ? "Trusted domain / GPO" : bootstrap.platform === "windows" ? "Windows service" : `${bootstrap.platform} bootstrap`}</dd></div>
-                <div><dt>Platform</dt><dd className="capitalize">{bootstrap.platform}</dd></div>
-                <div><dt>Backend</dt><dd title={bootstrap.backend_url}>{bootstrap.backend_url}</dd></div>
+                <div>
+                  <dt>Target</dt>
+                  <dd>
+                    {bootstrap.mode === "gpo"
+                      ? "Trusted domain / GPO"
+                      : bootstrap.platform === "windows"
+                        ? "Windows service"
+                        : `${bootstrap.platform} bootstrap`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd className="capitalize">{bootstrap.platform}</dd>
+                </div>
+                <div>
+                  <dt>Backend</dt>
+                  <dd title={bootstrap.backend_url}>{bootstrap.backend_url}</dd>
+                </div>
                 <div>
                   <dt>{bootstrap.mode === "gpo" ? "Enrollment" : "Token"}</dt>
-                  <dd>{bootstrap.mode === "gpo" ? "Domain trust" : selectedToken ? selectedToken.name : bootstrap.enrollment_token_id ? `#${bootstrap.enrollment_token_id}` : "—"}</dd>
+                  <dd>
+                    {bootstrap.mode === "gpo"
+                      ? "Domain trust"
+                      : selectedToken
+                        ? selectedToken.name
+                        : bootstrap.enrollment_token_id
+                          ? `#${bootstrap.enrollment_token_id}`
+                          : "—"}
+                  </dd>
                 </div>
               </dl>
 
@@ -821,7 +1059,13 @@ export default function EnrollmentBootstrap() {
                 Run command
                 <div className="flex items-stretch gap-2">
                   <code className="th-onb-code min-w-0 flex-1 truncate px-3 py-2">{bootstrap.bootstrap_command}</code>
-                  <button type="button" className="th-onb-action !h-auto !w-9 border" style={{ borderColor: "var(--th-border-subtle)" }} onClick={() => void copyText("command", bootstrap.bootstrap_command)} aria-label="Copy run command">
+                  <button
+                    type="button"
+                    className="th-onb-action !h-auto !w-9 border"
+                    style={{ borderColor: "var(--th-border-subtle)" }}
+                    onClick={() => void copyText("command", bootstrap.bootstrap_command)}
+                    aria-label="Copy run command"
+                  >
                     {copied === "command" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
                 </div>
@@ -829,7 +1073,9 @@ export default function EnrollmentBootstrap() {
 
               <div className="th-onb-field">
                 Script
-                <pre className="th-onb-code max-h-[320px] overflow-auto whitespace-pre-wrap break-words p-3">{bootstrap.bootstrap_script}</pre>
+                <pre className="th-onb-code max-h-[320px] overflow-auto whitespace-pre-wrap break-words p-3">
+                  {bootstrap.bootstrap_script}
+                </pre>
               </div>
 
               <OutputBlock
@@ -867,7 +1113,11 @@ export default function EnrollmentBootstrap() {
             </span>
             <span>
               Enrollment tokens
-              <small>{tokensLoading && tokens.length === 0 ? "Loading…" : `${formatCount(tokens.length)} total · ${formatCount(activeTokens.length)} active`}</small>
+              <small>
+                {tokensLoading && tokens.length === 0
+                  ? "Loading…"
+                  : `${formatCount(tokens.length)} total · ${formatCount(activeTokens.length)} active`}
+              </small>
             </span>
           </div>
           {canManage && (
@@ -881,7 +1131,9 @@ export default function EnrollmentBootstrap() {
         {flashToken && (
           <div className="th-onb-flash th-onb-reveal">
             <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
-            <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>Copy the token now; it is not shown again.</span>
+            <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+              Copy the token now; it is not shown again.
+            </span>
             <code className="th-onb-code min-w-0 flex-1 truncate px-2.5 py-1">{flashToken.plaintext}</code>
             <Button size="sm" variant="secondary" onClick={() => void copyText("flash", flashToken.plaintext)}>
               {copied === "flash" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -896,7 +1148,17 @@ export default function EnrollmentBootstrap() {
         <div className="th-alerts-toolbar">
           <div ref={statusTabsRef} role="tablist" aria-label="Token status" className="th-tabs">
             {TOKEN_FILTERS.map(({ id, label }) => (
-              <button key={id} type="button" role="tab" aria-selected={statusFilter === id} onClick={() => { setStatusFilter(id); setPage(1); }} className="th-tab">
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === id}
+                onClick={() => {
+                  setStatusFilter(id);
+                  setPage(1);
+                }}
+                className="th-tab"
+              >
                 {label}
                 <span className="th-tab-count">{formatCount(statusCounts[id])}</span>
               </button>
@@ -905,9 +1167,22 @@ export default function EnrollmentBootstrap() {
           <div className="pb-2">
             <label className="th-search th-search-sm w-[260px]">
               <Search className="h-3.5 w-3.5 flex-none" />
-              <input value={tokenSearch} onChange={(e) => { setTokenSearch(e.target.value); setPage(1); }} placeholder="Search tokens or clients" aria-label="Search tokens" />
+              <input
+                value={tokenSearch}
+                onChange={(e) => {
+                  setTokenSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search tokens or clients"
+                aria-label="Search tokens"
+              />
               {tokenSearch && (
-                <button type="button" onClick={() => setTokenSearch("")} className="th-explorer-clear" aria-label="Clear search">
+                <button
+                  type="button"
+                  onClick={() => setTokenSearch("")}
+                  className="th-explorer-clear"
+                  aria-label="Clear search"
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -926,7 +1201,20 @@ export default function EnrollmentBootstrap() {
             className="th-fade-in py-10"
             icon={<KeyRound className="h-5 w-5" />}
             title={tokens.length === 0 ? "No enrollment tokens yet" : "No tokens match these filters"}
-            action={tokens.length > 0 ? <Button size="sm" variant="secondary" onClick={() => { setStatusFilter("all"); setTokenSearch(""); }}>Clear filters</Button> : undefined}
+            action={
+              tokens.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setTokenSearch("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
@@ -955,22 +1243,46 @@ export default function EnrollmentBootstrap() {
               </thead>
               <tbody>
                 {pagedTokens.map((token, index) => (
-                  <tr key={token.id} className="th-alerts-row" style={{ "--row": index } as React.CSSProperties} data-selected={tokenId === String(token.id) || undefined}>
+                  <tr
+                    key={token.id}
+                    className="th-alerts-row"
+                    style={{ "--row": index } as React.CSSProperties}
+                    data-selected={tokenId === String(token.id) || undefined}
+                  >
                     <td>
                       <span className="th-alerts-primary flex items-center gap-1.5">
-                        {token.is_default && <Star className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }} aria-label="Default deployment token" />}
+                        {token.is_default && (
+                          <Star
+                            className="h-3.5 w-3.5 flex-none"
+                            style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }}
+                            aria-label="Default deployment token"
+                          />
+                        )}
                         {canManage ? (
-                          <button type="button" className="th-alerts-link truncate text-left" onClick={() => void openDiagnostics(token)}>{token.name}</button>
+                          <button
+                            type="button"
+                            className="th-alerts-link truncate text-left"
+                            onClick={() => void openDiagnostics(token)}
+                          >
+                            {token.name}
+                          </button>
                         ) : (
                           <span className="truncate">{token.name}</span>
                         )}
                       </span>
                       <span className="th-alerts-secondary font-mono">{formatTokenPrefix(token.token_prefix)}</span>
                     </td>
-                    <td><TokenStatusChip token={token} /></td>
+                    <td>
+                      <TokenStatusChip token={token} />
+                    </td>
                     <td>
                       {canManage ? (
-                        <button type="button" className="text-left" onClick={() => openMaxUsesEditor(token)} title="Change max uses">
+                        <button
+                          type="button"
+                          className="text-left"
+                          onClick={() => openMaxUsesEditor(token)}
+                          title="Change max uses"
+                        >
                           <UsageMeter token={token} />
                         </button>
                       ) : (
@@ -979,7 +1291,10 @@ export default function EnrollmentBootstrap() {
                     </td>
                     <td>
                       {token.client_id ? (
-                        <span className="th-alerts-primary" title={token.group_id ? `Group #${token.group_id}` : undefined}>
+                        <span
+                          className="th-alerts-primary"
+                          title={token.group_id ? `Group #${token.group_id}` : undefined}
+                        >
                           {clientNames[token.client_id] ?? `Client #${token.client_id}`}
                         </span>
                       ) : (
@@ -988,7 +1303,9 @@ export default function EnrollmentBootstrap() {
                     </td>
                     <td>
                       {token.last_used_at ? (
-                        <span className="th-alerts-primary" title={formatLocalDateTime(token.last_used_at)}>{timeAgo(token.last_used_at)}</span>
+                        <span className="th-alerts-primary" title={formatLocalDateTime(token.last_used_at)}>
+                          {timeAgo(token.last_used_at)}
+                        </span>
                       ) : (
                         <span className="th-alerts-secondary">Never</span>
                       )}
@@ -1000,29 +1317,72 @@ export default function EnrollmentBootstrap() {
                         <span className="th-alerts-secondary">Never</span>
                       )}
                     </td>
-                    <td><span className="th-alerts-secondary !mt-0 tabular-nums">{formatLocalDateTime(token.created_at)}</span></td>
+                    <td>
+                      <span className="th-alerts-secondary !mt-0 tabular-nums">
+                        {formatLocalDateTime(token.created_at)}
+                      </span>
+                    </td>
                     {canManage && (
                       <td>
                         <div className="th-onb-actions">
-                          <button type="button" className="th-onb-action" title="Diagnostics" aria-label={`Diagnostics for ${token.name}`} onClick={() => void openDiagnostics(token)}>
+                          <button
+                            type="button"
+                            className="th-onb-action"
+                            title="Diagnostics"
+                            aria-label={`Diagnostics for ${token.name}`}
+                            onClick={() => void openDiagnostics(token)}
+                          >
                             <Activity className="h-4 w-4" />
                           </button>
                           {flashToken?.id === token.id && (
-                            <button type="button" className="th-onb-action" title="Copy plaintext token" aria-label={`Copy ${token.name}`} onClick={() => void copyText(`row-${token.id}`, flashToken.plaintext)}>
-                              {copied === `row-${token.id}` ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              title="Copy plaintext token"
+                              aria-label={`Copy ${token.name}`}
+                              onClick={() => void copyText(`row-${token.id}`, flashToken.plaintext)}
+                            >
+                              {copied === `row-${token.id}` ? (
+                                <Check className="h-4 w-4" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
                             </button>
                           )}
                           {token.is_default && (
-                            <button type="button" className="th-onb-action" title="Regenerate" aria-label="Regenerate default token" disabled={regenerating} onClick={() => void handleRegenerateDefault()}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              title="Regenerate"
+                              aria-label="Regenerate default token"
+                              disabled={regenerating}
+                              onClick={() => void handleRegenerateDefault()}
+                            >
                               <RotateCcw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
                             </button>
                           )}
                           {isRevocable(token) && (
-                            <button type="button" className="th-onb-action" data-tone="danger" title="Revoke" aria-label={`Revoke ${token.name}`} disabled={revoking.has(token.id)} onClick={() => setRevokeTarget(token)}>
+                            <button
+                              type="button"
+                              className="th-onb-action"
+                              data-tone="danger"
+                              title="Revoke"
+                              aria-label={`Revoke ${token.name}`}
+                              disabled={revoking.has(token.id)}
+                              onClick={() => setRevokeTarget(token)}
+                            >
                               <Ban className="h-4 w-4" />
                             </button>
                           )}
-                          <button type="button" className="th-onb-action" data-tone="danger" title="Delete" aria-label={`Delete ${token.name}`} disabled={deleting} onClick={() => setDeleteTarget(token)}>
+                          <button
+                            type="button"
+                            className="th-onb-action"
+                            data-tone="danger"
+                            title="Delete"
+                            aria-label={`Delete ${token.name}`}
+                            disabled={deleting}
+                            onClick={() => setDeleteTarget(token)}
+                          >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
@@ -1041,7 +1401,10 @@ export default function EnrollmentBootstrap() {
             pageSize={pageSize}
             total={visibleTokens.length}
             onPageChange={setPage}
-            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
             pageSizeOptions={[25, 50, 100]}
             itemLabel="tokens"
           />
@@ -1076,19 +1439,35 @@ export default function EnrollmentBootstrap() {
           onClose={() => setCreateOpen(false)}
           footer={
             <>
-              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
-              <Button type="button" onClick={() => void handleCreateToken()} disabled={!newName.trim() || creating}>{creating ? "Creating…" : "Create and select"}</Button>
+              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleCreateToken()} disabled={!newName.trim() || creating}>
+                {creating ? "Creating…" : "Create and select"}
+              </Button>
             </>
           }
         >
           <label className="th-onb-field">
             Name
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. ADPascucci — Office PCs" data-autofocus onKeyDown={(e) => e.key === "Enter" && void handleCreateToken()} />
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g. ADPascucci — Office PCs"
+              data-autofocus
+              onKeyDown={(e) => e.key === "Enter" && void handleCreateToken()}
+            />
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="th-onb-field">
               Max uses
-              <input type="number" min={1} max={1000} value={newMaxUses} onChange={(e) => setNewMaxUses(Math.max(1, Number(e.target.value)))} />
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={newMaxUses}
+                onChange={(e) => setNewMaxUses(Math.max(1, Number(e.target.value)))}
+              />
             </label>
             <label className="th-onb-field">
               Expires (Tirana time)
@@ -1104,7 +1483,10 @@ export default function EnrollmentBootstrap() {
                   aria-label="Assign to client"
                   value={newClientId === "" ? "" : String(newClientId)}
                   onChange={(value) => setNewClientId(value === "" ? "" : Number(value))}
-                  options={[{ value: "", label: "No assignment" }, ...clients.map((c) => ({ value: String(c.id), label: c.name }))]}
+                  options={[
+                    { value: "", label: "No assignment" },
+                    ...clients.map((c) => ({ value: String(c.id), label: c.name })),
+                  ]}
                 />
               </div>
               <div className="th-onb-field">
@@ -1115,7 +1497,10 @@ export default function EnrollmentBootstrap() {
                   disabled={newClientId === "" || groups.length === 0}
                   value={newGroupId === "" ? "" : String(newGroupId)}
                   onChange={(value) => setNewGroupId(value === "" ? "" : Number(value))}
-                  options={[{ value: "", label: "Auto by device type" }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+                  options={[
+                    { value: "", label: "Auto by device type" },
+                    ...groups.map((g) => ({ value: String(g.id), label: g.name })),
+                  ]}
                 />
               </div>
             </div>
@@ -1134,8 +1519,17 @@ export default function EnrollmentBootstrap() {
           onClose={() => setEditMaxUsesTarget(null)}
           footer={
             <>
-              <Button type="button" variant="secondary" onClick={() => setEditMaxUsesTarget(null)} disabled={savingMaxUses}>Cancel</Button>
-              <Button type="button" onClick={() => void handleSaveMaxUses()} disabled={savingMaxUses}>{savingMaxUses ? "Saving…" : "Save"}</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setEditMaxUsesTarget(null)}
+                disabled={savingMaxUses}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleSaveMaxUses()} disabled={savingMaxUses}>
+                {savingMaxUses ? "Saving…" : "Save"}
+              </Button>
             </>
           }
         >
@@ -1151,7 +1545,15 @@ export default function EnrollmentBootstrap() {
           )}
           <label className="th-onb-field">
             Max uses
-            <input type="number" min={1} max={1000000} value={editMaxUses} data-autofocus onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))} onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()} />
+            <input
+              type="number"
+              min={1}
+              max={1000000}
+              value={editMaxUses}
+              data-autofocus
+              onChange={(e) => setEditMaxUses(Math.max(1, Number(e.target.value)))}
+              onKeyDown={(e) => e.key === "Enter" && void handleSaveMaxUses()}
+            />
           </label>
         </Modal>
       )}
@@ -1164,7 +1566,11 @@ export default function EnrollmentBootstrap() {
           onClose={() => setRevokeTarget(null)}
           onConfirm={() => void handleRevoke(revokeTarget)}
         >
-          Revoke <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{revokeTarget.name}</span>? Existing installers with this token will stop enrolling new devices.
+          Revoke{" "}
+          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {revokeTarget.name}
+          </span>
+          ? Existing installers with this token will stop enrolling new devices.
         </ConfirmationModal>
       )}
 
@@ -1176,9 +1582,14 @@ export default function EnrollmentBootstrap() {
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDeleteToken()}
         >
-          Permanently delete <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{deleteTarget.name}</span>?
-          {deleteTarget.status === "active" && " This token is active and this action cannot be undone."}
-          {deleteTarget.is_default && deleteTarget.status === "active" && " Regenerate or revoke the Default Deployment token first unless you are intentionally removing it."}
+          Permanently delete{" "}
+          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {deleteTarget.name}
+          </span>
+          ?{deleteTarget.status === "active" && " This token is active and this action cannot be undone."}
+          {deleteTarget.is_default &&
+            deleteTarget.status === "active" &&
+            " Regenerate or revoke the Default Deployment token first unless you are intentionally removing it."}
         </ConfirmationModal>
       )}
 
@@ -1190,9 +1601,18 @@ export default function EnrollmentBootstrap() {
             <div
               key={toast.id}
               className="th-toast flex items-center gap-2.5 rounded-lg px-4 py-3 text-[13px] font-medium shadow-xl"
-              style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-elevated)", color: "var(--th-text-primary)", boxShadow: `inset 3px 0 0 ${tone}` }}
+              style={{
+                border: "1px solid var(--th-border-card)",
+                background: "var(--th-bg-elevated)",
+                color: "var(--th-text-primary)",
+                boxShadow: `inset 3px 0 0 ${tone}`,
+              }}
             >
-              {toast.type === "success" ? <Check className="h-4 w-4 flex-none" style={{ color: tone }} /> : <AlertTriangle className="h-4 w-4 flex-none" style={{ color: tone }} />}
+              {toast.type === "success" ? (
+                <Check className="h-4 w-4 flex-none" style={{ color: tone }} />
+              ) : (
+                <AlertTriangle className="h-4 w-4 flex-none" style={{ color: tone }} />
+              )}
               {toast.message}
             </div>
           );
@@ -1235,7 +1655,9 @@ function TokenDiagnosticsDrawer({
   onClose: () => void;
 }) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -1253,7 +1675,9 @@ function TokenDiagnosticsDrawer({
     <div
       className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm"
       role="presentation"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
       <aside
         className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[var(--th-bg-surface)] shadow-2xl"
@@ -1267,7 +1691,11 @@ function TokenDiagnosticsDrawer({
             <h2 className="mt-1 text-lg font-semibold text-white">{token.name}</h2>
             <p className="mt-1 font-mono text-xs text-slate-500">{formatTokenPrefix(token.token_prefix)}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -1279,7 +1707,11 @@ function TokenDiagnosticsDrawer({
               Loading diagnostics…
             </div>
           )}
-          {error && <div className="mb-4 rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">
+              {error}
+            </div>
+          )}
           {!loading && diagnostics && (
             <>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1321,24 +1753,37 @@ function TokenDiagnosticsDrawer({
                     </thead>
                     <tbody className="divide-y divide-white/[0.05]">
                       {!events.length && (
-                        <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-500">No enrollment audit events recorded.</td></tr>
+                        <tr>
+                          <td colSpan={8} className="px-3 py-10 text-center text-slate-500">
+                            No enrollment audit events recorded.
+                          </td>
+                        </tr>
                       )}
                       {events.map((event) => (
                         <tr key={event.id} className="text-slate-300">
-                          <td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatLocalDateTime(event.created_at)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-500">
+                            {formatLocalDateTime(event.created_at)}
+                          </td>
                           <td className="px-3 py-3 font-semibold text-white">{event.hostname || "—"}</td>
                           <td className="px-3 py-3">{event.username || "—"}</td>
                           <td className="px-3 py-3">{event.device_id ? `#${event.device_id}` : "—"}</td>
                           <td className="px-3 py-3 font-mono">{event.rustdesk_id || "—"}</td>
                           <td className="px-3 py-3">
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${resultBadgeClass(event.result)}`}>
+                            <span
+                              className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${resultBadgeClass(event.result)}`}
+                            >
                               {event.result.replace("_", " ")}
                             </span>
                           </td>
-                          <td className="max-w-[240px] truncate px-3 py-3" title={event.raw_error || event.reason || ""}>
+                          <td
+                            className="max-w-[240px] truncate px-3 py-3"
+                            title={event.raw_error || event.reason || ""}
+                          >
                             {event.reason || event.raw_error || "—"}
                           </td>
-                          <td className="px-3 py-3 font-mono text-slate-400">{event.public_ip || event.local_ip || "—"}</td>
+                          <td className="px-3 py-3 font-mono text-slate-400">
+                            {event.public_ip || event.local_ip || "—"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1372,7 +1817,15 @@ function OutputBlock({ title, value, copied, onCopy }: OutputBlockProps) {
     <details className="th-onb-details">
       <summary>
         <span>{title}</span>
-        <button type="button" className="th-onb-action" onClick={(e) => { e.preventDefault(); onCopy(); }} aria-label={`Copy ${title}`}>
+        <button
+          type="button"
+          className="th-onb-action"
+          onClick={(e) => {
+            e.preventDefault();
+            onCopy();
+          }}
+          aria-label={`Copy ${title}`}
+        >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
       </summary>

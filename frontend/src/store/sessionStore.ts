@@ -1,16 +1,6 @@
 import { useSyncExternalStore } from "react";
-import {
-  AuthSession,
-  AuthUser,
-  getAuthSession,
-  login as loginRequest,
-} from "../api/auth";
-import {
-  clearAuthSession,
-  getAuthToken,
-  setAuthSession,
-  setUnauthorizedHandler,
-} from "../api/client";
+import { AuthSession, AuthUser, getAuthSession, login as loginRequest } from "../api/auth";
+import { clearAuthSession, getAuthToken, setAuthSession, setUnauthorizedHandler } from "../api/client";
 
 const SESSION_STORAGE_KEY = "techi.auth.session";
 
@@ -59,11 +49,14 @@ function emit(next: SessionSnapshot): void {
 }
 
 function persistSession(token: string, session: AuthSession): void {
-  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
-    token,
-    user: session.user,
-    permissions: session.permissions,
-  } satisfies PersistedSession));
+  window.sessionStorage.setItem(
+    SESSION_STORAGE_KEY,
+    JSON.stringify({
+      token,
+      user: session.user,
+      permissions: session.permissions,
+    } satisfies PersistedSession),
+  );
 }
 
 function applyAuthenticatedSession(token: string, session: AuthSession): void {

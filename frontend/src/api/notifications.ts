@@ -101,9 +101,7 @@ export async function listNotificationChannels(): Promise<NotificationChannel[]>
   return fetchJson<NotificationChannel[]>("/api/v1/notifications/channels");
 }
 
-export async function createNotificationChannel(
-  payload: NotificationChannelCreate,
-): Promise<NotificationChannel> {
+export async function createNotificationChannel(payload: NotificationChannelCreate): Promise<NotificationChannel> {
   return fetchJson<NotificationChannel>("/api/v1/notifications/channels", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -149,10 +147,7 @@ export async function createNotificationRule(payload: NotificationRuleCreate): P
   });
 }
 
-export async function updateNotificationRule(
-  id: number,
-  payload: NotificationRuleUpdate,
-): Promise<NotificationRule> {
+export async function updateNotificationRule(id: number, payload: NotificationRuleUpdate): Promise<NotificationRule> {
   return fetchJson<NotificationRule>(`/api/v1/notifications/rules/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

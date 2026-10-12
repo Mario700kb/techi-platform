@@ -58,7 +58,15 @@ function collect(children: ReactNode, out: SelectOption[], group?: string) {
  * `<option>` / `<optgroup>` children), rendered through the themed Select so
  * every dropdown in the app looks and behaves the same.
  */
-export default function SelectField({ value, onChange, children, className, title, name: _name, ...rest }: SelectFieldProps) {
+export default function SelectField({
+  value,
+  onChange,
+  children,
+  className,
+  title,
+  name: _name,
+  ...rest
+}: SelectFieldProps) {
   const options: SelectOption[] = [];
   collect(children, options);
   return (

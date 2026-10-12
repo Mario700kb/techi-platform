@@ -2,10 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ComponentStatesPanel from "../ComponentStatesPanel";
-import type {
-  DeviceComponentStatesResponse,
-  PlatformComponentsResponse,
-} from "../../api/platform";
+import type { DeviceComponentStatesResponse, PlatformComponentsResponse } from "../../api/platform";
 
 const getStates = vi.fn();
 const getComponents = vi.fn();
@@ -46,8 +43,13 @@ const COMPONENTS: PlatformComponentsResponse = {
   schema_version: 1,
   components: [
     {
-      id: "agent", display_name: "TECHI Agent", description: "", icon_key: "agent",
-      platforms: ["windows"], file_types: ["agent_binary"], capabilities: [],
+      id: "agent",
+      display_name: "TECHI Agent",
+      description: "",
+      icon_key: "agent",
+      platforms: ["windows"],
+      file_types: ["agent_binary"],
+      capabilities: [],
       lifecycle: [
         { operation: "update", label: "Update", action_type: "self_update", kind: "action" },
         { operation: "restart", label: "Restart", action_type: "restart_agent", kind: "action" },
@@ -56,11 +58,14 @@ const COMPONENTS: PlatformComponentsResponse = {
       policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
     },
     {
-      id: "remote_support", display_name: "TECHI Remote Support", description: "", icon_key: "remote_support",
-      platforms: ["windows"], file_types: ["remote_support_msi"], capabilities: ["remote_support"],
-      lifecycle: [
-        { operation: "reinstall", label: "Reinstall", action_type: "reinstall_rustdesk", kind: "action" },
-      ],
+      id: "remote_support",
+      display_name: "TECHI Remote Support",
+      description: "",
+      icon_key: "remote_support",
+      platforms: ["windows"],
+      file_types: ["remote_support_msi"],
+      capabilities: ["remote_support"],
+      lifecycle: [{ operation: "reinstall", label: "Reinstall", action_type: "reinstall_rustdesk", kind: "action" }],
       policy: { desired_source: "active_package", policy: "active_package", strategy: "manual" },
     },
   ],
@@ -77,8 +82,8 @@ describe("ComponentStatesPanel", () => {
     await waitFor(() => expect(screen.getByText("TECHI Agent")).toBeInTheDocument());
     expect(screen.getByText("Outdated")).toBeInTheDocument();
     expect(screen.getByText("Current")).toBeInTheDocument();
-    expect(screen.getByText("2.1.5")).toBeInTheDocument();   // installed
-    expect(screen.getByText("2.1.14")).toBeInTheDocument();  // desired
+    expect(screen.getByText("2.1.5")).toBeInTheDocument(); // installed
+    expect(screen.getByText("2.1.14")).toBeInTheDocument(); // desired
     // Lifecycle metadata chips (labels).
     await waitFor(() => expect(screen.getByText("Update")).toBeInTheDocument());
     expect(screen.getByText("Reinstall")).toBeInTheDocument();
@@ -88,8 +93,11 @@ describe("ComponentStatesPanel", () => {
     getStates.mockResolvedValue(STATES);
     getComponents.mockResolvedValue(COMPONENTS);
     queueAction.mockResolvedValue({
-      component_id: "agent", operation: "update", action_type: "self_update",
-      label: "Update", action: { id: 1, device_id: 7, action_type: "self_update", status: "queued", created_at: "" },
+      component_id: "agent",
+      operation: "update",
+      action_type: "self_update",
+      label: "Update",
+      action: { id: 1, device_id: 7, action_type: "self_update", status: "queued", created_at: "" },
     });
     render(<ComponentStatesPanel deviceId={7} />);
 
@@ -112,9 +120,7 @@ describe("ComponentStatesPanel", () => {
     fireEvent.click(restartBtn);
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restart" }));
 
-    await waitFor(() =>
-      expect(screen.getByText("Permission denied: deployment")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Permission denied: deployment")).toBeInTheDocument());
   });
 
   it("asks before an interrupting operation and does nothing when cancelled", async () => {

@@ -14,11 +14,23 @@ function Vital({ label, pct }: { label: string; pct: number | null }) {
   const tone = meterColor(pct);
   return (
     <div className="th-onb-card th-mvital" style={{ "--meter-tone": tone } as React.CSSProperties}>
-      <span className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{label}</span>
-      <span className="text-[18px] font-semibold leading-6 tabular-nums" style={{ color: pct == null ? "var(--th-text-faint)" : "var(--th-text-primary)" }}>
+      <span className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+        {label}
+      </span>
+      <span
+        className="text-[18px] font-semibold leading-6 tabular-nums"
+        style={{ color: pct == null ? "var(--th-text-faint)" : "var(--th-text-primary)" }}
+      >
         {pct == null ? "—" : `${Math.round(pct)}%`}
       </span>
-      <span className="th-mvital-track" role="meter" aria-label={`${label} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct == null ? undefined : Math.round(pct)}>
+      <span
+        className="th-mvital-track"
+        role="meter"
+        aria-label={`${label} usage`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct == null ? undefined : Math.round(pct)}
+      >
         <i className="m-anim" style={{ width: `${pct ?? 0}%` }} />
       </span>
     </div>

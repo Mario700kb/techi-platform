@@ -22,7 +22,12 @@ describe("shared device badges", () => {
   });
 
   it("names a stopped Remote Support service in full", () => {
-    const d = device({ freshness_state: "offline", last_seen: "2026-10-10T10:00:00", rustdesk_status: "stopped", rustdesk_install_status: "installed" });
+    const d = device({
+      freshness_state: "offline",
+      last_seen: "2026-10-10T10:00:00",
+      rustdesk_status: "stopped",
+      rustdesk_install_status: "installed",
+    });
     expect(offlineReasonBadge(d)?.label).toBe("Remote Support stopped");
     expect(remoteSupportIssue(d)?.label).toBe("Remote off");
     expect(remoteSupportIssue(d)?.title).toBe("Remote Support: Stopped");
@@ -32,7 +37,10 @@ describe("shared device badges", () => {
 
   it("measures a non-Windows agent against its own platform's version", () => {
     const linux = device({ platform: "linux", architecture: "x86_64", agent_version: "2.1.21" });
-    const view = agentVersionView(linux, { activePackageVersion: "2.1.20", activeAgentVersions: { "linux:x86_64": "2.1.21" } });
+    const view = agentVersionView(linux, {
+      activePackageVersion: "2.1.20",
+      activeAgentVersions: { "linux:x86_64": "2.1.21" },
+    });
     expect(view).toEqual({ status: "current", title: "Latest: 2.1.21" });
   });
 });

@@ -64,8 +64,9 @@ export function clickProtocolUrl(url: string): void {
 }
 
 function isIOS(): boolean {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  ); // iPadOS
 }
 
 /**
@@ -80,11 +81,7 @@ function isIOS(): boolean {
  * before handing off — the dialog itself causes a blur, so the heuristic still
  * works and no fallback fires.
  */
-export function launchWithFallback(
-  techiUrl: string,
-  rustdeskUrl: string,
-  onFallback?: () => void
-): void {
+export function launchWithFallback(techiUrl: string, rustdeskUrl: string, onFallback?: () => void): void {
   // Cancel any previous pending fallback (rapid double-click guard).
   cancelPendingFallback();
 
@@ -142,11 +139,7 @@ export function launchWithFallback(
  * On all other platforms the blur-detection heuristic in launchWithFallback
  * handles the techiremotesupport → rustdesk fallback as before.
  */
-export function launchConnect(
-  techiUrl: string,
-  rustdeskUrl: string,
-  onFallback?: () => void
-): void {
+export function launchConnect(techiUrl: string, rustdeskUrl: string, onFallback?: () => void): void {
   if (isIOS()) {
     clickProtocolUrl(rustdeskUrl);
     onFallback?.();

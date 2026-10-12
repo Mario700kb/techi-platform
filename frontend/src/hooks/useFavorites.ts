@@ -29,10 +29,7 @@ export function useFavorites() {
     });
   }, []);
 
-  const isFavorite = useCallback(
-    (deviceId: number) => favorites.has(deviceId),
-    [favorites]
-  );
+  const isFavorite = useCallback((deviceId: number) => favorites.has(deviceId), [favorites]);
 
   return { favorites, toggle, isFavorite };
 }

@@ -153,9 +153,7 @@ export async function listVaultCredentials(): Promise<VaultCredential[]> {
   return fetchJson<VaultCredential[]>("/api/v1/vault");
 }
 
-export async function createVaultCredential(
-  payload: VaultCredentialCreate,
-): Promise<VaultCredential> {
+export async function createVaultCredential(payload: VaultCredentialCreate): Promise<VaultCredential> {
   return fetchJson<VaultCredential>("/api/v1/vault", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -163,10 +161,7 @@ export async function createVaultCredential(
   });
 }
 
-export async function updateVaultCredential(
-  id: number,
-  payload: VaultCredentialUpdate,
-): Promise<VaultCredential> {
+export async function updateVaultCredential(id: number, payload: VaultCredentialUpdate): Promise<VaultCredential> {
   return fetchJson<VaultCredential>(`/api/v1/vault/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -174,10 +169,7 @@ export async function updateVaultCredential(
   });
 }
 
-export async function setVaultCredentialStatus(
-  id: number,
-  status: VaultCredentialStatus,
-): Promise<VaultCredential> {
+export async function setVaultCredentialStatus(id: number, status: VaultCredentialStatus): Promise<VaultCredential> {
   return fetchJson<VaultCredential>(`/api/v1/vault/${id}/status?status=${status}`, { method: "POST" });
 }
 

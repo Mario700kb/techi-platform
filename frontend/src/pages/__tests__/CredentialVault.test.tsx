@@ -9,21 +9,59 @@ import { ApiError } from "../../api/client";
 
 const TYPES: vaultApi.VaultCredentialTypeDescriptor[] = [
   {
-    id: "generic_username_password", label: "Generic username/password", icon: "UserCog", category: "generic",
-    metadata_fields: [], secret_fields: [{ key: "password", label: "Password", required: true, kind: "password", options: null, default: null, placeholder: null }],
-    requires_username: true, requires_secret: true, future_consumers: ["Other"], legacy: false,
+    id: "generic_username_password",
+    label: "Generic username/password",
+    icon: "UserCog",
+    category: "generic",
+    metadata_fields: [],
+    secret_fields: [
+      {
+        key: "password",
+        label: "Password",
+        required: true,
+        kind: "password",
+        options: null,
+        default: null,
+        placeholder: null,
+      },
+    ],
+    requires_username: true,
+    requires_secret: true,
+    future_consumers: ["Other"],
+    legacy: false,
   },
 ];
 
 function credential(overrides: Partial<vaultApi.VaultCredential> = {}): vaultApi.VaultCredential {
   return {
-    id: 1, name: "srv ssh", credential_type: "generic_username_password", scope_type: "global",
-    client_id: null, group_id: null, device_id: null, purpose: null, username: "admin", notes: null,
-    created_by: "mario", created_at: "2026-07-01T00:00:00Z", updated_at: "2026-07-01T00:00:00Z",
-    rotated_at: null, last_used_at: null, status: "active", expires_at: null, rotation_due_at: null,
-    last_tested_at: null, last_test_status: null, credential_metadata: {}, secret_hint: "••••1234",
-    lifecycle_status: "active", is_referenced: false, reference_count: 0, references: [],
-    consumer_status: "stored_only", future_consumers: [],
+    id: 1,
+    name: "srv ssh",
+    credential_type: "generic_username_password",
+    scope_type: "global",
+    client_id: null,
+    group_id: null,
+    device_id: null,
+    purpose: null,
+    username: "admin",
+    notes: null,
+    created_by: "mario",
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    rotated_at: null,
+    last_used_at: null,
+    status: "active",
+    expires_at: null,
+    rotation_due_at: null,
+    last_tested_at: null,
+    last_test_status: null,
+    credential_metadata: {},
+    secret_hint: "••••1234",
+    lifecycle_status: "active",
+    is_referenced: false,
+    reference_count: 0,
+    references: [],
+    consumer_status: "stored_only",
+    future_consumers: [],
     ...overrides,
   };
 }
@@ -31,14 +69,24 @@ function credential(overrides: Partial<vaultApi.VaultCredential> = {}): vaultApi
 function mockAuth(overrides: Partial<ReturnType<typeof authContext.useAuth>> = {}) {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "admin", email: "" } as any,
-    token: "t", loading: false, permissions: null,
-    login: vi.fn(), logout: vi.fn(), can: () => true, hasAnyRole: vi.fn(), hasPermission: () => true,
+    token: "t",
+    loading: false,
+    permissions: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    can: () => true,
+    hasAnyRole: vi.fn(),
+    hasPermission: () => true,
     ...overrides,
   });
 }
 
 function renderPage() {
-  return render(<MemoryRouter><CredentialVault /></MemoryRouter>);
+  return render(
+    <MemoryRouter>
+      <CredentialVault />
+    </MemoryRouter>,
+  );
 }
 
 describe("CredentialVault enterprise UI", () => {
@@ -53,7 +101,9 @@ describe("CredentialVault enterprise UI", () => {
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     let resolveList: (v: vaultApi.VaultCredential[]) => void = () => {};
     vi.spyOn(vaultApi, "listVaultCredentials").mockReturnValue(
-      new Promise((resolve) => { resolveList = resolve; }),
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
     );
 
     renderPage();
@@ -151,7 +201,10 @@ describe("CredentialVault enterprise UI", () => {
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
     vi.spyOn(vaultApi, "deleteVaultCredential").mockRejectedValue(
-      new ApiError('Credential "srv ssh" is still referenced by: Client #1 (Acme). Delete again with confirmation to override.', 409),
+      new ApiError(
+        'Credential "srv ssh" is still referenced by: Client #1 (Acme). Delete again with confirmation to override.',
+        409,
+      ),
     );
 
     renderPage();
@@ -170,7 +223,9 @@ describe("CredentialVault enterprise UI", () => {
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue([]);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([credential({ name: "srv ssh" })]);
-    const reveal = vi.spyOn(vaultApi, "revealVaultCredential").mockResolvedValue({ id: 1, name: "srv ssh", username: "admin", secret_fields: { password: "hunter2" } });
+    const reveal = vi
+      .spyOn(vaultApi, "revealVaultCredential")
+      .mockResolvedValue({ id: 1, name: "srv ssh", username: "admin", secret_fields: { password: "hunter2" } });
 
     renderPage();
     await waitFor(() => expect(screen.getByText("srv ssh")).toBeInTheDocument());
@@ -179,7 +234,9 @@ describe("CredentialVault enterprise UI", () => {
     const submit = within(dialog).getByRole("button", { name: "Reveal" });
     fireEvent.change(within(dialog).getByPlaceholderText(/why the secret is needed/i), { target: { value: "abc" } });
     expect(submit).toBeDisabled();
-    fireEvent.change(within(dialog).getByPlaceholderText(/why the secret is needed/i), { target: { value: "TICKET-42" } });
+    fireEvent.change(within(dialog).getByPlaceholderText(/why the secret is needed/i), {
+      target: { value: "TICKET-42" },
+    });
     fireEvent.click(submit);
 
     await waitFor(() => expect(reveal).toHaveBeenCalledWith(1, "TICKET-42"));

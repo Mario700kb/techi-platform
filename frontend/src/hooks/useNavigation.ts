@@ -11,9 +11,9 @@ export function useVisibleNav(): { sections: NavSection[]; canSee: (item: NavIte
   return useMemo(() => {
     const canSee = (item: NavItem) =>
       (item.permission === null || hasPermission(item.permission)) && (!item.feature || features[item.feature]);
-    const sections = NAV_SECTIONS
-      .map((section) => ({ ...section, items: section.items.filter(canSee) }))
-      .filter((section) => section.items.length > 0);
+    const sections = NAV_SECTIONS.map((section) => ({ ...section, items: section.items.filter(canSee) })).filter(
+      (section) => section.items.length > 0,
+    );
     return { sections, canSee };
   }, [hasPermission, features]);
 }

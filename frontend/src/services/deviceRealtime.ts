@@ -39,7 +39,17 @@ export interface DeviceRealtimeEvent {
     os_version?: string | null;
     platform?: string | null;
     device_type?: string;
-    status?: "online" | "offline" | "queued" | "sent" | "acknowledged" | "running" | "completed" | "failed" | "expired" | "cancelled";
+    status?:
+      | "online"
+      | "offline"
+      | "queued"
+      | "sent"
+      | "acknowledged"
+      | "running"
+      | "completed"
+      | "failed"
+      | "expired"
+      | "cancelled";
     freshness_state?: "online" | "stale" | "offline";
     last_seen?: string | null;
     client_id?: number | null;
@@ -124,17 +134,13 @@ export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
   let wsBase: string;
   const configured = import.meta.env.VITE_WS_BASE_URL;
   if (configured) {
-    wsBase = configured
-      .replace(/^https:/i, "wss:")
-      .replace(/^http:/i, "ws:");
+    wsBase = configured.replace(/^https:/i, "wss:").replace(/^http:/i, "ws:");
   } else if (typeof window !== "undefined") {
     // Production reverse proxies normally expose WebSockets on the page origin.
     // Vite development still talks directly to the backend on port 8000.
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const isViteDev = window.location.port === "5173";
-    wsBase = isViteDev
-      ? `${wsProtocol}//${window.location.hostname}:8000`
-      : `${wsProtocol}//${window.location.host}`;
+    wsBase = isViteDev ? `${wsProtocol}//${window.location.hostname}:8000` : `${wsProtocol}//${window.location.host}`;
   } else {
     wsBase = "ws://localhost:8000";
   }

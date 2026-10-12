@@ -68,7 +68,9 @@ describe("usePlatformFeatures shared store", () => {
     const { usePlatformFeatures, usePlatformFeaturesLoading } = await loadHook();
 
     // First consumer mounts (e.g. the Sidebar) and the fetch resolves.
-    const first = render(<Probe usePlatformFeatures={usePlatformFeatures} usePlatformFeaturesLoading={usePlatformFeaturesLoading} />);
+    const first = render(
+      <Probe usePlatformFeatures={usePlatformFeatures} usePlatformFeaturesLoading={usePlatformFeaturesLoading} />,
+    );
     await act(async () => {
       resolveFetch({ FEATURE_REPORTING: true });
     });
@@ -88,7 +90,9 @@ describe("usePlatformFeatures shared store", () => {
     getPlatformFeaturesMock.mockRejectedValueOnce(new Error("401"));
     const { usePlatformFeatures, usePlatformFeaturesLoading } = await loadHook();
 
-    const first = render(<Probe usePlatformFeatures={usePlatformFeatures} usePlatformFeaturesLoading={usePlatformFeaturesLoading} />);
+    const first = render(
+      <Probe usePlatformFeatures={usePlatformFeatures} usePlatformFeaturesLoading={usePlatformFeaturesLoading} />,
+    );
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"));
     expect(screen.getByTestId("reporting").textContent).toBe("false");
     first.unmount();

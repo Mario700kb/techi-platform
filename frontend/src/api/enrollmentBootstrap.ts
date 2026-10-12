@@ -150,7 +150,7 @@ export async function getEnrollmentTokenDiagnostics(tokenId: number): Promise<En
 
 export async function getEnrollmentTokenEvents(
   tokenId: number,
-  options: { limit?: number; offset?: number } = {}
+  options: { limit?: number; offset?: number } = {},
 ): Promise<EnrollmentAuditEvent[]> {
   const params = new URLSearchParams({
     limit: String(options.limit ?? 50),
@@ -159,9 +159,7 @@ export async function getEnrollmentTokenEvents(
   return fetchJson<EnrollmentAuditEvent[]>(`/api/v1/enrollment-tokens/${tokenId}/events?${params.toString()}`);
 }
 
-export async function createEnrollmentToken(
-  payload: CreateTokenRequest
-): Promise<CreateTokenResponse> {
+export async function createEnrollmentToken(payload: CreateTokenRequest): Promise<CreateTokenResponse> {
   return fetchJson<CreateTokenResponse>("/api/v1/enrollment-tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -191,7 +189,7 @@ export async function regenerateEnrollmentToken(tokenId: number): Promise<Create
 
 export async function deleteEnrollmentToken(
   tokenId: number,
-  options: { confirmActive?: boolean; confirmDefault?: boolean } = {}
+  options: { confirmActive?: boolean; confirmDefault?: boolean } = {},
 ): Promise<EnrollmentToken> {
   const params = new URLSearchParams();
   if (options.confirmActive) params.set("confirm_active", "true");
@@ -209,7 +207,7 @@ export async function regenerateDefaultToken(): Promise<CreateTokenResponse> {
 }
 
 export async function generateEnrollmentBootstrap(
-  payload: EnrollmentBootstrapRequest
+  payload: EnrollmentBootstrapRequest,
 ): Promise<EnrollmentBootstrapResponse> {
   return fetchJson<EnrollmentBootstrapResponse>("/api/v1/enrollment-bootstrap", {
     method: "POST",

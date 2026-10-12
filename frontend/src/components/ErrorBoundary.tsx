@@ -24,8 +24,9 @@ const CHUNK_RELOAD_KEY = "techi.chunk-reload-at";
  */
 export function isChunkLoadError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return /dynamically imported module|Importing a module script failed|Loading chunk [\w-]+ failed|error loading dynamically imported module/i
-    .test(error.message);
+  return /dynamically imported module|Importing a module script failed|Loading chunk [\w-]+ failed|error loading dynamically imported module/i.test(
+    error.message,
+  );
 }
 
 function reloadOnceForChunk(): boolean {
@@ -76,7 +77,11 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     return (
       <div
         role="alert"
-        className={app ? "flex min-h-screen items-center justify-center p-6" : "flex min-h-[50vh] items-center justify-center p-6"}
+        className={
+          app
+            ? "flex min-h-screen items-center justify-center p-6"
+            : "flex min-h-[50vh] items-center justify-center p-6"
+        }
         style={app ? { background: "var(--th-bg-main)" } : undefined}
       >
         <EmptyState
@@ -90,7 +95,9 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {!chunk && (
-                <Button variant="secondary" size="sm" onClick={this.retry}>Try again</Button>
+                <Button variant="secondary" size="sm" onClick={this.retry}>
+                  Try again
+                </Button>
               )}
               <Button size="sm" onClick={() => window.location.reload()}>
                 <RefreshCcw className="h-4 w-4" aria-hidden /> Reload

@@ -64,7 +64,11 @@ export function BottomNav() {
         >
           <span className="th-mnav-icon">
             <Icon className="h-5 w-5" strokeWidth={active ? 2.1 : 1.8} />
-            {badge > 0 && <span aria-hidden="true" className="th-mnav-badge">{badgeText}</span>}
+            {badge > 0 && (
+              <span aria-hidden="true" className="th-mnav-badge">
+                {badgeText}
+              </span>
+            )}
           </span>
           <span className="th-mnav-label m-bottomnav-label">{label}</span>
         </button>

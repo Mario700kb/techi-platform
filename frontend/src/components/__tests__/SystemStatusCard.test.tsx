@@ -11,8 +11,16 @@ const services: systemApi.ServiceTile[] = [
   { key: "database", state: "ok", label: "Live", detail: "3 ms · schema e1f2a3b4c5d6" },
   { key: "agents", state: "ok", label: "Live", detail: "612 reporting · last 5 min", value: 612, total: 665 },
   { key: "agent_versions", state: "done", label: "Synced", detail: "687 / 773 on 2.1.20", value: 687, total: 773 },
-  { key: "workers", state: "ok", label: "4 / 4", detail: "All background jobs ticking",
-    items: [{ name: "reports", state: "ok" }, { name: "reconcile", state: "ok" }] },
+  {
+    key: "workers",
+    state: "ok",
+    label: "4 / 4",
+    detail: "All background jobs ticking",
+    items: [
+      { name: "reports", state: "ok" },
+      { name: "reconcile", state: "ok" },
+    ],
+  },
   { key: "cleanup", state: "done", label: "Done", detail: "41,208 rows removed · 1.8 s", at: "2026-10-05T03:00:00" },
   { key: "backup", state: "done", label: "Done", detail: "148 MB · verified", at: "2026-10-05T01:00:00" },
 ];
@@ -24,7 +32,16 @@ describe("SystemStatusCard", () => {
     vi.spyOn(systemApi, "getSystemStatus").mockResolvedValue({ checked_at: "2026-10-05T15:00:00Z", services });
     render(<SystemStatusCard />);
     expect(await screen.findByText("All systems operational")).toBeInTheDocument();
-    for (const title of ["API ↔ Web", "Realtime", "Database", "Agents", "Agent versions", "Workers", "Nightly cleanup", "Nightly backup"]) {
+    for (const title of [
+      "API ↔ Web",
+      "Realtime",
+      "Database",
+      "Agents",
+      "Agent versions",
+      "Workers",
+      "Nightly cleanup",
+      "Nightly backup",
+    ]) {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
     expect(screen.getByText("WebSocket connected")).toBeInTheDocument();
@@ -34,7 +51,9 @@ describe("SystemStatusCard", () => {
   it("summarises a down service in the header", async () => {
     vi.spyOn(systemApi, "getSystemStatus").mockResolvedValue({
       checked_at: "2026-10-05T15:00:00Z",
-      services: services.map((s) => (s.key === "backup" ? { ...s, state: "down", label: "Missing", detail: "No verified backup found" } : s)),
+      services: services.map((s) =>
+        s.key === "backup" ? { ...s, state: "down", label: "Missing", detail: "No verified backup found" } : s,
+      ),
     });
     render(<SystemStatusCard />);
     expect(await screen.findByText("1 service down")).toBeInTheDocument();

@@ -11,8 +11,7 @@ function App() {
   // Routes that own the whole viewport: login, and the standalone terminal
   // window opened from the Device Catalog. Rendering the sidebar and topbar
   // inside a 1024x640 popup would leave the terminal a fraction of it.
-  const isChromeless =
-    location.pathname === "/login" || location.pathname.startsWith("/terminal/");
+  const isChromeless = location.pathname === "/login" || location.pathname.startsWith("/terminal/");
   // A stored token without a cached user is verified before any chrome is
   // drawn, so the shell never flashes in for someone about to be signed out.
   if (loading && location.pathname !== "/login") {

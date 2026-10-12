@@ -30,9 +30,7 @@ export const API_BASE_URL = normalizeBaseUrl(configuredApiBaseUrl || localApiBas
 // exist for a dev server with no .env; a production build always configures
 // its URL (vite.config.ts refuses to build otherwise), so a request — and its
 // bearer token — can never be retried against another origin there.
-const API_BASE_URLS = configuredApiBaseUrl
-  ? [API_BASE_URL]
-  : uniqueUrls([API_BASE_URL, ...localApiBaseUrls()]);
+const API_BASE_URLS = configuredApiBaseUrl ? [API_BASE_URL] : uniqueUrls([API_BASE_URL, ...localApiBaseUrls()]);
 const TOKEN_KEY = "techi.auth.token";
 const USER_KEY = "techi.auth.user";
 /** Long enough for report generation and package downloads; a hung request still ends. */
@@ -91,9 +89,13 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number) 
     if (signal.aborted) controller.abort(signal.reason);
     else signal.addEventListener("abort", onAbort, { once: true });
   }
-  const timer = timeoutMs > 0
-    ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs)
-    : null;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
   return {
     signal: controller.signal,
     timedOut: () => timedOut,

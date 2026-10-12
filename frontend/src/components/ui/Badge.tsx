@@ -17,7 +17,14 @@ const variantClasses = {
 
 export default function Badge({ children, variant = "primary", className, title }: BadgeProps) {
   return (
-    <span className={clsx("inline-flex min-h-6 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none", variantClasses[variant], className)} title={title}>
+    <span
+      className={clsx(
+        "inline-flex min-h-6 items-center rounded-full border px-3 py-1 text-xs font-semibold leading-none",
+        variantClasses[variant],
+        className,
+      )}
+      title={title}
+    >
       {children}
     </span>
   );

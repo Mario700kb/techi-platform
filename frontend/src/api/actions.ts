@@ -2,14 +2,7 @@ import { fetchJson } from "./client";
 import { TERMS } from "../utils/deviceStatus";
 
 export type ActionStatus =
-  | "queued"
-  | "sent"
-  | "acknowledged"
-  | "running"
-  | "completed"
-  | "failed"
-  | "expired"
-  | "cancelled";
+  "queued" | "sent" | "acknowledged" | "running" | "completed" | "failed" | "expired" | "cancelled";
 
 export type ActionType =
   | "ping"
@@ -119,11 +112,7 @@ export async function queueDeviceAction(deviceId: number, payload: QueueActionPa
   });
 }
 
-export async function getDeviceActions(
-  deviceId: number,
-  limit = 30,
-  status?: string,
-): Promise<RemoteAction[]> {
+export async function getDeviceActions(deviceId: number, limit = 30, status?: string): Promise<RemoteAction[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (status) params.set("status", status);
   return fetchJson<RemoteAction[]>(`/api/v1/devices/${deviceId}/actions?${params}`);
@@ -155,26 +144,42 @@ export function isActiveStatus(status: ActionStatus): boolean {
 
 export function statusColor(status: ActionStatus): string {
   switch (status) {
-    case "completed": return "text-emerald-400";
-    case "failed": return "text-red-400";
-    case "expired": return "text-slate-500";
-    case "cancelled": return "text-slate-500";
-    case "running": return "text-sky-400";
-    case "acknowledged": return "text-sky-300";
-    case "sent": return "text-amber-400";
-    case "queued": return "text-amber-300";
-    default: return "text-slate-400";
+    case "completed":
+      return "text-emerald-400";
+    case "failed":
+      return "text-red-400";
+    case "expired":
+      return "text-slate-500";
+    case "cancelled":
+      return "text-slate-500";
+    case "running":
+      return "text-sky-400";
+    case "acknowledged":
+      return "text-sky-300";
+    case "sent":
+      return "text-amber-400";
+    case "queued":
+      return "text-amber-300";
+    default:
+      return "text-slate-400";
   }
 }
 
 export function statusDotColor(status: ActionStatus): string {
   switch (status) {
-    case "completed": return "bg-emerald-400";
-    case "failed": return "bg-red-400";
-    case "running": return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
-    case "acknowledged": return "bg-sky-300";
-    case "sent": return "bg-amber-400";
-    case "queued": return "bg-amber-300";
-    default: return "bg-slate-500";
+    case "completed":
+      return "bg-emerald-400";
+    case "failed":
+      return "bg-red-400";
+    case "running":
+      return "bg-sky-400 shadow-[0_0_4px_color-mix(in_srgb,var(--th-status-info)_60%,transparent)]";
+    case "acknowledged":
+      return "bg-sky-300";
+    case "sent":
+      return "bg-amber-400";
+    case "queued":
+      return "bg-amber-300";
+    default:
+      return "bg-slate-500";
   }
 }

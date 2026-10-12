@@ -24,7 +24,11 @@ export default function PageHeader({ title, description, icon, actions, children
     return (
       <header className={clsx("space-y-3", className)}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {description && <p className="max-w-[80ch] text-[13px]" style={{ color: "var(--th-text-muted)" }}>{description}</p>}
+          {description && (
+            <p className="max-w-[80ch] text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+              {description}
+            </p>
+          )}
           {actions && <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
         {children}
@@ -38,7 +42,11 @@ export default function PageHeader({ title, description, icon, actions, children
           {icon && (
             <span
               className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border"
-              style={{ borderColor: "var(--th-accent-border)", background: "var(--th-accent-dim-bg)", color: "var(--th-accent-bright)" }}
+              style={{
+                borderColor: "var(--th-accent-border)",
+                background: "var(--th-accent-dim-bg)",
+                color: "var(--th-accent-bright)",
+              }}
             >
               {icon}
             </span>

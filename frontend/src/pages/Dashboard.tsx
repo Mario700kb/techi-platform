@@ -58,7 +58,12 @@ function SectionError({ what, onRetry }: { what: string; onRetry: () => void }) 
       icon={<AlertTriangle className="h-5 w-5" />}
       title={`Couldn't load ${what}`}
       description="The server did not respond. Try again."
-      action={<Button size="sm" variant="secondary" onClick={onRetry}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+      action={
+        <Button size="sm" variant="secondary" onClick={onRetry}>
+          <RefreshCcw className="h-3.5 w-3.5" />
+          Retry
+        </Button>
+      }
     />
   );
 }
@@ -66,14 +71,8 @@ function SectionError({ what, onRetry }: { what: string; onRetry: () => void }) 
 export default function Dashboard() {
   useNow();
   const { user, hasPermission } = useAuth();
-  const {
-    fleetOverview,
-    fleetOverviewLoading,
-    latestEvent,
-    realtimeStatus,
-    refreshFleetOverview,
-    totalOpenAlerts,
-  } = useAppData();
+  const { fleetOverview, fleetOverviewLoading, latestEvent, realtimeStatus, refreshFleetOverview, totalOpenAlerts } =
+    useAppData();
 
   const stats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
   const total = stats.total;
@@ -87,8 +86,12 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
-  const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(() => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? []);
-  const [operators, setOperators] = useState<OperatorPresenceRecord[]>(() => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? []);
+  const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
+    () => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [],
+  );
+  const [operators, setOperators] = useState<OperatorPresenceRecord[]>(
+    () => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? [],
+  );
   const [clientNames, setClientNames] = useState<Record<number, string>>(() =>
     Object.fromEntries((appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []).map((c) => [c.id, c.name])),
   );
@@ -111,12 +114,23 @@ export default function Dashboard() {
       })
       .catch(() => setInsightsFailed(true));
   }, [insightsKey]);
-  useEffect(() => { loadInsights(); }, [loadInsights]);
-  const [favoritesCount] = useState(() => { try { const raw = localStorage.getItem('techi.favorites'); return raw ? (JSON.parse(raw) as number[]).length : 0; } catch { return 0; } });
-  const [failed, setFailed] = useState<Record<ActivitySection, boolean>>({ devices: false, actions: false, operators: false });
-  const [activityReady, setActivityReady] = useState(
-    () => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null,
-  );
+  useEffect(() => {
+    loadInsights();
+  }, [loadInsights]);
+  const [favoritesCount] = useState(() => {
+    try {
+      const raw = localStorage.getItem("techi.favorites");
+      return raw ? (JSON.parse(raw) as number[]).length : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [failed, setFailed] = useState<Record<ActivitySection, boolean>>({
+    devices: false,
+    actions: false,
+    operators: false,
+  });
+  const [activityReady, setActivityReady] = useState(() => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null);
 
   const loadDashboard = useCallback(async () => {
     const devicesFresh = appCache.get(CACHE_KEYS.dashboardRecentDevices, CACHE_TTL.dashboardRecentDevices) !== null;
@@ -253,10 +267,10 @@ export default function Dashboard() {
     averageHealth == null
       ? { label: "No score", tone: TONE.neutral }
       : averageHealth < 50
-      ? { label: "Critical", tone: TONE.critical }
-      : averageHealth < 80
-      ? { label: "Warning", tone: TONE.warning }
-      : { label: "Healthy", tone: TONE.online };
+        ? { label: "Critical", tone: TONE.critical }
+        : averageHealth < 80
+          ? { label: "Warning", tone: TONE.warning }
+          : { label: "Healthy", tone: TONE.online };
   const canManageOperators = hasPermission("manage_operators");
   // System status is for owner and admin only (the API enforces it too).
   const isAdmin = user?.role === "owner" || user?.role === "admin";
@@ -297,331 +311,617 @@ export default function Dashboard() {
 
       {/* Desktop dashboard — shown only at md+ (768px) */}
       <div className="hidden md:block space-y-4">
-      <PageHeader
-        title="Dashboard"
-        description="Fleet health, open issues and recent activity across all clients."
-        actions={
-          <>
-            {onlineOperators.length > 0 && (() => {
-              const content = (
-                <>
-                  <Users className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
-                  {formatCount(onlineOperators.length)} {onlineOperators.length === 1 ? "operator" : "operators"} online
-                </>
-              );
-              const title = onlineOperators.map((op) => op.display_name ?? op.username).join(", ");
-              return canManageOperators
-                ? <Link to="/operators" className={HEADER_CHIP} title={title}>{content}</Link>
-                : <span className={HEADER_CHIP} title={title}>{content}</span>;
-            })()}
-            <span
-              className={HEADER_CHIP}
-              style={{ "--chip-tone": realtimeStatus === "connected" ? TONE.online : TONE.warning } as React.CSSProperties}
-              title={realtimeStatus === "connected" ? "Live updates over WebSocket" : "WebSocket unavailable, refreshing by polling"}
-            >
-              <i />
-              {realtimeStatus === "connected" ? "Live" : "Polling"}
-            </span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                appCache.invalidate();
-                setActivityReady(false);
-                loadInsights();
-                void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
-              }}
-            >
-              <RefreshCcw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </>
-        }
-      />
+        <PageHeader
+          title="Dashboard"
+          description="Fleet health, open issues and recent activity across all clients."
+          actions={
+            <>
+              {onlineOperators.length > 0 &&
+                (() => {
+                  const content = (
+                    <>
+                      <Users className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} />
+                      {formatCount(onlineOperators.length)} {onlineOperators.length === 1 ? "operator" : "operators"}{" "}
+                      online
+                    </>
+                  );
+                  const title = onlineOperators.map((op) => op.display_name ?? op.username).join(", ");
+                  return canManageOperators ? (
+                    <Link to="/operators" className={HEADER_CHIP} title={title}>
+                      {content}
+                    </Link>
+                  ) : (
+                    <span className={HEADER_CHIP} title={title}>
+                      {content}
+                    </span>
+                  );
+                })()}
+              <span
+                className={HEADER_CHIP}
+                style={
+                  { "--chip-tone": realtimeStatus === "connected" ? TONE.online : TONE.warning } as React.CSSProperties
+                }
+                title={
+                  realtimeStatus === "connected"
+                    ? "Live updates over WebSocket"
+                    : "WebSocket unavailable, refreshing by polling"
+                }
+              >
+                <i />
+                {realtimeStatus === "connected" ? "Live" : "Polling"}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  appCache.invalidate();
+                  setActivityReady(false);
+                  loadInsights();
+                  void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
+                }}
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+            </>
+          }
+        />
 
-      {/* KPIs */}
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        {([
-          { to: "/devices", label: "All devices", value: total, tone: TONE.neutral, hint: "Managed endpoints" },
-          { to: "/devices?filter=online", label: "Online", value: online, tone: TONE.online, hint: `${availability}% available` },
-          { to: "/devices?filter=stale", label: "Stale", value: stale, tone: TONE.stale, hint: "Last heartbeat 6–25 min ago" },
-          { to: "/devices?filter=offline", label: "Offline", value: offline, tone: TONE.offline, hint: "Not responding" },
-          { to: "/devices?filter=critical", label: "Critical health", value: criticalCount, tone: TONE.critical, hint: "Health score below 50" },
-          { to: "/devices?filter=needs_updates", label: DASHBOARD_LABELS.needsUpdates, value: patchCount, tone: TONE.warning, hint: "Pending patches" },
-        ]).map((kpi) => (
-          <Link key={kpi.label} to={kpi.to} className="th-kpi" style={{ "--kpi-tone": kpi.tone } as React.CSSProperties}>
-            <span className="th-kpi-label"><span className="th-kpi-dot" />{kpi.label}</span>
-            <span className="th-kpi-value">{loading ? "—" : formatCount(kpi.value)}</span>
-            <span className="th-kpi-hint">{kpi.hint}</span>
-          </Link>
-        ))}
-      </div>
+        {/* KPIs */}
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            { to: "/devices", label: "All devices", value: total, tone: TONE.neutral, hint: "Managed endpoints" },
+            {
+              to: "/devices?filter=online",
+              label: "Online",
+              value: online,
+              tone: TONE.online,
+              hint: `${availability}% available`,
+            },
+            {
+              to: "/devices?filter=stale",
+              label: "Stale",
+              value: stale,
+              tone: TONE.stale,
+              hint: "Last heartbeat 6–25 min ago",
+            },
+            {
+              to: "/devices?filter=offline",
+              label: "Offline",
+              value: offline,
+              tone: TONE.offline,
+              hint: "Not responding",
+            },
+            {
+              to: "/devices?filter=critical",
+              label: "Critical health",
+              value: criticalCount,
+              tone: TONE.critical,
+              hint: "Health score below 50",
+            },
+            {
+              to: "/devices?filter=needs_updates",
+              label: DASHBOARD_LABELS.needsUpdates,
+              value: patchCount,
+              tone: TONE.warning,
+              hint: "Pending patches",
+            },
+          ].map((kpi) => (
+            <Link
+              key={kpi.label}
+              to={kpi.to}
+              className="th-kpi"
+              style={{ "--kpi-tone": kpi.tone } as React.CSSProperties}
+            >
+              <span className="th-kpi-label">
+                <span className="th-kpi-dot" />
+                {kpi.label}
+              </span>
+              <span className="th-kpi-value">{loading ? "—" : formatCount(kpi.value)}</span>
+              <span className="th-kpi-hint">{kpi.hint}</span>
+            </Link>
+          ))}
+        </div>
 
-      {/* Health · attention · platform */}
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
-          <div className="th-panel-head">
-            <h2 id="fleet-health-title">Fleet health</h2>
-            <span className="th-status-chip" style={{ "--chip-tone": health.tone } as React.CSSProperties}>
-              <i />{health.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-6 px-5 pb-4">
-            <HealthRing value={loading ? null : averageHealth} />
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="th-mix-bar flex h-2 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }} aria-label="Device status mix">
-                <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
-                <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />
-                <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: TONE.offline }} />
-              </div>
-              <ul className="space-y-2 text-[13px]">
-                {([
-                  ["Online", online, onlinePct, TONE.online],
-                  ["Stale", stale, stalePct, TONE.stale],
-                  ["Offline", offline, offlinePct, TONE.offline],
-                ] as const).map(([label, count, pct, tone]) => (
-                  <li key={label} className="flex items-center gap-2">
-                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: tone }} />
-                    <span style={{ color: "var(--th-text-secondary)" }}>{label}</span>
-                    <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{loading ? "—" : formatCount(count)}</span>
-                    <span className="w-10 text-right tabular-nums" style={{ color: "var(--th-text-faint)" }}>{loading ? "" : `${Math.round(pct)}%`}</span>
-                  </li>
-                ))}
-              </ul>
+        {/* Health · attention · platform */}
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
+            <div className="th-panel-head">
+              <h2 id="fleet-health-title">Fleet health</h2>
+              <span className="th-status-chip" style={{ "--chip-tone": health.tone } as React.CSSProperties}>
+                <i />
+                {health.label}
+              </span>
             </div>
-          </div>
-          <div className="flex flex-1 flex-col px-5 pb-3 pt-3" style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
-            <p className="th-menu-label !px-0 !pt-0">Devices by client</p>
-            {clientBreakdown.length === 0 ? (
-              <p className="py-3 text-[13px]" style={{ color: "var(--th-text-muted)" }}>No devices yet.</p>
+            <div className="flex items-center gap-6 px-5 pb-4">
+              <HealthRing value={loading ? null : averageHealth} />
+              <div className="min-w-0 flex-1 space-y-3">
+                <div
+                  className="th-mix-bar flex h-2 overflow-hidden rounded-full"
+                  style={{ background: "var(--th-ring-track)" }}
+                  aria-label="Device status mix"
+                >
+                  <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
+                  <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />
+                  <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: TONE.offline }} />
+                </div>
+                <ul className="space-y-2 text-[13px]">
+                  {(
+                    [
+                      ["Online", online, onlinePct, TONE.online],
+                      ["Stale", stale, stalePct, TONE.stale],
+                      ["Offline", offline, offlinePct, TONE.offline],
+                    ] as const
+                  ).map(([label, count, pct, tone]) => (
+                    <li key={label} className="flex items-center gap-2">
+                      <span className="h-2 w-2 flex-none rounded-full" style={{ background: tone }} />
+                      <span style={{ color: "var(--th-text-secondary)" }}>{label}</span>
+                      <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+                        {loading ? "—" : formatCount(count)}
+                      </span>
+                      <span className="w-10 text-right tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+                        {loading ? "" : `${Math.round(pct)}%`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div
+              className="flex flex-1 flex-col px-5 pb-3 pt-3"
+              style={{ borderTop: "1px solid var(--th-border-subtle)" }}
+            >
+              <p className="th-menu-label !px-0 !pt-0">Devices by client</p>
+              {clientBreakdown.length === 0 ? (
+                <p className="py-3 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                  No devices yet.
+                </p>
+              ) : (
+                <ul className="mt-1 flex flex-1 flex-col justify-between gap-1">
+                  {clientBreakdown.map((row) => (
+                    <li key={row.id} className="text-[13px]">
+                      <Link
+                        to={
+                          row.id === "none"
+                            ? "/devices?folder=unassigned"
+                            : row.id === "other"
+                              ? "/clients"
+                              : `/devices?folder=client-${row.id}`
+                        }
+                        className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span
+                            className="truncate"
+                            style={{ color: row.id === "none" ? "var(--th-text-muted)" : "var(--th-text-secondary)" }}
+                          >
+                            {row.name}
+                          </span>
+                          <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+                            {formatCount(row.count)}
+                          </span>
+                        </div>
+                        <div
+                          className="mt-1 h-1 overflow-hidden rounded-full"
+                          style={{ background: "var(--th-ring-track)" }}
+                        >
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${total ? (row.count / total) * 100 : 0}%`,
+                              background: row.id === "none" ? TONE.neutral : "var(--th-accent)",
+                            }}
+                          />
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="th-panel-foot">Average health score of active devices. Archived devices are excluded.</p>
+          </section>
+
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="attention-title">
+            <div className="th-panel-head">
+              <h2 id="attention-title">Needs attention</h2>
+              <Link to="/alerts" className="th-link-btn">
+                View alerts
+              </Link>
+            </div>
+            <ul className="flex-1 px-2 pb-2">
+              {[
+                {
+                  to: "/alerts",
+                  label: DASHBOARD_LABELS.openAlerts,
+                  count: totalOpenAlerts,
+                  tone: TONE.critical,
+                  icon: BellRing,
+                },
+                {
+                  to: "/devices?filter=offline",
+                  label: DASHBOARD_LABELS.offline,
+                  count: offline,
+                  tone: TONE.offline,
+                  icon: WifiOff,
+                },
+                {
+                  to: "/devices?filter=stale",
+                  label: DASHBOARD_LABELS.stale,
+                  count: stale,
+                  tone: TONE.stale,
+                  icon: Clock3,
+                },
+                {
+                  to: "/devices?filter=critical",
+                  label: DASHBOARD_LABELS.critical,
+                  count: criticalCount,
+                  tone: TONE.critical,
+                  icon: HeartPulse,
+                },
+                {
+                  to: "/devices?filter=needs_updates",
+                  label: DASHBOARD_LABELS.needsUpdates,
+                  count: patchCount,
+                  tone: TONE.warning,
+                  icon: Download,
+                },
+                {
+                  to: "/devices?filter=needs_agent_update",
+                  label: DASHBOARD_LABELS.agentUpdates,
+                  count: fleetOverview?.agents_outdated ?? 0,
+                  tone: "var(--th-status-agent)",
+                  icon: Cpu,
+                },
+                {
+                  to: "/devices?folder=unassigned",
+                  label: "Devices without a client",
+                  count: fleetOverview?.tree_counts.unassigned ?? 0,
+                  tone: TONE.info,
+                  icon: Building2,
+                },
+                {
+                  to: "/devices?filter=favorites",
+                  label: "Favorite devices",
+                  count: favoritesCount,
+                  tone: TONE.warning,
+                  icon: Star,
+                },
+              ].map(({ to, label, count, tone, icon: Icon }) => (
+                <li key={label}>
+                  <Link
+                    to={to}
+                    className="th-attention-row"
+                    data-empty={!loading && count === 0}
+                    style={{ "--row-tone": tone } as React.CSSProperties}
+                  >
+                    <span className="th-attention-icon">
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex-1 truncate">{label}</span>
+                    <span className="th-attention-count">{loading ? "—" : formatCount(count)}</span>
+                    <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <div className="grid lg:col-span-2 xl:col-span-1">
+            {isAdmin ? (
+              <SystemStatusCard compact />
             ) : (
-              <ul className="mt-1 flex flex-1 flex-col justify-between gap-1">
-                {clientBreakdown.map((row) => (
-                  <li key={row.id} className="text-[13px]">
-                    <Link
-                      to={row.id === "none" ? "/devices?folder=unassigned" : row.id === "other" ? "/clients" : `/devices?folder=client-${row.id}`}
-                      className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
-                    >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate" style={{ color: row.id === "none" ? "var(--th-text-muted)" : "var(--th-text-secondary)" }}>{row.name}</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{formatCount(row.count)}</span>
-                    </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
-                      <div className="h-full rounded-full" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, background: row.id === "none" ? TONE.neutral : "var(--th-accent)" }} />
-                    </div>
+              <OperatorsPanel
+                operators={operators}
+                loading={operators.length === 0 && !activityReady}
+                failed={failed.operators}
+                onRetry={retryActivity}
+                currentUserId={user?.id}
+                canManage={canManageOperators}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Trends */}
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="availability-title">
+            <div className="th-panel-head">
+              <h2 id="availability-title">Availability</h2>
+              <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                Last 30 days
+              </span>
+            </div>
+            <div className="flex flex-1 flex-col px-5 pb-4">
+              <p className="th-metric-big">
+                {insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}
+              </p>
+              <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                Share of time managed devices were online
+              </p>
+              <div className="min-h-0 flex-1">
+                {insights ? (
+                  <AvailabilityChart series={insights.availability.series} />
+                ) : insightsFailed ? (
+                  <SectionError what="availability" onRetry={loadInsights} />
+                ) : (
+                  <div
+                    className="h-full min-h-[120px] animate-pulse rounded-lg"
+                    style={{ background: "var(--th-chip-bg)" }}
+                  />
+                )}
+              </div>
+            </div>
+            <p className="th-panel-foot">
+              {insights?.availability.coverage_pct != null && insights.availability.coverage_pct < 99
+                ? `Based on ${insights.availability.coverage_pct}% of device time with a known status.`
+                : "Measured from recorded online/offline transitions."}
+            </p>
+          </section>
+
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alert-trend-title">
+            <div className="th-panel-head">
+              <h2 id="alert-trend-title">Alerts this week</h2>
+              <span className="flex items-center gap-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                <span className="flex items-center gap-1.5">
+                  <i className="th-legend-swatch" data-series="1" />
+                  Opened
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <i className="th-legend-swatch" data-series="2" />
+                  Resolved
+                </span>
+              </span>
+            </div>
+            <div className="flex flex-1 flex-col px-5 pb-4">
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                {(
+                  [
+                    ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
+                    ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
+                    [
+                      "Avg. time to resolve",
+                      insights?.alerts.mean_time_to_resolve_hours != null
+                        ? `${insights.alerts.mean_time_to_resolve_hours} h`
+                        : undefined,
+                    ],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <p className="th-metric-big">{value ?? "—"}</p>
+                    <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                      {label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="min-h-0 flex-1">
+                {insights ? (
+                  <AlertFlowChart series={insights.alerts.series} />
+                ) : insightsFailed ? (
+                  <SectionError what="alert trends" onRetry={loadInsights} />
+                ) : (
+                  <div
+                    className="h-full min-h-[120px] animate-pulse rounded-lg"
+                    style={{ background: "var(--th-chip-bg)" }}
+                  />
+                )}
+              </div>
+            </div>
+            <p className="th-panel-foot">
+              {insights
+                ? `${formatCount(insights.alerts.open_now)} still open right now.`
+                : insightsFailed
+                  ? "Trends unavailable."
+                  : "Loading…"}
+            </p>
+          </section>
+
+          <section
+            className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
+            aria-labelledby="problem-devices-title"
+          >
+            <div className="th-panel-head">
+              <h2 id="problem-devices-title">Problem devices</h2>
+              <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                Last 7 days
+              </span>
+            </div>
+            {!insights && insightsFailed ? (
+              <SectionError what="problem devices" onRetry={loadInsights} />
+            ) : !insights ? (
+              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                Loading…
+              </p>
+            ) : insights.problem_devices.length === 0 ? (
+              <EmptyState
+                className="flex-1"
+                icon={<HeartPulse className="h-5 w-5" />}
+                title="No repeat offenders"
+                description="No device went offline or raised an alert this week."
+              />
+            ) : (
+              <ul className="flex-1 px-2 pb-2">
+                {insights.problem_devices.map((d, i) => (
+                  <li key={d.device_id}>
+                    <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
+                      <span
+                        className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums"
+                        style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className="block truncate text-[13px] font-medium"
+                          style={{ color: "var(--th-text-primary)" }}
+                        >
+                          {d.name}
+                        </span>
+                        <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                          {d.client_name ?? TERMS.noClient}
+                        </span>
+                      </span>
+                      <span
+                        className="text-right text-[12px] leading-5 tabular-nums"
+                        style={{ color: "var(--th-text-secondary)" }}
+                      >
+                        <span className="block">
+                          <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                            {formatCount(d.offline_events)}
+                          </strong>{" "}
+                          offline
+                        </span>
+                        <span className="block">
+                          <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                            {formatCount(d.alerts)}
+                          </strong>{" "}
+                          alerts
+                        </span>
+                      </span>
                     </Link>
                   </li>
                 ))}
               </ul>
             )}
-          </div>
-          <p className="th-panel-foot">Average health score of active devices. Archived devices are excluded.</p>
-        </section>
+            <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
+          </section>
+        </div>
 
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="attention-title">
-          <div className="th-panel-head">
-            <h2 id="attention-title">Needs attention</h2>
-            <Link to="/alerts" className="th-link-btn">View alerts</Link>
-          </div>
-          <ul className="flex-1 px-2 pb-2">
-            {([
-              { to: "/alerts", label: DASHBOARD_LABELS.openAlerts, count: totalOpenAlerts, tone: TONE.critical, icon: BellRing },
-              { to: "/devices?filter=offline", label: DASHBOARD_LABELS.offline, count: offline, tone: TONE.offline, icon: WifiOff },
-              { to: "/devices?filter=stale", label: DASHBOARD_LABELS.stale, count: stale, tone: TONE.stale, icon: Clock3 },
-              { to: "/devices?filter=critical", label: DASHBOARD_LABELS.critical, count: criticalCount, tone: TONE.critical, icon: HeartPulse },
-              { to: "/devices?filter=needs_updates", label: DASHBOARD_LABELS.needsUpdates, count: patchCount, tone: TONE.warning, icon: Download },
-              { to: "/devices?filter=needs_agent_update", label: DASHBOARD_LABELS.agentUpdates, count: fleetOverview?.agents_outdated ?? 0, tone: "var(--th-status-agent)", icon: Cpu },
-              { to: "/devices?folder=unassigned", label: "Devices without a client", count: fleetOverview?.tree_counts.unassigned ?? 0, tone: TONE.info, icon: Building2 },
-              { to: "/devices?filter=favorites", label: "Favorite devices", count: favoritesCount, tone: TONE.warning, icon: Star },
-            ]).map(({ to, label, count, tone, icon: Icon }) => (
-              <li key={label}>
-                <Link to={to} className="th-attention-row" data-empty={!loading && count === 0} style={{ "--row-tone": tone } as React.CSSProperties}>
-                  <span className="th-attention-icon"><Icon className="h-3.5 w-3.5" /></span>
-                  <span className="flex-1 truncate">{label}</span>
-                  <span className="th-attention-count">{loading ? "—" : formatCount(count)}</span>
-                  <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+        {/* Enrollments · activity */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
+            <div className="th-panel-head">
+              <h2 id="enrollments-title">Latest enrollments</h2>
+              <Link to="/devices" className="th-link-btn">
+                View all devices
+              </Link>
+            </div>
+            {recentDevices.length === 0 && !activityReady ? (
+              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                Loading devices…
+              </p>
+            ) : recentDevices.length === 0 && failed.devices ? (
+              <SectionError what="devices" onRetry={retryActivity} />
+            ) : recentDevices.length === 0 ? (
+              <EmptyState
+                className="flex-1"
+                icon={<Monitor className="h-5 w-5" />}
+                title="No devices yet"
+                description="Enrolled devices appear here as soon as their agent checks in."
+              />
+            ) : (
+              <ul className="flex-1 px-2 pb-2">
+                {recentDevices.slice(0, RECENT_DEVICES_LIMIT).map((device) => {
+                  const state = device.freshness_state ?? device.status;
+                  const tone = freshnessTone(state);
+                  return (
+                    <li key={device.id}>
+                      <Link to={`/devices?device=${device.id}`} className="th-list-row">
+                        <span className="th-palette-icon !h-8 !w-8">
+                          <Monitor className="h-4 w-4" />
+                          <i style={{ background: tone }} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className="block truncate text-[13px] font-medium"
+                            style={{ color: "var(--th-text-primary)" }}
+                          >
+                            {device.hostname || "Unknown"}
+                          </span>
+                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                            {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </span>
+                        <span className="text-right">
+                          <span
+                            className="th-status-chip capitalize"
+                            style={{ "--chip-tone": tone } as React.CSSProperties}
+                          >
+                            <i />
+                            {state}
+                          </span>
+                          <span
+                            className="mt-0.5 block text-[11px] tabular-nums"
+                            style={{ color: "var(--th-text-faint)" }}
+                          >
+                            {formatLocalDateTime(device.registered_at)}
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="activity-title">
+            <div className="th-panel-head">
+              <h2 id="activity-title">{DASHBOARD_LABELS.recentActions}</h2>
+              {hasPermission("audit_log") && (
+                <Link to="/audit" className="th-link-btn">
+                  Audit log
                 </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <div className="grid lg:col-span-2 xl:col-span-1">
-          {isAdmin ? <SystemStatusCard compact /> : <OperatorsPanel operators={operators} loading={operators.length === 0 && !activityReady} failed={failed.operators} onRetry={retryActivity} currentUserId={user?.id} canManage={canManageOperators} />}
+              )}
+            </div>
+            {recentActions.length === 0 && !activityReady ? (
+              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                Loading actions…
+              </p>
+            ) : recentActions.length === 0 && failed.actions ? (
+              <SectionError what="remote actions" onRetry={retryActivity} />
+            ) : recentActions.length === 0 ? (
+              <EmptyState
+                className="flex-1 justify-center"
+                icon={<Terminal className="h-5 w-5" />}
+                title="No remote actions yet"
+                description="Restarts, syncs and scripts sent to devices show up here with their result."
+              />
+            ) : (
+              <ul className="flex-1 px-2 pb-2">
+                {recentActions.slice(0, 6).map((action) => {
+                  const isRunning = action.status === "running";
+                  return (
+                    <li key={action.id}>
+                      <div className="th-list-row">
+                        <span className="th-palette-icon !h-8 !w-8">
+                          {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className="block truncate text-[13px] font-medium"
+                            style={{ color: "var(--th-text-primary)" }}
+                          >
+                            {ACTION_LABELS[action.action_type as ActionType] ?? action.action_type}
+                            <span style={{ color: "var(--th-text-muted)" }}>
+                              {" "}
+                              · {action.device_hostname ?? `Device #${action.device_id}`}
+                            </span>
+                          </span>
+                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                            {action.created_by ? `by ${action.created_by} · ` : ""}
+                            {timeAgo(actionRelevantTime(action))}
+                          </span>
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
+                          {ACTION_STATUS_LABELS[action.status] ?? action.status}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
-
-      {/* Trends */}
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="availability-title">
-          <div className="th-panel-head">
-            <h2 id="availability-title">Availability</h2>
-            <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 30 days</span>
-          </div>
-          <div className="flex flex-1 flex-col px-5 pb-4">
-            <p className="th-metric-big">{insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}</p>
-            <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Share of time managed devices were online</p>
-            <div className="min-h-0 flex-1">
-              {insights ? <AvailabilityChart series={insights.availability.series} /> : insightsFailed ? <SectionError what="availability" onRetry={loadInsights} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
-            </div>
-          </div>
-          <p className="th-panel-foot">
-            {insights?.availability.coverage_pct != null && insights.availability.coverage_pct < 99
-              ? `Based on ${insights.availability.coverage_pct}% of device time with a known status.`
-              : "Measured from recorded online/offline transitions."}
-          </p>
-        </section>
-
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alert-trend-title">
-          <div className="th-panel-head">
-            <h2 id="alert-trend-title">Alerts this week</h2>
-            <span className="flex items-center gap-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-              <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="1" />Opened</span>
-              <span className="flex items-center gap-1.5"><i className="th-legend-swatch" data-series="2" />Resolved</span>
-            </span>
-          </div>
-          <div className="flex flex-1 flex-col px-5 pb-4">
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              {([
-                ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
-                ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
-                ["Avg. time to resolve", insights?.alerts.mean_time_to_resolve_hours != null ? `${insights.alerts.mean_time_to_resolve_hours} h` : undefined],
-              ] as const).map(([label, value]) => (
-                <div key={label}>
-                  <p className="th-metric-big">{value ?? "—"}</p>
-                  <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="min-h-0 flex-1">
-              {insights ? <AlertFlowChart series={insights.alerts.series} /> : insightsFailed ? <SectionError what="alert trends" onRetry={loadInsights} /> : <div className="h-full min-h-[120px] animate-pulse rounded-lg" style={{ background: "var(--th-chip-bg)" }} />}
-            </div>
-          </div>
-          <p className="th-panel-foot">{insights ? `${formatCount(insights.alerts.open_now)} still open right now.` : insightsFailed ? "Trends unavailable." : "Loading…"}</p>
-        </section>
-
-        <section className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1" aria-labelledby="problem-devices-title">
-          <div className="th-panel-head">
-            <h2 id="problem-devices-title">Problem devices</h2>
-            <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>Last 7 days</span>
-          </div>
-          {!insights && insightsFailed ? (
-            <SectionError what="problem devices" onRetry={loadInsights} />
-          ) : !insights ? (
-            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
-          ) : insights.problem_devices.length === 0 ? (
-            <EmptyState className="flex-1" icon={<HeartPulse className="h-5 w-5" />} title="No repeat offenders" description="No device went offline or raised an alert this week." />
-          ) : (
-            <ul className="flex-1 px-2 pb-2">
-              {insights.problem_devices.map((d, i) => (
-                <li key={d.device_id}>
-                  <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
-                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums" style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}>{i + 1}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{d.name}</span>
-                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{d.client_name ?? TERMS.noClient}</span>
-                    </span>
-                    <span className="text-right text-[12px] leading-5 tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
-                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{formatCount(d.offline_events)}</strong> offline</span>
-                      <span className="block"><strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>{formatCount(d.alerts)}</strong> alerts</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
-        </section>
-      </div>
-
-      {/* Enrollments · activity */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
-          <div className="th-panel-head">
-            <h2 id="enrollments-title">Latest enrollments</h2>
-            <Link to="/devices" className="th-link-btn">View all devices</Link>
-          </div>
-          {recentDevices.length === 0 && !activityReady ? (
-            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading devices…</p>
-          ) : recentDevices.length === 0 && failed.devices ? (
-            <SectionError what="devices" onRetry={retryActivity} />
-          ) : recentDevices.length === 0 ? (
-            <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices yet" description="Enrolled devices appear here as soon as their agent checks in." />
-          ) : (
-            <ul className="flex-1 px-2 pb-2">
-              {recentDevices.slice(0, RECENT_DEVICES_LIMIT).map((device) => {
-                const state = device.freshness_state ?? device.status;
-                const tone = freshnessTone(state);
-                return (
-                <li key={device.id}>
-                  <Link to={`/devices?device=${device.id}`} className="th-list-row">
-                    <span className="th-palette-icon !h-8 !w-8">
-                      <Monitor className="h-4 w-4" />
-                      <i style={{ background: tone }} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{device.hostname || "Unknown"}</span>
-                      <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                        {[device.client_name || TERMS.noClient, device.current_user, device.public_ip].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                    <span className="text-right">
-                      <span className="th-status-chip capitalize" style={{ "--chip-tone": tone } as React.CSSProperties}>
-                        <i />{state}
-                      </span>
-                      <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>{formatLocalDateTime(device.registered_at)}</span>
-                    </span>
-                  </Link>
-                </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <section className="premium-card flex h-full flex-col p-0" aria-labelledby="activity-title">
-          <div className="th-panel-head">
-            <h2 id="activity-title">{DASHBOARD_LABELS.recentActions}</h2>
-            {hasPermission("audit_log") && <Link to="/audit" className="th-link-btn">Audit log</Link>}
-          </div>
-          {recentActions.length === 0 && !activityReady ? (
-            <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading actions…</p>
-          ) : recentActions.length === 0 && failed.actions ? (
-            <SectionError what="remote actions" onRetry={retryActivity} />
-          ) : recentActions.length === 0 ? (
-            <EmptyState className="flex-1 justify-center" icon={<Terminal className="h-5 w-5" />} title="No remote actions yet" description="Restarts, syncs and scripts sent to devices show up here with their result." />
-          ) : (
-            <ul className="flex-1 px-2 pb-2">
-              {recentActions.slice(0, 6).map((action) => {
-                const isRunning = action.status === "running";
-                return (
-                  <li key={action.id}>
-                    <div className="th-list-row">
-                      <span className="th-palette-icon !h-8 !w-8">
-                        {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-                          {ACTION_LABELS[action.action_type as ActionType] ?? action.action_type}
-                          <span style={{ color: "var(--th-text-muted)" }}> · {action.device_hostname ?? `Device #${action.device_id}`}</span>
-                        </span>
-                        <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                          {action.created_by ? `by ${action.created_by} · ` : ""}{timeAgo(actionRelevantTime(action))}
-                        </span>
-                      </span>
-                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
-                        {ACTION_STATUS_LABELS[action.status] ?? action.status}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      </div>
-      </div>{/* end hidden md:block */}
+      {/* end hidden md:block */}
     </section>
   );
 }
@@ -632,20 +932,52 @@ function HealthRing({ value }: { value: number | null }) {
   const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
   const tone = value == null ? TONE.neutral : value < 50 ? TONE.critical : value < 80 ? TONE.warning : TONE.online;
   return (
-    <div className="relative h-[88px] w-[88px] flex-none" role="img" aria-label={value == null ? "No health score" : `Average health ${value} of 100`}>
+    <div
+      className="relative h-[88px] w-[88px] flex-none"
+      role="img"
+      aria-label={value == null ? "No health score" : `Average health ${value} of 100`}
+    >
       <svg viewBox="0 0 88 88" className="h-full w-full -rotate-90">
         <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" style={{ stroke: "var(--th-ring-track)" }} />
-        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} className="th-ring-value" style={{ stroke: tone }} />
+        <circle
+          cx="44"
+          cy="44"
+          r={r}
+          fill="none"
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={`${(pct / 100) * c} ${c}`}
+          className="th-ring-value"
+          style={{ stroke: tone }}
+        />
       </svg>
       <span className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="th-metric-big" style={{ lineHeight: 1 }}>{value ?? "—"}</span>
-        <span className="mt-1 text-[11px]" style={{ color: "var(--th-text-faint)" }}>of 100</span>
+        <span className="th-metric-big" style={{ lineHeight: 1 }}>
+          {value ?? "—"}
+        </span>
+        <span className="mt-1 text-[11px]" style={{ color: "var(--th-text-faint)" }}>
+          of 100
+        </span>
       </span>
     </div>
   );
 }
 
-function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId, canManage }: { operators: OperatorPresenceRecord[]; loading: boolean; failed: boolean; onRetry: () => void; currentUserId?: number; canManage: boolean }) {
+function OperatorsPanel({
+  operators,
+  loading,
+  failed,
+  onRetry,
+  currentUserId,
+  canManage,
+}: {
+  operators: OperatorPresenceRecord[];
+  loading: boolean;
+  failed: boolean;
+  onRetry: () => void;
+  currentUserId?: number;
+  canManage: boolean;
+}) {
   const onlineCount = operators.filter((op) => op.is_online).length;
   return (
     <section className="premium-card flex h-full flex-col p-0" aria-labelledby="operators-title">
@@ -653,34 +985,53 @@ function OperatorsPanel({ operators, loading, failed, onRetry, currentUserId, ca
         <h2 id="operators-title">Operators</h2>
         <span className="flex items-center gap-3">
           <span className="th-nav-badge">{formatCount(onlineCount)} online</span>
-          {canManage && <Link to="/operators" className="th-link-btn">View all</Link>}
+          {canManage && (
+            <Link to="/operators" className="th-link-btn">
+              View all
+            </Link>
+          )}
         </span>
       </div>
       {loading ? (
-        <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading…</p>
+        <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+          Loading…
+        </p>
       ) : operators.length === 0 && failed ? (
         <SectionError what="operators" onRetry={onRetry} />
       ) : operators.length === 0 ? (
         <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators yet" />
       ) : (
         <ul className="flex-1 px-2 pb-2">
-          {[...operators].sort((a, b) => Number(b.is_online) - Number(a.is_online)).slice(0, OPERATORS_LIMIT).map((op) => {
-            const label = op.display_name ?? op.username;
-            return (
-              <li key={op.id} className="th-list-row">
-                <span className="th-avatar">{label.charAt(0).toUpperCase()}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-                    {label}{op.id === currentUserId && <span style={{ color: "var(--th-text-muted)" }}> (you)</span>}
+          {[...operators]
+            .sort((a, b) => Number(b.is_online) - Number(a.is_online))
+            .slice(0, OPERATORS_LIMIT)
+            .map((op) => {
+              const label = op.display_name ?? op.username;
+              return (
+                <li key={op.id} className="th-list-row">
+                  <span className="th-avatar">{label.charAt(0).toUpperCase()}</span>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className="block truncate text-[13px] font-medium"
+                      style={{ color: "var(--th-text-primary)" }}
+                    >
+                      {label}
+                      {op.id === currentUserId && <span style={{ color: "var(--th-text-muted)" }}> (you)</span>}
+                    </span>
+                    <span className="block truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
+                      {op.role}
+                    </span>
                   </span>
-                  <span className="block truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>{op.role}</span>
-                </span>
-                <span className="th-status-chip" style={{ "--chip-tone": op.is_online ? TONE.online : TONE.offline } as React.CSSProperties}>
-                  <i />{op.is_online ? "Online" : "Offline"}
-                </span>
-              </li>
-            );
-          })}
+                  <span
+                    className="th-status-chip"
+                    style={{ "--chip-tone": op.is_online ? TONE.online : TONE.offline } as React.CSSProperties}
+                  >
+                    <i />
+                    {op.is_online ? "Online" : "Offline"}
+                  </span>
+                </li>
+              );
+            })}
         </ul>
       )}
     </section>

@@ -75,10 +75,15 @@ export function resolveActiveVersion(device: Device, sources: AgentVersionSource
  * own platform. Windows keeps the two-state version + SHA check; a platform
  * with no known latest version is "unknown", never outdated.
  */
-export function agentVersionView(device: Device, sources: AgentVersionSources): { status: VersionStatus; title?: string } {
+export function agentVersionView(
+  device: Device,
+  sources: AgentVersionSources,
+): { status: VersionStatus; title?: string } {
   if (devicePlatform(device) === "windows") {
     return {
-      status: isAgentOutdated(device, sources.activePackageVersion, sources.activePackageSha256) ? "outdated" : "current",
+      status: isAgentOutdated(device, sources.activePackageVersion, sources.activePackageSha256)
+        ? "outdated"
+        : "current",
       title: windowsAgentVersionTitle(device, sources.activePackageVersion, sources.activePackageSha256),
     };
   }
@@ -158,10 +163,15 @@ export function offlineReasonBadge(device: Device, clientSummary?: ClientOffline
 
   if (device.client_id) {
     const t = parseUTC(device.last_seen).getTime();
-    const nearbyPeers = clientSummary?.inactiveLastSeen.filter(
-      (lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000
-    ).length ?? 0;
-    if (nearbyPeers >= 2) return { label: "Site?", tone: TONE.critical, title: "Other devices at this client went offline at the same time" };
+    const nearbyPeers =
+      clientSummary?.inactiveLastSeen.filter((lastSeen) => lastSeen !== t && Math.abs(lastSeen - t) < 10 * 60 * 1000)
+        .length ?? 0;
+    if (nearbyPeers >= 2)
+      return {
+        label: "Site?",
+        tone: TONE.critical,
+        title: "Other devices at this client went offline at the same time",
+      };
   }
 
   if (freshness === "offline" && device.client_id && (clientSummary?.offlineCount ?? 0) <= 1) {
@@ -180,7 +190,8 @@ export function offlineReasonBadge(device: Device, clientSummary?: ClientOffline
 export function patchBadge(patch?: PatchStatus): BadgeView | null {
   const state = patch?.patch_state ?? "unknown";
   if (state === "up_to_date") return { label: "Patched", tone: TONE.neutral };
-  if (state === "reboot_required") return { label: "Reboot", tone: TONE.critical, title: "Reboot required to finish updates" };
+  if (state === "reboot_required")
+    return { label: "Reboot", tone: TONE.critical, title: "Reboot required to finish updates" };
   if (state === "updates_available") {
     const count = patch?.pending_updates ?? 0;
     return {
@@ -197,8 +208,8 @@ export function maintenanceBadge(device: Device): BadgeView | null {
   const title = device.maintenance_ends_at
     ? `In maintenance until ${formatDateTime(device.maintenance_ends_at)}`
     : device.maintenance_note
-    ? `In maintenance: ${device.maintenance_note}`
-    : "In maintenance";
+      ? `In maintenance: ${device.maintenance_note}`
+      : "In maintenance";
   return { label: "Maintenance", tone: TONE.maintenance, title };
 }
 
@@ -228,7 +239,11 @@ export function lifecycleBadges(device: Device): BadgeView[] {
       title: device.archived_at ? `Archived ${formatDateTime(device.archived_at)}` : "Archived device",
     });
     if (device.freshness_state !== "offline") {
-      badges.push({ label: "Checked in", tone: TONE.warning, title: "This archived device is still sending heartbeats" });
+      badges.push({
+        label: "Checked in",
+        tone: TONE.warning,
+        title: "This archived device is still sending heartbeats",
+      });
     }
   }
   if (isSuggestedArchive(device)) {
@@ -238,11 +253,13 @@ export function lifecycleBadges(device: Device): BadgeView[] {
 }
 
 export function userSourceBadge(device: Device): BadgeView | null {
-  if (!device.user_source || device.user_source === "no_interactive_user" || device.user_source === "fallback") return null;
+  if (!device.user_source || device.user_source === "no_interactive_user" || device.user_source === "fallback")
+    return null;
   const isRdp = device.user_source === "rdp_session";
-  const state = device.user_session_state && device.user_session_state !== "unknown"
-    ? ` · ${humanize(device.user_session_state)}`
-    : "";
+  const state =
+    device.user_session_state && device.user_session_state !== "unknown"
+      ? ` · ${humanize(device.user_session_state)}`
+      : "";
   return {
     label: isRdp ? "RDP" : "Console",
     tone: isRdp ? "var(--th-status-agent)" : TONE.info,
@@ -262,7 +279,14 @@ export function ActionIndicator({ entry }: { entry: ActiveActionEntry }) {
     );
   }
   if (["queued", "sent", "acknowledged"].includes(entry.status)) {
-    return <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: TONE.warning }} title={title} aria-label={title} />;
+    return (
+      <span
+        className="h-1.5 w-1.5 flex-none rounded-full"
+        style={{ background: TONE.warning }}
+        title={title}
+        aria-label={title}
+      />
+    );
   }
   return null;
 }

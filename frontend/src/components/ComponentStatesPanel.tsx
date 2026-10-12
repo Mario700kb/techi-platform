@@ -96,7 +96,9 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
   const refreshStates = useCallback(() => {
     getDeviceComponentStates(deviceId)
       .then((resp) => setStates(resp.components))
-      .catch(() => { /* keep prior states on a transient refresh failure */ });
+      .catch(() => {
+        /* keep prior states on a transient refresh failure */
+      });
   }, [deviceId]);
 
   // action_type → component_id, from the fetched lifecycle metadata. Lets a
@@ -133,8 +135,12 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
   useEffect(() => {
     let alive = true;
     getDeviceComponentStates(deviceId)
-      .then((resp) => { if (alive) setStates(resp.components); })
-      .catch(() => { if (alive) setStates([]); });
+      .then((resp) => {
+        if (alive) setStates(resp.components);
+      })
+      .catch(() => {
+        if (alive) setStates([]);
+      });
     getPlatformComponents()
       .then((resp) => {
         if (!alive) return;
@@ -142,8 +148,12 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
         for (const component of resp.components) map[component.id] = component.lifecycle;
         setLifecycles(map);
       })
-      .catch(() => { /* lifecycle metadata is optional; versions still render */ });
-    return () => { alive = false; };
+      .catch(() => {
+        /* lifecycle metadata is optional; versions still render */
+      });
+    return () => {
+      alive = false;
+    };
   }, [deviceId]);
 
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
@@ -170,127 +180,133 @@ export default function ComponentStatesPanel({ deviceId }: { deviceId: number })
 
   return (
     <>
-    <section className="th-drawer-card">
-      <div className="mb-2 flex items-center gap-2">
-        <span
-          className="flex h-5 w-5 items-center justify-center rounded-md"
-          style={{ background: "var(--th-bg-shell)", color: "var(--th-text-muted)" }}
-        >
-          <Boxes className="h-3 w-3" />
-        </span>
-        <h3 className="premium-kicker">Components</h3>
-      </div>
+      <section className="th-drawer-card">
+        <div className="mb-2 flex items-center gap-2">
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-md"
+            style={{ background: "var(--th-bg-shell)", color: "var(--th-text-muted)" }}
+          >
+            <Boxes className="h-3 w-3" />
+          </span>
+          <h3 className="premium-kicker">Components</h3>
+        </div>
 
-      <div className="space-y-2.5">
-        {states.map((state) => {
-          const operations = lifecycles[state.component_id] ?? [];
-          const componentBusy = busy?.startsWith(`${state.component_id}:`) ?? false;
-          const note = feedback[state.component_id];
-          return (
-            <div
-              key={state.component_id}
-              className="rounded-lg border p-2.5"
-              style={{ borderColor: "var(--th-border-subtle)" }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                  {state.display_name}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {livePhase[state.component_id] && (
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_STYLES[livePhase[state.component_id]]}`}
-                    >
-                      {livePhase[state.component_id] === "running" && (
-                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                      )}
-                      {PHASE_LABEL[livePhase[state.component_id]]}
-                    </span>
-                  )}
-                  <StatusBadge health={state.health} status={state.status} />
-                </div>
-              </div>
-              <div className="mt-1 grid grid-cols-2 gap-x-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                <span>
-                  Installed:{" "}
-                  <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>
-                    {state.installed_version ?? "—"}
+        <div className="space-y-2.5">
+          {states.map((state) => {
+            const operations = lifecycles[state.component_id] ?? [];
+            const componentBusy = busy?.startsWith(`${state.component_id}:`) ?? false;
+            const note = feedback[state.component_id];
+            return (
+              <div
+                key={state.component_id}
+                className="rounded-lg border p-2.5"
+                style={{ borderColor: "var(--th-border-subtle)" }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                    {state.display_name}
                   </span>
-                </span>
-                <span>
-                  Desired:{" "}
-                  <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>
-                    {state.desired_version ?? "—"}
-                  </span>
-                </span>
-              </div>
-              {operations.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {operations.map((entry) => {
-                    const key = `${state.component_id}:${entry.operation}`;
-                    const isRunning = busy === key;
-                    // Out-of-band operations (GPO install, heartbeat discover)
-                    // are not triggerable — render them as static labels.
-                    if (entry.kind !== "action") {
-                      return (
-                        <span
-                          key={entry.operation}
-                          title="Handled out of band (not triggerable)"
-                          className="rounded border px-1.5 py-0.5 text-[11px] font-medium opacity-60"
-                          style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-muted)" }}
-                        >
-                          {entry.label}
-                        </span>
-                      );
-                    }
-                    return (
-                      <button
-                        key={entry.operation}
-                        type="button"
-                        disabled={componentBusy}
-                        onClick={() =>
-                          CONFIRM_OPERATIONS.has(entry.operation)
-                            ? setPendingOperation({ componentId: state.component_id, componentName: state.display_name, operation: entry.operation, label: entry.label })
-                            : runOperation(state.component_id, entry.operation, entry.label)
-                        }
-                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--th-table-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                  <div className="flex items-center gap-1.5">
+                    {livePhase[state.component_id] && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PHASE_STYLES[livePhase[state.component_id]]}`}
                       >
-                        {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-                        {entry.label}
-                      </button>
-                    );
-                  })}
+                        {livePhase[state.component_id] === "running" && (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        )}
+                        {PHASE_LABEL[livePhase[state.component_id]]}
+                      </span>
+                    )}
+                    <StatusBadge health={state.health} status={state.status} />
+                  </div>
                 </div>
-              )}
-              {note && (
-                <div
-                  className="mt-1.5 text-[11px]"
-                  style={{ color: note.error ? "var(--th-status-critical)" : "var(--th-text-muted)" }}
-                >
-                  {note.text}
+                <div className="mt-1 grid grid-cols-2 gap-x-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  <span>
+                    Installed:{" "}
+                    <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>
+                      {state.installed_version ?? "—"}
+                    </span>
+                  </span>
+                  <span>
+                    Desired:{" "}
+                    <span className="font-mono" style={{ color: "var(--th-text-primary)" }}>
+                      {state.desired_version ?? "—"}
+                    </span>
+                  </span>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-    {pendingOperation && (
-      <ConfirmationModal
-        title={`${pendingOperation.label} ${pendingOperation.componentName}?`}
-        confirmLabel={pendingOperation.label}
-        destructive={pendingOperation.operation !== "update"}
-        onClose={() => setPendingOperation(null)}
-        onConfirm={() => {
-          const { componentId, operation, label } = pendingOperation;
-          setPendingOperation(null);
-          void runOperation(componentId, operation, label);
-        }}
-      >
-        {pendingOperation.componentName} will be interrupted on this device while the {pendingOperation.label.toLowerCase()} runs.
-      </ConfirmationModal>
-    )}
+                {operations.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {operations.map((entry) => {
+                      const key = `${state.component_id}:${entry.operation}`;
+                      const isRunning = busy === key;
+                      // Out-of-band operations (GPO install, heartbeat discover)
+                      // are not triggerable — render them as static labels.
+                      if (entry.kind !== "action") {
+                        return (
+                          <span
+                            key={entry.operation}
+                            title="Handled out of band (not triggerable)"
+                            className="rounded border px-1.5 py-0.5 text-[11px] font-medium opacity-60"
+                            style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-muted)" }}
+                          >
+                            {entry.label}
+                          </span>
+                        );
+                      }
+                      return (
+                        <button
+                          key={entry.operation}
+                          type="button"
+                          disabled={componentBusy}
+                          onClick={() =>
+                            CONFIRM_OPERATIONS.has(entry.operation)
+                              ? setPendingOperation({
+                                  componentId: state.component_id,
+                                  componentName: state.display_name,
+                                  operation: entry.operation,
+                                  label: entry.label,
+                                })
+                              : runOperation(state.component_id, entry.operation, entry.label)
+                          }
+                          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--th-table-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                          style={{ borderColor: "var(--th-border-subtle)", color: "var(--th-text-primary)" }}
+                        >
+                          {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+                          {entry.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {note && (
+                  <div
+                    className="mt-1.5 text-[11px]"
+                    style={{ color: note.error ? "var(--th-status-critical)" : "var(--th-text-muted)" }}
+                  >
+                    {note.text}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      {pendingOperation && (
+        <ConfirmationModal
+          title={`${pendingOperation.label} ${pendingOperation.componentName}?`}
+          confirmLabel={pendingOperation.label}
+          destructive={pendingOperation.operation !== "update"}
+          onClose={() => setPendingOperation(null)}
+          onConfirm={() => {
+            const { componentId, operation, label } = pendingOperation;
+            setPendingOperation(null);
+            void runOperation(componentId, operation, label);
+          }}
+        >
+          {pendingOperation.componentName} will be interrupted on this device while the{" "}
+          {pendingOperation.label.toLowerCase()} runs.
+        </ConfirmationModal>
+      )}
     </>
   );
 }

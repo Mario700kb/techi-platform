@@ -44,7 +44,9 @@ export default function SSHSessionInfo({ deviceId, sessionId }: Props) {
           setDetail(d);
           setFetchedAtMs(Date.now());
         })
-        .catch(() => { /* keep showing the last known detail */ });
+        .catch(() => {
+          /* keep showing the last known detail */
+        });
     };
     load();
     const poll = window.setInterval(load, POLL_INTERVAL_MS);
@@ -63,9 +65,7 @@ export default function SSHSessionInfo({ deviceId, sessionId }: Props) {
   const durationSeconds =
     detail.status === "active" && startedAtMs ? (now - startedAtMs) / 1000 : detail.duration_seconds;
   const idleSeconds =
-    detail.status === "active" && detail.idle_seconds !== null
-      ? detail.idle_seconds + elapsedSincePollSeconds
-      : null;
+    detail.status === "active" && detail.idle_seconds !== null ? detail.idle_seconds + elapsedSincePollSeconds : null;
 
   const field = (label: string, value: string | number | null | undefined) =>
     value === null || value === undefined || value === "" ? null : (

@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Check, CheckCheck, CheckCircle2, ChevronRight, KeyRound, Monitor, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCheck,
+  CheckCircle2,
+  ChevronRight,
+  KeyRound,
+  Monitor,
+  RefreshCw,
+  ShieldAlert,
+} from "lucide-react";
 import AlertKindIcon from "../components/AlertKindIcon";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
@@ -67,9 +77,13 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
           <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
             {ALERT_KIND_LABELS[alert.kind] ?? alert.kind}
           </span>
-          <time className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>{timeAgo(alert.created_at)}</time>
+          <time className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+            {timeAgo(alert.created_at)}
+          </time>
         </div>
-        <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>{alert.message}</p>
+        <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>
+          {alert.message}
+        </p>
         <div className="mt-2 flex justify-end">
           <button type="button" onClick={() => onDismiss(alert.id)} className="th-malert-dismiss">
             <Check className="h-3.5 w-3.5" />
@@ -96,10 +110,18 @@ function AlertGroup({
   onDismissAll: (ids: number[]) => void;
   onOpenDevice: (deviceId: number) => void;
 }) {
-  const worst = alerts.some((a) => a.severity === "critical") ? "critical" : alerts.some((a) => a.severity === "warning") ? "warning" : "info";
+  const worst = alerts.some((a) => a.severity === "critical")
+    ? "critical"
+    : alerts.some((a) => a.severity === "warning")
+      ? "warning"
+      : "info";
   const tone = ALERT_SEVERITY_TONE[worst] ?? ALERT_SEVERITY_TONE.info;
   return (
-    <section className="th-onb-card overflow-hidden th-onb-enter" style={{ "--row-tone": tone } as CSSProperties} data-severity={worst}>
+    <section
+      className="th-onb-card overflow-hidden th-onb-enter"
+      style={{ "--row-tone": tone } as CSSProperties}
+      data-severity={worst}
+    >
       <div className="th-malert-head">
         <button
           type="button"
@@ -111,15 +133,20 @@ function AlertGroup({
             {deviceId != null ? <Monitor className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{label.name}</span>
+            <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              {label.name}
+            </span>
             <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-              {label.client ? `${label.client} · ` : ""}{alerts.length} open alert{alerts.length === 1 ? "" : "s"}
+              {label.client ? `${label.client} · ` : ""}
+              {alerts.length} open alert{alerts.length === 1 ? "" : "s"}
             </span>
           </span>
           {deviceId != null && <ChevronRight className="h-4 w-4 flex-none" style={{ color: "var(--th-text-faint)" }} />}
         </button>
       </div>
-      {alerts.map((a) => <AlertItem key={a.id} alert={a} onDismiss={onDismiss} />)}
+      {alerts.map((a) => (
+        <AlertItem key={a.id} alert={a} onDismiss={onDismiss} />
+      ))}
       {alerts.length > 1 && (
         <button type="button" onClick={() => onDismissAll(alerts.map((a) => a.id))} className="th-malert-all">
           <CheckCheck className="h-4 w-4" />
@@ -198,34 +225,55 @@ export default function AlertsMobile() {
       list.push(a);
       byDevice.set(key, list);
     }
-    return Array.from(byDevice.entries())
-      .map(([key, list]) => ({
-        deviceId: key === "token" ? null : key,
-        alerts: list.sort((a, b) => b.created_at.localeCompare(a.created_at)),
-      }))
-      // Critical devices first, then the device whose latest alert is newest.
-      .sort((a, b) => {
-        const aWorst = a.alerts.some((x) => x.severity === "critical") ? 0 : 1;
-        const bWorst = b.alerts.some((x) => x.severity === "critical") ? 0 : 1;
-        return aWorst - bWorst || b.alerts[0].created_at.localeCompare(a.alerts[0].created_at);
-      });
+    return (
+      Array.from(byDevice.entries())
+        .map(([key, list]) => ({
+          deviceId: key === "token" ? null : key,
+          alerts: list.sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        }))
+        // Critical devices first, then the device whose latest alert is newest.
+        .sort((a, b) => {
+          const aWorst = a.alerts.some((x) => x.severity === "critical") ? 0 : 1;
+          const bWorst = b.alerts.some((x) => x.severity === "critical") ? 0 : 1;
+          return aWorst - bWorst || b.alerts[0].created_at.localeCompare(a.alerts[0].created_at);
+        })
+    );
   }, [filtered]);
 
   const filterCounts = useMemo(() => {
     const visible = alerts.filter((a) => !hiddenIds.has(a.id));
-    return Object.fromEntries(FILTER_PILLS.map(({ id }) => [id, applyFilter(visible, id).length])) as Record<FilterId, number>;
+    return Object.fromEntries(FILTER_PILLS.map(({ id }) => [id, applyFilter(visible, id).length])) as Record<
+      FilterId,
+      number
+    >;
   }, [alerts, hiddenIds]);
   const shownFilters = FILTER_PILLS.filter(({ id }) => id === "all" || filterCounts[id] > 0 || id === activeFilter);
-  const affectedDevices = new Set(alerts.filter((a) => !hiddenIds.has(a.id) && a.device_id != null).map((a) => a.device_id)).size;
+  const affectedDevices = new Set(
+    alerts.filter((a) => !hiddenIds.has(a.id) && a.device_id != null).map((a) => a.device_id),
+  ).size;
   const stats = [
-    { label: "Critical", value: filterCounts.critical, tone: filterCounts.critical ? ALERT_SEVERITY_TONE.critical : "var(--th-text-faint)", icon: ShieldAlert },
-    { label: "Warning", value: filterCounts.warning, tone: filterCounts.warning ? ALERT_SEVERITY_TONE.warning : "var(--th-text-faint)", icon: AlertTriangle },
+    {
+      label: "Critical",
+      value: filterCounts.critical,
+      tone: filterCounts.critical ? ALERT_SEVERITY_TONE.critical : "var(--th-text-faint)",
+      icon: ShieldAlert,
+    },
+    {
+      label: "Warning",
+      value: filterCounts.warning,
+      tone: filterCounts.warning ? ALERT_SEVERITY_TONE.warning : "var(--th-text-faint)",
+      icon: AlertTriangle,
+    },
     { label: "Devices", value: affectedDevices, tone: "var(--th-accent)", icon: Monitor },
   ];
 
   return (
     <div className="th-onb flex flex-col gap-3">
-      <PageHeader className="mb-2 hidden md:block" title="Alerts" description="Open alerts across every managed device, newest first." />
+      <PageHeader
+        className="mb-2 hidden md:block"
+        title="Alerts"
+        description="Open alerts across every managed device, newest first."
+      />
 
       <div className="grid grid-cols-3 gap-2">
         {stats.map(({ label, value, tone, icon: Icon }, index) => (
@@ -237,11 +285,19 @@ export default function AlertsMobile() {
             style={{ "--i": index } as CSSProperties}
             aria-label={`${value} ${label.toLowerCase()}`}
           >
-            <span className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+            <span
+              className="flex items-center gap-1.5 text-[12px] font-medium"
+              style={{ color: "var(--th-text-muted)" }}
+            >
               <Icon className="h-3.5 w-3.5" style={{ color: tone }} />
               {label}
             </span>
-            <span className="text-[22px] font-semibold leading-7 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{value}</span>
+            <span
+              className="text-[22px] font-semibold leading-7 tabular-nums"
+              style={{ color: "var(--th-text-primary)" }}
+            >
+              {value}
+            </span>
           </button>
         ))}
       </div>
@@ -249,13 +305,25 @@ export default function AlertsMobile() {
       <div className="flex items-center gap-2">
         <div className="th-mdev-chips min-w-0 flex-1 !mx-0 !px-0" role="tablist" aria-label="Alert filter">
           {shownFilters.map(({ id, label }) => (
-            <button key={id} type="button" role="tab" aria-selected={activeFilter === id} onClick={() => setActiveFilter(id)} className="th-mdev-chip">
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeFilter === id}
+              onClick={() => setActiveFilter(id)}
+              className="th-mdev-chip"
+            >
               {label}
               <span className="tabular-nums">{filterCounts[id]}</span>
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => void handleReload()} aria-label="Refresh alerts" className="th-mdev-tool !h-[30px] !w-[30px] !rounded-full">
+        <button
+          type="button"
+          onClick={() => void handleReload()}
+          aria-label="Refresh alerts"
+          className="th-mdev-tool !h-[30px] !w-[30px] !rounded-full"
+        >
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -267,7 +335,13 @@ export default function AlertsMobile() {
             icon={<CheckCircle2 className="h-5 w-5" style={{ color: "var(--th-status-online)" }} />}
             title="No active alerts"
             description={activeFilter !== "all" ? "Nothing matches this filter." : "All systems healthy."}
-            action={activeFilter !== "all" ? <Button size="sm" variant="secondary" onClick={() => setActiveFilter("all")}>Show all</Button> : undefined}
+            action={
+              activeFilter !== "all" ? (
+                <Button size="sm" variant="secondary" onClick={() => setActiveFilter("all")}>
+                  Show all
+                </Button>
+              ) : undefined
+            }
           />
         </div>
       ) : (
@@ -275,9 +349,14 @@ export default function AlertsMobile() {
           <AlertGroup
             key={deviceId ?? "token"}
             deviceId={deviceId}
-            label={deviceId != null
-              ? { name: groupAlerts[0].device_name ?? `Device #${deviceId}`, client: groupAlerts[0].client_name ?? null }
-              : { name: "Enrollment tokens", client: null }}
+            label={
+              deviceId != null
+                ? {
+                    name: groupAlerts[0].device_name ?? `Device #${deviceId}`,
+                    client: groupAlerts[0].client_name ?? null,
+                  }
+                : { name: "Enrollment tokens", client: null }
+            }
             alerts={groupAlerts}
             onDismiss={(id) => dismissIds([id])}
             onDismissAll={dismissIds}
@@ -287,7 +366,11 @@ export default function AlertsMobile() {
       )}
 
       {groups.length > 3 && (
-        <Button variant="secondary" onClick={() => navigate("/devices?filter=needs_attention")} className="min-h-[44px] w-full">
+        <Button
+          variant="secondary"
+          onClick={() => navigate("/devices?filter=needs_attention")}
+          className="min-h-[44px] w-full"
+        >
           View all affected devices
           <ChevronRight className="h-4 w-4" />
         </Button>

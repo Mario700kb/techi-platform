@@ -12,10 +12,20 @@ vi.mock("../../api/platform", () => ({ getDrawerMeta: (...a: unknown[]) => getMe
 vi.mock("../../api/inventory", () => ({ getDeviceInventory: (...a: unknown[]) => getInventory(...a) }));
 vi.mock("../../api/notes", () => ({ getDeviceNotes: vi.fn().mockResolvedValue([]), createDeviceNote: vi.fn() }));
 vi.mock("../../api/actions", () => ({ queueDeviceAction: vi.fn() }));
-vi.mock("../../api/devices", () => ({ assignDeviceClient: vi.fn(), assignDeviceGroup: vi.fn(), updateDevice: vi.fn() }));
-vi.mock("../../hooks/useDeviceActivity", () => ({ useDeviceActivity: () => ({ events: [], loading: false, reload: vi.fn() }) }));
+vi.mock("../../api/devices", () => ({
+  assignDeviceClient: vi.fn(),
+  assignDeviceGroup: vi.fn(),
+  updateDevice: vi.fn(),
+}));
+vi.mock("../../hooks/useDeviceActivity", () => ({
+  useDeviceActivity: () => ({ events: [], loading: false, reload: vi.fn() }),
+}));
 vi.mock("../../hooks/useDeviceTelemetry", () => ({
-  useDeviceTelemetry: () => ({ snapshot: { cpu_percent: 12, ram_percent: 40, disk_percent: 88 }, healthScore: 90, healthState: "healthy" }),
+  useDeviceTelemetry: () => ({
+    snapshot: { cpu_percent: 12, ram_percent: 40, disk_percent: 88 },
+    healthScore: 90,
+    healthState: "healthy",
+  }),
 }));
 vi.mock("../../hooks/usePlatformFeatures", () => ({ usePlatformFeatures: () => ({ FEATURE_TERMINAL: false }) }));
 vi.mock("../ComponentStatesPanel", () => ({ default: () => null }));
@@ -68,7 +78,11 @@ describe("GenericDeviceDrawer", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Services" }));
     expect(await screen.findByText("Couldn't load services")).toBeInTheDocument();
 
-    const services = Array.from({ length: 250 }, (_, i) => ({ name: `svc${i}`, display_name: `Service ${i}`, status: "running" }));
+    const services = Array.from({ length: 250 }, (_, i) => ({
+      name: `svc${i}`,
+      display_name: `Service ${i}`,
+      status: "running",
+    }));
     getInventory.mockResolvedValueOnce({ services, processes: [], software: [] });
     fireEvent.click(screen.getByRole("button", { name: /Retry/ }));
     expect(await screen.findByText("Showing 200 of 250")).toBeInTheDocument();
@@ -78,6 +92,8 @@ describe("GenericDeviceDrawer", () => {
     getInventory.mockResolvedValue({ services: [], processes: [], software: [] });
     renderDrawer();
     fireEvent.click(await screen.findByRole("tab", { name: "Docker" }));
-    await waitFor(() => expect(screen.getByText("Detailed view not available yet for this platform")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Detailed view not available yet for this platform")).toBeInTheDocument(),
+    );
   });
 });

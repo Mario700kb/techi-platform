@@ -5,7 +5,19 @@ export type ReportFormat = "pdf" | "csv";
 export type ReportCadence = "daily" | "weekly" | "monthly";
 export type ReportStatus = "pending" | "completed" | "failed";
 export type ReportScope = "client" | "device";
-export type ReportType = "full" | "overview" | "user_activity" | "status_uptime" | "health" | "alerts" | "actions" | "software" | "remote_support" | "assignments" | "notes" | "event_history";
+export type ReportType =
+  | "full"
+  | "overview"
+  | "user_activity"
+  | "status_uptime"
+  | "health"
+  | "alerts"
+  | "actions"
+  | "software"
+  | "remote_support"
+  | "assignments"
+  | "notes"
+  | "event_history";
 export interface GenerateReportPayload {
   scope_type?: ReportScope;
   client_id?: number;
@@ -17,7 +29,10 @@ export interface GenerateReportPayload {
   period_to?: string;
 }
 
-export interface ReportClient { id: number; name: string }
+export interface ReportClient {
+  id: number;
+  name: string;
+}
 
 export interface ReportRun {
   id: number;
@@ -77,19 +92,25 @@ export const getReportSchedules = () => fetchJson<ReportSchedule[]>("/api/v1/rep
 
 export function generateReport(payload: GenerateReportPayload) {
   return fetchJson<ReportRun>("/api/v1/reports/generate", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 
 export function createReportSchedule(payload: SchedulePayload) {
   return fetchJson<ReportSchedule>("/api/v1/reports/schedules", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 
 export function updateReportSchedule(id: number, payload: Partial<SchedulePayload>) {
   return fetchJson<ReportSchedule>(`/api/v1/reports/schedules/${id}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

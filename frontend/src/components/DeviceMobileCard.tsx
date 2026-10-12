@@ -60,7 +60,12 @@ function freshnessOf(device: Device): FreshnessState {
 function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode }) {
   const tone = view?.tone ?? TONE.neutral;
   return (
-    <span title={view?.title} className="th-mdev-badge" style={{ "--chip-tone": tone } as CSSProperties} data-neutral={tone === TONE.neutral || undefined}>
+    <span
+      title={view?.title}
+      className="th-mdev-badge"
+      style={{ "--chip-tone": tone } as CSSProperties}
+      data-neutral={tone === TONE.neutral || undefined}
+    >
       {children ?? view?.label}
     </span>
   );
@@ -69,7 +74,8 @@ function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode 
 function DeviceTypeBadge({ device }: { device: Device }) {
   const cat = device.resolved_device_category;
   const dt = device.device_type;
-  if (cat === "servers" || dt === "server") return <ToneBadge view={{ label: TERMS.server, tone: "var(--th-status-agent)" }} />;
+  if (cat === "servers" || dt === "server")
+    return <ToneBadge view={{ label: TERMS.server, tone: "var(--th-status-agent)" }} />;
   if (cat === "clientpc" || dt === "client") return <ToneBadge view={{ label: TERMS.clientPc, tone: TONE.info }} />;
   return null;
 }
@@ -123,32 +129,68 @@ export function DeviceMobileCard({
 
   const freshness = freshnessOf(device);
   const meta = [
-    device.current_user ? { key: "user", node: <span className="max-w-[110px] truncate" title={device.current_user}>{device.current_user}</span> } : null,
+    device.current_user
+      ? {
+          key: "user",
+          node: (
+            <span className="max-w-[110px] truncate" title={device.current_user}>
+              {device.current_user}
+            </span>
+          ),
+        }
+      : null,
     osShort ? { key: "os", node: <span className="truncate">{osShort}</span> } : null,
-    device.public_ip || device.local_ip ? { key: "ip", node: <span className="font-mono">{device.public_ip || device.local_ip}</span> } : null,
+    device.public_ip || device.local_ip
+      ? { key: "ip", node: <span className="font-mono">{device.public_ip || device.local_ip}</span> }
+      : null,
     device.agent_version
-      ? { key: "agent", node: <span style={{ color: AGENT_VERSION_TONE[agentVersion.status] }} title={agentVersion.title}>v{device.agent_version}{outdated && " · update"}</span> }
+      ? {
+          key: "agent",
+          node: (
+            <span style={{ color: AGENT_VERSION_TONE[agentVersion.status] }} title={agentVersion.title}>
+              v{device.agent_version}
+              {outdated && " · update"}
+            </span>
+          ),
+        }
       : null,
   ].filter(Boolean) as { key: string; node: ReactNode }[];
 
   return (
-    <div {...activateProps(onSelect)} aria-label={`Open ${displayName}`} className="th-onb-card th-mdev-card th-device-card" data-state={freshness}>
+    <div
+      {...activateProps(onSelect)}
+      aria-label={`Open ${displayName}`}
+      className="th-onb-card th-mdev-card th-device-card"
+      data-state={freshness}
+    >
       <div className="flex items-start gap-3">
         <span className="th-mdev-status" aria-label={freshness} title={freshness}>
           <StatusDot state={freshness} size={9} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="min-w-0 truncate text-[15px] font-semibold leading-5" style={{ color: "var(--th-text-primary)" }} title={displayName}>
+            <span
+              className="min-w-0 truncate text-[15px] font-semibold leading-5"
+              style={{ color: "var(--th-text-primary)" }}
+              title={displayName}
+            >
               {displayName}
             </span>
             {hostnameSubtitle && (
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
+              <span
+                className="min-w-0 flex-1 truncate font-mono text-[11px]"
+                style={{ color: "var(--th-text-muted)" }}
+                title={device.hostname}
+              >
                 {hostnameSubtitle}
               </span>
             )}
           </div>
-          <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-secondary)" }} title={`${device.client_name || TERMS.noClient}${groupLine}`}>
+          <p
+            className="mt-0.5 truncate text-[12px]"
+            style={{ color: "var(--th-text-secondary)" }}
+            title={`${device.client_name || TERMS.noClient}${groupLine}`}
+          >
             {device.client_name || <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>}
             {groupLine && <span style={{ color: "var(--th-text-muted)" }}>{groupLine}</span>}
             {device.domain && <span style={{ color: "var(--th-text-faint)" }}> · {device.domain}</span>}
@@ -177,18 +219,39 @@ export function DeviceMobileCard({
         </div>
       </div>
 
-      {(healthScore != null || device.resolved_device_category || device.device_type || patchView || maintenanceView || activeAction || alerts?.critical || alerts?.warning || offlineBadge || rsIssue) && (
+      {(healthScore != null ||
+        device.resolved_device_category ||
+        device.device_type ||
+        patchView ||
+        maintenanceView ||
+        activeAction ||
+        alerts?.critical ||
+        alerts?.warning ||
+        offlineBadge ||
+        rsIssue) && (
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[21px]">
           {healthScore != null && (
-            <ToneBadge view={{ label: `Health ${healthScore}`, tone: HEALTH_TONE_COLOR[healthTone(health)], title: `Health score ${healthScore} of 100` }} />
+            <ToneBadge
+              view={{
+                label: `Health ${healthScore}`,
+                tone: HEALTH_TONE_COLOR[healthTone(health)],
+                title: `Health score ${healthScore} of 100`,
+              }}
+            />
           )}
           <DeviceTypeBadge device={device} />
           {patchView && <ToneBadge view={patchView} />}
           {maintenanceView && <ToneBadge view={maintenanceView} />}
           {activeAction && <ActionIndicator entry={activeAction} />}
           {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
-          {alerts?.warning ? <ToneBadge view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }} /> : null}
-          {offlineBadge && <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />}
+          {alerts?.warning ? (
+            <ToneBadge
+              view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }}
+            />
+          ) : null}
+          {offlineBadge && (
+            <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />
+          )}
           {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
         </div>
       )}
@@ -197,12 +260,18 @@ export function DeviceMobileCard({
         <span className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden whitespace-nowrap">
           {meta.map((m, i) => (
             <span key={m.key} className={`flex items-center gap-x-2.5 ${m.key === "agent" ? "flex-none" : "min-w-0"}`}>
-              {i > 0 && <span aria-hidden="true" style={{ color: "var(--th-text-faint)" }}>·</span>}
+              {i > 0 && (
+                <span aria-hidden="true" style={{ color: "var(--th-text-faint)" }}>
+                  ·
+                </span>
+              )}
               {m.node}
             </span>
           ))}
         </span>
-        <span className="flex-none font-medium tabular-nums" style={{ color: lastSeen.tone }}>{lastSeen.text}</span>
+        <span className="flex-none font-medium tabular-nums" style={{ color: lastSeen.tone }}>
+          {lastSeen.text}
+        </span>
       </div>
     </div>
   );

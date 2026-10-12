@@ -42,7 +42,9 @@ describe("AgentConfig", () => {
 
     fireEvent.change(linux, { target: { value: "240" } });
     fireEvent.click(screen.getByRole("button", { name: /Save interval policy/ }));
-    expect(put).toHaveBeenCalledWith(expect.objectContaining({ platform_heartbeat_intervals: expect.objectContaining({ linux: 240 }) }));
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ platform_heartbeat_intervals: expect.objectContaining({ linux: 240 }) }),
+    );
   });
 
   it("does not offer the heartbeat-interval command, which every heartbeat would undo", async () => {
@@ -51,6 +53,8 @@ describe("AgentConfig", () => {
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
     render(<AgentConfigPage />);
     await screen.findByText("Send command");
-    expect(screen.queryByRole("option", { name: commandsApi.BULK_COMMAND_LABELS.change_heartbeat_interval })).toBeNull();
+    expect(
+      screen.queryByRole("option", { name: commandsApi.BULK_COMMAND_LABELS.change_heartbeat_interval }),
+    ).toBeNull();
   });
 });

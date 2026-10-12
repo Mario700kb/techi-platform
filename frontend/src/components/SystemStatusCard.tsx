@@ -7,8 +7,19 @@ const POLL_MS = 30_000;
 const SAMPLES = 30;
 const SLOW_API_MS = 1500;
 
-const clock = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-const hourMinute = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const clock = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
+  timeZone: APP_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+const hourMinute = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
+  timeZone: APP_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 const dayMonth = new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeZone: APP_TIME_ZONE, day: "numeric", month: "short" });
 
 const TITLES: Record<string, string> = {
@@ -32,14 +43,41 @@ function when(iso?: string | null): string | null {
 }
 
 function StateIcon({ state }: { state: TileState }) {
-  if (state === "ok") return <span className="sys-ico"><span className="sys-dot" /></span>;
-  if (state === "running") return <span className="sys-ico"><span className="sys-spin" /></span>;
-  if (state === "warn") return <span className="sys-ico"><span className="sys-blink" /></span>;
-  if (state === "down") return <span className="sys-ico"><span className="sys-down" /></span>;
-  if (state === "unknown") return <span className="sys-ico"><span className="sys-unknown" /></span>;
+  if (state === "ok")
+    return (
+      <span className="sys-ico">
+        <span className="sys-dot" />
+      </span>
+    );
+  if (state === "running")
+    return (
+      <span className="sys-ico">
+        <span className="sys-spin" />
+      </span>
+    );
+  if (state === "warn")
+    return (
+      <span className="sys-ico">
+        <span className="sys-blink" />
+      </span>
+    );
+  if (state === "down")
+    return (
+      <span className="sys-ico">
+        <span className="sys-down" />
+      </span>
+    );
+  if (state === "unknown")
+    return (
+      <span className="sys-ico">
+        <span className="sys-unknown" />
+      </span>
+    );
   return (
     <span className="sys-ico">
-      <svg className="sys-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" /></svg>
+      <svg className="sys-check" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3 8.5l3.2 3L13 4.5" />
+      </svg>
     </span>
   );
 }
@@ -53,7 +91,13 @@ function Sparkline({ samples }: { samples: number[] }) {
   const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const [lx, ly] = pts[pts.length - 1];
   return (
-    <svg className="sys-spark" viewBox="0 0 120 26" preserveAspectRatio="none" role="img" aria-label="Response time, last checks">
+    <svg
+      className="sys-spark"
+      viewBox="0 0 120 26"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="Response time, last checks"
+    >
       <path className="area" d={`${line} L${lx.toFixed(1)},26 L${pts[0][0].toFixed(1)},26 Z`} />
       <path className="line" d={line} />
       <circle className="end" cx={Math.min(lx, 118.5)} cy={ly} r="2" />
@@ -67,25 +111,39 @@ function Tile({ tile, extra }: { tile: ServiceTile; extra?: React.ReactNode }) {
   return (
     <article className="sys-tile" data-state={tile.state}>
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5 text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+        <div
+          className="flex min-w-0 items-center gap-2.5 text-[14px] font-semibold"
+          style={{ color: "var(--th-text-primary)" }}
+        >
           <StateIcon state={tile.state} />
           <span className="min-w-0 leading-tight">{TITLES[tile.key] ?? tile.key}</span>
         </div>
-        <span className="sys-pill" data-state={tile.state}>{tile.label}</span>
+        <span className="sys-pill" data-state={tile.state}>
+          {tile.label}
+        </span>
       </div>
       <div className="sys-detail">{at ? `${at} · ${tile.detail}` : tile.detail}</div>
       {tile.items && (
         <div className="flex flex-wrap gap-1.5">
           {tile.items.map((item) => (
-            <span key={item.name} className="sys-chip" data-state={item.state}><b />{item.name}</span>
+            <span key={item.name} className="sys-chip" data-state={item.state}>
+              <b />
+              {item.name}
+            </span>
           ))}
         </div>
       )}
       {ratio !== null && tile.key !== "workers" && (
-        <div className="sys-bar" aria-hidden="true"><i style={{ width: `${Math.round(ratio * 100)}%` }} /></div>
+        <div className="sys-bar" aria-hidden="true">
+          <i style={{ width: `${Math.round(ratio * 100)}%` }} />
+        </div>
       )}
       {extra}
-      {tile.sub && <div className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{tile.sub}</div>}
+      {tile.sub && (
+        <div className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+          {tile.sub}
+        </div>
+      )}
     </article>
   );
 }
@@ -139,13 +197,33 @@ export default function SystemStatusCard({ compact = false }: { compact?: boolea
   const minutes = connectedSince.current ? Math.floor((Date.now() - connectedSince.current) / 60000) : 0;
   const realtimeTile: ServiceTile =
     realtimeStatus === "connected"
-      ? { key: "realtime", state: "ok", label: "Live", detail: "WebSocket connected",
-          sub: minutes < 1 ? "Connected just now" : `Stable for ${minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`}` }
+      ? {
+          key: "realtime",
+          state: "ok",
+          label: "Live",
+          detail: "WebSocket connected",
+          sub:
+            minutes < 1
+              ? "Connected just now"
+              : `Stable for ${minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`}`,
+        }
       : realtimeStatus === "connecting"
         ? { key: "realtime", state: "running", label: "Connecting", detail: "Opening WebSocket…" }
         : realtimeStatus === "fallback"
-          ? { key: "realtime", state: "warn", label: "Polling", detail: "WebSocket unavailable", sub: "Data refreshes by polling instead" }
-          : { key: "realtime", state: "down", label: "Offline", detail: "WebSocket disconnected", sub: "Reconnecting automatically" };
+          ? {
+              key: "realtime",
+              state: "warn",
+              label: "Polling",
+              detail: "WebSocket unavailable",
+              sub: "Data refreshes by polling instead",
+            }
+          : {
+              key: "realtime",
+              state: "down",
+              label: "Offline",
+              detail: "WebSocket disconnected",
+              sub: "Reconnecting automatically",
+            };
 
   const tiles = [apiTile, realtimeTile, ...(server ?? [])].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
   const down = tiles.filter((t) => t.state === "down").length;
@@ -172,10 +250,16 @@ export default function SystemStatusCard({ compact = false }: { compact?: boolea
             <li key={tile.key} className="th-status-row" title={tile.sub ?? undefined}>
               <StateIcon state={tile.state} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{TITLES[tile.key] ?? tile.key}</span>
-                <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{tile.detail}</span>
+                <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                  {TITLES[tile.key] ?? tile.key}
+                </span>
+                <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  {tile.detail}
+                </span>
               </span>
-              <span className="sys-pill" data-state={tile.state}>{tile.label}</span>
+              <span className="sys-pill" data-state={tile.state}>
+                {tile.label}
+              </span>
             </li>
           ))}
         </ul>
@@ -191,7 +275,9 @@ export default function SystemStatusCard({ compact = false }: { compact?: boolea
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="system-status-title">System status</h2>
-          <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>Platform services, agents and nightly jobs.</p>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+            Platform services, agents and nightly jobs.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="sys-overall" data-state={overall} role="status">

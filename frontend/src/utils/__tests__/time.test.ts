@@ -16,9 +16,23 @@ describe("Tirana time helpers", () => {
   });
 
   it("displays API (naive UTC) times in Tirana time", () => {
-    expect(formatLocalDateTime("2026-10-05T14:44:00", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })).toBe("16:44");
+    expect(formatLocalDateTime("2026-10-05T14:44:00", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })).toBe(
+      "16:44",
+    );
   });
 });
+
+/** The full argument list of a call whose "(" ends just before `start`, however it is line-wrapped. */
+function callText(text: string, start: number): string {
+  let depth = 1;
+  let i = start;
+  while (i < text.length && depth > 0) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") depth -= 1;
+    i += 1;
+  }
+  return text.slice(start, i);
+}
 
 describe("every displayed date uses Tirana time", () => {
   // Every source file under src/ (tests excluded), as raw text.
@@ -36,8 +50,9 @@ describe("every displayed date uses Tirana time", () => {
       for (let m = re.exec(text); m; m = re.exec(text)) {
         const before = text.slice(Math.max(0, m.index - 12), m.index);
         if (/\btotal$/.test(before)) continue; // number formatting
-        const call = text.slice(m.index, m.index + 200).split("\n").slice(0, 3).join("\n");
-        if (!call.includes("timeZone: APP_TIME_ZONE")) offenders.push(`${file}: ${call.split("\n")[0]}`);
+        const call = callText(text, m.index + m[0].length);
+        if (!call.includes("timeZone: APP_TIME_ZONE"))
+          offenders.push(`${file}: ${text.slice(m.index, m.index + 60).split("\n")[0]}`);
       }
     }
     expect(offenders).toEqual([]);

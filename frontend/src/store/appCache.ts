@@ -40,22 +40,22 @@ export const appCache = new AppCache();
 
 export const CACHE_KEYS = {
   dashboardRecentDevices: "dashboard.recent-devices", // Device[]
-  recentActions:      "dashboard.actions",       // RemoteActionWithDevice[]
-  operatorPresence:   "dashboard.op-presence",   // OperatorPresenceRecord[]
-  clientsList:        "clients.list",            // Client[]
-  groupsList:         "clients.groups",          // DeviceGroup[]
-  operatorsList:      "operators.list",          // OperatorRecord[]
-  dashboardInsights:  "dashboard.insights",      // FleetInsights, suffixed with the user id
+  recentActions: "dashboard.actions", // RemoteActionWithDevice[]
+  operatorPresence: "dashboard.op-presence", // OperatorPresenceRecord[]
+  clientsList: "clients.list", // Client[]
+  groupsList: "clients.groups", // DeviceGroup[]
+  operatorsList: "operators.list", // OperatorRecord[]
+  dashboardInsights: "dashboard.insights", // FleetInsights, suffixed with the user id
 } as const;
 
 export const CACHE_TTL = {
   dashboardRecentDevices: 60_000,
-  recentActions:      30_000,
-  operatorPresence:   30_000,
-  clientsList:        120_000,
-  groupsList:         120_000,
-  operatorsList:      120_000,
-  devicesTable:       30_000,
+  recentActions: 30_000,
+  operatorPresence: 30_000,
+  clientsList: 120_000,
+  groupsList: 120_000,
+  operatorsList: 120_000,
+  devicesTable: 30_000,
 } as const;
 
 export function deviceTableCacheKey(
@@ -66,18 +66,30 @@ export function deviceTableCacheKey(
   filters: Record<string, unknown>,
 ): string {
   return [
-    "devices-table", page, limit, search, quickFilter,
-    filters.status ?? "", filters.freshness_state ?? "",
-    filters.maintenance_state ?? "", filters.client_id ?? "",
-    filters.group_id ?? "", filters.smart_folder ?? "",
+    "devices-table",
+    page,
+    limit,
+    search,
+    quickFilter,
+    filters.status ?? "",
+    filters.freshness_state ?? "",
+    filters.maintenance_state ?? "",
+    filters.client_id ?? "",
+    filters.group_id ?? "",
+    filters.smart_folder ?? "",
     // category + platform are tree-node filters (Platform Expansion). They MUST
     // be in the key: two selections within a client differ only by these, so
     // omitting them collides the SWR cache and serves the previous selection's
     // rows until a manual Refresh (regression after the tree moved off
     // smart_folder/device_type to category/platform).
-    filters.category ?? "", filters.platform ?? "",
-    filters.duplicate_candidates ?? "", filters.lifecycle_state ?? "",
-    Array.isArray(filters.ids) ? filters.ids.join(",") : "", filters.agent_version ?? "",
-    filters.hide_offline_days ?? "", filters.sort ?? "", filters.order ?? "",
+    filters.category ?? "",
+    filters.platform ?? "",
+    filters.duplicate_candidates ?? "",
+    filters.lifecycle_state ?? "",
+    Array.isArray(filters.ids) ? filters.ids.join(",") : "",
+    filters.agent_version ?? "",
+    filters.hide_offline_days ?? "",
+    filters.sort ?? "",
+    filters.order ?? "",
   ].join("|");
 }

@@ -8,9 +8,23 @@ import Operators from "../Operators";
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 2 }, can: () => true }) }));
 
-const op = (id: number, username: string, role: operatorsApi.OperatorRecord["role"], extra: Partial<operatorsApi.OperatorRecord> = {}): operatorsApi.OperatorRecord => ({
-  id, username, email: `${username}@techi.al`, display_name: null, role, is_active: true, is_superuser: false,
-  created_at: "2026-05-19T08:00:00Z", last_login_at: null, last_active_at: null, ...extra,
+const op = (
+  id: number,
+  username: string,
+  role: operatorsApi.OperatorRecord["role"],
+  extra: Partial<operatorsApi.OperatorRecord> = {},
+): operatorsApi.OperatorRecord => ({
+  id,
+  username,
+  email: `${username}@techi.al`,
+  display_name: null,
+  role,
+  is_active: true,
+  is_superuser: false,
+  created_at: "2026-05-19T08:00:00Z",
+  last_login_at: null,
+  last_active_at: null,
+  ...extra,
 });
 
 function mockApi() {
@@ -18,11 +32,16 @@ function mockApi() {
     op(2, "denis", "owner", { display_name: "Denis" }),
     op(5, "laura", "operator", { display_name: "Laura" }),
   ]);
-  vi.spyOn(teamsApi, "listTeams").mockResolvedValue([{ id: 1, name: "IT Support", color: "#e85a3c", operator_ids: [5] } as unknown as teamsApi.TeamWithStats]);
+  vi.spyOn(teamsApi, "listTeams").mockResolvedValue([
+    { id: 1, name: "IT Support", color: "#e85a3c", operator_ids: [5] } as unknown as teamsApi.TeamWithStats,
+  ]);
 }
 
 describe("Operators", () => {
-  afterEach(() => { vi.restoreAllMocks(); appCache.invalidate(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    appCache.invalidate();
+  });
 
   it("keeps every action in place but locks the ones that would lock you out", async () => {
     mockApi();

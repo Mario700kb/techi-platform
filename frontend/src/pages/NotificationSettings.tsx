@@ -23,12 +23,13 @@ import { Badge, Button, PageHeader, SelectField } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE } from "../utils/time";
 
-const INPUT_CLS =
-  "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
+const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", timeZone: APP_TIME_ZONE,
+  return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, {
+    hourCycle: "h23",
+    timeZone: APP_TIME_ZONE,
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -102,8 +103,13 @@ export default function NotificationSettings() {
     void load();
   }, [load]);
 
-  const recipients = smtpTo.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
-  const channelReady = chName.trim() !== "" && (chType === "email" ? smtpHost.trim() !== "" && recipients.length > 0 : webhookUrl.trim() !== "");
+  const recipients = smtpTo
+    .split(/[,;\s]+/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const channelReady =
+    chName.trim() !== "" &&
+    (chType === "email" ? smtpHost.trim() !== "" && recipients.length > 0 : webhookUrl.trim() !== "");
 
   function resetChannelForm() {
     setChName("");
@@ -122,16 +128,17 @@ export default function NotificationSettings() {
     setSavingChannel(true);
     setError(null);
     try {
-      const config: Record<string, unknown> = chType === "email"
-        ? {
-            smtp_host: smtpHost.trim(),
-            smtp_port: Number(smtpPort) || 587,
-            use_tls: smtpTls,
-            username: smtpUser.trim() || null,
-            from_address: smtpFrom.trim() || smtpUser.trim() || null,
-            to_addresses: recipients,
-          }
-        : { url: webhookUrl.trim(), headers: {} };
+      const config: Record<string, unknown> =
+        chType === "email"
+          ? {
+              smtp_host: smtpHost.trim(),
+              smtp_port: Number(smtpPort) || 587,
+              use_tls: smtpTls,
+              username: smtpUser.trim() || null,
+              from_address: smtpFrom.trim() || smtpUser.trim() || null,
+              to_addresses: recipients,
+            }
+          : { url: webhookUrl.trim(), headers: {} };
       await createNotificationChannel({
         name: chName.trim(),
         channel_type: chType,
@@ -234,9 +241,7 @@ export default function NotificationSettings() {
       />
 
       {error && (
-        <div className="rounded-lg border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>
       )}
       {testResult && (
         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200">
@@ -249,14 +254,28 @@ export default function NotificationSettings() {
         <p className="premium-kicker mb-3">Channels</p>
 
         {canManage && (
-          <div className="mb-4 rounded-lg border p-4" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}>
-            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Add channel</p>
+          <div
+            className="mb-4 rounded-lg border p-4"
+            style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
+          >
+            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              Add channel
+            </p>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <Field label="Name">
-                <input className={INPUT_CLS} placeholder="e.g. Ops team email" value={chName} onChange={(e) => setChName(e.target.value)} />
+                <input
+                  className={INPUT_CLS}
+                  placeholder="e.g. Ops team email"
+                  value={chName}
+                  onChange={(e) => setChName(e.target.value)}
+                />
               </Field>
               <Field label="Type">
-                <SelectField className={INPUT_CLS} value={chType} onChange={(e) => setChType(e.target.value as NotificationChannelType)}>
+                <SelectField
+                  className={INPUT_CLS}
+                  value={chType}
+                  onChange={(e) => setChType(e.target.value as NotificationChannelType)}
+                >
                   <option value="email">Email (SMTP)</option>
                   <option value="webhook">Webhook</option>
                 </SelectField>
@@ -264,35 +283,87 @@ export default function NotificationSettings() {
               {chType === "email" ? (
                 <>
                   <Field label="SMTP server">
-                    <input className={INPUT_CLS} placeholder="smtp.example.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      placeholder="smtp.example.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                    />
                   </Field>
                   <Field label="Port">
-                    <input className={INPUT_CLS} type="number" min={1} value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      type="number"
+                      min={1}
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                    />
                   </Field>
                   <Field label="Username">
-                    <input className={INPUT_CLS} placeholder="alerts@example.com" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      placeholder="alerts@example.com"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                    />
                   </Field>
                   <Field label="Password (optional)">
-                    <input className={INPUT_CLS} type="password" autoComplete="new-password" value={chSecret} onChange={(e) => setChSecret(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      type="password"
+                      autoComplete="new-password"
+                      value={chSecret}
+                      onChange={(e) => setChSecret(e.target.value)}
+                    />
                   </Field>
                   <Field label="From address">
-                    <input className={INPUT_CLS} placeholder="Defaults to the username" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      placeholder="Defaults to the username"
+                      value={smtpFrom}
+                      onChange={(e) => setSmtpFrom(e.target.value)}
+                    />
                   </Field>
                   <Field label="Recipients">
-                    <input className={INPUT_CLS} placeholder="ops@example.com, noc@example.com" value={smtpTo} onChange={(e) => setSmtpTo(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      placeholder="ops@example.com, noc@example.com"
+                      value={smtpTo}
+                      onChange={(e) => setSmtpTo(e.target.value)}
+                    />
                   </Field>
-                  <label className="flex items-center gap-2 text-[13px] xl:col-span-4" style={{ color: "var(--th-text-secondary)" }}>
-                    <input type="checkbox" checked={smtpTls} onChange={(e) => setSmtpTls(e.target.checked)} className="h-4 w-4 accent-orange-500" />
+                  <label
+                    className="flex items-center gap-2 text-[13px] xl:col-span-4"
+                    style={{ color: "var(--th-text-secondary)" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={smtpTls}
+                      onChange={(e) => setSmtpTls(e.target.checked)}
+                      className="h-4 w-4 accent-orange-500"
+                    />
                     Use STARTTLS
                   </label>
                 </>
               ) : (
                 <>
                   <Field label="Webhook URL" className="xl:col-span-2">
-                    <input className={INPUT_CLS} placeholder="https://hooks.example.com/techi" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      placeholder="https://hooks.example.com/techi"
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                    />
                   </Field>
                   <Field label="Shared secret (optional)" className="xl:col-span-2">
-                    <input className={INPUT_CLS} type="password" autoComplete="new-password" placeholder="Sent as X-TECHI-Signature" value={chSecret} onChange={(e) => setChSecret(e.target.value)} />
+                    <input
+                      className={INPUT_CLS}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Sent as X-TECHI-Signature"
+                      value={chSecret}
+                      onChange={(e) => setChSecret(e.target.value)}
+                    />
                   </Field>
                 </>
               )}
@@ -319,19 +390,33 @@ export default function NotificationSettings() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                    Loading…
+                  </td>
+                </tr>
               ) : channels.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No channels yet.</td></tr>
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                    No channels yet.
+                  </td>
+                </tr>
               ) : (
                 channels.map((c) => (
                   <tr key={c.id} className="border-b border-white/5">
                     <td className="px-4 py-3 font-semibold text-white">
                       <span className="inline-flex items-center gap-2">
-                        {c.channel_type === "email" ? <Mail className="h-3.5 w-3.5" /> : <WebhookIcon className="h-3.5 w-3.5" />}
+                        {c.channel_type === "email" ? (
+                          <Mail className="h-3.5 w-3.5" />
+                        ) : (
+                          <WebhookIcon className="h-3.5 w-3.5" />
+                        )}
                         {c.name}
                       </span>
                     </td>
-                    <td className="px-4 py-3"><Badge variant="ghost">{c.channel_type}</Badge></td>
+                    <td className="px-4 py-3">
+                      <Badge variant="ghost">{c.channel_type}</Badge>
+                    </td>
                     <td className="px-4 py-3 text-slate-300">{c.enabled ? "Yes" : "No"}</td>
                     <td className="px-4 py-3 text-slate-400">{c.has_secret ? "Set" : "—"}</td>
                     <td className="px-4 py-3">
@@ -370,18 +455,29 @@ export default function NotificationSettings() {
         <p className="premium-kicker mb-3">Rules</p>
 
         {canManage && (
-          <div className="mb-4 rounded-lg border p-4" style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}>
-            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Add rule</p>
+          <div
+            className="mb-4 rounded-lg border p-4"
+            style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
+          >
+            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              Add rule
+            </p>
             <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <Field label="When this happens">
                 <SelectField className={INPUT_CLS} value={ruleEvent} onChange={(e) => setRuleEvent(e.target.value)}>
                   {NOTIFICATION_EVENT_TYPES.map((ev) => (
-                    <option key={ev} value={ev}>{ev.replace(/_/g, " ")}</option>
+                    <option key={ev} value={ev}>
+                      {ev.replace(/_/g, " ")}
+                    </option>
                   ))}
                 </SelectField>
               </Field>
               <Field label="Scope">
-                <SelectField className={INPUT_CLS} value={ruleScope} onChange={(e) => setRuleScope(e.target.value as NotificationScopeType)}>
+                <SelectField
+                  className={INPUT_CLS}
+                  value={ruleScope}
+                  onChange={(e) => setRuleScope(e.target.value as NotificationScopeType)}
+                >
                   <option value="global">All clients</option>
                   <option value="client">One client</option>
                 </SelectField>
@@ -392,15 +488,25 @@ export default function NotificationSettings() {
                 </Field>
               )}
               <Field label="Notify channel">
-                <SelectField className={INPUT_CLS} value={ruleChannelId} onChange={(e) => setRuleChannelId(e.target.value ? Number(e.target.value) : "")}>
+                <SelectField
+                  className={INPUT_CLS}
+                  value={ruleChannelId}
+                  onChange={(e) => setRuleChannelId(e.target.value ? Number(e.target.value) : "")}
+                >
                   <option value="">{channels.length ? "Choose a channel" : "Add a channel first"}</option>
                   {channels.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
                   ))}
                 </SelectField>
               </Field>
               <Field label="Minimum severity">
-                <SelectField className={INPUT_CLS} value={ruleSeverity} onChange={(e) => setRuleSeverity(e.target.value)}>
+                <SelectField
+                  className={INPUT_CLS}
+                  value={ruleSeverity}
+                  onChange={(e) => setRuleSeverity(e.target.value)}
+                >
                   <option value="">Any severity</option>
                   <option value="info">Info and above</option>
                   <option value="warning">Warning and above</option>
@@ -408,10 +514,23 @@ export default function NotificationSettings() {
                 </SelectField>
               </Field>
               <Field label="Cooldown (seconds)">
-                <input className={INPUT_CLS} type="number" min={0} value={ruleCooldown} onChange={(e) => setRuleCooldown(e.target.value)} />
+                <input
+                  className={INPUT_CLS}
+                  type="number"
+                  min={0}
+                  value={ruleCooldown}
+                  onChange={(e) => setRuleCooldown(e.target.value)}
+                />
               </Field>
               <Field label="Max per hour (optional)">
-                <input className={INPUT_CLS} type="number" min={1} placeholder="No limit" value={ruleRateLimit} onChange={(e) => setRuleRateLimit(e.target.value)} />
+                <input
+                  className={INPUT_CLS}
+                  type="number"
+                  min={1}
+                  placeholder="No limit"
+                  value={ruleRateLimit}
+                  onChange={(e) => setRuleRateLimit(e.target.value)}
+                />
               </Field>
             </div>
             <div className="mt-4 flex justify-end">
@@ -439,12 +558,18 @@ export default function NotificationSettings() {
             </thead>
             <tbody>
               {rules.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No rules yet — events won't notify anyone until a rule exists.</td></tr>
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    No rules yet — events won't notify anyone until a rule exists.
+                  </td>
+                </tr>
               ) : (
                 rules.map((r) => (
                   <tr key={r.id} className="border-b border-white/5">
                     <td className="px-4 py-3 font-mono text-xs text-white">{r.event_type}</td>
-                    <td className="px-4 py-3 text-slate-300">{r.scope_type === "client" ? `Client #${r.client_id}` : "Global"}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {r.scope_type === "client" ? `Client #${r.client_id}` : "Global"}
+                    </td>
                     <td className="px-4 py-3 text-slate-300">{channelName(r.channel_id)}</td>
                     <td className="px-4 py-3 text-slate-400">{r.min_severity || "any"}</td>
                     <td className="px-4 py-3 text-slate-400">{r.cooldown_seconds}s</td>
@@ -458,8 +583,10 @@ export default function NotificationSettings() {
                         >
                           {r.enabled ? "On" : "Off"}
                         </button>
+                      ) : r.enabled ? (
+                        "On"
                       ) : (
-                        r.enabled ? "On" : "Off"
+                        "Off"
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -501,7 +628,11 @@ export default function NotificationSettings() {
             </thead>
             <tbody>
               {deliveries.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No deliveries yet.</td></tr>
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    No deliveries yet.
+                  </td>
+                </tr>
               ) : (
                 deliveries.map((d) => (
                   <tr key={d.id} className="border-b border-white/5">
@@ -510,13 +641,21 @@ export default function NotificationSettings() {
                     <td className="px-4 py-3 text-slate-300">{channelName(d.channel_id)}</td>
                     <td className="px-4 py-3 text-slate-300">{d.title}</td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: STATUS_COLOR[d.status] || "var(--th-status-offline)" }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[d.status] || "var(--th-status-offline)" }} />
+                      <span
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                        style={{ color: STATUS_COLOR[d.status] || "var(--th-status-offline)" }}
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ background: STATUS_COLOR[d.status] || "var(--th-status-offline)" }}
+                        />
                         {d.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400">{d.attempt_count}</td>
-                    <td className="max-w-[240px] truncate px-4 py-3 text-slate-500" title={d.last_error || undefined}>{d.last_error || "—"}</td>
+                    <td className="max-w-[240px] truncate px-4 py-3 text-slate-500" title={d.last_error || undefined}>
+                      {d.last_error || "—"}
+                    </td>
                   </tr>
                 ))
               )}
@@ -533,7 +672,8 @@ export default function NotificationSettings() {
           onClose={() => setDeleteChannelTarget(null)}
         >
           <p className="text-sm" style={{ color: "var(--th-text-secondary)" }}>
-            Delete channel <strong>{deleteChannelTarget.name}</strong>? Rules using it will stop notifying (deleted via cascade).
+            Delete channel <strong>{deleteChannelTarget.name}</strong>? Rules using it will stop notifying (deleted via
+            cascade).
           </p>
         </ConfirmationModal>
       )}
@@ -557,7 +697,9 @@ export default function NotificationSettings() {
 function Field({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
     <label className={`flex flex-col gap-1.5 ${className ?? ""}`}>
-      <span className="text-[12px] font-medium" style={{ color: "var(--th-text-secondary)" }}>{label}</span>
+      <span className="text-[12px] font-medium" style={{ color: "var(--th-text-secondary)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );

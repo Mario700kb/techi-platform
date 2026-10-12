@@ -10,9 +10,20 @@ import EnrollmentBootstrap from "../EnrollmentBootstrap";
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
 const token = (over: Record<string, unknown>) => ({
-  status: "active", created_at: "2026-09-01T08:00:00Z", expires_at: null, used_at: null, last_used_at: null,
-  max_uses: 25, use_count: 1, client_id: null, group_id: null, is_default: false, token_prefix: "abcd1234",
-  has_recoverable_token: false, usage_warning: null, ...over,
+  status: "active",
+  created_at: "2026-09-01T08:00:00Z",
+  expires_at: null,
+  used_at: null,
+  last_used_at: null,
+  max_uses: 25,
+  use_count: 1,
+  client_id: null,
+  group_id: null,
+  is_default: false,
+  token_prefix: "abcd1234",
+  has_recoverable_token: false,
+  usage_warning: null,
+  ...over,
 });
 
 const TOKENS = [
@@ -23,7 +34,11 @@ const TOKENS = [
 ];
 
 function renderPage() {
-  return render(<MemoryRouter><EnrollmentBootstrap /></MemoryRouter>);
+  return render(
+    <MemoryRouter>
+      <EnrollmentBootstrap />
+    </MemoryRouter>,
+  );
 }
 
 describe("EnrollmentBootstrap", () => {

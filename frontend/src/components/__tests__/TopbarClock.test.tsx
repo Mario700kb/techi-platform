@@ -15,7 +15,9 @@ describe("TopbarClock", () => {
     expect(screen.getByText("Mon 5 Oct")).toBeInTheDocument();
     expect(screen.getByText("Tirana")).toBeInTheDocument();
 
-    act(() => { vi.advanceTimersByTime(61_000); });
+    act(() => {
+      vi.advanceTimersByTime(61_000);
+    });
     expect(screen.getByText("16:45")).toBeInTheDocument();
   });
 });

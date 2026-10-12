@@ -29,7 +29,11 @@ describe("api client", () => {
 
   it("surfaces the server's detail message as ApiError", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ detail: "Device not found" }, 404));
-    await expect(fetchJson("/api/v1/x")).rejects.toMatchObject({ name: "ApiError", status: 404, message: "Device not found" });
+    await expect(fetchJson("/api/v1/x")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      message: "Device not found",
+    });
   });
 
   it("calls the unauthorized handler on 401 when a session was sent", async () => {
@@ -48,9 +52,12 @@ describe("api client", () => {
 
   it("turns a hung request into ApiError 408", async () => {
     vi.useFakeTimers();
-    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-    }));
+    fetchMock.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
     const pending = apiFetch("/api/v1/slow", { timeoutMs: 1000 });
     const assertion = expect(pending).rejects.toMatchObject({ status: 408 });
     await vi.advanceTimersByTimeAsync(1000);
@@ -58,9 +65,12 @@ describe("api client", () => {
   });
 
   it("passes a caller's own abort through as AbortError", async () => {
-    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-    }));
+    fetchMock.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
     const controller = new AbortController();
     const pending = apiFetch("/api/v1/x", { signal: controller.signal });
     controller.abort();

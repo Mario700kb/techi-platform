@@ -17,7 +17,15 @@ export function StickyActionBar({ children }: { children: ReactNode }) {
   return <div className="th-mactionbar md:hidden">{children}</div>;
 }
 
-export function ActionBarPrimary({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }) {
+export function ActionBarPrimary({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} className="th-mactionbar-btn" data-variant="primary">
       {children}
@@ -25,15 +33,39 @@ export function ActionBarPrimary({ onClick, disabled, children }: { onClick: () 
   );
 }
 
-export function ActionBarSecondary({ onClick, disabled, children, danger }: { onClick: () => void; disabled?: boolean; children: ReactNode; danger?: boolean }) {
+export function ActionBarSecondary({
+  onClick,
+  disabled,
+  children,
+  danger,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+  danger?: boolean;
+}) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className="th-mactionbar-btn" data-variant={danger ? "danger" : "secondary"}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="th-mactionbar-btn"
+      data-variant={danger ? "danger" : "secondary"}
+    >
       {children}
     </button>
   );
 }
 
-export function ActionBarMore({ onClick, ariaLabel = "More actions", children }: { onClick: () => void; ariaLabel?: string; children: ReactNode }) {
+export function ActionBarMore({
+  onClick,
+  ariaLabel = "More actions",
+  children,
+}: {
+  onClick: () => void;
+  ariaLabel?: string;
+  children: ReactNode;
+}) {
   return (
     <button type="button" onClick={onClick} aria-label={ariaLabel} className="th-mactionbar-btn" data-variant="icon">
       {children}

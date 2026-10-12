@@ -58,7 +58,11 @@ export function FreshnessPill() {
       className="th-status-chip flex-none"
       style={{ "--chip-tone": color, color } as CSSProperties}
     >
-      {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <i aria-hidden="true" className={live ? "m-live-dot" : undefined} />}
+      {busy ? (
+        <RefreshCw className="h-3 w-3 animate-spin" />
+      ) : (
+        <i aria-hidden="true" className={live ? "m-live-dot" : undefined} />
+      )}
       {label}
     </button>
   );

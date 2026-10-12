@@ -7,10 +7,22 @@ import Teams from "../Teams";
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
-const team = (id: number, name: string, extra: Partial<teamsApi.TeamWithStats> = {}) => ({
-  id, name, description: null, color: "#E85A3C", created_at: "2026-06-04T08:00:00Z", permissions: null,
-  member_count: 1, client_count: 0, group_count: 0, explicit_device_count: 0, effective_device_count: 0, operator_ids: [], ...extra,
-}) as unknown as teamsApi.TeamWithStats;
+const team = (id: number, name: string, extra: Partial<teamsApi.TeamWithStats> = {}) =>
+  ({
+    id,
+    name,
+    description: null,
+    color: "#E85A3C",
+    created_at: "2026-06-04T08:00:00Z",
+    permissions: null,
+    member_count: 1,
+    client_count: 0,
+    group_count: 0,
+    explicit_device_count: 0,
+    effective_device_count: 0,
+    operator_ids: [],
+    ...extra,
+  }) as unknown as teamsApi.TeamWithStats;
 
 describe("Teams", () => {
   afterEach(() => vi.restoreAllMocks());

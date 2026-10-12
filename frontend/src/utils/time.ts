@@ -64,7 +64,12 @@ export function timeAgo(iso: string | null | undefined): string {
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
   if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
-  return d.toLocaleDateString(DISPLAY_LOCALE, { day: "numeric", month: "short", year: "numeric", timeZone: APP_TIME_ZONE });
+  return d.toLocaleDateString(DISPLAY_LOCALE, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 /**
@@ -78,7 +83,7 @@ export function formatLocalDateTime(
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }
+  },
 ): string {
   if (!iso) return "—";
   return parseUTC(iso).toLocaleString(DISPLAY_LOCALE, { hourCycle: "h23", ...opts, timeZone: APP_TIME_ZONE });

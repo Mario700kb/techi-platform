@@ -112,7 +112,15 @@ export interface DeviceFilters {
   search?: string;
   duplicate_candidates?: boolean;
   maintenance_state?: "maintenance" | "normal";
-  smart_folder?: "windows_server" | "windows_workstation" | "laptop" | "domain" | "workgroup" | "unassigned" | "offline" | "rustdesk_missing";
+  smart_folder?:
+    | "windows_server"
+    | "windows_workstation"
+    | "laptop"
+    | "domain"
+    | "workgroup"
+    | "unassigned"
+    | "offline"
+    | "rustdesk_missing";
   agent_update_state?: "outdated";
   // Platform Expansion: additive platform filter (e.g. "windows", "linux").
   platform?: string;
@@ -130,9 +138,21 @@ export interface DeviceFilters {
 }
 
 export type DeviceQuickFilter =
-  | "online" | "stale" | "offline" | "servers" | "workstations" | "maintenance"
-  | "critical" | "warnings" | "healthy" | "needs_updates" | "reboot_required"
-  | "needs_attention" | "low_health" | "rustdesk_issues" | "needs_agent_update";
+  | "online"
+  | "stale"
+  | "offline"
+  | "servers"
+  | "workstations"
+  | "maintenance"
+  | "critical"
+  | "warnings"
+  | "healthy"
+  | "needs_updates"
+  | "reboot_required"
+  | "needs_attention"
+  | "low_health"
+  | "rustdesk_issues"
+  | "needs_agent_update";
 
 export type DeviceSortKey = "hostname" | "client_name" | "last_seen" | "health";
 
@@ -151,10 +171,27 @@ const assignmentSourceParam = (source?: DeviceFilters["assignment_source"]) => {
 const allowedStatuses = new Set(["online", "offline"]);
 const allowedFreshnessStates = new Set(["online", "stale", "offline"]);
 const allowedDeviceTypes = new Set(["server", "client", "unassigned"]);
-const allowedAssignmentSources = new Set(["system_auto", "manual", "legacy_manual", "trusted_domain", "enrollment_token", "auto_os", "unassigned"]);
+const allowedAssignmentSources = new Set([
+  "system_auto",
+  "manual",
+  "legacy_manual",
+  "trusted_domain",
+  "enrollment_token",
+  "auto_os",
+  "unassigned",
+]);
 const allowedLifecycleStates = new Set(["active", "archived", "all"]);
 const allowedMaintenanceStates = new Set(["maintenance", "normal"]);
-const allowedSmartFolders = new Set(["windows_server", "windows_workstation", "laptop", "domain", "workgroup", "unassigned", "offline", "rustdesk_missing"]);
+const allowedSmartFolders = new Set([
+  "windows_server",
+  "windows_workstation",
+  "laptop",
+  "domain",
+  "workgroup",
+  "unassigned",
+  "offline",
+  "rustdesk_missing",
+]);
 const allowedAgentUpdateStates = new Set(["outdated"]);
 
 function appendIfAllowed(params: URLSearchParams, key: string, value: string | undefined, allowed: Set<string>) {
@@ -173,7 +210,12 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   if (typeof filters.group_id === "number" && Number.isFinite(filters.group_id)) {
     params.append("group_id", String(filters.group_id));
   }
-  appendIfAllowed(params, "assignment_source", assignmentSourceParam(filters.assignment_source), allowedAssignmentSources);
+  appendIfAllowed(
+    params,
+    "assignment_source",
+    assignmentSourceParam(filters.assignment_source),
+    allowedAssignmentSources,
+  );
   appendIfAllowed(params, "lifecycle_state", filters.lifecycle_state, allowedLifecycleStates);
   if (filters.search?.trim()) params.append("search", filters.search.trim());
   if (filters.duplicate_candidates === true) params.append("duplicate_candidates", "true");
@@ -221,7 +263,7 @@ export async function getDevices(
   filters: DeviceFilters = {},
   skip: number = 0,
   limit: number = 20,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<DevicesResponse> {
   const params = new URLSearchParams({
     skip: skip.toString(),

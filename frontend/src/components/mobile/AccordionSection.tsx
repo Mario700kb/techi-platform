@@ -40,13 +40,25 @@ export function AccordionSection({
   return (
     <section className="th-onb-card th-macc">
       <button type="button" onClick={toggle} aria-expanded={open} className="th-macc-head">
-        <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": tone } as React.CSSProperties}>{icon}</span>
+        <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": tone } as React.CSSProperties}>
+          {icon}
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{title}</span>
-          {subtitle && <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{subtitle}</span>}
+          <span className="block truncate text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {title}
+          </span>
+          {subtitle && (
+            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              {subtitle}
+            </span>
+          )}
         </span>
         {badge}
-        <ChevronRight className="th-onb-chevron h-4 w-4 flex-none" data-open={open || undefined} style={{ color: "var(--th-text-faint)" }} />
+        <ChevronRight
+          className="th-onb-chevron h-4 w-4 flex-none"
+          data-open={open || undefined}
+          style={{ color: "var(--th-text-faint)" }}
+        />
       </button>
       {everOpened && <div className={open ? "th-macc-body th-onb-reveal" : "hidden"}>{children}</div>}
     </section>

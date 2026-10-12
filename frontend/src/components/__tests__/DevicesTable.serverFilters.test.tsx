@@ -24,9 +24,23 @@ const devices = [
 ] as Device[];
 
 const counts = {
-  all: 812, online: 640, stale: 12, offline: 160, servers: 40, workstations: 700, maintenance: 3,
-  critical: 15, warnings: 30, healthy: 700, needs_updates: 19, reboot_required: 7,
-  needs_attention: 180, low_health: 22, rustdesk_issues: 5, needs_agent_update: 23, favorites: 0,
+  all: 812,
+  online: 640,
+  stale: 12,
+  offline: 160,
+  servers: 40,
+  workstations: 700,
+  maintenance: 3,
+  critical: 15,
+  warnings: 30,
+  healthy: 700,
+  needs_updates: 19,
+  reboot_required: 7,
+  needs_attention: 180,
+  low_health: 22,
+  rustdesk_issues: 5,
+  needs_agent_update: 23,
+  favorites: 0,
 } as DeviceQuickCounts["counts"];
 
 function renderTable(overrides: Partial<React.ComponentProps<typeof DevicesTable>> = {}) {
@@ -62,7 +76,9 @@ describe("DevicesTable with server-side filters", () => {
   it("keeps the server's row order instead of re-sorting the page", () => {
     renderTable();
     const table = screen.getByRole("table");
-    const names = within(table).getAllByText(/^(zulu|alpha|mike)$/).map((el) => el.textContent);
+    const names = within(table)
+      .getAllByText(/^(zulu|alpha|mike)$/)
+      .map((el) => el.textContent);
     expect(names).toEqual(["zulu", "alpha", "mike"]);
   });
 

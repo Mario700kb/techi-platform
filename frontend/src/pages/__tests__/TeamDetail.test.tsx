@@ -11,15 +11,26 @@ import TeamDetailPage from "../TeamDetail";
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
 const TEAM = {
-  id: 3, name: "IT Support", description: null, color: "#F04A2A", created_at: "2026-06-04T08:00:00Z",
-  operator_ids: [5], client_ids: [], group_ids: [10], device_ids: [], permissions: ["view_devices"], effective_device_count: 2,
+  id: 3,
+  name: "IT Support",
+  description: null,
+  color: "#F04A2A",
+  created_at: "2026-06-04T08:00:00Z",
+  operator_ids: [5],
+  client_ids: [],
+  group_ids: [10],
+  device_ids: [],
+  permissions: ["view_devices"],
+  effective_device_count: 2,
 } as unknown as teamsApi.TeamDetail;
 
 function renderPage() {
   vi.spyOn(teamsApi, "getTeam").mockResolvedValue(TEAM);
   return render(
     <MemoryRouter initialEntries={["/teams/3"]}>
-      <Routes><Route path="/teams/:id" element={<TeamDetailPage />} /></Routes>
+      <Routes>
+        <Route path="/teams/:id" element={<TeamDetailPage />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -29,8 +40,22 @@ describe("TeamDetail", () => {
 
   it("enables save only once membership changes, then saves the new set", async () => {
     vi.spyOn(operatorsApi, "getOperators").mockResolvedValue([
-      { id: 5, username: "laura", display_name: "Laura", email: "l@techi.al", role: "operator", is_active: true } as operatorsApi.OperatorRecord,
-      { id: 6, username: "sabina", display_name: "Sabina", email: "s@techi.al", role: "operator", is_active: true } as operatorsApi.OperatorRecord,
+      {
+        id: 5,
+        username: "laura",
+        display_name: "Laura",
+        email: "l@techi.al",
+        role: "operator",
+        is_active: true,
+      } as operatorsApi.OperatorRecord,
+      {
+        id: 6,
+        username: "sabina",
+        display_name: "Sabina",
+        email: "s@techi.al",
+        role: "operator",
+        is_active: true,
+      } as operatorsApi.OperatorRecord,
     ]);
     const save = vi.spyOn(teamsApi, "updateTeamMembers").mockResolvedValue(undefined as never);
     renderPage();
@@ -45,8 +70,21 @@ describe("TeamDetail", () => {
 
   it("builds the access tree from the device directory and counts reach from it", async () => {
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([{ id: 1, name: "Vasgroup" } as clientsApi.Client]);
-    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([{ id: 10, client_id: 1, name: "Servers" } as clientsApi.DeviceGroup]);
-    const entries = Array.from({ length: 1002 }, (_, i) => ({ id: i + 1, hostname: `pc-${i + 1}`, rustdesk_id: null, client_id: 1, group_id: 10, freshness_state: "online" }) as devicesApi.DeviceDirectoryEntry);
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([
+      { id: 10, client_id: 1, name: "Servers" } as clientsApi.DeviceGroup,
+    ]);
+    const entries = Array.from(
+      { length: 1002 },
+      (_, i) =>
+        ({
+          id: i + 1,
+          hostname: `pc-${i + 1}`,
+          rustdesk_id: null,
+          client_id: 1,
+          group_id: 10,
+          freshness_state: "online",
+        }) as devicesApi.DeviceDirectoryEntry,
+    );
     const directory = vi.spyOn(devicesApi, "getDeviceDirectory").mockResolvedValue(entries);
     const fullList = vi.spyOn(devicesApi, "getDevices");
     renderPage();
@@ -61,14 +99,20 @@ describe("TeamDetail", () => {
 
   it("pages the client list and filters it to clients the team can reach", async () => {
     const names = Array.from({ length: 12 }, (_, i) => `Client ${String(i + 1).padStart(2, "0")}`);
-    vi.spyOn(clientsApi, "getClients").mockResolvedValue(names.map((name, i) => ({ id: i + 1, name }) as clientsApi.Client));
-    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([{ id: 10, client_id: 12, name: "Servers" } as clientsApi.DeviceGroup]);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue(
+      names.map((name, i) => ({ id: i + 1, name }) as clientsApi.Client),
+    );
+    vi.spyOn(clientsApi, "getGroups").mockResolvedValue([
+      { id: 10, client_id: 12, name: "Servers" } as clientsApi.DeviceGroup,
+    ]);
     vi.spyOn(devicesApi, "getDeviceDirectory").mockResolvedValue([]);
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: /Device access/ }));
     await screen.findByText("Client 01");
     expect(screen.queryByText("Client 12")).not.toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.classList.contains("th-status-chip") === true && el.textContent === "1 group")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, el) => el?.classList.contains("th-status-chip") === true && el.textContent === "1 group"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /With access/ }));
     expect(screen.getByText("Client 12")).toBeInTheDocument();

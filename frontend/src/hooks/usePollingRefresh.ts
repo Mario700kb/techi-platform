@@ -8,7 +8,7 @@ interface UsePollingRefreshOptions {
 
 export function usePollingRefresh(
   task: () => Promise<void>,
-  options: UsePollingRefreshOptions = {}
+  options: UsePollingRefreshOptions = {},
 ): { runNow: () => Promise<void> } {
   const { intervalMs = 15000, enabled = true, immediate = true } = options;
   const inFlightRef = useRef<Promise<void> | null>(null);

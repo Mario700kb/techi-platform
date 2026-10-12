@@ -13,14 +13,22 @@ import * as connectApi from "../../api/connect";
 function mockShell() {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "admin", email: "" } as any,
-    token: "t", loading: false, permissions: null,
-    login: vi.fn(), logout: vi.fn(), can: () => true, hasAnyRole: vi.fn(), hasPermission: () => true,
+    token: "t",
+    loading: false,
+    permissions: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    can: () => true,
+    hasAnyRole: vi.fn(),
+    hasPermission: () => true,
   });
   vi.spyOn(themeContext, "useTheme").mockReturnValue({
-    themePreference: "dark", setThemeMode: vi.fn(),
+    themePreference: "dark",
+    setThemeMode: vi.fn(),
   } as any);
   vi.spyOn(appDataContext, "useAppData").mockReturnValue({
-    fleetOverview: null, realtimeStatus: "connected",
+    fleetOverview: null,
+    realtimeStatus: "connected",
   } as any);
 }
 

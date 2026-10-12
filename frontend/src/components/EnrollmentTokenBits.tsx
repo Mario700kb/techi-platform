@@ -18,7 +18,10 @@ export function formatTokenPrefix(tokenPrefix: EnrollmentToken["token_prefix"]):
   return prefix ? `${prefix}…` : "legacy";
 }
 
-export const TOKEN_STATE: Record<"active" | "unused" | "used" | "revoked" | "expired", { label: string; tone: string }> = {
+export const TOKEN_STATE: Record<
+  "active" | "unused" | "used" | "revoked" | "expired",
+  { label: string; tone: string }
+> = {
   active: { label: "Active", tone: TONE.online },
   unused: { label: "Unused", tone: TONE.info },
   used: { label: "Exhausted", tone: TONE.warning },
@@ -43,11 +46,17 @@ export function TokenStatusChip({ token }: { token: EnrollmentToken }) {
 
 export function UsageMeter({ token }: { token: EnrollmentToken }) {
   const pct = usagePercent(token);
-  const tone = token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-accent)";
+  const tone =
+    token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-accent)";
   return (
     <span className="inline-flex items-center gap-2.5" title={`${pct}% of max uses`}>
-      <span className="th-onb-meter" aria-hidden="true"><i style={{ width: `${Math.min(pct, 100)}%`, "--meter-tone": tone } as CSSProperties} /></span>
-      <span className="text-[12px] font-medium tabular-nums" style={{ color: token.usage_warning ? tone : "var(--th-text-secondary)" }}>
+      <span className="th-onb-meter" aria-hidden="true">
+        <i style={{ width: `${Math.min(pct, 100)}%`, "--meter-tone": tone } as CSSProperties} />
+      </span>
+      <span
+        className="text-[12px] font-medium tabular-nums"
+        style={{ color: token.usage_warning ? tone : "var(--th-text-secondary)" }}
+      >
         {formatCount(token.use_count)}/{formatCount(token.max_uses)}
       </span>
     </span>

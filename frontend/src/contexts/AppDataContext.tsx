@@ -1,20 +1,8 @@
-import {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceFleetOverview, getDevicesOverview } from "../api/devices";
 import { useAuth } from "../auth/AuthContext";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
-import {
-  DeviceRealtimeEvent,
-  DeviceRealtimeStatus,
-} from "../services/deviceRealtime";
+import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
 import { useAlerts } from "../hooks/useAlerts";
 import { Alert, AlertCount } from "../types/alert";
 
@@ -76,15 +64,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
   const initialOverview = useMemo(() => readPersistedOverview(userId), [userId]);
-  const [fleetOverview, setFleetOverview] = useState<DeviceFleetOverview | null>(
-    () => initialOverview?.data ?? null,
-  );
-  const [lastFetchTime, setLastFetchTime] = useState<number | null>(
-    () => initialOverview?.fetchedAt ?? null,
-  );
-  const [fleetOverviewLoading, setFleetOverviewLoading] = useState(
-    () => Boolean(user && !initialOverview),
-  );
+  const [fleetOverview, setFleetOverview] = useState<DeviceFleetOverview | null>(() => initialOverview?.data ?? null);
+  const [lastFetchTime, setLastFetchTime] = useState<number | null>(() => initialOverview?.fetchedAt ?? null);
+  const [fleetOverviewLoading, setFleetOverviewLoading] = useState(() => Boolean(user && !initialOverview));
   const [fleetOverviewError, setFleetOverviewError] = useState<string | null>(null);
   const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
@@ -96,48 +78,54 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   fleetOverviewRef.current = fleetOverview;
   lastFetchTimeRef.current = lastFetchTime;
 
-  const refreshFleetOverview = useCallback(async (force = false) => {
-    if (!userId) return;
-    const now = Date.now();
-    if (
-      !force &&
-      fleetOverviewRef.current &&
-      lastFetchTimeRef.current &&
-      now - lastFetchTimeRef.current < OVERVIEW_TTL_MS
-    ) {
-      return;
-    }
-    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+  const refreshFleetOverview = useCallback(
+    async (force = false) => {
+      if (!userId) return;
+      const now = Date.now();
+      if (
+        !force &&
+        fleetOverviewRef.current &&
+        lastFetchTimeRef.current &&
+        now - lastFetchTimeRef.current < OVERVIEW_TTL_MS
+      ) {
+        return;
+      }
+      if (refreshPromiseRef.current) return refreshPromiseRef.current;
 
-    if (!fleetOverviewRef.current) setFleetOverviewLoading(true);
-    setFleetOverviewError(null);
-    const request = getDevicesOverview()
-      .then((data) => {
-        if (activeUserIdRef.current !== userId) return;
-        const fetchedAt = Date.now();
-        setFleetOverview(data);
-        setLastFetchTime(fetchedAt);
-        window.sessionStorage.setItem(OVERVIEW_STORAGE_KEY, JSON.stringify({
-          userId,
-          data,
-          fetchedAt,
-        } satisfies PersistedOverview));
-      })
-      .catch((error) => {
-        if (activeUserIdRef.current !== userId) return;
-        setFleetOverviewError(error instanceof Error ? error.message : "Failed to load fleet overview");
-      })
-      .finally(() => {
-        if (activeUserIdRef.current === userId) {
-          setFleetOverviewLoading(false);
-        }
-        if (refreshPromiseRef.current === request) {
-          refreshPromiseRef.current = null;
-        }
-      });
-    refreshPromiseRef.current = request;
-    return request;
-  }, [userId]);
+      if (!fleetOverviewRef.current) setFleetOverviewLoading(true);
+      setFleetOverviewError(null);
+      const request = getDevicesOverview()
+        .then((data) => {
+          if (activeUserIdRef.current !== userId) return;
+          const fetchedAt = Date.now();
+          setFleetOverview(data);
+          setLastFetchTime(fetchedAt);
+          window.sessionStorage.setItem(
+            OVERVIEW_STORAGE_KEY,
+            JSON.stringify({
+              userId,
+              data,
+              fetchedAt,
+            } satisfies PersistedOverview),
+          );
+        })
+        .catch((error) => {
+          if (activeUserIdRef.current !== userId) return;
+          setFleetOverviewError(error instanceof Error ? error.message : "Failed to load fleet overview");
+        })
+        .finally(() => {
+          if (activeUserIdRef.current === userId) {
+            setFleetOverviewLoading(false);
+          }
+          if (refreshPromiseRef.current === request) {
+            refreshPromiseRef.current = null;
+          }
+        });
+      refreshPromiseRef.current = request;
+      return request;
+    },
+    [userId],
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -185,30 +173,33 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(refreshTimerRef.current);
   }, []);
 
-  const value = useMemo<AppDataContextValue>(() => ({
-    fleetOverview,
-    fleetOverviewLoading,
-    fleetOverviewError,
-    lastFetchTime,
-    refreshFleetOverview,
-    latestEvent,
-    realtimeStatus,
-    alertCount,
-    totalOpenAlerts: alertCount.total_open,
-    alerts,
-    reloadAlerts,
-  }), [
-    fleetOverview,
-    fleetOverviewLoading,
-    fleetOverviewError,
-    lastFetchTime,
-    refreshFleetOverview,
-    latestEvent,
-    realtimeStatus,
-    alertCount,
-    alerts,
-    reloadAlerts,
-  ]);
+  const value = useMemo<AppDataContextValue>(
+    () => ({
+      fleetOverview,
+      fleetOverviewLoading,
+      fleetOverviewError,
+      lastFetchTime,
+      refreshFleetOverview,
+      latestEvent,
+      realtimeStatus,
+      alertCount,
+      totalOpenAlerts: alertCount.total_open,
+      alerts,
+      reloadAlerts,
+    }),
+    [
+      fleetOverview,
+      fleetOverviewLoading,
+      fleetOverviewError,
+      lastFetchTime,
+      refreshFleetOverview,
+      latestEvent,
+      realtimeStatus,
+      alertCount,
+      alerts,
+      reloadAlerts,
+    ],
+  );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

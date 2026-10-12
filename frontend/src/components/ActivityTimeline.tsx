@@ -1,4 +1,18 @@
-import { Activity, AlertTriangle, Archive, CheckCircle, ClipboardList, FilePenLine, Monitor, RefreshCcw, RotateCcw, ShieldAlert, Wifi, WifiOff, Wrench } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Archive,
+  CheckCircle,
+  ClipboardList,
+  FilePenLine,
+  Monitor,
+  RefreshCcw,
+  RotateCcw,
+  ShieldAlert,
+  Wifi,
+  WifiOff,
+  Wrench,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { ActivityEvent, ActivityEventType } from "../types/activity";
 import { formatDateTime, timeAgo } from "../utils/time";
@@ -23,37 +37,197 @@ interface EventConfig {
 }
 
 const EVENT_CONFIG: Record<ActivityEventType, EventConfig> = {
-  heartbeat_received: { icon: Activity,      color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  device_online:     { icon: Wifi,           color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  device_offline:    { icon: WifiOff,        color: "text-slate-400",   iconClass: "text-slate-500",   bg: "bg-slate-700/20",        border: "border-slate-600/25"   },
-  rustdesk_updated:  { icon: Monitor,        color: "text-orange-400",  iconClass: "text-orange-400",  bg: "bg-orange-400/[0.07]",   border: "border-orange-400/20"  },
-  rustdesk_repaired: { icon: Wrench,         color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  sync_failed:       { icon: AlertTriangle,  color: "text-red-400",     iconClass: "text-red-400",     bg: "bg-red-400/[0.07]",      border: "border-red-400/20"     },
-  device_updated:    { icon: RefreshCcw,     color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
-  reconnect_detected:{ icon: Wifi,           color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
-  health_warning:    { icon: AlertTriangle,  color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
-  health_critical:   { icon: ShieldAlert,    color: "text-red-400",     iconClass: "text-red-400",     bg: "bg-red-400/[0.07]",      border: "border-red-400/20"     },
-  health_recovered:  { icon: CheckCircle,    color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  device_registered: { icon: Monitor,        color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  device_reenrolled: { icon: RefreshCcw,     color: "text-blue-300",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
-  assignment_changed:{ icon: ClipboardList,  color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
-  device_archived:   { icon: Archive,        color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
-  device_restored:   { icon: RotateCcw,      color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  maintenance_entered:{ icon: Wrench,        color: "",                 iconClass: "",                 bg: "",                       border: "",                       tone: TONE.maintenance },
-  maintenance_cleared:{ icon: Wrench,        color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  action_queued:     { icon: Activity,       color: "text-blue-400",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
-  action_completed:  { icon: CheckCircle,    color: "text-emerald-400", iconClass: "text-emerald-400", bg: "bg-emerald-400/[0.08]",  border: "border-emerald-400/20" },
-  action_failed:     { icon: AlertTriangle,  color: "text-red-400",     iconClass: "text-red-400",     bg: "bg-red-400/[0.07]",      border: "border-red-400/20"     },
-  note_added:        { icon: FilePenLine,    color: "text-slate-300",   iconClass: "text-slate-400",   bg: "bg-slate-700/20",        border: "border-slate-600/25"   },
-  note_edited:       { icon: FilePenLine,    color: "text-slate-300",   iconClass: "text-slate-400",   bg: "bg-slate-700/20",        border: "border-slate-600/25"   },
-  note_deleted:      { icon: FilePenLine,    color: "text-slate-400",   iconClass: "text-slate-500",   bg: "bg-slate-700/15",        border: "border-slate-700/25"   },
-  duplicate_candidate:{ icon: AlertTriangle, color: "text-amber-400",   iconClass: "text-amber-400",   bg: "bg-amber-400/[0.07]",    border: "border-amber-400/20"   },
-  archived_checkin:  { icon: AlertTriangle,  color: "text-orange-400",  iconClass: "text-orange-400",  bg: "bg-orange-400/[0.07]",   border: "border-orange-400/20"  },
-  user_changed:      { icon: Monitor,        color: "text-blue-300",    iconClass: "text-blue-400",    bg: "bg-blue-400/[0.07]",     border: "border-blue-400/20"    },
+  heartbeat_received: {
+    icon: Activity,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  device_online: {
+    icon: Wifi,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  device_offline: {
+    icon: WifiOff,
+    color: "text-slate-400",
+    iconClass: "text-slate-500",
+    bg: "bg-slate-700/20",
+    border: "border-slate-600/25",
+  },
+  rustdesk_updated: {
+    icon: Monitor,
+    color: "text-orange-400",
+    iconClass: "text-orange-400",
+    bg: "bg-orange-400/[0.07]",
+    border: "border-orange-400/20",
+  },
+  rustdesk_repaired: {
+    icon: Wrench,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  sync_failed: {
+    icon: AlertTriangle,
+    color: "text-red-400",
+    iconClass: "text-red-400",
+    bg: "bg-red-400/[0.07]",
+    border: "border-red-400/20",
+  },
+  device_updated: {
+    icon: RefreshCcw,
+    color: "text-blue-400",
+    iconClass: "text-blue-400",
+    bg: "bg-blue-400/[0.07]",
+    border: "border-blue-400/20",
+  },
+  reconnect_detected: {
+    icon: Wifi,
+    color: "text-amber-400",
+    iconClass: "text-amber-400",
+    bg: "bg-amber-400/[0.07]",
+    border: "border-amber-400/20",
+  },
+  health_warning: {
+    icon: AlertTriangle,
+    color: "text-amber-400",
+    iconClass: "text-amber-400",
+    bg: "bg-amber-400/[0.07]",
+    border: "border-amber-400/20",
+  },
+  health_critical: {
+    icon: ShieldAlert,
+    color: "text-red-400",
+    iconClass: "text-red-400",
+    bg: "bg-red-400/[0.07]",
+    border: "border-red-400/20",
+  },
+  health_recovered: {
+    icon: CheckCircle,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  device_registered: {
+    icon: Monitor,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  device_reenrolled: {
+    icon: RefreshCcw,
+    color: "text-blue-300",
+    iconClass: "text-blue-400",
+    bg: "bg-blue-400/[0.07]",
+    border: "border-blue-400/20",
+  },
+  assignment_changed: {
+    icon: ClipboardList,
+    color: "text-blue-400",
+    iconClass: "text-blue-400",
+    bg: "bg-blue-400/[0.07]",
+    border: "border-blue-400/20",
+  },
+  device_archived: {
+    icon: Archive,
+    color: "text-amber-400",
+    iconClass: "text-amber-400",
+    bg: "bg-amber-400/[0.07]",
+    border: "border-amber-400/20",
+  },
+  device_restored: {
+    icon: RotateCcw,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  maintenance_entered: { icon: Wrench, color: "", iconClass: "", bg: "", border: "", tone: TONE.maintenance },
+  maintenance_cleared: {
+    icon: Wrench,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  action_queued: {
+    icon: Activity,
+    color: "text-blue-400",
+    iconClass: "text-blue-400",
+    bg: "bg-blue-400/[0.07]",
+    border: "border-blue-400/20",
+  },
+  action_completed: {
+    icon: CheckCircle,
+    color: "text-emerald-400",
+    iconClass: "text-emerald-400",
+    bg: "bg-emerald-400/[0.08]",
+    border: "border-emerald-400/20",
+  },
+  action_failed: {
+    icon: AlertTriangle,
+    color: "text-red-400",
+    iconClass: "text-red-400",
+    bg: "bg-red-400/[0.07]",
+    border: "border-red-400/20",
+  },
+  note_added: {
+    icon: FilePenLine,
+    color: "text-slate-300",
+    iconClass: "text-slate-400",
+    bg: "bg-slate-700/20",
+    border: "border-slate-600/25",
+  },
+  note_edited: {
+    icon: FilePenLine,
+    color: "text-slate-300",
+    iconClass: "text-slate-400",
+    bg: "bg-slate-700/20",
+    border: "border-slate-600/25",
+  },
+  note_deleted: {
+    icon: FilePenLine,
+    color: "text-slate-400",
+    iconClass: "text-slate-500",
+    bg: "bg-slate-700/15",
+    border: "border-slate-700/25",
+  },
+  duplicate_candidate: {
+    icon: AlertTriangle,
+    color: "text-amber-400",
+    iconClass: "text-amber-400",
+    bg: "bg-amber-400/[0.07]",
+    border: "border-amber-400/20",
+  },
+  archived_checkin: {
+    icon: AlertTriangle,
+    color: "text-orange-400",
+    iconClass: "text-orange-400",
+    bg: "bg-orange-400/[0.07]",
+    border: "border-orange-400/20",
+  },
+  user_changed: {
+    icon: Monitor,
+    color: "text-blue-300",
+    iconClass: "text-blue-400",
+    bg: "bg-blue-400/[0.07]",
+    border: "border-blue-400/20",
+  },
 };
 
 const FALLBACK_CONFIG: EventConfig = {
-  icon: Activity, color: "text-slate-400", iconClass: "text-slate-600", bg: "bg-slate-700/15", border: "border-slate-700/25",
+  icon: Activity,
+  color: "text-slate-400",
+  iconClass: "text-slate-600",
+  bg: "bg-slate-700/15",
+  border: "border-slate-700/25",
 };
 
 export default function ActivityTimeline({ events, loading, onReload }: ActivityTimelineProps) {
@@ -71,7 +245,9 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading activity…</div>
+        <div className="py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+          Loading activity…
+        </div>
       ) : events.length === 0 ? (
         <EmptyState
           icon={<Activity className="h-5 w-5" />}
@@ -90,18 +266,25 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                 {!isLast && (
                   <div
                     className="absolute left-[11px] top-[30px] bottom-0 w-px"
-                    style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--th-text-primary) 6%, transparent), color-mix(in srgb, var(--th-text-primary) 1%, transparent))" }}
+                    style={{
+                      background:
+                        "linear-gradient(to bottom, color-mix(in srgb, var(--th-text-primary) 6%, transparent), color-mix(in srgb, var(--th-text-primary) 1%, transparent))",
+                    }}
                   />
                 )}
 
                 {/* Icon circle */}
                 <div
                   className={`relative z-10 mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border ${config.bg} ${config.border}`}
-                  style={config.tone ? {
-                    color: config.tone,
-                    background: `color-mix(in srgb, ${config.tone} 8%, transparent)`,
-                    borderColor: `color-mix(in srgb, ${config.tone} 22%, transparent)`,
-                  } : undefined}
+                  style={
+                    config.tone
+                      ? {
+                          color: config.tone,
+                          background: `color-mix(in srgb, ${config.tone} 8%, transparent)`,
+                          borderColor: `color-mix(in srgb, ${config.tone} 22%, transparent)`,
+                        }
+                      : undefined
+                  }
                 >
                   <Icon className={`h-3 w-3 ${config.iconClass}`} />
                 </div>
@@ -121,18 +304,23 @@ export default function ActivityTimeline({ events, loading, onReload }: Activity
                       {timeAgo(event.occurred_at)}
                     </time>
                   </div>
-                  {event.detail && (
-                    event.type === "device_offline" ? (
-                      <p className="mt-0.5 text-[11px] font-medium text-slate-400"
-                        style={{ fontFamily: '"JetBrains Mono", monospace' }}>
+                  {event.detail &&
+                    (event.type === "device_offline" ? (
+                      <p
+                        className="mt-0.5 text-[11px] font-medium text-slate-400"
+                        style={{ fontFamily: '"JetBrains Mono", monospace' }}
+                      >
                         {event.detail}
                       </p>
                     ) : (
-                      <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{event.detail}</p>
-                    )
-                  )}
+                      <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                        {event.detail}
+                      </p>
+                    ))}
                   {event.actor && (
-                    <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-faint)" }}>by {event.actor}</p>
+                    <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                      by {event.actor}
+                    </p>
                   )}
                 </div>
               </li>

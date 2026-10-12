@@ -30,7 +30,13 @@ interface Props {
 const DEBOUNCE_MS = 250;
 
 export default function EntitySearchSelect({
-  value, onChange, placeholder = "Search…", disabled, options, loadOptions, selectedLabel,
+  value,
+  onChange,
+  placeholder = "Search…",
+  disabled,
+  options,
+  loadOptions,
+  selectedLabel,
 }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -53,10 +59,17 @@ export default function EntitySearchSelect({
     setLoading(true);
     const timer = window.setTimeout(() => {
       loadOptions(query)
-        .then((r) => { if (active) setResults(r); })
-        .finally(() => { if (active) setLoading(false); });
+        .then((r) => {
+          if (active) setResults(r);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
     }, DEBOUNCE_MS);
-    return () => { active = false; window.clearTimeout(timer); };
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, options === undefined ? null : options.length]);
 
@@ -80,17 +93,22 @@ export default function EntitySearchSelect({
         className="th-select w-full text-left"
       >
         <Search className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-muted)" }} />
-        <span className={`flex-1 truncate ${displayLabel ? "" : "opacity-60"}`}>
-          {displayLabel || placeholder}
-        </span>
+        <span className={`flex-1 truncate ${displayLabel ? "" : "opacity-60"}`}>{displayLabel || placeholder}</span>
         {value && !disabled && (
           <X
             className="h-3.5 w-3.5 flex-none"
             style={{ color: "var(--th-text-faint)" }}
-            onClick={(e) => { e.stopPropagation(); onChange(""); setQuery(""); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("");
+              setQuery("");
+            }}
           />
         )}
-        <ChevronDown className={`h-4 w-4 flex-none transition-transform ${open ? "rotate-180" : ""}`} style={{ color: "var(--th-text-muted)" }} />
+        <ChevronDown
+          className={`h-4 w-4 flex-none transition-transform ${open ? "rotate-180" : ""}`}
+          style={{ color: "var(--th-text-muted)" }}
+        />
       </button>
 
       {open && !disabled && (
@@ -109,25 +127,38 @@ export default function EntitySearchSelect({
             onChange={(e) => setQuery(e.target.value)}
           />
           {loading && (
-            <div className="px-3 py-2 text-xs" style={{ color: "var(--th-text-faint)" }}>Searching…</div>
+            <div className="px-3 py-2 text-xs" style={{ color: "var(--th-text-faint)" }}>
+              Searching…
+            </div>
           )}
           {!loading && results.length === 0 && (
-            <div className="px-3 py-2 text-xs" style={{ color: "var(--th-text-faint)" }}>No matches</div>
+            <div className="px-3 py-2 text-xs" style={{ color: "var(--th-text-faint)" }}>
+              No matches
+            </div>
           )}
-          {!loading && results.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              onClick={() => { onChange(o.value, o.label); setOpen(false); setQuery(""); }}
-              className="flex w-full flex-col items-start px-3 py-2 text-left text-sm transition hover:bg-[var(--th-bg-card-hover)]"
-              style={{ color: "var(--th-text-primary)" }}
-            >
-              <span className="font-medium">{o.label}</span>
-              {o.sublabel && <span className="text-xs" style={{ color: "var(--th-text-faint)" }}>{o.sublabel}</span>}
-            </button>
-          ))}
+          {!loading &&
+            results.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                onClick={() => {
+                  onChange(o.value, o.label);
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className="flex w-full flex-col items-start px-3 py-2 text-left text-sm transition hover:bg-[var(--th-bg-card-hover)]"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                <span className="font-medium">{o.label}</span>
+                {o.sublabel && (
+                  <span className="text-xs" style={{ color: "var(--th-text-faint)" }}>
+                    {o.sublabel}
+                  </span>
+                )}
+              </button>
+            ))}
         </div>
       )}
     </div>

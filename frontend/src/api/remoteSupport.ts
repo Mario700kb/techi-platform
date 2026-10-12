@@ -51,7 +51,7 @@ export async function getRemoteSupportPassword(deviceId: number): Promise<Remote
 
 export async function setRemoteSupportPassword(
   deviceId: number,
-  password: string
+  password: string,
 ): Promise<RemoteSupportPasswordResponse> {
   return fetchJson<RemoteSupportPasswordResponse>(`/api/v1/remote-support/devices/${deviceId}/password`, {
     method: "POST",
@@ -60,11 +60,8 @@ export async function setRemoteSupportPassword(
   });
 }
 
-export async function regenerateRemoteSupportPassword(
-  deviceId: number
-): Promise<RemoteSupportPasswordResponse> {
-  return fetchJson<RemoteSupportPasswordResponse>(
-    `/api/v1/remote-support/devices/${deviceId}/password/regenerate`,
-    { method: "POST" }
-  );
+export async function regenerateRemoteSupportPassword(deviceId: number): Promise<RemoteSupportPasswordResponse> {
+  return fetchJson<RemoteSupportPasswordResponse>(`/api/v1/remote-support/devices/${deviceId}/password/regenerate`, {
+    method: "POST",
+  });
 }

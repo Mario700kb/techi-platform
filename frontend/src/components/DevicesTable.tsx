@@ -3,9 +3,36 @@ import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Archive, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Copy, ExternalLink, MonitorOff, Loader2, MoreHorizontal, PlayCircle, RotateCcw, Search, ServerOff, SlidersHorizontal, Star, Trash2, Wrench, X } from "lucide-react";
+import {
+  Archive,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Copy,
+  ExternalLink,
+  MonitorOff,
+  Loader2,
+  MoreHorizontal,
+  PlayCircle,
+  RotateCcw,
+  Search,
+  ServerOff,
+  SlidersHorizontal,
+  Star,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
-import { clearDeviceMaintenance, Device, DeviceFilters, DeviceQuickCounts, DeviceSortKey, enterDeviceMaintenance } from "../api/devices";
+import {
+  clearDeviceMaintenance,
+  Device,
+  DeviceFilters,
+  DeviceQuickCounts,
+  DeviceSortKey,
+  enterDeviceMaintenance,
+} from "../api/devices";
 import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
 import { PatchStatus } from "../api/inventory";
@@ -106,12 +133,29 @@ interface DevicesTableProps {
 }
 
 export type QuickFilter =
-  | "all" | "online" | "stale" | "offline" | "servers" | "workstations"
-  | "needs_updates" | "reboot_required" | "warnings" | "critical"
-  | "healthy" | "maintenance" | "needs_attention" | "low_health" | "rustdesk_issues" | "favorites"
+  | "all"
+  | "online"
+  | "stale"
+  | "offline"
+  | "servers"
+  | "workstations"
+  | "needs_updates"
+  | "reboot_required"
+  | "warnings"
+  | "critical"
+  | "healthy"
+  | "maintenance"
+  | "needs_attention"
+  | "low_health"
+  | "rustdesk_issues"
+  | "favorites"
   | "needs_agent_update";
 
-const STATUS_TABS: { id: "all" | "online" | "stale" | "offline" | "critical" | "warnings"; label: string; tone?: string }[] = [
+const STATUS_TABS: {
+  id: "all" | "online" | "stale" | "offline" | "critical" | "warnings";
+  label: string;
+  tone?: string;
+}[] = [
   { id: "all", label: "All" },
   { id: "online", label: "Online", tone: "var(--th-status-online)" },
   { id: "stale", label: "Stale", tone: "var(--th-status-stale)" },
@@ -122,23 +166,23 @@ const STATUS_TABS: { id: "all" | "online" | "stale" | "offline" | "critical" | "
 const STATUS_TAB_IDS = new Set<QuickFilter>(STATUS_TABS.map((t) => t.id));
 
 const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
-  { id: "all",               label: "All" },
-  { id: "online",            label: "Online" },
-  { id: "stale",             label: "Stale" },
-  { id: "offline",           label: "Offline" },
-  { id: "servers",           label: "Servers" },
-  { id: "workstations",      label: TERMS.clientPcs },
-  { id: "needs_updates",     label: "Needs updates" },
-  { id: "reboot_required",   label: "Reboot required" },
-  { id: "warnings",          label: "Warnings" },
-  { id: "critical",          label: "Critical" },
-  { id: "healthy",           label: "Healthy" },
-  { id: "maintenance",       label: "Maintenance" },
-  { id: "needs_attention",   label: "Needs attention" },
-  { id: "low_health",        label: "Low health" },
-  { id: "rustdesk_issues",   label: "Remote Support issues" },
+  { id: "all", label: "All" },
+  { id: "online", label: "Online" },
+  { id: "stale", label: "Stale" },
+  { id: "offline", label: "Offline" },
+  { id: "servers", label: "Servers" },
+  { id: "workstations", label: TERMS.clientPcs },
+  { id: "needs_updates", label: "Needs updates" },
+  { id: "reboot_required", label: "Reboot required" },
+  { id: "warnings", label: "Warnings" },
+  { id: "critical", label: "Critical" },
+  { id: "healthy", label: "Healthy" },
+  { id: "maintenance", label: "Maintenance" },
+  { id: "needs_attention", label: "Needs attention" },
+  { id: "low_health", label: "Low health" },
+  { id: "rustdesk_issues", label: "Remote Support issues" },
   { id: "needs_agent_update", label: "Agent update" },
-  { id: "favorites",         label: "Favorites" },
+  { id: "favorites", label: "Favorites" },
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
@@ -157,7 +201,12 @@ type PendingAction = "archive" | "restore" | "delete";
 // accurate, credential-aware ConnectMenu is what opens when the operator
 // gets to the Drawer.
 const PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD = new Set([
-  "mikrotik", "synology", "qnap", "vmware", "proxmox", "hyperv",
+  "mikrotik",
+  "synology",
+  "qnap",
+  "vmware",
+  "proxmox",
+  "hyperv",
 ]);
 
 export function hasStructuralConnectMethod(device: Device): boolean {
@@ -206,24 +255,34 @@ function minutesUntilTiranaMidnight(): number {
   return Math.round((new Date(tiranaInputToUtcIso(`${tomorrow}T00:00`)).getTime() - Date.now()) / 60000);
 }
 
-type BulkActionType = "restart_device" | "restart_agent" | "sync_rustdesk" | "reinstall_rustdesk" | "maintenance_enter" | "maintenance_exit";
+type BulkActionType =
+  | "restart_device"
+  | "restart_agent"
+  | "sync_rustdesk"
+  | "reinstall_rustdesk"
+  | "maintenance_enter"
+  | "maintenance_exit";
 
 const devicesPhrase = (n: number) => `${formatCount(n)} ${n === 1 ? "device" : "devices"}`;
 
-const BULK_ACTIONS: Record<BulkActionType, {
-  button: string;
-  confirm: string;
-  destructive: boolean;
-  title: (devices: string) => string;
-  description: string;
-  done: (devices: string) => string;
-}> = {
+const BULK_ACTIONS: Record<
+  BulkActionType,
+  {
+    button: string;
+    confirm: string;
+    destructive: boolean;
+    title: (devices: string) => string;
+    description: string;
+    done: (devices: string) => string;
+  }
+> = {
   restart_device: {
     button: "Restart",
     confirm: "Restart",
     destructive: true,
     title: (n) => `Restart ${n}?`,
-    description: "Each device restarts as soon as its agent picks up the request. Signed-in users may lose unsaved work.",
+    description:
+      "Each device restarts as soon as its agent picks up the request. Signed-in users may lose unsaved work.",
     done: (n) => `Restart requested for ${n}`,
   },
   restart_agent: {
@@ -278,14 +337,23 @@ const MAINTENANCE_DURATIONS: { id: MaintenanceDuration; label: string; minutes: 
   { id: "indefinite", label: "No end time", minutes: () => null },
 ];
 
-const BULK_BAR_ACTIONS: BulkActionType[] = ["restart_device", "restart_agent", "sync_rustdesk", "reinstall_rustdesk", "maintenance_enter", "maintenance_exit"];
+const BULK_BAR_ACTIONS: BulkActionType[] = [
+  "restart_device",
+  "restart_agent",
+  "sync_rustdesk",
+  "reinstall_rustdesk",
+  "maintenance_enter",
+  "maintenance_exit",
+];
 
 const LifecycleSignals = ({ device }: { device: Device }) => {
   const maintenance = maintenanceBadge(device);
   const duplicate = duplicateBadge(device);
   return (
     <>
-      {lifecycleBadges(device).map((badge) => <CompactBadge key={badge.label} view={badge} />)}
+      {lifecycleBadges(device).map((badge) => (
+        <CompactBadge key={badge.label} view={badge} />
+      ))}
       {maintenance && <CompactBadge view={maintenance} icon={Wrench} />}
       {duplicate && <CompactBadge view={duplicate} icon={AlertTriangle} />}
     </>
@@ -387,7 +455,6 @@ const DevicesTable = memo(function DevicesTable({
   );
   const scrollPositionRef = useRef({ left: 0, top: 0 });
 
-
   const pillCounts = useMemo(() => {
     const counts = Object.fromEntries(QUICK_FILTERS.map(({ id }) => [id, 0])) as Record<QuickFilter, number>;
     if (!quickCounts) return counts;
@@ -400,9 +467,10 @@ const DevicesTable = memo(function DevicesTable({
 
   // Agent versions present in the whole selection, newest first.
   const agentVersionOptions = useMemo(
-    () => Object.keys(agentVersionCounts ?? {})
-      .filter((v) => v !== "unknown")
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
+    () =>
+      Object.keys(agentVersionCounts ?? {})
+        .filter((v) => v !== "unknown")
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
     [agentVersionCounts],
   );
 
@@ -429,10 +497,11 @@ const DevicesTable = memo(function DevicesTable({
   // adding a credential / changing a default updates the buttons immediately.
   const [connectStatusMap, setConnectStatusMap] = useState<Record<number, ConnectRowStatus>>({});
   const nonWindowsIdsKey = useMemo(
-    () => displayDevices
-      .filter((d) => d.platform && d.platform.toLowerCase() !== "windows")
-      .map((d) => d.id)
-      .join(","),
+    () =>
+      displayDevices
+        .filter((d) => d.platform && d.platform.toLowerCase() !== "windows")
+        .map((d) => d.id)
+        .join(","),
     [displayDevices],
   );
   useEffect(() => {
@@ -447,10 +516,14 @@ const DevicesTable = memo(function DevicesTable({
         .then((rows) => {
           if (!active) return;
           const map: Record<number, ConnectRowStatus> = {};
-          rows.forEach((r) => { map[r.device_id] = r; });
+          rows.forEach((r) => {
+            map[r.device_id] = r;
+          });
           setConnectStatusMap(map);
         })
-        .catch(() => { /* row buttons fall back to the structural check */ });
+        .catch(() => {
+          /* row buttons fall back to the structural check */
+        });
     };
     fetchStatuses();
     window.addEventListener(CONNECT_REFRESH_EVENT, fetchStatuses);
@@ -506,7 +579,9 @@ const DevicesTable = memo(function DevicesTable({
 
   // Status is chosen with the chips above the list; the rest of the
   // filters show as removable chips under them.
-  const mobileRefinements = activeChips.filter((chip) => !(chip.key === "quick" && STATUS_TABS.some((tab) => tab.id === quickFilter)));
+  const mobileRefinements = activeChips.filter(
+    (chip) => !(chip.key === "quick" && STATUS_TABS.some((tab) => tab.id === quickFilter)),
+  );
 
   const clearAllMobileFilters = () => {
     onQuickFilterChange("all");
@@ -525,7 +600,7 @@ const DevicesTable = memo(function DevicesTable({
       (entries) => {
         if (entries[0]?.isIntersecting && !mobileLoadingMore) onMobileLoadMore();
       },
-      { rootMargin: "200px" }
+      { rootMargin: "200px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -546,10 +621,10 @@ const DevicesTable = memo(function DevicesTable({
     return summaries;
   }, [devices]);
 
-  const allSelected = displayDevices.length > 0 && displayDevices.every(d => selectedIds.has(d.id));
-  const someSelected = !allSelected && displayDevices.some(d => selectedIds.has(d.id));
-  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(displayDevices.map(d => d.id)));
-  const toggleOne = (id: number) => setSelectedIds(prev => toggled(prev, id));
+  const allSelected = displayDevices.length > 0 && displayDevices.every((d) => selectedIds.has(d.id));
+  const someSelected = !allSelected && displayDevices.some((d) => selectedIds.has(d.id));
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(displayDevices.map((d) => d.id)));
+  const toggleOne = (id: number) => setSelectedIds((prev) => toggled(prev, id));
 
   // The sticky Actions column only needs a divider while the table actually
   // scrolls sideways and content is passing underneath it.
@@ -562,7 +637,10 @@ const DevicesTable = memo(function DevicesTable({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     node.addEventListener("scroll", measure, { passive: true });
-    return () => { observer.disconnect(); node.removeEventListener("scroll", measure); };
+    return () => {
+      observer.disconnect();
+      node.removeEventListener("scroll", measure);
+    };
   }, [devices.length]);
 
   useLayoutEffect(() => {
@@ -599,30 +677,25 @@ const DevicesTable = memo(function DevicesTable({
 
   const activeActionDevice =
     openActionDeviceId !== null
-      ? displayDevices.find((d) => d.id === openActionDeviceId) ?? devices.find((d) => d.id === openActionDeviceId) ?? null
+      ? (displayDevices.find((d) => d.id === openActionDeviceId) ??
+        devices.find((d) => d.id === openActionDeviceId) ??
+        null)
       : null;
 
   const getMenuAnchor = (trigger: HTMLElement) => {
     const rect = trigger.getBoundingClientRect();
     const availableBelow = window.innerHeight - rect.bottom - ACTION_MENU_MARGIN;
-    const opensUp =
-      availableBelow < ACTION_MENU_MAX_HEIGHT && rect.top > availableBelow;
+    const opensUp = availableBelow < ACTION_MENU_MAX_HEIGHT && rect.top > availableBelow;
     const top = opensUp
-      ? Math.max(
-          ACTION_MENU_MARGIN,
-          rect.top - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_GAP
-        )
+      ? Math.max(ACTION_MENU_MARGIN, rect.top - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_GAP)
       : Math.max(
           ACTION_MENU_MARGIN,
-          Math.min(
-            rect.bottom + ACTION_MENU_GAP,
-            window.innerHeight - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_MARGIN
-          )
+          Math.min(rect.bottom + ACTION_MENU_GAP, window.innerHeight - ACTION_MENU_MAX_HEIGHT - ACTION_MENU_MARGIN),
         );
     const preferredLeft = rect.right - ACTION_MENU_WIDTH;
     const left = Math.min(
       Math.max(ACTION_MENU_MARGIN, preferredLeft),
-      window.innerWidth - ACTION_MENU_WIDTH - ACTION_MENU_MARGIN
+      window.innerWidth - ACTION_MENU_WIDTH - ACTION_MENU_MARGIN,
     );
     return { top, left };
   };
@@ -645,7 +718,10 @@ const DevicesTable = memo(function DevicesTable({
       for (const d of selectedDevices) {
         try {
           if (action === "maintenance_enter") {
-            await enterDeviceMaintenance(d.id, { duration_minutes: durationMinutes, started_by: currentUser ?? "operator" });
+            await enterDeviceMaintenance(d.id, {
+              duration_minutes: durationMinutes,
+              started_by: currentUser ?? "operator",
+            });
           } else if (action === "maintenance_exit") {
             await clearDeviceMaintenance(d.id);
           } else {
@@ -657,7 +733,10 @@ const DevicesTable = memo(function DevicesTable({
         }
       }
       const failed = fail ? ` · ${devicesPhrase(fail)} failed` : "";
-      showBulkToast(ok ? `${BULK_ACTIONS[action].done(devicesPhrase(ok))}${failed}` : `${devicesPhrase(fail)} failed`, fail === 0);
+      showBulkToast(
+        ok ? `${BULK_ACTIONS[action].done(devicesPhrase(ok))}${failed}` : `${devicesPhrase(fail)} failed`,
+        fail === 0,
+      );
       setSelectedIds(new Set());
       onBulkComplete?.();
     } finally {
@@ -672,32 +751,35 @@ const DevicesTable = memo(function DevicesTable({
     <div className="space-y-2.5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-2.5 xl:space-y-0">
       {/* ── Bulk Action Bar ── */}
       {selectedIds.size > 0 && canOperate && (
-      <div
-        className="th-bulk-bar flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
-        style={{ background: "color-mix(in srgb, var(--th-accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)" }}
-        role="region"
-        aria-label="Bulk actions"
-      >
-        <span className="text-sm font-semibold" style={{ color: "var(--th-accent)" }}>
-          {devicesPhrase(selectedIds.size)} selected
-        </span>
-        <div className="ml-2 flex flex-wrap gap-1.5">
-          {BULK_BAR_ACTIONS.map((action) => (
-            <Button
-              key={action}
-              size="sm"
-              variant={BULK_ACTIONS[action].destructive ? "danger" : "secondary"}
-              disabled={bulkBusy}
-              onClick={() => setPendingBulkAction(action)}
-            >
-              {BULK_ACTIONS[action].button}
-            </Button>
-          ))}
+        <div
+          className="th-bulk-bar flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
+          style={{
+            background: "color-mix(in srgb, var(--th-accent) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)",
+          }}
+          role="region"
+          aria-label="Bulk actions"
+        >
+          <span className="text-sm font-semibold" style={{ color: "var(--th-accent)" }}>
+            {devicesPhrase(selectedIds.size)} selected
+          </span>
+          <div className="ml-2 flex flex-wrap gap-1.5">
+            {BULK_BAR_ACTIONS.map((action) => (
+              <Button
+                key={action}
+                size="sm"
+                variant={BULK_ACTIONS[action].destructive ? "danger" : "secondary"}
+                disabled={bulkBusy}
+                onClick={() => setPendingBulkAction(action)}
+              >
+                {BULK_ACTIONS[action].button}
+              </Button>
+            ))}
+          </div>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>
+            Clear selection
+          </Button>
         </div>
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>
-          Clear selection
-        </Button>
-      </div>
       )}
 
       <div
@@ -705,7 +787,10 @@ const DevicesTable = memo(function DevicesTable({
         style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)" }}
       >
         {/* Status tabs — fleet-wide counts for the current explorer scope */}
-        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 pt-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+        <div
+          className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 pt-2"
+          style={{ borderBottom: "1px solid var(--th-border-subtle)" }}
+        >
           <div ref={statusTabsRef} role="tablist" aria-label="Device status" className="th-tabs">
             {STATUS_TABS.map(({ id, label, tone }) => {
               const count = pillCounts[id];
@@ -757,7 +842,7 @@ const DevicesTable = memo(function DevicesTable({
             id="filter-maintenance-state"
             aria-label="Filter by maintenance state"
             className="w-[176px]"
-            value={filters.duplicate_candidates ? "duplicate" : (filters.maintenance_state || "all")}
+            value={filters.duplicate_candidates ? "duplicate" : filters.maintenance_state || "all"}
             onChange={(value) => {
               if (value === "duplicate") {
                 onFilterChange("maintenance_state", undefined);
@@ -790,14 +875,18 @@ const DevicesTable = memo(function DevicesTable({
 
         {/* Secondary quick filters — only the ones that currently match devices */}
         {(() => {
-          const extras = QUICK_FILTERS.filter((f) => !STATUS_TAB_IDS.has(f.id)).map((f) => ({
-            ...f,
-            count: pillCounts[f.id],
-          })).filter((f) => f.count > 0 || quickFilter === f.id);
+          const extras = QUICK_FILTERS.filter((f) => !STATUS_TAB_IDS.has(f.id))
+            .map((f) => ({
+              ...f,
+              count: pillCounts[f.id],
+            }))
+            .filter((f) => f.count > 0 || quickFilter === f.id);
           if (extras.length === 0) return null;
           return (
             <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-              <span className="mr-1 text-[12px]" style={{ color: "var(--th-text-faint)" }}>Quick filters</span>
+              <span className="mr-1 text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                Quick filters
+              </span>
               {extras.map((f) => (
                 <button
                   key={f.id}
@@ -807,7 +896,9 @@ const DevicesTable = memo(function DevicesTable({
                   className="th-filter-chip"
                 >
                   {f.label}
-                  <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>{f.count}</span>
+                  <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+                    {f.count}
+                  </span>
                   {quickFilter === f.id && <X className="h-3 w-3" aria-label="Clear filter" />}
                 </button>
               ))}
@@ -833,7 +924,13 @@ const DevicesTable = memo(function DevicesTable({
                 enterKeyHint="search"
               />
             </label>
-            <button type="button" onClick={() => setFilterSheetOpen(true)} aria-label="Filters" className="th-mdev-tool" data-active={mobileRefinements.length > 0 || undefined}>
+            <button
+              type="button"
+              onClick={() => setFilterSheetOpen(true)}
+              aria-label="Filters"
+              className="th-mdev-tool"
+              data-active={mobileRefinements.length > 0 || undefined}
+            >
               <SlidersHorizontal className="h-4 w-4" />
               {mobileRefinements.length > 0 && <i aria-hidden="true" />}
             </button>
@@ -861,7 +958,14 @@ const DevicesTable = memo(function DevicesTable({
           {mobileRefinements.length > 0 && (
             <div className="th-mdev-chips">
               {mobileRefinements.map((chip) => (
-                <button key={chip.key} type="button" onClick={chip.onClear} className="th-mdev-chip" data-active="true" aria-label={`Clear ${chip.label}`}>
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.onClear}
+                  className="th-mdev-chip"
+                  data-active="true"
+                  aria-label={`Clear ${chip.label}`}
+                >
                   {chip.label}
                   <X className="h-3 w-3" />
                 </button>
@@ -887,7 +991,17 @@ const DevicesTable = memo(function DevicesTable({
           </div>
         ) : error ? (
           <div className="th-onb-card mt-3">
-            <EmptyState className="py-10" icon={<ServerOff className="h-5 w-5" />} title="Unable to load devices" description={error} action={<Button variant="secondary" onClick={onRefresh} size="sm">Try again</Button>} />
+            <EmptyState
+              className="py-10"
+              icon={<ServerOff className="h-5 w-5" />}
+              title="Unable to load devices"
+              description={error}
+              action={
+                <Button variant="secondary" onClick={onRefresh} size="sm">
+                  Try again
+                </Button>
+              }
+            />
           </div>
         ) : displayDevices.length === 0 ? (
           <div className="th-onb-card mt-3">
@@ -897,7 +1011,11 @@ const DevicesTable = memo(function DevicesTable({
                 icon={<Search className="h-5 w-5" />}
                 title={`No results for "${searchQuery}"`}
                 description="Searched across name, hostname, user, domain and IP."
-                action={<Button size="sm" variant="secondary" onClick={() => onSearch("")}>Clear search</Button>}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => onSearch("")}>
+                    Clear search
+                  </Button>
+                }
               />
             ) : activeChips.length > 0 ? (
               <EmptyState
@@ -905,66 +1023,72 @@ const DevicesTable = memo(function DevicesTable({
                 icon={<SlidersHorizontal className="h-5 w-5" />}
                 title="No devices match these filters"
                 description="Adjust or clear filters to see more devices."
-                action={<Button size="sm" variant="secondary" onClick={clearAllMobileFilters}>Clear filters</Button>}
+                action={
+                  <Button size="sm" variant="secondary" onClick={clearAllMobileFilters}>
+                    Clear filters
+                  </Button>
+                }
               />
             ) : (
-              <EmptyState className="py-10" icon={<ServerOff className="h-5 w-5" />} title="No devices found" description="Adjust filters or search terms to reveal devices." />
+              <EmptyState
+                className="py-10"
+                icon={<ServerOff className="h-5 w-5" />}
+                title="No devices found"
+                description="Adjust filters or search terms to reveal devices."
+              />
             )}
           </div>
         ) : (
           <div className="th-mdev-list">
-              {displayDevices.map((device) => {
-                const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-                const canConnect = isWindowsDevice
-                  ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                  : hasStructuralConnectMethod(device);
-                return (
-                  <DeviceMobileCard
-                    key={device.id}
-                    device={device}
-                    health={healthMap[device.id]}
-                    patch={patchMap[device.id]}
-                    activeAction={activeActionMap[device.id]}
-                    alerts={alertsMap[device.id]}
-                    offlineSummary={
-                      device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined
-                    }
-                    canConnect={canConnect}
-                    isFavorite={favorites.has(device.id)}
-                    agentVersion={agentVersionView(device, agentSources)}
-                    onSelect={() => navigate(`/devices/${device.id}`)}
-                    onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
-                    onConnect={
-                      isWindowsDevice
-                        ? async () => {
-                            try {
-                              const res = await getConnectUrl(device.id);
-                              launchConnect(
-                                res.connect_url,
-                                buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
-                              );
-                            } catch (err) {
-                              showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
-                            }
+            {displayDevices.map((device) => {
+              const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+              const canConnect = isWindowsDevice
+                ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                : hasStructuralConnectMethod(device);
+              return (
+                <DeviceMobileCard
+                  key={device.id}
+                  device={device}
+                  health={healthMap[device.id]}
+                  patch={patchMap[device.id]}
+                  activeAction={activeActionMap[device.id]}
+                  alerts={alertsMap[device.id]}
+                  offlineSummary={device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined}
+                  canConnect={canConnect}
+                  isFavorite={favorites.has(device.id)}
+                  agentVersion={agentVersionView(device, agentSources)}
+                  onSelect={() => navigate(`/devices/${device.id}`)}
+                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(device.id) : undefined}
+                  onConnect={
+                    isWindowsDevice
+                      ? async () => {
+                          try {
+                            const res = await getConnectUrl(device.id);
+                            launchConnect(res.connect_url, buildRustDeskFallbackUrlFromTechiUrl(res.connect_url), () =>
+                              showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true),
+                            );
+                          } catch (err) {
+                            showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
                           }
-                        : async () => navigate(`/devices/${device.id}`)
-                    }
-                    connectTitle={
-                      isWindowsDevice
-                        ? undefined
-                        : canConnect
+                        }
+                      : async () => navigate(`/devices/${device.id}`)
+                  }
+                  connectTitle={
+                    isWindowsDevice
+                      ? undefined
+                      : canConnect
                         ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
                         : "No Connect method available for this device yet"
-                    }
-                  />
-                );
-              })}
-
+                  }
+                />
+              );
+            })}
 
             {mobileHasMore && (
               <div ref={loadMoreSentinelRef} className="flex items-center justify-center p-4">
-                {mobileLoadingMore && <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--th-accent)" }} />}
+                {mobileLoadingMore && (
+                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--th-accent)" }} />
+                )}
               </div>
             )}
           </div>
@@ -979,7 +1103,10 @@ const DevicesTable = memo(function DevicesTable({
               <button
                 key={opt.key}
                 type="button"
-                onClick={() => { handleSort(opt.key); setSortSheetOpen(false); }}
+                onClick={() => {
+                  handleSort(opt.key);
+                  setSortSheetOpen(false);
+                }}
                 aria-pressed={active}
                 className="th-msheet-option"
               >
@@ -1020,7 +1147,11 @@ const DevicesTable = memo(function DevicesTable({
             icon={<AlertTriangle className="h-5 w-5" />}
             title="Unable to load devices"
             description={error}
-            action={<Button variant="secondary" size="sm" onClick={onRefresh}>Try again</Button>}
+            action={
+              <Button variant="secondary" size="sm" onClick={onRefresh}>
+                Try again
+              </Button>
+            }
           />
         </div>
       ) : displayDevices.length === 0 ? (
@@ -1030,14 +1161,22 @@ const DevicesTable = memo(function DevicesTable({
               icon={<ServerOff className="h-5 w-5" />}
               title={`No results for "${searchQuery}"`}
               description="Searched across name, hostname, user, domain and IP."
-              action={<Button variant="secondary" size="sm" onClick={() => onSearch("")}>Clear search</Button>}
+              action={
+                <Button variant="secondary" size="sm" onClick={() => onSearch("")}>
+                  Clear search
+                </Button>
+              }
             />
           ) : quickFilter !== "all" ? (
             <EmptyState
               icon={<ServerOff className="h-5 w-5" />}
               title="No devices match this filter"
               description="No device in this selection matches the filter."
-              action={<Button variant="secondary" size="sm" onClick={() => onQuickFilterChange("all")}>Show all devices</Button>}
+              action={
+                <Button variant="secondary" size="sm" onClick={() => onQuickFilterChange("all")}>
+                  Show all devices
+                </Button>
+              }
             />
           ) : (
             <EmptyState
@@ -1053,265 +1192,303 @@ const DevicesTable = memo(function DevicesTable({
           style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
         >
           <div className="hidden md:block xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
-          <div
-            ref={scrollRef}
-            className="th-table-scroll overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto"
-            data-overflow={hasOverflow}
-            data-loading={tableLoading || undefined}
-            onScroll={(event) => {
-              scrollPositionRef.current = {
-                left: event.currentTarget.scrollLeft,
-                top: event.currentTarget.scrollTop,
-              };
-              if (openActionDeviceId !== null) {
-                setOpenActionDeviceId(null);
-                setMenuAnchor(null);
-              }
-            }}
-          >
-            <table className="min-w-[880px] w-full border-separate border-spacing-0 text-left">
-              {/* ── Header ── */}
-              <thead>
-                <tr style={{ background: "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2.5%, transparent))", borderBottom: "1px solid var(--th-border-subtle)" }}>
-                  {canOperate && (
-                    <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
-                        onChange={toggleAll}
-                        className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
-                        title="Select all on this page"
-                        aria-label="Select all devices on this page"
-                      />
-                    </th>
-                  )}
-                  {[
-                    { label: "Device",                         sortable: "hostname" as SortKey },
-                    { label: "Status",                         sortable: "last_seen" as SortKey },
-                    { label: "Health",                         sortable: null },
-                    { label: "Client / group",                 sortable: "client_name" as SortKey },
-                    { label: "User / domain",                  sortable: null },
-                    { label: "IP address",                     sortable: null },
-                    { label: "Agent",                          sortable: null },
-                    { label: "Actions",                        sortable: null },
-                  ].map(({ label, sortable }) => (
-                    <th
-                      key={label}
-                      className={`px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""} ${label === "Actions" ? "th-sticky-end" : ""}`}
-                      style={{ color: sortable && sortKey === sortable ? "var(--th-text-primary)" : "var(--th-text-muted)", borderBottom: "1px solid var(--th-border-subtle)" }}
-                      onClick={sortable ? () => handleSort(sortable) : undefined}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {label}
-                        {sortable && sortKey === sortable && (
-                          <span className="text-[11px] opacity-70">{sortDir === "asc" ? "▲" : "▼"}</span>
+            <div
+              ref={scrollRef}
+              className="th-table-scroll overflow-x-auto xl:min-h-0 xl:flex-1 xl:overflow-auto"
+              data-overflow={hasOverflow}
+              data-loading={tableLoading || undefined}
+              onScroll={(event) => {
+                scrollPositionRef.current = {
+                  left: event.currentTarget.scrollLeft,
+                  top: event.currentTarget.scrollTop,
+                };
+                if (openActionDeviceId !== null) {
+                  setOpenActionDeviceId(null);
+                  setMenuAnchor(null);
+                }
+              }}
+            >
+              <table className="min-w-[880px] w-full border-separate border-spacing-0 text-left">
+                {/* ── Header ── */}
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "var(--th-bg-table-head, color-mix(in srgb, var(--th-text-primary) 2.5%, transparent))",
+                      borderBottom: "1px solid var(--th-border-subtle)",
+                    }}
+                  >
+                    {canOperate && (
+                      <th className="w-[36px] px-2 py-2" style={{ borderBottom: "1px solid var(--th-border-subtle)" }}>
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someSelected;
+                          }}
+                          onChange={toggleAll}
+                          className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                          title="Select all on this page"
+                          aria-label="Select all devices on this page"
+                        />
+                      </th>
+                    )}
+                    {[
+                      { label: "Device", sortable: "hostname" as SortKey },
+                      { label: "Status", sortable: "last_seen" as SortKey },
+                      { label: "Health", sortable: null },
+                      { label: "Client / group", sortable: "client_name" as SortKey },
+                      { label: "User / domain", sortable: null },
+                      { label: "IP address", sortable: null },
+                      { label: "Agent", sortable: null },
+                      { label: "Actions", sortable: null },
+                    ].map(({ label, sortable }) => (
+                      <th
+                        key={label}
+                        className={`px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""} ${label === "Actions" ? "th-sticky-end" : ""}`}
+                        style={{
+                          color: sortable && sortKey === sortable ? "var(--th-text-primary)" : "var(--th-text-muted)",
+                          borderBottom: "1px solid var(--th-border-subtle)",
+                        }}
+                        onClick={sortable ? () => handleSort(sortable) : undefined}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {label}
+                          {sortable && sortKey === sortable && (
+                            <span className="text-[11px] opacity-70">{sortDir === "asc" ? "▲" : "▼"}</span>
+                          )}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                {/* ── Rows ── */}
+                <tbody>
+                  {displayDevices.map((device, rowIndex) => {
+                    const lastSeen = lastSeenView(device.last_seen);
+                    const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
+                    const canConnect = isWindowsDevice
+                      ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                      : hasStructuralConnectMethod(device);
+                    const devAlerts = alertsMap[device.id];
+                    const offlineBadge = offlineReasonBadge(
+                      device,
+                      device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined,
+                    );
+                    const health = healthMap[device.id];
+                    const healthScore = health?.health_score;
+                    const rsIssue = remoteSupportIssue(device);
+                    const patchView = patchBadge(patchMap[device.id]);
+                    const userSource = userSourceBadge(device);
+                    const agentVersion = agentVersionView(device, agentSources);
+
+                    return (
+                      <tr
+                        key={device.id}
+                        className="th-device-row group cursor-pointer"
+                        style={{ "--row": Math.min(rowIndex, 12) } as React.CSSProperties}
+                        data-selected={selectedIds.has(device.id)}
+                        onClick={() => onDeviceSelect?.(device)}
+                      >
+                        {canOperate && (
+                          <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(device.id)}
+                              onChange={() => toggleOne(device.id)}
+                              id={`select-device-${device.id}`}
+                              name="select-device"
+                              aria-label={`Select ${deviceDisplayName(device)}`}
+                              className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                            />
+                          </td>
                         )}
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
 
-              {/* ── Rows ── */}
-              <tbody>
-                {displayDevices.map((device, rowIndex) => {
-                  const lastSeen = lastSeenView(device.last_seen);
-                  const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-                  const canConnect = isWindowsDevice
-                    ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                    : hasStructuralConnectMethod(device);
-                  const devAlerts = alertsMap[device.id];
-                  const offlineBadge = offlineReasonBadge(
-                    device,
-                    device.client_id ? offlineSummaryByClient.get(device.client_id) : undefined,
-                  );
-                  const health = healthMap[device.id];
-                  const healthScore = health?.health_score;
-                  const rsIssue = remoteSupportIssue(device);
-                  const patchView = patchBadge(patchMap[device.id]);
-                  const userSource = userSourceBadge(device);
-                  const agentVersion = agentVersionView(device, agentSources);
+                        {/* ── Hostname ── */}
+                        <td className="min-w-[200px] max-w-[244px] px-2.5 py-1.5 align-middle">
+                          {(() => {
+                            const label = deviceDisplayName(device);
+                            const hostname = deviceHostnameSubtitle(device);
+                            return (
+                              <>
+                                <div
+                                  className="flex max-w-[200px] items-center gap-1.5 text-[13px] font-semibold leading-[1.3]"
+                                  style={{ color: "var(--th-text-primary)" }}
+                                  title={device.os_name ? `${label} · ${device.os_name}` : label}
+                                >
+                                  <PlatformIcon platform={device.platform} size={13} className="shrink-0 opacity-70" />
+                                  <span className="truncate">{label}</span>
+                                </div>
+                                {hostname && (
+                                  <div
+                                    className="max-w-[180px] truncate font-mono text-[11px] leading-4"
+                                    style={{ color: "var(--th-text-muted)" }}
+                                    title={device.hostname}
+                                  >
+                                    {hostname}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                          <div
+                            className="mt-0.5 flex max-w-[220px] items-center gap-1.5 overflow-hidden whitespace-nowrap pl-[21px] text-[12px]"
+                            style={{ color: "var(--th-text-muted)" }}
+                          >
+                            <span>{deviceTypeLabel(device)}</span>
+                            {patchView && <CompactBadge view={patchView} />}
+                            <LifecycleSignals device={device} />
+                            {rsIssue && (
+                              <span
+                                className="inline-flex min-w-0 items-center gap-1"
+                                style={{ color: rsIssue.tone }}
+                                title={rsIssue.title}
+                              >
+                                <span aria-hidden="true">·</span>
+                                <MonitorOff className="h-3 w-3 flex-none" />
+                                <span className="truncate">{rsIssue.label}</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
 
-                  return (
-                    <tr
-                      key={device.id}
-                      className="th-device-row group cursor-pointer"
-                      style={{ "--row": Math.min(rowIndex, 12) } as React.CSSProperties}
-                      data-selected={selectedIds.has(device.id)}
-                      onClick={() => onDeviceSelect?.(device)}
-                    >
-                      {canOperate && (
-                        <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(device.id)}
-                            onChange={() => toggleOne(device.id)}
-                            id={`select-device-${device.id}`}
-                            name="select-device"
-                            aria-label={`Select ${deviceDisplayName(device)}`}
-                            className="h-3.5 w-3.5 cursor-pointer rounded accent-orange-500"
+                        {/* ── Status ── */}
+                        <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                          {(() => {
+                            const state = (device.freshness_state ?? device.status ?? "offline") as string;
+                            return (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className="th-status-dot" data-state={state} aria-hidden="true" />
+                                  <span
+                                    className="text-[13px] font-medium capitalize"
+                                    style={{ color: "var(--th-text-primary)" }}
+                                  >
+                                    {state}
+                                  </span>
+                                  {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
+                                </div>
+                                <div className="mt-0.5 pl-4 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                                  <span title="Last heartbeat">{lastSeen.text}</span>
+                                  {offlineBadge && (
+                                    <span title={offlineBadge.title ?? "Likely cause (inferred)"}>
+                                      {" "}
+                                      · {offlineBadge.label}
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </td>
+
+                        {/* ── Health ── */}
+                        <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="th-score"
+                              data-tone={healthTone(health)}
+                              title={healthScore == null ? "No health score yet" : `Health score ${healthScore} of 100`}
+                            >
+                              {healthScore ?? "—"}
+                            </span>
+                            {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0) > 0 && (
+                              <span
+                                className="th-alert-count"
+                                data-tone={devAlerts?.critical ? "critical" : "warning"}
+                                title={`${devAlerts?.critical ?? 0} critical · ${devAlerts?.warning ?? 0} warning open alerts`}
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* ── Client / Group ── */}
+                        <td className="px-2.5 py-1.5 align-middle">
+                          <div
+                            className="max-w-[160px] truncate text-[12px] font-semibold leading-[1.3]"
+                            style={{ color: "var(--th-text-primary)" }}
+                            title={device.client_name || TERMS.noClient}
+                          >
+                            {device.client_name || (
+                              <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1">
+                            <span
+                              className="max-w-[160px] truncate text-[12px]"
+                              style={{ color: "var(--th-text-muted)" }}
+                              title={device.group_name || TERMS.noGroup}
+                            >
+                              {device.group_name || TERMS.noGroup}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* ── User ── */}
+                        <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                          <div className="flex items-center gap-1">
+                            <span
+                              className="max-w-[140px] truncate text-[12px] font-medium"
+                              style={{ color: "var(--th-text-secondary)" }}
+                              title={device.current_user || undefined}
+                            >
+                              {device.current_user || "—"}
+                            </span>
+                            {userSource && <CompactBadge view={userSource} />}
+                          </div>
+                          <div
+                            className="max-w-[160px] truncate text-[11px]"
+                            style={{ color: "var(--th-text-muted)" }}
+                            title={device.domain || undefined}
+                          >
+                            {device.domain || "—"}
+                          </div>
+                        </td>
+
+                        {/* ── IP (public + local stacked) ── */}
+                        <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                          <div className="font-mono text-[11px]" style={{ color: "var(--th-text-secondary)" }}>
+                            {device.public_ip || "—"}
+                          </div>
+                          {device.local_ip && (
+                            <div className="font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+                              {device.local_ip}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* ── Agent version ── */}
+                        <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                          <VersionBadge
+                            version={device.agent_version}
+                            status={agentVersion.status}
+                            title={agentVersion.title}
                           />
                         </td>
-                      )}
 
-                      {/* ── Hostname ── */}
-                      <td className="min-w-[200px] max-w-[244px] px-2.5 py-1.5 align-middle">
-                        {(() => {
-                          const label = deviceDisplayName(device);
-                          const hostname = deviceHostnameSubtitle(device);
-                          return (
-                            <>
-                              <div
-                                className="flex max-w-[200px] items-center gap-1.5 text-[13px] font-semibold leading-[1.3]"
-                                style={{ color: "var(--th-text-primary)" }}
-                                title={device.os_name ? `${label} · ${device.os_name}` : label}
+                        {/* ── Actions ── */}
+                        <td className="th-sticky-end px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1.5">
+                            {/* Star / favourite */}
+                            {onToggleFavorite && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleFavorite(device.id)}
+                                title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                                aria-label={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                                className={`flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:bg-[var(--th-sidebar-nav-hover)] ${favorites.has(device.id) ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
+                                style={{
+                                  color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)",
+                                }}
                               >
-                                <PlatformIcon platform={device.platform} size={13} className="shrink-0 opacity-70" />
-                                <span className="truncate">{label}</span>
-                              </div>
-                              {hostname && (
-                                <div className="max-w-[180px] truncate font-mono text-[11px] leading-4" style={{ color: "var(--th-text-muted)" }} title={device.hostname}>
-                                  {hostname}
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                        <div className="mt-0.5 flex max-w-[220px] items-center gap-1.5 overflow-hidden whitespace-nowrap pl-[21px] text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                          <span>{deviceTypeLabel(device)}</span>
-                          {patchView && <CompactBadge view={patchView} />}
-                          <LifecycleSignals device={device} />
-                          {rsIssue && (
-                            <span className="inline-flex min-w-0 items-center gap-1" style={{ color: rsIssue.tone }} title={rsIssue.title}>
-                              <span aria-hidden="true">·</span>
-                              <MonitorOff className="h-3 w-3 flex-none" />
-                              <span className="truncate">{rsIssue.label}</span>
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* ── Status ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        {(() => {
-                          const state = (device.freshness_state ?? device.status ?? "offline") as string;
-                          return (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <span className="th-status-dot" data-state={state} aria-hidden="true" />
-                                <span className="text-[13px] font-medium capitalize" style={{ color: "var(--th-text-primary)" }}>{state}</span>
-                                {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
-                              </div>
-                              <div className="mt-0.5 pl-4 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                                <span title="Last heartbeat">{lastSeen.text}</span>
-                                {offlineBadge && <span title={offlineBadge.title ?? "Likely cause (inferred)"}> · {offlineBadge.label}</span>}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </td>
-
-                      {/* ── Health ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="th-score"
-                            data-tone={healthTone(health)}
-                            title={healthScore == null ? "No health score yet" : `Health score ${healthScore} of 100`}
-                          >
-                            {healthScore ?? "—"}
-                          </span>
-                          {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0) > 0 && (
-                            <span
-                              className="th-alert-count"
-                              data-tone={devAlerts?.critical ? "critical" : "warning"}
-                              title={`${devAlerts?.critical ?? 0} critical · ${devAlerts?.warning ?? 0} warning open alerts`}
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              {(devAlerts?.critical ?? 0) + (devAlerts?.warning ?? 0)}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* ── Client / Group ── */}
-                      <td className="px-2.5 py-1.5 align-middle">
-                        <div
-                          className="max-w-[160px] truncate text-[12px] font-semibold leading-[1.3]"
-                          style={{ color: "var(--th-text-primary)" }}
-                          title={device.client_name || TERMS.noClient}
-                        >
-                          {device.client_name || (
-                            <span style={{ color: "var(--th-text-muted)" }}>{TERMS.noClient}</span>
-                          )}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1">
-                          <span
-                            className="max-w-[160px] truncate text-[12px]"
-                            style={{ color: "var(--th-text-muted)" }}
-                            title={device.group_name || TERMS.noGroup}
-                          >
-                            {device.group_name || TERMS.noGroup}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* ── User ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <div className="flex items-center gap-1">
-                          <span
-                            className="max-w-[140px] truncate text-[12px] font-medium"
-                            style={{ color: "var(--th-text-secondary)" }}
-                            title={device.current_user || undefined}
-                          >
-                            {device.current_user || "—"}
-                          </span>
-                          {userSource && <CompactBadge view={userSource} />}
-                        </div>
-                        <div className="max-w-[160px] truncate text-[11px]" style={{ color: "var(--th-text-muted)" }} title={device.domain || undefined}>
-                          {device.domain || "—"}
-                        </div>
-                      </td>
-
-                      {/* ── IP (public + local stacked) ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <div className="font-mono text-[11px]" style={{ color: "var(--th-text-secondary)" }}>
-                          {device.public_ip || "—"}
-                        </div>
-                        {device.local_ip && (
-                          <div className="font-mono text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-                            {device.local_ip}
-                          </div>
-                        )}
-                      </td>
-
-
-                      {/* ── Agent version ── */}
-                      <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                        <VersionBadge version={device.agent_version} status={agentVersion.status} title={agentVersion.title} />
-                      </td>
-
-                      {/* ── Actions ── */}
-                      <td
-                        className="th-sticky-end px-2 py-1.5 align-middle"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {/* Star / favourite */}
-                          {onToggleFavorite && (
-                            <button
-                              type="button"
-                              onClick={() => onToggleFavorite(device.id)}
-                              title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
-                              aria-label={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
-                              className={`flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:bg-[var(--th-sidebar-nav-hover)] ${favorites.has(device.id) ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
-                              style={{ color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)" }}
-                            >
-                              <Star className={`h-3.5 w-3.5 ${favorites.has(device.id) ? "fill-current" : ""}`} />
-                            </button>
-                          )}
-                          {/* Connect (approved V3 Connect mockup). Windows keeps its
+                                <Star className={`h-3.5 w-3.5 ${favorites.has(device.id) ? "fill-current" : ""}`} />
+                              </button>
+                            )}
+                            {/* Connect (approved V3 Connect mockup). Windows keeps its
                               existing dedicated RustDesk flow, byte-identical — main
                               click opens directly, single option, exactly as before
                               (and as annotated in the mockup: "Opens directly —
@@ -1323,83 +1500,87 @@ const DevicesTable = memo(function DevicesTable({
                               from the batched /connect-status feed. Flag-off keeps
                               the old open-the-device behavior (no Connect Framework
                               endpoints exist then). */}
-                          {isWindowsDevice || !platformFeatures.FEATURE_PLATFORM_CORE ? (
-                            <ConnectButton
-                              size="sm"
-                              onClick={
-                                isWindowsDevice
-                                  ? async () => {
-                                      try {
-                                        const res = await getConnectUrl(device.id);
-                                        launchConnect(
-                                          res.connect_url,
-                                          buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
-                                          () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true)
-                                        );
-                                      } catch (err) {
-                                        showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                            {isWindowsDevice || !platformFeatures.FEATURE_PLATFORM_CORE ? (
+                              <ConnectButton
+                                size="sm"
+                                onClick={
+                                  isWindowsDevice
+                                    ? async () => {
+                                        try {
+                                          const res = await getConnectUrl(device.id);
+                                          launchConnect(
+                                            res.connect_url,
+                                            buildRustDeskFallbackUrlFromTechiUrl(res.connect_url),
+                                            () => showBulkToast(`Opening the ${TERMS.remoteSupport} app instead`, true),
+                                          );
+                                        } catch (err) {
+                                          showBulkToast(err instanceof Error ? err.message : "Connect failed", false);
+                                        }
                                       }
-                                    }
-                                  : () => onDeviceSelect?.(device)
-                              }
-                              title={
-                                isWindowsDevice
-                                  ? device.rustdesk_conflict_detected
-                                    ? "Remote Support ID conflict"
-                                    : canConnect
-                                    ? "Open TECHI Remote Support"
-                                    : `${TERMS.remoteSupportId} not resolved yet`
-                                  : canConnect
-                                  ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                                  : "No Connect method available for this device yet"
-                              }
-                              disabled={!canConnect}
-                            />
-                          ) : (
-                            <ConnectMenu
-                              variant="row"
-                              lazyLoad
-                              deviceId={device.id}
-                              hostname={device.hostname}
-                              initialState={connectStatusMap[device.id]?.state ?? (canConnect ? null : "unavailable")}
-                              initialStateReason={connectStatusMap[device.id]?.reason ?? (canConnect ? null : "No Connect method available for this device yet")}
-                              onOpenTerminal={onOpenDeviceTerminal ? () => onOpenDeviceTerminal(device) : undefined}
-                            />
-                          )}
-
-                          {canOperate && (
-                            <button
-                              type="button"
-                              data-action-trigger="true"
-                              className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 h-7 w-7"
-                              data-active={openActionDeviceId === device.id}
-                              aria-label={`More actions for ${deviceDisplayName(device)}`}
-                              aria-haspopup="menu"
-                              aria-expanded={openActionDeviceId === device.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (openActionDeviceId === device.id) {
-                                  setOpenActionDeviceId(null);
-                                  setMenuAnchor(null);
-                                } else {
-                                  setMenuAnchor(getMenuAnchor(e.currentTarget));
-                                  setOpenActionDeviceId(device.id);
+                                    : () => onDeviceSelect?.(device)
                                 }
-                              }}
-                              title="More actions"
-                            >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                                title={
+                                  isWindowsDevice
+                                    ? device.rustdesk_conflict_detected
+                                      ? "Remote Support ID conflict"
+                                      : canConnect
+                                        ? "Open TECHI Remote Support"
+                                        : `${TERMS.remoteSupportId} not resolved yet`
+                                    : canConnect
+                                      ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                                      : "No Connect method available for this device yet"
+                                }
+                                disabled={!canConnect}
+                              />
+                            ) : (
+                              <ConnectMenu
+                                variant="row"
+                                lazyLoad
+                                deviceId={device.id}
+                                hostname={device.hostname}
+                                initialState={connectStatusMap[device.id]?.state ?? (canConnect ? null : "unavailable")}
+                                initialStateReason={
+                                  connectStatusMap[device.id]?.reason ??
+                                  (canConnect ? null : "No Connect method available for this device yet")
+                                }
+                                onOpenTerminal={onOpenDeviceTerminal ? () => onOpenDeviceTerminal(device) : undefined}
+                              />
+                            )}
+
+                            {canOperate && (
+                              <button
+                                type="button"
+                                data-action-trigger="true"
+                                className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7 h-7 w-7"
+                                data-active={openActionDeviceId === device.id}
+                                aria-label={`More actions for ${deviceDisplayName(device)}`}
+                                aria-haspopup="menu"
+                                aria-expanded={openActionDeviceId === device.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (openActionDeviceId === device.id) {
+                                    setOpenActionDeviceId(null);
+                                    setMenuAnchor(null);
+                                  } else {
+                                    setMenuAnchor(getMenuAnchor(e.currentTarget));
+                                    setOpenActionDeviceId(device.id);
+                                  }
+                                }}
+                                title="More actions"
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          </div>{/* end hidden md:block */}
+          {/* end hidden md:block */}
 
           {/* Footer — hidden on mobile (Load More replaces pagination) */}
           <div className="hidden md:block">
@@ -1438,13 +1619,22 @@ const DevicesTable = memo(function DevicesTable({
             data-action-menu="true"
             role="menu"
             aria-label={`Actions for ${deviceDisplayName(activeActionDevice)}`}
-            style={{ position: "fixed", top: menuAnchor.top, left: menuAnchor.left, width: ACTION_MENU_WIDTH, maxHeight: ACTION_MENU_MAX_HEIGHT }}
+            style={{
+              position: "fixed",
+              top: menuAnchor.top,
+              left: menuAnchor.left,
+              width: ACTION_MENU_WIDTH,
+              maxHeight: ACTION_MENU_MAX_HEIGHT,
+            }}
             className="th-menu !z-[10000] overflow-y-auto"
           >
             {(() => {
               const device = activeActionDevice;
               const state = (device.freshness_state ?? device.status ?? "offline") as string;
-              const close = () => { setOpenActionDeviceId(null); setMenuAnchor(null); };
+              const close = () => {
+                setOpenActionDeviceId(null);
+                setMenuAnchor(null);
+              };
               const queue = (action_type: "ping" | "refresh_inventory", label: string) => {
                 close();
                 queueDeviceAction(device.id, { action_type, created_by: currentUser ?? "unknown" })
@@ -1456,20 +1646,40 @@ const DevicesTable = memo(function DevicesTable({
                   <div className="flex items-center gap-2.5 px-3 py-2.5">
                     <span className="th-status-dot" data-state={state} aria-hidden="true" />
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{deviceDisplayName(device)}</p>
+                      <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                        {deviceDisplayName(device)}
+                      </p>
                       <p className="truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
                         {state} · {device.client_name || TERMS.noClient}
                       </p>
                     </div>
                   </div>
                   <div className="th-menu-group">
-                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); onDeviceSelect?.(device); }}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="th-menu-item"
+                      onClick={() => {
+                        close();
+                        onDeviceSelect?.(device);
+                      }}
+                    >
                       <ExternalLink className="h-4 w-4" /> Open details
                     </button>
-                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => queue("ping", "Ping")}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="th-menu-item"
+                      onClick={() => queue("ping", "Ping")}
+                    >
                       <PlayCircle className="h-4 w-4" /> Ping device
                     </button>
-                    <button type="button" role="menuitem" className="th-menu-item" onClick={() => queue("refresh_inventory", "Inventory refresh")}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="th-menu-item"
+                      onClick={() => queue("refresh_inventory", "Inventory refresh")}
+                    >
                       <RotateCcw className="h-4 w-4" /> Refresh inventory
                     </button>
                     {isValidRustDeskId(device.rustdesk_id) && (
@@ -1491,16 +1701,40 @@ const DevicesTable = memo(function DevicesTable({
                   </div>
                   <div className="th-menu-group">
                     {!device.is_archived ? (
-                      <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); setPendingAction({ type: "archive", device }); }}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="th-menu-item"
+                        onClick={() => {
+                          close();
+                          setPendingAction({ type: "archive", device });
+                        }}
+                      >
                         <Archive className="h-4 w-4" /> Archive device
                       </button>
                     ) : (
-                      <button type="button" role="menuitem" className="th-menu-item" onClick={() => { close(); setPendingAction({ type: "restore", device }); }}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="th-menu-item"
+                        onClick={() => {
+                          close();
+                          setPendingAction({ type: "restore", device });
+                        }}
+                      >
                         <RotateCcw className="h-4 w-4" /> Restore device
                       </button>
                     )}
                     {canDelete && (
-                      <button type="button" role="menuitem" className="th-menu-item th-menu-item-danger" onClick={() => { close(); setPendingAction({ type: "delete", device }); }}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="th-menu-item th-menu-item-danger"
+                        onClick={() => {
+                          close();
+                          setPendingAction({ type: "delete", device });
+                        }}
+                      >
                         <Trash2 className="h-4 w-4" /> Remove permanently
                       </button>
                     )}
@@ -1509,7 +1743,7 @@ const DevicesTable = memo(function DevicesTable({
               );
             })()}
           </div>,
-          document.body
+          document.body,
         )}
 
       {/* ── Bulk toast ── */}
@@ -1517,7 +1751,9 @@ const DevicesTable = memo(function DevicesTable({
         <div
           className="th-toast fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
           style={{
-            background: bulkToast.ok ? "color-mix(in srgb, var(--th-status-online) 15%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 15%, transparent)",
+            background: bulkToast.ok
+              ? "color-mix(in srgb, var(--th-status-online) 15%, transparent)"
+              : "color-mix(in srgb, var(--th-status-critical) 15%, transparent)",
             border: `1px solid ${bulkToast.ok ? "color-mix(in srgb, var(--th-status-online) 30%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 30%, transparent)"}`,
             color: bulkToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
           }}
@@ -1538,7 +1774,9 @@ const DevicesTable = memo(function DevicesTable({
           <p>{BULK_ACTIONS[pendingBulkAction].description}</p>
           {pendingBulkAction === "maintenance_enter" && (
             <fieldset className="mt-4">
-              <legend className="mb-2 text-[13px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>Duration</legend>
+              <legend className="mb-2 text-[13px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>
+                Duration
+              </legend>
               <div className="flex flex-wrap gap-1.5">
                 {MAINTENANCE_DURATIONS.map((opt) => (
                   <button
@@ -1585,24 +1823,14 @@ function ConfirmDeviceAction({
   onConfirm: () => void;
 }) {
   const isDelete = type === "delete";
-  const title =
-    type === "archive"
-      ? "Archive device"
-      : type === "restore"
-      ? "Restore device"
-      : "Remove permanently";
+  const title = type === "archive" ? "Archive device" : type === "restore" ? "Restore device" : "Remove permanently";
   const message =
     type === "archive"
       ? "Device will be removed from the active fleet. History is preserved."
       : type === "restore"
-      ? "Device will be returned to the active fleet."
-      : "This action cannot be undone.";
-  const actionLabel =
-    type === "archive"
-      ? "Archive"
-      : type === "restore"
-      ? "Restore"
-      : "Remove permanently";
+        ? "Device will be returned to the active fleet."
+        : "This action cannot be undone.";
+  const actionLabel = type === "archive" ? "Archive" : type === "restore" ? "Restore" : "Remove permanently";
 
   return (
     <ConfirmationModal
@@ -1612,7 +1840,9 @@ function ConfirmDeviceAction({
       onClose={onCancel}
       onConfirm={onConfirm}
     >
-      <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>{deviceDisplayName(device)}</p>
+      <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>
+        {deviceDisplayName(device)}
+      </p>
       <p className="mt-3">{message}</p>
     </ConfirmationModal>
   );

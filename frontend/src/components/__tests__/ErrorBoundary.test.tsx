@@ -15,15 +15,27 @@ describe("ErrorBoundary", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("shows a recoverable message instead of a blank page", () => {
-    render(<ErrorBoundary><Boom fail /></ErrorBoundary>);
+    render(
+      <ErrorBoundary>
+        <Boom fail />
+      </ErrorBoundary>,
+    );
     expect(screen.getByRole("alert")).toHaveTextContent("Something went wrong on this page");
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
   it("clears the error when the reset key changes (navigation)", () => {
-    const { rerender } = render(<ErrorBoundary resetKey="/a"><Boom fail /></ErrorBoundary>);
+    const { rerender } = render(
+      <ErrorBoundary resetKey="/a">
+        <Boom fail />
+      </ErrorBoundary>,
+    );
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    rerender(<ErrorBoundary resetKey="/b"><Boom fail={false} /></ErrorBoundary>);
+    rerender(
+      <ErrorBoundary resetKey="/b">
+        <Boom fail={false} />
+      </ErrorBoundary>,
+    );
     expect(screen.getByText("Page content")).toBeInTheDocument();
   });
 
@@ -33,7 +45,11 @@ describe("ErrorBoundary", () => {
       if (fail) throw new Error("once");
       return <div>Recovered</div>;
     }
-    render(<ErrorBoundary><Flaky /></ErrorBoundary>);
+    render(
+      <ErrorBoundary>
+        <Flaky />
+      </ErrorBoundary>,
+    );
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(screen.getByText("Recovered")).toBeInTheDocument();

@@ -95,7 +95,18 @@ describe("DashboardMobile", () => {
   it("names the online share in English and matches the desktop labels", () => {
     render(
       <MemoryRouter>
-        <DashboardMobile total={2000} online={1500} stale={0} offline={0} criticalCount={0} patchCount={3} alertsTotal={2} agentsOutdated={1} actionsLoading={false} loading={false} />
+        <DashboardMobile
+          total={2000}
+          online={1500}
+          stale={0}
+          offline={0}
+          criticalCount={0}
+          patchCount={3}
+          alertsTotal={2}
+          agentsOutdated={1}
+          actionsLoading={false}
+          loading={false}
+        />
       </MemoryRouter>,
     );
     expect(screen.getByRole("img", { name: "75% online — 1,500 of 2,000" })).toBeInTheDocument();

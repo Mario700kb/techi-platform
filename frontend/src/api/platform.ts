@@ -24,16 +24,16 @@ export async function getPlatformFeatures(): Promise<PlatformFeatures> {
 // frontend has a local fallback (see usePlatformComponents) so an older backend
 // that lacks this endpoint never breaks the Agent Packages page.
 export interface ComponentLifecycle {
-  operation: string;           // install | update | reinstall | repair | restart | discover | sync
-  label: string;               // display label (Install/Update/…)
-  action_type: string | null;  // existing ActionType value, or null (GPO/heartbeat)
-  kind: string;                // "action" | "out_of_band"
+  operation: string; // install | update | reinstall | repair | restart | discover | sync
+  label: string; // display label (Install/Update/…)
+  action_type: string | null; // existing ActionType value, or null (GPO/heartbeat)
+  kind: string; // "action" | "out_of_band"
 }
 
 export interface ComponentPolicy {
-  desired_source: string;      // active_package | manual | none
-  policy: string;              // active_package | manual | future
-  strategy: string;            // manual | future
+  desired_source: string; // active_package | manual | none
+  policy: string; // active_package | manual | future
+  strategy: string; // manual | future
 }
 
 export interface PlatformComponent {
@@ -42,7 +42,7 @@ export interface PlatformComponent {
   description: string;
   icon_key: string;
   platforms: string[];
-  file_types: string[];        // existing AgentFileType string values
+  file_types: string[]; // existing AgentFileType string values
   lifecycle: ComponentLifecycle[];
   capabilities: string[];
   policy: ComponentPolicy;
@@ -65,8 +65,8 @@ export interface DeviceComponentState {
   icon_key: string;
   installed_version: string | null;
   desired_version: string | null;
-  health: string;   // current | outdated | missing | unknown
-  status: string;   // Current | Outdated | Missing | Unknown
+  health: string; // current | outdated | missing | unknown
+  status: string; // Current | Outdated | Missing | Unknown
 }
 
 export interface DeviceComponentStatesResponse {
@@ -75,12 +75,8 @@ export interface DeviceComponentStatesResponse {
   components: DeviceComponentState[];
 }
 
-export async function getDeviceComponentStates(
-  deviceId: number,
-): Promise<DeviceComponentStatesResponse> {
-  return fetchJson<DeviceComponentStatesResponse>(
-    `/api/v1/devices/${deviceId}/component-states`,
-  );
+export async function getDeviceComponentStates(deviceId: number): Promise<DeviceComponentStatesResponse> {
+  return fetchJson<DeviceComponentStatesResponse>(`/api/v1/devices/${deviceId}/component-states`);
 }
 
 // Component Action API (POST /devices/{id}/components/{component}/actions).
@@ -93,7 +89,7 @@ export interface QueuedRemoteAction {
   id: number;
   device_id: number;
   action_type: string;
-  status: string;   // queued | sent | acknowledged | running | completed | failed | ...
+  status: string; // queued | sent | acknowledged | running | completed | failed | ...
   created_at: string;
   created_by?: string | null;
 }
@@ -113,26 +109,19 @@ export async function queueComponentAction(
   parameters?: Record<string, unknown>,
   timeoutSeconds?: number,
 ): Promise<ComponentActionAccepted> {
-  return fetchJson<ComponentActionAccepted>(
-    `/api/v1/devices/${deviceId}/components/${componentId}/actions`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation, parameters, timeout_seconds: timeoutSeconds }),
-    },
-  );
+  return fetchJson<ComponentActionAccepted>(`/api/v1/devices/${deviceId}/components/${componentId}/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operation, parameters, timeout_seconds: timeoutSeconds }),
+  });
 }
 
 // Retry a terminal component action (Operational M8). Re-validates the operation
 // is still allowed for the device, then re-queues via the existing retry path.
-export async function retryComponentAction(
-  deviceId: number,
-  actionId: number,
-): Promise<ComponentActionAccepted> {
-  return fetchJson<ComponentActionAccepted>(
-    `/api/v1/devices/${deviceId}/components/actions/${actionId}/retry`,
-    { method: "POST" },
-  );
+export async function retryComponentAction(deviceId: number, actionId: number): Promise<ComponentActionAccepted> {
+  return fetchJson<ComponentActionAccepted>(`/api/v1/devices/${deviceId}/components/actions/${actionId}/retry`, {
+    method: "POST",
+  });
 }
 
 // Component Action History (GET /devices/{id}/components/actions). Reuses the
@@ -234,9 +223,7 @@ export async function getComponentPackageStatus(
   deviceId: number,
   componentId: string,
 ): Promise<ComponentPackageStatus> {
-  return fetchJson<ComponentPackageStatus>(
-    `/api/v1/devices/${deviceId}/components/${componentId}/package`,
-  );
+  return fetchJson<ComponentPackageStatus>(`/api/v1/devices/${deviceId}/components/${componentId}/package`);
 }
 
 // Auto-remediation (POST /devices/{id}/components/{component}/remediate). Detects
@@ -262,14 +249,11 @@ export async function remediateComponent(
   componentId: string,
   opts?: { dryRun?: boolean },
 ): Promise<ComponentRemediationResult> {
-  return fetchJson<ComponentRemediationResult>(
-    `/api/v1/devices/${deviceId}/components/${componentId}/remediate`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dry_run: opts?.dryRun ?? false }),
-    },
-  );
+  return fetchJson<ComponentRemediationResult>(`/api/v1/devices/${deviceId}/components/${componentId}/remediate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: opts?.dryRun ?? false }),
+  });
 }
 
 // Component action telemetry (GET /devices/{id}/components/telemetry). Read-only
@@ -304,14 +288,9 @@ export interface ComponentTelemetryResponse {
   components: ComponentMetrics[];
 }
 
-export async function getComponentTelemetry(
-  deviceId: number,
-  limit?: number,
-): Promise<ComponentTelemetryResponse> {
+export async function getComponentTelemetry(deviceId: number, limit?: number): Promise<ComponentTelemetryResponse> {
   const qs = limit ? `?limit=${limit}` : "";
-  return fetchJson<ComponentTelemetryResponse>(
-    `/api/v1/devices/${deviceId}/components/telemetry${qs}`,
-  );
+  return fetchJson<ComponentTelemetryResponse>(`/api/v1/devices/${deviceId}/components/telemetry${qs}`);
 }
 
 // Registry-driven Device Drawer feed (GET /devices/{id}/drawer). Everything the
@@ -322,8 +301,8 @@ export interface DrawerAction {
   label: string;
   permission?: string | null;
   required_capability?: string | null;
-  confirm: string;   // "none" | "confirm"
-  target: string;    // "agent" | "device"
+  confirm: string; // "none" | "confirm"
+  target: string; // "agent" | "device"
 }
 
 export interface DrawerConnectMethod {

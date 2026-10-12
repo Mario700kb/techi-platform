@@ -4,10 +4,19 @@ import { humanize, metricTone, remoteSupportStatus, TONE } from "../deviceStatus
 
 describe("remoteSupportStatus", () => {
   it("names every service state the same way everywhere", () => {
-    expect(remoteSupportStatus({ rustdesk_status: "running", rustdesk_install_status: "installed" })).toEqual({ label: "Running", tone: TONE.online });
-    expect(remoteSupportStatus({ rustdesk_status: "not_running", rustdesk_install_status: "installed" })).toEqual({ label: "Stopped", tone: TONE.warning });
+    expect(remoteSupportStatus({ rustdesk_status: "running", rustdesk_install_status: "installed" })).toEqual({
+      label: "Running",
+      tone: TONE.online,
+    });
+    expect(remoteSupportStatus({ rustdesk_status: "not_running", rustdesk_install_status: "installed" })).toEqual({
+      label: "Stopped",
+      tone: TONE.warning,
+    });
     expect(remoteSupportStatus({ rustdesk_status: "stopped" })).toEqual({ label: "Stopped", tone: TONE.warning });
-    expect(remoteSupportStatus({ rustdesk_status: null, rustdesk_install_status: "not_installed" })).toEqual({ label: "Not installed", tone: TONE.neutral });
+    expect(remoteSupportStatus({ rustdesk_status: null, rustdesk_install_status: "not_installed" })).toEqual({
+      label: "Not installed",
+      tone: TONE.neutral,
+    });
     expect(remoteSupportStatus({})).toEqual({ label: "Unknown", tone: TONE.neutral });
   });
 

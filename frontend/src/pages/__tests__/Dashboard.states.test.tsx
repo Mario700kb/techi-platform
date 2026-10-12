@@ -15,7 +15,10 @@ vi.mock("../../auth/AuthContext", () => ({
 
 vi.mock("../../contexts/AppDataContext", () => ({
   useAppData: () => ({
-    fleetOverview: { stats: { total: 3, online: 2, stale: 0, offline: 1 }, tree_counts: { by_client: {}, unassigned: 0 } },
+    fleetOverview: {
+      stats: { total: 3, online: 2, stale: 0, offline: 1 },
+      tree_counts: { by_client: {}, unassigned: 0 },
+    },
     fleetOverviewLoading: false,
     latestEvent: null,
     realtimeStatus: "connected",

@@ -13,13 +13,7 @@ const STATUS_VAR: Record<FreshnessState, string> = {
   offline: "var(--th-status-offline)",
 };
 
-export function StatusDot({
-  state,
-  size = 11,
-}: {
-  state: FreshnessState;
-  size?: number;
-}) {
+export function StatusDot({ state, size = 11 }: { state: FreshnessState; size?: number }) {
   return (
     <span
       aria-hidden="true"
@@ -29,24 +23,14 @@ export function StatusDot({
         height: size,
         background: STATUS_VAR[state],
         boxShadow:
-          state === "online"
-            ? "0 0 6px color-mix(in srgb, var(--th-status-online) 55%, transparent)"
-            : undefined,
+          state === "online" ? "0 0 6px color-mix(in srgb, var(--th-status-online) 55%, transparent)" : undefined,
       }}
     />
   );
 }
 
 export type MBadgeVariant =
-  | "server"
-  | "ws"
-  | "critical"
-  | "warning"
-  | "info"
-  | "maint"
-  | "agent"
-  | "offline"
-  | "online";
+  "server" | "ws" | "critical" | "warning" | "info" | "maint" | "agent" | "offline" | "online";
 
 const BADGE_VAR: Record<MBadgeVariant, string> = {
   server: "var(--th-status-agent)",
@@ -60,15 +44,7 @@ const BADGE_VAR: Record<MBadgeVariant, string> = {
   online: "var(--th-status-online)",
 };
 
-export function MBadge({
-  variant,
-  children,
-  title,
-}: {
-  variant: MBadgeVariant;
-  children: ReactNode;
-  title?: string;
-}) {
+export function MBadge({ variant, children, title }: { variant: MBadgeVariant; children: ReactNode; title?: string }) {
   const c = BADGE_VAR[variant];
   return (
     <span

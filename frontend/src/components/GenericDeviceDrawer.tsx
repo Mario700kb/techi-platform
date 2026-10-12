@@ -1,7 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle, Layers, Link2, Loader2, RefreshCcw, Save, StickyNote, Wrench, X,
-} from "lucide-react";
+import { AlertTriangle, Layers, Link2, Loader2, RefreshCcw, Save, StickyNote, Wrench, X } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
 import { assignDeviceClient, assignDeviceGroup, Device, updateDevice } from "../api/devices";
@@ -51,8 +49,13 @@ interface Props {
 }
 
 const CAP_TAB_LABELS: Record<string, string> = {
-  services: "Services", processes: "Processes", packages: "Packages",
-  docker: "Docker", logs: "Logs", network: "Network", storage: "Storage",
+  services: "Services",
+  processes: "Processes",
+  packages: "Packages",
+  docker: "Docker",
+  logs: "Logs",
+  network: "Network",
+  storage: "Storage",
 };
 const CAPABILITY_TABS = Object.keys(CAP_TAB_LABELS);
 
@@ -60,7 +63,17 @@ const TABLE_ROW_LIMIT = 200;
 
 type InventoryState = "loading" | "error" | "ready";
 
-export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEvent, clients, groups, canOperate, onDeviceUpdated, initialTab }: Props) {
+export default function GenericDeviceDrawer({
+  device,
+  isOpen,
+  onClose,
+  latestEvent,
+  clients,
+  groups,
+  canOperate,
+  onDeviceUpdated,
+  initialTab,
+}: Props) {
   useNow();
   const features = usePlatformFeatures();
   const [meta, setMeta] = useState<DrawerMeta | null>(null);
@@ -77,11 +90,18 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
   const toastTimer = useRef<number | null>(null);
-  const { events, loading: tlLoading, reload: reloadTimeline } = useDeviceActivity({
-    deviceId: device.id, latestEvent, enabled: isOpen && tab === "timeline",
+  const {
+    events,
+    loading: tlLoading,
+    reload: reloadTimeline,
+  } = useDeviceActivity({
+    deviceId: device.id,
+    latestEvent,
+    enabled: isOpen && tab === "timeline",
   });
   const { snapshot, healthScore, healthState } = useDeviceTelemetry({
-    deviceId: isOpen ? device.id : null, latestEvent,
+    deviceId: isOpen ? device.id : null,
+    latestEvent,
   });
   const operate = canOperate !== false;
   const displayName = deviceDisplayName(device);
@@ -110,9 +130,12 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
     };
   }, [isOpen, onClose, confirm]);
 
-  useEffect(() => () => {
-    if (toastTimer.current != null) window.clearTimeout(toastTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimer.current != null) window.clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   function loadMeta() {
     setMetaFailed(false);
@@ -219,7 +242,11 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               <i style={{ background: freshnessColor }} />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="min-w-0 break-words text-[17px] font-semibold leading-snug" style={{ color: "var(--th-text-primary)" }} title={displayName}>
+              <h2
+                className="min-w-0 break-words text-[17px] font-semibold leading-snug"
+                style={{ color: "var(--th-text-primary)" }}
+                title={displayName}
+              >
                 {displayName}
               </h2>
               <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
@@ -229,10 +256,18 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                   device.resolved_group || device.group_name,
                   hostnameSubtitle ? `host ${hostnameSubtitle}` : null,
                   `#${device.id}`,
-                ].filter(Boolean).join(" · ")}
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" title="Close (Esc)" className="th-icon-btn th-icon-btn-ghost flex-none">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close (Esc)"
+              className="th-icon-btn th-icon-btn-ghost flex-none"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -246,15 +281,31 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
             {healthScore != null && (
               <span
                 className="th-status-chip"
-                style={{ "--chip-tone": healthState === "critical" ? TONE.critical : healthState === "warning" ? TONE.warning : TONE.online } as React.CSSProperties}
+                style={
+                  {
+                    "--chip-tone":
+                      healthState === "critical"
+                        ? TONE.critical
+                        : healthState === "warning"
+                          ? TONE.warning
+                          : TONE.online,
+                  } as React.CSSProperties
+                }
                 title="Health score of 100"
               >
-                <i />Health {healthScore}
+                <i />
+                Health {healthScore}
               </span>
             )}
           </div>
 
-          <div ref={tabsRef} role="tablist" aria-label="Device sections" className="th-tabs mt-3 !flex-nowrap overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div
+            ref={tabsRef}
+            role="tablist"
+            aria-label="Device sections"
+            className="th-tabs mt-3 !flex-nowrap overflow-x-auto"
+            style={{ scrollbarWidth: "none" }}
+          >
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -286,10 +337,18 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               icon={<AlertTriangle className="h-5 w-5" />}
               title="Couldn't load this device"
               description="The server did not answer. Try again."
-              action={<Button size="sm" variant="secondary" onClick={loadMeta}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+              action={
+                <Button size="sm" variant="secondary" onClick={loadMeta}>
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                  Retry
+                </Button>
+              }
             />
           ) : !meta ? (
-            <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading device…</div>
+            <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading device…
+            </div>
           ) : (
             <>
               {tab === "overview" && (
@@ -314,7 +373,9 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
                   <section className="mb-4">
                     <p className="premium-kicker mb-2">Connection</p>
                     <div className="th-drawer-card">
-                      <p className="mb-3 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>Connect using this platform's native methods.</p>
+                      <p className="mb-3 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
+                        Connect using this platform's native methods.
+                      </p>
                       <ConnectMenu deviceId={device.id} hostname={device.hostname} onOpenTerminal={openTerminal} />
                     </div>
                   </section>
@@ -322,7 +383,14 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               )}
               {tab === "terminal" && (
                 <div className="th-tab-panel min-h-[340px]">
-                  <Suspense fallback={<div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}><Loader2 className="h-4 w-4 animate-spin" />Loading terminal…</div>}>
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading terminal…
+                      </div>
+                    }
+                  >
                     <DeviceTerminal deviceId={device.id} />
                   </Suspense>
                 </div>
@@ -339,7 +407,15 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
               )}
               {tab === "notes" && (
                 <div className="th-tab-panel">
-                  <NotesPanel notes={notes} loading={notesLoading} busy={noteBusy} noteText={noteText} setNoteText={setNoteText} onAdd={addNote} canOperate={operate} />
+                  <NotesPanel
+                    notes={notes}
+                    loading={notesLoading}
+                    busy={noteBusy}
+                    noteText={noteText}
+                    setNoteText={setNoteText}
+                    onAdd={addNote}
+                    canOperate={operate}
+                  />
                 </div>
               )}
               {tab === "timeline" && (
@@ -375,7 +451,9 @@ function Row({ label, value, mono = false }: { label: string; value?: string | n
   return (
     <>
       <dt>{label}</dt>
-      <dd className={`truncate ${mono ? "font-mono text-[12px]" : ""}`} title={value}>{value}</dd>
+      <dd className={`truncate ${mono ? "font-mono text-[12px]" : ""}`} title={value}>
+        {value}
+      </dd>
     </>
   );
 }
@@ -389,8 +467,14 @@ function Row({ label, value, mono = false }: { label: string; value?: string | n
 // Deliberately does NOT re-derive that fallback for display: the rule lives in
 // `resolve_connect_host` on the backend, and a copy here would be one more
 // thing to drift. Empty simply reads "Auto".
-function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
-  device: Device; canOperate: boolean; onDeviceUpdated?: (device: Device) => void;
+function ConnectTargetRow({
+  device,
+  canOperate,
+  onDeviceUpdated,
+}: {
+  device: Device;
+  canOperate: boolean;
+  onDeviceUpdated?: (device: Device) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [host, setHost] = useState(device.connect_host ?? "");
@@ -399,8 +483,12 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
   const [error, setError] = useState<string | null>(null);
 
   const current = device.connect_host
-    ? (device.connect_port ? `${device.connect_host}:${device.connect_port}` : device.connect_host)
-    : (device.connect_port ? `Auto : ${device.connect_port}` : "Auto");
+    ? device.connect_port
+      ? `${device.connect_host}:${device.connect_port}`
+      : device.connect_host
+    : device.connect_port
+      ? `Auto : ${device.connect_port}`
+      : "Auto";
 
   const save = async () => {
     setBusy(true);
@@ -434,20 +522,27 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate font-mono text-[12px]">{current}</span>
             {canOperate && (
-              <button type="button" onClick={() => setEditing(true)} className="th-link-btn !h-6">Edit</button>
+              <button type="button" onClick={() => setEditing(true)} className="th-link-btn !h-6">
+                Edit
+              </button>
             )}
           </span>
         ) : (
           <div>
             <div className="flex items-center gap-2">
               <input
-                value={host} onChange={(e) => setHost(e.target.value)} placeholder="Auto (reported IP)"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="Auto (reported IP)"
                 aria-label="Connect host"
                 className="th-input min-w-0 flex-1 rounded border px-2 py-1 font-mono text-[12px]"
               />
               <input
-                value={port} onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Port"
-                aria-label="Connect port" inputMode="numeric"
+                value={port}
+                onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="Port"
+                aria-label="Connect port"
+                inputMode="numeric"
                 className="th-input w-20 flex-none rounded border px-2 py-1 font-mono text-[12px]"
               />
             </div>
@@ -456,8 +551,14 @@ function ConnectTargetRow({ device, canOperate, onDeviceUpdated }: {
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                 {busy ? "Saving…" : "Save"}
               </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={cancel}>Cancel</Button>
-              {error && <span className="text-[12px]" style={{ color: TONE.critical }}>{error}</span>}
+              <Button size="sm" variant="secondary" disabled={busy} onClick={cancel}>
+                Cancel
+              </Button>
+              {error && (
+                <span className="text-[12px]" style={{ color: TONE.critical }}>
+                  {error}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -482,18 +583,25 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
 // MikroTik "Board=..."); Overview reads only the keys it displays.
 function captionValue(caption: string | null | undefined, key: string): string | null {
   if (!caption) return null;
-  const part = caption.split(";").map((p) => p.trim()).find((p) => p.toLowerCase().startsWith(`${key.toLowerCase()}=`));
+  const part = caption
+    .split(";")
+    .map((p) => p.trim())
+    .find((p) => p.toLowerCase().startsWith(`${key.toLowerCase()}=`));
   return part ? part.slice(key.length + 1).trim() : null;
 }
 
 function AssignmentSourceBadge({ source }: { source?: string | null }) {
   const normalized = (source || "unassigned").toLowerCase();
   const label =
-    normalized === "manual" || normalized === "legacy_manual" ? "manual" :
-    normalized === "trusted_domain" ? "domain" :
-    normalized === "enrollment_token" ? "token" :
-    normalized === "auto_os" || normalized === "system_auto" ? "auto" :
-    "unassigned";
+    normalized === "manual" || normalized === "legacy_manual"
+      ? "manual"
+      : normalized === "trusted_domain"
+        ? "domain"
+        : normalized === "enrollment_token"
+          ? "token"
+          : normalized === "auto_os" || normalized === "system_auto"
+            ? "auto"
+            : "unassigned";
   return <span className="th-status-chip !h-6">{label}</span>;
 }
 
@@ -501,14 +609,26 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
 // alive (Status) → what is it (Identity) → how loaded is it (Resources) → who
 // owns it (Assignment). Deeper detail lives in its own capability tab.
 function Overview({
-  device, meta, snapshot, healthState, healthScore, clients, groups, canOperate, onDeviceUpdated,
-  onOpenTerminal, onRemoteSupport,
+  device,
+  meta,
+  snapshot,
+  healthState,
+  healthScore,
+  clients,
+  groups,
+  canOperate,
+  onDeviceUpdated,
+  onOpenTerminal,
+  onRemoteSupport,
 }: {
-  device: Device; meta: DrawerMeta;
+  device: Device;
+  meta: DrawerMeta;
   snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
   healthState: React.ComponentProps<typeof HealthBadge>["state"];
   healthScore: number | null;
-  clients: Client[]; groups: DeviceGroup[]; canOperate: boolean;
+  clients: Client[];
+  groups: DeviceGroup[];
+  canOperate: boolean;
   onDeviceUpdated?: (device: Device) => void;
   onOpenTerminal?: () => void;
   onRemoteSupport?: () => void;
@@ -524,9 +644,13 @@ function Overview({
       <section className="mb-4">
         <div className="th-drawer-card flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="th-action-icon"><Link2 className="h-4 w-4" /></span>
+            <span className="th-action-icon">
+              <Link2 className="h-4 w-4" />
+            </span>
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>Connect</p>
+              <p className="text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                Connect
+              </p>
               <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                 {methods} method{methods === 1 ? "" : "s"} available
               </p>
@@ -555,13 +679,17 @@ function Overview({
             )}
           </dd>
           <dt>Health</dt>
-          <dd><HealthBadge state={healthState} score={healthScore} showLabel /></dd>
+          <dd>
+            <HealthBadge state={healthState} score={healthScore} showLabel />
+          </dd>
           <Row label="Local IP" value={device.local_ip} mono />
           <Row label="Public IP" value={device.public_ip} mono />
           <ConnectTargetRow device={device} canOperate={canOperate} onDeviceUpdated={onDeviceUpdated} />
           <Row label="Current user" value={device.current_user ?? undefined} />
           <dt>Connector</dt>
-          <dd><VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} /></dd>
+          <dd>
+            <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
+          </dd>
         </dl>
       </Section>
 
@@ -585,7 +713,9 @@ function Overview({
             <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
           </div>
         ) : (
-          <p className="py-2 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>No telemetry yet</p>
+          <p className="py-2 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+            No telemetry yet
+          </p>
         )}
       </Section>
 
@@ -596,10 +726,15 @@ function Overview({
           <dt>Group</dt>
           <dd>{device.resolved_group || device.group_name || TERMS.noGroup}</dd>
           <dt>Source</dt>
-          <dd><AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} /></dd>
+          <dd>
+            <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
+          </dd>
         </dl>
         {canOperate && (
-          <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4" style={{ borderColor: "var(--th-border-drawer-section)" }}>
+          <div
+            className="mt-4 grid grid-cols-2 gap-3 border-t pt-4"
+            style={{ borderColor: "var(--th-border-drawer-section)" }}
+          >
             <label className="block">
               <span className="premium-kicker mb-1 block">Assign client</span>
               <SelectField
@@ -612,7 +747,11 @@ function Overview({
                 className="w-full"
               >
                 <option value="none">{TERMS.noClient}</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </SelectField>
             </label>
             <label className="block">
@@ -628,7 +767,11 @@ function Overview({
                 className="w-full"
               >
                 <option value="none">{TERMS.noGroup}</option>
-                {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                {availableGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
               </SelectField>
             </label>
           </div>
@@ -640,21 +783,41 @@ function Overview({
   );
 }
 
-function CapabilityPanel({ tab, inventory, state, onRetry }: {
-  tab: string; inventory: DeviceInventory | null; state: InventoryState; onRetry: () => void;
+function CapabilityPanel({
+  tab,
+  inventory,
+  state,
+  onRetry,
+}: {
+  tab: string;
+  inventory: DeviceInventory | null;
+  state: InventoryState;
+  onRetry: () => void;
 }) {
   const title = CAP_TAB_LABELS[tab] ?? humanize(tab);
   const table = (head: string[], rows: string[][], noun: string) => (
     <SimpleTable title={title} head={head} rows={rows} noun={noun} state={state} onRetry={onRetry} />
   );
   if (tab === "services") {
-    return table(["Name", "Status"], (inventory?.services ?? []).map((s) => [s.display_name || s.name, humanize(s.status)]), "services");
+    return table(
+      ["Name", "Status"],
+      (inventory?.services ?? []).map((s) => [s.display_name || s.name, humanize(s.status)]),
+      "services",
+    );
   }
   if (tab === "processes") {
-    return table(["Name", "PID"], (inventory?.processes ?? []).map((p) => [p.name, String(p.pid)]), "processes");
+    return table(
+      ["Name", "PID"],
+      (inventory?.processes ?? []).map((p) => [p.name, String(p.pid)]),
+      "processes",
+    );
   }
   if (tab === "packages") {
-    return table(["Name", "Version"], (inventory?.software ?? []).map((s) => [s.name, s.version || "—"]), "packages");
+    return table(
+      ["Name", "Version"],
+      (inventory?.software ?? []).map((s) => [s.name, s.version || "—"]),
+      "packages",
+    );
   }
   return (
     <Section title={title}>
@@ -668,18 +831,37 @@ function CapabilityPanel({ tab, inventory, state, onRetry }: {
   );
 }
 
-function SimpleTable({ title, head, rows, noun, state, onRetry }: {
-  title: string; head: string[]; rows: string[][]; noun: string; state: InventoryState; onRetry: () => void;
+function SimpleTable({
+  title,
+  head,
+  rows,
+  noun,
+  state,
+  onRetry,
+}: {
+  title: string;
+  head: string[];
+  rows: string[][];
+  noun: string;
+  state: InventoryState;
+  onRetry: () => void;
 }) {
   const shown = rows.slice(0, TABLE_ROW_LIMIT);
-  const aside = state === "ready" && rows.length > 0
-    ? <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{rows.length} collected</span>
-    : undefined;
+  const aside =
+    state === "ready" && rows.length > 0 ? (
+      <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+        {rows.length} collected
+      </span>
+    ) : undefined;
   return (
     <Section title={title} aside={aside}>
       {state === "loading" ? (
-        <div className="flex items-center justify-center gap-2 py-6 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-          <Loader2 className="h-4 w-4 animate-spin" />Loading {noun}…
+        <div
+          className="flex items-center justify-center gap-2 py-6 text-[13px]"
+          style={{ color: "var(--th-text-muted)" }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading {noun}…
         </div>
       ) : state === "error" ? (
         <EmptyState
@@ -687,10 +869,19 @@ function SimpleTable({ title, head, rows, noun, state, onRetry }: {
           icon={<AlertTriangle className="h-5 w-5" />}
           title={`Couldn't load ${noun}`}
           description="The server did not answer. Try again."
-          action={<Button size="sm" variant="secondary" onClick={onRetry}><RefreshCcw className="h-3.5 w-3.5" />Retry</Button>}
+          action={
+            <Button size="sm" variant="secondary" onClick={onRetry}>
+              <RefreshCcw className="h-3.5 w-3.5" />
+              Retry
+            </Button>
+          }
         />
       ) : rows.length === 0 ? (
-        <EmptyState className="!py-6" title={`No ${noun} reported`} description="This device has not reported any yet." />
+        <EmptyState
+          className="!py-6"
+          title={`No ${noun} reported`}
+          description="This device has not reported any yet."
+        />
       ) : (
         <>
           <div className="max-h-[60vh] overflow-auto">
@@ -698,7 +889,13 @@ function SimpleTable({ title, head, rows, noun, state, onRetry }: {
               <thead className="sticky top-0" style={{ background: "var(--th-bg-drawer-table-head)" }}>
                 <tr>
                   {head.map((h) => (
-                    <th key={h} className="pb-1.5 pr-3 text-left text-[12px] font-semibold" style={{ color: "var(--th-text-muted)" }}>{h}</th>
+                    <th
+                      key={h}
+                      className="pb-1.5 pr-3 text-left text-[12px] font-semibold"
+                      style={{ color: "var(--th-text-muted)" }}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -706,7 +903,14 @@ function SimpleTable({ title, head, rows, noun, state, onRetry }: {
                 {shown.map((r, i) => (
                   <tr key={i} style={{ borderTop: "1px solid var(--th-border-drawer-section)" }}>
                     {r.map((c, j) => (
-                      <td key={j} className="max-w-[260px] truncate py-1.5 pr-3" style={{ color: j === 0 ? "var(--th-text-primary)" : "var(--th-text-secondary)" }} title={c}>{c}</td>
+                      <td
+                        key={j}
+                        className="max-w-[260px] truncate py-1.5 pr-3"
+                        style={{ color: j === 0 ? "var(--th-text-primary)" : "var(--th-text-secondary)" }}
+                        title={c}
+                      >
+                        {c}
+                      </td>
                     ))}
                   </tr>
                 ))}
@@ -724,12 +928,24 @@ function SimpleTable({ title, head, rows, noun, state, onRetry }: {
   );
 }
 
-function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMeta; busy: string | null; canOperate: boolean; onAction: (a: DrawerAction) => void }) {
+function ManagementPanel({
+  meta,
+  busy,
+  canOperate,
+  onAction,
+}: {
+  meta: DrawerMeta;
+  busy: string | null;
+  canOperate: boolean;
+  onAction: (a: DrawerAction) => void;
+}) {
   return (
     <section className="mb-4">
       <p className="premium-kicker mb-2">Remote actions</p>
       {!canOperate && (
-        <div className="th-drawer-callout mb-3 text-[13px]" data-tone="neutral">You have read-only access.</div>
+        <div className="th-drawer-callout mb-3 text-[13px]" data-tone="neutral">
+          You have read-only access.
+        </div>
       )}
       <div className="grid grid-cols-2 gap-2">
         {meta.actions.map((a) => {
@@ -746,7 +962,13 @@ function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMet
               onClick={() => onAction(a)}
             >
               <span className="th-action-icon">
-                {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : destructive ? <AlertTriangle className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+                {isBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : destructive ? (
+                  <AlertTriangle className="h-4 w-4" />
+                ) : (
+                  <Wrench className="h-4 w-4" />
+                )}
               </span>
               <span className="min-w-0 flex-1 truncate text-left text-[13px] font-medium">{a.label}</span>
             </button>
@@ -757,14 +979,30 @@ function ManagementPanel({ meta, busy, canOperate, onAction }: { meta: DrawerMet
   );
 }
 
-function NotesPanel({ notes, loading, busy, noteText, setNoteText, onAdd, canOperate }: {
-  notes: DeviceNote[]; loading: boolean; busy: boolean; noteText: string; setNoteText: (v: string) => void; onAdd: () => void; canOperate: boolean;
+function NotesPanel({
+  notes,
+  loading,
+  busy,
+  noteText,
+  setNoteText,
+  onAdd,
+  canOperate,
+}: {
+  notes: DeviceNote[];
+  loading: boolean;
+  busy: boolean;
+  noteText: string;
+  setNoteText: (v: string) => void;
+  onAdd: () => void;
+  canOperate: boolean;
 }) {
   return (
     <section className="mb-4">
       <div className="mb-2 flex items-center justify-between">
         <p className="premium-kicker">Notes</p>
-        <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
+        <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+          {notes.length} {notes.length === 1 ? "note" : "notes"}
+        </span>
       </div>
       {canOperate && (
         <div className="th-drawer-card">
@@ -785,7 +1023,9 @@ function NotesPanel({ notes, loading, busy, noteText, setNoteText, onAdd, canOpe
       )}
       <div className="mt-3 space-y-2">
         {loading && notes.length === 0 ? (
-          <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>Loading notes…</p>
+          <p className="py-6 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+            Loading notes…
+          </p>
         ) : notes.length === 0 ? (
           <EmptyState
             className="!py-6"
@@ -793,19 +1033,34 @@ function NotesPanel({ notes, loading, busy, noteText, setNoteText, onAdd, canOpe
             title="No notes yet"
             description="Internal notes are visible to every operator who can see this device."
           />
-        ) : notes.map((n) => {
-          const author = n.created_by || "admin";
-          return (
-            <div key={n.id} className="th-drawer-card !p-3">
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className="th-avatar !h-6 !w-6 !text-[11px]">{author.charAt(0).toUpperCase()}</span>
-                <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{author}</span>
-                <span className="text-[12px]" style={{ color: "var(--th-text-faint)" }} title={formatDateTime(n.created_at)}>{timeAgo(n.created_at)}</span>
+        ) : (
+          notes.map((n) => {
+            const author = n.created_by || "admin";
+            return (
+              <div key={n.id} className="th-drawer-card !p-3">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="th-avatar !h-6 !w-6 !text-[11px]">{author.charAt(0).toUpperCase()}</span>
+                  <span className="text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                    {author}
+                  </span>
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "var(--th-text-faint)" }}
+                    title={formatDateTime(n.created_at)}
+                  >
+                    {timeAgo(n.created_at)}
+                  </span>
+                </div>
+                <p
+                  className="whitespace-pre-wrap pl-8 text-[13px] leading-5"
+                  style={{ color: "var(--th-text-secondary)" }}
+                >
+                  {n.note}
+                </p>
               </div>
-              <p className="whitespace-pre-wrap pl-8 text-[13px] leading-5" style={{ color: "var(--th-text-secondary)" }}>{n.note}</p>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </section>
   );

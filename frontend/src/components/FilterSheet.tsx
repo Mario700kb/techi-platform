@@ -69,9 +69,7 @@ export function FilterSheet({
   const [draftClientId, setDraftClientId] = useState<number | undefined>(
     typeof filters.client_id === "number" ? filters.client_id : undefined,
   );
-  const [draftDeviceType, setDraftDeviceType] = useState<DeviceFilters["device_type"] | undefined>(
-    filters.device_type,
-  );
+  const [draftDeviceType, setDraftDeviceType] = useState<DeviceFilters["device_type"] | undefined>(filters.device_type);
 
   // Re-sync the draft to the committed filters every time the sheet opens.
   useEffect(() => {
@@ -82,9 +80,7 @@ export function FilterSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const validClients = clients.filter(
-    (c) => c.id && c.name && c.name !== "User" && c.name.trim() !== "",
-  );
+  const validClients = clients.filter((c) => c.id && c.name && c.name !== "User" && c.name.trim() !== "");
 
   const handleApply = () => {
     // Order matters: onFilterChange and onQuickFilterChange each call
@@ -109,8 +105,12 @@ export function FilterSheet({
       title="Filters"
       footer={
         <>
-          <Button variant="secondary" type="button" onClick={onClose} className="min-h-[44px] px-5">Reset</Button>
-          <Button type="button" onClick={handleApply} className="min-h-[44px] flex-1">Apply filters</Button>
+          <Button variant="secondary" type="button" onClick={onClose} className="min-h-[44px] px-5">
+            Reset
+          </Button>
+          <Button type="button" onClick={handleApply} className="min-h-[44px] flex-1">
+            Apply filters
+          </Button>
         </>
       }
     >
@@ -169,9 +169,7 @@ export function FilterSheet({
                   <Box className="h-4 w-4" />
                   No Client
                 </span>
-                {unassignedCount !== undefined && (
-                  <span className="th-msheet-count">{unassignedCount}</span>
-                )}
+                {unassignedCount !== undefined && <span className="th-msheet-count">{unassignedCount}</span>}
               </button>
 
               {validClients.map((client) => {
@@ -198,7 +196,10 @@ export function FilterSheet({
                     </button>
 
                     {hasSubgroups && (
-                      <div className="ml-3 mt-1 flex flex-col gap-1 border-l pl-3" style={{ borderColor: "var(--th-border-subtle)" }}>
+                      <div
+                        className="ml-3 mt-1 flex flex-col gap-1 border-l pl-3"
+                        style={{ borderColor: "var(--th-border-subtle)" }}
+                      >
                         {Object.entries(SUBGROUP_CONFIG).map(([catKey, { label, deviceType }]) => {
                           const count = subgroups?.[catKey] ?? 0;
                           if (count === 0) return null;

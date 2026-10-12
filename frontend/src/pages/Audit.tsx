@@ -1,6 +1,16 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { AlertTriangle, ChevronRight, ClipboardList, Clock, Filter, RefreshCcw, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  Filter,
+  RefreshCcw,
+  ShieldAlert,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import {
   ACTION_LABELS,
   AuditFacets,
@@ -31,10 +41,13 @@ const entityLabel = (type: string) => ENTITY_TYPE_LABELS[type] ?? humanize(type)
 function actionTone(action: string): string {
   if (/(failed|denied|blocked|deleted|forced)/.test(action)) return TONE.critical;
   if (action === "login") return TONE.info;
-  if (action.startsWith("remote_") || action.startsWith("terminal_") || action.startsWith("ssh_")) return "var(--th-status-agent)";
+  if (action.startsWith("remote_") || action.startsWith("terminal_") || action.startsWith("ssh_"))
+    return "var(--th-status-agent)";
   if (action.startsWith("action_")) return TONE.warning;
-  if (action.startsWith("operator_") || action.startsWith("team_") || action.startsWith("scope_")) return TONE.maintenance;
-  if (action.startsWith("agent_package_") || action.startsWith("enrollment_token_") || action.startsWith("bootstrap_")) return TONE.online;
+  if (action.startsWith("operator_") || action.startsWith("team_") || action.startsWith("scope_"))
+    return TONE.maintenance;
+  if (action.startsWith("agent_package_") || action.startsWith("enrollment_token_") || action.startsWith("bootstrap_"))
+    return TONE.online;
   if (action.startsWith("report_")) return "var(--th-series-2)";
   return TONE.neutral;
 }
@@ -94,7 +107,9 @@ export default function Audit() {
   }, [filters, page, pageSize, load]);
 
   useEffect(() => {
-    getAuditFacets().then(setFacets).catch(() => setFacets(null));
+    getAuditFacets()
+      .then(setFacets)
+      .catch(() => setFacets(null));
   }, []);
 
   const applyFilters = () => {
@@ -126,21 +141,33 @@ export default function Audit() {
   const actionOptions = useMemo(
     () => [
       { value: "", label: "All actions" },
-      ...(facets?.actions ?? []).map((f) => ({ value: f.value, label: actionLabel(f.value), hint: `${formatCount(f.count)} events` })),
+      ...(facets?.actions ?? []).map((f) => ({
+        value: f.value,
+        label: actionLabel(f.value),
+        hint: `${formatCount(f.count)} events`,
+      })),
     ],
     [facets],
   );
   const entityOptions = useMemo(
     () => [
       { value: "", label: "All entity types" },
-      ...(facets?.entity_types ?? []).map((f) => ({ value: f.value, label: entityLabel(f.value), hint: `${formatCount(f.count)} events` })),
+      ...(facets?.entity_types ?? []).map((f) => ({
+        value: f.value,
+        label: entityLabel(f.value),
+        hint: `${formatCount(f.count)} events`,
+      })),
     ],
     [facets],
   );
   const operatorOptions = useMemo(
     () => [
       { value: "", label: "All operators" },
-      ...(facets?.operators ?? []).map((f) => ({ value: f.value, label: f.value, hint: `${formatCount(f.count)} events` })),
+      ...(facets?.operators ?? []).map((f) => ({
+        value: f.value,
+        label: f.value,
+        hint: `${formatCount(f.count)} events`,
+      })),
     ],
     [facets],
   );
@@ -150,7 +177,11 @@ export default function Audit() {
       <section className="premium-page th-onb space-y-4">
         <PageHeader title="Audit Log" description="Append-only record of operator actions across the platform." />
         <div className="th-onb-card th-onb-enter">
-          <EmptyState icon={<ShieldAlert className="h-5 w-5" />} title="Access denied" description="Your role does not include the audit log." />
+          <EmptyState
+            icon={<ShieldAlert className="h-5 w-5" />}
+            title="Access denied"
+            description="Your role does not include the audit log."
+          />
         </div>
       </section>
     );
@@ -170,26 +201,67 @@ export default function Audit() {
       />
 
       {error && (
-        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties} role="alert">
+        <div
+          className="th-onb-note th-onb-reveal"
+          style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}
+          role="alert"
+        >
           <AlertTriangle className="h-4 w-4" />
           <span className="flex-1">{error}</span>
-          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
       {/* ── summary ─────────────────────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-3">
         {[
-          { label: activeFilters ? "Matching events" : "Events recorded", value: formatCount(total), hint: activeFilters ? "With the filters applied" : "Since the log began", icon: ClipboardList, tone: "var(--th-accent)" },
-          { label: "Latest event", value: latest ? timeAgo(latest.created_at) : "—", hint: latest ? `${latest.operator_username ?? "system"} · ${actionLabel(latest.action)}` : "Nothing recorded", icon: Clock, tone: TONE.info },
-          { label: "Active filters", value: String(activeFilters), hint: activeFilters ? "Clear them to see everything" : "Showing every event", icon: SlidersHorizontal, tone: activeFilters ? TONE.warning : TONE.neutral },
+          {
+            label: activeFilters ? "Matching events" : "Events recorded",
+            value: formatCount(total),
+            hint: activeFilters ? "With the filters applied" : "Since the log began",
+            icon: ClipboardList,
+            tone: "var(--th-accent)",
+          },
+          {
+            label: "Latest event",
+            value: latest ? timeAgo(latest.created_at) : "—",
+            hint: latest
+              ? `${latest.operator_username ?? "system"} · ${actionLabel(latest.action)}`
+              : "Nothing recorded",
+            icon: Clock,
+            tone: TONE.info,
+          },
+          {
+            label: "Active filters",
+            value: String(activeFilters),
+            hint: activeFilters ? "Clear them to see everything" : "Showing every event",
+            icon: SlidersHorizontal,
+            tone: activeFilters ? TONE.warning : TONE.neutral,
+          },
         ].map((item, index) => (
-          <div key={item.label} className="th-onb-card th-onb-stat th-onb-enter" style={{ "--i": index } as CSSProperties}>
-            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}><item.icon className="h-4 w-4" /></span>
+          <div
+            key={item.label}
+            className="th-onb-card th-onb-stat th-onb-enter"
+            style={{ "--i": index } as CSSProperties}
+          >
+            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}>
+              <item.icon className="h-4 w-4" />
+            </span>
             <div className="min-w-0">
-              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>{item.label}</div>
-              <div className="truncate text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>{item.value}</div>
-              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>{item.hint}</div>
+              <div className="text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                {item.label}
+              </div>
+              <div
+                className="truncate text-[24px] font-semibold leading-8 tabular-nums"
+                style={{ color: "var(--th-text-primary)" }}
+              >
+                {item.value}
+              </div>
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                {item.hint}
+              </div>
             </div>
           </div>
         ))}
@@ -204,8 +276,15 @@ export default function Audit() {
           subtitle="Times are Tirana time"
           aside={
             <div className="flex gap-2">
-              {activeFilters > 0 && <Button size="sm" variant="secondary" onClick={clearFilters}><X className="h-3.5 w-3.5" />Clear</Button>}
-              <Button size="sm" onClick={applyFilters} disabled={loading || !draftChanged}>Apply</Button>
+              {activeFilters > 0 && (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  <X className="h-3.5 w-3.5" />
+                  Clear
+                </Button>
+              )}
+              <Button size="sm" onClick={applyFilters} disabled={loading || !draftChanged}>
+                Apply
+              </Button>
             </div>
           }
         />
@@ -213,23 +292,53 @@ export default function Audit() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <div className="th-onb-field">
               Operator
-              <Select id="filter-operator" aria-label="Filter by operator" value={draft.operator_username ?? ""} onChange={(value) => setDraft((d) => ({ ...d, operator_username: value || undefined }))} options={operatorOptions} />
+              <Select
+                id="filter-operator"
+                aria-label="Filter by operator"
+                value={draft.operator_username ?? ""}
+                onChange={(value) => setDraft((d) => ({ ...d, operator_username: value || undefined }))}
+                options={operatorOptions}
+              />
             </div>
             <div className="th-onb-field">
               Action
-              <Select id="filter-action" aria-label="Filter by action" value={draft.action ?? ""} onChange={(value) => setDraft((d) => ({ ...d, action: value || undefined }))} options={actionOptions} />
+              <Select
+                id="filter-action"
+                aria-label="Filter by action"
+                value={draft.action ?? ""}
+                onChange={(value) => setDraft((d) => ({ ...d, action: value || undefined }))}
+                options={actionOptions}
+              />
             </div>
             <div className="th-onb-field">
               Entity type
-              <Select id="filter-entity-type" aria-label="Filter by entity type" value={draft.entity_type ?? ""} onChange={(value) => setDraft((d) => ({ ...d, entity_type: value || undefined }))} options={entityOptions} />
+              <Select
+                id="filter-entity-type"
+                aria-label="Filter by entity type"
+                value={draft.entity_type ?? ""}
+                onChange={(value) => setDraft((d) => ({ ...d, entity_type: value || undefined }))}
+                options={entityOptions}
+              />
             </div>
             <label className="th-onb-field">
               From
-              <input type="datetime-local" value={utcToTiranaInput(draft.from_dt)} onChange={(e) => setDraft((d) => ({ ...d, from_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))} />
+              <input
+                type="datetime-local"
+                value={utcToTiranaInput(draft.from_dt)}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, from_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))
+                }
+              />
             </label>
             <label className="th-onb-field">
               To
-              <input type="datetime-local" value={utcToTiranaInput(draft.to_dt)} onChange={(e) => setDraft((d) => ({ ...d, to_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))} />
+              <input
+                type="datetime-local"
+                value={utcToTiranaInput(draft.to_dt)}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, to_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))
+                }
+              />
             </label>
           </div>
         </div>
@@ -241,19 +350,31 @@ export default function Audit() {
           icon={ClipboardList}
           tone="var(--th-accent)"
           title="Events"
-          subtitle={loading && entries.length === 0 ? "Loading…" : `${formatCount(total)} event${total === 1 ? "" : "s"} · select a row for its details`}
+          subtitle={
+            loading && entries.length === 0
+              ? "Loading…"
+              : `${formatCount(total)} event${total === 1 ? "" : "s"} · select a row for its details`
+          }
         />
 
         {loading && entries.length === 0 ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading events">
-            {Array.from({ length: 8 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.1 }} />)}
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.1 }} />
+            ))}
           </div>
         ) : entries.length === 0 ? (
           <EmptyState
             className="th-fade-in py-10"
             icon={<ClipboardList className="h-5 w-5" />}
             title={activeFilters ? "No events match these filters" : "No events recorded"}
-            action={activeFilters ? <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button> : undefined}
+            action={
+              activeFilters ? (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
@@ -290,26 +411,39 @@ export default function Audit() {
                         onClick={() => toggleExpand(entry.id)}
                       >
                         <td data-m="hide">
-                          <ChevronRight className="th-onb-chevron h-4 w-4" data-open={open || undefined} style={{ color: "var(--th-text-faint)" }} />
+                          <ChevronRight
+                            className="th-onb-chevron h-4 w-4"
+                            data-open={open || undefined}
+                            style={{ color: "var(--th-text-faint)" }}
+                          />
                         </td>
                         <td>
                           <span className="th-alerts-primary tabular-nums">{timeAgo(entry.created_at)}</span>
-                          <span className="th-alerts-secondary tabular-nums">{formatLocalDateTime(entry.created_at)}</span>
+                          <span className="th-alerts-secondary tabular-nums">
+                            {formatLocalDateTime(entry.created_at)}
+                          </span>
                         </td>
                         <td>
                           <span className="flex min-w-0 items-center gap-2">
-                            <span className="th-onb-avatar" aria-hidden="true">{who.charAt(0).toUpperCase()}</span>
+                            <span className="th-onb-avatar" aria-hidden="true">
+                              {who.charAt(0).toUpperCase()}
+                            </span>
                             <span className="th-alerts-primary truncate">{who}</span>
                           </span>
                         </td>
                         <td>
-                          <span className="th-status-chip" style={{ "--chip-tone": tone } as CSSProperties}><i />{actionLabel(entry.action)}</span>
+                          <span className="th-status-chip" style={{ "--chip-tone": tone } as CSSProperties}>
+                            <i />
+                            {actionLabel(entry.action)}
+                          </span>
                         </td>
                         <td>
                           {entry.entity_type ? (
                             <>
                               <span className="th-alerts-primary">{entityLabel(entry.entity_type)}</span>
-                              {entry.entity_id != null && <span className="th-alerts-secondary font-mono">#{entry.entity_id}</span>}
+                              {entry.entity_id != null && (
+                                <span className="th-alerts-secondary font-mono">#{entry.entity_id}</span>
+                              )}
                             </>
                           ) : (
                             <span className="th-alerts-secondary">—</span>
@@ -339,8 +473,15 @@ export default function Audit() {
             page={page}
             pageSize={pageSize}
             total={total}
-            onPageChange={(next) => { setPage(next); setExpanded(new Set()); }}
-            onPageSizeChange={(size) => { setPageSize(size); setPage(1); setExpanded(new Set()); }}
+            onPageChange={(next) => {
+              setPage(next);
+              setExpanded(new Set());
+            }}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+              setExpanded(new Set());
+            }}
             pageSizeOptions={[25, 50, 100]}
             itemLabel="events"
             loading={loading}

@@ -12,7 +12,13 @@ const SLIDE_MS = 1400;
  * `inline` is the in-page variant (bar only), for content that is still
  * resolving inside an already rendered shell.
  */
-export default function AppPreloader({ inline = false, label = "Loading TECHI Connect" }: { inline?: boolean; label?: string }) {
+export default function AppPreloader({
+  inline = false,
+  label = "Loading TECHI Connect",
+}: {
+  inline?: boolean;
+  label?: string;
+}) {
   const [phase] = useState(() => {
     const now = performance.now();
     return {

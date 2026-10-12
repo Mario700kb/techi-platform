@@ -9,24 +9,50 @@ import * as client from "../../api/client";
 vi.mock("../EmbeddedSSHModal", () => ({
   default: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="embedded-ssh-modal">
-      <button type="button" onClick={onClose}>close-modal</button>
+      <button type="button" onClick={onClose}>
+        close-modal
+      </button>
     </div>
   ),
 }));
 
 const SSH_METHOD = {
-  id: "ssh", label: "Embedded SSH", surface: "desktop", capability: "terminal", priority: 20,
-  scheme: "ssh://", requires_client_os: null, status: "ready", status_reason: null, credential_source: "global",
-  transport: "Backend relay · Vault", category: "available", embedded: true,
+  id: "ssh",
+  label: "Embedded SSH",
+  surface: "desktop",
+  capability: "terminal",
+  priority: 20,
+  scheme: "ssh://",
+  requires_client_os: null,
+  status: "ready",
+  status_reason: null,
+  credential_source: "global",
+  transport: "Backend relay · Vault",
+  category: "available",
+  embedded: true,
 };
 const WEB_TERMINAL_METHOD = {
-  id: "web_terminal", label: "Embedded Terminal", surface: "browser", capability: "terminal", priority: 10,
-  scheme: null, requires_client_os: null, status: "ready", status_reason: null, credential_source: null,
-  transport: "Agent tunnel", category: "available", embedded: true,
+  id: "web_terminal",
+  label: "Embedded Terminal",
+  surface: "browser",
+  capability: "terminal",
+  priority: 10,
+  scheme: null,
+  requires_client_os: null,
+  status: "ready",
+  status_reason: null,
+  credential_source: null,
+  transport: "Agent tunnel",
+  category: "available",
+  embedded: true,
 };
 
 function renderMenu(deviceId = 7, extraProps: Record<string, unknown> = {}) {
-  return render(<MemoryRouter><ConnectMenu deviceId={deviceId} {...extraProps} /></MemoryRouter>);
+  return render(
+    <MemoryRouter>
+      <ConnectMenu deviceId={deviceId} {...extraProps} />
+    </MemoryRouter>,
+  );
 }
 
 describe("ConnectMenu — Embedded SSH Connect wiring", () => {
@@ -36,8 +62,10 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 
   it("opens the Embedded SSH modal instead of the generic launcher when SSH is selected", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "linux", methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
-      preferred_method_id: "ssh", configured_preference_id: null,
+      platform: "linux",
+      methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
+      preferred_method_id: "ssh",
+      configured_preference_id: null,
     });
     renderMenu();
 
@@ -54,8 +82,10 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 
   it("web_terminal calls onOpenTerminal (opens the Terminal tab) instead of a dead toast", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "linux", methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
-      preferred_method_id: "ssh", configured_preference_id: null,
+      platform: "linux",
+      methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
+      preferred_method_id: "ssh",
+      configured_preference_id: null,
     });
     const onOpenTerminal = vi.fn();
     renderMenu(7, { onOpenTerminal });
@@ -71,7 +101,10 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 
   it("closing the modal removes it", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "linux", methods: [SSH_METHOD], preferred_method_id: "ssh", configured_preference_id: null,
+      platform: "linux",
+      methods: [SSH_METHOD],
+      preferred_method_id: "ssh",
+      configured_preference_id: null,
     });
     renderMenu();
 
@@ -87,15 +120,34 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
 });
 
 const WINBOX_CREDENTIAL_REQUIRED = {
-  id: "winbox", label: "Winbox", surface: "desktop", capability: null, priority: 10,
-  scheme: "winbox://", requires_client_os: null, status: "credential_required",
-  status_reason: "No compatible credential configured", credential_source: null,
-  transport: "Desktop app", category: "desktop_app", embedded: false,
+  id: "winbox",
+  label: "Winbox",
+  surface: "desktop",
+  capability: null,
+  priority: 10,
+  scheme: "winbox://",
+  requires_client_os: null,
+  status: "credential_required",
+  status_reason: "No compatible credential configured",
+  credential_source: null,
+  transport: "Desktop app",
+  category: "desktop_app",
+  embedded: false,
 };
 const WEBFIG_READY = {
-  id: "webfig", label: "WebFig", surface: "browser", capability: null, priority: 30,
-  scheme: null, requires_client_os: null, status: "ready", status_reason: null, credential_source: "device",
-  transport: "Browser", category: "web", embedded: false,
+  id: "webfig",
+  label: "WebFig",
+  surface: "browser",
+  capability: null,
+  priority: 30,
+  scheme: null,
+  requires_client_os: null,
+  status: "ready",
+  status_reason: null,
+  credential_source: "device",
+  transport: "Browser",
+  category: "web",
+  embedded: false,
 };
 
 describe("ConnectMenu — credential-aware status (Section D/E)", () => {
@@ -105,8 +157,10 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
   it("shows every method even when a credential is required — never hides it", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [WINBOX_CREDENTIAL_REQUIRED, WEBFIG_READY],
-      preferred_method_id: "webfig", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [WINBOX_CREDENTIAL_REQUIRED, WEBFIG_READY],
+      preferred_method_id: "webfig",
+      configured_preference_id: null,
     });
     renderMenu();
     fireEvent.click(await screen.findByText("Connect"));
@@ -118,8 +172,10 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
   it("shows the resolved credential source for a Ready method", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [WEBFIG_READY],
-      preferred_method_id: "webfig", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [WEBFIG_READY],
+      preferred_method_id: "webfig",
+      configured_preference_id: null,
     });
     renderMenu();
     fireEvent.click(await screen.findByText("Connect"));
@@ -128,8 +184,10 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
   it("clicking a credential_required method navigates to the Vault prefilled with device/scope/type", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [WINBOX_CREDENTIAL_REQUIRED],
-      preferred_method_id: "winbox", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [WINBOX_CREDENTIAL_REQUIRED],
+      preferred_method_id: "winbox",
+      configured_preference_id: null,
     });
     render(
       <MemoryRouter initialEntries={["/devices/7"]}>
@@ -145,8 +203,10 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
 
   it("marks the preferred method with a Default badge (arrow opens the menu directly)", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [WEBFIG_READY],
-      preferred_method_id: "webfig", configured_preference_id: "webfig",
+      platform: "mikrotik",
+      methods: [WEBFIG_READY],
+      preferred_method_id: "webfig",
+      configured_preference_id: "webfig",
     });
     renderMenu();
     await screen.findByText("Connect");
@@ -157,13 +217,17 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
   it("pin icon calls setConnectPreference for a Ready method", async () => {
     vi.spyOn(client, "fetchJson")
       .mockResolvedValueOnce({
-        platform: "mikrotik", methods: [WEBFIG_READY],
-        preferred_method_id: "webfig", configured_preference_id: null,
+        platform: "mikrotik",
+        methods: [WEBFIG_READY],
+        preferred_method_id: "webfig",
+        configured_preference_id: null,
       })
       .mockResolvedValueOnce({ platform: "mikrotik", device_id: null, method_id: "webfig" })
       .mockResolvedValueOnce({
-        platform: "mikrotik", methods: [WEBFIG_READY],
-        preferred_method_id: "webfig", configured_preference_id: "webfig",
+        platform: "mikrotik",
+        methods: [WEBFIG_READY],
+        preferred_method_id: "webfig",
+        configured_preference_id: "webfig",
       });
     renderMenu();
     fireEvent.click(await screen.findByText("Connect"));
@@ -180,11 +244,16 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
   it("unavailable_os methods are shown disabled with a reason, not hidden", async () => {
     const winboxOnMac = {
       ...WINBOX_CREDENTIAL_REQUIRED,
-      requires_client_os: "windows", status: "ready", status_reason: null, credential_source: "global",
+      requires_client_os: "windows",
+      status: "ready",
+      status_reason: null,
+      credential_source: "global",
     };
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [winboxOnMac, WEBFIG_READY],
-      preferred_method_id: "webfig", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [winboxOnMac, WEBFIG_READY],
+      preferred_method_id: "webfig",
+      configured_preference_id: null,
     });
     // detectOperatorOS reads navigator.platform; jsdom defaults won't match
     // "windows" so this reliably exercises the mismatch branch regardless
@@ -207,8 +276,10 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
 
   it("main click launches the operator's SAVED Ready default immediately (no menu)", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "linux", methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
-      preferred_method_id: "ssh", configured_preference_id: "ssh",
+      platform: "linux",
+      methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
+      preferred_method_id: "ssh",
+      configured_preference_id: "ssh",
     });
     renderMenu();
 
@@ -221,8 +292,10 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
 
   it("main click with NO saved preference opens the categorized menu once", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
-      preferred_method_id: "ssh", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
+      preferred_method_id: "ssh",
+      configured_preference_id: null,
     });
     renderMenu(7, { hostname: "rb-core-01" });
 
@@ -238,8 +311,10 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
   it("'Always use this option' saves the launched method as the platform default", async () => {
     vi.spyOn(client, "fetchJson")
       .mockResolvedValueOnce({
-        platform: "mikrotik", methods: [WEBFIG_READY, SSH_METHOD],
-        preferred_method_id: "webfig", configured_preference_id: null,
+        platform: "mikrotik",
+        methods: [WEBFIG_READY, SSH_METHOD],
+        preferred_method_id: "webfig",
+        configured_preference_id: null,
       })
       .mockResolvedValue({ platform: "mikrotik", device_id: null, method_id: "ssh" });
     renderMenu();
@@ -259,12 +334,16 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
 
   it("feature-gated embedded methods land in the Unavailable section, disabled with the backend's reason", async () => {
     const gatedSsh = {
-      ...SSH_METHOD, status: "unavailable",
-      status_reason: "Embedded terminal is not enabled for this device yet", credential_source: null,
+      ...SSH_METHOD,
+      status: "unavailable",
+      status_reason: "Embedded terminal is not enabled for this device yet",
+      credential_source: null,
     };
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik", methods: [gatedSsh, WEBFIG_READY],
-      preferred_method_id: "webfig", configured_preference_id: null,
+      platform: "mikrotik",
+      methods: [gatedSsh, WEBFIG_READY],
+      preferred_method_id: "webfig",
+      configured_preference_id: null,
     });
     renderMenu();
     fireEvent.click(await screen.findByText("Connect"));
@@ -278,9 +357,19 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
 
 describe("groupConnectMethods — approved mockup menu structure", () => {
   const method = (overrides: Partial<ConnectMethod>): ConnectMethod => ({
-    id: "x", label: "X", surface: "desktop", capability: null, priority: 10,
-    scheme: null, requires_client_os: null, status: "ready", status_reason: null,
-    credential_source: null, transport: "", category: "available", embedded: false,
+    id: "x",
+    label: "X",
+    surface: "desktop",
+    capability: null,
+    priority: 10,
+    scheme: null,
+    requires_client_os: null,
+    status: "ready",
+    status_reason: null,
+    credential_source: null,
+    transport: "",
+    category: "available",
+    embedded: false,
     ...overrides,
   });
 

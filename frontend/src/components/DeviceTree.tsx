@@ -1,5 +1,19 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { Building2, ChevronRight, Folder, HardDrive, Layers, LayoutGrid, Monitor, Network, PackageX, RefreshCcw, Search, Server, X } from "lucide-react";
+import {
+  Building2,
+  ChevronRight,
+  Folder,
+  HardDrive,
+  Layers,
+  LayoutGrid,
+  Monitor,
+  Network,
+  PackageX,
+  RefreshCcw,
+  Search,
+  Server,
+  X,
+} from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
 import { Device } from "../api/devices";
@@ -63,7 +77,15 @@ interface DeviceTreeProps {
   onRefreshCounts: () => void;
 }
 
-const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, clients, treeCounts, showPlatformFolders = false, onRefreshCounts }: DeviceTreeProps) {
+const DeviceTree = memo(function DeviceTree({
+  selectedKey,
+  onSelect,
+  devices,
+  clients,
+  treeCounts,
+  showPlatformFolders = false,
+  onRefreshCounts,
+}: DeviceTreeProps) {
   const activeClientFolder = useMemo(() => {
     const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors|other)$/);
     if (!match) return null;
@@ -100,15 +122,14 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
   const platformChildren = (clientId: number, folderId: string): Array<[string, number]> => {
     const plats = treeCounts.byClientCategoryPlatform?.get(clientId)?.get(folderId);
     if (!plats) return [];
-    return [...plats.entries()].sort(([a], [b]) =>
-      a === "windows" ? -1 : b === "windows" ? 1 : a.localeCompare(b),
-    );
+    return [...plats.entries()].sort(([a], [b]) => (a === "windows" ? -1 : b === "windows" ? 1 : a.localeCompare(b)));
   };
   const clientHasMaintenance = (clientId: number) => treeIndex.maintenanceClients.has(clientId);
-  const folderHasMaintenance = (clientId: number, folderId: string) => treeIndex.maintenanceFolders.has(`${clientId}:${folderId}`);
+  const folderHasMaintenance = (clientId: number, folderId: string) =>
+    treeIndex.maintenanceFolders.has(`${clientId}:${folderId}`);
   const sortedClients = useMemo(
     () => [...clients].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
-    [clients]
+    [clients],
   );
   const visibleClients = useMemo(() => {
     const q = clientQuery.trim().toLowerCase();
@@ -144,9 +165,18 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
       <header className="th-explorer-head">
         <div className="min-w-0">
           <h2>Explorer</h2>
-          <p>{formatCount(allCount)} {allCount === 1 ? "device" : "devices"} · {formatCount(sortedClients.length)} {sortedClients.length === 1 ? "client" : "clients"}</p>
+          <p>
+            {formatCount(allCount)} {allCount === 1 ? "device" : "devices"} · {formatCount(sortedClients.length)}{" "}
+            {sortedClients.length === 1 ? "client" : "clients"}
+          </p>
         </div>
-        <button type="button" onClick={onRefreshCounts} className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7" title="Refresh counts" aria-label="Refresh counts">
+        <button
+          type="button"
+          onClick={onRefreshCounts}
+          className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7"
+          title="Refresh counts"
+          aria-label="Refresh counts"
+        >
           <RefreshCcw className="h-3.5 w-3.5" />
         </button>
       </header>
@@ -155,10 +185,22 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
         <p className="th-explorer-label">Fleet</p>
         <ul className="th-explorer-list">
           <li>
-            <TreeButton active={selectedKey === "all"} icon={LayoutGrid} label="All devices" count={allCount} onClick={() => onSelect("all")} />
+            <TreeButton
+              active={selectedKey === "all"}
+              icon={LayoutGrid}
+              label="All devices"
+              count={allCount}
+              onClick={() => onSelect("all")}
+            />
           </li>
           <li>
-            <TreeButton active={selectedKey === "unassigned"} icon={PackageX} label={TERMS.noClient} count={unassignedCount} onClick={() => onSelect("unassigned")} />
+            <TreeButton
+              active={selectedKey === "unassigned"}
+              icon={PackageX}
+              label={TERMS.noClient}
+              count={unassignedCount}
+              onClick={() => onSelect("unassigned")}
+            />
           </li>
         </ul>
 
@@ -178,9 +220,19 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
           </div>
           <label className="th-search th-search-sm">
             <Search className="h-3.5 w-3.5 flex-none" />
-            <input value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} placeholder="Filter clients" aria-label="Filter clients" />
+            <input
+              value={clientQuery}
+              onChange={(e) => setClientQuery(e.target.value)}
+              placeholder="Filter clients"
+              aria-label="Filter clients"
+            />
             {clientQuery && (
-              <button type="button" onClick={() => setClientQuery("")} className="th-explorer-clear" aria-label="Clear filter">
+              <button
+                type="button"
+                onClick={() => setClientQuery("")}
+                className="th-explorer-clear"
+                aria-label="Clear filter"
+              >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
@@ -189,9 +241,7 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
 
         <ul className="th-explorer-list pb-2">
           {visibleClients.length === 0 && (
-            <li className="th-explorer-empty">
-              {clientQuery ? "No clients match." : "No clients with devices."}
-            </li>
+            <li className="th-explorer-empty">{clientQuery ? "No clients match." : "No clients with devices."}</li>
           )}
           {visibleClients.map((client) => {
             const childFolders = CLIENT_FOLDERS.filter((folder) => {
@@ -216,45 +266,45 @@ const DeviceTree = memo(function DeviceTree({ selectedKey, onSelect, devices, cl
                   // Always rendered so the branch can slide closed as well as
                   // open; a closed branch is hidden from focus and the a11y tree.
                   <div className="th-tree-collapse" data-open={expanded} aria-hidden={!expanded}>
-                  <div className="th-tree-collapse-inner">
-                  <ul className="fleet-tree-child">
-                    {childFolders.map((folder) => {
-                      const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
-                      return (
-                        <li key={folder.id}>
-                          <TreeButton
-                            active={selectedKey === `client-${client.id}-${folder.id}`}
-                            child
-                            icon={folder.icon}
-                            label={folder.label}
-                            count={folderCount(client.id, folder.id)}
-                            hasMaintenance={folderHasMaintenance(client.id, folder.id)}
-                            onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
-                          />
-                          {platforms.length > 0 && (
-                            <ul className="fleet-tree-child">
-                              {platforms.map(([platform, count]) => {
-                                const key = `client-${client.id}-${folder.id}-${platform}`;
-                                return (
-                                  <li key={platform}>
-                                    <TreeButton
-                                      active={selectedKey === key}
-                                      child
-                                      platformIcon={platform}
-                                      label={PLATFORM_LABELS[platform] ?? platform}
-                                      count={count}
-                                      onClick={() => onSelect(key)}
-                                    />
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  </div>
+                    <div className="th-tree-collapse-inner">
+                      <ul className="fleet-tree-child">
+                        {childFolders.map((folder) => {
+                          const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
+                          return (
+                            <li key={folder.id}>
+                              <TreeButton
+                                active={selectedKey === `client-${client.id}-${folder.id}`}
+                                child
+                                icon={folder.icon}
+                                label={folder.label}
+                                count={folderCount(client.id, folder.id)}
+                                hasMaintenance={folderHasMaintenance(client.id, folder.id)}
+                                onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
+                              />
+                              {platforms.length > 0 && (
+                                <ul className="fleet-tree-child">
+                                  {platforms.map(([platform, count]) => {
+                                    const key = `client-${client.id}-${folder.id}-${platform}`;
+                                    return (
+                                      <li key={platform}>
+                                        <TreeButton
+                                          active={selectedKey === key}
+                                          child
+                                          platformIcon={platform}
+                                          label={PLATFORM_LABELS[platform] ?? platform}
+                                          count={count}
+                                          onClick={() => onSelect(key)}
+                                        />
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   </div>
                 )}
               </li>
@@ -294,7 +344,19 @@ interface TreeButtonProps {
   onClick: () => void;
 }
 
-function TreeButton({ active, withinActive = false, child = false, icon: Icon, platformIcon, label, count, expanded = false, hasChildren = false, hasMaintenance = false, onClick }: TreeButtonProps) {
+function TreeButton({
+  active,
+  withinActive = false,
+  child = false,
+  icon: Icon,
+  platformIcon,
+  label,
+  count,
+  expanded = false,
+  hasChildren = false,
+  hasMaintenance = false,
+  onClick,
+}: TreeButtonProps) {
   // One anatomy for every level: icon column on the left, count column and
   // disclosure slot on the right, so all rows line up whatever their depth.
   return (

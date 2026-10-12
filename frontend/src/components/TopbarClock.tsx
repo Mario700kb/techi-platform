@@ -22,10 +22,13 @@ export default function TopbarClock() {
   useEffect(() => {
     // Tick on the second boundary so the display never lags a full second.
     let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setNow(new Date());
-      interval = window.setInterval(() => setNow(new Date()), 1000);
-    }, 1000 - (Date.now() % 1000));
+    const timeout = window.setTimeout(
+      () => {
+        setNow(new Date());
+        interval = window.setInterval(() => setNow(new Date()), 1000);
+      },
+      1000 - (Date.now() % 1000),
+    );
     return () => {
       window.clearTimeout(timeout);
       if (interval !== undefined) window.clearInterval(interval);
@@ -33,12 +36,10 @@ export default function TopbarClock() {
   }, []);
 
   return (
-    <time
-      dateTime={now.toISOString()}
-      title="Platform time — Tirana (Europe/Tirane)"
-      className="th-clock"
-    >
-      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>{timeFormat.format(now)}</span>
+    <time dateTime={now.toISOString()} title="Platform time — Tirana (Europe/Tirane)" className="th-clock">
+      <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+        {timeFormat.format(now)}
+      </span>
       <span style={{ color: "var(--th-text-muted)" }}>{dateFormat.format(now)}</span>
       <span style={{ color: "var(--th-text-faint)" }}>Tirana</span>
     </time>

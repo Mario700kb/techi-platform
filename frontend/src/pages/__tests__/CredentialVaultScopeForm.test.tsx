@@ -17,9 +17,26 @@ import * as authContext from "../../auth/AuthContext";
 
 const TYPES: vaultApi.VaultCredentialTypeDescriptor[] = [
   {
-    id: "generic_username_password", label: "Generic username/password", icon: "UserCog", category: "generic",
-    metadata_fields: [], secret_fields: [{ key: "password", label: "Password", required: true, kind: "password", options: null, default: null, placeholder: null }],
-    requires_username: true, requires_secret: true, future_consumers: ["Other"], legacy: false,
+    id: "generic_username_password",
+    label: "Generic username/password",
+    icon: "UserCog",
+    category: "generic",
+    metadata_fields: [],
+    secret_fields: [
+      {
+        key: "password",
+        label: "Password",
+        required: true,
+        kind: "password",
+        options: null,
+        default: null,
+        placeholder: null,
+      },
+    ],
+    requires_username: true,
+    requires_secret: true,
+    future_consumers: ["Other"],
+    legacy: false,
   },
 ];
 
@@ -33,13 +50,34 @@ const GROUPS: clientsApi.DeviceGroup[] = [
 
 function credential(overrides: Partial<vaultApi.VaultCredential> = {}): vaultApi.VaultCredential {
   return {
-    id: 1, name: "cred", credential_type: "generic_username_password", scope_type: "global",
-    client_id: null, group_id: null, device_id: null, purpose: null, username: "admin", notes: null,
-    created_by: "mario", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
-    rotated_at: null, last_used_at: null, status: "active", expires_at: null, rotation_due_at: null,
-    last_tested_at: null, last_test_status: null, credential_metadata: {}, secret_hint: "••••1234",
-    lifecycle_status: "active", is_referenced: false, reference_count: 0, references: [],
-    consumer_status: "stored_only", future_consumers: [],
+    id: 1,
+    name: "cred",
+    credential_type: "generic_username_password",
+    scope_type: "global",
+    client_id: null,
+    group_id: null,
+    device_id: null,
+    purpose: null,
+    username: "admin",
+    notes: null,
+    created_by: "mario",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    rotated_at: null,
+    last_used_at: null,
+    status: "active",
+    expires_at: null,
+    rotation_due_at: null,
+    last_tested_at: null,
+    last_test_status: null,
+    credential_metadata: {},
+    secret_hint: "••••1234",
+    lifecycle_status: "active",
+    is_referenced: false,
+    reference_count: 0,
+    references: [],
+    consumer_status: "stored_only",
+    future_consumers: [],
     ...overrides,
   };
 }
@@ -47,13 +85,23 @@ function credential(overrides: Partial<vaultApi.VaultCredential> = {}): vaultApi
 function mockAuth() {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "admin", email: "" } as any,
-    token: "t", loading: false, permissions: null,
-    login: vi.fn(), logout: vi.fn(), can: () => true, hasAnyRole: vi.fn(), hasPermission: () => true,
+    token: "t",
+    loading: false,
+    permissions: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    can: () => true,
+    hasAnyRole: vi.fn(),
+    hasPermission: () => true,
   });
 }
 
 function renderPage() {
-  return render(<MemoryRouter><CredentialVault /></MemoryRouter>);
+  return render(
+    <MemoryRouter>
+      <CredentialVault />
+    </MemoryRouter>,
+  );
 }
 
 async function openForm() {
@@ -91,7 +139,9 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
     vi.spyOn(clientsApi, "getClients").mockResolvedValue(CLIENTS);
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue(GROUPS);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
-    const createSpy = vi.spyOn(vaultApi, "createVaultCredential").mockResolvedValue(credential({ scope_type: "client", client_id: 100 }));
+    const createSpy = vi
+      .spyOn(vaultApi, "createVaultCredential")
+      .mockResolvedValue(credential({ scope_type: "client", client_id: 100 }));
 
     renderPage();
     await openForm();
@@ -114,7 +164,9 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
     vi.spyOn(clientsApi, "getClients").mockResolvedValue(CLIENTS);
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue(GROUPS);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
-    const createSpy = vi.spyOn(vaultApi, "createVaultCredential").mockResolvedValue(credential({ scope_type: "group", group_id: 5 }));
+    const createSpy = vi
+      .spyOn(vaultApi, "createVaultCredential")
+      .mockResolvedValue(credential({ scope_type: "group", group_id: 5 }));
 
     renderPage();
     await openForm();
@@ -139,10 +191,21 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue(GROUPS);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
     vi.spyOn(devicesApi, "getDevices").mockResolvedValue({
-      devices: [{ id: 733, hostname: "mario-home", display_name: "Mario Home", client_id: 100, group_id: 5, platform: "linux" } as devicesApi.Device],
+      devices: [
+        {
+          id: 733,
+          hostname: "mario-home",
+          display_name: "Mario Home",
+          client_id: 100,
+          group_id: 5,
+          platform: "linux",
+        } as devicesApi.Device,
+      ],
       total: 1,
     });
-    const createSpy = vi.spyOn(vaultApi, "createVaultCredential").mockResolvedValue(credential({ scope_type: "device", device_id: 733 }));
+    const createSpy = vi
+      .spyOn(vaultApi, "createVaultCredential")
+      .mockResolvedValue(credential({ scope_type: "device", device_id: 733 }));
 
     renderPage();
     await openForm();
@@ -172,7 +235,9 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
     vi.spyOn(clientsApi, "getClients").mockResolvedValue(CLIENTS);
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue(GROUPS);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
-    const createSpy = vi.spyOn(vaultApi, "createVaultCredential").mockResolvedValue(credential({ scope_type: "global" }));
+    const createSpy = vi
+      .spyOn(vaultApi, "createVaultCredential")
+      .mockResolvedValue(credential({ scope_type: "global" }));
 
     renderPage();
     await openForm();
@@ -206,11 +271,16 @@ describe("CredentialVault — 'Add credential' prefill from Connect menu (Sectio
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue(GROUPS);
     vi.spyOn(vaultApi, "listVaultCredentials").mockResolvedValue([]);
     vi.spyOn(devicesApi, "getDevice").mockResolvedValue({
-      id: 733, hostname: "mario-home", display_name: "Mario Home", client_id: 100,
+      id: 733,
+      hostname: "mario-home",
+      display_name: "Mario Home",
+      client_id: 100,
     } as devicesApi.Device);
 
     render(
-      <MemoryRouter initialEntries={["/vault?prefill_scope=device&prefill_device_id=733&prefill_credential_type=ssh_password"]}>
+      <MemoryRouter
+        initialEntries={["/vault?prefill_scope=device&prefill_device_id=733&prefill_credential_type=ssh_password"]}
+      >
         <CredentialVault />
       </MemoryRouter>,
     );

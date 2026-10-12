@@ -8,7 +8,14 @@ import Clients from "../Clients";
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
-const client = (id: number, name: string, is_active = true) => ({ id, name, slug: name.toLowerCase(), description: null, is_active, created_at: "2026-06-01T08:00:00Z" });
+const client = (id: number, name: string, is_active = true) => ({
+  id,
+  name,
+  slug: name.toLowerCase(),
+  description: null,
+  is_active,
+  created_at: "2026-06-01T08:00:00Z",
+});
 
 function mockApi() {
   vi.spyOn(clientsApi, "getClients").mockResolvedValue([client(1, "Vasgroup"), client(2, "Oldco", false)]);
@@ -16,12 +23,17 @@ function mockApi() {
     { id: 10, client_id: 1, name: "Servers", created_at: "" },
     { id: 11, client_id: 1, name: "Reception", created_at: "" },
   ]);
-  vi.spyOn(clientsApi, "getTrustedDomains").mockResolvedValue([{ id: 5, domain: "VASGROUP", client_id: 1, is_active: true } as clientsApi.TrustedDomain]);
+  vi.spyOn(clientsApi, "getTrustedDomains").mockResolvedValue([
+    { id: 5, domain: "VASGROUP", client_id: 1, is_active: true } as clientsApi.TrustedDomain,
+  ]);
   vi.spyOn(devicesApi, "getDeviceTree").mockResolvedValue({ total: 42, unassigned: 0, by_client: { "1": 42 } });
 }
 
 describe("Clients", () => {
-  afterEach(() => { vi.restoreAllMocks(); appCache.invalidate(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    appCache.invalidate();
+  });
 
   it("shows each client's real status and device count", async () => {
     mockApi();

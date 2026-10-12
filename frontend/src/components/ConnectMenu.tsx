@@ -5,7 +5,11 @@ import { ChevronDown, CircleAlert, Monitor, Globe, Pin, PinOff, Plus, Terminal, 
 import { fetchJson } from "../api/client";
 import {
   CONNECT_REFRESH_EVENT,
-  type ConnectMethod, emitConnectRefresh, getConnectMethods, resetConnectPreference, setConnectPreference,
+  type ConnectMethod,
+  emitConnectRefresh,
+  getConnectMethods,
+  resetConnectPreference,
+  setConnectPreference,
 } from "../api/connect";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
@@ -62,7 +66,10 @@ interface Props {
 
 const METHOD_CREDENTIAL_TYPE: Record<string, string> = { ssh: "ssh_password", winbox: "winbox", webfig: "webfig" };
 const CREDENTIAL_SOURCE_LABEL: Record<string, string> = {
-  device: "Device credential", group: "Group credential", client: "Client credential", global: "Global credential",
+  device: "Device credential",
+  group: "Group credential",
+  client: "Client credential",
+  global: "Global credential",
 };
 const OS_LABEL: Record<string, string> = { windows: "Windows", macos: "macOS", linux: "Linux" };
 
@@ -87,7 +94,11 @@ export function groupConnectMethods(
   operatorOS: string | null,
 ): ConnectMethodGroup[] {
   const groups: Record<string, ConnectMethod[]> = {
-    Recommended: [], Available: [], Web: [], "Desktop Applications": [], Unavailable: [],
+    Recommended: [],
+    Available: [],
+    Web: [],
+    "Desktop Applications": [],
+    Unavailable: [],
   };
   for (const m of methods) {
     const status = displayStatus(m, operatorOS);
@@ -109,8 +120,14 @@ export function groupConnectMethods(
 }
 
 export default function ConnectMenu({
-  deviceId, hostname, variant = "drawer", lazyLoad = false,
-  initialState = null, initialStateReason = null, onOpenTerminal, onRemoteSupport,
+  deviceId,
+  hostname,
+  variant = "drawer",
+  lazyLoad = false,
+  initialState = null,
+  initialStateReason = null,
+  onOpenTerminal,
+  onRemoteSupport,
 }: Props) {
   const navigate = useNavigate();
   const [platform, setPlatform] = useState<string | null>(null);
@@ -165,7 +182,9 @@ export default function ConnectMenu({
   // if this instance has fetched at least once — an untouched lazy row stays
   // lazy.
   useEffect(() => {
-    const onRefresh = () => { if (loadPromise.current) void load(); };
+    const onRefresh = () => {
+      if (loadPromise.current) void load();
+    };
     window.addEventListener(CONNECT_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(CONNECT_REFRESH_EVENT, onRefresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,7 +245,8 @@ export default function ConnectMenu({
     setOpen(false);
     const credentialType = METHOD_CREDENTIAL_TYPE[m.id];
     const params = new URLSearchParams({
-      prefill_scope: "device", prefill_device_id: String(deviceId),
+      prefill_scope: "device",
+      prefill_device_id: String(deviceId),
       ...(credentialType ? { prefill_credential_type: credentialType } : {}),
       prefill_purpose: m.id === "webfig" ? "WebFig" : "",
     });
@@ -304,7 +324,9 @@ export default function ConnectMenu({
           // included — crosses the network unencrypted. Say so rather than let
           // it look like any other connection. Fixed by enabling www-ssl on the
           // device and setting its Connect port to 443.
-          showNote(`${m.label} opened over plain HTTP — the password you type is sent unencrypted. Enable www-ssl on the device and set its Connect port to 443.`);
+          showNote(
+            `${m.label} opened over plain HTTP — the password you type is sent unencrypted. Enable www-ssl on the device and set its Connect port to 443.`,
+          );
         }
       }
     } catch (e) {
@@ -317,7 +339,10 @@ export default function ConnectMenu({
   // Main segment (approved behavior): saved default that's Ready → launch it
   // immediately; anything else → open the menu once so the operator chooses.
   const onMainClick = async () => {
-    if (open) { setOpen(false); return; }
+    if (open) {
+      setOpen(false);
+      return;
+    }
     const loaded = await ensureLoaded();
     const configured = loaded?.methods.find((m) => m.id === loaded.configured);
     if (configured && displayStatus(configured, operatorOS) === "ready") {
@@ -328,7 +353,10 @@ export default function ConnectMenu({
   };
 
   const onArrowClick = async () => {
-    if (open) { setOpen(false); return; }
+    if (open) {
+      setOpen(false);
+      return;
+    }
     await ensureLoaded();
     openMenu();
   };
@@ -367,22 +395,27 @@ export default function ConnectMenu({
   const isRow = variant === "row";
   const connectTone = rowState === "credential_required" ? "warning" : rowState === "unavailable" ? "muted" : "default";
 
-  const mainTitle = rowState === "credential_required"
-    ? (initialStateReason ?? "Credential required — open the menu to add one")
-    : rowState === "unavailable"
-      ? (initialStateReason ?? "No Connect method available for this device yet")
-      : undefined;
+  const mainTitle =
+    rowState === "credential_required"
+      ? (initialStateReason ?? "Credential required — open the menu to add one")
+      : rowState === "unavailable"
+        ? (initialStateReason ?? "No Connect method available for this device yet")
+        : undefined;
 
   const menuBody = methods && (
     <div
       className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-50 min-w-[280px] overflow-hidden rounded-lg shadow-2xl`}
       style={{
-        background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)",
+        background: "var(--th-bg-card)",
+        border: "1px solid var(--th-border-card)",
         ...(isRow && menuPos ? { top: menuPos.top, right: menuPos.right } : {}),
       }}
     >
       {hostname && (
-        <div className="px-3 pb-1 pt-2.5 font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+        <div
+          className="px-3 pb-1 pt-2.5 font-mono text-[11px] font-bold uppercase tracking-widest"
+          style={{ color: "var(--th-text-faint)" }}
+        >
           Connect to {hostname}
         </div>
       )}
@@ -393,7 +426,10 @@ export default function ConnectMenu({
       )}
       {groupConnectMethods(methods, preferredMethodId, operatorOS).map((group) => (
         <div key={group.label}>
-          <div className="px-3 pb-0.5 pt-2 font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--th-text-faint)" }}>
+          <div
+            className="px-3 pb-0.5 pt-2 font-mono text-[11px] font-bold uppercase tracking-widest"
+            style={{ color: "var(--th-text-faint)" }}
+          >
             {group.label}
           </div>
           {group.methods.map((m) => {
@@ -408,22 +444,30 @@ export default function ConnectMenu({
                 type="button"
                 disabled={disabled}
                 onClick={() => void launch(m)}
-                title={status === "unavailable_os" || status === "unavailable" ? reason ?? undefined : undefined}
+                title={status === "unavailable_os" || status === "unavailable" ? (reason ?? undefined) : undefined}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium transition hover:bg-[var(--th-bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ color: "var(--th-text-primary)" }}
               >
-                {status === "credential_required"
-                  ? <CircleAlert className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning, var(--th-status-warning))" }} />
-                  : m.embedded
-                    ? <Terminal className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
-                    : m.surface === "browser"
-                      ? <Globe className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
-                      : <Monitor className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />}
+                {status === "credential_required" ? (
+                  <CircleAlert
+                    className="h-4 w-4 flex-none"
+                    style={{ color: "var(--th-status-warning, var(--th-status-warning))" }}
+                  />
+                ) : m.embedded ? (
+                  <Terminal className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                ) : m.surface === "browser" ? (
+                  <Globe className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                ) : (
+                  <Monitor className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
+                )}
                 <span className="flex flex-1 flex-col items-start">
                   <span className="flex items-center gap-1.5">
                     {launching === m.id ? "Opening…" : m.label}
                     {isPreferred && (
-                      <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ background: "var(--th-accent-glow)", color: "var(--th-accent)" }}>
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                        style={{ background: "var(--th-accent-glow)", color: "var(--th-accent)" }}
+                      >
                         Default
                       </span>
                     )}
@@ -431,7 +475,12 @@ export default function ConnectMenu({
                   {reason && (
                     <span
                       className="text-[11px] font-normal"
-                      style={{ color: status === "credential_required" ? "var(--th-status-warning, var(--th-status-warning))" : "var(--th-text-faint)" }}
+                      style={{
+                        color:
+                          status === "credential_required"
+                            ? "var(--th-status-warning, var(--th-status-warning))"
+                            : "var(--th-text-faint)",
+                      }}
                     >
                       {reason}
                     </span>
@@ -452,12 +501,16 @@ export default function ConnectMenu({
                     title={isConfigured ? "Stop always using this method" : "Always use this method"}
                     className="flex-none rounded p-1 hover:bg-[var(--th-bg-card-hover)]"
                   >
-                    {isConfigured
-                      ? <Pin className="h-3.5 w-3.5" style={{ color: "var(--th-accent)" }} />
-                      : <PinOff className="h-3.5 w-3.5" style={{ color: "var(--th-text-faint)" }} />}
+                    {isConfigured ? (
+                      <Pin className="h-3.5 w-3.5" style={{ color: "var(--th-accent)" }} />
+                    ) : (
+                      <PinOff className="h-3.5 w-3.5" style={{ color: "var(--th-text-faint)" }} />
+                    )}
                   </span>
                 )}
-                {status === "credential_required" && <Plus className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />}
+                {status === "credential_required" && (
+                  <Plus className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                )}
               </button>
             );
           })}
@@ -524,10 +577,13 @@ export default function ConnectMenu({
             // already-opaque panel. As a floating overlay it let whatever was
             // underneath read straight through the text, so this uses the same
             // opaque card background the dropdown itself uses.
-            background: "var(--th-bg-card)", border: "1px solid var(--th-border-card)", color: "var(--th-text-secondary)",
+            background: "var(--th-bg-card)",
+            border: "1px solid var(--th-border-card)",
+            color: "var(--th-text-secondary)",
             ...(isRow && menuPos ? { top: menuPos.top, right: menuPos.right } : {}),
           }}
-          onClick={() => setNote(null)}>
+          onClick={() => setNote(null)}
+        >
           {note}
         </button>
       )}

@@ -36,10 +36,27 @@ interface SelectProps<T extends string> {
  * OS draws and CSS cannot style) with a menu that matches the rest of the UI.
  * Keyboard: ↑/↓ move, Enter/Space choose, Esc closes, type to jump.
  */
-export default function Select<T extends string>({ value, options, onChange, id, className, prefix, disabled, placeholder, required, style, ...aria }: SelectProps<T>) {
+export default function Select<T extends string>({
+  value,
+  options,
+  onChange,
+  id,
+  className,
+  prefix,
+  disabled,
+  placeholder,
+  required,
+  style,
+  ...aria
+}: SelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number; up: boolean }>({ top: 0, left: 0, width: 0, up: false });
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; up: boolean }>({
+    top: 0,
+    left: 0,
+    width: 0,
+    up: false,
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const typed = useRef({ text: "", at: 0 });
@@ -87,7 +104,8 @@ export default function Select<T extends string>({ value, options, onChange, id,
   }, [open]);
 
   useEffect(() => {
-    if (open) listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView?.({ block: "nearest" });
+    if (open)
+      listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView?.({ block: "nearest" });
   }, [active, open]);
 
   const choose = (index: number) => {
@@ -106,13 +124,24 @@ export default function Select<T extends string>({ value, options, onChange, id,
       return;
     }
     if (!open) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => step(i, 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => step(i, -1)); }
-    else if (e.key === "Home") { e.preventDefault(); setActive(step(-1, 1)); }
-    else if (e.key === "End") { e.preventDefault(); setActive(step(options.length, -1)); }
-    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(active); }
-    else if (e.key === "Escape" || e.key === "Tab") { setOpen(false); }
-    else if (e.key.length === 1) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => step(i, 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => step(i, -1));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setActive(step(-1, 1));
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setActive(step(options.length, -1));
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      choose(active);
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      setOpen(false);
+    } else if (e.key.length === 1) {
       const now = Date.now();
       typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : "") + e.key.toLowerCase(), at: now };
       const hit = options.findIndex((o) => !o.disabled && o.label.toLowerCase().startsWith(typed.current.text));
@@ -144,53 +173,74 @@ export default function Select<T extends string>({ value, options, onChange, id,
         {selected?.icon}
         <span className="min-w-0 flex-1 truncate text-left">
           {prefix && <span style={{ color: "var(--th-text-muted)" }}>{prefix} </span>}
-          {selected ? selected.label : <span style={{ color: "var(--th-text-faint)" }}>{placeholder ?? "Select…"}</span>}
+          {selected ? (
+            selected.label
+          ) : (
+            <span style={{ color: "var(--th-text-faint)" }}>{placeholder ?? "Select…"}</span>
+          )}
         </span>
-        <ChevronDown className={clsx("h-4 w-4 flex-none transition-transform", open && "rotate-180")} style={{ color: "var(--th-text-muted)" }} />
+        <ChevronDown
+          className={clsx("h-4 w-4 flex-none transition-transform", open && "rotate-180")}
+          style={{ color: "var(--th-text-muted)" }}
+        />
       </button>
-      {open && createPortal(
-        <ul
-          ref={listRef}
-          id={listId}
-          role="listbox"
-          aria-label={aria["aria-label"]}
-          className="th-menu th-select-list"
-          data-up={pos.up}
-          style={{ position: "fixed", top: pos.top, left: pos.left, minWidth: pos.width }}
-          onKeyDown={onKeyDown}
-        >
-          {options.map((option, index) => (
-            <Fragment key={`${option.group ?? ""}:${option.value}:${index}`}>
-              {option.group && (
-                <li role="presentation" className="th-menu-label px-2.5 pb-1 pt-2">{option.group}</li>
-              )}
-              {/* aria-activedescendant listbox: the list owns the keyboard (onKeyDown above); options are clicked, never focused. */}
-              {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
-              <li
-                id={`${listId}-${index}`}
-                role="option"
-                aria-selected={option.value === value}
-                aria-disabled={option.disabled || undefined}
-                data-value={option.value}
-                data-index={index}
-                data-active={index === active && !option.disabled}
-                className="th-select-option"
-                onMouseMove={() => { if (!option.disabled) setActive(index); }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => choose(index)}
-              >
-                {option.icon}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{option.label}</span>
-                  {option.hint && <span className="block truncate text-[12px] font-normal" style={{ color: "var(--th-text-muted)" }}>{option.hint}</span>}
-                </span>
-                {option.value === value && <Check className="h-4 w-4 flex-none" style={{ color: "var(--th-accent-bright)" }} />}
-              </li>
-            </Fragment>
-          ))}
-        </ul>,
-        document.body,
-      )}
+      {open &&
+        createPortal(
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label={aria["aria-label"]}
+            className="th-menu th-select-list"
+            data-up={pos.up}
+            style={{ position: "fixed", top: pos.top, left: pos.left, minWidth: pos.width }}
+            onKeyDown={onKeyDown}
+          >
+            {options.map((option, index) => (
+              <Fragment key={`${option.group ?? ""}:${option.value}:${index}`}>
+                {option.group && (
+                  <li role="presentation" className="th-menu-label px-2.5 pb-1 pt-2">
+                    {option.group}
+                  </li>
+                )}
+                {/* aria-activedescendant listbox: the list owns the keyboard (onKeyDown above); options are clicked, never focused. */}
+                {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
+                <li
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={option.value === value}
+                  aria-disabled={option.disabled || undefined}
+                  data-value={option.value}
+                  data-index={index}
+                  data-active={index === active && !option.disabled}
+                  className="th-select-option"
+                  onMouseMove={() => {
+                    if (!option.disabled) setActive(index);
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(index)}
+                >
+                  {option.icon}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{option.label}</span>
+                    {option.hint && (
+                      <span
+                        className="block truncate text-[12px] font-normal"
+                        style={{ color: "var(--th-text-muted)" }}
+                      >
+                        {option.hint}
+                      </span>
+                    )}
+                  </span>
+                  {option.value === value && (
+                    <Check className="h-4 w-4 flex-none" style={{ color: "var(--th-accent-bright)" }} />
+                  )}
+                </li>
+              </Fragment>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </>
   );
 }

@@ -3,7 +3,19 @@ import type { LucideIcon } from "lucide-react";
 
 // Card header shared by the pages built on the th-onb card system.
 
-export function CardHead({ icon: Icon, tone, title, subtitle, aside }: { icon: LucideIcon; tone: string; title: string; subtitle?: string; aside?: ReactNode }) {
+export function CardHead({
+  icon: Icon,
+  tone,
+  title,
+  subtitle,
+  aside,
+}: {
+  icon: LucideIcon;
+  tone: string;
+  title: string;
+  subtitle?: string;
+  aside?: ReactNode;
+}) {
   return (
     <div className="th-onb-card-head">
       <div className="th-onb-card-title">

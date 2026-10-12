@@ -34,4 +34,3 @@ export async function deleteDeviceNote(deviceId: number, noteId: number): Promis
     method: "DELETE",
   });
 }
-

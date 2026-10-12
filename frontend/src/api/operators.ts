@@ -74,7 +74,10 @@ export async function deleteOperator(operatorId: number): Promise<OperatorRecord
   });
 }
 
-export async function resetOperatorPassword(operatorId: number, payload: OperatorPasswordReset): Promise<OperatorRecord> {
+export async function resetOperatorPassword(
+  operatorId: number,
+  payload: OperatorPasswordReset,
+): Promise<OperatorRecord> {
   return fetchJson<OperatorRecord>(`/api/v1/operators/${operatorId}/password`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

@@ -26,7 +26,7 @@ export default function Button({ children, className, size = "md", variant = "pr
         "th-btn inline-flex items-center justify-center gap-2 border transition duration-150 focus:outline-none focus:ring-2 focus:ring-techi-orange/25",
         variantClasses[variant],
         sizeClasses[size],
-        className
+        className,
       )}
       {...props}
     >

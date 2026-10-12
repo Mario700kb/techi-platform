@@ -16,14 +16,22 @@ export default function EmptyState({ icon, title, description, action, className
       {icon && (
         <span
           className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl border"
-          style={{ borderColor: "var(--th-border-default)", background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
+          style={{
+            borderColor: "var(--th-border-default)",
+            background: "var(--th-chip-bg)",
+            color: "var(--th-text-muted)",
+          }}
         >
           {icon}
         </span>
       )}
-      <p className="text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{title}</p>
+      <p className="text-[14px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+        {title}
+      </p>
       {description && (
-        <p className="max-w-sm text-[13px]" style={{ color: "var(--th-text-muted)" }}>{description}</p>
+        <p className="max-w-sm text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+          {description}
+        </p>
       )}
       {action && <div className="mt-2">{action}</div>}
     </div>

@@ -1,7 +1,21 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import {
-  Activity, Bell, Check, Copy, KeyRound, LayoutDashboard, Link2, LogOut, Monitor, MonitorCog, Moon, Palette, Shield, Sun, X,
+  Activity,
+  Bell,
+  Check,
+  Copy,
+  KeyRound,
+  LayoutDashboard,
+  Link2,
+  LogOut,
+  Monitor,
+  MonitorCog,
+  Moon,
+  Palette,
+  Shield,
+  Sun,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -31,21 +45,55 @@ export function getPreferredDefaultScreen(): DefaultScreen {
   return stored === "/devices" || stored === "/alerts" ? stored : "/";
 }
 
-const ROLE_TONE: Record<string, string> = { owner: "var(--th-accent)", admin: TONE.warning, operator: TONE.info, readonly: TONE.neutral };
+const ROLE_TONE: Record<string, string> = {
+  owner: "var(--th-accent)",
+  admin: TONE.warning,
+  operator: TONE.info,
+  readonly: TONE.neutral,
+};
 
-interface ChoiceOption<T extends string> { id: T; label: string; hint: string; icon: LucideIcon }
+interface ChoiceOption<T extends string> {
+  id: T;
+  label: string;
+  hint: string;
+  icon: LucideIcon;
+}
 
-function ChoiceGroup<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: ChoiceOption<T>[]; onChange: (id: T) => void }) {
+function ChoiceGroup<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: ChoiceOption<T>[];
+  onChange: (id: T) => void;
+}) {
   return (
     <div className="th-choice-grid" role="radiogroup" aria-label={label}>
       {options.map(({ id, label: optionLabel, hint, icon: Icon }) => (
-        <button key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)} className="th-choice">
-          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": value === id ? "var(--th-accent)" : "var(--th-text-muted)" } as CSSProperties}><Icon className="h-4 w-4" /></span>
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
+          className="th-choice"
+        >
+          <span
+            className="th-onb-icon !h-8 !w-8"
+            style={{ "--onb-tone": value === id ? "var(--th-accent)" : "var(--th-text-muted)" } as CSSProperties}
+          >
+            <Icon className="h-4 w-4" />
+          </span>
           <span className="min-w-0">
             <strong>{optionLabel}</strong>
             <small>{hint}</small>
           </span>
-          <span className="th-choice-check" aria-hidden="true"><Check className="h-2.5 w-2.5" /></span>
+          <span className="th-choice-check" aria-hidden="true">
+            <Check className="h-2.5 w-2.5" />
+          </span>
         </button>
       ))}
     </div>
@@ -76,16 +124,23 @@ export default function Settings() {
   useEffect(() => {
     let active = true;
     listConnectPreferences()
-      .then((prefs) => { if (active) setConnectPreferences(prefs); })
-      .catch(() => { /* Settings should still render without this section */ });
-    return () => { active = false; };
+      .then((prefs) => {
+        if (active) setConnectPreferences(prefs);
+      })
+      .catch(() => {
+        /* Settings should still render without this section */
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleResetConnectPreference = async (pref: ConnectPreference) => {
     try {
       await resetConnectPreference(pref.platform, pref.device_id ?? undefined);
       setConnectPreferences((current) =>
-        current.filter((p) => !(p.platform === pref.platform && p.device_id === pref.device_id)));
+        current.filter((p) => !(p.platform === pref.platform && p.device_id === pref.device_id)),
+      );
     } catch {
       // Best-effort — the list will just re-fetch correctly next visit.
     }
@@ -119,22 +174,31 @@ export default function Settings() {
 
   return (
     <section className="premium-page th-onb mx-auto w-full max-w-5xl space-y-4">
-      <PageHeader title="Settings" description="Your appearance, account and connection preferences." className="hidden md:block" />
+      <PageHeader
+        title="Settings"
+        description="Your appearance, account and connection preferences."
+        className="hidden md:block"
+      />
 
       {user && (
         <div className="th-onb-card th-onb-enter" style={{ "--i": 0 } as CSSProperties}>
           <div className="th-settings-profile">
-            <span className="th-settings-avatar" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</span>
+            <span className="th-settings-avatar" aria-hidden="true">
+              {displayName.charAt(0).toUpperCase()}
+            </span>
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h2 className="truncate text-[16px] font-semibold" style={{ color: "var(--th-text-primary)" }}>{displayName}</h2>
+                <h2 className="truncate text-[16px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  {displayName}
+                </h2>
                 <span className="th-status-chip capitalize" style={{ "--chip-tone": roleTone } as CSSProperties}>
                   <Shield className="h-3 w-3" style={{ color: roleTone }} />
                   {user.role}
                 </span>
               </div>
               <p className="truncate text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                <span className="font-mono">{user.username}</span>{user.email ? ` · ${user.email}` : ""}
+                <span className="font-mono">{user.username}</span>
+                {user.email ? ` · ${user.email}` : ""}
               </p>
             </div>
             <div className="th-settings-profile-actions">
@@ -149,10 +213,28 @@ export default function Settings() {
             </div>
           </div>
           <dl className="th-onb-meta th-settings-meta">
-            <div><dt>Username</dt><dd className="font-mono">{user.username}</dd></div>
-            <div><dt>Role</dt><dd className="capitalize">{user.role}</dd></div>
-            <div><dt>Last sign-in</dt><dd title={formatLocalDateTime(user.last_login_at)}>{user.last_login_at ? timeAgo(user.last_login_at) : "—"}</dd></div>
-            <div><dt>Member since</dt><dd className="tabular-nums">{user.created_at ? formatLocalDateTime(user.created_at, { day: "numeric", month: "short", year: "numeric" }) : "—"}</dd></div>
+            <div>
+              <dt>Username</dt>
+              <dd className="font-mono">{user.username}</dd>
+            </div>
+            <div>
+              <dt>Role</dt>
+              <dd className="capitalize">{user.role}</dd>
+            </div>
+            <div>
+              <dt>Last sign-in</dt>
+              <dd title={formatLocalDateTime(user.last_login_at)}>
+                {user.last_login_at ? timeAgo(user.last_login_at) : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>Member since</dt>
+              <dd className="tabular-nums">
+                {user.created_at
+                  ? formatLocalDateTime(user.created_at, { day: "numeric", month: "short", year: "numeric" })
+                  : "—"}
+              </dd>
+            </div>
           </dl>
         </div>
       )}
@@ -168,14 +250,24 @@ export default function Settings() {
         <div className="th-onb-card th-onb-enter" style={{ "--i": 2 } as CSSProperties}>
           <CardHead icon={LayoutDashboard} tone={TONE.info} title="Preferences" subtitle="Default screen on open" />
           <div className="th-onb-body flex-1">
-            <ChoiceGroup label="Default screen" value={defaultScreen} options={SCREEN_OPTIONS} onChange={handleDefaultScreen} />
+            <ChoiceGroup
+              label="Default screen"
+              value={defaultScreen}
+              options={SCREEN_OPTIONS}
+              onChange={handleDefaultScreen}
+            />
           </div>
         </div>
       </div>
 
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as CSSProperties}>
-          <CardHead icon={Activity} tone={realtimeTone} title="Diagnostics" subtitle="What support needs to reproduce an issue" />
+          <CardHead
+            icon={Activity}
+            tone={realtimeTone}
+            title="Diagnostics"
+            subtitle="What support needs to reproduce an issue"
+          />
           <div className="th-onb-body flex-1">
             <dl className="th-onb-meta">
               <div>
@@ -185,14 +277,27 @@ export default function Settings() {
                   {realtimeStatus}
                 </dd>
               </div>
-              <div><dt>Signed in as</dt><dd className="font-mono">{user?.username ?? "—"}</dd></div>
-              <div><dt>App version</dt><dd className="font-mono">v{pkg.version}</dd></div>
-              <div><dt>Active agent</dt><dd className="font-mono">{fleetOverview?.active_agent_version ?? "—"}</dd></div>
+              <div>
+                <dt>Signed in as</dt>
+                <dd className="font-mono">{user?.username ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>App version</dt>
+                <dd className="font-mono">v{pkg.version}</dd>
+              </div>
+              <div>
+                <dt>Active agent</dt>
+                <dd className="font-mono">{fleetOverview?.active_agent_version ?? "—"}</dd>
+              </div>
             </dl>
           </div>
           <div className="th-onb-foot flex justify-end">
             <Button variant="secondary" size="sm" onClick={() => void handleCopyDiagnostics()}>
-              {copied ? <Check className="h-3.5 w-3.5" style={{ color: TONE.online }} /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? (
+                <Check className="h-3.5 w-3.5" style={{ color: TONE.online }} />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
               {copied ? "Copied" : "Copy diagnostic info"}
             </Button>
           </div>
@@ -207,21 +312,40 @@ export default function Settings() {
           />
           {connectPreferences.length === 0 ? (
             <div className="th-onb-empty">
-              <EmptyState icon={<Link2 className="h-5 w-5" />} title="No saved connect methods" description='Pick "Always use this method" in a Connect menu to skip the choice next time.' />
+              <EmptyState
+                icon={<Link2 className="h-5 w-5" />}
+                title="No saved connect methods"
+                description='Pick "Always use this method" in a Connect menu to skip the choice next time.'
+              />
             </div>
           ) : (
             <div className="th-onb-body flex-1">
               <ul className="th-batch-list">
                 {connectPreferences.map((pref) => (
                   <li key={`${pref.platform}-${pref.device_id ?? "platform"}`}>
-                    <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">{pref.device_id ? "Device" : "Platform"}</span>
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]" style={{ color: "var(--th-text-primary)" }}>
+                    <span className="th-status-chip !h-5 flex-none !px-1.5 !text-[11px]">
+                      {pref.device_id ? "Device" : "Platform"}
+                    </span>
+                    <span
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]"
+                      style={{ color: "var(--th-text-primary)" }}
+                    >
                       <span className="font-medium capitalize">{pref.platform}</span>
-                      {pref.device_id && <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>device #{pref.device_id}</span>}
+                      {pref.device_id && (
+                        <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                          device #{pref.device_id}
+                        </span>
+                      )}
                       <span style={{ color: "var(--th-text-faint)" }}>→</span>
                       <span className="truncate font-mono text-[12px]">{pref.method_id}</span>
                     </span>
-                    <button type="button" className="th-onb-action" onClick={() => void handleResetConnectPreference(pref)} title="Reset to the platform default" aria-label={`Reset ${pref.platform} connect default`}>
+                    <button
+                      type="button"
+                      className="th-onb-action"
+                      onClick={() => void handleResetConnectPreference(pref)}
+                      title="Reset to the platform default"
+                      aria-label={`Reset ${pref.platform} connect default`}
+                    >
                       <X className="h-4 w-4" />
                     </button>
                   </li>

@@ -1,7 +1,19 @@
 import { ComponentType, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Building2, CornerDownLeft, CornerDownRight, KeyRound, LogOut, Monitor, Moon, Search, Sun, User, UsersRound } from "lucide-react";
+import {
+  Building2,
+  CornerDownLeft,
+  CornerDownRight,
+  KeyRound,
+  LogOut,
+  Monitor,
+  Moon,
+  Search,
+  Sun,
+  User,
+  UsersRound,
+} from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useVisibleNav } from "../hooks/useNavigation";
@@ -66,7 +78,11 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const canSearchDevices = hasPermission("view_devices");
-  const [directory, setDirectory] = useState<{ clients: Client[]; teams: TeamWithStats[]; operators: OperatorRecord[] } | null>(null);
+  const [directory, setDirectory] = useState<{
+    clients: Client[];
+    teams: TeamWithStats[];
+    operators: OperatorRecord[];
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -99,32 +115,59 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         .catch(() => undefined)
         .finally(() => setDevicesLoading(false));
     }, 180);
-    return () => { window.clearTimeout(timer); controller.abort(); };
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [query, open, canSearchDevices]);
 
-  const go = (to: string) => { onClose(); navigate(to); };
+  const go = (to: string) => {
+    onClose();
+    navigate(to);
+  };
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim();
     const out: (Result & { rank: number })[] = [];
-    const push = (r: Result, rank: number) => { if (rank > 0) out.push({ ...r, rank }); };
+    const push = (r: Result, rank: number) => {
+      if (rank > 0) out.push({ ...r, rank });
+    };
 
     for (const device of devices) {
-      push({
-        id: `device-${device.id}`,
-        group: "Devices",
-        title: deviceDisplayName(device),
-        subtitle: [device.client_name ?? "No client", device.current_user, device.public_ip || device.local_ip, device.rustdesk_id && `ID ${device.rustdesk_id}`].filter(Boolean).join(" · "),
-        icon: Monitor,
-        tone: freshnessTone(device),
-        run: () => go(`/devices?device=${device.id}`),
-      }, 4);
+      push(
+        {
+          id: `device-${device.id}`,
+          group: "Devices",
+          title: deviceDisplayName(device),
+          subtitle: [
+            device.client_name ?? "No client",
+            device.current_user,
+            device.public_ip || device.local_ip,
+            device.rustdesk_id && `ID ${device.rustdesk_id}`,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          icon: Monitor,
+          tone: freshnessTone(device),
+          run: () => go(`/devices?device=${device.id}`),
+        },
+        4,
+      );
     }
 
     for (const item of ALL_NAV_ITEMS) {
       if (!canSee(item)) continue;
-      push({ id: `page-${item.to}`, group: "Pages", title: item.label, subtitle: locateNav(item.to).section || undefined, icon: item.icon, run: () => go(item.to) },
-        score(q, item.label, item.keywords));
+      push(
+        {
+          id: `page-${item.to}`,
+          group: "Pages",
+          title: item.label,
+          subtitle: locateNav(item.to).section || undefined,
+          icon: item.icon,
+          run: () => go(item.to),
+        },
+        score(q, item.label, item.keywords),
+      );
     }
 
     if (q) {
@@ -132,28 +175,91 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         const base = "/" + dest.to.split(/[/?]/)[1];
         const owner = ALL_NAV_ITEMS.find((i) => i.to === base);
         if (owner && !canSee(owner)) continue;
-        push({ id: `dest-${dest.context}-${dest.label}`, group: "Go to", title: dest.label, subtitle: dest.context, icon: CornerDownRight, run: () => go(dest.to) },
-          score(q, dest.label, `${dest.context} ${dest.keywords ?? ""}`));
+        push(
+          {
+            id: `dest-${dest.context}-${dest.label}`,
+            group: "Go to",
+            title: dest.label,
+            subtitle: dest.context,
+            icon: CornerDownRight,
+            run: () => go(dest.to),
+          },
+          score(q, dest.label, `${dest.context} ${dest.keywords ?? ""}`),
+        );
       }
       for (const client of directory?.clients ?? []) {
-        push({ id: `client-${client.id}`, group: "Clients", title: client.name, subtitle: client.description || client.slug, icon: Building2, run: () => go("/clients") },
-          score(q, client.name, `${client.slug} ${client.description ?? ""}`));
+        push(
+          {
+            id: `client-${client.id}`,
+            group: "Clients",
+            title: client.name,
+            subtitle: client.description || client.slug,
+            icon: Building2,
+            run: () => go("/clients"),
+          },
+          score(q, client.name, `${client.slug} ${client.description ?? ""}`),
+        );
       }
       for (const team of directory?.teams ?? []) {
-        push({ id: `team-${team.id}`, group: "Teams", title: team.name, subtitle: team.description || "Team", icon: UsersRound, run: () => go(`/teams/${team.id}`) },
-          score(q, team.name, team.description ?? ""));
+        push(
+          {
+            id: `team-${team.id}`,
+            group: "Teams",
+            title: team.name,
+            subtitle: team.description || "Team",
+            icon: UsersRound,
+            run: () => go(`/teams/${team.id}`),
+          },
+          score(q, team.name, team.description ?? ""),
+        );
       }
       for (const op of directory?.operators ?? []) {
         const name = op.display_name || op.username;
-        push({ id: `operator-${op.id}`, group: "Operators", title: name, subtitle: `${op.email} · ${op.role}`, icon: User, run: () => go("/operators") },
-          score(q, name, `${op.username} ${op.email} ${op.role}`));
+        push(
+          {
+            id: `operator-${op.id}`,
+            group: "Operators",
+            title: name,
+            subtitle: `${op.email} · ${op.role}`,
+            icon: User,
+            run: () => go("/operators"),
+          },
+          score(q, name, `${op.username} ${op.email} ${op.role}`),
+        );
       }
     }
 
     const actions: (Result & { keywords: string })[] = [
-      { id: "action-theme", group: "Actions", title: theme === "dark" ? "Switch to light theme" : "Switch to dark theme", icon: theme === "dark" ? Sun : Moon, keywords: "theme appearance mode dark light", run: () => { setThemeMode(theme === "dark" ? "light" : "dark"); onClose(); } },
-      { id: "action-password", group: "Actions", title: "Change password", icon: KeyRound, keywords: "password account security", run: () => go("/settings") },
-      { id: "action-signout", group: "Actions", title: "Sign out", icon: LogOut, keywords: "logout log out exit", run: () => { onClose(); logout(); } },
+      {
+        id: "action-theme",
+        group: "Actions",
+        title: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        icon: theme === "dark" ? Sun : Moon,
+        keywords: "theme appearance mode dark light",
+        run: () => {
+          setThemeMode(theme === "dark" ? "light" : "dark");
+          onClose();
+        },
+      },
+      {
+        id: "action-password",
+        group: "Actions",
+        title: "Change password",
+        icon: KeyRound,
+        keywords: "password account security",
+        run: () => go("/settings"),
+      },
+      {
+        id: "action-signout",
+        group: "Actions",
+        title: "Sign out",
+        icon: LogOut,
+        keywords: "logout log out exit",
+        run: () => {
+          onClose();
+          logout();
+        },
+      },
     ];
     for (const a of actions) push(a, score(q, a.title, a.keywords));
 
@@ -163,7 +269,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, devices, directory, canSee, theme]);
 
-  useEffect(() => { setActive(0); }, [query]);
+  useEffect(() => {
+    setActive(0);
+  }, [query]);
 
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
@@ -172,18 +280,35 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   if (!open) return null;
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "ArrowDown") { event.preventDefault(); setActive((i) => Math.min(i + 1, results.length - 1)); }
-    else if (event.key === "ArrowUp") { event.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
-    else if (event.key === "Enter") { event.preventDefault(); results[active]?.run(); }
-    else if (event.key === "Escape") { event.preventDefault(); onClose(); }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActive((i) => Math.min(i + 1, results.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      results[active]?.run();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
   };
 
   let index = -1;
-  const grouped = GROUP_ORDER.map((group) => ({ group, items: results.filter((r) => r.group === group) })).filter((g) => g.items.length > 0);
+  const grouped = GROUP_ORDER.map((group) => ({ group, items: results.filter((r) => r.group === group) })).filter(
+    (g) => g.items.length > 0,
+  );
   const q = query.trim();
 
   return createPortal(
-    <div className="th-palette-scrim" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div
+      className="th-palette-scrim"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       {/* Keys are handled on the dialog so Escape and the arrows still work after a click has moved focus off the input. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className="th-palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKeyDown}>
@@ -243,10 +368,21 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                         {r.tone && <i style={{ background: r.tone }} />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>{r.title}</span>
-                        {r.subtitle && <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>{r.subtitle}</span>}
+                        <span
+                          className="block truncate text-[13px] font-medium"
+                          style={{ color: "var(--th-text-primary)" }}
+                        >
+                          {r.title}
+                        </span>
+                        {r.subtitle && (
+                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                            {r.subtitle}
+                          </span>
+                        )}
                       </span>
-                      {i === active && <CornerDownLeft className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />}
+                      {i === active && (
+                        <CornerDownLeft className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                      )}
                     </div>
                   );
                 })}
@@ -256,9 +392,16 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         <div className="th-palette-footer">
-          <span><kbd className="th-kbd">↑</kbd><kbd className="th-kbd">↓</kbd> navigate</span>
-          <span><kbd className="th-kbd">↵</kbd> open</span>
-          <span><kbd className="th-kbd">esc</kbd> close</span>
+          <span>
+            <kbd className="th-kbd">↑</kbd>
+            <kbd className="th-kbd">↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="th-kbd">↵</kbd> open
+          </span>
+          <span>
+            <kbd className="th-kbd">esc</kbd> close
+          </span>
         </div>
       </div>
     </div>,
