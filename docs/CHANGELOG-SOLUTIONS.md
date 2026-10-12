@@ -5,6 +5,38 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] RS-PAGE-REMOVAL-2026-10-12 — Remote Support page removed; service worker no longer caches extension requests
+
+Commits `e9d52bf` and `cb063bf`. Frontend only, deployed 2026-10-12.
+Rollback image `techi-platform-frontend:pre-rs-removal-0c064af`.
+
+### What changed
+- **Remote Support page removed:** the `/remote-support` route, its nav
+  entry (sidebar, More, command palette), the desktop and mobile page
+  components, and four API calls only that page used (device list, restart
+  service, repair config, deploy). Connect, the Remote Support password and
+  per-device status in the device drawer and device details are unchanged.
+  The backend endpoints stay. `/remote-support` now has no route.
+- **Service worker:** it cached every GET, including `chrome-extension://`
+  requests from browser extensions, which the Cache API rejects ("Request
+  scheme 'chrome-extension' is unsupported", uncaught in `sw.js:65`). It now
+  handles only same-origin requests, and a failed `cache.put` is caught.
+
+### Deploy
+1. Local preflight: contract 15/15, backend 1252 passed with flags off and
+   on, tsc, build OK. The agent build step could not run (no Go toolchain on
+   the workstation); `agent/` and `backend/` are unchanged since `0c064af`.
+2. Guard passed; rollback image tagged; `git pull --ff-only` → `cb063bf`;
+   `docker compose build frontend`; `up -d --no-deps frontend`.
+3. Frontend healthy; guard and smoke passed. Public frontend and API health
+   200; the live `sw.js` carries the origin check and the live bundle has no
+   `/remote-support` route.
+
+Not verified: authenticated browser check.
+
+Rollback: `docker tag techi-platform-frontend:pre-rs-removal-0c064af
+techi-platform-frontend:latest`, then `docker compose up -d --no-deps frontend`.
+
 ## [2026-10-12] MOBILE-UI-2026-10-12 — the whole mobile console in the Onboarding design
 
 Commits `5202f7e`, `a0064ca`, `be32c67`, `63d285b`, `4a0d0b5` and `0c064af`.
