@@ -26,7 +26,31 @@ NAME="techi-restore-test-$(date +%s)"
 DUMP="${1:-$(ls -t "$BACKUP_DIR"/postgres-????-??-??_??-??.sql.gz 2>/dev/null | head -1 || true)}"
 [ -n "$DUMP" ] && [ -f "$DUMP" ] || { echo "❌ no dump found"; exit 1; }
 
-cleanup() { docker rm -f -v "$NAME" >/dev/null 2>&1 || true; }
+# The restore needs roughly the live database's size on the same disk as the
+# live PostgreSQL. A full disk would take production down, so: refuse to
+# start without that size plus a margin, and stop the copy if free space
+# drops below a floor while it runs.
+MARGIN_MB="${MARGIN_MB:-1024}"
+FLOOR_MB="${FLOOR_MB:-700}"
+DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+[ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/
+# Fails closed: an unreadable size counts as no space at all.
+free_mb() {
+  local mb
+  mb=$(df -Pm "$DOCKER_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
+  case "$mb" in ''|*[!0-9]*) echo 0 ;; *) echo "$mb" ;; esac
+}
+live_mb=$(( $(docker exec "$LIVE" psql -U "$DB_USER" -d "$DB_NAME" -tAX -c "select pg_database_size(current_database())") / 1048576 ))
+if [ "$(free_mb)" -lt $(( live_mb + MARGIN_MB )) ]; then
+  echo "❌ not enough disk: $(free_mb) MB free, need $(( live_mb + MARGIN_MB )) MB (database ${live_mb} MB + ${MARGIN_MB} MB margin)"
+  exit 1
+fi
+
+WATCHDOG_PID=""
+cleanup() {
+  [ -n "$WATCHDOG_PID" ] && kill "$WATCHDOG_PID" 2>/dev/null || true
+  docker rm -f -v "$NAME" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
 
 started=$(date +%s)
@@ -44,6 +68,17 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 [ "$ready" -eq 1 ] || { echo "❌ restore container did not start"; exit 1; }
+
+( while :; do
+    if [ "$(free_mb)" -lt "$FLOOR_MB" ]; then
+      echo "❌ free disk fell below ${FLOOR_MB} MB — stopping the restore copy to protect the live database"
+      docker rm -f -v "$NAME" >/dev/null 2>&1
+      exit 0
+    fi
+    sleep 2
+  done ) &
+WATCHDOG_PID=$!
+disown "$WATCHDOG_PID" 2>/dev/null || true
 
 # pg_dumpall recreates the roles and the database; ignore "already exists"
 # for anything the image created itself, count every other error.
