@@ -6,7 +6,6 @@ import Audit from "../pages/Audit";
 import Onboarding from "../pages/Onboarding";
 import Inventory from "../pages/Inventory";
 import Operators from "../pages/Operators";
-import RemoteSupport from "../pages/RemoteSupport";
 import Teams from "../pages/Teams";
 import TeamDetailPage from "../pages/TeamDetail";
 import Login from "../pages/Login";
@@ -43,7 +42,6 @@ export default function AppRoutes() {
       <Route path="/teams" element={<RequireAuth><RequirePermission perm="manage_teams"><Teams /></RequirePermission></RequireAuth>} />
       <Route path="/teams/:id" element={<RequireAuth><RequirePermission perm="manage_teams"><TeamDetailPage /></RequirePermission></RequireAuth>} />
       <Route path="/audit" element={<RequireAuth><RequirePermission perm="audit_log"><Audit /></RequirePermission></RequireAuth>} />
-      <Route path="/remote-support" element={<RequireAuth><RemoteSupport /></RequireAuth>} />
       <Route path="/agent-config" element={<RequireAuth><RequirePermission perm="system_settings"><AgentConfigPage /></RequirePermission></RequireAuth>} />
       <Route path="/vault" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_VAULT"><CredentialVault /></RequireFeature></RequirePermission></RequireAuth>} />
       <Route path="/notifications" element={<RequireAuth><RequirePermission perm="system_settings"><RequireFeature flag="FEATURE_NOTIFICATIONS"><NotificationSettings /></RequireFeature></RequirePermission></RequireAuth>} />

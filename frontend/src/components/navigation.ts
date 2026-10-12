@@ -8,7 +8,6 @@ import {
   Folder,
   Home,
   PackagePlus,
-  Radio,
   ShieldCheck,
   SlidersHorizontal,
   Users,
@@ -56,7 +55,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Dashboard", to: "/", icon: Home, permission: null, mobile: "tab", keywords: "home overview kpi fleet health system status" },
       { label: "Devices", to: "/devices", icon: Folder, permission: "view_devices", badge: "devices", mobile: "tab", keywords: "endpoints computers servers workstations fleet pc" },
       { label: "Alerts", to: "/alerts", icon: BellRing, permission: null, badge: "alerts", mobile: "tab", keywords: "incidents notifications offline critical warnings" },
-      { label: "Remote Support", to: "/remote-support", icon: Radio, permission: null, mobile: "workspace", keywords: "rustdesk connect remote desktop session" },
     ],
   },
   {
