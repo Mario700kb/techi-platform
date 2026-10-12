@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] SESSION-RENEWAL-2026-10-12 — renew the session before the access cookie expires (`2491c11`)
+
+Backend and frontend, deployed 2026-10-12 13:52. No migration.
+Pre-deploy dump `/opt/backups/techi/pre-session-renewal-2026-10-12_13-52.sql.gz`;
+rollback images `techi-platform-{backend,frontend}:pre-session-renewal-bc2f279`.
+
+Every 15 minutes the console's first requests hit a 401, then
+/auth/refresh, then succeeded on retry within a second (backend log
+13:43:18: three 401s, one refresh 200, three retried 200s; 19 such 401s in
+three hours). Harmless but red in the browser console and a round trip
+late. Login, refresh and /auth/session now return `access_expires_at`; the
+frontend refreshes 60 s before it, catches up when a background tab is
+shown, and keeps 401 → refresh → retry as the fallback.
+
+Deploy: guard; dump (`gzip -t` OK); rollback tags; pull; both images
+built; `nginx -t` OK; recreated; healthy; guard and smoke passed; no
+traceback. The live bundle carries the renewal. Tabs opened before the
+deploy keep the old behaviour until reloaded.
+
 ## [2026-10-12] DB-ENTERPRISE-A — database performance, limits and visibility; dependency upgrade; first restore test
 
 `a7dc6fb`/`67d6855` → `df7f9fe`. Backend and database, deployed 2026-10-12
