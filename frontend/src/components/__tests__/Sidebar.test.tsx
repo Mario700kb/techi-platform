@@ -1,6 +1,6 @@
 import { AUTH_DEFAULTS } from "../../test/auth";
 import { MemoryRouter } from "react-router-dom";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Sidebar from "../Sidebar";
 import * as authContext from "../../auth/AuthContext";
@@ -95,5 +95,31 @@ describe.each([
 
     renderSidebar();
     expect(screen.queryByText(label)).not.toBeInTheDocument();
+  });
+});
+
+describe("Sidebar collapsed", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("stays collapsed under the mouse and opens only from its button", () => {
+    mockAuth(() => true);
+    vi.spyOn(platformFeaturesHook, "usePlatformFeatures").mockReturnValue(ALL_FEATURES_OFF);
+    const onCollapsedChange = vi.fn();
+    const { container } = render(
+      <MemoryRouter>
+        <Sidebar collapsed onCollapsedChange={onCollapsedChange} />
+      </MemoryRouter>,
+    );
+    const aside = container.querySelector("aside")!;
+
+    fireEvent.mouseEnter(aside);
+    expect(aside).toHaveAttribute("data-expanded", "false");
+    expect(screen.queryByText("Devices")).not.toBeInTheDocument(); // labels stay hidden
+    expect(screen.getByRole("link", { name: "Devices" })).toHaveAttribute("title", "Devices");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    expect(onCollapsedChange).toHaveBeenCalledWith(false);
   });
 });

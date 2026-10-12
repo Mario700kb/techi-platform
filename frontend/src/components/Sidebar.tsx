@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
@@ -13,12 +12,13 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: SidebarProps) {
-  const [hovered, setHovered] = useState(false);
   const { theme } = useTheme();
   const { fleetOverview, totalOpenAlerts, alertCount } = useAppData();
   const { sections } = useVisibleNav();
   const { pathname } = useLocation();
-  const expanded = !collapsed || hovered;
+  // Collapsed stays collapsed: hovering does not open it (icons carry their
+  // label as a tooltip); only the logo button expands it.
+  const expanded = !collapsed;
 
   const badgeFor = (badge?: NavBadge): { value: number; tone: "neutral" | "critical" | "warning" } | null => {
     if (badge === "devices") {
@@ -36,8 +36,6 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
     <aside
       className={`th-sidebar flex h-full flex-col ${expanded ? "w-[248px]" : "w-[64px]"}`}
       data-expanded={expanded}
-      onMouseEnter={() => collapsed && setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {/* Brand */}
       <div
@@ -48,7 +46,9 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
           type="button"
           onClick={() => onCollapsedChange?.(!collapsed)}
           className="flex items-center rounded-md"
-          title={collapsed ? "Pin sidebar open" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           <img
             src={
