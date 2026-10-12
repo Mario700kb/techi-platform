@@ -5,7 +5,11 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppDataProvider } from "./contexts/AppDataContext";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { installGlobalErrorHandlers } from "./utils/errorReporting";
 import "./index.css";
+
+installGlobalErrorHandlers();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -27,14 +31,16 @@ if ("serviceWorker" in navigator) {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <AuthProvider>
-          <AppDataProvider>
-            <App />
-          </AppDataProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </ThemeProvider>
+    <ErrorBoundary scope="app">
+      <ThemeProvider>
+        <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+          <AuthProvider>
+            <AppDataProvider>
+              <App />
+            </AppDataProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

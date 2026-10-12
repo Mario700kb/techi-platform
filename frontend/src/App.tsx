@@ -3,6 +3,7 @@ import AppRoutes from "./routes/AppRoutes";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import AppPreloader from "./components/AppPreloader";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function App() {
   const location = useLocation();
@@ -17,14 +18,17 @@ function App() {
   if (loading && location.pathname !== "/login") {
     return <AppPreloader />;
   }
-  if (isChromeless) {
-    return <AppRoutes />;
-  }
-  return (
-    <AppShell>
+  // Keyed on the path so a crashed page clears itself on navigation while
+  // the sidebar and top bar stay usable.
+  const routes = (
+    <ErrorBoundary resetKey={location.pathname}>
       <AppRoutes />
-    </AppShell>
+    </ErrorBoundary>
   );
+  if (isChromeless) {
+    return routes;
+  }
+  return <AppShell>{routes}</AppShell>;
 }
 
 export default App;

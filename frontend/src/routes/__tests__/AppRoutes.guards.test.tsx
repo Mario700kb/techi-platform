@@ -134,7 +134,7 @@ describe("RequirePermission", () => {
     expect(screen.getByText("Protected content")).toBeInTheDocument();
   });
 
-  it("redirects home when permission is denied", () => {
+  it("shows an access-denied message when permission is denied", () => {
     vi.spyOn(authContext, "useAuth").mockReturnValue({
       user: { username: "op", display_name: "Op", role: "operator", email: "" } as any,
       token: "t",
@@ -154,6 +154,6 @@ describe("RequirePermission", () => {
     );
 
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("You do not have access to this page")).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePlatformFeatures, usePlatformFeaturesLoading } from "../hooks/usePlatformFeatures";
 import AppPreloader from "../components/AppPreloader";
+import { AccessDenied } from "../pages/StatusPages";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -14,9 +15,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function RequirePermission({ perm, children }: { perm: string; children: ReactNode }) {
   const { hasPermission, loading } = useAuth();
-  const location = useLocation();
   if (loading) return <AppPreloader inline label="Loading session" />;
-  if (!hasPermission(perm)) return <Navigate to="/" replace state={{ from: location }} />;
+  // Say so instead of bouncing to the Dashboard: a silent redirect reads as
+  // a broken link.
+  if (!hasPermission(perm)) return <AccessDenied />;
   return <>{children}</>;
 }
 

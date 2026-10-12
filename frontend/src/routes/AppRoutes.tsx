@@ -18,6 +18,7 @@ import TerminalWindow from "../pages/TerminalWindow";
 import CredentialVault from "../pages/CredentialVault";
 import NotificationSettings from "../pages/NotificationSettings";
 import Reports from "../pages/Reports";
+import { NotFound } from "../pages/StatusPages";
 import { RequireAuth, RequireFeature, RequirePermission } from "./guards";
 
 export default function AppRoutes() {
@@ -49,6 +50,7 @@ export default function AppRoutes() {
       <Route path="/alerts" element={<RequireAuth><Alerts /></RequireAuth>} />
       <Route path="/more" element={<RequireAuth><More /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+      <Route path="*" element={<RequireAuth><NotFound /></RequireAuth>} />
     </Routes>
   );
 }
