@@ -1,8 +1,8 @@
-from datetime import datetime
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class DeviceGroup(Base):
@@ -12,7 +12,7 @@ class DeviceGroup(Base):
     name = Column(String(120), nullable=False, index=True)
     description = Column(String(255), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
 
     client = relationship("Client", back_populates="device_groups")
     devices = relationship("Device", back_populates="group")

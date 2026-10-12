@@ -158,11 +158,10 @@ class TestWiringBoundary:
             "app/services/permission_service.py",  # ACTION_PERMISSION_MAP derives from the Action Registry (Step 1c)
             "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)
             "app/services/version_service.py",  # Version Service reads Platform Registry's latest_connector_version
-            "app/main.py",  # gates terminal_watchdog startup by FEATURE_TERMINAL (Phase 5 completion)
+            "app/main.py",  # gates terminal_watchdog (FEATURE_TERMINAL) and ReportWorker startup
             "app/api/v1/endpoints/notifications.py",  # notification flag gate (Notification Engine)
             "app/services/notification_service.py",  # dispatch() checked against FEATURE_NOTIFICATIONS
             "app/api/v1/endpoints/reports.py",  # reporting flag gate
-            "app/main.py",  # also gates ReportWorker startup
             "app/services/vault_service.py",  # credential-type field registry (Enterprise Vault)
             "app/services/component_state_service.py",  # Component Registry desired-state resolver (Platform Components backport)
             "app/services/component_action_service.py",  # Component Action Resolver → existing queue (Operational M2)

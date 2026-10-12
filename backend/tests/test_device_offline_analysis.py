@@ -8,7 +8,6 @@ Fake Device objects are built with types.SimpleNamespace.
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import pytest
 
 from app.services.device_offline_analysis_service import (
     CONFIDENCE_HIGH,

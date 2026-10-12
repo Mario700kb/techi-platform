@@ -11,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, require_min_role
+from app.core.auth import require_min_role
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
 from app.platform_core.flags import feature_enabled

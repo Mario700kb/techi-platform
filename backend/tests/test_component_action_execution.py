@@ -6,7 +6,6 @@ RemoteAction and flows through the full existing pipeline — heartbeat delivery
 acknowledge → running → complete — driven entirely by RemoteActionService. Also
 covers the reverse attribution seam (RemoteAction → component/operation).
 """
-from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

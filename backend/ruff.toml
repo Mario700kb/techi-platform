@@ -1,0 +1,22 @@
+# Lint gate for the backend (CI and scripts/preflight.sh).
+# Correctness rules only for now: pyflakes (F — unused imports and names,
+# undefined names, shadowing), syntax/IO errors (E9), and bugbear's
+# likely-bug checks (B). Style is not enforced, so this does not churn the
+# existing code; tighten in steps.
+target-version = "py312"
+line-length = 140
+extend-exclude = ["venv", "alembic/versions"]
+
+[lint]
+select = ["F", "E9", "B"]
+ignore = [
+    "B008",  # FastAPI's Depends(...) in argument defaults is the framework idiom.
+    # Style-level bugbear rules, deferred rather than churned across ~100
+    # call sites in one change; enable one at a time:
+    "B904",  # raise ... from err inside except (87 sites)
+    "B905",  # zip(strict=...) — changes behaviour on length mismatch
+    "B010",  # setattr with a constant name
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["B011", "B017"]  # assert False / pytest.raises(Exception) are test idioms

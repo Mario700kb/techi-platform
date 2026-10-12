@@ -1,7 +1,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 import os
 
@@ -37,6 +37,7 @@ from app.workers.device_reconciliation_worker import device_reconciliation_worke
 from app.workers.notification_worker import notification_worker
 from app.workers.report_worker import report_worker
 from app.workers.terminal_watchdog import terminal_watchdog
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger("techi.startup")
 
@@ -98,7 +99,7 @@ def _run_heartbeat_cleanup() -> None:
 
 async def _heartbeat_cleanup_scheduler() -> None:
     while True:
-        now = datetime.utcnow()
+        now = utcnow_naive()
         next_03 = now.replace(hour=3, minute=0, second=0, microsecond=0)
         if next_03 <= now:
             next_03 += timedelta(days=1)

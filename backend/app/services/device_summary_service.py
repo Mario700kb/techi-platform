@@ -10,7 +10,6 @@ from app.repositories.alert_repository import AlertRepository
 from app.repositories.device_inventory_repository import DeviceInventoryRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 from app.schemas.device import DeviceStats, DeviceTreeCounts, DevicesSummary
-from app.schemas.device_inventory import PatchStatusSnapshot
 from app.schemas.telemetry import DeviceHealthSummary
 from app.services.device_health_score_service import compute_device_health_score
 from app.services.device_inventory_service import DeviceInventoryService

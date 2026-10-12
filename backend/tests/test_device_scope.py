@@ -160,8 +160,8 @@ class TestDeviceScopeByClientId:
         op = _operator(db, "op_scope")
         _team_with_client(db, op, client_id=1)
 
-        dev_in  = _device(db, "RUST-001", client_id=1, hostname="techi-pc")
-        dev_out = _device(db, "RUST-999", client_id=2, hostname="metro-pc")
+        _device(db, "RUST-001", client_id=1, hostname="techi-pc")
+        _ = _device(db, "RUST-999", client_id=2, hostname="metro-pc")
 
         client = _make_app(db, op)
         resp = client.get("/devices/")
@@ -423,9 +423,9 @@ class TestDeviceScopeWithMultipleClients:
         _team_with_client(db, op, client_id=1)
         _team_with_client(db, op, client_id=3)
 
-        dev1 = _device(db, "RUST-T1", client_id=1, hostname="team1-pc")
-        dev3 = _device(db, "RUST-T3", client_id=3, hostname="team3-pc")
-        dev2 = _device(db, "RUST-T2", client_id=2, hostname="metro-pc")
+        _ = _device(db, "RUST-T1", client_id=1, hostname="team1-pc")
+        _ = _device(db, "RUST-T3", client_id=3, hostname="team3-pc")
+        _ = _device(db, "RUST-T2", client_id=2, hostname="metro-pc")
 
         client = _make_app(db, op)
         resp = client.get("/devices/")
@@ -441,7 +441,7 @@ class TestDeviceScopeByDeviceId:
     def test_explicit_device_access_grants_only_that_device(self, db):
         op = _operator(db, "op_dev")
         dev_ok  = _device(db, "RUST-EXPLICIT", client_id=2, hostname="explicit")
-        dev_bad = _device(db, "RUST-OTHER",    client_id=2, hostname="other-metro")
+        _ = _device(db, "RUST-OTHER",    client_id=2, hostname="other-metro")
         _client_for(db, op, device_id=dev_ok.id)
 
         client = _make_app(db, op)
@@ -484,8 +484,8 @@ class TestLifecycleAllWithScope:
         op = _operator(db, "op_lifecycle")
         _team_with_client(db, op, client_id=1)
 
-        dev_in  = _device(db, "RUST-LIVE",  client_id=1, hostname="live")
-        dev_out = _device(db, "RUST-METRO", client_id=2, hostname="metro")
+        _device(db, "RUST-LIVE",  client_id=1, hostname="live")
+        _ = _device(db, "RUST-METRO", client_id=2, hostname="metro")
 
         client = _make_app(db, op)
         resp = client.get("/devices/?lifecycle_state=all")

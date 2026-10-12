@@ -1,9 +1,8 @@
-from datetime import datetime
 from enum import Enum
-from typing import Optional
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, false
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class OperatorRole(str, Enum):
@@ -24,7 +23,7 @@ class Operator(Base):
     role = Column(String(32), default=OperatorRole.READONLY.value, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
     # Two-factor authentication (TOTP). The secret is sealed with the vault
     # cipher; mfa_last_step blocks replaying a code inside its 30s window.

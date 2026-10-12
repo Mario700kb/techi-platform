@@ -195,10 +195,14 @@ def test_create_session_auto_connects_with_single_candidate(monkeypatch):
     assert session.ssh_username == "root"
     assert session.credential_source == "device"
 
-    resolved_actions = [json.loads(a.details_json) for a in db.query(AuditLog).all()]
-    action_names = [a.action for a in db.query(AuditLog).all()]
+    entries = db.query(AuditLog).all()
+    action_names = [a.action for a in entries]
     assert "ssh_credential_resolved" in action_names
     assert "ssh_session_started" in action_names
+    # The audit trail records which credential was used, never its secret.
+    resolved = [json.loads(a.details_json) for a in entries if a.action == "ssh_credential_resolved"]
+    assert resolved == [{"device_id": 7, "credential_source": "device"}]
+    assert all("hunter2" not in (a.details_json or "") for a in entries)
 
 
 def test_create_session_with_explicit_credential_id_among_multiple(monkeypatch):

@@ -19,7 +19,6 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.db.base import Base
 from app.models.device import Device, DeviceStatus, DeviceType
-from app.models.remote_action import ActionStatus
 from app.schemas.agent import AgentEnrollmentRequest
 from app.schemas.remote_action import ActionType, RemoteActionCreate
 from app.services.alert_engine import AlertEngine

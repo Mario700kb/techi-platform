@@ -9,9 +9,8 @@ Verifies that:
 3. No health event is emitted when state does not change.
 """
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from app.services.device_heartbeat_service import DeviceHeartbeatService
 

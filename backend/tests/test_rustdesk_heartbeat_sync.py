@@ -7,7 +7,6 @@ install_path, or sync_state actually changes — not on every heartbeat.
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType

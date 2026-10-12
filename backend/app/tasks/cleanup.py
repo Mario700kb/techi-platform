@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models.device_heartbeat import DeviceHeartbeat
 import logging
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def _vacuum_analyze(db: Session, table_name: str) -> None:
 
 
 def cleanup_old_heartbeats(db: Session, days: int = 7) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     deleted = db.query(DeviceHeartbeat).filter(DeviceHeartbeat.created_at < cutoff).delete()
     db.commit()
     _vacuum_analyze(db, "device_heartbeats")
@@ -28,7 +29,7 @@ def cleanup_old_heartbeats(db: Session, days: int = 7) -> int:
 
 
 def cleanup_old_telemetry(db: Session, days: int = 7) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM device_telemetry WHERE created_at < :cutoff"),
         {"cutoff": cutoff},
@@ -41,7 +42,7 @@ def cleanup_old_telemetry(db: Session, days: int = 7) -> int:
 
 
 def cleanup_old_activity_events(db: Session, days: int = 7) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM device_activity_events WHERE occurred_at < :cutoff"),
         {"cutoff": cutoff},
@@ -55,7 +56,7 @@ def cleanup_old_activity_events(db: Session, days: int = 7) -> int:
 
 def cleanup_resolved_alerts(db: Session, days: int = 90) -> int:
     """Open alerts are never touched; only resolved ones past the window."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM device_alerts WHERE state = 'resolved' AND updated_at < :cutoff"),
         {"cutoff": cutoff},
@@ -69,7 +70,7 @@ def cleanup_resolved_alerts(db: Session, days: int = 90) -> int:
 
 def cleanup_old_remote_actions(db: Session, days: int = 90) -> int:
     """Only terminal actions; queued/sent/running are never touched."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text(
             "DELETE FROM remote_actions "
@@ -87,7 +88,7 @@ def cleanup_old_remote_actions(db: Session, days: int = 90) -> int:
 
 def cleanup_old_command_batches(db: Session, days: int = 90) -> int:
     """Batches past the window whose actions are all gone (see cleanup_old_remote_actions)."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text(
             "DELETE FROM agent_command_batches "
@@ -104,7 +105,7 @@ def cleanup_old_command_batches(db: Session, days: int = 90) -> int:
 
 
 def cleanup_old_status_history(db: Session, days: int = 60) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM device_status_history WHERE created_at < :cutoff"),
         {"cutoff": cutoff},
@@ -117,7 +118,7 @@ def cleanup_old_status_history(db: Session, days: int = 60) -> int:
 
 
 def cleanup_old_audit_logs(db: Session, days: int = 180) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM audit_logs WHERE created_at < :cutoff"),
         {"cutoff": cutoff},
@@ -130,7 +131,7 @@ def cleanup_old_audit_logs(db: Session, days: int = 180) -> int:
 
 
 def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM enrollment_audit WHERE created_at < :cutoff"),
         {"cutoff": cutoff},
@@ -156,7 +157,7 @@ def find_stale_alerts(db: Session) -> list:
     from app.models.device import Device, DeviceStatus
     from app.services.alert_rules import RECONNECT_WINDOW_SECONDS, STALE_WHEN_OFFLINE
 
-    reconnect_cutoff = datetime.utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
+    reconnect_cutoff = utcnow_naive() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
     rows = (
         db.query(DeviceAlert, Device)
         .join(Device, Device.id == DeviceAlert.device_id)

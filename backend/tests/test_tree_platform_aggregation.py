@@ -48,7 +48,6 @@ def test_mikrotik_classifies_as_network():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
-    import app.models  # noqa: F401
     from app.db.base import Base
     from app.repositories.device_repository import DeviceRepository
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -78,7 +77,6 @@ def test_category_filter_matches_tree_count_cumulative():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
-    import app.models  # noqa: F401
     from app.db.base import Base
     from app.repositories.device_repository import DeviceRepository
     from app.services.device_service import DeviceService

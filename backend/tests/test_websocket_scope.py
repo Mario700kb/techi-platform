@@ -10,9 +10,8 @@ Verifies that RealtimeConnectionManager._event_in_scope correctly:
 
 import asyncio
 
-import pytest
 
-from app.core.scope import AllowedScope, device_in_scope
+from app.core.scope import AllowedScope
 from app.websocket.manager import RealtimeConnectionManager
 from app.websocket.routes import _AUTH_FAILED, _authenticate_ws
 

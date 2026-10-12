@@ -2,7 +2,6 @@
 if policy allows, queue the recommended remediation via the EXISTING action path.
 Detection is patched (the real status is manifest-driven) so cases are deterministic.
 """
-from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

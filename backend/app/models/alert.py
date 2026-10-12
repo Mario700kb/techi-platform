@@ -1,10 +1,10 @@
-from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class AlertSeverity(str, Enum):
@@ -43,8 +43,8 @@ class DeviceAlert(Base):
     state = Column(SQLEnum(AlertState, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=AlertState.OPEN, nullable=False, index=True)
     message = Column(String(512), nullable=False)
     detail = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime, default=utcnow_naive, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     cooldown_until = Column(DateTime, nullable=True)

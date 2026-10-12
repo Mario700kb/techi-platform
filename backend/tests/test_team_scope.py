@@ -3,7 +3,6 @@ Tests for team-based scope resolution, permission service, and team CRUD.
 All tests are pure in-memory SQLite — no HTTP client needed.
 """
 
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -24,7 +23,6 @@ from app.services.permission_service import (
     DIAGNOSTICS,
     MAINTENANCE_MODE,
     REMOTE_SUPPORT_MANAGE,
-    ROLE_PERMISSIONS,
     get_permissions_for_role,
     has_permission,
     permissions_summary,

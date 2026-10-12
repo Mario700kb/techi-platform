@@ -10,7 +10,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent
 sys.path.insert(0, str(backend_dir))
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -18,6 +18,7 @@ from app.models.client import Client
 from app.models.device_group import DeviceGroup
 from app.models.device import Device, DeviceType, DeviceStatus
 from app.models.operator import Operator
+from app.core.time import utcnow_naive
 
 
 def create_sample_data(db: Session):
@@ -73,7 +74,7 @@ def create_sample_data(db: Session):
             "cpu": "Intel Core i7-8700K",
             "ram": "32GB",
             "storage": "500GB SSD",
-            "last_seen": datetime.utcnow(),
+            "last_seen": utcnow_naive(),
         },
         {
             "rustdesk_id": "987654321",
@@ -92,7 +93,7 @@ def create_sample_data(db: Session):
             "cpu": "AMD Ryzen 5 5600X",
             "ram": "16GB",
             "storage": "1TB SSD",
-            "last_seen": datetime.utcnow(),
+            "last_seen": utcnow_naive(),
         },
         {
             "rustdesk_id": "555666777",
@@ -111,7 +112,7 @@ def create_sample_data(db: Session):
             "cpu": "Intel Xeon E5-2650",
             "ram": "64GB",
             "storage": "2TB SSD",
-            "last_seen": datetime.utcnow() - timedelta(hours=2),
+            "last_seen": utcnow_naive() - timedelta(hours=2),
         },
         {
             "rustdesk_id": "111222333",
@@ -130,7 +131,7 @@ def create_sample_data(db: Session):
             "cpu": "Apple M2",
             "ram": "16GB",
             "storage": "512GB SSD",
-            "last_seen": datetime.utcnow(),
+            "last_seen": utcnow_naive(),
         },
         {
             "rustdesk_id": "444555666",
@@ -146,7 +147,7 @@ def create_sample_data(db: Session):
             "cpu": "Intel Core i5-10400",
             "ram": "8GB",
             "storage": "256GB SSD",
-            "last_seen": datetime.utcnow() - timedelta(days=1),
+            "last_seen": utcnow_naive() - timedelta(days=1),
         },
     ]
 

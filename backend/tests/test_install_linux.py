@@ -1,6 +1,5 @@
 """Phase 2 — Linux installer endpoint (flag-gated)."""
 
-from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -26,6 +25,7 @@ from app.services.notification_events import NotificationEvent
 from app.services.notification_service import NotificationService
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class AlertEngine:
         if self.repo.get_open_by_device_and_kind(device_id, kind):
             return True
         recent = self.repo.get_most_recent_resolved(device_id, kind)
-        if recent and recent.cooldown_until and recent.cooldown_until > datetime.utcnow():
+        if recent and recent.cooldown_until and recent.cooldown_until > utcnow_naive():
             return True
         return False
 

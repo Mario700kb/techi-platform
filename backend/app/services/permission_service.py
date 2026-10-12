@@ -5,7 +5,7 @@ Every permission check in the application should reference ROLE_PERMISSIONS
 rather than scattering string comparisons through route handlers.
 """
 
-from typing import Dict, FrozenSet, List
+from typing import Dict, FrozenSet
 
 # ── Permission identifiers ──────────────────────────────────────────────── #
 

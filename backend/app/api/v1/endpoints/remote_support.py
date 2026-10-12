@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.scope import AllowedScope, device_in_scope
 from app.core.time import utcnow
 from app.db.session import get_db
-from app.models.device import Device, DeviceType
+from app.models.device import Device
 from app.models.operator import Operator, OperatorRole
 from app.platform_core.action_resolver import ComponentActionError
 from app.platform_core.components import LifecycleOperation
@@ -20,7 +20,7 @@ from app.schemas.remote_action import ActionType, RemoteActionCreate, RemoteActi
 from app.services import agent_config_service
 from app.services.component_package_service import ComponentPackageService
 from app.services.audit_service import AuditAction, audit_log
-from app.services.permission_service import DEPLOYMENT, REINSTALL_REMOTE_SUPPORT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
+from app.services.permission_service import DEPLOYMENT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
@@ -450,7 +450,7 @@ def restart_remote_support_service(
     device_id: int,
 ):
     """Queue a restart of the TECHI Remote Support service on the device."""
-    device = _get_device(device_id, db, scope)
+    _get_device(device_id, db, scope)  # scope check: 404 for a device outside the operator's reach
 
     try:
         action = RemoteActionService(db).queue_action(
@@ -540,7 +540,7 @@ def repair_remote_support_config(
     device_id: int,
 ):
     """Queue a config repair for TECHI Remote Support (rewrites TOML + restarts service)."""
-    device = _get_device(device_id, db, scope)
+    _get_device(device_id, db, scope)  # scope check: 404 for a device outside the operator's reach
 
     try:
         action = RemoteActionService(db).queue_action(

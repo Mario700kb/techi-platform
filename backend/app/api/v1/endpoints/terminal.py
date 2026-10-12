@@ -23,7 +23,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import (
     ROLE_ORDER,
-    get_current_operator,
     get_operator_permissions,
     require_min_role,
     require_role_or_permission,
@@ -42,7 +41,7 @@ from app.services.audit_service import AuditAction, audit_log
 from app.services.remote_action_service import RemoteActionService
 from app.services.ssh_connector import dial_and_run, ssh_connector_runner
 from app.services.terminal_relay import terminal_relay
-from app.services.terminal_service import TerminalService, TICKET_TTL_SECONDS
+from app.services.terminal_service import TerminalService
 from app.services.permission_service import TERMINAL_OPEN, TERMINAL_VIEW, VAULT_USE
 from app.services.vault_service import VaultService
 

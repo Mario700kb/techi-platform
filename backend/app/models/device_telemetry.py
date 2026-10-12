@@ -1,7 +1,7 @@
-from datetime import datetime
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class DeviceTelemetry(Base):
@@ -14,4 +14,4 @@ class DeviceTelemetry(Base):
     disk_percent = Column(Float, nullable=True)
     uptime_seconds = Column(Integer, nullable=True)
     heartbeat_latency_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)

@@ -1,10 +1,9 @@
-from datetime import datetime
-from enum import Enum
 from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 from app.models.device import DeviceType, DeviceStatus
+from app.core.time import utcnow_naive
 
 
 class DeviceHeartbeat(Base):
@@ -33,6 +32,6 @@ class DeviceHeartbeat(Base):
     rustdesk_status = Column(String(32), nullable=True)
     rustdesk_version = Column(String(80), nullable=True)
     rustdesk_install_path = Column(String(512), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
 
     device = relationship("Device", back_populates="heartbeats")

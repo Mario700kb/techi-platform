@@ -1,8 +1,8 @@
-from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class AuditLog(Base):
@@ -15,4 +15,4 @@ class AuditLog(Base):
     entity_type = Column(String(64), nullable=True, index=True)
     entity_id = Column(Integer, nullable=True)
     details_json = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)

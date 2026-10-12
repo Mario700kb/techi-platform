@@ -1,9 +1,9 @@
-from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Integer, String
 
 from app.db.base import Base
 from app.models.device import DeviceStatus
+from app.core.time import utcnow_naive
 
 
 class DeviceStatusHistory(Base):
@@ -14,4 +14,4 @@ class DeviceStatusHistory(Base):
     previous_status = Column(SQLEnum(DeviceStatus), nullable=True)
     new_status = Column(SQLEnum(DeviceStatus), nullable=False)
     reason = Column(String(160), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)

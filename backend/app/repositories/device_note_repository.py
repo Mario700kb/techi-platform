@@ -1,4 +1,3 @@
-from datetime import datetime
 from app.core.time import utcnow
 from typing import List, Optional
 

@@ -1,6 +1,5 @@
 import logging
 import secrets
-from datetime import datetime
 from app.core.time import utcnow
 from typing import Optional
 

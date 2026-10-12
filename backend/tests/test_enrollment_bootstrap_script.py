@@ -15,14 +15,11 @@ import json
 import re
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import bootstrap as bootstrap_endpoint
 from app.schemas.enrollment_bootstrap import (
-    AvailabilityProfile,
-    EnrollmentBootstrapPlatform,
     EnrollmentBootstrapRequest,
 )
 from app.services.enrollment_bootstrap_service import (

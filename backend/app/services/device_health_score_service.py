@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from app.models.alert import AlertSeverity
@@ -10,6 +9,7 @@ from app.repositories.alert_repository import AlertRepository
 from app.repositories.device_inventory_repository import DeviceInventoryRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 from app.services import agent_config_service
+from app.core.time import utcnow_naive
 
 
 class DeviceHealthScoreService:
@@ -110,7 +110,7 @@ def _add_freshness_penalties(penalties: List[Tuple[float, str]], device: Device)
         penalties.append((45.0, "Device has never checked in"))
         return
 
-    age_hours = max((datetime.utcnow() - device.last_seen).total_seconds() / 3600, 0)
+    age_hours = max((utcnow_naive() - device.last_seen).total_seconds() / 3600, 0)
     if age_hours >= 24 * 7:
         penalties.append((45.0, "Device offline for more than 7 days"))
     elif age_hours >= 24:
@@ -137,7 +137,7 @@ def _add_inventory_freshness_penalties(
         penalties.append((12.0, "Inventory has not been collected"))
         return
     interval = agent_config_service.get_inventory_interval("mikrotik")
-    age_seconds = max((datetime.utcnow() - inventory.collected_at).total_seconds(), 0)
+    age_seconds = max((utcnow_naive() - inventory.collected_at).total_seconds(), 0)
     if age_seconds > interval * 2:
         penalties.append((12.0, "Inventory is stale"))
 

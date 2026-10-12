@@ -11,7 +11,6 @@ Verifies:
 - No impact on existing endpoints (no imports/side-effects from agent_config_service on heartbeat)
 """
 
-import os
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

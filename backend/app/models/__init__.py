@@ -23,6 +23,11 @@ from app.models.terminal_session import TerminalSession
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 
 __all__ = [
+    "Team",
+    "TeamClientAccess",
+    "TeamDeviceAccess",
+    "TeamGroupAccess",
+    "TeamMember",
     "OperatorSession",
     "AgentCommandBatch",
     "Client",

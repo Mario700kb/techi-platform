@@ -26,7 +26,7 @@ from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.device_group import DeviceGroup
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import Operator
 from app.models.team import Team, TeamMember
 from app.models.terminal_session import TerminalSession
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage

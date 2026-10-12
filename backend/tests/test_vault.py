@@ -25,7 +25,7 @@ from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import OperatorRole
 from app.models.team import Team, TeamMember
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 from app.platform_core.vault_credential_types import (

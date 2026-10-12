@@ -1,9 +1,9 @@
-from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class TrustedDomain(Base):
@@ -14,7 +14,7 @@ class TrustedDomain(Base):
     client_name = Column(String(160), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
 
     client = relationship("Client")

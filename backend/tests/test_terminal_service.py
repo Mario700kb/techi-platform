@@ -9,7 +9,6 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.core.time import utcnow
 from app.db.base import Base
-from app.models.terminal_session import TerminalSession, TerminalSessionStatus
 from app.services.terminal_service import TerminalService
 
 

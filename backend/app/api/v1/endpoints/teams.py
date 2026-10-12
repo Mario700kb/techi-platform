@@ -3,10 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, require_min_role
+from app.core.auth import get_current_operator
 from app.db.session import get_db
 from app.models.operator import Operator, OperatorRole
-from app.repositories.team_repository import _decode_permissions
 from app.schemas.team import (
     AccessUpdateRequest,
     MemberUpdateRequest,

@@ -1,7 +1,6 @@
 import json
 import re
 from urllib.parse import urlsplit, urlunsplit
-from typing import Optional
 
 from sqlalchemy.orm import Session
 

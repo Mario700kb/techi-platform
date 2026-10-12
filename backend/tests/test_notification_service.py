@@ -118,7 +118,7 @@ def test_retry_delivery_marks_failed_after_max_attempts(monkeypatch):
     monkeypatch.setattr(channels_module.WebhookSender, "send", lambda self, **kwargs: (False, "still down"))
     db = _db()
     channel = _make_channel(db)
-    rule = _make_rule(db, channel)
+    _make_rule(db, channel)
     svc = NotificationService(db)
     svc.dispatch(event_type="device_offline", title="t", message="m")
     delivery = db.query(NotificationDelivery).one()

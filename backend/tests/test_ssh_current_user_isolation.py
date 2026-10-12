@@ -11,7 +11,6 @@ pin that invariant so it can never be introduced silently:
   in themselves.
 """
 
-import json
 from types import SimpleNamespace
 
 import pytest

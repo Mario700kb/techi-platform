@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
-from app.models.operator import Operator, OperatorRole
+from app.models.operator import Operator
 from app.models.team import Team, TeamMember
 from app.core.auth import get_current_operator, require_team_permission, get_operator_permissions
 from app.services.permission_service import (

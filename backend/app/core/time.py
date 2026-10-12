@@ -14,6 +14,15 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def utcnow_naive() -> datetime:
+    """Current UTC time without tzinfo — the form the database columns store.
+
+    The drop-in replacement for datetime.utcnow() (deprecated in Python 3.12)
+    wherever a value is compared with, or written to, a naive UTC column.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None

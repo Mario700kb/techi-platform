@@ -122,7 +122,7 @@ class TestLaunch:
             client = _client(monkeypatch, flag_on=True, platform=platform,
                              capabilities={"terminal": ""},
                              local_ip="10.0.0.5", public_ip="203.0.113.9")
-            r = client.get(f"/devices/3/connect-methods/ssh/launch")
+            r = client.get("/devices/3/connect-methods/ssh/launch")
             if r.status_code == 200:
                 assert r.json()["url"] == "ssh://10.0.0.5", platform
 

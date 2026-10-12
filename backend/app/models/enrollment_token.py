@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
 
@@ -6,6 +5,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, St
 from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
+from app.core.time import utcnow_naive
 
 
 class EnrollmentTokenStatus(str, Enum):
@@ -57,7 +57,7 @@ class EnrollmentToken(Base):
     name = Column(String(160), nullable=False)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
     status = Column(EnrollmentTokenStatusType(), default=EnrollmentTokenStatus.ACTIVE, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
     expires_at = Column(DateTime, nullable=True, index=True)
     used_at = Column(DateTime, nullable=True)
     max_uses = Column(Integer, default=1, nullable=False)
