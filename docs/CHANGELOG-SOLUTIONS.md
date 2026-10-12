@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] TITLE-BAR-2026-10-12 — the installed app's title bar matches the app (`9a94c8a`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-title-bar-c071bc5`.
+
+The owner asked for the orange strip above the installed app (PWA window
+title bar) to match the app. It comes from `theme-color`, which was the
+brand orange in both `index.html` and `manifest.json`. It now follows the
+active theme — `#131316` (top bar and sidebar) in dark, white in light —
+set before first paint by `boot/theme.js` and updated by `ThemeContext` on
+a theme change; the manifest uses `#131316`. Verified live (meta and
+manifest). An installed app may need one restart to pick up the manifest.
+
 ## [2026-10-12] SW-FIX-2026-10-12 — the service worker always answers with a real Response (`f408fa7`)
 
 Frontend only, deployed 2026-10-12 23:2x. Rollback image
