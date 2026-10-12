@@ -4800,6 +4800,58 @@ a.th-list-row:hover {
   box-shadow: inset 0 0 0 1px var(--th-accent-border);
 }
 
+/* Quick filters (Devices): the row opens by growing its height, so the table
+   below slides down instead of jumping; chips enter one after another; a
+   changed count fades in. Off under prefers-reduced-motion (global rule). */
+.th-quick-filters {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--th-dur-slow) var(--th-ease-out),
+    opacity var(--th-dur) var(--th-ease);
+}
+.th-quick-filters[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.th-quick-filters > div {
+  min-height: 0;
+  overflow: hidden;
+  /* Room for the 2px focus outline (+2px offset) inside the clip. */
+  padding-top: 4px;
+  margin-top: -4px;
+}
+.th-quick-filters[data-open="true"] .th-filter-chip,
+.th-quick-filters[data-open="true"] .th-quick-filters-label {
+  animation: th-chip-in 380ms var(--th-ease-out) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+.th-filter-chip-count {
+  display: inline-block;
+  animation: th-count-in 260ms var(--th-ease) both;
+}
+@keyframes th-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes th-count-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ── Table cells: status dot, health score, alert count ── */
 .th-status-dot {
   display: inline-block;

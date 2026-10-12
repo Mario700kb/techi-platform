@@ -454,6 +454,9 @@ const DevicesTable = memo(function DevicesTable({
     [activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions],
   );
   const scrollPositionRef = useRef({ left: 0, top: 0 });
+  // The last non-empty quick-filter row, so it can close smoothly when the
+  // counts drop to zero instead of vanishing mid-animation.
+  const lastQuickFilters = useRef<{ id: QuickFilter; label: string; count: number }[]>([]);
 
   const pillCounts = useMemo(() => {
     const counts = Object.fromEntries(QUICK_FILTERS.map(({ id }) => [id, 0])) as Record<QuickFilter, number>;
@@ -873,7 +876,9 @@ const DevicesTable = memo(function DevicesTable({
           />
         </div>
 
-        {/* Secondary quick filters — only the ones that currently match devices */}
+        {/* Secondary quick filters — only the ones that currently match devices.
+            The row opens and closes smoothly (no jump of the table below it),
+            chips come in one after another, and a changed count fades in. */}
         {(() => {
           const extras = QUICK_FILTERS.filter((f) => !STATUS_TAB_IDS.has(f.id))
             .map((f) => ({
@@ -881,27 +886,44 @@ const DevicesTable = memo(function DevicesTable({
               count: pillCounts[f.id],
             }))
             .filter((f) => f.count > 0 || quickFilter === f.id);
-          if (extras.length === 0) return null;
+          if (extras.length > 0) lastQuickFilters.current = extras;
+          const shown = extras.length > 0 ? extras : lastQuickFilters.current;
           return (
-            <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-              <span className="mr-1 text-[12px]" style={{ color: "var(--th-text-faint)" }}>
-                Quick filters
-              </span>
-              {extras.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={quickFilter === f.id}
-                  onClick={() => applyQuickFilter(quickFilter === f.id ? "all" : f.id)}
-                  className="th-filter-chip"
-                >
-                  {f.label}
-                  <span className="tabular-nums" style={{ color: "var(--th-text-faint)" }}>
-                    {f.count}
-                  </span>
-                  {quickFilter === f.id && <X className="h-3 w-3" aria-label="Clear filter" />}
-                </button>
-              ))}
+            <div
+              className="th-quick-filters"
+              data-open={extras.length > 0}
+              aria-hidden={extras.length === 0 || undefined}
+            >
+              <div>
+                {shown.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+                    <span className="th-quick-filters-label mr-1 text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                      Quick filters
+                    </span>
+                    {shown.map((f, index) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        aria-pressed={quickFilter === f.id}
+                        onClick={() => applyQuickFilter(quickFilter === f.id ? "all" : f.id)}
+                        className="th-filter-chip"
+                        tabIndex={extras.length === 0 ? -1 : undefined}
+                        style={{ "--i": index + 1 } as React.CSSProperties}
+                      >
+                        {f.label}
+                        <span
+                          key={f.count}
+                          className="th-filter-chip-count tabular-nums"
+                          style={{ color: "var(--th-text-faint)" }}
+                        >
+                          {f.count}
+                        </span>
+                        {quickFilter === f.id && <X className="h-3 w-3" aria-label="Clear filter" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })()}
