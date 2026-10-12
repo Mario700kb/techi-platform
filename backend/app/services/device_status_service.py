@@ -117,3 +117,6 @@ class DeviceStatusService:
             dedupe_key=f"device_updated:{device.id}:{device.status.value}",
         )
         _get_alert_engine(self.db).resolve_stale_on_offline(device)
+        from app.services.remote_session_service import RemoteSessionService
+
+        RemoteSessionService(self.db).end_if_active(device, reason="device_offline")

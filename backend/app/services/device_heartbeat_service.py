@@ -14,6 +14,7 @@ from app.platform_core.classification import classify_platform
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
+from app.services.remote_session_service import RemoteSessionService
 from app.schemas.device import DeviceCreate, DeviceUpdate
 from app.services.alert_engine import AlertEngine
 from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
@@ -371,6 +372,7 @@ class DeviceHeartbeatService:
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
         self._process_capabilities(payload, device)
+        RemoteSessionService(self.db).apply_report(device, payload.remote_session_active)
         self._evaluate_post_heartbeat_alerts(device)
 
     def _process_capabilities(self, payload: AgentHeartbeatPayload, device) -> None:

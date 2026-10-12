@@ -62,3 +62,22 @@ func TestRemoteSupportIsNotRestartedDuringASession(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteSessionReport(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		cmdlines []string
+		want     *bool
+	}{
+		{nil, &no},
+		{[]string{`"...\TECHI Remote Support.exe" --service`}, &no},
+		{[]string{`"...\TECHI Remote Support.exe" --service`, `"...\TECHI Remote Support.exe" --cm`}, &yes},
+		{[]string{`"...\TECHI Remote Support.exe" --service`, ""}, nil},
+	}
+	for _, c := range cases {
+		got := remoteSessionReport(c.cmdlines)
+		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
+			t.Errorf("remoteSessionReport(%q) = %v, want %v", c.cmdlines, got, c.want)
+		}
+	}
+}

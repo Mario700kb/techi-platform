@@ -57,6 +57,9 @@ export async function getAuditFacets(): Promise<AuditFacets> {
 
 export const ACTION_LABELS: Record<string, string> = {
   remote_connect: "Remote connect",
+  remote_session_started: "Remote session started",
+  remote_session_ended: "Remote session ended",
+  remote_support_passwords_rotated: "Remote Support passwords rotated",
   terminal_session_opened: "Terminal opened",
   terminal_session_closed: "Terminal closed",
   terminal_session_denied: "Terminal denied",

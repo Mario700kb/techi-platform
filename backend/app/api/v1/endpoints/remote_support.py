@@ -23,7 +23,7 @@ from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
 from app.services.remote_action_service import RemoteActionService
-from app.services.remote_support_password_service import RemoteSupportPasswordService
+from app.services.remote_support_password_service import RemoteSupportPasswordService, agent_applies_per_device_password
 
 router = APIRouter(dependencies=[Depends(get_current_operator)])
 
@@ -147,18 +147,8 @@ def _build_connect_url(remote_id: str, password: Optional[str]) -> str:
     return connect_url
 
 
-def _agent_applies_per_device_password(device: Device) -> bool:
-    """Only >= 2.1.5 agents apply the server's per-device password to RustDesk.
-    Older agents still hold the legacy shared password, so connecting to them
-    must use that during the rollout — otherwise remote access breaks fleet-wide
-    until every device is upgraded."""
-    parts = []
-    for piece in (getattr(device, "agent_version", None) or "").strip().lstrip("vV").split("."):
-        digits = "".join(ch for ch in piece if ch.isdigit())
-        if not digits:
-            return False
-        parts.append(int(digits))
-    return tuple(parts) >= (2, 1, 5)
+# Kept as a name here for callers and tests; the rule lives with the service.
+_agent_applies_per_device_password = agent_applies_per_device_password
 
 
 def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlResponse:
@@ -171,7 +161,9 @@ def _connect_url_response_for_device(device: Device, db: Session) -> ConnectUrlR
     if _agent_applies_per_device_password(device):
         # Server-authoritative per-device password. The agent applies exactly
         # this value to RustDesk every heartbeat — no fleet-wide shared secret.
-        password = RemoteSupportPasswordService(db).get_or_create(device)
+        # for_connect: right after a change, the previous password until the
+        # agent's next heartbeat delivers the new one.
+        password = RemoteSupportPasswordService(db).for_connect(device)
     else:
         # Transition fallback for agents < 2.1.5 that still hold the legacy
         # shared password. Automatically retired once the fleet is upgraded.
@@ -438,6 +430,54 @@ def regenerate_remote_support_password(
         device_id=device.id, password=password, source="generated",
         updated_at=device.remote_support_password_updated_at,
     )
+
+
+class PasswordPolicyStatus(BaseModel):
+    rotation_days: int
+    per_device: int
+    legacy_shared: int
+    oldest_changed_at: Optional[datetime] = None
+
+
+class PasswordRotationResult(BaseModel):
+    rotated: int
+
+
+@router.get("/passwords/status", response_model=PasswordPolicyStatus)
+def remote_support_password_status(
+    *,
+    db: Session = Depends(get_db),
+    _operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+):
+    """How the fleet's Remote Support passwords stand, for Settings → Security."""
+    devices = db.query(Device).filter(Device.is_archived.is_(False), Device.rustdesk_id.isnot(None)).all()
+    per_device = [d for d in devices if agent_applies_per_device_password(d)]
+    changed = [d.remote_support_password_updated_at for d in per_device if d.remote_support_password_updated_at]
+    return PasswordPolicyStatus(
+        rotation_days=settings.REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS,
+        per_device=len(per_device),
+        legacy_shared=len(devices) - len(per_device),
+        oldest_changed_at=min(changed) if changed else None,
+    )
+
+
+@router.post("/passwords/rotate-all", response_model=PasswordRotationResult)
+def rotate_all_remote_support_passwords(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+):
+    """New per-device passwords for the whole fleet, e.g. when someone with
+    access leaves. Each agent applies its own on its next heartbeat; Connect
+    keeps working throughout (for_connect)."""
+    rotated = RemoteSupportPasswordService(db).rotate_all()
+    audit_log(
+        db,
+        operator=operator,
+        action=AuditAction.REMOTE_SUPPORT_PASSWORDS_ROTATED,
+        details={"rotated": rotated, "trigger": "manual"},
+    )
+    return PasswordRotationResult(rotated=rotated)
 
 
 @router.post("/devices/{device_id}/restart-service", response_model=RemoteActionResponse)

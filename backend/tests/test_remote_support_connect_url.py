@@ -49,7 +49,7 @@ def test_connect_url_uses_per_device_password(monkeypatch):
         def __init__(self, db):
             pass
 
-        def get_or_create(self, device):
+        def for_connect(self, device):
             return "UniquePerDevice9"
 
     monkeypatch.setattr(
@@ -73,7 +73,7 @@ def test_connect_url_allows_stale_agent_heartbeat_when_remote_id_exists(monkeypa
         def __init__(self, db):
             pass
 
-        def get_or_create(self, device):
+        def for_connect(self, device):
             return "irrelevant"
 
     monkeypatch.setattr(
@@ -119,7 +119,7 @@ def test_connect_url_falls_back_to_legacy_password_for_old_agent(monkeypatch):
         def __init__(self, db):
             pass
 
-        def get_or_create(self, device):
+        def for_connect(self, device):
             raise AssertionError("must not generate per-device password for old agent")
 
     monkeypatch.setattr(
@@ -141,7 +141,7 @@ def test_connect_url_uses_per_device_for_215_agent(monkeypatch):
         def __init__(self, db):
             pass
 
-        def get_or_create(self, device):
+        def for_connect(self, device):
             return "PerDevice12345"
 
     monkeypatch.setattr(

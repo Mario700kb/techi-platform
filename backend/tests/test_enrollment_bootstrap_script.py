@@ -398,7 +398,8 @@ class TestRustDeskForceMigrationScript:
         assert captured["payload"].rustdesk_rendezvous_server == "139.162.158.208"
         assert captured["payload"].rustdesk_relay_server == "139.162.158.208"
         assert captured["payload"].rustdesk_key == "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
-        assert captured["payload"].rustdesk_default_password == "Durres.12"
+        # Served without authentication: never the fleet-wide shared password.
+        assert captured["payload"].rustdesk_default_password == ""
 
 
 class TestPublicWindowsBootstrapEndpoint:
@@ -514,6 +515,8 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["payload"].enrollment_token_id is None
         assert captured["payload"].backend_url == "https://api-rdp.techi.com.al"
         assert captured["payload"].rustdesk_manage_enabled is True
+        # Public script: no shared Remote Support password in it.
+        assert captured["payload"].rustdesk_default_password == ""
         assert captured["audited"] is True
 
     def test_gpo_endpoint_returns_tokenless_script(self, monkeypatch):
@@ -549,6 +552,7 @@ class TestPublicWindowsBootstrapEndpoint:
         assert captured["payload"].enrollment_token is None
         assert captured["payload"].backend_url == "https://api-rdp.techi.com.al"
         assert captured["payload"].rustdesk_manage_enabled is True
+        assert captured["payload"].rustdesk_default_password == ""
 
 
 class TestTokenInstallerPlaintextResolution:

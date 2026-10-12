@@ -47,6 +47,9 @@ class AgentHeartbeatPayload(BaseModel):
     rustdesk_install_path: Optional[str] = None
     rustdesk_last_repair_at: Optional[datetime] = None
     rustdesk_repair_count: Optional[int] = None
+    # A live Remote Support session on the device (agents >= 2.1.24); None
+    # when the agent does not report it or could not tell.
+    remote_session_active: Optional[bool] = None
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
     disk_percent: Optional[float] = None

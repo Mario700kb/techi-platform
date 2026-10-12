@@ -426,6 +426,24 @@ func remoteSupportSessionActive(brandedCmdlines []string) bool {
 	return false
 }
 
+// remoteSessionReport is what the heartbeat says about a live session: true
+// when a branded process runs the connection manager ("--cm"), false when
+// none does, nil when a command line could not be read. Unlike
+// remoteSupportSessionActive (which treats "unreadable" as a session so a
+// restart is never risked), a report must not claim a session it cannot see.
+func remoteSessionReport(brandedCmdlines []string) *bool {
+	active := false
+	for _, raw := range brandedCmdlines {
+		if raw == "" {
+			return nil
+		}
+		if strings.Contains(strings.ToLower(raw), "--cm") {
+			active = true
+		}
+	}
+	return &active
+}
+
 // remoteSupportManagedInstallDirs are the directories a MANAGED Remote Support
 // installation can live in (Program Files is the supported location; the others
 // are historical install paths still present in the fleet). Termination is

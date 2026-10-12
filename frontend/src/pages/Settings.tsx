@@ -23,6 +23,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
 import SecurityCard from "../components/security/SecurityCard";
+import RemoteSupportPasswordsCard from "../components/security/RemoteSupportPasswordsCard";
 import { DefaultScreen, getPreferredDefaultScreen, setPreferredDefaultScreen } from "../utils/defaultScreen";
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
@@ -233,6 +234,9 @@ export default function Settings() {
       )}
 
       {user && <SecurityCard style={{ "--i": 1 } as CSSProperties} />}
+      {(user?.role === "owner" || user?.role === "admin") && (
+        <RemoteSupportPasswordsCard style={{ "--i": 1 } as CSSProperties} />
+      )}
 
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <div className="th-onb-card th-onb-enter" style={{ "--i": 1 } as CSSProperties}>

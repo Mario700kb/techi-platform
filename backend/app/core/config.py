@@ -89,7 +89,13 @@ class Settings(BaseSettings):
     RUSTDESK_SERVER_HOST: str = "139.162.158.208"
     RUSTDESK_RELAY_HOST: str = "139.162.158.208"
     RUSTDESK_PUBLIC_KEY: str = "8B5Z8Vp6ZKVUYOQsLxL+rktKft7s4KyozByrIPG8qSw="
-    RUSTDESK_DEFAULT_PASSWORD: str = "Durres.12"
+    # The legacy fleet-wide Remote Support password, still held by agents
+    # older than 2.1.5 until they update. Set only in the server's .env, never
+    # in code or in any script: it was public and is treated as compromised.
+    RUSTDESK_DEFAULT_PASSWORD: str = ""
+    # Per-device Remote Support passwords are replaced this often at the
+    # nightly run (0 = never); "rotate all" in Settings does it at once.
+    REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS: int = 30
     RUSTDESK_DEEP_LINK_PASSWORD_ENABLED: bool = True
     RUSTDESK_SERVER_DB_PATH: str = ""
     RUSTDESK_RESOLVER_ENABLED: bool = False

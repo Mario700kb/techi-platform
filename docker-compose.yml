@@ -61,6 +61,12 @@ services:
       # Log timestamps in Tirana time. Stored data stays UTC: the code only
       # uses utcnow()/datetime.utcnow(), which ignore TZ (audited 2026-10-05).
       TZ: Europe/Tirane
+      # The proxy (nginx-proxy-manager) reaches the backend through the
+      # compose network's gateway; trusting X-Forwarded-For from it gives the
+      # real client IP for audit, sessions and login rate limiting. Port 8000
+      # is closed to the internet (DOCKER-USER TECHI-SEC1A), so only the proxy
+      # can set the header.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.18.0.1}
     depends_on:
       postgres:
         condition: service_healthy

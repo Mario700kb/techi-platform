@@ -185,3 +185,21 @@ def resolve_stale_alerts(db: Session) -> int:
             resolved += 1
     logger.info(f"Cleanup: resolved {resolved} stale open alerts")
     return resolved
+
+
+def rotate_remote_support_passwords(db: Session) -> int:
+    """Nightly: replace per-device Remote Support passwords older than
+    REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS. Returns 0 (nothing is deleted);
+    the count goes to its own audit entry."""
+    from app.services.audit_service import AuditAction, system_audit_log
+    from app.services.remote_support_password_service import RemoteSupportPasswordService
+
+    rotated = RemoteSupportPasswordService(db).rotate_due()
+    if rotated:
+        system_audit_log(
+            db,
+            action=AuditAction.REMOTE_SUPPORT_PASSWORDS_ROTATED,
+            details={"rotated": rotated, "trigger": "schedule"},
+        )
+        logger.info("Rotated %d Remote Support passwords", rotated)
+    return 0

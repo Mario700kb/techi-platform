@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -114,6 +114,14 @@ class Device(Base):
     remote_support_password_ciphertext = Column(Text, nullable=True)
     remote_support_password_updated_at = Column(DateTime, nullable=True)
     remote_support_password_source = Column(String(16), nullable=True)  # "generated" | "custom"
+    # The password before the last change, still what the agent holds until
+    # its next heartbeat delivers the new one; Connect uses it until then.
+    remote_support_password_previous_ciphertext = Column(Text, nullable=True)
+    # A live Remote Support session, as reported by agents that send
+    # remote_session_active (from 2.1.24); older agents leave it False.
+    rustdesk_session_active = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+    rustdesk_session_started_at = Column(DateTime, nullable=True)
+    rustdesk_session_operator = Column(String(128), nullable=True)
 
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)

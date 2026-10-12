@@ -524,6 +524,9 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/audit/facets": (route) => json(route, auditFacets),
   "GET /api/v1/system/status": (route) => json(route, systemStatus),
   "GET /api/v1/connect-preferences": (route) => json(route, connectPreferences),
+  "GET /api/v1/remote-support/passwords/status": (route) =>
+    json(route, { rotation_days: 30, per_device: 4, legacy_shared: 1, oldest_changed_at: iso(60 * 24 * 20) }),
+  "POST /api/v1/remote-support/passwords/rotate-all": (route) => json(route, { rotated: 4 }),
   "GET /api/v1/notifications/channels": (route) => json(route, channels),
   "GET /api/v1/notifications/rules": (route) => json(route, rules),
   "GET /api/v1/notifications/deliveries": (route) => json(route, deliveries),

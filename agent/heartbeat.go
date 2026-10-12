@@ -55,6 +55,9 @@ type HeartbeatPayload struct {
 	RustDeskInstallPath   string         `json:"rustdesk_install_path"`
 	RustDeskLastRepairAt  string         `json:"rustdesk_last_repair_at,omitempty"`
 	RustDeskRepairCount   int            `json:"rustdesk_repair_count,omitempty"`
+	// A live Remote Support session (nil: not known on this platform or
+	// unreadable); the server turns changes into its session audit trail.
+	RemoteSessionActive *bool `json:"remote_session_active,omitempty"`
 	CPUPercent            float64        `json:"cpu_percent"`
 	RAMPercent            float64        `json:"ram_percent"`
 	DiskPercent           float64        `json:"disk_percent"`

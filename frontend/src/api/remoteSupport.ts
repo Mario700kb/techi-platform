@@ -65,3 +65,20 @@ export async function regenerateRemoteSupportPassword(deviceId: number): Promise
     method: "POST",
   });
 }
+
+export interface RemoteSupportPasswordStatus {
+  rotation_days: number;
+  per_device: number;
+  legacy_shared: number;
+  oldest_changed_at: string | null;
+}
+
+/** Owner/admin: how the fleet's Remote Support passwords stand. */
+export async function getRemoteSupportPasswordStatus(): Promise<RemoteSupportPasswordStatus> {
+  return fetchJson<RemoteSupportPasswordStatus>("/api/v1/remote-support/passwords/status");
+}
+
+/** Owner/admin: a new per-device password for every device, applied on its next heartbeat. */
+export async function rotateAllRemoteSupportPasswords(): Promise<{ rotated: number }> {
+  return fetchJson<{ rotated: number }>("/api/v1/remote-support/passwords/rotate-all", { method: "POST" });
+}

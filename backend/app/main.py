@@ -8,6 +8,7 @@ import os
 from sqlalchemy.engine import make_url
 
 from app.core.logging_config import configure_logging
+from app.core.request_context import ClientIPMiddleware
 
 configure_logging()
 
@@ -56,9 +57,11 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
         resolve_stale_alerts,
+        rotate_remote_support_passwords,
     )
     tasks = (
         resolve_stale_alerts,
+        rotate_remote_support_passwords,
         cleanup_old_heartbeats,
         cleanup_old_telemetry,
         cleanup_old_activity_events,
@@ -229,6 +232,7 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(ClientIPMiddleware)
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)

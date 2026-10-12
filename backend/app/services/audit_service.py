@@ -3,10 +3,19 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.request_context import current_client_ip
 from app.models.operator import Operator
 from app.repositories.audit_log_repository import AuditLogRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _with_client_ip(details: Optional[dict]) -> Optional[dict]:
+    """Stamp the request's client IP (real, via the proxy) on every entry."""
+    ip = current_client_ip()
+    if not ip or (details and "ip" in details):
+        return details
+    return {**(details or {}), "ip": ip}
 
 
 class AuditAction:
@@ -47,6 +56,9 @@ class AuditAction:
     SCOPE_ENTRY_REMOVED = "scope_entry_removed"
     SCOPE_REPLACED = "scope_replaced"
     REMOTE_CONNECT = "remote_connect"
+    REMOTE_SESSION_STARTED = "remote_session_started"
+    REMOTE_SESSION_ENDED = "remote_session_ended"
+    REMOTE_SUPPORT_PASSWORDS_ROTATED = "remote_support_passwords_rotated"
     TEAM_CREATED = "team_created"
     TEAM_UPDATED = "team_updated"
     TEAM_DELETED = "team_deleted"
@@ -100,7 +112,7 @@ def audit_log(
             action=action,
             entity_type=entity_type,
             entity_id=entity_id,
-            details=details,
+            details=_with_client_ip(details),
         )
     except Exception:
         logger.exception("audit_log write failed action=%s operator=%s", action, operator.username)
@@ -122,7 +134,7 @@ def system_audit_log(
             action=action,
             entity_type=entity_type,
             entity_id=entity_id,
-            details=details,
+            details=_with_client_ip(details),
         )
     except Exception:
         logger.exception("system_audit_log write failed action=%s", action)

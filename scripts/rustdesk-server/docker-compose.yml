@@ -1,0 +1,40 @@
+# TECHI Remote Support server (RustDesk OSS hbbs + hbbr), self-hosted on the
+# platform host. Production copy: /opt/techi/rustdesk-server/docker-compose.yml
+# (deploy by copying this file there and `docker compose up -d`).
+#
+# - Image pinned by digest (1.1.15, the build running since 2026-05-30): an
+#   unpinned "latest" would change the server on any restart. Upgrade on
+#   purpose: test, then change the digest here.
+# - ./data holds id_ed25519 (the server's private key: every client is
+#   configured with its public half) and db_v2.sqlite3. Backed up nightly by
+#   scripts/techi-backup.sh. Losing the key means reconfiguring every client.
+# - Host networking; ports 21115-21117/tcp, 21116/udp, 21118-21119/tcp
+#   (websocket). 21114 (Pro web console) and 21119/udp are not used.
+# - Logs capped: they grew without bound.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  hbbs:
+    image: rustdesk/rustdesk-server@sha256:10818ec05b179039c6660f4d8e74b303f0db2858bbad2b18e24992ea22d54cd6
+    container_name: techi-hbbs
+    command: hbbs -r 139.162.158.208:21117
+    volumes:
+      - ./data:/root
+    network_mode: "host"
+    restart: unless-stopped
+    logging: *logging
+
+  hbbr:
+    image: rustdesk/rustdesk-server@sha256:10818ec05b179039c6660f4d8e74b303f0db2858bbad2b18e24992ea22d54cd6
+    container_name: techi-hbbr
+    command: hbbr
+    volumes:
+      - ./data:/root
+    network_mode: "host"
+    restart: unless-stopped
+    logging: *logging
