@@ -164,6 +164,8 @@ export default function Select<T extends string>({ value, options, onChange, id,
               {option.group && (
                 <li role="presentation" className="th-menu-label px-2.5 pb-1 pt-2">{option.group}</li>
               )}
+              {/* aria-activedescendant listbox: the list owns the keyboard (onKeyDown above); options are clicked, never focused. */}
+              {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
               <li
                 id={`${listId}-${index}`}
                 role="option"

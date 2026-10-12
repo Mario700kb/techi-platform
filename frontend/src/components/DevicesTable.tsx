@@ -38,6 +38,7 @@ import {
   userSourceBadge,
 } from "../utils/deviceBadges";
 import { DeviceMobileCard } from "./DeviceMobileCard";
+import { toggled } from "../utils/sets";
 import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
@@ -548,11 +549,7 @@ const DevicesTable = memo(function DevicesTable({
   const allSelected = displayDevices.length > 0 && displayDevices.every(d => selectedIds.has(d.id));
   const someSelected = !allSelected && displayDevices.some(d => selectedIds.has(d.id));
   const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(displayDevices.map(d => d.id)));
-  const toggleOne = (id: number) => setSelectedIds(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  const toggleOne = (id: number) => setSelectedIds(prev => toggled(prev, id));
 
   // The sticky Actions column only needs a divider while the table actually
   // scrolls sideways and content is passing underneath it.
@@ -864,7 +861,7 @@ const DevicesTable = memo(function DevicesTable({
           {mobileRefinements.length > 0 && (
             <div className="th-mdev-chips">
               {mobileRefinements.map((chip) => (
-                <button key={chip.key} type="button" onClick={chip.onClear} className="th-mdev-chip" aria-selected="true" aria-label={`Clear ${chip.label}`}>
+                <button key={chip.key} type="button" onClick={chip.onClear} className="th-mdev-chip" data-active="true" aria-label={`Clear ${chip.label}`}>
                   {chip.label}
                   <X className="h-3 w-3" />
                 </button>

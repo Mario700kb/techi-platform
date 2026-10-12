@@ -25,8 +25,6 @@ import {
   OWNER_ONLY_BULK_COMMANDS,
   TWO_STEP_CONFIRM_COMMANDS,
   cancelBatch,
-  commandStatusColor,
-  commandStatusDot,
   getBatchProgress,
   getCommandHistory,
   sendBulkCommand,
@@ -473,6 +471,7 @@ export default function AgentCommandsPanel() {
   // History
   const [history, setHistory] = useState<BatchSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [cancelling, setCancelling] = useState(false);
   const [outputModal, setOutputModal] = useState<{ hostname: string; output: string | null; error: string | null } | null>(null);
@@ -626,7 +625,8 @@ export default function AgentCommandsPanel() {
       const progress = await getBatchProgress(activeBatch.batch_id);
       setActiveBatch(progress);
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    } catch {
+    } catch (err) {
+      setSendError(err instanceof Error ? `Could not cancel the batch: ${err.message}` : "Could not cancel the batch");
     } finally {
       setCancelling(false);
     }
@@ -634,9 +634,11 @@ export default function AgentCommandsPanel() {
 
   async function loadHistory() {
     setHistoryLoading(true);
+    setHistoryError(null);
     try {
       setHistory(await getCommandHistory(20));
-    } catch {
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Could not load the command history");
     } finally {
       setHistoryLoading(false);
     }
@@ -652,7 +654,9 @@ export default function AgentCommandsPanel() {
       const progress = await getBatchProgress(batchId);
       setActiveBatch(progress);
       if (!progress.finished) startPolling(batchId);
-    } catch {}
+    } catch (err) {
+      setHistoryError(err instanceof Error ? `Could not open the batch: ${err.message}` : "Could not open the batch");
+    }
   }
 
   const needsConfirm = DESTRUCTIVE_BULK_COMMANDS.has(commandType);
@@ -885,6 +889,7 @@ export default function AgentCommandsPanel() {
           subtitle={historyLoading && history.length === 0 ? "Loading…" : `The last ${formatCount(history.length)} batches · open one for its per-device results`}
           aside={<Button size="sm" variant="secondary" onClick={() => void loadHistory()} disabled={historyLoading}><RefreshCw className={`h-3.5 w-3.5 ${historyLoading ? "animate-spin" : ""}`} />Refresh</Button>}
         />
+        {historyError && <Note tone="var(--th-status-critical)" icon={AlertTriangle}>{historyError}</Note>}
         {historyLoading && history.length === 0 ? (
           <div className="th-alerts-scroll" aria-busy="true">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />)}</div>
         ) : history.length === 0 ? (

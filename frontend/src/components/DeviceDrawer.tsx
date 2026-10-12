@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
-import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, ExternalLink, Fingerprint, HeartPulse, Loader2, Monitor, PlayCircle, Power, RefreshCw, RotateCcw, Package, Save, Search, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, AppWindow, CheckCircle, ClipboardCopy, Download, Edit3, Fingerprint, HeartPulse, Loader2, Monitor, Power, RefreshCw, RotateCcw, Package, Save, Search, Server, Star, StickyNote, Trash2, UploadCloud, Wifi, WifiOff, Wrench, X, Zap } from "lucide-react";
 import {
   getConnectUrl,
   getRemoteSupportDevice,
@@ -18,7 +18,6 @@ import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect 
 import {
   ACTION_LABELS,
   ACTION_STATUS_LABELS,
-  ActionStatus,
   ActionType,
   cancelAction,
   DESTRUCTIVE_ACTIONS,
@@ -34,7 +33,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, deleteDeviceNote, DeviceNote, getDeviceNotes, updateDeviceNote } from "../api/notes";
-import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
+import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
@@ -53,7 +52,6 @@ interface DeviceDrawerProps {
   device: Device;
   isOpen: boolean;
   onClose: () => void;
-  wsStatus?: DeviceRealtimeStatus;
   latestEvent?: DeviceRealtimeEvent | null;
   clients?: Client[];
   groups?: DeviceGroup[];
@@ -188,7 +186,6 @@ export default function DeviceDrawer({
   device,
   isOpen,
   onClose,
-  wsStatus,
   latestEvent,
   clients = [],
   groups = [],
@@ -546,7 +543,6 @@ export default function DeviceDrawer({
     );
   }, [inventory, softwareSearch]);
 
-  const isOnline = device.status === "online";
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
 
@@ -589,6 +585,7 @@ export default function DeviceDrawer({
         }`}
         style={{ background: "var(--th-scrim)" }}
         data-open={isOpen}
+        role="presentation"
         onClick={onClose}
       />
 

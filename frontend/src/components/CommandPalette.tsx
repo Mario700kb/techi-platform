@@ -183,8 +183,10 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const q = query.trim();
 
   return createPortal(
-    <div className="th-palette-scrim" onMouseDown={onClose}>
-      <div className="th-palette" role="dialog" aria-modal="true" aria-label="Search" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+    <div className="th-palette-scrim" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {/* Keys are handled on the dialog so Escape and the arrows still work after a click has moved focus off the input. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div className="th-palette" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKeyDown}>
         <div className="th-palette-input">
           <Search className="h-4 w-4 flex-none" />
           <input
@@ -223,6 +225,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                   const i = index;
                   const Icon = r.icon;
                   return (
+                    // Combobox with aria-activedescendant: focus stays in the input, which owns
+                    // the keyboard; options are clicked, never focused.
+                    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus
                     <div
                       key={r.id}
                       id={`th-palette-${r.id}`}

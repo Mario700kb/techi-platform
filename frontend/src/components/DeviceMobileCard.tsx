@@ -21,6 +21,7 @@ import {
 import type { VersionStatus } from "../utils/version";
 import { StatusDot, FreshnessState } from "./mobile/primitives";
 import { ConnectButton } from "./ui";
+import { activateProps, stopRowClick } from "../utils/a11y";
 
 /**
  * Mobile device card (docs/reference/MOBILE-DESIGN-SPEC.md — Devices,
@@ -131,7 +132,7 @@ export function DeviceMobileCard({
   ].filter(Boolean) as { key: string; node: ReactNode }[];
 
   return (
-    <div onClick={onSelect} className="th-onb-card th-mdev-card th-device-card" data-state={freshness}>
+    <div {...activateProps(onSelect)} aria-label={`Open ${displayName}`} className="th-onb-card th-mdev-card th-device-card" data-state={freshness}>
       <div className="flex items-start gap-3">
         <span className="th-mdev-status" aria-label={freshness} title={freshness}>
           <StatusDot state={freshness} size={9} />
@@ -153,7 +154,7 @@ export function DeviceMobileCard({
             {device.domain && <span style={{ color: "var(--th-text-faint)" }}> · {device.domain}</span>}
           </p>
         </div>
-        <div className="-mr-1 -mt-1 flex flex-none items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <div className="-mr-1 -mt-1 flex flex-none items-center gap-0.5" {...stopRowClick}>
           {onToggleFavorite && (
             <button
               type="button"

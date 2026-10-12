@@ -5,7 +5,7 @@ import { AlertTriangle, Check, CheckCheck, CheckCircle2, ChevronRight, KeyRound,
 import AlertKindIcon from "../components/AlertKindIcon";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
-import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
+import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE } from "../types/alert";
 import { parseUTC } from "../utils/time";
 import { Snackbar } from "../components/mobile/Snackbar";
 import { Button, EmptyState, PageHeader } from "../components/ui";
@@ -184,8 +184,11 @@ export default function AlertsMobile() {
     reloadAlerts();
   };
 
-  // Commit any pending dismissal if the user navigates away.
-  useEffect(() => () => flushPending(), []);
+  // Commit any pending dismissal if the user navigates away. Through a ref,
+  // so the unmount cleanup runs the latest flushPending, not the first one.
+  const flushRef = useRef(flushPending);
+  flushRef.current = flushPending;
+  useEffect(() => () => flushRef.current(), []);
 
   const groups = useMemo(() => {
     const byDevice = new Map<number | "token", Alert[]>();

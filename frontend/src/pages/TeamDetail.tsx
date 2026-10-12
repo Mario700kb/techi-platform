@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Building2, Check, CheckCircle2, ChevronRight, Info, KeyRound,
-  Layers, Monitor, RefreshCcw, Save, Search, Shield, ShieldCheck, Users, UsersRound, X,
+  Layers, Monitor, RefreshCcw, Search, Shield, ShieldCheck, Users, UsersRound, X,
 } from "lucide-react";
 import {
   TeamDetail,
@@ -26,6 +26,8 @@ import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
+import { toggled } from "../utils/sets";
+import { activateProps, stopRowClick } from "../utils/a11y";
 
 // Team colours are user data, chosen from this fixed set and stored on the team.
 const COLOR_PRESETS = [
@@ -283,12 +285,9 @@ function AccessTab({
       return n;
     });
 
-  const toggleD = (id: number) =>
-    setSelDevices((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleExC = (id: number) =>
-    setExClients((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleExG = (id: number) =>
-    setExGroups((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleD = (id: number) => setSelDevices((p) => toggled(p, id));
+  const toggleExC = (id: number) => setExClients((p) => toggled(p, id));
+  const toggleExG = (id: number) => setExGroups((p) => toggled(p, id));
 
   const expandAll = () => {
     setExClients(new Set(clients.map((c) => c.id)));
@@ -397,8 +396,8 @@ function AccessTab({
     const name = device.hostname ?? device.rustdesk_id ?? `Device #${device.id}`;
     return (
       <li key={device.id}>
-        <div className="th-team-node" data-level="3" data-inherited={dInherited || undefined} data-clickable={(!dInherited && canManage) || undefined} onClick={() => !dInherited && canManage && toggleD(device.id)}>
-          <span onClick={(e) => e.stopPropagation()}>
+        <div className="th-team-node" data-level="3" data-inherited={dInherited || undefined} data-clickable={(!dInherited && canManage) || undefined} {...(!dInherited && canManage ? activateProps(() => toggleD(device.id)) : {})}>
+          <span {...stopRowClick}>
             <TreeCheckbox state={dState} onChange={() => !dInherited && canManage && toggleD(device.id)} disabled={!canManage || dInherited} label={name} inheritedFrom={inheritedFrom} />
           </span>
           <DeviceStatusDot device={device} />
@@ -471,8 +470,8 @@ function AccessTab({
             const expandable = clientGroups.length > 0 || ung.length > 0;
             return (
               <li key={client.id}>
-                <div className="th-team-node" data-level="1" data-clickable="true" data-checked={cState === "checked" || undefined} onClick={() => toggleExC(client.id)} aria-expanded={expandable ? isExC : undefined}>
-                  <span onClick={(e) => e.stopPropagation()}>
+                <div className="th-team-node" data-level="1" data-clickable="true" data-checked={cState === "checked" || undefined} {...activateProps(() => toggleExC(client.id))} aria-expanded={expandable ? isExC : undefined}>
+                  <span {...stopRowClick}>
                     <TreeCheckbox state={cState} onChange={() => canManage && toggleC(client.id)} disabled={!canManage} label={client.name} />
                   </span>
                   <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--th-text-muted)" }} />
@@ -490,8 +489,8 @@ function AccessTab({
                       const inherited = gState === "inherited";
                       return (
                         <li key={group.id}>
-                          <div className="th-team-node" data-level="2" data-inherited={inherited || undefined} data-clickable={groupDevices.length > 0 || undefined} onClick={() => groupDevices.length > 0 && toggleExG(group.id)} aria-expanded={groupDevices.length > 0 ? isExG : undefined}>
-                            <span onClick={(e) => e.stopPropagation()}>
+                          <div className="th-team-node" data-level="2" data-inherited={inherited || undefined} data-clickable={groupDevices.length > 0 || undefined} {...(groupDevices.length > 0 ? activateProps(() => toggleExG(group.id)) : {})} aria-expanded={groupDevices.length > 0 ? isExG : undefined}>
+                            <span {...stopRowClick}>
                               <TreeCheckbox state={gState} onChange={() => canManage && !inherited && toggleG(group.id)} disabled={!canManage || inherited} label={`${client.name} / ${group.name}`} inheritedFrom="Inherited from client access" />
                             </span>
                             <Layers className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />

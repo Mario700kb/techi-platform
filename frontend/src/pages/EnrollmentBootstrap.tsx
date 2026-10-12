@@ -24,7 +24,6 @@ import {
 import {
   AvailabilityProfile,
   CreateTokenRequest,
-  CreateTokenResponse,
   EnrollmentBootstrapMode,
   EnrollmentBootstrapPlatform,
   EnrollmentBootstrapResponse,
@@ -180,7 +179,6 @@ export default function EnrollmentBootstrap() {
   const [savingMaxUses, setSavingMaxUses] = useState(false);
   const [diagnosticsToken, setDiagnosticsToken] = useState<EnrollmentToken | null>(null);
   const [diagnostics, setDiagnostics] = useState<EnrollmentTokenDiagnostics | null>(null);
-  const [diagnosticsCache, setDiagnosticsCache] = useState<Record<number, EnrollmentTokenDiagnostics>>({});
   const [diagnosticsEvents, setDiagnosticsEvents] = useState<EnrollmentAuditEvent[]>([]);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
@@ -264,7 +262,6 @@ export default function EnrollmentBootstrap() {
       ]);
       setDiagnostics(summary);
       setDiagnosticsEvents(events);
-      setDiagnosticsCache((current) => ({ ...current, [token.id]: summary }));
     } catch (err) {
       setDiagnosticsError(err instanceof Error ? err.message : "Failed to load token diagnostics");
     } finally {
@@ -1237,6 +1234,12 @@ function TokenDiagnosticsDrawer({
   onLoadMore: () => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const metrics = [
     ["Uses", `${token.use_count} / ${token.max_uses}`],
     ["Unique devices", diagnosticValue(diagnostics?.unique_devices)],
@@ -1247,10 +1250,16 @@ function TokenDiagnosticsDrawer({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
       <aside
         className="flex h-full w-full max-w-6xl flex-col border-l border-white/10 bg-[var(--th-bg-surface)] shadow-2xl"
-        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Token diagnostics: ${token.name}`}
       >
         <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-4">
           <div>

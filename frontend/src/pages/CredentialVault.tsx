@@ -290,7 +290,6 @@ export default function CredentialVault() {
           ` · ${d.platform ?? "windows"} · #${d.id}`,
       }));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.scope_client_filter, clientById, groupById]);
 
   const categoryOf = useCallback((item: VaultCredential): Category | undefined => typeById[item.credential_type]?.category, [typeById]);

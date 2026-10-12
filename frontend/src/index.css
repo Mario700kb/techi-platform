@@ -1115,8 +1115,8 @@ html.light .drawer-table-head {
 }
 .th-mdev-chip > i { width: 7px; height: 7px; border-radius: 999px; background: var(--chip-tone); }
 .th-mdev-chip > span { color: var(--th-text-faint); }
-.th-mdev-chip[aria-selected="true"] { color: var(--th-text-primary); border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 12%, var(--th-bg-card)); }
-.th-mdev-chip[aria-selected="true"] > span { color: var(--th-text-secondary); }
+.th-mdev-chip:is([aria-selected="true"], [aria-pressed="true"], [data-active="true"]) { color: var(--th-text-primary); border-color: var(--th-accent-border); background: color-mix(in srgb, var(--th-accent) 12%, var(--th-bg-card)); }
+.th-mdev-chip:is([aria-selected="true"], [aria-pressed="true"], [data-active="true"]) > span { color: var(--th-text-secondary); }
 .th-mdev-count { padding: 12px 4px 8px; font-size: 12px; color: var(--th-text-muted); }
 .th-mdev-list { display: flex; flex-direction: column; gap: 8px; }
 .th-onb-card.th-mdev-card {

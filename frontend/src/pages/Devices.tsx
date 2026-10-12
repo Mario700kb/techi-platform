@@ -77,12 +77,10 @@ export default function Devices() {
   const platformFeatures = usePlatformFeatures();
   const {
     fleetOverview,
-    fleetOverviewLoading,
     latestEvent,
     realtimeStatus,
     refreshFleetOverview,
     alerts,
-    alertCount,
   } = useAppData();
   const { favorites, toggle: toggleFavorite } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,7 +175,6 @@ export default function Devices() {
   }), [baseFilters, quickFilter, favoriteIds, sort]);
   const [quickCounts, setQuickCounts] = useState<DeviceQuickCounts | null>(null);
   const countsRequestRef = useRef(0);
-  const snapshotLoading = fleetOverviewLoading && fleetOverview === null;
   const [error, setError] = useState<string | null>(null);
   const refreshTimerRef = useRef<number | undefined>();
 
@@ -938,7 +935,6 @@ export default function Devices() {
             device={drawerDevice}
             isOpen={drawerOpen}
             onClose={closeDrawer}
-            wsStatus={realtimeStatus}
             latestEvent={latestEvent}
             clients={clients}
             groups={groups}

@@ -204,6 +204,7 @@ export default function GenericDeviceDrawer({ device, isOpen, onClose, latestEve
         className={`th-drawer-scrim fixed inset-0 z-40 backdrop-blur-[2px] ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
         style={{ background: "var(--th-scrim)" }}
         data-open={isOpen}
+        role="presentation"
         onClick={onClose}
       />
       <div

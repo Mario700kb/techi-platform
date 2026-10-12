@@ -126,7 +126,7 @@ export function FilterSheet({
                   key={id}
                   type="button"
                   onClick={() => setDraftQuickFilter(id)}
-                  aria-selected={active}
+                  aria-pressed={active}
                   className="th-mdev-chip"
                   style={{ "--chip-tone": color } as React.CSSProperties}
                 >

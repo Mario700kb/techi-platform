@@ -83,7 +83,11 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
   }, []);
 
   return createPortal(
-    <div className="th-modal-scrim" onMouseDown={() => { if (!busy) onClose(); }}>
+    <div
+      className="th-modal-scrim"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}
+    >
       <div
         ref={panelRef}
         role="dialog"
@@ -93,7 +97,6 @@ export default function Modal({ title, subtitle, icon: Icon, tone = "accent", si
         className="th-modal th-onb"
         data-size={size}
         style={{ "--modal-tone": TONE_VAR[tone] } as CSSProperties}
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="th-modal-head">
           {Icon && (

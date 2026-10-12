@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { Bell, Mail, Plus, RefreshCcw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
+import { Mail, Plus, RefreshCcw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 
 import {
   NOTIFICATION_EVENT_TYPES,

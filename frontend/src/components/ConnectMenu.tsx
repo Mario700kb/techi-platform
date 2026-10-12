@@ -60,7 +60,6 @@ interface Props {
   onRemoteSupport?: () => void;
 }
 
-const DEDICATED_METHOD_IDS = new Set(["remote_support", "web_terminal"]);
 const METHOD_CREDENTIAL_TYPE: Record<string, string> = { ssh: "ssh_password", winbox: "winbox", webfig: "webfig" };
 const CREDENTIAL_SOURCE_LABEL: Record<string, string> = {
   device: "Device credential", group: "Group credential", client: "Client credential", global: "Global credential",
@@ -334,7 +333,7 @@ export default function ConnectMenu({
     openMenu();
   };
 
-  const togglePreferred = async (e: React.MouseEvent, m: ConnectMethod) => {
+  const togglePreferred = async (e: React.SyntheticEvent, m: ConnectMethod) => {
     e.stopPropagation();
     if (!platform) return;
     try {
@@ -442,7 +441,14 @@ export default function ConnectMenu({
                   <span
                     role="button"
                     tabIndex={0}
+                    aria-pressed={isConfigured}
+                    aria-label={isConfigured ? "Stop always using this method" : "Always use this method"}
                     onClick={(e) => void togglePreferred(e, m)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      void togglePreferred(e, m);
+                    }}
                     title={isConfigured ? "Stop always using this method" : "Always use this method"}
                     className="flex-none rounded p-1 hover:bg-[var(--th-bg-card-hover)]"
                   >
@@ -458,6 +464,8 @@ export default function ConnectMenu({
         </div>
       ))}
       {methods.length > 0 && (
+        // The click is the checkbox's own (via its label); stopping it keeps the menu open.
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
         <label
           className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[11px]"
           style={{ borderTop: "1px solid var(--th-border-subtle)", color: "var(--th-text-secondary)" }}
@@ -506,7 +514,11 @@ export default function ConnectMenu({
       {open && menuBody}
 
       {note && (
-        <div className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-40 min-w-[220px] max-w-[320px] cursor-pointer rounded-md px-3 py-2 text-xs leading-snug shadow-lg`}
+        <button
+          type="button"
+          aria-live="polite"
+          title="Dismiss"
+          className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-40 min-w-[220px] max-w-[320px] cursor-pointer rounded-md px-3 py-2 text-left text-xs leading-snug shadow-lg`}
           style={{
             // --th-bg-drawer-section is a ~2% tint meant to sit inside an
             // already-opaque panel. As a floating overlay it let whatever was
@@ -517,7 +529,7 @@ export default function ConnectMenu({
           }}
           onClick={() => setNote(null)}>
           {note}
-        </div>
+        </button>
       )}
 
       {sshModalOpen && (
