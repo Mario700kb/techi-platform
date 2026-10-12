@@ -43,6 +43,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
+  // Only this app's own origin. Browser extensions (chrome-extension://)
+  // and third-party hosts pass straight through — the Cache API rejects
+  // non-http(s) schemes.
+  if (url.origin !== self.location.origin) return;
+
   // API and WebSocket traffic: always network, never cached.
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/")) {
     return;
@@ -62,7 +67,7 @@ self.addEventListener("fetch", (event) => {
       const cached = await cache.match(req);
       const networkFetch = fetch(req)
         .then((res) => {
-          if (res && res.ok) cache.put(req, res.clone());
+          if (res && res.ok) cache.put(req, res.clone()).catch(() => undefined);
           return res;
         })
         .catch(() => cached);
