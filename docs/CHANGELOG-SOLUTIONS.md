@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] DATEPICKER-DRAWER-LINK-2026-10-12 — the app's own calendar; alerts open their device (`bdc395f`, `a1a9a7b`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-datepicker-fc70606`.
+
+- **Date picker.** The owner asked for calendars that belong to the app
+  instead of the browser's. `components/ui/DatePicker` (optional time)
+  takes the same strings as the native inputs and replaces all seven: Reports
+  custom range (From/To bound each other), Audit From/To, Vault expiry,
+  enrollment token expiry ×2 (a picked day defaults to 23:59). Monday-first,
+  Tirana "today", month/year view, Clear / Today (Now) / Done, full keyboard
+  support; Esc closes the picker, not a dialog behind it.
+- **Alert → device drawer.** The owner reported that clicking an alert
+  should open that device's drawer. It did only when the device was on the
+  table's current page: the device fetched for the link was discarded
+  because the drawer looked only in the current page — with ~900 devices
+  and 20–50 per page, most alerts. The drawer now keeps the device it was
+  opened with (patched by realtime events and edits). Same path for the
+  bell, top-bar search, command palette and dashboard links.
+
+Tests: unit 199, E2E 71 (new: picker with axe in both themes; alert row,
+bell and off-page alert → drawer, the last failing without the fix).
+Deploy: guard; rollback tag; pull; frontend built; `nginx -t` OK;
+recreated; healthy; guard and smoke passed; the live main bundle carries
+the picker and the Devices chunk is new.
+
 ## [2026-10-12] SWEEP-INDEX-2026-10-12 — the offline-alert sweep is one index seek per device (`2a7e978`)
 
 Backend and migration `c3d4e5f6a7b8` → `d4e5f6a7b8c9`, deployed 2026-10-12
