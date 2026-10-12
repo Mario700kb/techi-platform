@@ -251,7 +251,7 @@ const features: PlatformFeatures = {
 
 const alertCount: AlertCount = { total_open: 2, by_severity: { critical: 1, warning: 1 }, devices_affected: 2 };
 const recentActions: RemoteActionWithDevice[] = [];
-const presence: OperatorPresenceRecord[] = OPERATORS.map((o) => ({
+export const presence: OperatorPresenceRecord[] = OPERATORS.map((o) => ({
   id: o.id,
   username: o.username,
   display_name: o.display_name,

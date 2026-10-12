@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import {
   AlertTriangle,
@@ -44,6 +44,18 @@ import { useAppData } from "../contexts/AppDataContext";
 import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./DashboardMobile";
 
 const RECENT_DEVICES_LIMIT = 6;
+/**
+ * Enrollments, actions and operator presence are re-read on this cadence
+ * while the page is visible: events keep device rows and actions current, but
+ * nothing announces an operator signing in or out.
+ */
+const ACTIVITY_POLL_MS = 60_000;
+/** Without a socket there are no events, so the lists are polled faster. */
+const ACTIVITY_POLL_OFFLINE_MS = 30_000;
+/** The server recomputes the 30-day trends every 30 minutes. */
+const INSIGHTS_REFRESH_MS = 30 * 60_000;
+/** A tab hidden at least this long refreshes its lists when shown again. */
+const CATCH_UP_AFTER_HIDDEN_MS = 30_000;
 const OPERATORS_LIMIT = 6;
 
 // Header chips sit next to a size="sm" Button, so they share its 32px height.
@@ -68,11 +80,24 @@ function SectionError({ what, onRetry }: { what: string; onRetry: () => void }) 
   );
 }
 
+/** "updated just now" / "updated 2m ago" for the header chip. */
+function updatedLabel(at: number): string {
+  const ago = timeAgo(new Date(at).toISOString());
+  return ago === "just now" ? "updated just now" : `updated ${ago}`;
+}
+
 export default function Dashboard() {
   useNow();
   const { user, hasPermission } = useAuth();
-  const { fleetOverview, fleetOverviewLoading, latestEvent, realtimeStatus, refreshFleetOverview, totalOpenAlerts } =
-    useAppData();
+  const {
+    fleetOverview,
+    fleetOverviewLoading,
+    lastFetchTime,
+    latestEvent,
+    realtimeStatus,
+    refreshFleetOverview,
+    totalOpenAlerts,
+  } = useAppData();
 
   const stats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
   const total = stats.total;
@@ -86,6 +111,8 @@ export default function Dashboard() {
   const [recentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
+  // Mirrors recentDevices so realtime events can patch it without a stale closure.
+  const recentDevicesRef = useRef(recentDevices);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
     () => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [],
   );
@@ -105,18 +132,27 @@ export default function Dashboard() {
   const insightsKey = `${CACHE_KEYS.dashboardInsights}.${user?.id ?? "anon"}`;
   const [insights, setInsights] = useState<FleetInsights | null>(() => appCache.peek<FleetInsights>(insightsKey));
   const [insightsFailed, setInsightsFailed] = useState(false);
+  const insightsLoadedAt = useRef(0);
   const loadInsights = useCallback(() => {
     setInsightsFailed(false);
     getFleetInsights(30)
       .then((data) => {
         appCache.set(insightsKey, data);
+        insightsLoadedAt.current = Date.now();
         setInsights(data);
       })
       .catch(() => setInsightsFailed(true));
   }, [insightsKey]);
+  const refreshStaleInsights = useCallback(() => {
+    if (Date.now() - insightsLoadedAt.current >= INSIGHTS_REFRESH_MS) loadInsights();
+  }, [loadInsights]);
   useEffect(() => {
     loadInsights();
-  }, [loadInsights]);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshStaleInsights();
+    }, INSIGHTS_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [loadInsights, refreshStaleInsights]);
   const [favoritesCount] = useState(() => {
     try {
       const raw = localStorage.getItem("techi.favorites");
@@ -132,10 +168,12 @@ export default function Dashboard() {
   });
   const [activityReady, setActivityReady] = useState(() => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null);
 
-  const loadDashboard = useCallback(async () => {
-    const devicesFresh = appCache.get(CACHE_KEYS.dashboardRecentDevices, CACHE_TTL.dashboardRecentDevices) !== null;
-    const actionsFresh = appCache.get(CACHE_KEYS.recentActions, CACHE_TTL.recentActions) !== null;
-    const presenceFresh = appCache.get(CACHE_KEYS.operatorPresence, CACHE_TTL.operatorPresence) !== null;
+  /** Loads the sections whose cached copy is older than its TTL (or than maxAgeMs, if shorter). */
+  const loadDashboard = useCallback(async (maxAgeMs = Infinity) => {
+    const fresh = (key: string, ttl: number) => appCache.get(key, Math.min(ttl, maxAgeMs)) !== null;
+    const devicesFresh = fresh(CACHE_KEYS.dashboardRecentDevices, CACHE_TTL.dashboardRecentDevices);
+    const actionsFresh = fresh(CACHE_KEYS.recentActions, CACHE_TTL.recentActions);
+    const presenceFresh = fresh(CACHE_KEYS.operatorPresence, CACHE_TTL.operatorPresence);
 
     if (devicesFresh && actionsFresh && presenceFresh) {
       setActivityReady(true);
@@ -150,6 +188,7 @@ export default function Dashboard() {
 
     if (!devicesFresh && devicesResult.status === "fulfilled" && devicesResult.value) {
       appCache.set(CACHE_KEYS.dashboardRecentDevices, devicesResult.value.devices);
+      recentDevicesRef.current = devicesResult.value.devices;
       setRecentDevices(devicesResult.value.devices);
     }
     if (!actionsFresh && actionsResult.status === "fulfilled" && actionsResult.value) {
@@ -168,22 +207,35 @@ export default function Dashboard() {
     setActivityReady(true);
   }, []);
 
-  const patchRecentDevice = useCallback((event: DeviceRealtimeEvent) => {
-    const eventDevice = event.data;
-    if (!eventDevice?.id) return false;
-    let patched = false;
-    setRecentDevices((items) => {
+  const enrollmentReload = useRef(false);
+  const patchRecentDevice = useCallback(
+    (event: DeviceRealtimeEvent) => {
+      const eventDevice = event.data;
+      if (!eventDevice?.id) return;
+      const items = recentDevicesRef.current;
+      // Until the first list arrives there is nothing to patch or compare with.
+      if (items.length === 0) return;
       const index = items.findIndex((item) => item.id === eventDevice.id);
-      if (index === -1) {
-        return items;
+      if (index >= 0) {
+        const next = [...items];
+        next[index] = { ...items[index], ...eventDevice } as Device;
+        recentDevicesRef.current = next;
+        setRecentDevices(next);
+        return;
       }
-      const next = [...items];
-      next[index] = { ...items[index], ...eventDevice } as Device;
-      patched = true;
-      return next;
-    });
-    return patched;
-  }, []);
+      // The list is newest enrollment first and ids only grow, so a device
+      // newer than every row is one that has just enrolled: re-read the list.
+      const newest = items.reduce((max, item) => Math.max(max, item.id), 0);
+      if (eventDevice.id > newest && !enrollmentReload.current) {
+        enrollmentReload.current = true;
+        appCache.invalidate(CACHE_KEYS.dashboardRecentDevices);
+        void loadDashboard().finally(() => {
+          enrollmentReload.current = false;
+        });
+      }
+    },
+    [loadDashboard],
+  );
 
   const patchRecentAction = useCallback((event: DeviceRealtimeEvent) => {
     if (event.type !== "action_queued" && event.type !== "action_status_changed") return;
@@ -241,18 +293,41 @@ export default function Dashboard() {
     }
   }, [latestEvent, patchRecentAction, patchRecentDevice]);
 
-  const { runNow: refreshDashboard } = usePollingRefresh(loadDashboard, {
-    intervalMs: 120000,
-    enabled: realtimeStatus !== "connected",
-    immediate: !activityReady,
+  const activityPollMs = realtimeStatus === "connected" ? ACTIVITY_POLL_MS : ACTIVITY_POLL_OFFLINE_MS;
+  const pollDashboard = useCallback(async () => {
+    if (document.visibilityState !== "visible") return;
+    // Half the interval: each tick re-reads every section, a fresh cache
+    // left by another page included.
+    await loadDashboard(activityPollMs / 2);
+  }, [activityPollMs, loadDashboard]);
+  const { runNow: refreshDashboard } = usePollingRefresh(pollDashboard, {
+    intervalMs: activityPollMs,
+    immediate: false,
   });
 
-  // Polling is off while the WebSocket is connected, so it cannot be the
-  // initial load: arriving from another page with a live socket would leave
-  // the lists empty. loadDashboard skips sections whose cache is still fresh.
+  // The first load uses whatever is still fresh in the cache.
   useEffect(() => {
-    void refreshDashboard();
-  }, [refreshDashboard]);
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  // Coming back to a tab that was hidden a while: re-read the lists and, when
+  // stale, the trends (the overview and alerts catch up in AppDataContext).
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt !== null && Date.now() - hiddenAt >= CATCH_UP_AFTER_HIDDEN_MS) {
+        void refreshDashboard();
+        refreshStaleInsights();
+      }
+      hiddenAt = null;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshDashboard, refreshStaleInsights]);
 
   const retryActivity = useCallback(() => {
     setActivityReady(false);
@@ -342,13 +417,21 @@ export default function Dashboard() {
                   { "--chip-tone": realtimeStatus === "connected" ? TONE.online : TONE.warning } as React.CSSProperties
                 }
                 title={
-                  realtimeStatus === "connected"
+                  (realtimeStatus === "connected"
                     ? "Live updates over WebSocket"
-                    : "WebSocket unavailable, refreshing by polling"
+                    : "WebSocket unavailable, refreshing every 30 s") +
+                  (lastFetchTime
+                    ? ` · fleet counts updated ${formatLocalDateTime(new Date(lastFetchTime).toISOString())}`
+                    : "")
                 }
               >
                 <i />
                 {realtimeStatus === "connected" ? "Live" : "Polling"}
+                {lastFetchTime && (
+                  <span style={{ color: "var(--th-text-secondary)" }} data-testid="dashboard-updated">
+                    · {updatedLabel(lastFetchTime)}
+                  </span>
+                )}
               </span>
               <Button
                 size="sm"

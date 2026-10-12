@@ -8,6 +8,10 @@ import { Alert, AlertCount } from "../types/alert";
 
 const OVERVIEW_STORAGE_KEY = "techi.fleet.overview";
 const OVERVIEW_TTL_MS = 30_000;
+/** Overview polling while the WebSocket is down (events refresh it otherwise). */
+const OVERVIEW_POLL_MS = 30_000;
+/** A tab hidden at least this long refreshes the overview and alerts when shown. */
+const CATCH_UP_AFTER_HIDDEN_MS = 30_000;
 const OVERVIEW_REFRESH_EVENTS = new Set([
   "device_online",
   "device_offline",
@@ -172,6 +176,52 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return () => window.clearTimeout(refreshTimerRef.current);
   }, []);
+
+  // Events are what keep the overview current. Without a socket there are
+  // none, so poll instead (visible tabs only), and catch up as soon as the
+  // socket comes back: whatever happened while it was down sent no event.
+  // While it retries, the socket cycles through connecting/fallback; only
+  // "connected or not" may restart the poll, or its timer never gets to fire.
+  const socketConnected = realtimeStatus === "connected";
+  const socketWasDown = useRef(false);
+  useEffect(() => {
+    if (!userId) return;
+    if (realtimeStatus === "disconnected" || realtimeStatus === "fallback") socketWasDown.current = true;
+    if (realtimeStatus === "connected" && socketWasDown.current) {
+      socketWasDown.current = false;
+      void refreshFleetOverview(true);
+      reloadAlerts();
+    }
+  }, [realtimeStatus, refreshFleetOverview, reloadAlerts, userId]);
+  useEffect(() => {
+    if (!userId || socketConnected) return;
+    const id = window.setInterval(() => {
+      // Forced: the poll is the cadence, and a fetch that returned a moment
+      // after the last tick would otherwise still count as fresh and be skipped.
+      if (document.visibilityState === "visible") void refreshFleetOverview(true);
+    }, OVERVIEW_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [refreshFleetOverview, socketConnected, userId]);
+
+  // A tab in the background (or a laptop asleep) misses events and has its
+  // timers throttled; refresh what is stale when it is shown again.
+  useEffect(() => {
+    if (!userId) return;
+    let hiddenAt: number | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt !== null && Date.now() - hiddenAt >= CATCH_UP_AFTER_HIDDEN_MS) {
+        void refreshFleetOverview();
+        reloadAlerts();
+      }
+      hiddenAt = null;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshFleetOverview, reloadAlerts, userId]);
 
   const value = useMemo<AppDataContextValue>(
     () => ({
