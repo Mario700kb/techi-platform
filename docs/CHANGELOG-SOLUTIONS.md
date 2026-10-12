@@ -5,6 +5,76 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] DB-ENTERPRISE-A — database performance, limits and visibility; dependency upgrade; first restore test
+
+`a7dc6fb`/`67d6855` → `df7f9fe`. Backend and database, deployed 2026-10-12
+13:15–13:32. Frontend unchanged. Migrations `f2a3b4c5d6e7` → `a9b8c7d6e5f4`
+→ `b1c2d3e4f5a6`. Pre-deploy dump
+`/opt/backups/techi/pre-db-enterprise-2026-10-12_13-15.sql.gz` (146 MB,
+`gzip -t` OK). Rollback images `techi-platform-backend:pre-db-enterprise-320d1d1`
+(before the deploy) and `pre-health-query-04579bf` (before its second step).
+
+### Why
+A backend/database audit found: `device_telemetry` read in full ~200k
+times (76 billion tuples) by DISTINCT ON / GROUP BY "latest per device"
+queries; six client/group re-reads per heartbeat; no statement or
+idle-transaction limits; no per-query visibility; PostgreSQL at default
+memory (92% heap cache hit); 27 dependency advisories; the app connecting
+as superuser; migrations unable to build the schema from an empty
+database; API docs public; no restore ever tested.
+
+### What changed
+- Latest telemetry per device and the health-score inputs use one index
+  probe per device. Measured in production: 7.06 s → 32 ms and 2.4–2.9 s
+  → 236 ms.
+- Device.client/group load joined: a heartbeat issues 11 statements, not 17.
+- Request connections: statement_timeout 60 s, idle-in-transaction 120 s;
+  a maintenance engine without the statement limit for cleanup and reports.
+- PostgreSQL: shared_buffers 256MB and related memory, random_page_cost
+  1.1, pg_stat_statements, logging of statements over 500 ms, lock waits
+  and temp files; 5432 bound to 127.0.0.1; no "techi" password fallback.
+- Migrations: integer-for-boolean fixes, the vault tables created when
+  missing, and `a9b8c7d6e5f4` reconciling with what was built outside
+  Alembic. A fresh `upgrade head` equals production's schema; on
+  production the revision changed nothing (schema diffed before/after).
+- `/api/v1/health/ready` (database check, in the smoke test); API docs and
+  OpenAPI schema for admins only.
+- Dependencies: FastAPI 0.141 / Starlette 1.7, cryptography 50,
+  python-multipart 0.0.32, asyncssh 2.24, PyJWT replaces python-jose;
+  pip-audit clean. List settings accept comma-separated values (with
+  JSON-only parsing, `MFA_REQUIRED_ROLES=owner,admin` stopped startup).
+- Backend CI (ruff, pytest, pip-audit, migrations on PostgreSQL 15),
+  `datetime.utcnow` replaced, backup retention for pre-deploy dumps,
+  scripted restore test with disk guards.
+
+### Deploy
+1. Local: 1305 backend tests on the new dependency set; a real uvicorn
+   against PostgreSQL (login, cookies, refresh, CSRF refusal, readiness,
+   docs); the reconciliation migration diffed on a production schema copy.
+2. Server: guard; baseline counters; dump; rollback tag; pull; backend
+   build; postgres recreated with the new settings (11 s; same volume,
+   918 devices); `alembic upgrade head`; backend recreated; guard and
+   smoke passed, 0 tracebacks. Request connections report 1min/2min,
+   maintenance 0. Backup script reinstalled (old copy
+   `/root/techi-backup.sh.pre-2026-10-12`).
+3. pg_stat_statements then showed the health-score query at 2.4–2.9 s;
+   fixed (`40f5ca0`) and deployed at 13:32, same checks.
+4. Restore test: the 03:00 dump restored in 177 s with 0 errors, every
+   configuration table equal to live. A first attempt was stopped by hand
+   when free disk fell to 1.6 GB; the script now refuses to start without
+   room and stops itself below 700 MB free (minimum during the run 1.2 GB).
+
+### Measured after (10-minute window, new code only)
+- `device_telemetry` sequential scans: 75 scans / 28M tuples in the
+  previous 10 minutes → 0.
+- Total statement time 101 s per 607 s. About 57 s of it is the 30-day
+  insight computations (availability, alerts, status history), each 7–12 s
+  and run 2–3 times per 10 minutes — the next target.
+- Load average 1.4 (1.8–2.0 before).
+
+Not done here: the techi_app least-privilege role (scripts/db/app-role.sql),
+planned as a separate deploy.
+
 ## [2026-10-12] BADGE-WHITE-2026-10-12 — critical alert badge text white again (`a7dc6fb`)
 
 Frontend only, deployed 2026-10-12. Rollback image
