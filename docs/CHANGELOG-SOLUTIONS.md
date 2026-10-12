@@ -5,6 +5,48 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] OFFLINE-POLICY-2026-10-12 — offline alerts follow working hours and device role (`999f18a`)
+
+Backend only, no migration, deployed 2026-10-12 20:04. Pre-deploy dump
+`/opt/backups/techi/pre-offline-policy-2026-10-12_20-01.sql.gz` (`gzip -t`
+OK); rollback image `techi-platform-backend:pre-offline-policy-9f8a7d5`.
+
+The owner reported that most alerts come from PCs switched off after
+working hours. Measured (read-only): 60,240 offline alerts in 7 days, 94%
+closed within 15 minutes; 14,732 heartbeat-timeout transitions against 4
+agent-reported shutdowns/sleeps in 3 days — Windows cuts power before the
+agent reports, so "a reported clean shutdown raises nothing" almost never
+applied. 772 offline alerts in the last 24 h, peaking 16:00–18:00.
+
+Going offline no longer raises an alert; `OfflineAlertSweep` runs with each
+reconciliation pass (30 s). Owner's choices:
+
+- Servers, network, storage, hypervisors: CRITICAL after 10 min out of
+  contact, any hour; WARNING after a reported clean shutdown/sleep.
+- Workstations: WARNING only when contact was lost Mon–Fri 08:00–17:00
+  (Tirana) and stays lost 120 min. Simulated on 6–9 Oct: 30 min ≈ 185 a
+  workday (lunch, leaving early, laptops), 60 min ≈ 97, **120 min ≈ 40**
+  (chosen), 180 min ≈ 24.
+- Workstations unseen 7 days: one WARNING.
+- One alert per episode stage; an alert closed by hand is not reopened while
+  the device stays away (the 7-day warning is its own stage).
+- Settings: `OFFLINE_ALERT_ALWAYS_ON_MINUTES`, `OFFLINE_ALERT_WORKSTATION_MINUTES`,
+  `OFFLINE_ALERT_ABSENT_DAYS`, `WORK_DAYS`, `WORK_START`, `WORK_END`.
+
+Deploy: guard; dump; rollback tag; pull; backend built; recreated; healthy;
+`python -m app.services.offline_alerts --apply-to-open-alerts` → 250 open
+CRITICAL offline alerts (client PCs) closed, 0 reworded; the first sweep
+after the 5-minute cooldown opened 88 "not seen for 7 days" warnings (82
+client, 6 unassigned). Guard and smoke passed; 0 tracebacks. Backend tests
+1,331 (20 new).
+
+Seven always-on devices are offline without an open alert because theirs
+were closed while they stayed away (five by the 11 Oct sweep, two by hand):
+rustdesk-srv (since 10 Aug), SALTPRISHTINA-C (8 Aug), SALTGC-CAPS (17 Sep),
+Main Router (25 Sep), hako-dc2 (1 Oct), DESKTOP-8LP3K94 (10 Oct, in a
+server group), SRV-MIAMIBEACH (12 Oct 08:57). Left to the owner to check or
+archive.
+
 ## [2026-10-12] DASHBOARD-LIVE-2026-10-12 — every dashboard section refreshes on its own (`2fb852d`)
 
 Frontend only, deployed 2026-10-12. Rollback image
