@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] INVENTORY-UI-2026-10-12 — device drawer Software tab rebuilt as an inventory panel (`1abcbea`)
+
+Frontend only, deployed 2026-10-12 by the owner by hand. Rollback image
+`techi-platform-frontend:pre-inventory-ui-b99548b`.
+
+The tab stacked three tables (processes, services, software) under an
+uneven patch block; empty lists still drew their headers, publishers were
+cut off. Now: patch status as four equal tiles (status, pending updates,
+reboot, last update); one list at a time behind a Software / Services /
+Processes switch with counts and one search ("x of y apps", clear); fixed
+column grid with sticky headers, publisher / service name as a second line,
+monospace versions and PIDs, processes heaviest first; empty and no-match
+states instead of empty tables. Code moved to `DeviceInventoryPanel.tsx`.
+New E2E spec and axe scans in both themes.
+
+Verified: server at `1abcbea`, frontend healthy, the live Devices chunk and
+stylesheet carry the panel, smoke passed. Disk 82%.
+
 ## [2026-10-12] ALERT-KINDS-2026-10-12 — device drawer names each alert kind; resolved history up to 20 (`5cee825`)
 
 Frontend only, deployed 2026-10-12. Rollback image
