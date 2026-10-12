@@ -12,6 +12,8 @@ from app.core.logging_config import configure_logging
 configure_logging()
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -19,7 +21,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.legacy_compat import router as legacy_compat_router
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.agent import agent_enroll
+from app.core.auth import require_min_role
 from app.core.config import settings
+from app.models.operator import OperatorRole
 from app.db.session import engine, get_db
 from app.schemas.agent import AgentEnrollmentRequest
 from app.services.schema_compat_service import ensure_sqlite_dev_schema
@@ -185,11 +189,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,
-    openapi_url=f"{settings.API_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_PREFIX}/docs",
+    # The API description is served below to signed-in admins only: public,
+    # it mapped every endpoint and parameter for anyone on the internet.
+    openapi_url=None,
+    docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
 )
+
+
+@app.get(f"{settings.API_PREFIX}/openapi.json", include_in_schema=False)
+def openapi_schema(_: object = Depends(require_min_role(OperatorRole.ADMIN.value))) -> JSONResponse:
+    return JSONResponse(app.openapi())
+
+
+@app.get(f"{settings.API_PREFIX}/docs", include_in_schema=False)
+def swagger_ui(_: object = Depends(require_min_role(OperatorRole.ADMIN.value))) -> HTMLResponse:
+    return get_swagger_ui_html(openapi_url=f"{settings.API_PREFIX}/openapi.json", title=f"{settings.PROJECT_NAME} API")
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
