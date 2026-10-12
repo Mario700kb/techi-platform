@@ -5,6 +5,30 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] ALERTS-CURRENT-2026-10-12 — device alerts stay current; "recently resolved" by resolution time (`1ad0f6d`)
+
+Backend and frontend, deployed 2026-10-12 14:35. No migration. Pre-deploy
+dump `/opt/backups/techi/pre-alerts-current-2026-10-12_14-35.sql.gz`;
+rollback images `techi-platform-{backend,frontend}:pre-alerts-current-37b42e4`.
+
+Reported: a device's alert list looked stuck on 8–9 October. Checked on
+Mario-Lenovo (id 924): today it shut down and slept several times, which by
+design raises no alert since ALERT-NOISE (fleet offline alerts 11–12k/day →
+285 today), so no newer alerts is correct. Two real defects, fixed for
+every device: "Recently resolved" was ordered and dated by when an alert
+opened (an alert opened 9 Oct, resolved 11 Oct 00:15 showed "Resolved 2d
+ago"); the phone device view never received realtime alert events. Every
+device view also re-reads its alerts once a minute while visible.
+
+Deploy: guard; dump (`gzip -t` OK); rollback tags; pull; both images
+built; `nginx -t` OK; recreated; healthy; guard and smoke passed; 0
+tracebacks. The live Devices chunk carries the new tooltip.
+
+Disk: the day's seven pre-deploy dumps and new images took the root
+filesystem to 90%; `docker builder prune -f --keep-storage 1GB` (what the
+Sunday cron does) freed 2.0 GB → 83%, 4.1 GB free. Older rollback images
+(10–11 Oct, ~1.7 GB reclaimable) left in place pending the owner's say.
+
 ## [2026-10-12] TREND-INDEXES-2026-10-12 — dashboard trends measured incrementally; trend indexes (`2a6c027`)
 
 Backend and migration `b1c2d3e4f5a6` → `c3d4e5f6a7b8`, deployed 2026-10-12
