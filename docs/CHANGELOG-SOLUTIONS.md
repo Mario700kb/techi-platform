@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] BRAND-CONNECT-2026-10-13 — the Connect logo set replaces the old TECHI marks (`c772c8b`)
+
+Frontend and backend, deployed 2026-10-13. Rollback images
+`techi-platform-{frontend,backend}:pre-brand-50fe7c3`.
+
+The owner supplied three SVGs, now in `frontend/public/brand/`:
+- `connect-primary.svg` (symbol + CONNECT): expanded sidebar, sign-in page,
+  and PDF reports (`backend/app/assets/connect-logo-on-light.png`, 1080×296,
+  rendered from it). `connect-primary-on-dark.svg` is the same artwork with
+  the wordmark in #F5F5F7 for the dark theme.
+- `connect-symbol.svg`: collapsed sidebar, boot screen, in-app preloader.
+- `connect-app-icon.svg`: favicon (SVG and 64 px PNG), installed-app icons
+  192/512, and full-bleed square variants for Android maskable and the iOS
+  home screen. Icon URLs' cache-busting versions bumped.
+Old `techi-logo*` / `techi-mark*` files removed. Verified live: all assets
+200, PDF logo loads, guard and smoke passed, 0 tracebacks.
+
 ## [2026-10-12] SIDEBAR-HOVER-2026-10-12 — a collapsed sidebar stays collapsed under the mouse (`daca94d`)
 
 Frontend only, deployed 2026-10-12. Rollback image
