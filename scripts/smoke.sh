@@ -43,6 +43,8 @@ echo "Smoke test against $BASE ${TOKEN:+(authenticated)}"
 
 # /health is always public → 200.
 check "/health"                       "$(code GET /health)"                       200 200
+# Readiness reaches the database → 200, or 503 when it cannot.
+check "/api/v1/health/ready"          "$(code GET /api/v1/health/ready)"          200 200
 # Protected endpoints → 200 with a token, 401 without; NEVER 500.
 check "/api/v1/devices/"              "$(code GET /api/v1/devices/)"              200 401
 check "/api/v1/platform/features"    "$(code GET /api/v1/platform/features)"     200 401
