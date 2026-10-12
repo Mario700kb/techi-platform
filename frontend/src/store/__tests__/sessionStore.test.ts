@@ -76,6 +76,22 @@ describe("sessionStore boot", () => {
     expect(window.sessionStorage.getItem(store.SESSION_EXPIRED_FLAG)).toBeNull();
   });
 
+  it("asks once and makes no failed request when this browser holds no session (204)", async () => {
+    const calls: string[] = [];
+    fetchMock.mockImplementation(async (url: string) => {
+      calls.push(url);
+      if (url.endsWith("/api/v1/auth/session")) return new Response(null, { status: 204 });
+      throw new Error(`unexpected ${url}`);
+    });
+    const store = await freshStore();
+    await store.bootstrapSession();
+
+    expect(store.getSessionSnapshot()).toMatchObject({ user: null, loading: false });
+    expect(calls.filter((u) => u.endsWith("/api/v1/auth/refresh"))).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(window.sessionStorage.getItem(store.SESSION_EXPIRED_FLAG)).toBeNull();
+  });
+
   it("returns the MFA challenge from the password step without signing in", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.endsWith("/api/v1/auth/login")) return jsonResponse({ mfa_required: true, mfa_token: "challenge" });

@@ -471,8 +471,9 @@ function devicesPage(url: URL): DevicesResponse {
 }
 
 const HANDLERS: Record<string, Handler> = {
+  // Signed out: 204, as the backend answers a browser with no session cookie.
   "GET /api/v1/auth/session": (route, state) =>
-    state.user ? json(route, sessionBody(state)) : json(route, { detail: "Not authenticated" }, 401),
+    state.user ? json(route, sessionBody(state)) : route.fulfill({ status: 204 }),
   "POST /api/v1/auth/refresh": (route, state) =>
     state.user
       ? json(route, { session_expires_at: sessionBody(state).session_expires_at })

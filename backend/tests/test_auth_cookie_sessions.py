@@ -119,7 +119,13 @@ def test_bearer_token_still_works_without_csrf(db):
     assert response.status_code == 200
 
 
-def test_refresh_rotates_and_old_refresh_token_dies(db):
+def _replay(db, refresh_token):
+    other = _client(db)
+    other.cookies.set(REFRESH_COOKIE, refresh_token, domain="testserver.local", path="/api/v1/auth")
+    return other.post("/api/v1/auth/refresh", headers=CSRF)
+
+
+def test_refresh_rotates_and_old_refresh_token_dies_after_the_grace(db):
     _operator(db)
     client = _client(db)
     _login(client)
@@ -128,9 +134,53 @@ def test_refresh_rotates_and_old_refresh_token_dies(db):
     assert response.status_code == 200
     assert client.cookies.get(REFRESH_COOKIE) != old_refresh
 
-    replay = _client(db)
-    replay.cookies.set(REFRESH_COOKIE, old_refresh, domain="testserver", path="/api/v1/auth")
-    assert replay.post("/api/v1/auth/refresh", headers=CSRF).status_code == 401
+    row = db.query(OperatorSession).one()
+    row.refresh_rotated_at = utcnow() - timedelta(seconds=31)
+    db.commit()
+    assert _replay(db, old_refresh).status_code == 401
+
+
+def test_tabs_renewing_together_all_stay_signed_in(db):
+    """Tabs share the cookie and renew at the same moment: the second one
+    arrives with the token the first has just rotated."""
+    _operator(db)
+    client = _client(db)
+    _login(client)
+    shared = client.cookies.get(REFRESH_COOKIE)
+
+    first = _replay(db, shared)
+    second = _replay(db, shared)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert db.query(OperatorSession).count() == 1  # one session, renewed twice
+
+
+def test_a_token_two_rotations_old_is_refused(db):
+    _operator(db)
+    client = _client(db)
+    _login(client)
+    oldest = client.cookies.get(REFRESH_COOKIE)
+    client.post("/api/v1/auth/refresh", headers=CSRF)
+    client.post("/api/v1/auth/refresh", headers=CSRF)
+
+    assert _replay(db, oldest).status_code == 401
+
+
+def test_a_signed_out_browser_gets_204_not_401(db):
+    client = _client(db)
+    response = client.get("/api/v1/auth/session")
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_an_expired_access_cookie_with_a_refresh_cookie_still_answers_401(db):
+    """The app renews on 401; only a browser with no session at all gets 204."""
+    _operator(db)
+    client = _client(db)
+    _login(client)
+    client.cookies.delete(ACCESS_COOKIE, domain="testserver.local", path="/")
+    assert client.get("/api/v1/auth/session").status_code == 401
 
 
 def test_refresh_requires_csrf_header(db):
@@ -148,7 +198,7 @@ def test_logout_revokes_the_session_server_side(db):
     assert client.post("/api/v1/auth/logout", headers=CSRF).status_code == 204
 
     attacker = _client(db)
-    attacker.cookies.set(ACCESS_COOKIE, stolen_access, domain="testserver", path="/")
+    attacker.cookies.set(ACCESS_COOKIE, stolen_access, domain="testserver.local", path="/")
     assert attacker.get("/api/v1/auth/session").status_code == 401
 
 

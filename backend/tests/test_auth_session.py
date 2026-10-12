@@ -55,6 +55,8 @@ def _client(db, operator: Operator) -> TestClient:
     app = FastAPI()
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_operator] = lambda: operator
+    # /auth/session resolves the operator itself (204 when signed out).
+    app.dependency_overrides[auth_module._operator_if_signed_in] = lambda: operator
     app.include_router(auth_module.router, prefix="/auth")
     return TestClient(app, raise_server_exceptions=False)
 

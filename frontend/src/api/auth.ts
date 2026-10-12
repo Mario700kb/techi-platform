@@ -91,8 +91,9 @@ export interface AuthSession {
   mfa_enrollment_required: boolean;
 }
 
-export async function getAuthSession(): Promise<AuthSession> {
-  return fetchJson<AuthSession>("/api/v1/auth/session");
+/** The signed-in session, or null when this browser holds none (204). */
+export async function getAuthSession(): Promise<AuthSession | null> {
+  return (await fetchJson<AuthSession | undefined>("/api/v1/auth/session")) ?? null;
 }
 
 export async function getEffectivePermissions(): Promise<EffectivePermissions> {

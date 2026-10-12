@@ -22,6 +22,8 @@ from app.models.operator_session import OperatorSession
 
 ACCESS_COOKIE = "techi_access"
 REFRESH_COOKIE = "techi_refresh"
+# How long a just-rotated refresh token is still accepted (see rotate()).
+REFRESH_GRACE = timedelta(seconds=30)
 # Required on every cookie-authenticated request that changes state. A page
 # on another site cannot set a custom header without a CORS preflight, which
 # BACKEND_CORS_ORIGINS refuses, so a forged form post or link never carries it.
@@ -82,17 +84,37 @@ class SessionService:
         return session if self.is_live(session) else None
 
     def rotate(self, refresh_token: str) -> Optional[Tuple[OperatorSession, str]]:
-        """Swap a valid refresh token for a new one; None if it is not valid."""
+        """Swap a valid refresh token for a new one; None if it is not valid.
+
+        The token just replaced stays valid for REFRESH_GRACE: tabs of one
+        browser share the cookie and renew together, so the second request
+        arrives with the token the first has just rotated. The row is locked
+        so two simultaneous renewals take turns instead of both rotating."""
+        digest = _digest(refresh_token)
+        now = utcnow()
         session = (
             self.db.query(OperatorSession)
-            .filter(OperatorSession.refresh_token_hash == _digest(refresh_token))
+            .filter(OperatorSession.refresh_token_hash == digest)
+            .with_for_update()
             .one_or_none()
         )
-        if not self.is_live(session):
+        if session is None:
+            session = (
+                self.db.query(OperatorSession)
+                .filter(OperatorSession.previous_refresh_token_hash == digest)
+                .with_for_update()
+                .one_or_none()
+            )
+            rotated_at = ensure_utc(session.refresh_rotated_at) if session else None
+            if rotated_at is None or rotated_at <= now - REFRESH_GRACE:
+                return None
+        if not self.is_live(session, now):
             return None
         new_token = secrets.token_urlsafe(32)
+        session.previous_refresh_token_hash = session.refresh_token_hash
         session.refresh_token_hash = _digest(new_token)
-        session.last_used_at = utcnow()
+        session.refresh_rotated_at = now
+        session.last_used_at = now
         self.db.commit()
         self.db.refresh(session)
         return session, new_token

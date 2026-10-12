@@ -13,6 +13,11 @@ class OperatorSession(Base):
     id = Column(String(43), primary_key=True)  # random, url-safe
     operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
     refresh_token_hash = Column(String(64), nullable=False, unique=True)
+    # The token this one replaced, still accepted for REFRESH_GRACE after the
+    # rotation: several tabs renew at the same moment with the same cookie,
+    # and only the first would otherwise succeed (the rest signed out).
+    previous_refresh_token_hash = Column(String(64), nullable=True, index=True)
+    refresh_rotated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     last_used_at = Column(DateTime, default=utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)

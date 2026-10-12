@@ -190,6 +190,8 @@ setSessionRefreshedHandler(({ sessionExpiresAt, accessExpiresAt }) => {
 async function loadSession(): Promise<AuthSession | null> {
   const legacy = takeLegacyToken();
   if (legacy) await exchangeLegacyToken(legacy);
+  // null: no session cookie at all — signed out, nothing to renew (no 401s).
+  // 401: a session whose access cookie expired — renew it once.
   try {
     return await getAuthSession();
   } catch (error) {
@@ -197,6 +199,13 @@ async function loadSession(): Promise<AuthSession | null> {
   }
   if (!(await refreshSession())) return null;
   return getAuthSession();
+}
+
+/** After signing in or a change to the session the server must have one. */
+async function requireSession(): Promise<AuthSession> {
+  const session = await getAuthSession();
+  if (!session) throw new ApiError("Not signed in", 401);
+  return session;
 }
 
 export function bootstrapSession(): Promise<void> {
@@ -233,13 +242,13 @@ export function bootstrapSession(): Promise<void> {
 /** Re-reads the session, e.g. after turning on two-factor authentication. */
 export async function reloadSession(): Promise<void> {
   const generation = sessionGeneration;
-  const session = await getAuthSession();
+  const session = await requireSession();
   if (sessionGeneration === generation) applyAuthenticatedSession(session);
 }
 
 async function completeSignIn(generation: number): Promise<void> {
   setSessionActive(true);
-  const session = await getAuthSession();
+  const session = await requireSession();
   if (sessionGeneration === generation) applyAuthenticatedSession(session);
 }
 

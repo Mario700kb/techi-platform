@@ -198,12 +198,34 @@ def read_me(operator: OperatorModel = Depends(get_current_operator)):
     return operator
 
 
-@router.get("/session", response_model=AuthSession)
+def _operator_if_signed_in(
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[OperatorModel]:
+    """None when the browser holds no session at all (no access or refresh
+    cookie, no Bearer): nothing to validate, and nothing to renew."""
+    if not bearer_token and not request.cookies.get(ACCESS_COOKIE) and not request.cookies.get(REFRESH_COOKIE):
+        return None
+    return get_current_operator(request=request, bearer_token=bearer_token, db=db)
+
+
+@router.get(
+    "/session",
+    response_model=AuthSession,
+    responses={204: {"description": "Not signed in: this browser holds no session"}},
+)
 def read_session(
     request: Request,
-    operator: OperatorModel = Depends(get_current_operator),
+    operator: Optional[OperatorModel] = Depends(_operator_if_signed_in),
     db: Session = Depends(get_db),
 ):
+    # A signed-out browser asking "am I signed in?" is not an error. 204 lets
+    # the app show the sign-in page without a 401 + failed refresh in the
+    # console. With a session cookie, an expired one still answers 401 so
+    # the app renews it.
+    if operator is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     effective = get_operator_permissions(operator, db)
     permission_data = permissions_summary(operator.role) if effective is None else {
         "permissions": sorted(effective),
