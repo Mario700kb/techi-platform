@@ -10,13 +10,14 @@ unknown.
 
 Days are bucketed in DISPLAY_TIMEZONE (Europe/Tirane); storage stays UTC.
 """
+import threading
 from bisect import bisect_right
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import func, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import Session, aliased
 
 from app.core.config import settings
 from app.core.scope import AllowedScope
@@ -29,12 +30,22 @@ from app.models.device_status_history import DeviceStatusHistory
 from app.repositories.device_repository import DeviceRepository
 
 # Thirty-day trends move slowly and cost seconds on a large fleet: a result is
-# fresh for five minutes, then served while one background thread recomputes it.
-_cache: SWRCache[dict] = SWRCache("insights", ttl=300.0, max_age=6 * 3600.0)
+# fresh for thirty minutes, then served while one background thread recomputes
+# it. (Five minutes recomputed them 2–3 times per 10 minutes in production,
+# about half of all database time on the one-vCPU host.)
+_cache: SWRCache[dict] = SWRCache("insights", ttl=1800.0, max_age=6 * 3600.0)
+
+# Availability of days that are over does not change: it is measured once per
+# day for a given device set, and afterwards only today is recomputed.
+_completed_days: "OrderedDict[tuple, tuple[list[float], list[float]]]" = OrderedDict()
+_completed_days_lock = threading.Lock()
+_COMPLETED_DAYS_MAX = 32
 
 
 def invalidate_insights_cache() -> None:
     _cache.clear()
+    with _completed_days_lock:
+        _completed_days.clear()
 
 
 def warm_insights_cache(db: Session, days: int = 30) -> None:
@@ -108,20 +119,32 @@ class FleetInsightsService:
         # Storage is naive UTC, so day edges are compared in that form.
         starts = _day_starts(days, now)
         bounds = [b.replace(tzinfo=None) for b in starts + [now]]
-        window_start = bounds[0]
         online = [0.0] * days
         known = [0.0] * days
         ids = [d.id for d in devices]
 
         if ids:
-            before = self._state_before(ids, window_start)
-            # A large fleet writes hundreds of thousands of transitions a month.
-            # On PostgreSQL the segments are cut into days inside the database,
-            # so only one row per day comes back instead of every transition.
-            if self.db.get_bind().dialect.name == "postgresql":
-                self._availability_in_db(devices, before, bounds, online, known)
-            else:
-                self._availability_in_python(devices, before, bounds, online, known)
+            # Days that are over: measured once, reused until the day rolls over
+            # or the device set changes. Today: measured on every recompute. The
+            # split is exact — today's measurement starts from each device's last
+            # transition before midnight, the state the full window carries over.
+            key = (len(ids), hash(tuple(ids)), days, bounds[0], bounds[days - 1])
+            with _completed_days_lock:
+                completed = _completed_days.get(key)
+            if completed is None:
+                done_online, done_known = [0.0] * (days - 1), [0.0] * (days - 1)
+                self._measure(devices, bounds[:days], done_online, done_known)
+                completed = (done_online, done_known)
+                with _completed_days_lock:
+                    _completed_days[key] = completed
+                    while len(_completed_days) > _COMPLETED_DAYS_MAX:
+                        _completed_days.popitem(last=False)
+            online[: days - 1] = completed[0]
+            known[: days - 1] = completed[1]
+            today_online, today_known = [0.0], [0.0]
+            self._measure(devices, bounds[days - 1:], today_online, today_known)
+            online[days - 1] = today_online[0]
+            known[days - 1] = today_known[0]
 
         tz = _zone(settings.DISPLAY_TIMEZONE)
         series = []
@@ -138,19 +161,37 @@ class FleetInsightsService:
             "device_count": len(devices),
         }
 
+    def _measure(self, devices: list[Device], bounds: list[datetime], online: list[float], known: list[float]) -> None:
+        """Online and known seconds per bucket of `bounds` (len(bounds) - 1 buckets)."""
+        before = self._state_before([d.id for d in devices], bounds[0])
+        # A large fleet writes hundreds of thousands of transitions a month.
+        # On PostgreSQL the segments are cut into days inside the database,
+        # so only one row per day comes back instead of every transition.
+        if self.db.get_bind().dialect.name == "postgresql":
+            self._availability_in_db(devices, before, bounds, online, known)
+        else:
+            self._availability_in_python(devices, before, bounds, online, known)
+
     def _state_before(self, ids: list[int], window_start: datetime) -> dict[int, DeviceStatus]:
-        """Last known status of each device before the window opened."""
-        latest_before = (
-            self.db.query(DeviceStatusHistory.device_id, func.max(DeviceStatusHistory.created_at).label("at"))
-            .filter(DeviceStatusHistory.device_id.in_(ids),
-                    DeviceStatusHistory.created_at < window_start)
-            .group_by(DeviceStatusHistory.device_id)
-            .subquery()
+        """Last known status of each device before the window opened.
+
+        One probe per device on (device_id, created_at) for its newest earlier
+        transition. A max(created_at) GROUP BY read every earlier row instead —
+        the whole table before the window, recomputed on every refresh.
+        """
+        earlier = aliased(DeviceStatusHistory)
+        newest_before = (
+            select(earlier.id)
+            .where(earlier.device_id == Device.id, earlier.created_at < window_start)
+            .order_by(earlier.created_at.desc())
+            .limit(1)
+            .correlate(Device)
+            .scalar_subquery()
         )
+        newest_ids = select(newest_before).select_from(Device).where(Device.id.in_(ids))
         return dict(
             self.db.query(DeviceStatusHistory.device_id, DeviceStatusHistory.new_status)
-            .join(latest_before, (DeviceStatusHistory.device_id == latest_before.c.device_id)
-                  & (DeviceStatusHistory.created_at == latest_before.c.at))
+            .filter(DeviceStatusHistory.id.in_(newest_ids))
             .all()
         )
 
@@ -275,7 +316,16 @@ class FleetInsightsService:
         resolved = dict.fromkeys(labels, 0)
         resolve_hours: list[float] = []
         open_now = 0
-        if ids:
+        if ids and self.db.get_bind().dialect.name == "postgresql":
+            edges = [s.replace(tzinfo=None) for s in starts]
+            counts = self._alert_counts_in_db(ids, window_start, edges)
+            for day, label in enumerate(labels, start=1):
+                opened[label] = counts["opened"].get(day, 0)
+                resolved[label] = counts["resolved"].get(day, 0)
+            open_now = counts["open_now"]
+            if counts["resolved_n"]:
+                resolve_hours = [counts["resolve_hours_sum"] / counts["resolved_n"]] * counts["resolved_n"]
+        elif ids:
             rows = (
                 self.db.query(DeviceAlert.created_at, DeviceAlert.resolved_at, DeviceAlert.state)
                 .filter(DeviceAlert.device_id.in_(ids),
@@ -305,6 +355,43 @@ class FleetInsightsService:
             "open_now": open_now,
             "mean_time_to_resolve_hours": round(sum(resolve_hours) / len(resolve_hours), 1) if resolve_hours else None,
         }
+
+    def _alert_counts_in_db(self, ids: list[int], window_start: datetime, edges: list[datetime]) -> dict:
+        """The alert trend counted inside PostgreSQL: per-day opened and resolved
+        counts, resolve-time total and open count. Returning every alert row
+        instead (370k in the 30-day window in production) took ~7 s of Python
+        on the one-vCPU host. Day buckets follow the Python path exactly:
+        width_bucket over the day starts, 1-based, 0 = before the window."""
+        rows = self.db.execute(
+            text("""
+                WITH a AS (
+                    SELECT created_at, resolved_at, state::text AS state
+                    FROM device_alerts
+                    WHERE device_id = ANY(CAST(:ids AS integer[]))
+                      AND (created_at >= :window_start OR resolved_at >= :window_start OR state = 'open')
+                )
+                SELECT 'opened' AS kind, width_bucket(created_at, CAST(:edges AS timestamp[])) AS day,
+                       count(*) AS n, 0.0 AS hours
+                FROM a GROUP BY 2
+                UNION ALL
+                SELECT 'resolved', width_bucket(resolved_at, CAST(:edges AS timestamp[])),
+                       count(*), sum(EXTRACT(EPOCH FROM resolved_at - created_at)) / 3600.0
+                FROM a WHERE resolved_at IS NOT NULL GROUP BY 2
+                UNION ALL
+                SELECT 'open', 0, count(*), 0.0 FROM a WHERE state = 'open'
+            """),
+            {"ids": ids, "window_start": window_start, "edges": edges},
+        ).all()
+        counts: dict = {"opened": {}, "resolved": {}, "open_now": 0, "resolved_n": 0, "resolve_hours_sum": 0.0}
+        for kind, day, n, hours in rows:
+            if kind == "open":
+                counts["open_now"] = int(n)
+            elif day and day >= 1:
+                counts[kind][int(day)] = int(n)
+                if kind == "resolved":
+                    counts["resolved_n"] += int(n)
+                    counts["resolve_hours_sum"] += float(hours or 0.0)
+        return counts
 
     # ── problem devices ──────────────────────────────────────────────────
     def _problem_devices(self, devices: list[Device], days: int, now: datetime, limit: int = 5) -> list[dict]:

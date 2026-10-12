@@ -43,9 +43,10 @@ class DeviceAlert(Base):
     state = Column(SQLEnum(AlertState, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=AlertState.OPEN, nullable=False, index=True)
     message = Column(String(512), nullable=False)
     detail = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    # Indexed for the dashboard's 30-day alert trend (opened / resolved in window).
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
     updated_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True, index=True)
     acknowledged_at = Column(DateTime, nullable=True)
     cooldown_until = Column(DateTime, nullable=True)
 

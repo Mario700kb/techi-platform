@@ -130,3 +130,61 @@ def test_scope_limits_every_figure_to_visible_devices(db):
     assert result["alerts"]["opened_total"] == 1
     assert [d["name"] for d in result["problem_devices"]] == ["MINE"]
     assert result["problem_devices"][0]["client_name"] == "Acme"
+
+
+# -- completed days measured once, today recomputed ----------------------------
+
+
+def _edge_case_fleet(db):
+    steady = _device(db, "STEADY")
+    _transition(db, steady, NOW - timedelta(days=40), DeviceStatus.ONLINE)
+    flaky = _device(db, "FLAKY", status=DeviceStatus.OFFLINE)
+    _transition(db, flaky, NOW - timedelta(days=40), DeviceStatus.ONLINE)
+    for hours in (300, 200, 30, 5, 2):  # completed days and today
+        state = DeviceStatus.OFFLINE if hours in (300, 30, 2) else DeviceStatus.ONLINE
+        previous = DeviceStatus.ONLINE if state is DeviceStatus.OFFLINE else DeviceStatus.OFFLINE
+        _transition(db, flaky, NOW - timedelta(hours=hours), state, previous)
+    _device(db, "NEW", registered=NOW - timedelta(days=3))  # no transitions, registered in window
+    late = _device(db, "FIRST-TODAY")
+    _transition(db, late, NOW - timedelta(hours=3), DeviceStatus.OFFLINE, DeviceStatus.ONLINE)
+    _device(db, "SILENT", status=DeviceStatus.OFFLINE)  # never changed, current status throughout
+    return db.query(Device).order_by(Device.id).all()
+
+
+def test_split_measurement_equals_measuring_the_whole_window(db):
+    devices = _edge_case_fleet(db)
+    service = svc.FleetInsightsService(db)
+    split = service._availability(devices, 30, NOW)
+
+    starts = svc._day_starts(30, NOW)
+    bounds = [b.replace(tzinfo=None) for b in starts + [NOW]]
+    online, known = [0.0] * 30, [0.0] * 30
+    service._measure(devices, bounds, online, known)
+    whole = [round(online[i] / known[i] * 100, 2) if known[i] > 0 else None for i in range(30)]
+
+    assert [point["availability_pct"] for point in split["series"]] == whole
+    assert split["overall_pct"] == round(sum(online) / sum(known) * 100, 2)
+
+
+def test_completed_days_are_measured_once_then_only_today(db, monkeypatch):
+    devices = _edge_case_fleet(db)
+    service = svc.FleetInsightsService(db)
+    calls = []
+    original = svc.FleetInsightsService._measure
+
+    def counting(self, devs, bounds, online, known):
+        calls.append(len(bounds) - 1)
+        return original(self, devs, bounds, online, known)
+
+    monkeypatch.setattr(svc.FleetInsightsService, "_measure", counting)
+    first = service._availability(devices, 30, NOW)
+    assert calls == [29, 1]  # completed days, then today
+    calls.clear()
+    second = service._availability(devices, 30, NOW)
+    assert calls == [1]  # only today
+    assert first == second
+
+    # A different device set is a different key: measured in full again.
+    calls.clear()
+    service._availability(devices[:-1], 30, NOW)
+    assert calls == [29, 1]
