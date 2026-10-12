@@ -150,11 +150,11 @@ export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
   return url.toString();
 }
 
-// The session token rides in the WebSocket subprotocol header, never in the
-// URL, which proxies and servers write to their access logs.
+// The browser authenticates the socket with the HttpOnly session cookie it
+// sends on the handshake; the token is never in the URL (access logs) and
+// never visible to page scripts.
 export function deviceRealtimeProtocols(): string[] {
-  const token = window.localStorage.getItem("techi.auth.token");
-  return token ? ["techi.v1", `techi.auth.${token}`] : ["techi.v1"];
+  return ["techi.v1"];
 }
 
 export class DeviceRealtimeClient {

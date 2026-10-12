@@ -1,3 +1,4 @@
+import { AUTH_DEFAULTS } from "../../test/auth";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { chooseOption } from "../../test/select";
 import { MemoryRouter } from "react-router-dom";
@@ -85,7 +86,7 @@ function credential(overrides: Partial<vaultApi.VaultCredential> = {}): vaultApi
 function mockAuth() {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "admin", email: "" } as any,
-    token: "t",
+    ...AUTH_DEFAULTS,
     loading: false,
     permissions: null,
     login: vi.fn(),

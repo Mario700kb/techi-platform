@@ -1,3 +1,4 @@
+import { AUTH_DEFAULTS } from "../../test/auth";
 import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +32,7 @@ function mockAuth(hasPermission: (perm: string) => boolean) {
   } as any);
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "operator", email: "" } as any,
-    token: "t",
+    ...AUTH_DEFAULTS,
     loading: false,
     permissions: [],
     login: vi.fn(),

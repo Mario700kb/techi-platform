@@ -12,6 +12,7 @@ export interface OperatorRecord {
   created_at: string;
   last_login_at: string | null;
   last_active_at: string | null;
+  mfa_enabled?: boolean;
 }
 
 export interface OperatorCreate {
@@ -83,4 +84,9 @@ export async function resetOperatorPassword(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+/** Turns off an operator's two-factor authentication (lost phone) and signs them out. */
+export async function resetOperatorMfa(operatorId: number): Promise<OperatorRecord> {
+  return fetchJson<OperatorRecord>(`/api/v1/operators/${operatorId}/mfa/reset`, { method: "POST" });
 }

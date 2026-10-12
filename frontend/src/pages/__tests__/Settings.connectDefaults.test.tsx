@@ -1,3 +1,4 @@
+import { AUTH_DEFAULTS } from "../../test/auth";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,7 +14,7 @@ import * as connectApi from "../../api/connect";
 function mockShell() {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "op", display_name: "Op", role: "admin", email: "" } as any,
-    token: "t",
+    ...AUTH_DEFAULTS,
     loading: false,
     permissions: null,
     login: vi.fn(),

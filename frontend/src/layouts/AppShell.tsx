@@ -5,6 +5,7 @@ import Topbar from "../components/Topbar";
 import { BottomNav } from "../components/BottomNav";
 import { MobileTopBar } from "../components/mobile/MobileTopBar";
 import { OfflineBanner } from "../components/mobile/OfflineBanner";
+import SessionExpiryBanner from "../components/SessionExpiryBanner";
 import { useAppData } from "../contexts/AppDataContext";
 import { locateNav } from "../components/navigation";
 
@@ -84,6 +85,7 @@ export default function AppShell({ children }: AppShellProps) {
               />
             )}
             <OfflineBanner lastFetchTime={lastFetchTime} />
+            <SessionExpiryBanner />
             {/* Keyed by path: each page enters with the shared page motion and
                 starts scrolled to the top. Search-param changes keep the page. */}
             <main

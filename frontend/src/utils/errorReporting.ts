@@ -1,4 +1,5 @@
-import { API_BASE_URL, getAuthToken } from "../api/client";
+import { API_BASE_URL, CSRF_HEADER } from "../api/client";
+import { getSessionSnapshot } from "../store/sessionStore";
 
 interface ErrorContext {
   componentStack?: string;
@@ -36,14 +37,14 @@ export function reportError(value: unknown, context: ErrorContext = {}, filename
   recentlyReported.set(key, now);
 
   // The endpoint is authenticated; an error before sign-in stays local.
-  const token = getAuthToken();
-  if (!token || import.meta.env.MODE === "test") return;
+  if (!getSessionSnapshot().user || import.meta.env.MODE === "test") return;
 
   try {
     void fetch(`${API_BASE_URL}/api/v1/system/client-errors`, {
       method: "POST",
       keepalive: true,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
       body: JSON.stringify({
         message: error.message.slice(0, 1000),
         name: error.name.slice(0, 200),

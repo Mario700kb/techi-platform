@@ -50,3 +50,16 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
+
+// jsdom has no matchMedia; pages that respect prefers-reduced-motion or the
+// system theme only need a "no match" answer.
+window.matchMedia ??= ((query: string) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addEventListener: () => undefined,
+  removeEventListener: () => undefined,
+  addListener: () => undefined,
+  removeListener: () => undefined,
+  dispatchEvent: () => false,
+})) as unknown as typeof window.matchMedia;

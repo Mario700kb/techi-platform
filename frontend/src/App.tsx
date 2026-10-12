@@ -4,10 +4,11 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import AppPreloader from "./components/AppPreloader";
 import ErrorBoundary from "./components/ErrorBoundary";
+import MfaEnrollment from "./pages/MfaEnrollment";
 
 function App() {
   const location = useLocation();
-  const { loading } = useAuth();
+  const { loading, user, mfaEnrollmentRequired } = useAuth();
   // Routes that own the whole viewport: login, and the standalone terminal
   // window opened from the Device Catalog. Rendering the sidebar and topbar
   // inside a 1024x640 popup would leave the terminal a fraction of it.
@@ -24,6 +25,15 @@ function App() {
       <AppRoutes />
     </ErrorBoundary>
   );
+  // The role requires 2FA and it is not set up: the API answers nothing
+  // else until it is, so the setup replaces the whole console.
+  if (user && mfaEnrollmentRequired && location.pathname !== "/login") {
+    return (
+      <ErrorBoundary scope="app">
+        <MfaEnrollment />
+      </ErrorBoundary>
+    );
+  }
   if (isChromeless) {
     return routes;
   }

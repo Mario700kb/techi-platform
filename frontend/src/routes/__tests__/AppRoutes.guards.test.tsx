@@ -1,3 +1,4 @@
+import { AUTH_DEFAULTS } from "../../test/auth";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,7 +116,7 @@ describe("RequirePermission", () => {
   it("renders children when permission is granted", () => {
     vi.spyOn(authContext, "useAuth").mockReturnValue({
       user: { username: "op", display_name: "Op", role: "operator", email: "" } as any,
-      token: "t",
+      ...AUTH_DEFAULTS,
       loading: false,
       permissions: ["view_devices"],
       login: vi.fn(),
@@ -137,7 +138,7 @@ describe("RequirePermission", () => {
   it("shows an access-denied message when permission is denied", () => {
     vi.spyOn(authContext, "useAuth").mockReturnValue({
       user: { username: "op", display_name: "Op", role: "operator", email: "" } as any,
-      token: "t",
+      ...AUTH_DEFAULTS,
       loading: false,
       permissions: [],
       login: vi.fn(),

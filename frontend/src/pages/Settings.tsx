@@ -22,6 +22,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
+import SecurityCard from "../components/security/SecurityCard";
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import { type ConnectPreference, listConnectPreferences, resetConnectPreference } from "../api/connect";
@@ -238,6 +239,8 @@ export default function Settings() {
           </dl>
         </div>
       )}
+
+      {user && <SecurityCard style={{ "--i": 1 } as CSSProperties} />}
 
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <div className="th-onb-card th-onb-enter" style={{ "--i": 1 } as CSSProperties}>

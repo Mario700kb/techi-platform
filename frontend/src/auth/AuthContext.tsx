@@ -1,15 +1,28 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
 import { AuthUser, UserRole } from "../api/auth";
-import { bootstrapSession, clearSession, loginSession, useSessionStore } from "../store/sessionStore";
+import {
+  bootstrapSession,
+  completeMfaLogin,
+  loginSession,
+  logoutSession,
+  reloadSession,
+  useSessionStore,
+} from "../store/sessionStore";
 
 interface AuthContextValue {
   user: AuthUser | null;
-  token: string | null;
   loading: boolean;
+  /** When the server ends this session regardless of activity (ISO, UTC). */
+  sessionExpiresAt: string | null;
+  /** The operator's role requires two-factor authentication they have not set up. */
+  mfaEnrollmentRequired: boolean;
   /** null = admin/owner bypass (all permissions granted), string[] = explicit list */
   permissions: string[] | null;
-  login: (username: string, password: string) => Promise<void>;
+  /** Password step; resolves with an MFA challenge when the account has 2FA on. */
+  login: (username: string, password: string) => Promise<{ mfaToken: string } | null>;
+  completeMfa: (mfaToken: string, code: string) => Promise<void>;
   logout: () => void;
+  reloadSession: () => Promise<void>;
   can: (role: UserRole) => boolean;
   hasAnyRole: (roles: UserRole[]) => boolean;
   hasPermission: (perm: string) => boolean;
@@ -25,18 +38,17 @@ const roleRank: Record<UserRole, number> = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { token, user, loading, permissions } = useSessionStore();
+  const { user, loading, permissions, sessionExpiresAt, mfaEnrollmentRequired } = useSessionStore();
 
   useEffect(() => {
     void bootstrapSession();
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    await loginSession(username, password);
-  }, []);
+  const login = useCallback((username: string, password: string) => loginSession(username, password), []);
+  const completeMfa = useCallback((mfaToken: string, code: string) => completeMfaLogin(mfaToken, code), []);
 
   const logout = useCallback(() => {
-    clearSession();
+    void logoutSession();
   }, []);
 
   const can = useCallback(
@@ -66,8 +78,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, token, loading, permissions, login, logout, can, hasAnyRole, hasPermission }),
-    [user, token, loading, permissions, login, logout, can, hasAnyRole, hasPermission],
+    () => ({
+      user,
+      loading,
+      permissions,
+      sessionExpiresAt,
+      mfaEnrollmentRequired,
+      login,
+      completeMfa,
+      logout,
+      reloadSession,
+      can,
+      hasAnyRole,
+      hasPermission,
+    }),
+    [
+      user,
+      loading,
+      permissions,
+      sessionExpiresAt,
+      mfaEnrollmentRequired,
+      login,
+      completeMfa,
+      logout,
+      can,
+      hasAnyRole,
+      hasPermission,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

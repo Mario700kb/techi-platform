@@ -11,6 +11,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  ShieldOff,
   Trash2,
   UserCheck,
   UserPlus,
@@ -25,6 +26,7 @@ import {
   createOperator,
   deleteOperator,
   getOperators,
+  resetOperatorMfa,
   resetOperatorPassword,
   updateOperator,
 } from "../api/operators";
@@ -126,6 +128,8 @@ export default function Operators() {
   const [passwordLoading, setPasswordLoading] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<OperatorRecord | null>(null);
+  const [mfaResetTarget, setMfaResetTarget] = useState<OperatorRecord | null>(null);
+  const [mfaResetLoading, setMfaResetLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [filter, setFilter] = useState<OperatorFilter>("all");
@@ -276,6 +280,24 @@ export default function Operators() {
       setPasswordError(err instanceof Error ? err.message : "Failed to reset password");
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const handleMfaReset = async () => {
+    if (!mfaResetTarget) return;
+    try {
+      setMfaResetLoading(true);
+      const updated = await resetOperatorMfa(mfaResetTarget.id);
+      setOperators((prev) => {
+        const next = prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
+        appCache.set(CACHE_KEYS.operatorsList, next);
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset two-factor authentication");
+    } finally {
+      setMfaResetTarget(null);
+      setMfaResetLoading(false);
     }
   };
 
@@ -534,16 +556,18 @@ export default function Operators() {
                 <col />
                 <col className="w-[120px]" />
                 <col className="w-[110px]" />
+                <col className="w-[90px]" />
                 <col className="w-[20%]" />
                 <col className="w-[160px]" />
                 <col className="w-[120px]" />
-                {canManage && <col className="w-[148px]" />}
+                {canManage && <col className="w-[184px]" />}
               </colgroup>
               <thead>
                 <tr>
                   <th>Operator</th>
                   <th>Role</th>
                   <th>Status</th>
+                  <th>2FA</th>
                   <th>Teams</th>
                   <th>Last sign-in</th>
                   <th>Created</th>
@@ -602,6 +626,16 @@ export default function Operators() {
                         >
                           <i />
                           {op.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className="th-status-chip"
+                          style={{ "--chip-tone": op.mfa_enabled ? TONE.online : TONE.neutral } as CSSProperties}
+                          title={op.mfa_enabled ? "Signs in with a code from their phone" : "Password only"}
+                        >
+                          {op.mfa_enabled ? <ShieldCheck className="h-3 w-3" /> : <i />}
+                          {op.mfa_enabled ? "On" : "Off"}
                         </span>
                       </td>
                       <td>
@@ -664,6 +698,17 @@ export default function Operators() {
                             >
                               <KeySquare className="h-4 w-4" />
                             </button>
+                            {op.mfa_enabled && !isSelf && (
+                              <button
+                                type="button"
+                                className="th-onb-action"
+                                onClick={() => setMfaResetTarget(op)}
+                                title="Reset two-factor authentication"
+                                aria-label={`Reset two-factor authentication for ${displayLabel}`}
+                              >
+                                <ShieldOff className="h-4 w-4" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="th-onb-action"
@@ -897,6 +942,23 @@ export default function Operators() {
             />
           </label>
         </Modal>
+      )}
+
+      {mfaResetTarget && (
+        <ConfirmationModal
+          title="Reset two-factor authentication"
+          confirmLabel={mfaResetLoading ? "Resetting" : "Reset 2FA"}
+          loading={mfaResetLoading}
+          onClose={() => setMfaResetTarget(null)}
+          onConfirm={() => void handleMfaReset()}
+        >
+          Turn off two-factor authentication for{" "}
+          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+            {mfaResetTarget.display_name ?? mfaResetTarget.username}
+          </span>{" "}
+          and sign them out everywhere? Use this when they lost their phone. They can sign in with their password and
+          set it up again. The reset is recorded in the audit log.
+        </ConfirmationModal>
       )}
 
       {deleteTarget && (

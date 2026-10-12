@@ -1,3 +1,4 @@
+import { AUTH_DEFAULTS } from "../../test/auth";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { chooseOption, findOption, openSelect } from "../../test/select";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +29,7 @@ const run = (overrides: Partial<reportsApi.ReportRun> = {}): reportsApi.ReportRu
 function mockPage() {
   vi.spyOn(authContext, "useAuth").mockReturnValue({
     user: { username: "mario", role: "admin" } as any,
-    token: "t",
+    ...AUTH_DEFAULTS,
     loading: false,
     permissions: null,
     login: vi.fn(),
