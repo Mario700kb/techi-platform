@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] DB-ENTERPRISE-B — the backend connects as techi_app, not the superuser
+
+Database role change, deployed 2026-10-12 13:58–14:02. No code change
+(`fe4b7fd`). Pre-deploy dump `/opt/backups/techi/pre-app-role-2026-10-12_13-58.sql.gz`;
+`.env` backup `/opt/techi/techi-platform/.env.bak-app-role-20261012-135845`.
+
+The backend connected as `techi`, the cluster superuser: an SQL injection
+or a bug would have had server-side file and program access, every
+database and every role.
+
+1. Guard; dump (`gzip -t` OK); `.env` backed up (mode 600).
+2. `scripts/db/app-role.sql` run as `techi` with `lock_timeout=5s` (an
+   ownership change that could not get its lock would roll back rather
+   than queue requests behind it): techi_app created — LOGIN, not
+   superuser, no CREATEROLE/CREATEDB — owning every application table and
+   sequence (0 left with techi), pg_read_all_stats granted. Password: 24
+   random bytes, written only to `.env`.
+3. Before switching: techi_app connected over TCP, updated and inserted in
+   a rolled-back transaction, read pg_stat_statements.
+4. `DATABASE_URL` pointed at techi_app; backend force-recreated; healthy;
+   guard and smoke passed; 0 tracebacks, 0 permission errors.
+5. After: 123 heartbeats written in 45 s, newest row current; 31 techi_app
+   connections once settled.
+
+`techi` remains the superuser for `pg_dumpall` backups and administration.
+Rollback: restore `.env` from the backup above and
+`docker compose up -d --no-deps --force-recreate backend` (ownership needs
+no change; the superuser can use every object).
+
 ## [2026-10-12] SESSION-RENEWAL-2026-10-12 — renew the session before the access cookie expires (`2491c11`)
 
 Backend and frontend, deployed 2026-10-12 13:52. No migration.
