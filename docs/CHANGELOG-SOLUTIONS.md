@@ -5,6 +5,40 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] AUTH-GRACE-2026-10-12 — tabs no longer sign each other out; quick-filter motion (`62d2f1d`, `d174430`)
+
+Backend, frontend and migration `e5f6a7b8c9d0` → `f6a7b8c9d0e1`, deployed
+2026-10-12 23:07. Pre-deploy dump
+`/opt/backups/techi/pre-auth-grace-2026-10-12_23-06.sql.gz` (`gzip -t` OK);
+rollback images `techi-platform-{backend,frontend}:pre-auth-grace-3798555`.
+
+- Reported: console 401s on `/auth/session` and `/auth/refresh`. The
+  owner had signed out at 20:54 (audit), so those were the signed-out boot
+  check. But the data showed a real defect: operators signing in up to 8
+  times a day, four sessions opened in one minute. Every tab schedules its
+  renewal for the same moment with the same refresh cookie; the first
+  rotated it, the others got 401 and dropped to sign-in.
+- Refresh tokens: the replaced token stays valid for 30 s (previous hash +
+  rotation time; the row is locked so simultaneous renewals take turns); a
+  token two rotations old is refused.
+- `/auth/session` answers 204 to a browser with no session cookie at all,
+  so the sign-in page loads without a 401 and a failed refresh; an expired
+  access cookie with a refresh cookie still answers 401 and is renewed.
+  Verified live: 204 without cookies.
+- The cookie-session tests set cookies for "testserver" while the jar keys
+  them "testserver.local", so replay and stolen-token tests never sent the
+  cookie; fixed.
+- Devices: the quick-filter row opens by growing (the table slides instead
+  of jumping), chips enter in turn, changed counts fade in.
+
+Tests: backend 1,351; frontend unit 200, E2E 73. Guard and smoke passed;
+0 tracebacks.
+
+Legacy self-update (batch `74b8483a`): the three online devices accepted
+and downloaded the bridge MSI / binary at 20:49 but still report 2.0.0 /
+2.1.0 at 23:08; MAGAZINA reports version 2.1.0 with the 2.1.20 binary's
+hash. Needs the on-device deploy log to diagnose.
+
 ## [2026-10-12] RS-SECURITY-2026-10-12 — Remote Support: public shared password removed, real IPs, rotation, session audit, 2FA required (`de1b43f`, `f0035ca`, `b138224`)
 
 Backend, frontend, migration `d4e5f6a7b8c9` → `e5f6a7b8c9d0`, RustDesk server
