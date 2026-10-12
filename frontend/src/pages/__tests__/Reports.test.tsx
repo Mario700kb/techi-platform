@@ -54,6 +54,17 @@ function mockPage() {
   });
 }
 
+/** Picks a day through the app's calendar: month/year view, then the day. */
+function pickDate(field: RegExp, year: number, month: RegExp, day: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: field }));
+  fireEvent.click(screen.getByRole("button", { name: "Choose month and year" }));
+  const shownYear = () => Number(screen.getByRole("button", { name: "Back to days" }).textContent);
+  while (shownYear() > year) fireEvent.click(screen.getByRole("button", { name: "Previous year" }));
+  while (shownYear() < year) fireEvent.click(screen.getByRole("button", { name: "Next year" }));
+  fireEvent.click(screen.getByRole("button", { name: month }));
+  fireEvent.click(screen.getByRole("button", { name: day }));
+}
+
 describe("Reports scope and history", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -87,8 +98,8 @@ describe("Reports scope and history", () => {
     await findOption("Device", "Owner-04 · Eugreen · #606");
     await chooseOption("Report type", "alerts");
     await chooseOption("Period", "custom");
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-01" } });
-    fireEvent.change(screen.getByLabelText("To (inclusive)"), { target: { value: "2026-09-03" } });
+    pickDate(/^From/, 2026, /^Sep/, /, 1 September 2026$/);
+    pickDate(/^To \(inclusive\)/, 2026, /^Sep/, /, 3 September 2026$/);
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(generate).toHaveBeenCalled());
     expect(generate.mock.calls[0][0]).toMatchObject({

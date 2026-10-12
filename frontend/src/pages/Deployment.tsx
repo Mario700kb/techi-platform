@@ -53,7 +53,7 @@ import {
 import { PlatformFeatures } from "../api/platform";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
-import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { Button, EmptyState, PageHeader, Select, DatePicker } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { CardHead } from "../components/ui/PanelCard";
@@ -1236,12 +1236,7 @@ function EditTokenModal({
         </label>
         <label className="th-onb-field">
           Expires (Tirana time)
-          <input
-            type="datetime-local"
-            value={expiresAt}
-            onChange={(e) => setExpiresAt(e.target.value)}
-            id="token-expires-at"
-          />
+          <DatePicker withTime defaultTime="23:59" value={expiresAt} onChange={setExpiresAt} id="token-expires-at" />
         </label>
       </div>
       <div className="th-onb-field">

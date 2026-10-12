@@ -44,7 +44,7 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { API_BASE_URL } from "../api/client";
-import { Button, EmptyState, Modal, PageHeader, Select } from "../components/ui";
+import { Button, EmptyState, Modal, PageHeader, Select, DatePicker } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import {
   TokenStatusChip,
@@ -1471,7 +1471,7 @@ export default function EnrollmentBootstrap() {
             </label>
             <label className="th-onb-field">
               Expires (Tirana time)
-              <input type="datetime-local" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} />
+              <DatePicker withTime defaultTime="23:59" value={newExpiry} onChange={setNewExpiry} />
             </label>
           </div>
           {clients.length > 0 && (

@@ -5172,6 +5172,192 @@ input.th-switch:checked::after {
   cursor: not-allowed;
 }
 
+/* ── Date picker (components/ui/DatePicker) ── replaces the browser's own
+   calendar; same surface, radius and focus ring as the select menu. */
+.th-date-trigger {
+  width: 100%;
+}
+.th-datepicker {
+  z-index: 10001;
+  width: 296px;
+  padding: 12px;
+  overflow: visible;
+}
+.th-datepicker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.th-datepicker-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px;
+  margin-left: -4px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-datepicker-title svg {
+  color: var(--th-text-muted);
+  transition: transform 150ms ease;
+}
+.th-datepicker-title:hover,
+.th-datepicker-nav:hover,
+.th-datepicker-day:hover:not(:disabled):not([data-selected]),
+.th-datepicker-month:hover:not([data-selected]) {
+  background: var(--th-sidebar-nav-hover);
+  color: var(--th-text-primary);
+}
+.th-datepicker-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--th-text-muted);
+}
+.th-datepicker-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.th-datepicker-row + .th-datepicker-row {
+  margin-top: 2px;
+}
+.th-datepicker-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--th-text-faint);
+}
+.th-datepicker-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 36px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-primary);
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+}
+.th-datepicker-day[data-outside] {
+  color: var(--th-text-faint);
+}
+.th-datepicker-day[data-today] {
+  box-shadow: inset 0 0 0 1px var(--th-accent-border);
+  color: var(--th-text-primary);
+  font-weight: 600;
+}
+.th-datepicker-day[data-selected],
+.th-datepicker-month[data-selected] {
+  background: var(--th-accent-fill);
+  box-shadow: none;
+  color: #fff;
+  font-weight: 600;
+}
+.th-datepicker-day:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.th-datepicker-day:focus-visible,
+.th-datepicker-month:focus-visible,
+.th-datepicker-nav:focus-visible,
+.th-datepicker-title:focus-visible,
+.th-datepicker-link:focus-visible {
+  outline: 2px solid var(--th-accent);
+  outline-offset: 1px;
+}
+.th-datepicker-months {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px 0;
+}
+.th-datepicker-month {
+  height: 44px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--th-text-secondary);
+}
+.th-datepicker-month[data-today]:not([data-selected]) {
+  box-shadow: inset 0 0 0 1px var(--th-accent-border);
+  color: var(--th-text-primary);
+}
+.th-datepicker-time {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--th-border-subtle);
+  font-size: 13px;
+  color: var(--th-text-secondary);
+}
+.th-datepicker-time-fields {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--th-text-muted);
+}
+.th-datepicker-time-input {
+  width: 44px !important;
+  height: 32px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border-radius: 6px;
+  border: 1px solid var(--th-border-input) !important;
+  background: var(--th-bg-input) !important;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-primary);
+}
+.th-datepicker-time-input:focus {
+  outline: none;
+  border-color: var(--th-accent-border) !important;
+  box-shadow: 0 0 0 3px var(--th-accent-glow) !important;
+}
+.th-datepicker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-datepicker-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-accent);
+}
+.th-datepicker-link:hover:not(:disabled) {
+  background: var(--th-accent-glow);
+}
+.th-datepicker-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Device drawer ── */
 .th-drawer section > p.premium-kicker:first-child,
 .th-drawer section > div:first-child > p.premium-kicker:first-child {

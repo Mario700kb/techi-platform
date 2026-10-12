@@ -56,7 +56,7 @@ import { getDevice, getDevices } from "../api/devices";
 import { emitConnectRefresh } from "../api/connect";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Button, EmptyState, PageHeader, SelectField } from "../components/ui";
+import { Button, EmptyState, PageHeader, SelectField, DatePicker } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
@@ -1342,10 +1342,9 @@ export default function CredentialVault() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="th-onb-field">
               Expires
-              <input
-                type="date"
+              <DatePicker
                 value={form.expires_at}
-                onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+                onChange={(v) => setForm({ ...form, expires_at: v })}
                 aria-label="Expires at"
               />
             </label>

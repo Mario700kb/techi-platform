@@ -20,7 +20,7 @@ import {
   getAuditFacets,
   getAuditLogs,
 } from "../api/audit";
-import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { Button, EmptyState, PageHeader, Select, DatePicker } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import { CardHead } from "../components/ui/PanelCard";
 import { TONE } from "../utils/deviceStatus";
@@ -322,22 +322,19 @@ export default function Audit() {
             </div>
             <label className="th-onb-field">
               From
-              <input
-                type="datetime-local"
+              <DatePicker
+                withTime
                 value={utcToTiranaInput(draft.from_dt)}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, from_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))
-                }
+                onChange={(v) => setDraft((d) => ({ ...d, from_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
               />
             </label>
             <label className="th-onb-field">
               To
-              <input
-                type="datetime-local"
+              <DatePicker
+                withTime
+                defaultTime="23:59"
                 value={utcToTiranaInput(draft.to_dt)}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, to_dt: e.target.value ? tiranaInputToUtcIso(e.target.value) : undefined }))
-                }
+                onChange={(v) => setDraft((d) => ({ ...d, to_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
               />
             </label>
           </div>

@@ -24,7 +24,7 @@ export default tseslint.config(
       // Our own form controls wrap a native input/select one level down.
       "jsx-a11y/label-has-associated-control": ["error", {
         assert: "either",
-        controlComponents: ["SelectField", "Select", "EntitySearchSelect"],
+        controlComponents: ["SelectField", "Select", "EntitySearchSelect", "DatePicker"],
         depth: 4,
       }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],

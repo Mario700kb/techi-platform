@@ -45,7 +45,7 @@ import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
 import TablePagination from "../components/ui/TablePagination";
 import { CardHead } from "../components/ui/PanelCard";
-import { EmptyState, SelectField } from "../components/ui";
+import { EmptyState, SelectField, DatePicker } from "../components/ui";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -536,11 +536,11 @@ export default function Reports() {
                 <>
                   <label className="th-onb-field th-onb-reveal">
                     From
-                    <input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+                    <DatePicker value={customFrom} onChange={setCustomFrom} max={customTo || undefined} />
                   </label>
                   <label className="th-onb-field th-onb-reveal">
                     To (inclusive)
-                    <input type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+                    <DatePicker value={customTo} onChange={setCustomTo} min={customFrom || undefined} />
                   </label>
                 </>
               )}
