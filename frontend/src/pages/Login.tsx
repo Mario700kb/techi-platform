@@ -108,7 +108,7 @@ export default function Login() {
   const codeComplete = useRecoveryCode ? code.replace(/[^0-9a-z]/gi, "").length >= 10 : /^\d{6}$/.test(code);
 
   const trackCaps = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState("CapsLock"));
-  const logo = theme === "light" ? "/brand/techi-logo.webp" : "/brand/techi-logo-dark.png";
+  const logo = theme === "light" ? "/brand/connect-primary.svg" : "/brand/connect-primary-on-dark.svg";
 
   return (
     <div className="th-auth" data-phase={phase}>

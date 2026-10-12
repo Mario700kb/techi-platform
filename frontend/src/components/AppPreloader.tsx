@@ -30,7 +30,9 @@ export default function AppPreloader({
   return (
     <div className={inline ? "th-preloader th-preloader--inline" : "th-preloader"} role="status" aria-label={label}>
       <div className="th-preloader__stack" style={{ animationDelay: phase.enter }}>
-        {!inline && <img className="th-preloader__mark" src="/brand/techi-mark.svg" alt="" width={44} height={44} />}
+        {!inline && (
+          <img className="th-preloader__mark" src="/brand/connect-symbol.svg" alt="" width={44} height={44} />
+        )}
         <div className="th-preloader__track">
           <div className="th-preloader__bar" style={{ animationDelay: phase.slide }} />
         </div>

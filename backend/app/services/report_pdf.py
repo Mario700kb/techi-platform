@@ -26,9 +26,10 @@ MUTED = colors.HexColor("#5F6C7B")
 ACCENT = colors.HexColor("#E85A3C")  # TECHI coral, same as the logo mark
 PALE = colors.HexColor("#F2F5F8")
 
-# Coral mark + dark wordmark, made for white backgrounds (800×185 PNG, alpha).
-LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "techi-logo-on-light.png"
-LOGO_RATIO = 800 / 185
+# Connect symbol + dark wordmark for white backgrounds (1080×296 PNG, alpha),
+# rendered from frontend/public/brand/connect-primary.svg.
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "connect-logo-on-light.png"
+LOGO_RATIO = 1080 / 296
 logger = logging.getLogger(__name__)
 
 

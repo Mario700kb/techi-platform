@@ -8,7 +8,7 @@ describe("AppPreloader", () => {
     render(<AppPreloader />);
     const status = screen.getByRole("status", { name: "Loading TECHI Connect" });
     expect(status).toHaveClass("th-preloader");
-    expect(status.querySelector(".th-preloader__mark")).toHaveAttribute("src", "/brand/techi-mark.svg");
+    expect(status.querySelector(".th-preloader__mark")).toHaveAttribute("src", "/brand/connect-symbol.svg");
     expect(screen.getByText("TECHI Connect")).toBeInTheDocument();
   });
 

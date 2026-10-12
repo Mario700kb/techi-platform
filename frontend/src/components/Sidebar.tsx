@@ -54,16 +54,12 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
             src={
               expanded
                 ? theme === "light"
-                  ? "/brand/techi-logo.webp"
-                  : "/brand/techi-logo-dark.png"
-                : "/brand/techi-mark.svg"
+                  ? "/brand/connect-primary.svg"
+                  : "/brand/connect-primary-on-dark.svg"
+                : "/brand/connect-symbol.svg"
             }
-            alt="techi"
-            className={expanded ? "h-6 w-auto max-w-[120px] object-contain" : "h-6 w-6 object-contain"}
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (!img.src.endsWith("techi-mark-dark.png")) img.src = "/brand/techi-mark-dark.png";
-            }}
+            alt="TECHI Connect"
+            className={expanded ? "h-7 w-auto max-w-[140px] object-contain" : "h-7 w-7 object-contain"}
           />
         </button>
       </div>
