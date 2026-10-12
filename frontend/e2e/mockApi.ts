@@ -18,6 +18,7 @@ import type {
   FleetInsights,
 } from "../src/api/devices";
 import type { OperatorPresenceRecord, OperatorRecord } from "../src/api/operators";
+import type { DeviceInventory } from "../src/api/inventory";
 import type { NotificationChannel, NotificationDeliveryList, NotificationRule } from "../src/api/notifications";
 import type { PlatformFeatures } from "../src/api/platform";
 import type { SystemStatus } from "../src/api/system";
@@ -404,6 +405,62 @@ const DEVICE_2_RESOLVED: Alert[] = (
   client_name: "Northwind Clinic",
 }));
 
+const SOFTWARE: [string, string, string][] = [
+  ["Google Chrome", "129.0.6668.90", "Google LLC"],
+  ["Microsoft Edge", "129.0.2792.79", "Microsoft Corporation"],
+  ["Microsoft 365 Apps for business - en-us", "16.0.17928.20156", "Microsoft Corporation"],
+  ["Microsoft Visual C++ 2015-2022 Redistributable (x64) - 14.40.33810", "14.40.33810.0", "Microsoft Corporation"],
+  ["7-Zip 24.08 (x64)", "24.08", "Igor Pavlov"],
+  ["Adobe Acrobat (64-bit)", "24.003.20112", "Adobe"],
+  ["TECHI Agent", "3.4.1", "TECHI"],
+  ["RustDesk", "1.3.1", "RustDesk"],
+  ["Zoom Workplace (64-bit)", "6.2.3", "Zoom Video Communications, Inc."],
+  ["Notepad++ (64-bit x64)", "8.6.9", "Notepad++ Team"],
+  ["Microsoft Teams", "24215.1007.3082.1590", "Microsoft Corporation"],
+  ["Intel(R) Management Engine Components", "2306.4.3.0", "Intel Corporation"],
+];
+
+/** Device 2's inventory: patches pending, no services reported (as some agents send). */
+const DEVICE_2_INVENTORY: DeviceInventory = {
+  device_id: 2,
+  software: SOFTWARE.map(([name, version, publisher]) => ({ name, version, publisher })),
+  services: [],
+  processes: [
+    { pid: 4, name: "System", memory_mb: 0.1 },
+    { pid: 1184, name: "svchost.exe", memory_mb: 42.6 },
+    { pid: 6120, name: "chrome.exe", memory_mb: 612.4 },
+    { pid: 6244, name: "chrome.exe", memory_mb: 188.2 },
+    { pid: 7310, name: "OUTLOOK.EXE", memory_mb: 1536 },
+    { pid: 8012, name: "explorer.exe", memory_mb: 154.9 },
+    { pid: 9020, name: "techi-agent.exe", memory_mb: 38.1 },
+    { pid: 9104, name: "MsMpEng.exe", memory_mb: 286.7 },
+  ],
+  pending_updates: 3,
+  reboot_required: false,
+  last_update_at: iso(60 * 24 * 6),
+  patch_state: "updates_available",
+  collected_at: iso(4),
+};
+
+const DEVICE_1_INVENTORY: DeviceInventory = {
+  ...DEVICE_2_INVENTORY,
+  device_id: 1,
+  services: [
+    { name: "Spooler", display_name: "Print Spooler", status: "running", startup_type: "automatic" },
+    { name: "wuauserv", display_name: "Windows Update", status: "stopped", startup_type: "manual" },
+    { name: "TechiAgent", display_name: "TECHI Agent", status: "running", startup_type: "automatic" },
+    {
+      name: "BITS",
+      display_name: "Background Intelligent Transfer Service",
+      status: "start_pending",
+      startup_type: "manual",
+    },
+  ],
+  pending_updates: 0,
+  reboot_required: true,
+  patch_state: "reboot_required",
+};
+
 function devicesPage(url: URL): DevicesResponse {
   const status = url.searchParams.get("freshness_state") ?? url.searchParams.get("quick_filter");
   const rows =
@@ -481,6 +538,11 @@ export async function mockApi(page: Page, initial: Partial<Omit<MockState, "unha
     const key = `${route.request().method()} ${url.pathname}`;
     const handler = HANDLERS[key];
     if (handler) return handler(route, state, url);
+    const inventory = url.pathname.match(/^\/api\/v1\/devices\/(\d+)\/inventory$/);
+    if (inventory && route.request().method() === "GET") {
+      const id = Number(inventory[1]);
+      return json(route, id === 1 ? DEVICE_1_INVENTORY : { ...DEVICE_2_INVENTORY, device_id: id });
+    }
     const deviceAlerts = url.pathname.match(/^\/api\/v1\/alerts\/device\/(\d+)$/);
     if (deviceAlerts && route.request().method() === "GET") {
       const id = Number(deviceAlerts[1]);

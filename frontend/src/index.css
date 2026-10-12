@@ -2983,7 +2983,7 @@ a.th-kpi:hover {
   color: var(--th-text-primary);
 }
 .th-onb-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 12px;
   line-height: 1.6;
   color: var(--th-text-secondary);
@@ -3125,7 +3125,7 @@ a.th-kpi:hover {
   color: var(--th-text-muted);
 }
 .th-onb-fixed {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 12px;
 }
 .th-onb-file {
@@ -3153,7 +3153,7 @@ a.th-kpi:hover {
   max-width: 100%;
   align-items: center;
   gap: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 12px;
   color: var(--th-text-secondary);
 }
@@ -3811,7 +3811,7 @@ a.th-kpi:hover {
   border: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 13px;
   color: var(--th-text-primary);
   outline: none;
@@ -5242,6 +5242,187 @@ button.th-drawer-tile:hover {
 }
 .th-drawer-callout[data-tone="critical"] {
   --tone: var(--th-status-critical);
+}
+
+/* ── Device inventory (drawer Software tab) ── a 2×2 patch summary, then one
+   list at a time under a segmented control; every table shares one grid. */
+.th-inv-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.th-inv-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-drawer-section);
+  background: var(--th-bg-drawer-section);
+}
+.th-inv-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+}
+.th-inv-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.th-inv-stat-value i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--stat-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--stat-tone) 18%, transparent);
+}
+.th-inv-stat-hint {
+  font-size: 12px;
+  color: var(--th-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.th-inv-card {
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-drawer-section);
+  background: var(--th-bg-drawer-section);
+}
+.th-inv-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--th-border-drawer-section);
+}
+.th-inv-toolbar .th-segmented > button {
+  height: 30px;
+}
+.th-inv-seg-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-muted);
+  background: var(--th-border-default);
+}
+.th-segmented > button[aria-checked="true"] .th-inv-seg-count {
+  color: var(--th-text-primary);
+  background: var(--th-border-strong);
+}
+.th-inv-count {
+  flex: none;
+  min-width: 56px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-muted);
+}
+.th-inv-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--th-text-faint);
+}
+.th-inv-clear:hover {
+  color: var(--th-text-primary);
+  background: var(--th-btn-secondary-hover);
+}
+.th-inv-scroll {
+  max-height: min(480px, 56vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.th-inv-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.th-inv-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding: 0 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+  background: var(--th-bg-drawer-table-head);
+  border-bottom: 1px solid var(--th-border-drawer-section);
+}
+.th-inv-table td {
+  height: 48px;
+  padding: 6px 14px;
+  vertical-align: middle;
+  color: var(--th-text-primary);
+  border-bottom: 1px solid var(--th-divide-color);
+}
+.th-inv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.th-inv-table tbody tr:hover td {
+  background: var(--th-table-hover);
+}
+.th-inv-table .th-inv-end {
+  text-align: right;
+}
+.th-inv-primary,
+.th-inv-secondary {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.th-inv-primary {
+  font-weight: 500;
+}
+.th-inv-secondary {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-inv-mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+}
+span.th-inv-mono {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  color: var(--th-text-secondary);
+}
+.th-inv-num {
+  font-variant-numeric: tabular-nums;
+}
+.th-inv-muted {
+  color: var(--th-text-muted) !important;
 }
 
 /* ── Action tiles (device drawer) ── */

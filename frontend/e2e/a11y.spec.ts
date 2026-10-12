@@ -46,3 +46,17 @@ for (const theme of ["dark", "light"] as const) {
     }
   });
 }
+
+for (const theme of ["dark", "light"] as const) {
+  test(`${theme} device inventory tab has no serious accessibility violations`, async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "the drawer is the desktop device view");
+    await page.addInitScript((value) => window.localStorage.setItem("techi.theme", value), theme);
+    await page.goto("/devices");
+    await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
+    await page.getByRole("tab", { name: /Software/ }).click();
+    await page.getByRole("button", { name: "Load inventory" }).click();
+    await page.getByRole("radio", { name: /Services/ }).click();
+    await expect(page.locator(".th-inv-table tbody tr")).toHaveCount(4);
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+}

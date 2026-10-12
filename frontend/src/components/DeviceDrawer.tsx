@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
 import {
@@ -16,9 +16,7 @@ import {
   Power,
   RefreshCw,
   RotateCcw,
-  Package,
   Save,
-  Search,
   Server,
   Star,
   StickyNote,
@@ -50,7 +48,7 @@ import {
   getDeviceOfflineAnalysis,
   updateDevice,
 } from "../api/devices";
-import { DISPLAY_LOCALE, formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
+import { formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
 import { freshnessTone, humanize, remoteSupportStatus, TERMS, TONE } from "../utils/deviceStatus";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
@@ -77,6 +75,7 @@ import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
+import DeviceInventoryPanel from "./DeviceInventoryPanel";
 import { Button, ConnectButton, EmptyState, SelectField } from "./ui";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertSeverity } from "../types/alert";
 import AlertKindIcon from "./AlertKindIcon";
@@ -183,19 +182,6 @@ function formatUptime(seconds: number | null): string {
   if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
-}
-
-function patchStateLabel(state?: string): string {
-  if (state === "up_to_date") return "Up to date";
-  if (state === "updates_available") return "Updates available";
-  if (state === "reboot_required") return "Reboot required";
-  return "Unknown";
-}
-
-function patchStateClass(state?: string): string {
-  if (state === "up_to_date") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
-  if (state === "reboot_required") return "border-red-400/30 bg-red-400/10 text-red-300";
-  return "border-amber-400/30 bg-amber-400/10 text-amber-200";
 }
 
 function alertDuration(alert: Alert): string | null {
@@ -307,9 +293,6 @@ export default function DeviceDrawer({
   const [inventory, setInventory] = useState<DeviceInventory | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
-  const [processSearch, setProcessSearch] = useState("");
-  const [serviceSearch, setServiceSearch] = useState("");
-  const [softwareSearch, setSoftwareSearch] = useState("");
   const inventoryLoadedFor = useRef<number | null>(null);
   const platformFeatures = usePlatformFeatures();
   const [activeTab, setActiveTab] = useState<DrawerTab>("overview");
@@ -459,9 +442,6 @@ export default function DeviceDrawer({
       inventoryLoadedFor.current = device.id;
       setInventory(null);
       setInventoryError(null);
-      setSoftwareSearch("");
-      setProcessSearch("");
-      setServiceSearch("");
     }
   }, [isOpen, device.id]);
 
@@ -615,37 +595,6 @@ export default function DeviceDrawer({
     },
     [activeTab, device.id, reload],
   );
-
-  const filteredProcesses = useMemo(() => {
-    const all = inventory?.processes ?? [];
-    if (!processSearch.trim()) return all;
-    const q = processSearch.toLowerCase();
-    return all.filter((p) => p.name.toLowerCase().includes(q) || String(p.pid).includes(q));
-  }, [inventory, processSearch]);
-
-  const filteredServices = useMemo(() => {
-    const all = inventory?.services ?? [];
-    if (!serviceSearch.trim()) return all;
-    const q = serviceSearch.toLowerCase();
-    return all.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.display_name.toLowerCase().includes(q) ||
-        s.status.toLowerCase().includes(q),
-    );
-  }, [inventory, serviceSearch]);
-
-  const filteredSoftware = useMemo(() => {
-    const all = inventory?.software ?? [];
-    if (!softwareSearch.trim()) return all;
-    const q = softwareSearch.toLowerCase();
-    return all.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.version ?? "").toLowerCase().includes(q) ||
-        (s.publisher ?? "").toLowerCase().includes(q),
-    );
-  }, [inventory, softwareSearch]);
 
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
@@ -1852,279 +1801,13 @@ export default function DeviceDrawer({
           <div className={activeTab === "software" ? "th-tab-panel" : "hidden"}>
             {/* Manual fetch control — see the loadInventory effect above for why
               this is not automatic. */}
-            <section className="mb-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="premium-kicker">Inventory</p>
-                {inventory && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void loadInventory()}
-                    disabled={inventoryLoading}
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${inventoryLoading ? "animate-spin" : ""}`} />
-                    {inventoryLoading ? "Refreshing…" : "Refresh"}
-                  </Button>
-                )}
-              </div>
-              {inventoryError && (
-                <div
-                  className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]"
-                  data-tone="warning"
-                  role="alert"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">Inventory could not be loaded</p>
-                    <p className="mt-0.5 text-[12px]" style={{ color: "var(--th-text-secondary)" }}>
-                      {inventoryError}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="flex-none"
-                    onClick={() => void loadInventory()}
-                    disabled={inventoryLoading}
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${inventoryLoading ? "animate-spin" : ""}`} />
-                    Retry
-                  </Button>
-                </div>
-              )}
-              {!inventory && !inventoryError && (
-                <div className="th-drawer-card">
-                  <EmptyState
-                    className="!py-6"
-                    icon={<Package className="h-5 w-5" />}
-                    title="Inventory not loaded"
-                    description="Patch status, installed software, services and processes for this device. Loaded on request to keep the drawer fast."
-                    action={
-                      <Button size="sm" onClick={() => void loadInventory()} disabled={inventoryLoading}>
-                        {inventoryLoading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Download className="h-3.5 w-3.5" />
-                        )}
-                        {inventoryLoading ? "Loading…" : "Load inventory"}
-                      </Button>
-                    }
-                  />
-                </div>
-              )}
-            </section>
-
-            {/* Patch status */}
-            {inventory && (
-              <section className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="premium-kicker">Patch status</p>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${patchStateClass(inventory?.patch_state)}`}
-                  >
-                    {patchStateLabel(inventory?.patch_state)}
-                  </span>
-                </div>
-                <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
-                  <div>
-                    <p className="premium-kicker mb-1">Pending updates</p>
-                    <p className="text-xs font-medium text-slate-100">
-                      {inventory?.pending_updates != null ? inventory.pending_updates : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="premium-kicker mb-1">Reboot required</p>
-                    <p
-                      className={`text-xs font-semibold ${inventory?.reboot_required ? "text-red-300" : "text-emerald-300"}`}
-                    >
-                      {inventory ? (inventory.reboot_required ? "Yes" : "No") : "—"}
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="premium-kicker mb-1">Last update</p>
-                    <p className="text-xs font-medium text-slate-300">{formatDateTime(inventory?.last_update_at)}</p>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {inventory && (
-              <section className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="premium-kicker">Processes</p>
-                  <span className="text-[11px] text-slate-500">{inventory.processes.length} collected</span>
-                </div>
-                <div className="th-drawer-card">
-                  <>
-                    {inventory.processes.length > 0 && (
-                      <label className="th-search th-search-sm mb-3">
-                        <Search className="h-3.5 w-3.5 flex-none" />
-                        <input
-                          type="text"
-                          placeholder="Search by name or PID…"
-                          value={processSearch}
-                          onChange={(e) => setProcessSearch(e.target.value)}
-                        />
-                      </label>
-                    )}
-                    <div className="max-h-60 overflow-y-auto">
-                      <table className="w-full text-[11px]">
-                        <thead
-                          className="sticky top-0 drawer-table-head"
-                          style={{ background: "var(--th-bg-drawer-table-head)" }}
-                        >
-                          <tr className="text-left text-[12px] font-medium text-slate-500">
-                            <th className="pb-1.5 pr-3">PID</th>
-                            <th className="pb-1.5 pr-3">Name</th>
-                            <th className="pb-1.5 text-right">Memory</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
-                          {filteredProcesses.map((p) => (
-                            <tr key={p.pid} className="text-slate-300 hover:bg-[var(--th-table-hover)]">
-                              <td className="py-1 pr-3 font-mono text-[11px] text-slate-500">{p.pid}</td>
-                              <td className="max-w-[200px] truncate py-1 pr-3 font-medium">{p.name}</td>
-                              <td className="py-1 text-right text-slate-400">{formatMemoryMb(p.memory_mb)}</td>
-                            </tr>
-                          ))}
-                          {filteredProcesses.length === 0 && (
-                            <tr>
-                              <td colSpan={3} className="py-3 text-center text-slate-500">
-                                {inventory.processes.length === 0 ? "None reported" : "No matches"}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                </div>
-              </section>
-            )}
-
-            {inventory && (
-              <section className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="premium-kicker">Services</p>
-                  <span className="text-[11px] text-slate-500">{inventory.services.length} collected</span>
-                </div>
-                <div className="th-drawer-card">
-                  {inventory.services.length > 0 && (
-                    <label className="th-search th-search-sm mb-3">
-                      <Search className="h-3.5 w-3.5 flex-none" />
-                      <input
-                        type="text"
-                        placeholder="Search by name or status…"
-                        value={serviceSearch}
-                        onChange={(e) => setServiceSearch(e.target.value)}
-                      />
-                    </label>
-                  )}
-                  <div className="max-h-60 overflow-y-auto">
-                    <table className="w-full text-[11px]">
-                      <thead
-                        className="sticky top-0 drawer-table-head"
-                        style={{ background: "var(--th-bg-drawer-table-head)" }}
-                      >
-                        <tr className="text-left text-[12px] font-medium text-slate-500">
-                          <th className="pb-1.5 pr-3">Name</th>
-                          <th className="pb-1.5 pr-3">Status</th>
-                          <th className="pb-1.5 text-right">Startup</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
-                        {filteredServices.map((s) => (
-                          <tr key={s.name} className="text-slate-300 hover:bg-[var(--th-table-hover)]">
-                            <td className="py-1 pr-3">
-                              <p className="max-w-[180px] truncate font-medium">{s.display_name || s.name}</p>
-                              <p className="font-mono text-[11px] text-slate-600">{s.name}</p>
-                            </td>
-                            <td className="py-1 pr-3">
-                              <span
-                                className={`font-semibold ${
-                                  s.status === "running"
-                                    ? "text-emerald-400"
-                                    : s.status === "stopped"
-                                      ? "text-slate-500"
-                                      : "text-amber-400"
-                                }`}
-                              >
-                                {humanize(s.status)}
-                              </span>
-                            </td>
-                            <td className="py-1 text-right text-slate-500">{s.startup_type ?? "—"}</td>
-                          </tr>
-                        ))}
-                        {filteredServices.length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="py-3 text-center text-slate-500">
-                              {inventory.services.length === 0 ? "None reported" : "No matches"}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {inventory && (
-              <section className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="premium-kicker">Software</p>
-                  <span className="text-[11px] text-slate-500">{(inventory.software ?? []).length} collected</span>
-                </div>
-                <div className="th-drawer-card">
-                  <>
-                    {(inventory.software ?? []).length > 0 && (
-                      <label className="th-search th-search-sm mb-3">
-                        <Search className="h-3.5 w-3.5 flex-none" />
-                        <input
-                          type="text"
-                          placeholder="Search by name, version, or publisher…"
-                          value={softwareSearch}
-                          onChange={(e) => setSoftwareSearch(e.target.value)}
-                        />
-                      </label>
-                    )}
-                    <div className="max-h-72 overflow-y-auto">
-                      <table className="w-full text-[11px]">
-                        <thead
-                          className="sticky top-0 drawer-table-head"
-                          style={{ background: "var(--th-bg-drawer-table-head)" }}
-                        >
-                          <tr className="text-left text-[12px] font-medium text-slate-500">
-                            <th className="pb-1.5 pr-3">Name</th>
-                            <th className="pb-1.5 pr-3">Version</th>
-                            <th className="pb-1.5">Publisher</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[color:var(--th-border-drawer-section)]">
-                          {filteredSoftware.map((s, idx) => (
-                            <tr
-                              key={`${s.name}-${s.version ?? ""}-${idx}`}
-                              className="text-slate-300 hover:bg-[var(--th-table-hover)]"
-                            >
-                              <td className="max-w-[180px] truncate py-1 pr-3 font-medium">{s.name}</td>
-                              <td className="max-w-[90px] truncate py-1 pr-3 text-slate-400">{s.version || "—"}</td>
-                              <td className="max-w-[140px] truncate py-1 text-slate-500">{s.publisher || "—"}</td>
-                            </tr>
-                          ))}
-                          {filteredSoftware.length === 0 && (
-                            <tr>
-                              <td colSpan={3} className="py-3 text-center text-slate-500">
-                                {(inventory.software ?? []).length === 0 ? "None reported" : "No matches"}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                </div>
-              </section>
-            )}
+            <DeviceInventoryPanel
+              key={device.id}
+              inventory={inventory}
+              loading={inventoryLoading}
+              error={inventoryError}
+              onLoad={() => void loadInventory()}
+            />
           </div>
 
           <div className={activeTab === "notes" ? "th-tab-panel" : "hidden"}>
@@ -2728,16 +2411,6 @@ function DrawerActionTile({
       </span>
     </button>
   );
-}
-
-const MEMORY_FORMAT = new Intl.NumberFormat(DISPLAY_LOCALE, { maximumFractionDigits: 1 });
-
-/** Process memory arrives in MB; show it the way Task Manager would ("312 MB", "1.5 GB"). */
-function formatMemoryMb(mb: number | null | undefined): string {
-  if (mb == null || !Number.isFinite(mb)) return "—";
-  if (mb >= 1024) return `${MEMORY_FORMAT.format(mb / 1024)} GB`;
-  if (mb >= 1) return `${MEMORY_FORMAT.format(Math.round(mb))} MB`;
-  return `${MEMORY_FORMAT.format(Math.round(mb * 1024))} KB`;
 }
 
 function actionTimeAgo(iso?: string | null): string {
