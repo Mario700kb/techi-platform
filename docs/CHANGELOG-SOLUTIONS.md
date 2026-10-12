@@ -5,6 +5,14 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] SIDEBAR-HOVER-2026-10-12 — a collapsed sidebar stays collapsed under the mouse (`daca94d`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-sidebar-14f3c7c`. The owner asked that the
+collapsed sidebar not open on hover. Icons keep their label as a tooltip;
+the logo button ("Expand sidebar", `aria-expanded`) is the only way to open
+it. Unit test covers mouse-enter and the button.
+
 ## [2026-10-12] TITLE-BAR-2026-10-12 — the installed app's title bar matches the app (`9a94c8a`)
 
 Frontend only, deployed 2026-10-12. Rollback image
