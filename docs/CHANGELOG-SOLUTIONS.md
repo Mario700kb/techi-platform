@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] DASHBOARD-LIVE-2026-10-12 — every dashboard section refreshes on its own (`2fb852d`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-dashboard-live-1e56641`.
+
+Analysis: with the WebSocket up, KPIs, alerts and actions were live, but
+operators online, latest enrollments (a new device never appeared) and the
+30-day trends loaded once per visit; with the socket down ("Polling") the
+fleet KPIs froze — nothing polled them, and an interval keyed on the socket
+status would have been restarted by every retry (connecting ↔ fallback).
+Now: KPIs poll every 30 s without a socket and catch up (with alerts) on
+reconnect or when a tab hidden 30 s+ is shown; presence, enrollments and
+actions every 60 s (30 s without a socket), visible tabs only; a device
+newer than every listed enrollment reloads the list; trends every 30 min;
+header chip "Live · updated 20s ago". Unit tests with fake timers and an
+E2E run in polling mode.
+
+Deploy: guard; rollback tag; pull; frontend built; `nginx -t` OK;
+recreated; healthy; guard and smoke passed. The live main bundle carries
+the change.
+
 ## [2026-10-12] INVENTORY-UI-2026-10-12 — device drawer Software tab rebuilt as an inventory panel (`1abcbea`)
 
 Frontend only, deployed 2026-10-12 by the owner by hand. Rollback image
