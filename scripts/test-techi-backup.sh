@@ -49,6 +49,13 @@ run_case() {
   # An 8-day-old backup set: retention must remove it only on success.
   touch -t "$(date -v-8d +%Y%m%d0300 2>/dev/null || date -d '8 days ago' +%Y%m%d0300)" \
         "$dir/postgres-2026-07-21_03-00.sql.gz"
+  # Pre-deploy dumps: four 20 days old (the newest three of all must
+  # survive regardless), one 2 days old.
+  local d
+  for d in 20 21 22 23; do
+    touch -t "$(date -v-${d}d +%Y%m%d1200 2>/dev/null || date -d "$d days ago" +%Y%m%d1200)" "$dir/pre-old-$d.sql.gz"
+  done
+  touch -t "$(date -v-2d +%Y%m%d1200 2>/dev/null || date -d '2 days ago' +%Y%m%d1200)" "$dir/pre-recent.sql.gz"
   MODE="$mode" BACKUP_DIR="$dir" PATH="$BIN:$PATH" bash "$SANDBOX/backup.sh" >"$dir/.log" 2>&1
   local rc=$?
   echo "--- $name (exit $rc) ---"
@@ -58,20 +65,26 @@ run_case() {
 assert_ok() {
   local dir=$1 rc=$2
   [ "$rc" -eq 0 ]                                    || { echo "  exit != 0"; return 1; }
-  ls "$dir"/postgres-2026-07-29*.sql.gz >/dev/null 2>&1 || { echo "  no promoted dump"; return 1; }
+  ls "$dir"/postgres-"$(date +%Y-%m-%d)"*.sql.gz >/dev/null 2>&1 || { echo "  no promoted dump"; return 1; }
   [ ! -e "$dir/postgres-2026-07-21_03-00.sql.gz" ]   || { echo "  old backup survived (retention did not run)"; return 1; }
   ls "$dir"/*.partial >/dev/null 2>&1                && { echo "  .partial left behind"; return 1; }
   ls "$dir"/rustdesk-keys-*.tar.gz >/dev/null 2>&1   || { echo "  rustdesk keys missing"; return 1; }
+  # Newest three pre-deploy dumps kept (recent, 20, 21 days); 22 and 23 gone.
+  [ -e "$dir/pre-recent.sql.gz" ] && [ -e "$dir/pre-old-20.sql.gz" ] && [ -e "$dir/pre-old-21.sql.gz" ] \
+                                                     || { echo "  a protected pre-deploy dump was deleted"; return 1; }
+  [ ! -e "$dir/pre-old-22.sql.gz" ] && [ ! -e "$dir/pre-old-23.sql.gz" ] \
+                                                     || { echo "  old pre-deploy dumps survived"; return 1; }
   return 0
 }
 
 assert_rejected() {
   local dir=$1 rc=$2
   [ "$rc" -ne 0 ]                                     || { echo "  exit should be non-zero"; return 1; }
-  ls "$dir"/postgres-2026-07-29*.sql.gz >/dev/null 2>&1 && { echo "  bad dump was promoted"; return 1; }
+  ls "$dir"/postgres-"$(date +%Y-%m-%d)"*.sql.gz >/dev/null 2>&1 && { echo "  bad dump was promoted"; return 1; }
   [ -e "$dir/postgres-2026-07-21_03-00.sql.gz" ]      || { echo "  RETENTION DELETED GOOD BACKUP"; return 1; }
   ls "$dir"/*.partial >/dev/null 2>&1                 && { echo "  .partial left behind"; return 1; }
   ls "$dir"/rustdesk-keys-*.tar.gz >/dev/null 2>&1    || { echo "  rustdesk keys missing (aborted too early)"; return 1; }
+  [ "$(ls "$dir"/pre-*.sql.gz | wc -l)" -eq 5 ]       || { echo "  pre-deploy dumps deleted without a verified dump"; return 1; }
   return 0
 }
 

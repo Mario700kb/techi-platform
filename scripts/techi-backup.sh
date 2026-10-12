@@ -76,11 +76,19 @@ else
 fi
 
 # ---------------------------------------------------------------- Retention
-# Keep daily backup sets for 7 days; preserve manual rollback artifacts.
+# Keep daily backup sets for 7 days.
+# Pre-deploy dumps (pre-*.sql.gz, the manual rollback points) are kept 14
+# days, and the newest PRE_DEPLOY_KEEP are never deleted however old: they
+# used to be kept forever and filled the disk (~150 MB each, 81% used).
 # Gated on DUMP_OK: if tonight produced no verified dump, deleting week-old
 # ones would trade a recoverable failure for an unrecoverable one.
+PRE_DEPLOY_KEEP="${PRE_DEPLOY_KEEP:-3}"
 if [ "$DUMP_OK" -eq 1 ]; then
   find "$BACKUP_DIR" -maxdepth 1 -type f -mtime +7 \( -name 'postgres-????-??-??_??-??.sql.gz' -o -name 'rustdesk-keys-????-??-??_??-??.tar.gz' -o -name 'techi-platform-config-????-??-??_??-??.tar.gz' -o -name 'vault-key-????-??-??_??-??.tar.gz' -o -name 'vault-key-????-??-??_??-??.sha256' \) -delete
+  # Newest first; skip the protected head, then delete what is past 14 days.
+  ls -t "$BACKUP_DIR"/pre-*.sql.gz 2>/dev/null | tail -n +"$((PRE_DEPLOY_KEEP + 1))" | while read -r old; do
+    [ -n "$(find "$old" -maxdepth 0 -mtime +14 2>/dev/null)" ] && rm -f -- "$old" && echo "Removed old pre-deploy dump: $old"
+  done
 else
   echo "WARNING: retention sweep skipped — keeping every existing backup"
 fi
