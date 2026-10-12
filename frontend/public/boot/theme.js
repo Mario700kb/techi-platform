@@ -9,4 +9,8 @@
   }
   document.documentElement.classList.add(t);
   document.documentElement.style.colorScheme = t;
+  // Window chrome (installed-app title bar, mobile status bar) matches the
+  // top bar. Same values as THEME_CHROME_COLOR in src/contexts/ThemeContext.tsx.
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", t === "light" ? "#ffffff" : "#131316");
 })();

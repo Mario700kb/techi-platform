@@ -29,6 +29,19 @@ function resolve(pref: ThemePreference): EffectiveTheme {
   return pref === "system" ? (systemPrefersDark() ? "dark" : "light") : pref;
 }
 
+/** The window chrome (installed app title bar, mobile status bar) takes the
+ * top bar's colour, so it reads as part of the app rather than a brand-orange
+ * strip above it. Same values as public/boot/theme.js. */
+export const THEME_CHROME_COLOR: Record<EffectiveTheme, string> = { dark: "#131316", light: "#ffffff" };
+
+function applyTheme(effective: EffectiveTheme) {
+  const root = document.documentElement;
+  root.classList.toggle("dark", effective === "dark");
+  root.classList.toggle("light", effective === "light");
+  root.style.colorScheme = effective;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_CHROME_COLOR[effective]);
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
     if (typeof window === "undefined") return "dark";
@@ -38,12 +51,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<EffectiveTheme>(() => resolve(themePreference));
 
   useEffect(() => {
-    const root = document.documentElement;
     const effective = resolve(themePreference);
     setTheme(effective);
-    root.classList.toggle("dark", effective === "dark");
-    root.classList.toggle("light", effective === "light");
-    root.style.colorScheme = effective;
+    applyTheme(effective);
     localStorage.setItem("techi.theme", themePreference);
   }, [themePreference]);
 
@@ -54,10 +64,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const onChange = () => {
       const effective = resolve("system");
       setTheme(effective);
-      const root = document.documentElement;
-      root.classList.toggle("dark", effective === "dark");
-      root.classList.toggle("light", effective === "light");
-      root.style.colorScheme = effective;
+      applyTheme(effective);
     };
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
