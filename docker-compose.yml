@@ -5,13 +5,34 @@ services:
     shm_size: 256mb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-techi}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techi}
+      # No fallback: a missing password must stop the stack, not start it as "techi".
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-techi}
+    # Loopback only. The backend reaches it on the compose network and the
+    # backup runs `docker exec`; nothing outside the host needs this port.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    command: postgres -c max_connections=200
+    # Sized for the 2 GB / 1 vCPU host (backend capped at 800 MB):
+    # - shared_buffers 256MB (was the 128MB default; heap cache hit was 92%);
+    # - random_page_cost 1.1: SSD storage, so index scans are not penalised;
+    # - pg_stat_statements: per-query totals, read with
+    #   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC;
+    # - log statements over 500 ms, lock waits and temp files.
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=8MB
+      -c maintenance_work_mem=128MB
+      -c random_page_cost=1.1
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=top
+      -c log_min_duration_statement=500
+      -c log_lock_waits=on
+      -c log_temp_files=0
     restart: unless-stopped
     logging:
       driver: "json-file"
