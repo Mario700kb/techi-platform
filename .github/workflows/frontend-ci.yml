@@ -1,0 +1,60 @@
+name: Frontend CI
+
+# The same gate scripts/preflight.sh runs locally, enforced on every push and
+# pull request that touches the frontend: types, lint, formatting, tests,
+# production build and a dependency audit of what ships to browsers.
+
+on:
+  push:
+    branches:
+      - backport/platform-components-92a521c
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm test
+
+      # vite.config.ts refuses a production build without the real API URL;
+      # .env.production is committed, so this is the exact production build.
+      - name: Production build
+        run: npm run build
+
+      - name: Audit shipped dependencies
+        run: npm audit --omit=dev --audit-level=moderate

@@ -70,6 +70,12 @@ FEATURE_PLATFORM_CORE=true FEATURE_LINUX=true FEATURE_VAULT=true FEATURE_TERMINA
 step "Frontend TypeScript (tsc --noEmit)"
 ( cd "$FRONTEND" && npx tsc --noEmit ) || fail "tsc errors"
 
+# 4b. Frontend lint (eslint, zero warnings) and unit tests.
+step "Frontend lint + unit tests"
+( cd "$FRONTEND" && npm run lint >/tmp/preflight_fe_lint.log 2>&1 ) || { tail -20 /tmp/preflight_fe_lint.log; fail "frontend lint failed"; }
+( cd "$FRONTEND" && npx vitest run >/tmp/preflight_fe_test.log 2>&1 ) || { tail -30 /tmp/preflight_fe_test.log; fail "frontend tests failed"; }
+grep -E "Tests +[0-9]+ passed" /tmp/preflight_fe_test.log | sed 's/^ */  /'
+
 # 5. Frontend production build.
 step "Frontend production build"
 ( cd "$FRONTEND" && npm run build >/tmp/preflight_fe_build.log 2>&1 ) || { tail -20 /tmp/preflight_fe_build.log; fail "frontend build failed"; }
@@ -77,6 +83,7 @@ echo "  build OK"
 
 # 6. Agent builds (Windows reference MUST compile; Linux targets too).
 step "Agent go build (windows + linux)"
+command -v go >/dev/null 2>&1 || fail "Go toolchain not found (install Go, or run this gate where it exists)"
 ( cd "$AGENT" && GOOS=windows GOARCH=amd64 go build -o /dev/null . ) || fail "agent windows build failed"
 ( cd "$AGENT" && GOOS=linux GOARCH=amd64 go build -o /dev/null . ) || fail "agent linux build failed"
 ( cd "$AGENT" && go test ./... >/tmp/preflight_go.log 2>&1 ) || { tail -20 /tmp/preflight_go.log; fail "agent go test failed"; }
