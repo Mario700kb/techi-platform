@@ -298,6 +298,21 @@ html {
   text-size-adjust: 100%;
 }
 
+/* Vertical scrollbars are hidden everywhere; scrolling itself (wheel,
+   trackpad, touch, keyboard) is unchanged. Only the vertical bar: width
+   sizes the vertical scrollbar, height the horizontal one, so wide tables
+   keep their horizontal bar. The standard scrollbar-width property is left
+   unset on purpose — once set, Chromium ignores ::-webkit-scrollbar. */
+*::-webkit-scrollbar {
+  width: 0;
+}
+/* Firefox has no per-axis control: there the bars are hidden entirely. */
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: none;
+  }
+}
+
 body {
   background-color: #0a0a0b;
   color: var(--th-text-primary);
