@@ -1,0 +1,78 @@
+name: Backend CI
+
+# Lint, tests, dependency audit, and the migration chain on a real
+# PostgreSQL 15 (production's major version): `alembic upgrade head` on an
+# empty database must succeed, or no new environment or disaster rebuild
+# could come from migrations — which was the case until 2026-10-12.
+
+on:
+  push:
+    branches:
+      - backport/platform-components-92a521c
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Lint, test, audit, migrate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: techi
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: techi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U techi -d techi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DEV_ALLOW_RANDOM_SECRET: 'true'
+      LOG_DIR: ${{ github.workspace }}/backend/ci-logs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Unit tests
+        run: python -m pytest -q -p no:cacheprovider tests
+
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt
+
+      - name: Migrations build the schema from an empty database
+        env:
+          DATABASE_URL: postgresql+psycopg://techi:ci-only-password@localhost:5432/techi
+        run: |
+          alembic upgrade head
+          alembic current | grep -q "(head)"

@@ -53,6 +53,9 @@ fi
 echo "  OK — one engine (platform_core/classification.py)"
 
 # 1. Contract tests — the hard gate. ZERO tolerance.
+step "Backend lint (ruff)"
+( cd "$BACKEND" && "$BACKEND/venv/bin/ruff" check . ) || fail "ruff found problems (install: venv/bin/pip install -r requirements-dev.txt)"
+
 step "Backend contract tests (service↔repository interface)"
 run_pytest "contract tests" 0 /tmp/preflight_contracts.log \
   tests/test_service_repository_contracts.py tests/test_device_service_filter_contract.py
