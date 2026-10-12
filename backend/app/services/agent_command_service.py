@@ -270,7 +270,7 @@ class AgentCommandService:
             msi_payload = None
             if legacy_devices:
                 msi_package = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_update_msi")
-                if msi_package is None or msi_package.version != package.version:
+                if msi_package is None or not _same_version(msi_package.version, package.version):
                     hostnames = ", ".join(sorted(d.hostname or str(d.id) for d in legacy_devices[:5]))
                     extra = "" if len(legacy_devices) <= 5 else f" (+{len(legacy_devices) - 5} more)"
                     raise ValueError(
@@ -389,6 +389,16 @@ def _parse_agent_version(raw: Optional[str]) -> Optional[tuple]:
             return None
         parts.append(int(digits))
     return tuple(parts)
+
+
+def _same_version(a: Optional[str], b: Optional[str]) -> bool:
+    """MSI versions carry four parts ("2.1.20.0"), agent versions three
+    ("2.1.20"); trailing zero parts do not make them different."""
+    pa, pb = _parse_agent_version(a), _parse_agent_version(b)
+    if pa is None or pb is None:
+        return (a or "").strip() == (b or "").strip()
+    width = max(len(pa), len(pb))
+    return pa + (0,) * (width - len(pa)) == pb + (0,) * (width - len(pb))
 
 
 def _requires_legacy_msi_self_update(device: Device) -> bool:

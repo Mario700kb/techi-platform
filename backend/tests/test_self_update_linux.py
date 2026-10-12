@@ -108,3 +108,25 @@ class TestUnsupportedPlatforms:
     def test_mikrotik_is_refused_with_its_hostname(self, packages):
         with pytest.raises(ValueError, match="not supported"):
             _payloads([_Device(700, "mikrotik", hostname="rb-gw")])
+
+
+class TestLegacyWindowsBridge:
+    """Agents below 2.1.1 update through the Agent Update Bridge MSI, whose
+    version has four parts (2.1.20.0) where the agent's has three (2.1.20)."""
+
+    def test_a_four_part_bridge_version_matches_the_agent_version(self, packages):
+        packages[("windows-amd64", "agent_update_msi")] = _Pkg("2.1.20.0", "msi-sha")
+        device = _Device(669, "windows", agent_version="2.1.0", agent_sha256=None)
+
+        payload = _payloads([device])[669]
+
+        assert payload["package_type"] == "msi"
+        assert payload["sha256"] == "msi-sha"
+        assert payload["target_sha256"] == "win-sha"
+
+    def test_a_bridge_for_another_version_is_still_refused(self, packages):
+        packages[("windows-amd64", "agent_update_msi")] = _Pkg("2.1.19.0", "msi-sha")
+        device = _Device(669, "windows", agent_version="2.1.0", agent_sha256=None)
+
+        with pytest.raises(ValueError, match="Agent Update Bridge MSI"):
+            _payloads([device])
