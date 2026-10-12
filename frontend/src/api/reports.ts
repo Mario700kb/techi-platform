@@ -1,4 +1,5 @@
-import { API_BASE_URL, ApiError, fetchJson, getAuthToken } from "./client";
+import { apiFetch, fetchJson } from "./client";
+import { saveBlob } from "../utils/download";
 
 export type ReportFormat = "pdf" | "csv";
 export type ReportCadence = "daily" | "weekly" | "monthly";
@@ -93,37 +94,14 @@ export function updateReportSchedule(id: number, payload: Partial<SchedulePayloa
 }
 
 export function deleteReportSchedule(id: number) {
-  return fetch(`${API_BASE_URL}/api/v1/reports/schedules/${id}`, {
-    method: "DELETE", headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
-  }).then((response) => {
-    if (!response.ok) throw new ApiError("Unable to delete schedule", response.status);
-  });
+  return apiFetch(`/api/v1/reports/schedules/${id}`, { method: "DELETE" }).then(() => undefined);
 }
 
 export function deleteReportRun(id: number) {
-  return fetch(`${API_BASE_URL}/api/v1/reports/runs/${id}`, {
-    method: "DELETE", headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
-  }).then((response) => {
-    if (!response.ok) throw new ApiError("Unable to delete report", response.status);
-  });
+  return apiFetch(`/api/v1/reports/runs/${id}`, { method: "DELETE" }).then(() => undefined);
 }
 
 export async function downloadReport(run: ReportRun): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/reports/runs/${run.id}/download`, {
-    headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
-  });
-  if (!response.ok) {
-    let message = "Unable to download report";
-    try { message = (await response.json()).detail || message; } catch { /* non-JSON error */ }
-    throw new ApiError(message, response.status);
-  }
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = run.filename || `techi-report-${run.id}.${run.report_format}`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  const response = await apiFetch(`/api/v1/reports/runs/${run.id}/download`);
+  saveBlob(await response.blob(), run.filename || `techi-report-${run.id}.${run.report_format}`);
 }

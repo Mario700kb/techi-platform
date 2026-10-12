@@ -1,4 +1,4 @@
-import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
+import { fetchJson, fetchText } from "./client";
 
 export interface AgentConfig {
   heartbeat_interval_seconds: number;
@@ -35,10 +35,5 @@ export async function putAgentConfig(update: AgentConfigUpdate): Promise<AgentCo
 }
 
 export async function getHeartbeatScript(seconds: number): Promise<string> {
-  const token = getAuthToken();
-  const res = await fetch(`${API_BASE_URL}/api/v1/agent-config/heartbeat-script?seconds=${seconds}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.text();
+  return fetchText(`/api/v1/agent-config/heartbeat-script?seconds=${seconds}`);
 }

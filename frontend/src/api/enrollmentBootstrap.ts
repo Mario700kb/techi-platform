@@ -237,8 +237,8 @@ export function buildWindowsBootstrapCommand(token: string): string {
   ].join("\n");
 }
 
-export function enrollmentTokenBootstrapDownloadUrl(tokenId: number): string {
-  return `${API_BASE_URL}/api/v1/enrollment-tokens/${tokenId}/bootstrap.ps1`;
+export function enrollmentTokenBootstrapPath(tokenId: number): string {
+  return `/api/v1/enrollment-tokens/${tokenId}/bootstrap.ps1`;
 }
 
 // Linux uses the SAME enrollment token as Windows — the one-liner served by

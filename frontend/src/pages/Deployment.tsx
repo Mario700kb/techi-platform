@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Ban, Boxes, Check, Copy, Download, Eye, HardDrive, KeyRound, Laptop, Layers, LifeBuoy, Loader2, LucideIcon, Monitor, Package, Pencil, RefreshCcw, Router, Search, Server, Terminal, Trash2, X } from "lucide-react";
-import { API_BASE_URL, getAuthToken } from "../api/client";
+import { fetchText } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { AgentPackage, getLatestPackage } from "../api/agentPackages";
 import {
@@ -16,7 +16,7 @@ import {
   buildWindowsBootstrapUrl,
   createEnrollmentToken,
   deleteEnrollmentToken,
-  enrollmentTokenBootstrapDownloadUrl,
+  enrollmentTokenBootstrapPath,
   getEnrollmentTokenDeployment,
   getEnrollmentTokens,
   getRustDeskConfig,
@@ -108,13 +108,7 @@ function downloadText(name: string, text: string) {
 }
 
 async function downloadTokenScript(tokenId: number) {
-  const response = await fetch(enrollmentTokenBootstrapDownloadUrl(tokenId).replace(API_BASE_URL, API_BASE_URL), {
-    headers: {
-      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
-    },
-  });
-  if (!response.ok) throw new Error(await response.text());
-  downloadText("techi-bootstrap.ps1", await response.text());
+  downloadText("techi-bootstrap.ps1", await fetchText(enrollmentTokenBootstrapPath(tokenId)));
 }
 
 export default function Deployment() {
@@ -657,11 +651,7 @@ function ScriptSection({ meta, token, copied, onCopy }: { meta: DeploymentPlatfo
     // enrollment token is the credential).
     const params = new URLSearchParams({ token });
     if (meta.routerosVersions) params.set("routeros_version", routerosVersion);
-    fetch(`${API_BASE_URL}${meta.scriptEndpoint}?${params.toString()}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.text();
-      })
+    fetchText(`${meta.scriptEndpoint}?${params.toString()}`)
       .then((t) => { if (active) setScript(t); })
       .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to generate script"); });
     return () => { active = false; };

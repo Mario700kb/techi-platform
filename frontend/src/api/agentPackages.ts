@@ -1,4 +1,5 @@
-import { API_BASE_URL, fetchJson, getAuthToken } from "./client";
+import { apiFetch, fetchJson } from "./client";
+import { saveBlob } from "../utils/download";
 
 export type AgentPackagePlatform = "windows" | "windows-amd64" | "windows-arm64" | "linux-amd64" | "linux-arm64" | "linux-armhf" | "darwin-arm64";
 export type AgentFileType = "msi" | "agent_binary" | "agent_update_msi" | "remote_support_msi";
@@ -66,21 +67,6 @@ export async function getLatestPackage(platform: string): Promise<AgentPackage> 
 }
 
 export async function downloadAgentPackage(pkg: AgentPackage): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}${pkg.download_url}`, {
-    headers: {
-      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = pkg.filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
+  const response = await apiFetch(pkg.download_url);
+  saveBlob(await response.blob(), pkg.filename);
 }
