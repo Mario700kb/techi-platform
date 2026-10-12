@@ -280,3 +280,9 @@ backend/data/
 # MSI/WiX extraction debris (Binary/Icon tables from msiexec /a or msiinfo dumps)
 Binary/
 Icon/
+
+# Playwright output
+frontend/test-results/
+frontend/playwright-report/
+frontend/e2e/.screens/
+frontend/dist-e2e/

@@ -58,3 +58,42 @@ jobs:
 
       - name: Audit shipped dependencies
         run: npm audit --omit=dev --audit-level=moderate
+
+  e2e:
+    name: End-to-end and accessibility (Playwright)
+    runs-on: ubuntu-latest
+    needs: verify
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Production bundle (--mode e2e) against an in-browser mock API: sign-in
+      # and 2FA, navigation, 404 / access denied, and axe (WCAG 2.1 AA) on
+      # desktop and phone, dark and light.
+      - name: Playwright
+        run: npm run e2e
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 14

@@ -5,7 +5,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", "coverage", "public/sw.js", "public/boot"] },
+  { ignores: ["dist", "dist-e2e", "node_modules", "coverage", "test-results", "playwright-report", "public/sw.js", "public/boot"] },
   {
     files: ["src/**/*.{ts,tsx}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended, jsxA11y.flatConfigs.recommended],
@@ -29,6 +29,11 @@ export default tseslint.config(
       }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
+  },
+  {
+    files: ["e2e/**/*.ts"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
   {
     files: ["src/**/__tests__/**", "src/test/**"],

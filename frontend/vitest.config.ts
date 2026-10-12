@@ -6,6 +6,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // e2e/ is Playwright's (npm run e2e).
+    include: ["src/**/*.test.{ts,tsx}"],
     globals: true,
     pool: "forks",
     fileParallelism: false,
