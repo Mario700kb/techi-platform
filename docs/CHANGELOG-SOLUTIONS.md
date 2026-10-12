@@ -27,7 +27,11 @@ tracebacks. The live Devices chunk carries the new tooltip.
 Disk: the day's seven pre-deploy dumps and new images took the root
 filesystem to 90%; `docker builder prune -f --keep-storage 1GB` (what the
 Sunday cron does) freed 2.0 GB → 83%, 4.1 GB free. Older rollback images
-(10–11 Oct, ~1.7 GB reclaimable) left in place pending the owner's say.
+(10–11 Oct) were then removed with the owner's approval: 24 tags, 762 MB
+→ 79% used, 4.9 GB free. Kept: `latest` and every rollback image of
+12 Oct, including the state before all of that day's work
+(`techi-platform-backend:pre-sessions-mfa-07c2cee`,
+`techi-platform-frontend:pre-rs-removal-0c064af`).
 
 ## [2026-10-12] TREND-INDEXES-2026-10-12 — dashboard trends measured incrementally; trend indexes (`2a6c027`)
 
