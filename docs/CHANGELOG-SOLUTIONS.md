@@ -5,6 +5,80 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] SESSIONS-MFA-ENTERPRISE-2026-10-12 — cookie sessions, two-factor sign-in, frontend enterprise hardening
+
+`07c2cee` → `67d6855` (16 commits). Backend and frontend, deployed
+2026-10-12 11:53. Migration `e1f2a3b4c5d6` → `f2a3b4c5d6e7`.
+Pre-deploy dump: `/opt/backups/techi/pre-sessions-mfa-2026-10-12_11-46.sql.gz`
+(145 MB, `gzip -t` OK). Rollback images:
+`techi-platform-{backend,frontend}:pre-sessions-mfa-07c2cee`.
+
+### Why
+A frontend audit found the session token in `localStorage` under a CSP
+that allowed inline and eval'd script, no error boundary (any render error
+was a white page), a fetch fallback that retried requests with the token
+against `https://<frontend>:8000`, no MFA, no linter or frontend CI, a
+single 868 KB bundle, and white-on-orange buttons at 3.5:1 contrast.
+
+### What changed
+- **Sessions:** HttpOnly, Secure, SameSite=Strict cookies — a 15-minute
+  access JWT carrying a session id and a rotating refresh token (path
+  `/api/v1/auth`, stored as SHA-256). `operator_sessions` makes sign-out,
+  "sign out other sessions", password change/reset and MFA reset take
+  effect on the next request. Absolute limit 12 h, idle limit 120 min.
+  Cookie-authenticated writes need `X-TECHI-CSRF`; WebSockets take the
+  cookie only from a `BACKEND_CORS_ORIGINS` origin. Bearer headers still
+  work (smoke test, scripts). The frontend exchanges a pre-upgrade
+  localStorage token for cookies once (`POST /auth/token-exchange`), so
+  the deploy signed nobody out.
+- **Two-factor (TOTP, stdlib):** QR setup confirmed by a code, secrets
+  sealed with the vault cipher, replay-proof codes, 10 one-time recovery
+  codes, 5 tries / 5 min, admin reset (`POST /operators/{id}/mfa/reset`,
+  audited). `MFA_REQUIRED_ROLES` forces enrolment; empty in production.
+- **Frontend:** app and per-route error boundaries; errors reported to
+  `POST /system/client-errors` (backend log); 404 and access-denied pages;
+  one `apiFetch` with a 30 s timeout and no cross-origin retry; strict CSP
+  (inline boot scripts moved to `/boot/`), HSTS, Permissions-Policy,
+  X-Frame-Options, COOP via one nginx snippet; react-router 7, vite 7,
+  node 24 / nginx 1.28 images, `npm ci`; route-level chunks (main bundle
+  868 → 349 KB); ESLint (react-hooks, jsx-a11y) with every finding fixed,
+  Prettier, frontend CI; Playwright E2E with an in-browser mock API and
+  axe (WCAG 2.1 AA) in both themes on desktop and phone; `--th-accent-fill`
+  and related tokens for AA contrast; white/black utilities and the
+  123-line light-mode override layer removed; vertical scrollbars hidden.
+- **Bugs found on the way:** deletes answering 204 (notifications, vault)
+  were reported as failures ("Unexpected end of JSON input"); three bulk
+  command errors were swallowed; mobile device cards and team-tree rows
+  were mouse-only.
+
+### Deploy
+1. Local: backend 1281 passed; frontend typecheck, lint, Prettier, 182
+   unit tests, 58 E2E tests, build, `npm audit --omit=dev` 0. (The agent
+   step of `scripts/preflight.sh` needs Go, absent on the workstation;
+   `agent/` is unchanged.)
+2. Server: guard passed; `.env` has `BACKEND_CORS_ORIGINS=["https://rdp.techi.com.al"]`
+   and allow-all off; dump; rollback tags; `git pull --ff-only` → `67d6855`;
+   `docker compose build backend frontend`; `nginx -t` in the new frontend
+   image OK; `alembic upgrade head` → `f2a3b4c5d6e7`;
+   `up -d --no-deps backend frontend`.
+3. Both healthy; guard and smoke passed; no traceback. Live: CSP, HSTS,
+   Permissions-Policy, X-Frame-Options, COOP present; `/health` 200;
+   `/auth/session` without cookie 401; `/auth/refresh` without CSRF 403;
+   CORS preflight allows credentials and `x-techi-csrf` for the frontend
+   origin; `/boot/theme.js` served. Load peaked at 16 during the builds
+   and fleet reconnect and was back to 5 two minutes after the restart.
+4. Two minutes after: 0 tracebacks, 0 5xx, 0 client errors; heartbeats
+   at ~2.3–2.7/s (access summary); 464 devices checked in within 3 min
+   and 728 within 10 min of 915 active. No operator had opened the
+   console yet, so `operator_sessions` was still empty.
+
+Not verified: an authenticated browser session (sign-in, token exchange,
+2FA setup) — no operator credentials in this session.
+
+Rollback: tag `pre-sessions-mfa-07c2cee` back to `:latest` for both
+images, `docker compose run --rm backend alembic downgrade e1f2a3b4c5d6`,
+`up -d --no-deps backend frontend`; code `git checkout 07c2cee`.
+
 ## [2026-10-12] RS-PAGE-REMOVAL-2026-10-12 — Remote Support page removed; service worker no longer caches extension requests
 
 Commits `e9d52bf` and `cb063bf`. Frontend only, deployed 2026-10-12.
