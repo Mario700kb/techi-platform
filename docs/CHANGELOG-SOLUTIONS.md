@@ -5,6 +5,67 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] RS-SECURITY-2026-10-12 — Remote Support: public shared password removed, real IPs, rotation, session audit, 2FA required (`de1b43f`, `f0035ca`, `b138224`)
+
+Backend, frontend, migration `d4e5f6a7b8c9` → `e5f6a7b8c9d0`, RustDesk server
+and firewall; deployed 2026-10-12 22:35–22:50 with the owner's approval of
+each step. Pre-deploy dump
+`/opt/backups/techi/pre-rs-security-2026-10-12_22-35.sql.gz` (`gzip -t` OK);
+rollback images `techi-platform-{backend,frontend}:pre-rs-security-a06d163`;
+`.env` backup `.env.bak-pre-rs-security-2026-10-12_22-35`; RustDesk compose
+backup `/opt/techi/rustdesk-server/docker-compose.yml.bak-pre-pin-*`.
+
+### Found (server-side analysis, read-only)
+
+- RustDesk server: OSS hbbs/hbbr 1.1.15 on this host, image `latest`
+  (unpinned), compose outside Git, logs unbounded, ports 21114/tcp and
+  21119/udp open with nothing listening. CPU < 1%, ~6 MB RAM; ~119 relay
+  sessions a day, the rest P2P.
+- hbbs holds 1,484 IDs for 918 platform devices; 56 machines have several
+  (identity churn, RISK-RS-001). ID 234232189 (V-Vadinska, Vasgroup, Dubai)
+  is also claimed by another installation from 80.227.198.6.
+- `/api/v1/bootstrap/domain.ps1` and `/gpo.ps1`, unauthenticated, embedded
+  the legacy shared Remote Support password: 24 downloads since May; the
+  audit recorded `172.18.0.1` (the proxy) for every request, so who
+  downloaded is unknown. Treated as compromised.
+- Connect hands each device's password to operators inside the URL (RustDesk
+  needs it); passwords never changed; no session audit; 2FA optional.
+- Trusted-domain auto-enrollment is off in production (no open door there).
+
+### Changed
+
+- No shared password in any script; code default empty; the server `.env`
+  holds it only for agents < 2.1.5 (15 devices) until they update.
+- Real client IPs: `FORWARDED_ALLOW_IPS` (compose gateway; port 8000 is
+  closed to the internet by TECHI-SEC1A) and every audit entry stamped with
+  the request IP. Also fixes login rate limiting and session IPs, which saw
+  one address for everyone. Verified live: bootstrap audit shows the
+  caller's public IP.
+- Per-device passwords rotate every 30 days at the nightly run, at most 150
+  a night, oldest first (898 were past 30 days: the first cycle spreads over
+  ~6 nights), skipping live sessions; "Rotate all now" in Settings →
+  Security (owner/admin, audited). Connect uses a device's previous password
+  until its next heartbeat delivers the new one (the agent applies it on
+  receipt), so rotation never breaks Connect.
+- Session audit: agents report `remote_session_active` (Windows, from the
+  connection-manager process; agent code for the next release); the
+  platform records start/end/duration in the audit log and device timeline,
+  attributed to the Connect request within 15 minutes; going offline ends a
+  session.
+- `MFA_REQUIRED_ROLES=owner,admin,operator`.
+- RustDesk server: compose from `scripts/rustdesk-server/` (pinned digest,
+  logs 3×10 MB), recreated with 0 relay sessions active; ~487 clients
+  re-registered within 30 s. hbbs reports 1.1.16 available — upgrade is now
+  deliberate.
+- `ufw delete allow 21114/tcp` and `21119/udp` (v4 and v6).
+- Self-update for agents < 2.1.1 was blocked: the bridge MSI's version
+  "2.1.20.0" was compared as text with "2.1.20". Fixed (`b138224`); batch
+  `74b8483a` queues self_update for the 13 legacy Windows devices.
+
+Tests: backend 1,347; agent `go test` + Windows build (golang:1.21);
+frontend unit 199, E2E 102. Guard and smoke passed after each restart; 0
+tracebacks.
+
 ## [2026-10-12] DATEPICKER-DRAWER-LINK-2026-10-12 — the app's own calendar; alerts open their device (`bdc395f`, `a1a9a7b`)
 
 Frontend only, deployed 2026-10-12. Rollback image
