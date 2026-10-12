@@ -250,13 +250,25 @@ export default function Devices() {
   const [patchMap, setPatchMap] = useState<Record<number, PatchStatus>>({});
   const [activeActionMap, setActiveActionMap] = useState<Record<number, ActiveActionEntry>>({});
 
-  const drawerDevice = useMemo(
-    () => (drawerDeviceId != null ? (tableDevices.find((d) => d.id === drawerDeviceId) ?? null) : null),
-    [drawerDeviceId, tableDevices],
-  );
+  // The device the drawer was opened with. A link from an alert, the bell or
+  // search names a device that is usually not on the table's current page;
+  // the drawer falls back to this copy (kept current by the same realtime
+  // patches) instead of finding nothing and staying closed.
+  const [drawerFallback, setDrawerFallback] = useState<Device | null>(null);
+  const drawerDevice = useMemo(() => {
+    if (drawerDeviceId == null) return null;
+    return (
+      tableDevices.find((d) => d.id === drawerDeviceId) ??
+      (drawerFallback?.id === drawerDeviceId ? drawerFallback : null)
+    );
+  }, [drawerDeviceId, tableDevices, drawerFallback]);
+  const patchDrawerFallback = useCallback((id: number, update: (device: Device) => Device) => {
+    setDrawerFallback((prev) => (prev && prev.id === id ? update(prev) : prev));
+  }, []);
 
   const openDrawer = useCallback((device: Device) => {
     window.clearTimeout(drawerCloseTimerRef.current);
+    setDrawerFallback(device);
     setDrawerInitialTab(undefined);
     setDrawerDeviceId(device.id);
     setDrawerOpen(true);
@@ -482,6 +494,7 @@ export default function Devices() {
     };
 
     const foundInTable = tableDevicesRef.current.some((d) => d.id === eventDevice.id);
+    setDrawerFallback((prev) => (prev && prev.id === eventDevice.id ? ({ ...prev, ...eventDevice } as Device) : prev));
 
     // In-place patch for the current page only (no add/remove — pagination handles that)
     setTableDevices((items) => applyPatch(items).nextItems);
@@ -779,6 +792,7 @@ export default function Devices() {
       return exists ? items.map((item) => (item.id === updated.id ? updated : item)) : [updated, ...items];
     };
     setTableDevices(upsert);
+    patchDrawerFallback(updated.id, () => updated);
   };
 
   const handleDeviceDelete = async (device: Device) => {
@@ -792,6 +806,7 @@ export default function Devices() {
 
   const handleDeviceArchive = async (device: Device) => {
     const updated = await archiveDevice(device.id);
+    patchDrawerFallback(device.id, () => updated);
     setTableDevices((items) =>
       items
         .map((item) => (item.id === device.id ? updated : item))
@@ -807,6 +822,7 @@ export default function Devices() {
 
   const handleDeviceRestore = async (device: Device) => {
     const updated = await restoreDevice(device.id);
+    patchDrawerFallback(device.id, () => updated);
     setTableDevices((items) =>
       filters.lifecycle_state === "archived"
         ? items.filter((item) => item.id !== device.id)

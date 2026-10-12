@@ -538,6 +538,11 @@ export async function mockApi(page: Page, initial: Partial<Omit<MockState, "unha
     const key = `${route.request().method()} ${url.pathname}`;
     const handler = HANDLERS[key];
     if (handler) return handler(route, state, url);
+    const oneDevice = url.pathname.match(/^\/api\/v1\/devices\/(\d+)$/);
+    if (oneDevice && route.request().method() === "GET") {
+      const found = DEVICES.find((d) => d.id === Number(oneDevice[1]));
+      return found ? json(route, found) : json(route, { detail: "Device not found" }, 404);
+    }
     const inventory = url.pathname.match(/^\/api\/v1\/devices\/(\d+)\/inventory$/);
     if (inventory && route.request().method() === "GET") {
       const id = Number(inventory[1]);
