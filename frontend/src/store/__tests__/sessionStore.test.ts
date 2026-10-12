@@ -85,4 +85,41 @@ describe("sessionStore boot", () => {
     await expect(store.loginSession("alice", "pw")).resolves.toEqual({ mfaToken: "challenge" });
     expect(store.getSessionSnapshot().user).toBeNull();
   });
+
+  it("renews the access cookie a minute before it expires, without waiting for a 401", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      const now = Date.now();
+      let refreshes = 0;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.endsWith("/api/v1/auth/session")) {
+          return jsonResponse({ ...SESSION, access_expires_at: new Date(now + 15 * 60_000).toISOString() });
+        }
+        if (url.endsWith("/api/v1/auth/refresh")) {
+          refreshes += 1;
+          return jsonResponse({
+            session_expires_at: SESSION.session_expires_at,
+            access_expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+          });
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+      const store = await freshStore();
+      await store.bootstrapSession();
+
+      await vi.advanceTimersByTimeAsync(13 * 60_000);
+      expect(refreshes).toBe(0);
+      await vi.advanceTimersByTimeAsync(60_000 + 1);
+      expect(refreshes).toBe(1);
+      // The renewed cookie schedules the next renewal the same way.
+      await vi.advanceTimersByTimeAsync(14 * 60_000 + 1);
+      expect(refreshes).toBe(2);
+
+      store.clearSession();
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(refreshes).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

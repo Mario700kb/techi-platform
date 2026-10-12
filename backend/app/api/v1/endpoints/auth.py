@@ -67,8 +67,12 @@ def _start_session(
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    set_session_cookies(response, operator, session, refresh_token)
-    return LoginResult(user=Operator.model_validate(operator), session_expires_at=session.expires_at)
+    access_expires_at = set_session_cookies(response, operator, session, refresh_token)
+    return LoginResult(
+        user=Operator.model_validate(operator),
+        session_expires_at=session.expires_at,
+        access_expires_at=access_expires_at,
+    )
 
 
 def _current_session_id(request: Request) -> Optional[str]:
@@ -157,8 +161,8 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         clear_session_cookies(expired)
         return expired
     session, new_token = rotated
-    set_session_cookies(response, operator, session, new_token)
-    return SessionInfo(session_expires_at=session.expires_at)
+    access_expires_at = set_session_cookies(response, operator, session, new_token)
+    return SessionInfo(session_expires_at=session.expires_at, access_expires_at=access_expires_at)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -212,6 +216,7 @@ def read_session(
         permissions=permission_data["permissions"],
         denied=permission_data["denied"],
         session_expires_at=session.expires_at if session else None,
+        access_expires_at=getattr(request.state, "access_expires_at", None),
         mfa_enrollment_required=mfa_enrollment_required(operator),
     )
 

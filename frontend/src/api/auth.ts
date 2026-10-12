@@ -86,6 +86,8 @@ export interface AuthSession {
   permissions: string[];
   denied: string[];
   session_expires_at: string | null;
+  /** When the access cookie this request carried expires. */
+  access_expires_at?: string | null;
   mfa_enrollment_required: boolean;
 }
 

@@ -327,3 +327,31 @@ def test_required_role_must_enrol_before_anything_else(db, monkeypatch):
 
     _enable_mfa(client)
     assert client.get("/api/v1/operators/").status_code == 200
+
+
+# -- renewing before expiry ----------------------------------------------------
+
+
+def _parse(ts: str):
+    from datetime import datetime
+
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def test_login_refresh_and_session_report_when_the_access_cookie_expires(db):
+    from datetime import timedelta
+
+    _operator(db)
+    client = _client(db)
+    access_window = timedelta(minutes=settings.SESSION_ACCESS_MINUTES)
+
+    login = _login(client).json()
+    login_exp = _parse(login["access_expires_at"])
+    assert abs((login_exp - utcnow()) - access_window) < timedelta(seconds=5)
+
+    session = client.get("/api/v1/auth/session").json()
+    # The session endpoint reports the expiry of the cookie that was sent.
+    assert abs(_parse(session["access_expires_at"]) - login_exp) < timedelta(seconds=2)
+
+    refreshed = client.post("/api/v1/auth/refresh", headers=CSRF).json()
+    assert abs((_parse(refreshed["access_expires_at"]) - utcnow()) - access_window) < timedelta(seconds=5)

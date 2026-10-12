@@ -2,7 +2,7 @@ import base64
 import hmac
 import hashlib
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import FrozenSet, Iterable, Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -115,6 +115,9 @@ def get_current_operator(
         if session is None or session.operator_id != operator_id:
             raise _credentials_error()
         request.state.session_id = session_id
+    exp = payload.get("exp")
+    if isinstance(exp, (int, float)):
+        request.state.access_expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
 
     operator = OperatorRepository(db).get(operator_id)
     if operator is None or not operator.is_active:

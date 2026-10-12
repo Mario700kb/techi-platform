@@ -135,19 +135,25 @@ class SessionService:
         self.db.commit()
 
 
-def access_token_for(operator: Operator, session: OperatorSession) -> str:
+def _access_lifetime(session: OperatorSession) -> timedelta:
     # Never outlives the session it belongs to.
     remaining = ensure_utc(session.expires_at) - utcnow()
-    lifetime = min(timedelta(minutes=settings.SESSION_ACCESS_MINUTES), remaining)
+    return min(timedelta(minutes=settings.SESSION_ACCESS_MINUTES), remaining)
+
+
+def access_token_for(operator: Operator, session: OperatorSession) -> str:
     return create_access_token(
         subject=str(operator.id),
-        expires_delta=lifetime,
+        expires_delta=_access_lifetime(session),
         extra_claims={"role": operator.role, "username": operator.username, "sid": session.id},
     )
 
 
-def set_session_cookies(response: Response, operator: Operator, session: OperatorSession, refresh_token: str) -> None:
+def set_session_cookies(response: Response, operator: Operator, session: OperatorSession, refresh_token: str) -> datetime:
+    """Sets both cookies; returns when the new access cookie expires, so the
+    browser can renew it shortly before instead of waiting for a 401."""
     common = {"httponly": True, "secure": settings.SESSION_COOKIE_SECURE, "samesite": "strict"}
+    access_expires_at = utcnow() + _access_lifetime(session)
     response.set_cookie(
         ACCESS_COOKIE,
         access_token_for(operator, session),
@@ -163,6 +169,7 @@ def set_session_cookies(response: Response, operator: Operator, session: Operato
         path=refresh_cookie_path(),
         **common,
     )
+    return access_expires_at
 
 
 def clear_session_cookies(response: Response) -> None:

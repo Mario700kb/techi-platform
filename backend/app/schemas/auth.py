@@ -25,6 +25,7 @@ class LoginResult(BaseModel):
     mfa_token: Optional[str] = None
     user: Optional[Operator] = None
     session_expires_at: Optional[datetime] = None
+    access_expires_at: Optional[datetime] = None
 
 
 class MfaLoginRequest(BaseModel):
@@ -34,6 +35,8 @@ class MfaLoginRequest(BaseModel):
 
 class SessionInfo(BaseModel):
     session_expires_at: datetime
+    # When the access cookie just set expires; the browser renews before it.
+    access_expires_at: datetime
 
 
 class AuthSession(BaseModel):
@@ -41,6 +44,7 @@ class AuthSession(BaseModel):
     permissions: List[str]
     denied: List[str]
     session_expires_at: Optional[datetime] = None
+    access_expires_at: Optional[datetime] = None
     mfa_enrollment_required: bool = False
 
 

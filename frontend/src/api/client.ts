@@ -45,7 +45,13 @@ const REFRESH_PATH = "/api/v1/auth/refresh";
 export const DEFAULT_TIMEOUT_MS = 30_000;
 let unauthorizedHandler: (() => void) | null = null;
 let mfaEnrollmentHandler: (() => void) | null = null;
-let sessionRefreshedHandler: ((sessionExpiresAt: string) => void) | null = null;
+export interface SessionTimes {
+  /** The session's absolute end. */
+  sessionExpiresAt: string;
+  /** When the access cookie just issued expires; renew shortly before it. */
+  accessExpiresAt: string | null;
+}
+let sessionRefreshedHandler: ((times: SessionTimes) => void) | null = null;
 let sessionActive = false;
 let refreshInFlight: Promise<boolean> | null = null;
 
@@ -74,7 +80,7 @@ export function setMfaEnrollmentHandler(handler: (() => void) | null): void {
   mfaEnrollmentHandler = handler;
 }
 
-export function setSessionRefreshedHandler(handler: ((sessionExpiresAt: string) => void) | null): void {
+export function setSessionRefreshedHandler(handler: ((times: SessionTimes) => void) | null): void {
   sessionRefreshedHandler = handler;
 }
 
@@ -113,8 +119,16 @@ export function refreshSession(): Promise<boolean> {
     })
       .then(async (response) => {
         if (!response.ok) return false;
-        const body = (await response.json().catch(() => null)) as { session_expires_at?: string } | null;
-        if (body?.session_expires_at) sessionRefreshedHandler?.(body.session_expires_at);
+        const body = (await response.json().catch(() => null)) as {
+          session_expires_at?: string;
+          access_expires_at?: string;
+        } | null;
+        if (body?.session_expires_at) {
+          sessionRefreshedHandler?.({
+            sessionExpiresAt: body.session_expires_at,
+            accessExpiresAt: body.access_expires_at ?? null,
+          });
+        }
         return true;
       })
       .catch(() => false)

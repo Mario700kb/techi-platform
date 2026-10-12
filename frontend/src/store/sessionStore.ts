@@ -63,6 +63,8 @@ let snapshot: SessionSnapshot = {
 };
 setSessionActive(Boolean(persisted));
 let bootstrapPromise: Promise<void> | null = null;
+let renewalTimer: ReturnType<typeof setTimeout> | null = null;
+let renewalDueAt: number | null = null;
 let sessionGeneration = 0;
 const listeners = new Set<Listener>();
 
@@ -82,9 +84,50 @@ function persistSession(session: AuthSession): void {
   }
 }
 
+/** Renew this long before the access cookie expires. */
+const RENEW_BEFORE_MS = 60_000;
+
+function cancelRenewal(): void {
+  if (renewalTimer) clearTimeout(renewalTimer);
+  renewalTimer = null;
+  renewalDueAt = null;
+}
+
+/**
+ * Renews the access cookie a minute before it expires, so requests never hit
+ * a 401 first (each such 401 used to show in the console and delay the
+ * request by a round trip). The 401 → refresh → retry path in apiFetch stays
+ * as the fallback, e.g. after a laptop wakes from sleep.
+ */
+function scheduleRenewal(accessExpiresAt: string | null | undefined): void {
+  cancelRenewal();
+  if (!accessExpiresAt) return;
+  const expires = Date.parse(accessExpiresAt);
+  if (Number.isNaN(expires)) return;
+  renewalDueAt = expires - RENEW_BEFORE_MS;
+  renewalTimer = setTimeout(
+    () => {
+      renewalTimer = null;
+      void refreshSession();
+    },
+    Math.max(renewalDueAt - Date.now(), 5_000),
+  );
+}
+
+// Background tabs throttle timers; catch up as soon as the tab is shown.
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && renewalDueAt !== null && Date.now() >= renewalDueAt) {
+      cancelRenewal();
+      void refreshSession();
+    }
+  });
+}
+
 function applyAuthenticatedSession(session: AuthSession): void {
   persistSession(session);
   setSessionActive(true);
+  scheduleRenewal(session.access_expires_at);
   emit({
     user: session.user,
     permissions: session.permissions,
@@ -97,6 +140,7 @@ function applyAuthenticatedSession(session: AuthSession): void {
 /** Forgets the session in this tab. Does not tell the server; see logoutSession. */
 export function clearSession(): void {
   sessionGeneration += 1;
+  cancelRenewal();
   setSessionActive(false);
   try {
     window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
@@ -132,8 +176,10 @@ setUnauthorizedHandler(handleUnauthorized);
 setMfaEnrollmentHandler(() => {
   if (!snapshot.mfaEnrollmentRequired) emit({ ...snapshot, mfaEnrollmentRequired: true });
 });
-setSessionRefreshedHandler((sessionExpiresAt) => {
-  if (snapshot.user) emit({ ...snapshot, sessionExpiresAt });
+setSessionRefreshedHandler(({ sessionExpiresAt, accessExpiresAt }) => {
+  if (!snapshot.user) return;
+  scheduleRenewal(accessExpiresAt);
+  emit({ ...snapshot, sessionExpiresAt });
 });
 
 /**
