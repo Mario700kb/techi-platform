@@ -244,7 +244,10 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
 
 export async function fetchJson<T>(path: string, init?: ApiRequestInit): Promise<T> {
   const response = await apiFetch(path, init);
-  return response.json() as Promise<T>;
+  // 204 No Content (most deletes) has no body to parse.
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export async function fetchText(path: string, init?: ApiRequestInit): Promise<string> {

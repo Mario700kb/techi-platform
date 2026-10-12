@@ -39,6 +39,11 @@ describe("api client", () => {
     expect(init.headers.Authorization).toBeUndefined();
   });
 
+  it("resolves a 204 No Content delete instead of failing to parse an empty body", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(fetchJson<void>("/api/v1/notifications/rules/3", { method: "DELETE" })).resolves.toBeUndefined();
+  });
+
   it("surfaces the server's detail message as ApiError", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ detail: "Device not found" }, 404));
     await expect(fetchJson("/api/v1/x")).rejects.toMatchObject({
