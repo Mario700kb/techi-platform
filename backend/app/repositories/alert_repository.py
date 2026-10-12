@@ -92,7 +92,13 @@ class AlertRepository:
         q = self.db.query(DeviceAlert).filter(DeviceAlert.device_id == device_id)
         if state is not None:
             q = q.filter(DeviceAlert.state == state)
-        return q.order_by(DeviceAlert.created_at.desc()).limit(limit).all()
+        if state == "resolved":
+            # "Recently resolved" means resolved recently: an alert opened days
+            # ago but resolved an hour ago belongs at the top.
+            order = (DeviceAlert.resolved_at.desc().nulls_last(), DeviceAlert.id.desc())
+        else:
+            order = (DeviceAlert.created_at.desc(), DeviceAlert.id.desc())
+        return q.order_by(*order).limit(limit).all()
 
     def _in_scope(self, query, scope: Optional["AllowedScope"]):
         # Alerts belong to devices: an operator sees, counts and resolves only

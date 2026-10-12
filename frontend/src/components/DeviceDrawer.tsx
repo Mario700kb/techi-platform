@@ -209,7 +209,26 @@ function patchStateClass(state?: string): string {
   return "border-amber-400/30 bg-amber-400/10 text-amber-200";
 }
 
+function alertDuration(alert: Alert): string | null {
+  if (!alert.resolved_at) return null;
+  const minutes = Math.max(
+    0,
+    Math.round((parseUTC(alert.resolved_at).getTime() - parseUTC(alert.created_at).getTime()) / 60_000),
+  );
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} h ${minutes % 60} min` : `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
 function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolean }) {
+  // A resolved alert is dated by when it was resolved; when it opened and how
+  // long it lasted are in the tooltip.
+  const at = resolved && alert.resolved_at ? alert.resolved_at : alert.created_at;
+  const duration = resolved ? alertDuration(alert) : null;
+  const title =
+    resolved && alert.resolved_at
+      ? `Opened ${formatDateTime(alert.created_at)} · resolved ${formatDateTime(alert.resolved_at)}${duration ? ` · lasted ${duration}` : ""}`
+      : formatDateTime(alert.created_at);
   return (
     <div className={`flex items-start gap-2 py-2 ${resolved ? "opacity-65" : ""}`}>
       <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${alertSeverityDot(alert.severity)}`} />
@@ -219,12 +238,8 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
             {alert.severity}
           </span>
           {resolved && <span className="text-[12px] text-slate-500">Resolved</span>}
-          <time
-            dateTime={alert.created_at}
-            title={formatDateTime(alert.created_at)}
-            className="ml-auto flex-none text-[12px] text-slate-500"
-          >
-            {timeAgo(alert.created_at)}
+          <time dateTime={at} title={title} className="ml-auto flex-none text-[12px] text-slate-500">
+            {timeAgo(at)}
           </time>
         </div>
         <p className="text-xs leading-5 text-slate-200">{alert.message}</p>

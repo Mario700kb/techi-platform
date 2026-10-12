@@ -146,7 +146,7 @@ export default function DeviceDetailsMobile() {
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetrySnapshot[]>([]);
 
   const telemetry = useDeviceTelemetry({ deviceId: device ? deviceId : null, latestEvent });
-  const deviceAlerts = useDeviceAlerts({ deviceId });
+  const deviceAlerts = useDeviceAlerts({ deviceId, latestEvent });
   const activity = useDeviceActivity({ deviceId, latestEvent, enabled: timelineOpen });
 
   useEffect(() => {
