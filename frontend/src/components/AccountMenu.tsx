@@ -52,7 +52,7 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`th-nav-item w-full ${compact ? "justify-center px-0" : "py-2"}`}
+        className="th-nav-item th-account-trigger w-full overflow-hidden"
         data-active={open}
         title={compact ? name : undefined}
         aria-haspopup="menu"
@@ -62,10 +62,16 @@ export default function AccountMenu({ compact = false, onNavigate }: AccountMenu
         {!compact && (
           <>
             <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+              <span
+                className="block truncate text-[13px] font-semibold leading-[18px]"
+                style={{ color: "var(--th-text-primary)" }}
+              >
                 {name}
               </span>
-              <span className="block truncate text-[12px] font-normal" style={{ color: "var(--th-text-muted)" }}>
+              <span
+                className="block truncate text-[12px] font-normal leading-4"
+                style={{ color: "var(--th-text-muted)" }}
+              >
                 {user.email || user.username}
               </span>
             </span>

@@ -2190,6 +2190,35 @@ textarea:focus-visible,
     background-color 120ms ease,
     color 120ms ease;
 }
+/* Sidebar geometry is the same collapsed and expanded (only the width
+   animates): 12px nav padding + 12px item padding puts every icon at 24px,
+   the centre of the 64px collapsed rail. */
+.th-sidebar .th-nav-item {
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.th-sidebar .th-account-trigger {
+  min-height: 50px;
+  padding: 8px 6px;
+}
+.th-nav-section-slot {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  margin-bottom: 6px;
+}
+.th-nav-section-slot .th-nav-section {
+  margin: 0;
+  padding: 0 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.th-nav-section-rule {
+  display: block;
+  width: 100%;
+  margin: 0 8px;
+  border-top: 1px solid var(--th-sidebar-divider);
+}
 .th-nav-item:hover {
   background: var(--th-sidebar-nav-hover);
   color: var(--th-text-primary);

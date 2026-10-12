@@ -38,8 +38,11 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       data-expanded={expanded}
     >
       {/* Brand */}
+      {/* Fixed left offsets in both states, so nothing moves while the width
+          animates: the symbol sits at 18px (the full logo's symbol lines up
+          with the collapsed one), nav icons at 24px, the avatar at 18px. */}
       <div
-        className={`flex h-14 flex-none items-center border-b ${expanded ? "px-4" : "justify-center"}`}
+        className="flex h-14 flex-none items-center overflow-hidden border-b pl-[18px]"
         style={{ borderColor: "var(--th-border-default)" }}
       >
         <button
@@ -65,15 +68,19 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       </div>
 
       {/* Navigation */}
-      <nav className={`min-h-0 flex-1 overflow-y-auto pb-3 pt-3 ${expanded ? "px-3" : "px-2"}`} aria-label="Main">
+      <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-3" aria-label="Main">
         {sections.map((section, index) => (
           <div key={section.id} className={index === 0 ? "pt-1" : "pt-5"}>
-            {section.label &&
-              (expanded ? (
-                <p className="th-nav-section">{section.label}</p>
-              ) : (
-                <div className="mx-2 mb-3 border-t" style={{ borderColor: "var(--th-sidebar-divider)" }} />
-              ))}
+            {section.label && (
+              // Same height either way, so the items below do not jump.
+              <div className="th-nav-section-slot">
+                {expanded ? (
+                  <p className="th-nav-section">{section.label}</p>
+                ) : (
+                  <span className="th-nav-section-rule" aria-hidden="true" />
+                )}
+              </div>
+            )}
             <ul className="space-y-0.5">
               {section.items.map((item) => {
                 const Icon = item.icon;
@@ -87,7 +94,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
                       title={expanded ? undefined : item.label}
                       aria-label={expanded ? undefined : item.label}
                       onClick={onNavigate}
-                      className={`th-nav-item ${expanded ? "" : "justify-center px-0"}`}
+                      className="th-nav-item"
                       data-active={active}
                     >
                       <span className="relative flex flex-none">
@@ -112,10 +119,7 @@ export default function Sidebar({ collapsed, onCollapsedChange, onNavigate }: Si
       </nav>
 
       {/* Account */}
-      <div
-        className={`flex-none border-t py-3 ${expanded ? "px-3" : "px-2"}`}
-        style={{ borderColor: "var(--th-sidebar-divider)" }}
-      >
+      <div className="flex-none border-t px-3 py-3" style={{ borderColor: "var(--th-sidebar-divider)" }}>
         <AccountMenu compact={!expanded} onNavigate={onNavigate} />
       </div>
     </aside>
