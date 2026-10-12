@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] SWEEP-INDEX-2026-10-12 — the offline-alert sweep is one index seek per device (`2a7e978`)
+
+Backend and migration `c3d4e5f6a7b8` → `d4e5f6a7b8c9`, deployed 2026-10-12
+20:12. Pre-deploy dump `/opt/backups/techi/pre-sweep-index-2026-10-12_20-10.sql.gz`
+(`gzip -t` OK); rollback image `techi-platform-backend:pre-sweep-index-bba6b22`.
+
+Found checking OFFLINE-POLICY in production: the sweep's query took 119 ms
+every 30 s. For each offline always-on device, "an offline alert opened since
+the last contact?" read every offline alert the device ever had (~600 for
+servers that flapped before the policy; 989,081 alerts in the table). Index
+(device_id, kind, created_at), built CONCURRENTLY in 8 s (valid, 30 MB), and
+the OR split into two NOT EXISTS. Measured: query 143 ms → 7 ms; a full
+sweep pass ~25 ms warm.
+
+Deploy: guard; dump; rollback tag; pull; build; migration; backend
+recreated; healthy; guard and smoke passed. Disk 85% after the day's
+pre-deploy dumps.
+
 ## [2026-10-12] OFFLINE-POLICY-2026-10-12 — offline alerts follow working hours and device role (`999f18a`)
 
 Backend only, no migration, deployed 2026-10-12 20:04. Pre-deploy dump
