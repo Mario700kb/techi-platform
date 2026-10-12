@@ -12,8 +12,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
 from app.db.base import Base
-# Import all models so Alembic can detect them
-from app.models import Client, Device, DeviceGroup, DeviceHeartbeat, DeviceStatusHistory, DeviceTelemetry, EnrollmentAudit, EnrollmentToken, Operator, TrustedDomain
+# Registers every model on Base.metadata so `alembic revision --autogenerate`
+# sees the whole schema. Imported for that side effect only.
+import app.models  # noqa: F401
 
 # this is the Alembic Config object, which provides access to the values within the .ini file in use.
 config = context.config
