@@ -1,10 +1,24 @@
+import json
 import logging
 import os
 import secrets
-from typing import Any, List
+from typing import Annotated, Any, List
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
+
+
+def _string_list(value: Any) -> Any:
+    """A list setting from the environment, either JSON (`["a","b"]`) or
+    comma-separated (`a,b`). NoDecode on the field stops pydantic-settings
+    from insisting on JSON — with it, `MFA_REQUIRED_ROLES=owner,admin`
+    failed settings parsing and the backend would not start."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.startswith("["):
+        return json.loads(text)
+    return [item.strip() for item in text.split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
@@ -18,7 +32,7 @@ class Settings(BaseSettings):
     DISPLAY_TIMEZONE: str = "Europe/Tirane"
     # Host backup folder, mounted read-only for the System status panel.
     BACKUP_DIR: str = "/backups"
-    BACKEND_CORS_ORIGINS: List[str] = [
+    BACKEND_CORS_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
@@ -48,7 +62,7 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = True
     # Comma-separated roles that must use two-factor authentication, e.g.
     # "owner,admin". Empty = MFA is optional for everyone.
-    MFA_REQUIRED_ROLES: List[str] = []
+    MFA_REQUIRED_ROLES: Annotated[List[str], NoDecode] = []
     MFA_ISSUER: str = "TECHI Connect"
     BOOTSTRAP_OWNER_USERNAME: str = "owner"
     BOOTSTRAP_OWNER_EMAIL: str = "owner@localhost"
@@ -152,16 +166,13 @@ class Settings(BaseSettings):
     @field_validator("MFA_REQUIRED_ROLES", mode="before")
     @classmethod
     def assemble_mfa_roles(cls, value):
-        if isinstance(value, str):
-            return [role.strip().lower() for role in value.split(",") if role.strip()]
-        return value
+        roles = _string_list(value)
+        return [str(role).strip().lower() for role in roles] if isinstance(roles, list) else roles
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, value):
-        if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
+        return _string_list(value)
 
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
