@@ -128,3 +128,20 @@ def test_rotate_all_covers_every_device_whose_agent_applies_it(db):
 
 def test_public_scripts_and_code_carry_no_shared_password():
     assert settings.RUSTDESK_DEFAULT_PASSWORD == ""
+
+
+def test_a_night_rotates_at_most_the_cap_oldest_first(db, monkeypatch):
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS", 30)
+    monkeypatch.setattr(settings, "REMOTE_SUPPORT_PASSWORD_ROTATION_PER_NIGHT", 2)
+    svc = RemoteSupportPasswordService(db)
+    devices = [_device(db, hostname=f"pc-{i}") for i in range(4)]
+    for age, device in zip((40, 90, 60, 35), devices):
+        svc.get_or_create(device)
+        device.remote_support_password_updated_at = (utcnow() - timedelta(days=age)).replace(tzinfo=None)
+    db.commit()
+    before = {d.id: d.remote_support_password_ciphertext for d in devices}
+
+    assert svc.rotate_due() == 2
+
+    rotated = {d.hostname for d in devices if d.remote_support_password_ciphertext != before[d.id]}
+    assert rotated == {"pc-1", "pc-2"}  # 90 and 60 days old

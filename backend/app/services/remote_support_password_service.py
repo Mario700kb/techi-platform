@@ -84,8 +84,9 @@ class RemoteSupportPasswordService:
 
     def rotate_due(self, *, now: Optional[datetime] = None) -> int:
         """Rotates generated passwords older than the rotation period on
-        devices whose agent applies them, skipping live sessions (applying a
-        password restarts Remote Support). Returns how many were rotated."""
+        devices whose agent applies them, oldest first and at most
+        REMOTE_SUPPORT_PASSWORD_ROTATION_PER_NIGHT, skipping live sessions
+        (applying a password restarts Remote Support). Returns the count."""
         days = settings.REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS
         if days <= 0:
             return 0
@@ -99,10 +100,14 @@ class RemoteSupportPasswordService:
                 Device.remote_support_password_updated_at <= cutoff,
                 Device.rustdesk_session_active.is_(False),
             )
+            .order_by(Device.remote_support_password_updated_at.asc())
             .all()
         )
+        limit = settings.REMOTE_SUPPORT_PASSWORD_ROTATION_PER_NIGHT
         rotated = 0
         for device in due:
+            if limit > 0 and rotated >= limit:
+                break
             if agent_applies_per_device_password(device):
                 self.rotate(device)
                 rotated += 1

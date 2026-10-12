@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # Per-device Remote Support passwords are replaced this often at the
     # nightly run (0 = never); "rotate all" in Settings does it at once.
     REMOTE_SUPPORT_PASSWORD_ROTATION_DAYS: int = 30
+    # At most this many per night, oldest first, so a rotation never touches
+    # the whole fleet at once (the first cycle spreads over several nights).
+    REMOTE_SUPPORT_PASSWORD_ROTATION_PER_NIGHT: int = 150
     RUSTDESK_DEEP_LINK_PASSWORD_ENABLED: bool = True
     RUSTDESK_SERVER_DB_PATH: str = ""
     RUSTDESK_RESOLVER_ENABLED: bool = False
