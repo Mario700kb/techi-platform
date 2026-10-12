@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] BADGE-WHITE-2026-10-12 — critical alert badge text white again (`a7dc6fb`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-badge-6679e26`.
+
+The AA contrast change in SESSIONS-MFA-ENTERPRISE gave the top-bar count
+badge dark text (for the yellow warning variant) and the red critical
+variant inherited it. Critical now sets white text on --th-critical-fill
+(4.8:1); warning keeps dark text (white on that yellow is 2.5:1).
+
+Deploy: guard passed; rollback tag; `git pull --ff-only` → `a7dc6fb`;
+frontend rebuilt, `nginx -t` OK, recreated; healthy; guard and smoke
+passed. The live CSS carries
+`.th-count-badge[data-tone=critical]{color:var(--th-on-accent);background:var(--th-critical-fill)}`.
+
 ## [2026-10-12] SESSIONS-MFA-ENTERPRISE-2026-10-12 — cookie sessions, two-factor sign-in, frontend enterprise hardening
 
 `07c2cee` → `67d6855` (16 commits). Backend and frontend, deployed
