@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] SW-FIX-2026-10-12 — the service worker always answers with a real Response (`f408fa7`)
+
+Frontend only, deployed 2026-10-12 23:2x. Rollback image
+`techi-platform-frontend:pre-sw-fix-8b62e95`.
+
+Console: "Failed to convert value to 'Response'" / "The FetchEvent for
+/login resulted in a network error". A navigation or uncached asset that
+could not be fetched (e.g. during a frontend restart) fell back to
+`cache.match()`, which resolved to undefined, so the page did not load.
+Now: navigations are network-first with the cached shell, else a small
+offline page (503); uncached assets that fail are `Response.error()`; the
+shell is refreshed by every successful navigation (it was cached once at
+install and pointed at assets later deploys removed); redirects/errors are
+never cached; runtime cache capped at 150; caches renamed v2. `sw.js` is
+served `no-store`, so browsers pick it up on the next load. Unit tests run
+`sw.js` against fake fetch/caches (six of seven fail on the old worker).
+
 ## [2026-10-12] AUTH-GRACE-2026-10-12 — tabs no longer sign each other out; quick-filter motion (`62d2f1d`, `d174430`)
 
 Backend, frontend and migration `e5f6a7b8c9d0` → `f6a7b8c9d0e1`, deployed
