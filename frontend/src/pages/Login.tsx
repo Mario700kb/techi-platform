@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { getPreferredDefaultScreen } from "./Settings";
+import { getPreferredDefaultScreen } from "../utils/defaultScreen";
 import { SESSION_EXPIRED_FLAG } from "../store/sessionStore";
 import pkg from "../../package.json";
 

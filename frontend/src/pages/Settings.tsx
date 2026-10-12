@@ -23,6 +23,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
 import SecurityCard from "../components/security/SecurityCard";
+import { DefaultScreen, getPreferredDefaultScreen, setPreferredDefaultScreen } from "../utils/defaultScreen";
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import { type ConnectPreference, listConnectPreferences, resetConnectPreference } from "../api/connect";
@@ -36,15 +37,6 @@ import pkg from "../../package.json";
  * subscriptions) that does not exist, and a toggle without it would be a
  * non-functional placeholder.
  */
-
-const DEFAULT_SCREEN_KEY = "techi.preferences.defaultScreen";
-export type DefaultScreen = "/" | "/devices" | "/alerts";
-
-export function getPreferredDefaultScreen(): DefaultScreen {
-  if (typeof window === "undefined") return "/";
-  const stored = window.localStorage.getItem(DEFAULT_SCREEN_KEY);
-  return stored === "/devices" || stored === "/alerts" ? stored : "/";
-}
 
 const ROLE_TONE: Record<string, string> = {
   owner: "var(--th-accent)",
@@ -149,7 +141,7 @@ export default function Settings() {
 
   const handleDefaultScreen = (id: DefaultScreen) => {
     setDefaultScreen(id);
-    window.localStorage.setItem(DEFAULT_SCREEN_KEY, id);
+    setPreferredDefaultScreen(id);
   };
 
   const handleCopyDiagnostics = async () => {
