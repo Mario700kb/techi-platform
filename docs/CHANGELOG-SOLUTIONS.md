@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-12] ALERT-KINDS-2026-10-12 — device drawer names each alert kind; resolved history up to 20 (`5cee825`)
+
+Frontend only, deployed 2026-10-12. Rollback image
+`techi-platform-frontend:pre-alert-kinds-19fad6b`.
+
+"Recently resolved" read as critical-only: rows showed just the severity
+and the message, and only five appeared (Mario-Lenovo's single High CPU
+alert was sixth). Rows now lead with the alert kind and its icon in the
+severity colour, with a Critical / Warning / Info chip; the last 20
+resolved alerts are kept, five shown and "Show N more" for the rest. The
+new E2E also exposed an unhandled rejection when a device health refresh
+failed (useDeviceTelemetry had no catch); it keeps the last known health.
+
+Deploy: guard; rollback tag; pull; frontend built; `nginx -t` OK;
+recreated; healthy; guard and smoke passed. The live Devices chunk carries
+the change.
+
 ## [2026-10-12] ALERTS-CURRENT-2026-10-12 — device alerts stay current; "recently resolved" by resolution time (`1ad0f6d`)
 
 Backend and frontend, deployed 2026-10-12 14:35. No migration. Pre-deploy
