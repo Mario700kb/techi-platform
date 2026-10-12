@@ -142,9 +142,14 @@ class OfflineAlertSweep:
         open_alert = DeviceAlert.state == AlertState.OPEN
         offline_alert = and_(DeviceAlert.device_id == Device.id, DeviceAlert.kind == AlertKind.DEVICE_OFFLINE)
 
-        due = self._out_too_long(now).filter(
-            ~exists().where(offline_alert, or_(open_alert, DeviceAlert.created_at >= Device.last_seen))
-        ).all()
+        # Two NOT EXISTS rather than one with an OR: each is a single index
+        # seek, (device_id, kind, state) and (device_id, kind, created_at).
+        due = (
+            self._out_too_long(now)
+            .filter(~exists().where(offline_alert, open_alert))
+            .filter(~exists().where(offline_alert, DeviceAlert.created_at >= Device.last_seen))
+            .all()
+        )
 
         absent = self._long_absent(now)
         if absent is not None:

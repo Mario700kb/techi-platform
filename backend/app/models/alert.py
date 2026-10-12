@@ -34,6 +34,8 @@ class DeviceAlert(Base):
     __tablename__ = "device_alerts"
     __table_args__ = (
         Index("ix_device_alerts_device_kind_state", "device_id", "kind", "state"),
+        # OfflineAlertSweep: "an offline alert opened since the last contact?"
+        Index("ix_device_alerts_device_kind_created", "device_id", "kind", "created_at"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
