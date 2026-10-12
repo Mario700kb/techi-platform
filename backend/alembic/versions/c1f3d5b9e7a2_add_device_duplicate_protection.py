@@ -20,7 +20,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("duplicate_of_device_id", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("duplicate_score", sa.Float(), nullable=True))
 
-    op.execute("UPDATE devices SET duplicate_candidate = 0 WHERE duplicate_candidate IS NULL")
+    op.execute("UPDATE devices SET duplicate_candidate = false WHERE duplicate_candidate IS NULL")
 
     with op.batch_alter_table("devices") as batch_op:
         batch_op.alter_column("duplicate_candidate", existing_type=sa.Boolean(), nullable=False)

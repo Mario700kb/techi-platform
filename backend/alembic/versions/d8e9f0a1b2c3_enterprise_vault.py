@@ -15,8 +15,54 @@ branch_labels = None
 depends_on = None
 
 
+def _create_phase4_vault_tables() -> None:
+    """The Phase 4 vault tables, as production has them.
+
+    They were first created outside Alembic (2026-07-07), so on an existing
+    database this is a no-op; on an empty one — a new environment, or a
+    rebuild after a disaster — this revision would otherwise fail on a table
+    that no migration ever created.
+    """
+    op.create_table(
+        "vault_credentials",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("name", sa.String(160), nullable=False),
+        sa.Column("credential_type", sa.String(32), nullable=False),
+        sa.Column("scope_type", sa.String(16), nullable=False, server_default="global"),
+        sa.Column("client_id", sa.Integer(), sa.ForeignKey("clients.id"), nullable=True),
+        sa.Column("group_id", sa.Integer(), sa.ForeignKey("device_groups.id"), nullable=True),
+        sa.Column("device_id", sa.Integer(), sa.ForeignKey("devices.id"), nullable=True),
+        sa.Column("username", sa.String(160), nullable=True),
+        sa.Column("ciphertext", sa.Text(), nullable=False),
+        sa.Column("dek_wrapped", sa.Text(), nullable=False),
+        sa.Column("notes", sa.String(500), nullable=True),
+        sa.Column("created_by", sa.String(128), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column("rotated_at", sa.DateTime(), nullable=True),
+        sa.Column("last_used_at", sa.DateTime(), nullable=True),
+    )
+    for column in ("scope_type", "client_id", "group_id", "device_id"):
+        op.create_index(f"ix_vault_credentials_{column}", "vault_credentials", [column])
+    op.create_table(
+        "vault_credential_usage",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("credential_id", sa.Integer(), sa.ForeignKey("vault_credentials.id"), nullable=False),
+        sa.Column("operator_username", sa.String(128), nullable=True),
+        sa.Column("device_id", sa.Integer(), nullable=True),
+        sa.Column("action", sa.String(24), nullable=False),
+        sa.Column("reason", sa.String(300), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+    )
+    op.create_index("ix_vault_credential_usage_credential_id", "vault_credential_usage", ["credential_id"])
+    op.create_index("ix_vault_credential_usage_created_at", "vault_credential_usage", ["created_at"])
+
+
 def upgrade():
     inspector = inspect(op.get_bind())
+    if "vault_credentials" not in set(inspector.get_table_names()):
+        _create_phase4_vault_tables()
+        inspector = inspect(op.get_bind())
     tables = set(inspector.get_table_names())
     credential_columns = {column["name"] for column in inspector.get_columns("vault_credentials")}
     if "purpose" not in credential_columns:

@@ -20,7 +20,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("archived_at", sa.DateTime(), nullable=True))
         batch_op.add_column(sa.Column("archived_by", sa.String(length=128), nullable=True))
 
-    op.execute("UPDATE devices SET is_archived = 0 WHERE is_archived IS NULL")
+    op.execute("UPDATE devices SET is_archived = false WHERE is_archived IS NULL")
 
     with op.batch_alter_table("devices") as batch_op:
         batch_op.alter_column("is_archived", existing_type=sa.Boolean(), nullable=False)

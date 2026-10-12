@@ -22,7 +22,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("maintenance_note", sa.String(length=255), nullable=True))
         batch_op.add_column(sa.Column("maintenance_started_by", sa.String(length=128), nullable=True))
 
-    op.execute("UPDATE devices SET is_in_maintenance = 0 WHERE is_in_maintenance IS NULL")
+    op.execute("UPDATE devices SET is_in_maintenance = false WHERE is_in_maintenance IS NULL")
 
     with op.batch_alter_table("devices") as batch_op:
         batch_op.alter_column("is_in_maintenance", existing_type=sa.Boolean(), nullable=False)

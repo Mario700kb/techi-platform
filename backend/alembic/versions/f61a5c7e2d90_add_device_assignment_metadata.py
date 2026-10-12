@@ -19,7 +19,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("auto_assigned", sa.Boolean(), nullable=True))
         batch_op.add_column(sa.Column("assignment_source", sa.String(length=40), nullable=True))
 
-    op.execute("UPDATE devices SET auto_assigned = 0 WHERE auto_assigned IS NULL")
+    op.execute("UPDATE devices SET auto_assigned = false WHERE auto_assigned IS NULL")
     op.execute(
         """
         UPDATE devices
