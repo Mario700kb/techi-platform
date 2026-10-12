@@ -120,8 +120,13 @@ class Device(Base):
     auto_assigned = Column(Boolean, default=False, nullable=False)
     assignment_source = Column(String(40), default="manual", nullable=False)
 
-    client = relationship("Client", back_populates="devices")
-    group = relationship("DeviceGroup", back_populates="devices")
+    # Joined: every heartbeat reads client_name/group_name, and each commit in
+    # the heartbeat path expires the device, so lazy loading re-selected the
+    # client and the group after every commit — 6 of a heartbeat's 17
+    # queries, ~135M scans of these two small tables in production. Joined,
+    # the device's own refresh brings both along.
+    client = relationship("Client", back_populates="devices", lazy="joined")
+    group = relationship("DeviceGroup", back_populates="devices", lazy="joined")
     heartbeats = relationship("DeviceHeartbeat", back_populates="device")
     remote_actions = relationship("RemoteAction", back_populates="device", cascade="all, delete-orphan")
     notes = relationship("DeviceNote", back_populates="device", cascade="all, delete-orphan")
