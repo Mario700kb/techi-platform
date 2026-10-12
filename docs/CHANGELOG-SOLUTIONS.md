@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] SIDEBAR-GEOMETRY-2026-10-13 — icons stay still while the sidebar collapses (`d42c9c5`)
+
+Frontend only, deployed 2026-10-13. Rollback image
+`techi-platform-frontend:pre-sidebar-geometry-a015659`. The owner asked
+that icons not move during collapse. Paddings, the section title/divider
+swap, the centred logo and the account row height all differed between
+states. One geometry now: logo at 18px, nav icons at 24px (centre of the
+64px rail), avatar at 18px, equal-height section slots and account row;
+only the width animates. E2E measures every icon, the logo and the avatar
+in both states.
+
 ## [2026-10-13] BRAND-CONNECT-2026-10-13 — the Connect logo set replaces the old TECHI marks (`c772c8b`)
 
 Frontend and backend, deployed 2026-10-13. Rollback images
