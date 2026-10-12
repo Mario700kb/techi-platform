@@ -15,16 +15,7 @@
     <title>TECHI Connect</title>
     <meta name="application-name" content="TECHI Connect" />
     <meta name="description" content="TECHI Connect — remote monitoring and support for managed devices." />
-    <script>
-      (function () {
-        var t = localStorage.getItem("techi.theme") || "dark";
-        if (t === "system") {
-          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        }
-        document.documentElement.classList.add(t);
-        document.documentElement.style.colorScheme = t;
-      })();
-    </script>
+    <script src="/boot/theme.js"></script>
     <style>
       /* Boot screen. Inline so it paints before any bundle loads; the React
          AppPreloader reuses these classes so the hand-over is seamless. */
@@ -54,15 +45,7 @@
         </div>
       </div>
     </div>
-    <script>
-      (function () {
-        var now = performance.now();
-        var stack = document.querySelector(".th-preloader__stack");
-        var bar = document.querySelector(".th-preloader__bar");
-        if (stack) stack.style.animationDelay = Math.round(150 - now) + "ms";
-        if (bar) bar.style.animationDelay = -Math.round(now % 1400) + "ms";
-      })();
-    </script>
+    <script src="/boot/preloader.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

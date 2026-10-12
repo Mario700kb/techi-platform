@@ -1,9 +1,11 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm install
+# npm ci installs exactly what package-lock.json pins, so every image build
+# resolves the same dependency tree.
+RUN npm ci
 
 COPY ./src ./src
 COPY ./index.html ./
@@ -26,7 +28,7 @@ ENV VITE_WS_BASE_URL=$VITE_WS_BASE_URL
 RUN npm run build
 
 # --- production stage ---
-FROM nginx:1.27-alpine
+FROM nginx:1.28-alpine
 
 # Access-log timestamps in Tirana time (Alpine ships no zoneinfo by default).
 RUN apk add --no-cache tzdata
@@ -34,6 +36,7 @@ ENV TZ=Europe/Tirane
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 EXPOSE 80
 
