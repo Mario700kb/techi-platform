@@ -96,12 +96,20 @@ restored_tables=$(q_restored "$tables_sql")
 
 fail=0
 [ "$errors" -eq 0 ] || { echo "❌ restore reported errors"; fail=1; }
-if [ "$live_tables" != "$restored_tables" ]; then
-  echo "❌ table lists differ"; fail=1
-fi
 live_version=$(q_live "select version_num from alembic_version")
 restored_version=$(q_restored "select version_num from alembic_version")
 echo "  alembic: live $live_version, restored $restored_version"
+# A dump taken before a later migration legitimately lacks that migration's
+# tables; only an identical revision must have an identical table list.
+same_revision=0
+[ "$live_version" = "$restored_version" ] && same_revision=1
+if [ "$live_tables" != "$restored_tables" ]; then
+  if [ "$same_revision" -eq 1 ]; then
+    echo "❌ table lists differ at the same schema revision"; fail=1
+  else
+    echo "  note: the dump predates migrations after $restored_version; tables they add are expected to be missing"
+  fi
+fi
 
 # Configuration tables change rarely: they must match exactly unless edited
 # since the dump. Telemetry tables only need to be present and populated.
@@ -116,7 +124,9 @@ for t in $live_tables; do
     device_heartbeats|device_telemetry|devices)
       [ "$rest_n" != missing ] && [ "$rest_n" -gt 0 ] || { flag="  ← EMPTY"; fail=1; };;
   esac
-  [ "$rest_n" = missing ] && { flag="  ← MISSING"; fail=1; }
+  if [ "$rest_n" = missing ]; then
+    if [ "$same_revision" -eq 1 ]; then flag="  ← MISSING"; fail=1; else flag="  (added by a later migration)"; fi
+  fi
   printf '  %-28s %12s %12s%s\n' "$t" "$live_n" "$rest_n" "$flag"
 done
 
