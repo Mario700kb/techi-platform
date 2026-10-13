@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] DASHBOARD-FAST-2026-10-13 — dashboard sections paint from cache on reload (not deployed)
+
+Frontend only. The owner asked for the Operators card to appear faster after
+a refresh. The dashboard already seeded its sections from `appCache`, but
+that cache was lost on reload, and `loadDashboard` showed recent
+enrollments, recent actions and operator presence only once all three
+requests had returned.
+
+- `dashboard.*` keys (recent enrollments, actions, operator presence, trends)
+  join the sessionStorage-persisted set from DEVICES-FAST, per operator,
+  cleared on sign-out.
+- Each of the three sections is set as soon as its own request returns.
+
+Measured with 300 ms added to every API call: Operators card after a reload
+in 92 ms (was 878 ms); first load unchanged. New appCache test for the
+dashboard sections. `tsc`, ESLint, Prettier, Vitest 223, Playwright 90 passed.
+
 ## [2026-10-13] DEVICES-FAST-2026-10-13 — Devices page paints from cache on reload (`ae32a42`)
 
 Frontend only, deployed 2026-10-13 19:29 (Tirana). Rollback image

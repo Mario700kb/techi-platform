@@ -199,25 +199,29 @@ export default function Dashboard() {
       return;
     }
 
+    // Each section shows as soon as its own request returns, not when the
+    // slowest of the three does.
     const [devicesResult, actionsResult, presenceResult] = await Promise.allSettled([
-      devicesFresh ? Promise.resolve(null) : getDevices({}, 0, RECENT_DEVICES_LIMIT),
-      actionsFresh ? Promise.resolve(null) : getRecentActions(10),
-      presenceFresh ? Promise.resolve(null) : getOperatorPresence(),
+      devicesFresh
+        ? Promise.resolve(null)
+        : getDevices({}, 0, RECENT_DEVICES_LIMIT).then((value) => {
+            appCache.set(CACHE_KEYS.dashboardRecentDevices, value.devices);
+            recentDevicesRef.current = value.devices;
+            setRecentDevices(value.devices);
+          }),
+      actionsFresh
+        ? Promise.resolve(null)
+        : getRecentActions(10).then((value) => {
+            appCache.set(CACHE_KEYS.recentActions, value);
+            setRecentActions(value);
+          }),
+      presenceFresh
+        ? Promise.resolve(null)
+        : getOperatorPresence().then((value) => {
+            appCache.set(CACHE_KEYS.operatorPresence, value);
+            setOperators(value);
+          }),
     ]);
-
-    if (!devicesFresh && devicesResult.status === "fulfilled" && devicesResult.value) {
-      appCache.set(CACHE_KEYS.dashboardRecentDevices, devicesResult.value.devices);
-      recentDevicesRef.current = devicesResult.value.devices;
-      setRecentDevices(devicesResult.value.devices);
-    }
-    if (!actionsFresh && actionsResult.status === "fulfilled" && actionsResult.value) {
-      appCache.set(CACHE_KEYS.recentActions, actionsResult.value);
-      setRecentActions(actionsResult.value);
-    }
-    if (!presenceFresh && presenceResult.status === "fulfilled" && presenceResult.value) {
-      appCache.set(CACHE_KEYS.operatorPresence, presenceResult.value);
-      setOperators(presenceResult.value);
-    }
     setFailed({
       devices: devicesResult.status === "rejected",
       actions: actionsResult.status === "rejected",

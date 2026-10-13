@@ -15,6 +15,14 @@ describe("appCache persistence", () => {
     expect(appCache.peek(CACHE_KEYS.clientsList)).toEqual([{ id: 1, name: "Northwind" }]);
   });
 
+  it("restores the dashboard's sections (operators included) after a reload", () => {
+    appCache.setScope("7");
+    appCache.set(CACHE_KEYS.operatorPresence, [{ id: 1, is_online: true }]);
+    appCache.setScope("");
+    appCache.setScope("7");
+    expect(appCache.peek(CACHE_KEYS.operatorPresence)).toEqual([{ id: 1, is_online: true }]);
+  });
+
   it("never shows one operator's entries to another", () => {
     appCache.setScope("7");
     appCache.set("devices-table|1|20", { devices: [{ id: 1 }], total: 1 });

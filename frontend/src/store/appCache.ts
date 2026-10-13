@@ -4,14 +4,16 @@ interface CacheEntry<T> {
 }
 
 const STORAGE_PREFIX = "techi.cache.v1:";
-// Kept in sessionStorage as well, so a reload paints the last page, its
-// badges, the tab counts and the Explorer at once and then revalidates.
+// Kept in sessionStorage as well, so a reload paints the Devices page (last
+// page, badges, tab counts, Explorer) and the dashboard's sections (recent
+// enrollments, actions, operators, trends) at once and then revalidates.
 const PERSISTED_PREFIXES = [
   "devices-table",
   "devices.details",
   "devices.quick-counts",
   "clients.list",
   "clients.groups",
+  "dashboard.",
 ];
 
 function storage(): Storage | null {
