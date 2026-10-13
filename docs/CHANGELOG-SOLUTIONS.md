@@ -5,6 +5,34 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] DEVICES-FAST-2026-10-13 — Devices page paints from cache on reload (not deployed)
+
+Frontend only. The owner reported the device list and the Explorer appear
+late. Production API timings from inside the backend are small (devices page
+26–37 ms, clients/groups 6–19 ms, overview 4–41 ms, table-details 55–129 ms;
+RTT to the API ~45 ms, gzip on), and the first-load requests already run in
+parallel after `auth/session`. The delay was the frontend starting empty:
+
+- `appCache` lived in memory only, so every reload waited for the list, then
+  the badges, the tab counts and the Explorer's clients/groups. It now also
+  keeps the devices pages, their row details, the quick counts and the
+  clients/groups in sessionStorage, per operator (`techi.cache.v1:<id>:…`,
+  scope set by AuthProvider during render; memory cleared on an operator
+  switch; everything removed on sign-out; on a quota error the persisted
+  copies are dropped and memory keeps working).
+- Devices: the initial table seed computed its cache key without sort/order,
+  so it never matched and the skeleton flashed even with a cached page. The
+  seed is gone; `loadTableData` and `loadQuickCounts` run in layout effects so
+  a cached page and counts are set before the first paint. Row details and
+  quick counts show their cached copy, then revalidate; clients/groups start
+  from the cache and are stored after each fetch (the Clients page shares it).
+
+Measured with 300 ms added to every API call: after a reload, rows and the
+Explorer visible in 134 ms (was 883 ms); first load unchanged (~870 ms:
+session, then the parallel batch). `src/store/__tests__/appCache.test.ts`
+covers reload restore, per-operator isolation, memory-only keys, sign-out and
+prefix invalidation. `tsc`, ESLint, Prettier, Vitest 222, Playwright 90 passed.
+
 ## [2026-10-13] EXPLORER-MOTION-2026-10-13 — smooth motion on every Explorer element (`4f01c32`)
 
 Frontend only, deployed 2026-10-13 17:22 (Tirana). Rollback image

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { deviceDisplayName } from "../utils/deviceLabel";
 import { useSearchParams } from "react-router-dom";
 import { PanelLeftClose, PanelLeftOpen, RefreshCcw } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   DeviceQuickFilter,
   DeviceSortKey,
   DeviceStats,
+  DeviceTableDetails,
 } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
@@ -32,7 +33,7 @@ import { useAppData } from "../contexts/AppDataContext";
 import { isActiveStatus } from "../api/actions";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { DeviceHealthSummary } from "../types/telemetry";
-import { appCache, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
+import { appCache, CACHE_KEYS, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
 
 const DEVICE_PATCH_EVENTS = new Set([
   "device_online",
@@ -140,22 +141,15 @@ export default function Devices() {
     [setSearchParams],
   );
 
-  // tableDevices: the current page from the API (seed from cache for instant navigation)
-  const [tableDevices, setTableDevices] = useState<Device[]>(() => {
-    const k = deviceTableCacheKey(tablePage, tableLimit, searchParams.get("q") || "", quickFilter, {});
-    return appCache.peek<{ devices: Device[]; total: number }>(k)?.devices ?? [];
-  });
-  const [tableTotal, setTableTotal] = useState<number>(() => {
-    const k = deviceTableCacheKey(tablePage, tableLimit, searchParams.get("q") || "", quickFilter, {});
-    return appCache.peek<{ devices: Device[]; total: number }>(k)?.total ?? 0;
-  });
-  const [tableLoading, setTableLoading] = useState<boolean>(() => {
-    const k = deviceTableCacheKey(tablePage, tableLimit, searchParams.get("q") || "", quickFilter, {});
-    return appCache.get(k, CACHE_TTL.devicesTable) === null && appCache.peek(k) === null;
-  });
+  // The current page from the API. A cached copy (memory, or sessionStorage
+  // after a reload) is applied by loadTableData in a layout effect, before the
+  // first paint, so the skeleton only shows when nothing is cached.
+  const [tableDevices, setTableDevices] = useState<Device[]>([]);
+  const [tableTotal, setTableTotal] = useState(0);
+  const [tableLoading, setTableLoading] = useState(true);
 
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<DeviceGroup[]>([]);
+  const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
+  const [groups, setGroups] = useState<DeviceGroup[]>(() => appCache.peek<DeviceGroup[]>(CACHE_KEYS.groupsList) ?? []);
   const [filters, setFilters] = useState<DeviceFilters>({});
 
   // Two-tier search: immediate (input display) vs. debounced (API trigger)
@@ -325,6 +319,10 @@ export default function Devices() {
     // await below so a response for an old client_id/folder is discarded.
     tableRequestKeyRef.current = cacheKey;
 
+    const applyDetails = (details: DeviceTableDetails) => {
+      setHealthMap(Object.fromEntries(details.health.map((item) => [item.device_id, item])));
+      setPatchMap(Object.fromEntries(details.patches.map((item) => [item.device_id, item])));
+    };
     const loadDetails = async (devices: Device[]) => {
       const requestId = ++detailsRequestRef.current;
       if (devices.length === 0) {
@@ -332,11 +330,15 @@ export default function Devices() {
         setPatchMap({});
         return;
       }
+      const ids = devices.map((device) => device.id);
+      const detailsKey = `${CACHE_KEYS.devicesDetails}:${ids.join(",")}`;
+      const cached = appCache.peek<DeviceTableDetails>(detailsKey);
+      if (cached) applyDetails(cached);
       try {
-        const details = await getDeviceTableDetails(devices.map((device) => device.id));
+        const details = await getDeviceTableDetails(ids);
         if (detailsRequestRef.current !== requestId) return;
-        setHealthMap(Object.fromEntries(details.health.map((item) => [item.device_id, item])));
-        setPatchMap(Object.fromEntries(details.patches.map((item) => [item.device_id, item])));
+        applyDetails(details);
+        appCache.set(detailsKey, details);
       } catch {
         // Optional row details must not block the paginated table.
       }
@@ -407,15 +409,20 @@ export default function Devices() {
     const requestId = ++countsRequestRef.current;
     const counted: DeviceFilters = { ...baseFilters };
     if (debouncedSearch) counted.search = debouncedSearch;
+    const countsKey = `${CACHE_KEYS.devicesQuickCounts}:${JSON.stringify(counted)}|${favoriteIds.join(",")}`;
+    const cached = appCache.peek<DeviceQuickCounts>(countsKey);
+    if (cached) setQuickCounts(cached);
     try {
       const result = await getDeviceQuickCounts(counted, favoriteIds);
-      if (countsRequestRef.current === requestId) setQuickCounts(result);
+      if (countsRequestRef.current !== requestId) return;
+      setQuickCounts(result);
+      appCache.set(countsKey, result);
     } catch {
       // Counts are advisory; the list itself still loads and shows its total.
     }
   }, [baseFilters, debouncedSearch, favoriteIds]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     void loadQuickCounts();
   }, [loadQuickCounts]);
 
@@ -453,6 +460,8 @@ export default function Devices() {
       const [clientData, groupData] = await Promise.all([getClients(), getGroups()]);
       setClients(clientData);
       setGroups(groupData);
+      appCache.set(CACHE_KEYS.clientsList, clientData);
+      appCache.set(CACHE_KEYS.groupsList, groupData);
     } catch {
       // organization metadata is optional for device refresh
     }
@@ -586,8 +595,9 @@ export default function Devices() {
     immediate: false,
   });
 
-  // Load/reload paginated table whenever page, limit, filter, quick filter, or debounced search changes
-  useEffect(() => {
+  // Load/reload paginated table whenever page, limit, filter, quick filter, or debounced search changes.
+  // A layout effect: a cached page is set before the browser paints.
+  useLayoutEffect(() => {
     void loadTableData();
   }, [loadTableData]);
 

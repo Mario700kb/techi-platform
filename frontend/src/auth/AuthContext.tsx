@@ -8,6 +8,7 @@ import {
   reloadSession,
   useSessionStore,
 } from "../store/sessionStore";
+import { appCache } from "../store/appCache";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -39,6 +40,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { user, loading, permissions, sessionExpiresAt, mfaEnrollmentRequired } = useSessionStore();
+  // During render, not in an effect: the pages below read the cache in their
+  // own (earlier-running) effects and must see this operator's entries.
+  appCache.setScope(user ? String(user.id) : "");
 
   useEffect(() => {
     void bootstrapSession();
@@ -48,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeMfa = useCallback((mfaToken: string, code: string) => completeMfaLogin(mfaToken, code), []);
 
   const logout = useCallback(() => {
+    appCache.invalidate();
     void logoutSession();
   }, []);
 
