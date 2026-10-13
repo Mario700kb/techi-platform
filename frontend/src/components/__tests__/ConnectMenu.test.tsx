@@ -418,3 +418,23 @@ describe("groupConnectMethods — approved mockup menu structure", () => {
     expect(groups.map((g) => g.label)).toEqual(["Desktop Applications"]);
   });
 });
+
+describe("ConnectMenu — offline device", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("disables both segments with the reason and never opens the menu", () => {
+    const fetchSpy = vi.spyOn(client, "fetchJson");
+    renderMenu(7, { lazyLoad: true, disabledReason: "Device is offline" });
+
+    const main = screen.getByText("Connect").closest("button");
+    const arrow = screen.getByLabelText("Connect options");
+    expect(main).toBeDisabled();
+    expect(main).toHaveAttribute("title", "Device is offline");
+    expect(arrow).toBeDisabled();
+
+    fireEvent.click(arrow);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

@@ -1337,6 +1337,39 @@ html.light .drawer-table-head {
   border-color: var(--th-border-subtle);
   background: var(--th-chip-bg);
 }
+/* Compact status tag for dense table rows (Reboot, maintenance, duplicate…). */
+.th-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--chip-tone) 72%, var(--th-text-primary));
+  border: 1px solid color-mix(in srgb, var(--chip-tone) 24%, transparent);
+  background: color-mix(in srgb, var(--chip-tone) 8%, transparent);
+}
+.th-tag[data-size="md"] {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10.5px;
+}
+.th-tag[data-neutral="true"] {
+  color: var(--th-text-muted);
+  border-color: var(--th-border-subtle);
+  background: var(--th-chip-bg);
+}
+.th-tag svg {
+  width: 9px;
+  height: 9px;
+}
 .th-mdev-meta {
   display: flex;
   align-items: center;

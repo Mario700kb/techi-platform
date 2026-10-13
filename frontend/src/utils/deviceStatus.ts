@@ -74,3 +74,11 @@ export function freshnessTone(state: string | null | undefined): string {
   if (state === "stale") return TONE.stale;
   return TONE.offline;
 }
+
+export const OFFLINE_CONNECT_REASON = "Device is offline";
+
+/** Offline (not stale): Connect stays disabled until the device reports again. */
+export function isDeviceOffline(device: { freshness_state?: string | null; status?: string | null }): boolean {
+  const state = device.freshness_state ?? device.status;
+  return state !== "online" && state !== "stale";
+}

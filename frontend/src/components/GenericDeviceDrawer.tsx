@@ -13,7 +13,7 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
-import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
+import { freshnessTone, humanize, isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { formatDateTime, timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
@@ -376,7 +376,12 @@ export default function GenericDeviceDrawer({
                       <p className="mb-3 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
                         Connect using this platform's native methods.
                       </p>
-                      <ConnectMenu deviceId={device.id} hostname={device.hostname} onOpenTerminal={openTerminal} />
+                      <ConnectMenu
+                        deviceId={device.id}
+                        hostname={device.hostname}
+                        disabledReason={isDeviceOffline(device) ? OFFLINE_CONNECT_REASON : null}
+                        onOpenTerminal={openTerminal}
+                      />
                     </div>
                   </section>
                 </div>
@@ -659,6 +664,7 @@ function Overview({
           <ConnectMenu
             deviceId={device.id}
             hostname={device.hostname}
+            disabledReason={isDeviceOffline(device) ? OFFLINE_CONNECT_REASON : null}
             onOpenTerminal={onOpenTerminal}
             onRemoteSupport={onRemoteSupport}
           />

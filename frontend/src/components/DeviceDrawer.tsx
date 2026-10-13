@@ -49,7 +49,15 @@ import {
   updateDevice,
 } from "../api/devices";
 import { formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
-import { freshnessTone, humanize, remoteSupportStatus, TERMS, TONE } from "../utils/deviceStatus";
+import {
+  freshnessTone,
+  humanize,
+  isDeviceOffline,
+  OFFLINE_CONNECT_REASON,
+  remoteSupportStatus,
+  TERMS,
+  TONE,
+} from "../utils/deviceStatus";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   ACTION_LABELS,
@@ -311,17 +319,21 @@ export default function DeviceDrawer({
   const [rsBusyAction, setRsBusyAction] = useState<string | null>(null);
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
   const [maintFormOpen, setMaintFormOpen] = useState(false);
+  const offline = isDeviceOffline(device);
   const canConnectRs =
+    !offline &&
     isValidRustDeskId(device.rustdesk_id) &&
     !device.rustdesk_conflict_detected &&
     hasPermission("remote_support_connect");
   const connectRsTitle = !hasPermission("remote_support_connect")
     ? "Permission required: remote_support_connect"
-    : device.rustdesk_conflict_detected
-      ? `${TERMS.remoteSupportId} conflict detected`
-      : isValidRustDeskId(device.rustdesk_id)
-        ? `Open ${TERMS.remoteSupport}`
-        : `${TERMS.remoteSupportId} not resolved yet`;
+    : offline
+      ? OFFLINE_CONNECT_REASON
+      : device.rustdesk_conflict_detected
+        ? `${TERMS.remoteSupportId} conflict detected`
+        : isValidRustDeskId(device.rustdesk_id)
+          ? `Open ${TERMS.remoteSupport}`
+          : `${TERMS.remoteSupportId} not resolved yet`;
   const connectRemoteSupport = async () => {
     try {
       const res = await getConnectUrl(device.id);
@@ -1315,7 +1327,11 @@ export default function DeviceDrawer({
                 {platformFeatures.FEATURE_PLATFORM_CORE && (
                   <div className="col-span-2 flex items-center justify-between">
                     <p className="premium-kicker">Connect</p>
-                    <ConnectMenu deviceId={device.id} hostname={device.hostname} />
+                    <ConnectMenu
+                      deviceId={device.id}
+                      hostname={device.hostname}
+                      disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
+                    />
                   </div>
                 )}
                 {/* Capabilities — capability-driven, real data reported by the

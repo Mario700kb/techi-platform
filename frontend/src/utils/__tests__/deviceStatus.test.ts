@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { humanize, metricTone, remoteSupportStatus, TONE } from "../deviceStatus";
+import { humanize, isDeviceOffline, metricTone, remoteSupportStatus, TONE } from "../deviceStatus";
 
 describe("remoteSupportStatus", () => {
   it("names every service state the same way everywhere", () => {
@@ -32,5 +32,16 @@ describe("metricTone", () => {
     expect(metricTone("ram", 90)).toBe(TONE.warning);
     expect(metricTone("cpu", 95)).toBe(TONE.critical);
     expect(metricTone("disk", null)).toBe(TONE.neutral);
+  });
+});
+
+describe("isDeviceOffline", () => {
+  it("only offline (or unknown) devices block Connect; stale ones stay connectable", () => {
+    expect(isDeviceOffline({ freshness_state: "online" })).toBe(false);
+    expect(isDeviceOffline({ freshness_state: "stale" })).toBe(false);
+    expect(isDeviceOffline({ freshness_state: "offline", status: "online" })).toBe(true);
+    expect(isDeviceOffline({ status: "offline" })).toBe(true);
+    expect(isDeviceOffline({ status: "online" })).toBe(false);
+    expect(isDeviceOffline({})).toBe(true);
   });
 });

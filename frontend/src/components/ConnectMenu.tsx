@@ -60,6 +60,9 @@ interface Props {
   lazyLoad?: boolean;
   initialState?: "ready" | "credential_required" | "unavailable" | null;
   initialStateReason?: string | null;
+  // Set (e.g. the device is offline): both segments are disabled and the
+  // reason is the tooltip.
+  disabledReason?: string | null;
   onOpenTerminal?: () => void;
   onRemoteSupport?: () => void;
 }
@@ -126,6 +129,7 @@ export default function ConnectMenu({
   lazyLoad = false,
   initialState = null,
   initialStateReason = null,
+  disabledReason = null,
   onOpenTerminal,
   onRemoteSupport,
 }: Props) {
@@ -542,7 +546,8 @@ export default function ConnectMenu({
         <button
           type="button"
           onClick={() => void onMainClick()}
-          title={mainTitle}
+          disabled={!!disabledReason}
+          title={disabledReason ?? mainTitle}
           className="th-connect"
           data-size={isRow ? "sm" : "md"}
           data-tone={connectTone}
@@ -556,6 +561,8 @@ export default function ConnectMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => void onArrowClick()}
+          disabled={!!disabledReason}
+          title={disabledReason ?? undefined}
           className="th-connect th-connect-arrow"
           data-size={isRow ? "sm" : "md"}
           data-tone={connectTone}
@@ -564,7 +571,7 @@ export default function ConnectMenu({
         </button>
       </div>
 
-      {open && menuBody}
+      {open && !disabledReason && menuBody}
 
       {note && (
         <button

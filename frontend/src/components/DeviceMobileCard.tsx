@@ -61,7 +61,8 @@ function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode 
   return (
     <span
       title={view?.title}
-      className="th-mdev-badge"
+      className="th-tag"
+      data-size="md"
       style={{ "--chip-tone": tone } as CSSProperties}
       data-neutral={tone === TONE.neutral || undefined}
     >
@@ -228,7 +229,7 @@ export function DeviceMobileCard({
         alerts?.warning ||
         offlineBadge ||
         rsIssue) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[21px]">
+        <div className="mt-2.5 flex flex-wrap items-center gap-1 pl-[21px]">
           {healthScore != null && (
             <ToneBadge
               view={{

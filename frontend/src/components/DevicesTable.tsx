@@ -45,7 +45,7 @@ import { Button, ConnectButton, EmptyState, Select, TablePagination } from "./ui
 import ConfirmationModal from "./ConfirmationModal";
 import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 import { formatCount } from "../utils/number";
-import { TERMS, TONE } from "../utils/deviceStatus";
+import { isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
 import {
   ActionIndicator,
   ActiveActionEntry,
@@ -226,22 +226,14 @@ const ACTION_MENU_MARGIN = 8;
 // ─── Cell helpers ────────────────────────────────────────────────────────────
 
 function CompactBadge({ view, icon: Icon }: { view: BadgeView; icon?: typeof Wrench }) {
-  const neutral = view.tone === TONE.neutral;
   return (
     <span
-      className="inline-flex min-h-[1.35rem] items-center rounded-full border px-1.5 py-0.5 text-[11px] font-semibold leading-3"
-      style={
-        neutral
-          ? { color: "var(--th-text-muted)", background: "var(--th-chip-bg)", borderColor: "var(--th-border-subtle)" }
-          : {
-              color: view.tone,
-              background: `color-mix(in srgb, ${view.tone} 10%, transparent)`,
-              borderColor: `color-mix(in srgb, ${view.tone} 28%, transparent)`,
-            }
-      }
+      className="th-tag"
+      data-neutral={view.tone === TONE.neutral || undefined}
+      style={{ "--chip-tone": view.tone } as React.CSSProperties}
       title={view.title}
     >
-      {Icon && <Icon className="mr-0.5 inline h-2 w-2" aria-hidden="true" />}
+      {Icon && <Icon aria-hidden="true" />}
       {view.label}
     </span>
   );
@@ -1064,9 +1056,12 @@ const DevicesTable = memo(function DevicesTable({
           <div className="th-mdev-list">
             {displayDevices.map((device) => {
               const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-              const canConnect = isWindowsDevice
-                ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                : hasStructuralConnectMethod(device);
+              const offline = isDeviceOffline(device);
+              const canConnect =
+                !offline &&
+                (isWindowsDevice
+                  ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                  : hasStructuralConnectMethod(device));
               return (
                 <DeviceMobileCard
                   key={device.id}
@@ -1096,11 +1091,13 @@ const DevicesTable = memo(function DevicesTable({
                       : async () => navigate(`/devices/${device.id}`)
                   }
                   connectTitle={
-                    isWindowsDevice
-                      ? undefined
-                      : canConnect
-                        ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                        : "No Connect method available for this device yet"
+                    offline
+                      ? OFFLINE_CONNECT_REASON
+                      : isWindowsDevice
+                        ? undefined
+                        : canConnect
+                          ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                          : "No Connect method available for this device yet"
                   }
                 />
               );
@@ -1290,9 +1287,12 @@ const DevicesTable = memo(function DevicesTable({
                   {displayDevices.map((device, rowIndex) => {
                     const lastSeen = lastSeenView(device.last_seen);
                     const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-                    const canConnect = isWindowsDevice
-                      ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                      : hasStructuralConnectMethod(device);
+                    const offline = isDeviceOffline(device);
+                    const canConnect =
+                      !offline &&
+                      (isWindowsDevice
+                        ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                        : hasStructuralConnectMethod(device));
                     const devAlerts = alertsMap[device.id];
                     const offlineBadge = offlineReasonBadge(
                       device,
@@ -1355,10 +1355,10 @@ const DevicesTable = memo(function DevicesTable({
                             );
                           })()}
                           <div
-                            className="mt-0.5 flex max-w-[220px] items-center gap-1.5 overflow-hidden whitespace-nowrap pl-[21px] text-[12px]"
+                            className="mt-0.5 flex max-w-[220px] flex-wrap items-center gap-x-1 gap-y-0.5 pl-[21px] text-[12px]"
                             style={{ color: "var(--th-text-muted)" }}
                           >
-                            <span>{deviceTypeLabel(device)}</span>
+                            <span className="mr-0.5 whitespace-nowrap">{deviceTypeLabel(device)}</span>
                             {patchView && <CompactBadge view={patchView} />}
                             <LifecycleSignals device={device} />
                             {rsIssue && (
@@ -1542,15 +1542,17 @@ const DevicesTable = memo(function DevicesTable({
                                     : () => onDeviceSelect?.(device)
                                 }
                                 title={
-                                  isWindowsDevice
-                                    ? device.rustdesk_conflict_detected
-                                      ? "Remote Support ID conflict"
+                                  offline
+                                    ? OFFLINE_CONNECT_REASON
+                                    : isWindowsDevice
+                                      ? device.rustdesk_conflict_detected
+                                        ? "Remote Support ID conflict"
+                                        : canConnect
+                                          ? "Open TECHI Remote Support"
+                                          : `${TERMS.remoteSupportId} not resolved yet`
                                       : canConnect
-                                        ? "Open TECHI Remote Support"
-                                        : `${TERMS.remoteSupportId} not resolved yet`
-                                    : canConnect
-                                      ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                                      : "No Connect method available for this device yet"
+                                        ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                                        : "No Connect method available for this device yet"
                                 }
                                 disabled={!canConnect}
                               />
@@ -1565,6 +1567,7 @@ const DevicesTable = memo(function DevicesTable({
                                   connectStatusMap[device.id]?.reason ??
                                   (canConnect ? null : "No Connect method available for this device yet")
                                 }
+                                disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
                                 onOpenTerminal={onOpenDeviceTerminal ? () => onOpenDeviceTerminal(device) : undefined}
                               />
                             )}

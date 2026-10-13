@@ -41,7 +41,7 @@ import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel"
 import { timeAgo } from "../utils/time";
 import { FreshnessState } from "../components/mobile/primitives";
 import { Button, EmptyState } from "../components/ui";
-import { TERMS, TONE } from "../utils/deviceStatus";
+import { isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
 import { VitalsStrip } from "../components/mobile/VitalsStrip";
 import { AccordionSection } from "../components/mobile/AccordionSection";
 import { Sparkline } from "../components/mobile/Sparkline";
@@ -311,7 +311,8 @@ export default function DeviceDetailsMobile() {
 
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const canConnect = isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+  const canConnect =
+    !isDeviceOffline(device) && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
   const criticalCount = deviceAlerts.openAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = deviceAlerts.openAlerts.length - criticalCount;
   const freshness = freshnessOf(device);
