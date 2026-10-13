@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] HEARTBEAT-OFFLOOP-2026-10-13 — incident follow-ups (not deployed)
+
+Backend only. Audit of every `SessionLocal()` outside the workers after the
+15:24 outage:
+
+- `POST /api/heartbeat` (legacy agents) is `async def` and ran the whole v1
+  heartbeat — device resolution, `agent_heartbeat`, every query — on the event
+  loop. A wait for a pool connection there blocks all requests for up to
+  `pool_timeout`, which is why `/health/ready` stopped answering during the
+  outage. Both calls now go through `run_in_threadpool`.
+- `tests/test_heartbeat_connection_release.py`: the v1 heartbeat's side
+  effects start only after the request session has left its transaction; the
+  legacy route's database work runs off the event loop. Both fail against the
+  pre-fix code.
+- Left as is, low risk: the WebSocket handshakes (`/ws/devices` operator auth,
+  terminal sessions, the Linux-only agent channel) each open one short session
+  on the event loop when a socket connects; ~10 operators and rare terminal
+  sessions. The `trusted_domains` session seen idle in transaction was the v1
+  heartbeat itself, fixed in `f622fa2`.
+- pytest 1354 passed, ruff clean.
+
 ## [2026-10-13] INCIDENT 15:24–15:48 — API down: heartbeat held two pool connections (`f622fa2`)
 
 **Impact.** From 15:24 to 15:48 (Tirana) the API did not answer: operators
@@ -44,8 +65,8 @@ frontend was started at 15:52. Rollback images:
 **Follow-ups.** Deploy commands on the server get a `timeout` and a bounded
 readiness poll so a slow start never looks like a hang. Other endpoints that
 open a second session while holding the request's (the `trusted_domains`
-lookup was also seen `idle in transaction`) should be audited. A regression
-test for the heartbeat's single connection is still to be written.
+lookup was also seen `idle in transaction`) should be audited. Done in
+HEARTBEAT-OFFLOOP-2026-10-13 above.
 
 ## [2026-10-13] EXPLORER-2026-10-13 — status ring per client, quieter Explorer (`3513e9b`)
 

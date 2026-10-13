@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, stat
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse
 
@@ -79,7 +80,10 @@ async def heartbeat_legacy(request: Request, db: Session = Depends(get_db)):
         logger.debug("Ignoring incompatible legacy heartbeat")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    if not _resolves_existing_device(payload, db):
+    # The database work runs in the threadpool: on the event loop a wait for a
+    # pool connection (up to pool_timeout) froze every request, health included
+    # (2026-10-13 15:24 outage).
+    if not await run_in_threadpool(_resolves_existing_device, payload, db):
         logger.debug("Ignoring legacy heartbeat without an existing device identity")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -91,7 +95,7 @@ async def heartbeat_legacy(request: Request, db: Session = Depends(get_db)):
         # would treat every heartbeat as failed and hammer this endpoint in a
         # tight retry loop (2026-07-03 CPU incident).
         background_tasks = BackgroundTasks()
-        response = agent_heartbeat(payload, request, background_tasks, db)
+        response = await run_in_threadpool(agent_heartbeat, payload, request, background_tasks, db)
         await background_tasks()
     except Exception as exc:
         db.rollback()
