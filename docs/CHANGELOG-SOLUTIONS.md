@@ -5,6 +5,73 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] INCIDENT 15:24–15:48 — API down: heartbeat held two pool connections (`f622fa2`)
+
+**Impact.** From 15:24 to 15:48 (Tirana) the API did not answer: operators
+could not sign in, agents' heartbeats failed, and the offline sweep opened
+device_offline alerts (by 15:50, 52 already resolved, 24 critical + 4 warning
+still open and closing as agents return).
+
+**Trigger.** The EXPLORER deploy's `docker compose up -d --no-deps backend
+frontend` was interrupted by the operator mid-run (it looked stuck): the new
+backend started, the new frontend stayed in "Created". The backend at once
+logged `QueuePool limit of size 30 overflow 50 reached`; Postgres showed only
+~12 sessions, most `idle in transaction` after the pending `remote_actions`
+read. Rolling back to `pre-explorer-4c92e47` (15:35) and a plain restart
+(15:42) failed the same way within a minute — not the Explorer change.
+
+**Root cause.** `POST /agent/heartbeat` keeps its `get_db` session open until
+its BackgroundTasks side effects finish, and `_heartbeat_side_effects` opens a
+second `SessionLocal()`. Every heartbeat held two connections. In steady state
+this is invisible; after a restart the fleet's queued heartbeats arrive
+together, each request holds one connection and waits for a second, and the
+80-connection pool deadlocks until `pool_timeout`, then again on the next wave.
+
+**Fix.** The heartbeat closes its session once the response is built (all
+writes already committed; `get_db`'s close is then a no-op). Backend-only
+hotfix `f622fa2` deployed 15:47 (build on the existing cache, ~20 s): ready in
+50 s while the backlog drained, 0 QueuePool errors and 0 side-effect failures
+since, no `idle in transaction` sessions, guard and smoke passed. pytest 1352,
+ruff clean. Pre-deploy dump from the Explorer deploy
+`/opt/backups/techi/pre-explorer-2026-10-13_15-17.sql.gz` (`gzip -t` OK).
+
+**State after.** Backend runs `f622fa2` (includes the Explorer backend:
+`tree_counts.by_client_status`, unused by the current frontend). Frontend
+runs the `pre-explorer-4c92e47` image (= `b1175f4`); the Explorer frontend is
+built from `3513e9b` but not yet started. Rollback images:
+`techi-platform-{backend,frontend}:pre-explorer-4c92e47`.
+
+**Follow-ups.** Deploy commands on the server get a `timeout` and a bounded
+readiness poll so a slow start never looks like a hang. Other endpoints that
+open a second session while holding the request's (the `trusted_domains`
+lookup was also seen `idle in transaction`) should be audited. A regression
+test for the heartbeat's single connection is still to be written.
+
+## [2026-10-13] EXPLORER-2026-10-13 — status ring per client, quieter Explorer (backend live in `f622fa2`, frontend not yet started)
+
+Backend and frontend, no migration. The owner asked for an enterprise,
+symmetric Explorer. From their screenshot: the native tooltip of a client
+name covered the row below it, the selected client was a filled coral block,
+"Servers 9 → Windows 9" repeated each count on a second level, and the same
+building icon sat on all 39 clients.
+
+- Backend: `tree_counts.by_client_status` = total/online/stale/offline per
+  client, from the same loop over `get_fleet_counts` (no extra query; the
+  overview stays two statements). New test
+  `test_overview_counts_each_client_by_freshness_across_categories`.
+- Explorer: each client's icon is a 10px ring split online/stale/offline
+  clockwise (`.th-tree-ring`, `conic-gradient` on status tokens), with the
+  counts in its label and tooltip. A folder with one platform shows that
+  platform as a small icon on its own row; two or more keep their sub-rows.
+  The name's tooltip appears only when the name is cut off. Selected row:
+  neutral tint only (the owner asked for no side bar), neutral count; keyboard
+  focus 1px.
+- E2E `explorer.spec.ts` (ring labels, single-platform fold, multi-platform
+  rows, no side bar, no tooltip on a name that fits); the mock overview now
+  carries production's `by_client_category(_platform)` and `by_client_status`.
+- pytest 1352 passed, ruff clean; `tsc`, ESLint, Prettier, Vitest (213),
+  Playwright (90 passed).
+
 ## [2026-10-13] TABLE-ROWS-2026-10-13 — one row height, quieter Devices table (`b1175f4`)
 
 Frontend only, deployed 2026-10-13 15:08 (Tirana), no migration, no dump.
