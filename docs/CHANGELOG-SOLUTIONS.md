@@ -5,7 +5,12 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] DASHBOARD-ALERTS-FAST-2026-10-13 — alert breakdown paints at once (not deployed)
+## [2026-10-13] DASHBOARD-ALERTS-FAST-2026-10-13 — alert breakdown paints at once (`0e32fdd`)
+
+Frontend only, deployed 2026-10-13 16:16 (Tirana). Rollback image
+`techi-platform-frontend:pre-alerts-fast-41e7208`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200; the served
+bundle carries "Loading alerts…" in the dashboard and `th-grow-x .45s`.
 
 Frontend only. The owner reported the dashboard's charts appear and refresh
 late. "Open alerts by type" had three delays:
