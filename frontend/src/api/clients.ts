@@ -175,3 +175,62 @@ export interface ClientActivityPage extends AuditLogPage {
 export async function getClientActivity(clientId: number, limit = 50, offset = 0): Promise<ClientActivityPage> {
   return fetchJson<ClientActivityPage>(`/api/v1/clients/${clientId}/activity?limit=${limit}&offset=${offset}`);
 }
+
+export type DocumentCategory = "general" | "network" | "procedures" | "contacts" | "hardware" | "software";
+
+export interface ClientDocumentSummary {
+  id: number;
+  client_id: number;
+  title: string;
+  category: DocumentCategory;
+  pinned: boolean;
+  excerpt: string;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientDocument extends ClientDocumentSummary {
+  body: string;
+}
+
+export interface ClientDocumentInput {
+  title: string;
+  category: DocumentCategory;
+  body: string;
+  pinned: boolean;
+}
+
+export async function getClientDocuments(clientId: number, q = ""): Promise<ClientDocumentSummary[]> {
+  const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return fetchJson<ClientDocumentSummary[]>(`/api/v1/clients/${clientId}/documents${qs}`);
+}
+
+export async function getClientDocument(clientId: number, documentId: number): Promise<ClientDocument> {
+  return fetchJson<ClientDocument>(`/api/v1/clients/${clientId}/documents/${documentId}`);
+}
+
+export async function createClientDocument(clientId: number, input: ClientDocumentInput): Promise<ClientDocument> {
+  return fetchJson<ClientDocument>(`/api/v1/clients/${clientId}/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateClientDocument(
+  clientId: number,
+  documentId: number,
+  input: Partial<ClientDocumentInput>,
+): Promise<ClientDocument> {
+  return fetchJson<ClientDocument>(`/api/v1/clients/${clientId}/documents/${documentId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteClientDocument(clientId: number, documentId: number): Promise<void> {
+  await fetchJson<void>(`/api/v1/clients/${clientId}/documents/${documentId}`, { method: "DELETE" });
+}

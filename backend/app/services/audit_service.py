@@ -19,6 +19,9 @@ def _with_client_ip(details: Optional[dict]) -> Optional[dict]:
 
 
 class AuditAction:
+    CLIENT_DOCUMENT_CREATED = "client_document_created"
+    CLIENT_DOCUMENT_UPDATED = "client_document_updated"
+    CLIENT_DOCUMENT_DELETED = "client_document_deleted"
     LOGIN = "login"
     LOGOUT = "logout"
     SESSION_REVOKED = "session_revoked"

@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 
 import { ACTION_LABELS } from "../api/audit";
+import { useAuth } from "../auth/AuthContext";
+import ClientDocuments from "../components/ClientDocuments";
 import { getAlerts } from "../api/alerts";
 import { ClientProfile, getClientActivity, getClientProfile } from "../api/clients";
 import { Device, getDevices, getFleetInsights } from "../api/devices";
@@ -37,7 +39,7 @@ import { freshnessTone, humanize, TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
-type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics";
+type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
 
 const DEVICE_PAGE_SIZES = [20, 50];
 const ACTIVITY_PAGE_SIZE = 25;
@@ -103,6 +105,7 @@ export default function ClientProfilePage() {
   useNow();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { can } = useAuth();
   const clientId = id ? Number(id) : NaN;
   const valid = Number.isInteger(clientId) && clientId > 0;
 
@@ -170,6 +173,7 @@ export default function ClientProfilePage() {
     { key: "alerts", label: "Alerts", icon: BellRing, count: alerts.total_open },
     { key: "activity", label: "Activity", icon: Activity },
     { key: "analytics", label: "Analytics", icon: BarChart3 },
+    { key: "documents", label: "Documentation", icon: BookOpen },
   ];
 
   const kpis = [
@@ -335,10 +339,7 @@ export default function ClientProfilePage() {
                 {t.count !== undefined && <span className="th-tab-count">{formatCount(t.count)}</span>}
               </button>
             ))}
-            {[
-              { label: "Documentation", icon: BookOpen },
-              { label: "Tickets", icon: Ticket },
-            ].map((t) => (
+            {[{ label: "Tickets", icon: Ticket }].map((t) => (
               <button
                 key={t.label}
                 type="button"
@@ -373,6 +374,9 @@ export default function ClientProfilePage() {
         {opened.has("alerts") && tab === "alerts" && <AlertsTab clientId={client.id} />}
         {opened.has("activity") && tab === "activity" && <ActivityTab clientId={client.id} />}
         {opened.has("analytics") && tab === "analytics" && <AnalyticsTab clientId={client.id} />}
+        {opened.has("documents") && tab === "documents" && (
+          <ClientDocuments clientId={client.id} canWrite={can("operator")} />
+        )}
       </div>
     </section>
   );

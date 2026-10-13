@@ -125,7 +125,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("tab", { name: /Analytics/ }).click();
     await expect(page.getByRole("heading", { name: "Availability" })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`profile-analytics-${theme}.png`), fullPage: true });
-    await expect(page.getByRole("tab", { name: /Documentation/ })).toBeDisabled();
+    await expect(page.getByRole("tab", { name: /Tickets/ })).toBeDisabled();
   });
 }
 

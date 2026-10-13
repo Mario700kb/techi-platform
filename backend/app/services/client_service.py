@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.client_document import ClientDocument
 from app.models.client import Client
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_group_repository import DeviceGroupRepository
@@ -12,6 +13,7 @@ from app.schemas.client import ClientCreate, ClientUpdate
 
 class ClientService:
     def __init__(self, db: Session):
+        self.db = db
         self.repository = ClientRepository(db)
         self.devices = DeviceRepository(db)
         self.groups = DeviceGroupRepository(db)
@@ -44,6 +46,7 @@ class ClientService:
             return None
         self.devices.clear_client(client_id)
         self.groups.delete_by_client(client_id)
+        self.db.query(ClientDocument).filter(ClientDocument.client_id == client_id).delete(synchronize_session=False)
         return self.repository.delete(client)
 
     @staticmethod

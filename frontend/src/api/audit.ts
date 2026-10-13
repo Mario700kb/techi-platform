@@ -58,6 +58,9 @@ export async function getAuditFacets(): Promise<AuditFacets> {
 }
 
 export const ACTION_LABELS: Record<string, string> = {
+  client_document_created: "Documentation page created",
+  client_document_updated: "Documentation page edited",
+  client_document_deleted: "Documentation page deleted",
   remote_connect: "Remote connect",
   remote_session_started: "Remote session started",
   remote_session_ended: "Remote session ended",

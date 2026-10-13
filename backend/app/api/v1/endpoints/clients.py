@@ -1,19 +1,28 @@
+import re
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_operator, get_operator_scope, require_team_permission
+from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
+from app.core.time import utcnow
 from app.core.scope import AllowedScope
 from app.db.session import get_db
+from app.models.client_document import ClientDocument
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
-from app.models.operator import Operator
+from app.models.operator import Operator, OperatorRole
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.alert import AlertCountResponse
+from app.schemas.client_document import (
+    ClientDocumentCreate,
+    ClientDocumentOut,
+    ClientDocumentSummary,
+    ClientDocumentUpdate,
+)
 from app.schemas.client import (
     Client,
     ClientActivityPage,
@@ -22,6 +31,7 @@ from app.schemas.client import (
     ClientProfileGroup,
     ClientUpdate,
 )
+from app.services.audit_service import AuditAction, audit_log
 from app.services.client_service import ClientService
 from app.services.device_overview_service import DeviceOverviewService
 from app.services.operator_scope_service import OperatorScopeService
@@ -159,6 +169,133 @@ def get_client_activity(
         items=items,
         device_names={device_id: display or hostname for device_id, display, hostname in names},
     )
+
+
+def _excerpt(body: str) -> str:
+    text = re.sub(r"^\s*(?:[-*+]|\d+\.)\s+", "", body, flags=re.MULTILINE)
+    text = re.sub(r"[#>*_`|~\[\]()]+|-{3,}", " ", text)
+    return " ".join(text.split())[:160]
+
+
+def _document_summary(doc: ClientDocument) -> ClientDocumentSummary:
+    return ClientDocumentSummary.model_validate(doc).model_copy(update={"excerpt": _excerpt(doc.body)})
+
+
+def _document(db: Session, client_id: int, document_id: int) -> ClientDocument:
+    doc = (
+        db.query(ClientDocument)
+        .filter(ClientDocument.id == document_id, ClientDocument.client_id == client_id)
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@router.get("/{client_id}/documents", response_model=List[ClientDocumentSummary])
+def list_client_documents(
+    client_id: int,
+    q: Optional[str] = Query(default=None, max_length=100),
+    category: Optional[str] = Query(default=None, max_length=40),
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """The client's documentation pages, pinned first, then most recently edited."""
+    _client_in_scope(db, scope, client_id)
+    query = db.query(ClientDocument).filter(ClientDocument.client_id == client_id)
+    if category:
+        query = query.filter(ClientDocument.category == category)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(or_(ClientDocument.title.ilike(like), ClientDocument.body.ilike(like)))
+    docs = query.order_by(ClientDocument.pinned.desc(), ClientDocument.updated_at.desc()).all()
+    return [_document_summary(doc) for doc in docs]
+
+
+@router.get("/{client_id}/documents/{document_id}", response_model=ClientDocumentOut)
+def get_client_document(
+    client_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _client_in_scope(db, scope, client_id)
+    doc = _document(db, client_id, document_id)
+    return ClientDocumentOut.model_validate(doc).model_copy(update={"excerpt": _excerpt(doc.body)})
+
+
+@router.post("/{client_id}/documents", response_model=ClientDocumentOut, status_code=201)
+def create_client_document(
+    client_id: int,
+    payload: ClientDocumentCreate,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _client_in_scope(db, scope, client_id)
+    now = utcnow()
+    doc = ClientDocument(
+        client_id=client_id,
+        title=payload.title.strip(),
+        category=payload.category,
+        body=payload.body,
+        pinned=payload.pinned,
+        created_by=operator.username,
+        updated_by=operator.username,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_DOCUMENT_CREATED, entity_type="client_document",
+              entity_id=doc.id, details={"client_id": client_id, "title": doc.title})
+    return ClientDocumentOut.model_validate(doc).model_copy(update={"excerpt": _excerpt(doc.body)})
+
+
+@router.put("/{client_id}/documents/{document_id}", response_model=ClientDocumentOut)
+def update_client_document(
+    client_id: int,
+    document_id: int,
+    payload: ClientDocumentUpdate,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _client_in_scope(db, scope, client_id)
+    doc = _document(db, client_id, document_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if "title" in changes:
+        changes["title"] = changes["title"].strip()
+    for field, value in changes.items():
+        setattr(doc, field, value)
+    doc.updated_by = operator.username
+    doc.updated_at = utcnow()
+    db.commit()
+    db.refresh(doc)
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_DOCUMENT_UPDATED, entity_type="client_document",
+              entity_id=doc.id, details={"client_id": client_id, "title": doc.title, "fields": sorted(changes)})
+    return ClientDocumentOut.model_validate(doc).model_copy(update={"excerpt": _excerpt(doc.body)})
+
+
+@router.delete("/{client_id}/documents/{document_id}", status_code=204)
+def delete_client_document(
+    client_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _client_in_scope(db, scope, client_id)
+    doc = _document(db, client_id, document_id)
+    title = doc.title
+    db.delete(doc)
+    db.commit()
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_DOCUMENT_DELETED, entity_type="client_document",
+              entity_id=document_id, details={"client_id": client_id, "title": title})
+    return Response(status_code=204)
 
 
 @router.put("/{client_id}", response_model=Client)

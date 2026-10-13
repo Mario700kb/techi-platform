@@ -5,6 +5,47 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] CLIENT-DOCS-2026-10-13 — client profile, phase 2: documentation (not deployed)
+
+Backend and frontend, **one migration** (`h8i9j0k1l2m3`, new table only).
+
+Backend:
+- `client_documents` (client_id FK ON DELETE CASCADE, indexed; title ≤ 200,
+  category general/network/procedures/contacts/hardware/software, Markdown
+  body ≤ 100,000 characters, pinned, created_by/updated_by, timestamps).
+  `ClientService.delete_client` also removes the client's pages.
+- `GET/POST /clients/{id}/documents` (list: pinned first, then latest edit;
+  `q` searches title and body, `category` filters; rows carry a 160-character
+  plain-text excerpt, not the body), `GET/PUT/DELETE
+  /clients/{id}/documents/{doc_id}`. Reading follows the client scope (404
+  outside the operator's teams, and for a page under another client);
+  writing needs role operator or above (readonly 403). Every write is
+  audited (`client_document_created/updated/deleted`, entity
+  `client_document`, details carry client_id and title), so it shows in the
+  profile's Activity.
+- `tests/test_client_documents.py` (6): full CRUD with audit trail, readonly
+  read-only, other client 404, order and search, validation limits, client
+  deletion removes pages.
+
+Frontend:
+- Documentation tab on the client profile (Tickets stays "Soon"): pages list
+  with search, pin marker, category, last editor and time; the open page with
+  category, editor and pin/edit/delete; the editor has title, category,
+  Write/Preview, a formatting toolbar (heading, bold, italic, lists, checklist,
+  code, link, table), pin switch, and a reminder to keep passwords in the
+  Credential Vault. Pages and lists are cached in memory only.
+- `MarkdownView`: headings, paragraphs, bulleted/numbered lists, checklists,
+  tables, fenced code, inline code, bold/italic, quotes, rules, links —
+  rendered straight to React elements, never parsed as HTML; links only
+  http(s)/mailto with `rel="noopener noreferrer"`. Tests cover script/img/HTML
+  text staying text and javascript:/data: links not becoming links.
+- E2E `client-docs.spec.ts`: write a page with a table and checklist, preview,
+  create, view, pin — both themes.
+
+pytest 1367 (6 new), ruff clean on the changed files; `tsc`, ESLint, Prettier,
+Vitest 234, Playwright 98 passed. Migration exercised on a scratch database
+(defaults, downgrade).
+
 ## [2026-10-13] CLIENTS-PAGE-2026-10-13 — Clients page leads with the list (`40f82d0`)
 
 Frontend only, deployed 2026-10-13 21:19 (Tirana). Rollback image
