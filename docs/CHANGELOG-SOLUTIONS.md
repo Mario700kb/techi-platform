@@ -5,7 +5,12 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] CLIENTS-PAGE-2026-10-13 — Clients page leads with the list (not deployed)
+## [2026-10-13] CLIENTS-PAGE-2026-10-13 — Clients page leads with the list (`40f82d0`)
+
+Frontend only, deployed 2026-10-13 21:19 (Tirana). Rollback image
+`techi-platform-frontend:pre-clients-page-976a4f7`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, `/clients` 200,
+`.th-client-bar` in the served CSS.
 
 Frontend only. The owner asked for an enterprise, symmetric Clients page. The
 page opened with two large create forms above the list, every row repeated
