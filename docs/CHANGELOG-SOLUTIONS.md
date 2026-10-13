@@ -37,8 +37,8 @@ ruff clean. Pre-deploy dump from the Explorer deploy
 
 **State after.** Backend runs `f622fa2` (includes the Explorer backend:
 `tree_counts.by_client_status`, unused by the current frontend). Frontend
-runs the `pre-explorer-4c92e47` image (= `b1175f4`); the Explorer frontend is
-built from `3513e9b` but not yet started. Rollback images:
+ran the `pre-explorer-4c92e47` image (= `b1175f4`) until the Explorer
+frontend was started at 15:52. Rollback images:
 `techi-platform-{backend,frontend}:pre-explorer-4c92e47`.
 
 **Follow-ups.** Deploy commands on the server get a `timeout` and a bounded
@@ -47,7 +47,14 @@ open a second session while holding the request's (the `trusted_domains`
 lookup was also seen `idle in transaction`) should be audited. A regression
 test for the heartbeat's single connection is still to be written.
 
-## [2026-10-13] EXPLORER-2026-10-13 — status ring per client, quieter Explorer (backend live in `f622fa2`, frontend not yet started)
+## [2026-10-13] EXPLORER-2026-10-13 — status ring per client, quieter Explorer (`3513e9b`)
+
+Backend live since the 15:47 hotfix `f622fa2`; frontend deployed 15:52
+(Tirana), built from `1f75477`, `nginx -t` OK, container healthy, guard and
+smoke passed, `.th-tree-ring` in the served CSS. On production data
+`by_client_status` covers all 36 clients with devices and sums to the fleet
+(922 + 2 without a client = 924); 0 QueuePool errors. Rollback image
+`techi-platform-frontend:pre-explorer-4c92e47`.
 
 Backend and frontend, no migration. The owner asked for an enterprise,
 symmetric Explorer. From their screenshot: the native tooltip of a client
