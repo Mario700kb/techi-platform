@@ -142,8 +142,8 @@ export function remoteSupportIssue(device: Device): BadgeView | null {
   // state is the normal case for devices that do not report it.
   if (["Running", "Not installed", "Unknown"].includes(rs.label)) return null;
   return {
-    // The device row has ~220px for its second line; the full name is in the tooltip.
-    label: rs.label === "Stopped" ? "Remote off" : `Remote ${rs.label.toLowerCase()}`,
+    // A row tag, so the label stays short; the service's own state is in the tooltip.
+    label: rs.label === "Stopped" ? "Remote off" : "Remote issue",
     tone: rs.tone,
     title: `${TERMS.remoteSupport}: ${rs.label}`,
   };
@@ -252,19 +252,14 @@ export function lifecycleBadges(device: Device): BadgeView[] {
   return badges;
 }
 
+// Console sign-in is the norm, so only a Remote Desktop session gets a tag.
 export function userSourceBadge(device: Device): BadgeView | null {
-  if (!device.user_source || device.user_source === "no_interactive_user" || device.user_source === "fallback")
-    return null;
-  const isRdp = device.user_source === "rdp_session";
+  if (device.user_source !== "rdp_session") return null;
   const state =
     device.user_session_state && device.user_session_state !== "unknown"
       ? ` · ${humanize(device.user_session_state)}`
       : "";
-  return {
-    label: isRdp ? "RDP" : "Console",
-    tone: isRdp ? "var(--th-status-agent)" : TONE.info,
-    title: `${isRdp ? "Signed in over Remote Desktop" : "Signed in at the console"}${state}`,
-  };
+  return { label: "RDP", tone: "var(--th-status-agent)", title: `Signed in over Remote Desktop${state}` };
 }
 
 // ─── Queued / running action ─────────────────────────────────────────────────

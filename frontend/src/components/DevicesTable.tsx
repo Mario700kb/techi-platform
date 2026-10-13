@@ -11,7 +11,6 @@ import {
   ArrowUpDown,
   Copy,
   ExternalLink,
-  MonitorOff,
   Loader2,
   MoreHorizontal,
   PlayCircle,
@@ -21,7 +20,6 @@ import {
   SlidersHorizontal,
   Star,
   Trash2,
-  Wrench,
   X,
 } from "lucide-react";
 import { MobileSheet } from "./mobile/MobileSheet";
@@ -225,7 +223,7 @@ const ACTION_MENU_MARGIN = 8;
 
 // ─── Cell helpers ────────────────────────────────────────────────────────────
 
-function CompactBadge({ view, icon: Icon }: { view: BadgeView; icon?: typeof Wrench }) {
+function CompactBadge({ view }: { view: BadgeView }) {
   return (
     <span
       className="th-tag"
@@ -233,9 +231,43 @@ function CompactBadge({ view, icon: Icon }: { view: BadgeView; icon?: typeof Wre
       style={{ "--chip-tone": view.tone } as React.CSSProperties}
       title={view.title}
     >
-      {Icon && <Icon aria-hidden="true" />}
       {view.label}
     </span>
+  );
+}
+
+const ROW_TAG_LIMIT = 2;
+
+// Sized to their content; the free width goes to the text columns.
+const FIT_COLUMNS = new Set(["Health", "IP address", "Agent", "Actions"]);
+
+// One line under the device name, so every row has the same height: the most
+// urgent tags first, the rest folded into "+N" with their names in its tooltip.
+function RowTags({ device, patch, remote }: { device: Device; patch: BadgeView | null; remote: BadgeView | null }) {
+  const tags = [
+    maintenanceBadge(device),
+    patch && patch.tone !== TONE.neutral ? patch : null,
+    remote,
+    duplicateBadge(device),
+    ...lifecycleBadges(device),
+    patch && patch.tone === TONE.neutral ? patch : null,
+  ].filter((tag): tag is BadgeView => tag !== null);
+  const hidden = tags.slice(ROW_TAG_LIMIT);
+  return (
+    <>
+      {tags.slice(0, ROW_TAG_LIMIT).map((tag) => (
+        <CompactBadge key={tag.label} view={tag} />
+      ))}
+      {hidden.length > 0 && (
+        <CompactBadge
+          view={{
+            label: `+${hidden.length}`,
+            tone: TONE.neutral,
+            title: hidden.map((tag) => tag.title ?? tag.label).join("\n"),
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -337,20 +369,6 @@ const BULK_BAR_ACTIONS: BulkActionType[] = [
   "maintenance_enter",
   "maintenance_exit",
 ];
-
-const LifecycleSignals = ({ device }: { device: Device }) => {
-  const maintenance = maintenanceBadge(device);
-  const duplicate = duplicateBadge(device);
-  return (
-    <>
-      {lifecycleBadges(device).map((badge) => (
-        <CompactBadge key={badge.label} view={badge} />
-      ))}
-      {maintenance && <CompactBadge view={maintenance} icon={Wrench} />}
-      {duplicate && <CompactBadge view={duplicate} icon={AlertTriangle} />}
-    </>
-  );
-};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -1264,7 +1282,7 @@ const DevicesTable = memo(function DevicesTable({
                     ].map(({ label, sortable }) => (
                       <th
                         key={label}
-                        className={`px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""} ${label === "Actions" ? "th-sticky-end" : ""}`}
+                        className={`whitespace-nowrap px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] ${sortable ? "cursor-pointer select-none hover:text-slate-200" : ""} ${FIT_COLUMNS.has(label) ? "w-px" : ""} ${label === "Actions" ? "th-sticky-end" : ""}`}
                         style={{
                           color: sortable && sortKey === sortable ? "var(--th-text-primary)" : "var(--th-text-muted)",
                           borderBottom: "1px solid var(--th-border-subtle)",
@@ -1328,51 +1346,41 @@ const DevicesTable = memo(function DevicesTable({
                         )}
 
                         {/* ── Hostname ── */}
-                        <td className="min-w-[200px] max-w-[244px] px-2.5 py-1.5 align-middle">
+                        <td className="th-device-cell px-2.5 py-1.5 align-middle">
                           {(() => {
                             const label = deviceDisplayName(device);
                             const hostname = deviceHostnameSubtitle(device);
+                            const typeLabel = deviceTypeLabel(device);
+                            // A group named after the device type already says it in Client / group.
+                            const showType = typeLabel.toLowerCase() !== (device.group_name ?? "").trim().toLowerCase();
                             return (
                               <>
                                 <div
-                                  className="flex max-w-[200px] items-center gap-1.5 text-[13px] font-semibold leading-[1.3]"
+                                  className="flex h-[18px] items-center gap-1.5 text-[13px] font-semibold"
                                   style={{ color: "var(--th-text-primary)" }}
-                                  title={device.os_name ? `${label} · ${device.os_name}` : label}
+                                  title={[label, hostname, device.os_name].filter(Boolean).join(" · ")}
                                 >
                                   <PlatformIcon platform={device.platform} size={13} className="shrink-0 opacity-70" />
                                   <span className="truncate">{label}</span>
+                                  {hostname && (
+                                    <span
+                                      className="min-w-[48px] truncate font-mono text-[11px] font-normal"
+                                      style={{ color: "var(--th-text-muted)" }}
+                                    >
+                                      {hostname}
+                                    </span>
+                                  )}
                                 </div>
-                                {hostname && (
-                                  <div
-                                    className="max-w-[180px] truncate font-mono text-[11px] leading-4"
-                                    style={{ color: "var(--th-text-muted)" }}
-                                    title={device.hostname}
-                                  >
-                                    {hostname}
-                                  </div>
-                                )}
+                                <div
+                                  className="mt-0.5 flex h-4 items-center gap-1 overflow-hidden pl-[21px] text-[12px]"
+                                  style={{ color: "var(--th-text-muted)" }}
+                                >
+                                  {showType && <span className="mr-0.5 min-w-0 truncate">{typeLabel}</span>}
+                                  <RowTags device={device} patch={patchView} remote={rsIssue} />
+                                </div>
                               </>
                             );
                           })()}
-                          <div
-                            className="mt-0.5 flex max-w-[220px] flex-wrap items-center gap-x-1 gap-y-0.5 pl-[21px] text-[12px]"
-                            style={{ color: "var(--th-text-muted)" }}
-                          >
-                            <span className="mr-0.5 whitespace-nowrap">{deviceTypeLabel(device)}</span>
-                            {patchView && <CompactBadge view={patchView} />}
-                            <LifecycleSignals device={device} />
-                            {rsIssue && (
-                              <span
-                                className="inline-flex min-w-0 items-center gap-1"
-                                style={{ color: rsIssue.tone }}
-                                title={rsIssue.title}
-                              >
-                                <span aria-hidden="true">·</span>
-                                <MonitorOff className="h-3 w-3 flex-none" />
-                                <span className="truncate">{rsIssue.label}</span>
-                              </span>
-                            )}
-                          </div>
                         </td>
 
                         {/* ── Status ── */}

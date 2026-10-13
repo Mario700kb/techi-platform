@@ -6357,3 +6357,12 @@ span.th-inv-mono {
     transition-delay: 0ms !important;
   }
 }
+
+/* Device column: fixed bounds so the two-line cell never pushes the row taller. */
+.th-device-cell {
+  min-width: 240px;
+  max-width: 300px;
+}
+.th-device-cell > div {
+  max-width: 280px;
+}
