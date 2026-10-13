@@ -5,7 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] CLIENT-DOCS-2026-10-13 — client profile, phase 2: documentation (not deployed)
+## [2026-10-13] CLIENT-DOCS-2026-10-13 — client profile, phase 2: documentation (`b490029`)
+
+Backend and frontend deployed 2026-10-13 21:31–21:36 (Tirana). Dump
+`/opt/backups/techi/pre-client-docs-2026-10-13_21-31.sql.gz` (`gzip -t` OK);
+rollback images `techi-platform-{backend,frontend}:pre-client-docs-fb5292d`.
+`alembic upgrade head` → `h8i9j0k1l2m3` while the old backend served (new
+table only, empty, with its client_id index). Backend ready 7 s after start,
+0 QueuePool; frontend healthy; guard and smoke passed; documents endpoint 401
+unauthenticated; read-only check as owner: list and search 200 (empty),
+unknown client 404, profile 200. No test pages were written to production.
+Root disk 88% (2.9 GB free) after the builds.
 
 Backend and frontend, **one migration** (`h8i9j0k1l2m3`, new table only).
 
