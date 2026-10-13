@@ -5,6 +5,45 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] CONNECT-OFFLINE-2026-10-13 deploy (`d489db7`)
+
+The two entries below shipped together, frontend only, deployed 2026-10-13
+14:50 (Tirana), no migration, no dump (database and backend untouched).
+Rollback image `techi-platform-frontend:pre-connect-offline-7cabf0c`. Guard
+passed before and after, `nginx -t` OK in the new image, container healthy,
+smoke passed, `.th-tag` and "Device is offline" present in the served bundle.
+Root disk 89% (2.6 GB free) after the build. Authenticated browser check
+pending.
+
+## [2026-10-13] TABLE-TAGS-2026-10-13 — compact row tags, no clipping
+
+Frontend only. The Devices table's row badges (Reboot, patch, maintenance,
+duplicate, lifecycle, user source) were 22px rounded pills inside a
+`max-w-[220px] overflow-hidden whitespace-nowrap` line, so a second or third
+badge was cut off. They now use `.th-tag` (`index.css`): 16px, 3px radius,
+10px uppercase, tone via `--chip-tone`, never shrinks. The line under the
+device name wraps instead of clipping. The mobile device cards use the same
+tag at `data-size="md"` (18px, 10.5px) instead of the 22px `.th-mdev-badge`.
+New E2E `table-tags.spec.ts` gives one row Reboot + Maintenance + Duplicate
+and checks every tag sits whole inside its cell, dark and light, desktop and
+mobile. `tsc`, ESLint, Prettier, all Vitest files and the full Playwright
+suite (87 passed, 53 skipped by design) pass.
+
+## [2026-10-13] CONNECT-OFFLINE-2026-10-13 — Connect disabled for offline devices
+
+Frontend only, no migration. The owner asked that every offline device's
+Connect button be unclickable. `isDeviceOffline()` in `utils/deviceStatus.ts`
+(`freshness_state ?? status`, anything but online/stale) now gates Connect in
+the Devices table (desktop rows and mobile cards), both device drawers and the
+mobile device page; the tooltip reads "Device is offline". `ConnectMenu` gained
+`disabledReason`, which disables the main and ▾ segments and keeps the menu
+closed. Stale devices stay connectable. This reverses the frontend half of
+[2026-07-02] "Remote Support Connect Must Not Depend on Agent Heartbeat": a
+Windows PC whose agent is down but whose Remote Support service still runs can
+no longer be reached from these buttons. The backend `connect-url` endpoint is
+unchanged. `tsc`, ESLint and all 47 Vitest files pass (new tests in
+`deviceStatus.test.ts` and `ConnectMenu.test.tsx`).
+
 ## [2026-10-13] DASHBOARD-LAYOUT-2026-10-13 — compact operators, status per category, breakdown motion (`639e19f`)
 
 Backend and frontend, deployed 2026-10-13 11:11–11:18, no migration.
