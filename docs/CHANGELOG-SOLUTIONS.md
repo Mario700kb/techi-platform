@@ -5,7 +5,12 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] DASHBOARD-FAST-2026-10-13 — dashboard sections paint from cache on reload (not deployed)
+## [2026-10-13] DASHBOARD-FAST-2026-10-13 — dashboard sections paint from cache on reload (`cdfa267`)
+
+Frontend only, deployed 2026-10-13 19:40 (Tirana). Rollback image
+`techi-platform-frontend:pre-dashboard-fast-f2997c3`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200; the
+`dashboard.` persisted prefix is in the served bundle.
 
 Frontend only. The owner asked for the Operators card to appear faster after
 a refresh. The dashboard already seeded its sections from `appCache`, but
