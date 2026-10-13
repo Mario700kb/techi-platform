@@ -5,7 +5,12 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] APP-FAST-2026-10-13 — every page paints its last data at once (not deployed)
+## [2026-10-13] APP-FAST-2026-10-13 — every page paints its last data at once (`603dfa2`)
+
+Frontend only, deployed 2026-10-13 20:01 (Tirana). Rollback image
+`techi-platform-frontend:pre-app-fast-50231f9`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200; the
+Alerts and Audit chunks carry the new `page.`/`mem.` keys.
 
 Frontend only. The owner asked for the Devices/Dashboard speed-up across the
 whole app. New `src/hooks/useCachedQuery.ts`: stale-while-revalidate for one
