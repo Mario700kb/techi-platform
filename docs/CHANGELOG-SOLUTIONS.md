@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] DASHBOARD-BREAKDOWN-2026-10-13 — operators for every role, open alerts by type, devices by category (`9944fd3`)
+
+Backend and frontend, deployed 2026-10-13 10:51–10:58, no migration.
+Pre-deploy dump `/opt/backups/techi/pre-dashboard-breakdown-2026-10-13_10-51.sql.gz`
+(`gzip -t` OK); rollback images
+`techi-platform-{backend,frontend}:pre-dashboard-breakdown-43155da`.
+
+The owner asked for the operator list with who is online, a chart of alerts
+by category and the device count per category. The operators panel was shown
+only to non-admins (owner/admin saw System status in its place and only the
+"N operators online" chip); it now has its own dashboard row for every role,
+lists every operator (online first, then by name) and shows when an offline
+one was last active. Beside it, two share-of-total bar lists: open alerts by
+type from the existing `/alerts/count` `by_kind`, and active devices by
+category from the new overview field `tree_counts.by_category` — summed in
+the loop that already reads per-client category counts, so devices without a
+client are included and no query is added. Servers and Client PCs rows open
+the Devices list with the matching quick filter (same classification).
+Verified live: guard and smoke passed, new images healthy, `by_category`
+`{servers: 134, clientpc: 783, network: 3}` sums to the 920 active devices,
+0 tracebacks, new panels present in the served bundle. Authenticated browser
+check pending.
+
 ## [2026-10-13] SIDEBAR-GEOMETRY-2026-10-13 — icons stay still while the sidebar collapses (`d42c9c5`)
 
 Frontend only, deployed 2026-10-13. Rollback image
