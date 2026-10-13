@@ -5,7 +5,14 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] HEARTBEAT-OFFLOOP-2026-10-13 — incident follow-ups (not deployed)
+## [2026-10-13] HEARTBEAT-OFFLOOP-2026-10-13 — incident follow-ups (`55a4660`)
+
+Backend only, deployed 2026-10-13 16:02 (Tirana), no migration. Dump
+`/opt/backups/techi/pre-offloop-2026-10-13_16-00.sql.gz` (`gzip -t` OK),
+rollback image `techi-platform-backend:pre-offloop-3fab2ef`. Ready 8 s after
+start (50 s after the 15:47 hotfix restart), 0 QueuePool errors, 0 side-effect
+failures, guard and smoke passed, 702 devices seen within 5 minutes,
+`idle in transaction` sessions sub-second.
 
 Backend only. Audit of every `SessionLocal()` outside the workers after the
 15:24 outage:
