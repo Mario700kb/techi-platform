@@ -5,7 +5,13 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] DEVICES-FAST-2026-10-13 — Devices page paints from cache on reload (not deployed)
+## [2026-10-13] DEVICES-FAST-2026-10-13 — Devices page paints from cache on reload (`ae32a42`)
+
+Frontend only, deployed 2026-10-13 19:29 (Tirana). Rollback image
+`techi-platform-frontend:pre-devices-fast-c06475c`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200; the
+served bundle carries the `techi.cache.v1:` persistence and the cached quick
+counts.
 
 Frontend only. The owner reported the device list and the Explorer appear
 late. Production API timings from inside the backend are small (devices page
