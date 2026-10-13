@@ -5096,8 +5096,8 @@ a.th-list-row:hover {
   color: var(--th-text-primary);
 }
 .th-tree-item:focus-visible {
-  outline: 2px solid var(--th-accent-border);
-  outline-offset: -2px;
+  outline: 1px solid var(--th-accent-border);
+  outline-offset: -1px;
 }
 .th-tree-icon {
   display: inline-flex;
@@ -5116,12 +5116,12 @@ a.th-list-row:hover {
   color: var(--th-text-primary);
 }
 .th-tree-item[data-active="true"] {
-  background: color-mix(in srgb, var(--th-accent) 10%, transparent);
+  background: color-mix(in srgb, var(--th-text-primary) 7%, transparent);
   color: var(--th-text-primary);
   font-weight: 600;
 }
 .th-tree-item[data-active="true"] .th-tree-icon {
-  color: var(--th-accent-bright);
+  color: var(--th-text-primary);
 }
 .th-tree-caret {
   display: inline-flex;
@@ -5146,8 +5146,29 @@ a.th-list-row:hover {
   background: var(--th-chip-bg);
 }
 .th-tree-item[data-active="true"] .th-tree-count {
-  color: var(--th-accent-bright);
-  background: color-mix(in srgb, var(--th-accent) 14%, transparent);
+  color: var(--th-text-primary);
+  background: color-mix(in srgb, var(--th-text-primary) 10%, transparent);
+}
+/* Client status ring: online, then stale, then offline, clockwise from the top. */
+.th-tree-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--th-status-online) 0 var(--online),
+    var(--th-status-stale) var(--online) var(--stale),
+    var(--th-status-offline) var(--stale) 100%
+  );
+  -webkit-mask: radial-gradient(circle, transparent 2.5px, #000 3px);
+  mask: radial-gradient(circle, transparent 2.5px, #000 3px);
+}
+.th-tree-ring[data-empty="true"] {
+  background: var(--th-border-default);
+}
+.th-tree-platform {
+  display: inline-flex;
+  flex: none;
+  color: var(--th-text-faint);
 }
 .th-tree-maint {
   width: 6px;

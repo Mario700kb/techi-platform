@@ -254,6 +254,7 @@ class TestDeviceScopeByClientId:
             "by_client": {"1": 1},
             "by_client_category": {"1": {"clientpc": 1}},
             "by_category": {"clientpc": {"total": 1, "online": 1, "stale": 0, "offline": 0}},
+            "by_client_status": {"1": {"total": 1, "online": 1, "stale": 0, "offline": 0}},
             # Platform Expansion: empty with FEATURE_LINUX off (default).
             "by_client_category_platform": {},
         }
@@ -262,6 +263,26 @@ class TestDeviceScopeByClientId:
         assert body["average_health"] == 94
         assert body["needs_updates"] == 0
         assert len(response.content) < 5000
+
+    def test_overview_counts_each_client_by_freshness_across_categories(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "FEATURE_LINUX", False)
+        invalidate_overview_cache()
+        op = _operator(db, "op_client_status")
+        _team_with_client(db, op, client_id=1)
+        _team_with_client(db, op, client_id=2)
+        pc = _device(db, "RUST-CS-PC", client_id=1, hostname="pc")
+        pc.last_seen = utcnow() - timedelta(seconds=30)
+        server = _device(db, "RUST-CS-SRV", client_id=1, hostname="srv")
+        server.device_type = "server"
+        _device(db, "RUST-CS-OFF", client_id=2, hostname="off")
+        db.commit()
+
+        body = _make_app(db, op).get("/devices/overview").json()
+
+        assert body["tree_counts"]["by_client_status"] == {
+            "1": {"total": 2, "online": 1, "stale": 0, "offline": 1},
+            "2": {"total": 1, "online": 0, "stale": 0, "offline": 1},
+        }
 
     def test_overview_agent_outdated_is_zero_when_versions_match(self, db, tmp_path, monkeypatch):
         invalidate_overview_cache()
@@ -560,6 +581,7 @@ def test_overview_uses_two_queries_and_cache(db, monkeypatch):
 
     assert overview.stats.total == 700
     assert overview.tree_counts.by_client_category == {}
+    assert overview.tree_counts.by_client_status == {}
     assert {k: v.model_dump() for k, v in overview.tree_counts.by_category.items()} == {
         "clientpc": {"total": 700, "online": 0, "stale": 0, "offline": 700}
     }

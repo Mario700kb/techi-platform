@@ -1,6 +1,5 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { CSSProperties, memo, useEffect, useMemo, useState } from "react";
 import {
-  Building2,
   ChevronRight,
   Folder,
   HardDrive,
@@ -16,7 +15,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { Client, DeviceGroup } from "../api/clients";
-import { Device } from "../api/devices";
+import { Device, DeviceStats } from "../api/devices";
 import PlatformIcon from "./PlatformIcon";
 import { TERMS } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -64,6 +63,7 @@ interface TreeCounts {
   byClient: Map<number, number>;
   byClientCategory: Map<number, Map<string, number>>;
   byClientCategoryPlatform?: Map<number, Map<string, Map<string, number>>>;
+  byClientStatus?: Map<number, DeviceStats>;
 }
 
 interface DeviceTreeProps {
@@ -256,7 +256,7 @@ const DeviceTree = memo(function DeviceTree({
                   withinActive={activeClientFolder?.clientId === client.id || (expanded && childFolders.length > 0)}
                   expanded={expanded}
                   hasChildren={childFolders.length > 0}
-                  icon={Building2}
+                  status={treeCounts.byClientStatus?.get(client.id)}
                   label={client.name}
                   count={clientCount(client.id)}
                   hasMaintenance={clientHasMaintenance(client.id)}
@@ -270,6 +270,8 @@ const DeviceTree = memo(function DeviceTree({
                       <ul className="fleet-tree-child">
                         {childFolders.map((folder) => {
                           const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
+                          // One platform repeats its folder's count, so it becomes an icon on the folder row.
+                          const onlyPlatform = platforms.length === 1 ? platforms[0][0] : null;
                           return (
                             <li key={folder.id}>
                               <TreeButton
@@ -277,11 +279,12 @@ const DeviceTree = memo(function DeviceTree({
                                 child
                                 icon={folder.icon}
                                 label={folder.label}
+                                platformBadge={onlyPlatform}
                                 count={folderCount(client.id, folder.id)}
                                 hasMaintenance={folderHasMaintenance(client.id, folder.id)}
                                 onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
                               />
-                              {platforms.length > 0 && (
+                              {platforms.length > 1 && (
                                 <ul className="fleet-tree-child">
                                   {platforms.map(([platform, count]) => {
                                     const key = `client-${client.id}-${folder.id}-${platform}`;
@@ -336,6 +339,10 @@ interface TreeButtonProps {
   child?: boolean;
   icon?: typeof LayoutGrid;
   platformIcon?: string;
+  /** The folder's single platform, shown as a trailing icon instead of a sub-row. */
+  platformBadge?: string | null;
+  /** Client rows: freshness of its devices, drawn as a ring in the icon column. */
+  status?: DeviceStats;
   label: string;
   count: number;
   expanded?: boolean;
@@ -350,6 +357,8 @@ function TreeButton({
   child = false,
   icon: Icon,
   platformIcon,
+  platformBadge = null,
+  status,
   label,
   count,
   expanded = false,
@@ -369,17 +378,58 @@ function TreeButton({
       data-active={active}
       data-within={withinActive}
       data-child={child}
-      title={label}
     >
-      <span className="th-tree-icon" aria-hidden="true">
-        {platformIcon ? <PlatformIcon platform={platformIcon} size={14} /> : Icon ? <Icon className="h-4 w-4" /> : null}
+      <span className="th-tree-icon" aria-hidden={!status}>
+        {status ? (
+          <StatusRing stats={status} />
+        ) : platformIcon ? (
+          <PlatformIcon platform={platformIcon} size={14} />
+        ) : Icon ? (
+          <Icon className="h-4 w-4" />
+        ) : null}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span
+        className="min-w-0 flex-1 truncate"
+        // The full name as a tooltip only when it is cut off.
+        onMouseEnter={(e) => {
+          const el = e.currentTarget;
+          el.title = el.scrollWidth > el.clientWidth ? label : "";
+        }}
+      >
+        {label}
+      </span>
       {hasMaintenance && <span className="th-tree-maint" title="Has devices in maintenance" />}
+      {platformBadge && (
+        <span className="th-tree-platform" title={PLATFORM_LABELS[platformBadge] ?? platformBadge}>
+          <PlatformIcon platform={platformBadge} size={12} />
+        </span>
+      )}
       <span className="th-tree-count">{formatCount(count)}</span>
       <span className="th-tree-caret" aria-hidden="true">
         {hasChildren && <ChevronRight className={clsx("th-tree-chevron h-3.5 w-3.5", expanded && "rotate-90")} />}
       </span>
     </button>
+  );
+}
+
+// Share of the client's devices online (green), stale (amber) and offline
+// (grey), clockwise from the top.
+function StatusRing({ stats }: { stats: DeviceStats }) {
+  const total = stats.total || 1;
+  const online = (stats.online / total) * 100;
+  const stale = online + (stats.stale / total) * 100;
+  const label =
+    stats.total === 0
+      ? "No devices"
+      : `${formatCount(stats.online)} online · ${formatCount(stats.stale)} stale · ${formatCount(stats.offline)} offline`;
+  return (
+    <span
+      className="th-tree-ring"
+      role="img"
+      aria-label={label}
+      title={label}
+      data-empty={stats.total === 0 || undefined}
+      style={{ "--online": `${online}%`, "--stale": `${stale}%` } as CSSProperties}
+    />
   );
 }

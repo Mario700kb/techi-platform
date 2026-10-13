@@ -185,12 +185,21 @@ function sessionBody(state: MockState): AuthSession {
   };
 }
 
-const overview: DeviceFleetOverview = {
+export const overview: DeviceFleetOverview = {
   stats: { total: 5, online: 3, stale: 1, offline: 1 },
   tree_counts: {
     total: 5,
     unassigned: 0,
     by_client: { "1": 3, "2": 2 },
+    by_client_category: { "1": { clientpc: 2, servers: 1 }, "2": { clientpc: 2 } },
+    by_client_category_platform: {
+      "1": { clientpc: { windows: 2 }, servers: { windows: 1 } },
+      "2": { clientpc: { windows: 2 } },
+    },
+    by_client_status: {
+      "1": { total: 3, online: 2, stale: 1, offline: 0 },
+      "2": { total: 2, online: 1, stale: 0, offline: 1 },
+    },
     by_category: {
       clientpc: { total: 4, online: 2, stale: 1, offline: 1 },
       servers: { total: 1, online: 1, stale: 0, offline: 0 },

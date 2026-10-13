@@ -321,6 +321,8 @@ export interface DeviceFleetOverview {
     by_client_category?: Record<string, Record<string, number>>;
     // Fleet-wide counts per category by freshness, devices without a client included.
     by_category?: Record<string, DeviceStats>;
+    // Per client by freshness (the Explorer's status ring).
+    by_client_status?: Record<string, DeviceStats>;
     // Platform Expansion: {clientId: {category: {platform: count}}} (empty when FEATURE_LINUX off).
     by_client_category_platform?: Record<string, Record<string, Record<string, number>>>;
   };

@@ -16,6 +16,7 @@ import {
   DeviceQuickCounts,
   DeviceQuickFilter,
   DeviceSortKey,
+  DeviceStats,
 } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
@@ -51,6 +52,7 @@ interface TreeCounts {
   byClientCategory: Map<number, Map<string, number>>;
   // Platform Expansion: clientId → category → platform → count.
   byClientCategoryPlatform: Map<number, Map<string, Map<string, number>>>;
+  byClientStatus: Map<number, DeviceStats>;
 }
 
 function computeTreeCounts(devices: Device[]): TreeCounts {
@@ -67,6 +69,7 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
     byClient,
     byClientCategory: new Map(),
     byClientCategoryPlatform: new Map(),
+    byClientStatus: new Map(),
   };
 }
 
@@ -243,6 +246,9 @@ export default function Devices() {
           Number(clientId),
           new Map(Object.entries(cats).map(([category, plats]) => [category, new Map(Object.entries(plats))])),
         ]),
+      ),
+      byClientStatus: new Map(
+        Object.entries(fleetOverview.tree_counts.by_client_status ?? {}).map(([id, stats]) => [Number(id), stats]),
       ),
     };
   }, [fleetOverview]);

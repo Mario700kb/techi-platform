@@ -128,6 +128,7 @@ class DeviceOverviewService:
         by_client: dict[int, int] = {}
         by_client_category: dict[int, dict[str, int]] = {}
         by_category: dict[str, dict[str, int]] = {}
+        by_client_status: dict[int, dict[str, int]] = {}
         unassigned = 0
         for client_id, category, total, online, stale, offline in count_rows:
             stats["total"] += total
@@ -144,6 +145,11 @@ class DeviceOverviewService:
             else:
                 by_client[client_id] = by_client.get(client_id, 0) + total
                 by_client_category.setdefault(client_id, {})[category] = total
+                client_row = by_client_status.setdefault(client_id, {"total": 0, "online": 0, "stale": 0, "offline": 0})
+                client_row["total"] += total
+                client_row["online"] += online
+                client_row["stale"] += stale
+                client_row["offline"] += offline
 
         active_entries = [entry for entry in get_health_index(self.db, scope).values() if not entry.archived]
         critical = sum(1 for entry in active_entries if entry.state == "critical")
@@ -160,6 +166,7 @@ class DeviceOverviewService:
                 by_client=by_client,
                 by_client_category=by_client_category,
                 by_category={category: DeviceStats(**row) for category, row in by_category.items()},
+                by_client_status={client_id: DeviceStats(**row) for client_id, row in by_client_status.items()},
                 # Extra aggregation query ONLY when Linux is enabled — the
                 # overview stays a 2-query hot path in today's production.
                 by_client_category_platform=(
