@@ -164,7 +164,7 @@ def agent_heartbeat(
         RemoteSupportPasswordService(db).get_or_create(device) if authenticated else None
     )
 
-    return {
+    response = {
         "device_id": device.id,
         "heartbeat_id": heartbeat.id,
         "rustdesk_id": device.rustdesk_id,
@@ -177,6 +177,12 @@ def agent_heartbeat(
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
         "remote_support_password": rs_password,
     }
+    # Hand the connection back before the side effects open their own session.
+    # get_db would only close it after them, so every heartbeat held two pool
+    # connections at once and a burst (all agents after a restart) exhausted the
+    # pool with each request waiting on a second connection.
+    db.close()
+    return response
 
 
 @router.post("/power-event", status_code=status.HTTP_204_NO_CONTENT)
