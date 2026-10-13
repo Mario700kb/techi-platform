@@ -1,12 +1,20 @@
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
 from app.models.audit_log import AuditLog
+from app.models.device import Device
+
+
+def _as_int(value) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 class AuditLogRepository:
@@ -23,6 +31,7 @@ class AuditLogRepository:
         entity_id: Optional[int] = None,
         details: Optional[dict] = None,
     ) -> AuditLog:
+        device_id, client_id = self._subject(entity_type, entity_id, details)
         entry = AuditLog(
             operator_id=operator_id,
             operator_username=operator_username,
@@ -30,11 +39,38 @@ class AuditLogRepository:
             entity_type=entity_type,
             entity_id=entity_id,
             details_json=json.dumps(details) if details else None,
+            device_id=device_id,
+            client_id=client_id,
             created_at=utcnow(),
         )
         self.db.add(entry)
         self.db.commit()
         return entry
+
+    def _subject(
+        self, entity_type: Optional[str], entity_id: Optional[int], details: Optional[dict]
+    ) -> Tuple[Optional[int], Optional[int]]:
+        details = details or {}
+        device_id = entity_id if entity_type == "device" else _as_int(details.get("device_id"))
+        client_id = entity_id if entity_type == "client" else _as_int(details.get("client_id"))
+        if client_id is None and device_id is not None:
+            client_id = self.db.query(Device.client_id).filter(Device.id == device_id).scalar()
+        return device_id, client_id
+
+    def for_client(self, client_id: int, device_ids: Optional[List[int]], limit: int, offset: int) -> Tuple[int, List[AuditLog]]:
+        """Entries about a client or its devices, newest first.
+
+        device_ids None: the whole client. A list: an operator who sees only
+        those devices of it gets only their entries.
+        """
+        q = self.db.query(AuditLog)
+        if device_ids is None:
+            q = q.filter(AuditLog.client_id == client_id)
+        else:
+            q = q.filter(AuditLog.device_id.in_(device_ids or [-1]))
+        total = q.count()
+        rows = q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
+        return total, rows
 
     def get_multi(
         self,

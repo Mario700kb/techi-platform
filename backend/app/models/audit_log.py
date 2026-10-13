@@ -15,4 +15,8 @@ class AuditLog(Base):
     entity_type = Column(String(64), nullable=True, index=True)
     entity_id = Column(Integer, nullable=True)
     details_json = Column(Text, nullable=True)
+    # The device and client an entry concerns, resolved when it is written, so
+    # a client's activity is an indexed lookup rather than a scan of details_json.
+    device_id = Column(Integer, nullable=True, index=True)
+    client_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)

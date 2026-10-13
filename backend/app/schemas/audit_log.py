@@ -14,6 +14,8 @@ class AuditLogOut(BaseModel):
     entity_type: Optional[str] = None
     entity_id: Optional[int] = None
     details_json: Optional[str] = None
+    device_id: Optional[int] = None
+    client_id: Optional[int] = None
     created_at: datetime
 
 

@@ -1,6 +1,8 @@
 import { CSSProperties, memo, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
+  IdCard,
   Folder,
   HardDrive,
   Layers,
@@ -86,6 +88,7 @@ const DeviceTree = memo(function DeviceTree({
   showPlatformFolders = false,
   onRefreshCounts,
 }: DeviceTreeProps) {
+  const navigate = useNavigate();
   const activeClientFolder = useMemo(() => {
     const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors|other)$/);
     if (!match) return null;
@@ -268,12 +271,22 @@ const DeviceTree = memo(function DeviceTree({
                   <div className="th-tree-collapse" data-open={expanded} aria-hidden={!expanded}>
                     <div className="th-tree-collapse-inner">
                       <ul className="fleet-tree-child">
+                        <li style={{ "--i": 0 } as CSSProperties}>
+                          <TreeButton
+                            active={false}
+                            child
+                            icon={IdCard}
+                            label="Client profile"
+                            count={null}
+                            onClick={() => navigate(`/clients/${client.id}`)}
+                          />
+                        </li>
                         {childFolders.map((folder, folderIndex) => {
                           const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
                           // One platform repeats its folder's count, so it becomes an icon on the folder row.
                           const onlyPlatform = platforms.length === 1 ? platforms[0][0] : null;
                           return (
-                            <li key={folder.id} style={{ "--i": folderIndex } as CSSProperties}>
+                            <li key={folder.id} style={{ "--i": folderIndex + 1 } as CSSProperties}>
                               <TreeButton
                                 active={selectedKey === `client-${client.id}-${folder.id}`}
                                 child
@@ -344,7 +357,8 @@ interface TreeButtonProps {
   /** Client rows: freshness of its devices, drawn as a ring in the icon column. */
   status?: DeviceStats;
   label: string;
-  count: number;
+  /** null: a link row (e.g. the client profile), no count badge. */
+  count: number | null;
   expanded?: boolean;
   hasChildren?: boolean;
   hasMaintenance?: boolean;
@@ -405,9 +419,11 @@ function TreeButton({
         </span>
       )}
       {/* Keyed by value, so a changed count fades in rather than snapping. */}
-      <span key={count} className="th-tree-count">
-        {formatCount(count)}
-      </span>
+      {count !== null && (
+        <span key={count} className="th-tree-count">
+          {formatCount(count)}
+        </span>
+      )}
       <span className="th-tree-caret" aria-hidden="true">
         {hasChildren && <ChevronRight className={clsx("th-tree-chevron h-3.5 w-3.5", expanded && "rotate-90")} />}
       </span>

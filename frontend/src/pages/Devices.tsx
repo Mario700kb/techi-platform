@@ -709,6 +709,22 @@ export default function Devices() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlQuery]);
 
+  // "Open in Devices" from a client profile: select that client in the Explorer.
+  const urlClientId = Number(searchParams.get("client")) || null;
+  useEffect(() => {
+    if (urlClientId === null) return;
+    handleTreeSelect(`client-${urlClientId}`);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("client");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlClientId]);
+
   const urlDeviceId = Number(searchParams.get("device")) || null;
   useEffect(() => {
     if (urlDeviceId === null) return;

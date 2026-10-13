@@ -8,6 +8,8 @@ export interface AuditLogEntry {
   entity_type: string | null;
   entity_id: number | null;
   details_json: string | null;
+  device_id?: number | null;
+  client_id?: number | null;
   created_at: string;
 }
 

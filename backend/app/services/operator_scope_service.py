@@ -65,6 +65,34 @@ class OperatorScopeService:
 
         return visible
 
+    def scope_for_client(self, scope: Optional[AllowedScope], client_id: int) -> Optional[AllowedScope]:
+        """The part of *scope* inside one client, or None when none of it is visible.
+
+        An unrestricted operator (scope None) and one granted the whole client
+        see all of it; one granted only some of its groups or devices sees
+        just those.
+        """
+        from app.models.device import Device
+        from app.models.device_group import DeviceGroup
+
+        if scope is None or client_id in scope.client_ids:
+            return AllowedScope(client_ids=frozenset({client_id}))
+        group_ids = frozenset(
+            r[0]
+            for r in self.db.query(DeviceGroup.id)
+            .filter(DeviceGroup.client_id == client_id, DeviceGroup.id.in_(list(scope.group_ids)))
+            .all()
+        ) if scope.group_ids else frozenset()
+        device_ids = frozenset(
+            r[0]
+            for r in self.db.query(Device.id)
+            .filter(Device.client_id == client_id, Device.id.in_(list(scope.device_ids)))
+            .all()
+        ) if scope.device_ids else frozenset()
+        if not group_ids and not device_ids:
+            return None
+        return AllowedScope(group_ids=group_ids, device_ids=device_ids)
+
     def get_visible_group_ids(self, scope: AllowedScope) -> Set[int]:
         """Return the set of group IDs visible under *scope*."""
         from app.models.device import Device

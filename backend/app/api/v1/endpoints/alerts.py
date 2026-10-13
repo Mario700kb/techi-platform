@@ -12,6 +12,7 @@ from app.repositories.alert_repository import AlertRepository
 from app.schemas.alert import AlertCountResponse, AlertOut
 from app.services.alert_engine import _alert_payload
 from app.services.device_service import DeviceService
+from app.services.operator_scope_service import OperatorScopeService
 from app.services.token_usage_alert_service import build_token_usage_alerts
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
@@ -35,13 +36,18 @@ def list_alerts(
     severity: Optional[str] = Query(default=None, pattern="^(info|warning|critical)$"),
     kind: Optional[str] = None,
     search: Optional[str] = Query(default=None, max_length=100),
+    client_id: Optional[int] = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ):
+    if client_id is not None:
+        scope = OperatorScopeService(db).scope_for_client(scope, client_id)
+        if scope is None:
+            raise HTTPException(status_code=404, detail="Client not found")
     repo = AlertRepository(db)
     rows = repo.list_with_device(
         scope=scope,
-        state=AlertState.OPEN.value if state == "open" else None,
+        state=state if state in (AlertState.OPEN.value, AlertState.RESOLVED.value) else None,
         severity=severity,
         kind=kind,
         search=search,
@@ -53,7 +59,13 @@ def list_alerts(
     # always "open" — they resolve themselves once max_uses is raised. They
     # describe enrollment tokens, not devices, so only an unscoped operator
     # sees them.
-    if offset == 0 and scope is None and not search and kind in (None, "token_usage_warning", "token_usage_critical"):
+    if (
+        offset == 0
+        and scope is None
+        and not search
+        and state != AlertState.RESOLVED.value
+        and kind in (None, "token_usage_warning", "token_usage_critical")
+    ):
         token_alerts = [
             alert for alert in build_token_usage_alerts(db)
             if (severity is None or alert["severity"] == severity) and (kind is None or alert["kind"] == kind)
@@ -68,7 +80,12 @@ def alert_count(
     _: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
     search: Optional[str] = Query(default=None, max_length=100),
+    client_id: Optional[int] = None,
 ):
+    if client_id is not None:
+        scope = OperatorScopeService(db).scope_for_client(scope, client_id)
+        if scope is None:
+            raise HTTPException(status_code=404, detail="Client not found")
     counts = AlertRepository(db).open_counts(scope, search)
     by_severity, by_kind = counts["by_severity"], counts["by_kind"]
     total = counts["total"]

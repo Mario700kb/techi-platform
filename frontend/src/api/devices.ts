@@ -365,8 +365,9 @@ export interface FleetInsights {
   generated_at: string;
 }
 
-export async function getFleetInsights(days = 30): Promise<FleetInsights> {
-  return fetchJson<FleetInsights>(`/api/v1/devices/insights?days=${days}`);
+export async function getFleetInsights(days = 30, clientId?: number): Promise<FleetInsights> {
+  const client = clientId != null ? `&client_id=${clientId}` : "";
+  return fetchJson<FleetInsights>(`/api/v1/devices/insights?days=${days}${client}`);
 }
 
 // Counts for every status tab and quick filter over one selection — the same

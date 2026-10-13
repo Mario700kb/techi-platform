@@ -1,5 +1,9 @@
 import { fetchJson } from "./client";
 
+import type { AuditLogPage } from "./audit";
+import type { DeviceStats } from "./devices";
+import type { AlertCount } from "../types/alert";
+
 export interface Client {
   id: number;
   name: string;
@@ -143,4 +147,31 @@ export async function deleteGroup(groupId: number): Promise<DeviceGroup> {
   return fetchJson<DeviceGroup>(`/api/v1/groups/${groupId}`, {
     method: "DELETE",
   });
+}
+
+export interface ClientProfile {
+  client: Client;
+  stats: DeviceStats;
+  by_category: Record<string, DeviceStats>;
+  alerts: AlertCount;
+  average_health: number | null;
+  health_critical: number;
+  health_warning: number;
+  needs_updates: number;
+  agents_outdated: number;
+  groups: { id: number; name: string; devices: number }[];
+  last_seen: string | null;
+}
+
+export async function getClientProfile(clientId: number): Promise<ClientProfile> {
+  return fetchJson<ClientProfile>(`/api/v1/clients/${clientId}/profile`);
+}
+
+export interface ClientActivityPage extends AuditLogPage {
+  /** Current name of every device the page's entries mention. */
+  device_names: Record<number, string>;
+}
+
+export async function getClientActivity(clientId: number, limit = 50, offset = 0): Promise<ClientActivityPage> {
+  return fetchJson<ClientActivityPage>(`/api/v1/clients/${clientId}/activity?limit=${limit}&offset=${offset}`);
 }

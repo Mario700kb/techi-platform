@@ -36,6 +36,7 @@ from app.schemas.platform_component import (
 )
 from app.schemas.telemetry import DeviceHealth, DeviceHealthSummary, TelemetrySnapshot
 from app.services.audit_service import AuditAction, audit_log
+from app.services.operator_scope_service import OperatorScopeService
 from app.services.permission_service import MAINTENANCE_MODE
 from app.services.device_activity_service import DeviceActivityService
 from app.services.device_inventory_service import DeviceInventoryService
@@ -267,10 +268,18 @@ def read_devices_overview(
 @router.get("/insights", response_model=FleetInsights)
 def read_fleet_insights(
     days: int = Query(30, ge=7, le=60),
+    client_id: Optional[int] = None,
     db: Session = Depends(get_db),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
-    """Dashboard trends: daily availability, 7-day alert flow, top problem devices."""
+    """Dashboard trends: daily availability, 7-day alert flow, top problem devices.
+
+    With client_id, the same for that client (the client profile's Analytics).
+    """
+    if client_id is not None:
+        scope = OperatorScopeService(db).scope_for_client(scope, client_id)
+        if scope is None:
+            raise HTTPException(status_code=404, detail="Client not found")
     return FleetInsightsService(db).get_insights(scope=scope, days=days)
 
 

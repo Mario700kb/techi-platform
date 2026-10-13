@@ -9,6 +9,7 @@ import Login from "../pages/Login";
 
 const Devices = lazy(() => import("../pages/Devices"));
 const Clients = lazy(() => import("../pages/Clients"));
+const ClientProfilePage = lazy(() => import("../pages/ClientProfile"));
 const Audit = lazy(() => import("../pages/Audit"));
 const Onboarding = lazy(() => import("../pages/Onboarding"));
 const Inventory = lazy(() => import("../pages/Inventory"));
@@ -123,6 +124,18 @@ export default function AppRoutes() {
             <RequireAuth>
               <RequirePermission perm="manage_teams">
                 <Teams />
+              </RequirePermission>
+            </RequireAuth>
+          }
+        />
+        {/* A client's profile: anyone who can see devices; the API limits it to
+            the part of the client the operator's teams grant. */}
+        <Route
+          path="/clients/:id"
+          element={
+            <RequireAuth>
+              <RequirePermission perm="view_devices">
+                <ClientProfilePage />
               </RequirePermission>
             </RequireAuth>
           }

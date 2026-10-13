@@ -5,6 +5,73 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] CLIENT-PROFILE-1-2026-10-13 — client profile, phase 1 (not deployed)
+
+Backend and frontend, **one migration** (`g7h8i9j0k1l2`). The owner asked for
+an enterprise profile per client (devices, alerts, logs, documentation,
+analytics, HubSpot tickets). Agreed in three phases: 1 profile from existing
+data, 2 documentation as text pages, 3 HubSpot through a Private App token.
+
+Backend:
+- `OperatorScopeService.scope_for_client(scope, client_id)`: the part of the
+  operator's team scope inside one client (whole client, or only the groups /
+  devices granted); None → 404, so a client outside the operator's teams is
+  never revealed.
+- `GET /clients/{id}/profile`: client, devices by status and category, open
+  alerts by severity/kind, health, pending updates, outdated agents, groups
+  with device counts, last check-in — overview service with the narrowed scope
+  (cached per scope), no new heavy query.
+- `GET /clients/{id}/activity`: audit entries about the client or its devices,
+  newest first, with the current names of the devices on the page.
+- `client_id` on `GET /alerts/`, `GET /alerts/count`, `GET /devices/insights`.
+- `audit_logs.device_id` / `client_id` (indexed), filled by
+  `AuditLogRepository.create` (device from the entity or `details.device_id`,
+  client from details or the device); migration backfills the 8,266 existing
+  rows from entity/details_json. No audit write is on the heartbeat path
+  (~160 entries a day), so the extra lookup costs nothing measurable.
+- `tests/test_client_profile.py` (6): counts limited to the client, 404 outside
+  the operator's teams (profile, activity, alerts, count, insights), partial
+  access sees only its devices, alerts filtered by client, audit subject
+  resolution, activity within the operator's view.
+
+Frontend:
+- `/clients/:id` (view_devices): identity header (initials mark, status, last
+  check-in, Open in Devices, Refresh), five key figures, tabs Overview ·
+  Devices · Alerts · Activity · Analytics (Documentation and Tickets shown as
+  "Soon"). Overview: devices by category split by status, open alerts by
+  type, groups, recent activity — four even cards. Devices: searchable,
+  paginated, row opens the device. Alerts: open/resolved. Activity: audit
+  entries (memory-only cache). Analytics: 30-day availability, alert flow,
+  MTTR, devices needing attention.
+- Clients page rows open the profile; the Explorer's client branch gets a
+  "Client profile" row; `/devices?client=<id>` selects that client.
+- `BreakdownBars` and `CATEGORY_LABELS` moved to `components/BreakdownBars`.
+- E2E `client-profile.spec.ts` (figures, four even cards, every tab, Clients →
+  profile, unknown client); mock API serves trusted-domains and the device
+  tree.
+
+Review before deploy (owner asked for a second pass):
+- `GET /alerts/?state=resolved` now returns resolved alerts only, newest
+  resolution first (it returned every state, so the profile's Resolved tab
+  filtered the latest 100 in the browser and could miss resolved ones);
+  synthetic token alerts are no longer prepended to a resolved list.
+- Migration exercised on a scratch database: device from the entity, from
+  `details.device_id` (also as a string), client from details, broken and
+  non-object JSON, a device without a client; downgrade drops both columns.
+  Production is at `f6a7b8c9d0e1`; 5,190 of 8,266 entries will be filled.
+- Production timings of the profile's building blocks (read-only, existing
+  code): Gffa, 147 devices — overview 126 ms cold / 0 ms cached, open alert
+  counts 12 ms, groups 3 ms; insights 2.5 s on first open, then served from
+  the per-scope 30-minute SWR cache.
+- Six key figures (Groups added: groups and devices without one) so the grid
+  is even at every width (2×3 phone, 3×2 tablet/laptop, 6×1 wide); tabs stay
+  on one line and scroll on phones; the card's back arrow hides on phones
+  (the top bar has one) and goes to Devices when the profile was opened from a
+  link.
+
+pytest 1361 (7 new), ruff clean on the changed files; `tsc`, ESLint,
+Prettier, Vitest 230, Playwright 94 passed.
+
 ## [2026-10-13] APP-FAST-2026-10-13 — every page paints its last data at once (`603dfa2`)
 
 Frontend only, deployed 2026-10-13 20:01 (Tirana). Rollback image

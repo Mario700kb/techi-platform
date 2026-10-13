@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -37,7 +38,11 @@ describe("Clients", () => {
 
   it("shows each client's real status and device count", async () => {
     mockApi();
-    render(<Clients />);
+    render(
+      <MemoryRouter>
+        <Clients />
+      </MemoryRouter>,
+    );
     const table = (await screen.findAllByRole("table"))[0];
     const vas = within(table).getByText("Vasgroup").closest("tr")!;
     expect(within(vas).getByText("Active")).toBeInTheDocument();
@@ -48,7 +53,11 @@ describe("Clients", () => {
 
   it("finds a client by one of its groups and lists domain mappings", async () => {
     mockApi();
-    render(<Clients />);
+    render(
+      <MemoryRouter>
+        <Clients />
+      </MemoryRouter>,
+    );
     await screen.findAllByRole("table");
     fireEvent.change(screen.getByRole("textbox", { name: "Search clients" }), { target: { value: "reception" } });
     const table = screen.getAllByRole("table")[0];

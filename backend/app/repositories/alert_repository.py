@@ -124,6 +124,15 @@ class AlertRepository:
         )
         if state == AlertState.OPEN.value:
             query = query.filter(DeviceAlert.state == AlertState.OPEN.value)
+        elif state == AlertState.RESOLVED.value:
+            # Newest resolution first: what was just fixed leads the list.
+            return (
+                query.filter(DeviceAlert.state == AlertState.RESOLVED.value)
+                .order_by(DeviceAlert.resolved_at.desc(), DeviceAlert.id.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
         if severity:
             query = query.filter(DeviceAlert.severity == severity)
         if kind:

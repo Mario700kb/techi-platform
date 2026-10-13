@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Building2,
@@ -64,6 +65,7 @@ function slugify(value: string): string {
 }
 
 export default function Clients() {
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canManageClients = can("admin");
   const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
@@ -700,9 +702,19 @@ export default function Clients() {
                   const clientGroups = groupsByClient[client.id] ?? [];
                   const devices = deviceCounts[String(client.id)] ?? 0;
                   return (
-                    <tr key={client.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
+                    <tr
+                      key={client.id}
+                      className="th-alerts-row cursor-pointer"
+                      style={{ "--row": index } as CSSProperties}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button, a")) return;
+                        navigate(`/clients/${client.id}`);
+                      }}
+                    >
                       <td>
-                        <span className="th-alerts-primary">{client.name}</span>
+                        <Link to={`/clients/${client.id}`} className="th-alerts-primary th-alerts-link">
+                          {client.name}
+                        </Link>
                         <span className="th-alerts-secondary" title={client.description ?? undefined}>
                           <span className="font-mono">{client.slug}</span>
                           {client.description ? ` · ${client.description}` : ""}
