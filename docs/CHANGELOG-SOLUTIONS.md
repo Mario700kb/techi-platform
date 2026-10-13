@@ -5,6 +5,43 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] APP-FAST-2026-10-13 — every page paints its last data at once (not deployed)
+
+Frontend only. The owner asked for the Devices/Dashboard speed-up across the
+whole app. New `src/hooks/useCachedQuery.ts`: stale-while-revalidate for one
+request — the last answer for a key is shown before the first paint, the
+request refreshes it, an answer for a key the screen has left is dropped,
+`setData` keeps local mutations and the cached copy in step, and `loading`
+is true only while nothing is on screen. Keys under `page.` persist in
+sessionStorage (per operator, cleared on sign-out, via appCache); keys under
+`mem.` never leave memory.
+
+Converted, with mutations and realtime handlers kept as they were:
+
+- `page.`: Alerts list (`page.alerts.list:<filters,page>`), Reports, Teams,
+  Team detail (`page.team:<id>`; the edit forms still wait for the fresh
+  answer so Save never compares against stale values), Agent packages, Agent
+  config (fresh values replace only fields the operator has not edited),
+  Deployment package and RustDesk config, and the device views: actions,
+  notes, remote-support state (no password field), activity, open/resolved
+  alerts, telemetry, drawer layout, the mobile device record and telemetry
+  history (`page.device.<id>.*`).
+- `mem.` (never written to browser storage): Audit log and facets, Credential
+  Vault lists, Enrollment tokens and client names, the Deployment token
+  table, Notification settings (webhook URLs may embed tokens), device
+  inventory (large). Revealed passwords/secrets, one-time tokens and
+  everything fetched on a user action are not cached at all.
+- Deployment: a failed token-table load now shows the existing error banner
+  instead of failing silently.
+
+Checked in Chromium after visiting every page: sessionStorage holds only
+lists (clients, groups, dashboard sections, devices page, alerts, teams,
+deployment package/config) — no mem./vault/audit/enrollment/notification
+key and no password or secret value. With 300 ms per API call, reload to
+content: Alerts 116 ms, Teams 89 ms. `useCachedQuery` tests (6), updated
+device-alert and page tests; `tsc`, ESLint, Prettier, Vitest 230, Playwright
+90 passed.
+
 ## [2026-10-13] DASHBOARD-FAST-2026-10-13 — dashboard sections paint from cache on reload (`cdfa267`)
 
 Frontend only, deployed 2026-10-13 19:40 (Tirana). Rollback image

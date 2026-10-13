@@ -75,9 +75,11 @@ import {
   statusDotColor,
 } from "../api/actions";
 import { useAuth } from "../auth/AuthContext";
+import { appCache } from "../store/appCache";
 import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, deleteDeviceNote, DeviceNote, getDeviceNotes, updateDeviceNote } from "../api/notes";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
@@ -290,32 +292,65 @@ export default function DeviceDrawer({
   const [nameDraft, setNameDraft] = useState(device.display_name ?? "");
   const [nameSaving, setNameSaving] = useState(false);
 
-  const [actions, setActions] = useState<RemoteAction[]>([]);
-  const [actionsLoading, setActionsLoading] = useState(false);
+  const [openedFor, setOpenedFor] = useState<number | null>(null);
+  if (isOpen && openedFor !== device.id) setOpenedFor(device.id);
+  const {
+    data: actionsData,
+    loading: actionsLoading,
+    reload: loadActions,
+    setData: setActionsData,
+  } = useCachedQuery(openedFor === device.id ? `page.device.${device.id}.actions` : null, () =>
+    getDeviceActions(device.id),
+  );
+  const actions = actionsData ?? [];
+  const setActions = useCallback(
+    (update: (prev: RemoteAction[]) => RemoteAction[]) => setActionsData((prev) => update(prev ?? [])),
+    [setActionsData],
+  );
   const [selectedActionType, setSelectedActionType] = useState<ActionType>("ping");
   const [actionBusy, setActionBusy] = useState(false);
   const [actionFilter, setActionFilter] = useState<"all" | "active" | "done" | "failed">("all");
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
-  const actionLoadedFor = useRef<number | null>(null);
 
-  const [inventory, setInventory] = useState<DeviceInventory | null>(null);
-  const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [inventoryError, setInventoryError] = useState<string | null>(null);
-  const inventoryLoadedFor = useRef<number | null>(null);
+  // Inventory is deliberately NOT auto-fetched. It used to load on every drawer
+  // open, for every device, whether or not anyone looked at it — one wasted
+  // GET /devices/{id}/inventory per open across a 770-device fleet. The mobile
+  // drawer already required an explicit tap; desktop now matches it, and the
+  // operator can re-pull whenever they want via the Refresh button. A copy
+  // pulled earlier this session is shown without a request.
+  const inventoryKey = `mem.device.${device.id}.inventory`;
+  const [inventoryRequestedFor, setInventoryRequestedFor] = useState<number | null>(null);
+  const inventoryQuery = useCachedQuery(inventoryRequestedFor === device.id ? inventoryKey : null, () =>
+    getDeviceInventory(device.id),
+  );
+  const inventory = inventoryQuery.data ?? appCache.peek<DeviceInventory>(inventoryKey);
   const platformFeatures = usePlatformFeatures();
   const [activeTab, setActiveTab] = useState<DrawerTab>("overview");
   const drawerTabsRef = useTabIndicator<HTMLDivElement>(activeTab);
-  const [notes, setNotes] = useState<DeviceNote[]>([]);
-  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesFor, setNotesFor] = useState<number | null>(null);
+  if (isOpen && activeTab === "notes" && notesFor !== device.id) setNotesFor(device.id);
+  const {
+    data: notesData,
+    loading: notesLoading,
+    setData: setNotesData,
+  } = useCachedQuery(notesFor === device.id ? `page.device.${device.id}.notes` : null, () => getDeviceNotes(device.id));
+  const notes = notesData ?? [];
+  const setNotes = useCallback(
+    (update: (prev: DeviceNote[]) => DeviceNote[]) => setNotesData((prev) => update(prev ?? [])),
+    [setNotesData],
+  );
   const [noteText, setNoteText] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
-  const notesLoadedFor = useRef<number | null>(null);
 
   // Remote Support tab state
-  const [rsDevice, setRsDevice] = useState<RemoteSupportDevice | null>(null);
-  const [rsLoading, setRsLoading] = useState(false);
+  const [rsFor, setRsFor] = useState<number | null>(null);
+  if (isOpen && activeTab === "remote_support" && rsFor !== device.id) setRsFor(device.id);
+  const { data: rsDevice, loading: rsLoading } = useCachedQuery<RemoteSupportDevice>(
+    rsFor === device.id ? `page.device.${device.id}.remote-support` : null,
+    () => getRemoteSupportDevice(device.id),
+  );
   const [rsBusyAction, setRsBusyAction] = useState<string | null>(null);
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
   const [maintFormOpen, setMaintFormOpen] = useState(false);
@@ -347,7 +382,6 @@ export default function DeviceDrawer({
     }
   };
   const [rsCopySuccess, setRsCopySuccess] = useState(false);
-  const rsLoadedFor = useRef<number | null>(null);
   const [rsPassword, setRsPassword] = useState<string | null>(null);
   const [rsPasswordSource, setRsPasswordSource] = useState<string | null>(null);
   const [rsPasswordBusy, setRsPasswordBusy] = useState(false);
@@ -410,104 +444,19 @@ export default function DeviceDrawer({
     setActiveTab("overview");
   }, [device.id]);
 
-  const loadActions = useCallback(async () => {
-    setActionsLoading(true);
-    try {
-      const data = await getDeviceActions(device.id);
-      setActions(data);
-    } catch {
-      // non-critical
-    } finally {
-      setActionsLoading(false);
-    }
-  }, [device.id]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (actionLoadedFor.current !== device.id) {
-      actionLoadedFor.current = device.id;
-      void loadActions();
-    }
-  }, [isOpen, device.id, loadActions]);
-
-  const loadInventory = useCallback(async () => {
-    setInventoryLoading(true);
-    setInventoryError(null);
-    try {
-      const data = await getDeviceInventory(device.id);
-      setInventory(data);
-    } catch (err) {
-      setInventoryError(err instanceof Error ? err.message : "The inventory request failed.");
-    } finally {
-      setInventoryLoading(false);
-    }
-  }, [device.id]);
-
-  // Inventory is deliberately NOT auto-fetched. It used to load on every drawer
-  // open, for every device, whether or not anyone looked at it — one wasted
-  // GET /devices/{id}/inventory per open across a 770-device fleet. The mobile
-  // drawer already required an explicit tap; desktop now matches it, and the
-  // operator can re-pull whenever they want via the Refresh button.
-  useEffect(() => {
-    if (!isOpen) return;
-    if (inventoryLoadedFor.current !== device.id) {
-      inventoryLoadedFor.current = device.id;
-      setInventory(null);
-      setInventoryError(null);
-    }
-  }, [isOpen, device.id]);
-
-  const loadNotes = useCallback(async () => {
-    setNotesLoading(true);
-    try {
-      const data = await getDeviceNotes(device.id);
-      setNotes(data);
-    } catch {
-      setNotes([]);
-    } finally {
-      setNotesLoading(false);
-    }
-  }, [device.id]);
-
-  useEffect(() => {
-    if (!isOpen || activeTab !== "notes") return;
-    if (notesLoadedFor.current !== device.id) {
-      notesLoadedFor.current = device.id;
-      void loadNotes();
-    }
-  }, [isOpen, activeTab, device.id, loadNotes]);
+  const { reload: reloadInventory } = inventoryQuery;
+  const loadInventory = useCallback(() => {
+    if (inventoryRequestedFor === device.id) void reloadInventory();
+    else setInventoryRequestedFor(device.id);
+  }, [inventoryRequestedFor, device.id, reloadInventory]);
 
   useEffect(() => {
     setNoteText("");
     setEditingNoteId(null);
     setEditingText("");
-    notesLoadedFor.current = null;
-  }, [device.id]);
-
-  // Remote Support data loading
-  const loadRsDevice = useCallback(async () => {
-    setRsLoading(true);
-    try {
-      const data = await getRemoteSupportDevice(device.id);
-      setRsDevice(data);
-    } catch {
-      // non-critical — device may not have RS data yet
-    } finally {
-      setRsLoading(false);
-    }
   }, [device.id]);
 
   useEffect(() => {
-    if (!isOpen || activeTab !== "remote_support") return;
-    if (rsLoadedFor.current !== device.id) {
-      rsLoadedFor.current = device.id;
-      void loadRsDevice();
-    }
-  }, [isOpen, activeTab, device.id, loadRsDevice]);
-
-  useEffect(() => {
-    rsLoadedFor.current = null;
-    setRsDevice(null);
     setRsCopySuccess(false);
     setRsToast(null);
     setRsBusyAction(null);
@@ -551,7 +500,7 @@ export default function DeviceDrawer({
       updated[idx] = { ...updated[idx], ...patch };
       return updated;
     });
-  }, [latestEvent, device.id]);
+  }, [latestEvent, device.id, setActions]);
 
   const addNote = useCallback(async () => {
     const note = noteText.trim();
@@ -565,7 +514,7 @@ export default function DeviceDrawer({
     } finally {
       setNoteBusy(false);
     }
-  }, [activeTab, device.id, noteText, reload]);
+  }, [activeTab, device.id, noteText, reload, setNotes]);
 
   const saveNote = useCallback(
     async (noteId: number) => {
@@ -582,7 +531,7 @@ export default function DeviceDrawer({
         setNoteBusy(false);
       }
     },
-    [activeTab, device.id, editingText, reload],
+    [activeTab, device.id, editingText, reload, setNotes],
   );
 
   // Auto-save when editing an existing note (1.5s debounce)
@@ -605,7 +554,7 @@ export default function DeviceDrawer({
         setNoteBusy(false);
       }
     },
-    [activeTab, device.id, reload],
+    [activeTab, device.id, reload, setNotes],
   );
 
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
@@ -1815,14 +1764,14 @@ export default function DeviceDrawer({
           </div>
 
           <div className={activeTab === "software" ? "th-tab-panel" : "hidden"}>
-            {/* Manual fetch control — see the loadInventory effect above for why
+            {/* Manual fetch control — see the inventory state above for why
               this is not automatic. */}
             <DeviceInventoryPanel
               key={device.id}
               inventory={inventory}
-              loading={inventoryLoading}
-              error={inventoryError}
-              onLoad={() => void loadInventory()}
+              loading={inventoryQuery.refreshing}
+              error={inventoryQuery.error}
+              onLoad={loadInventory}
             />
           </div>
 

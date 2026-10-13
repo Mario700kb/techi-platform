@@ -51,6 +51,7 @@ import {
   updateEnrollmentToken,
 } from "../api/enrollmentBootstrap";
 import { PlatformFeatures } from "../api/platform";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { Button, EmptyState, PageHeader, Select, DatePicker } from "../components/ui";
@@ -196,21 +197,53 @@ async function downloadTokenScript(tokenId: number) {
   downloadText("techi-bootstrap.ps1", await fetchText(enrollmentTokenBootstrapPath(tokenId)));
 }
 
+interface TokenTable {
+  tokens: EnrollmentToken[];
+  clients: Client[];
+  groups: DeviceGroup[];
+}
+
+const EMPTY_TABLE: TokenTable = { tokens: [], clients: [], groups: [] };
+
+async function fetchTokenTable(): Promise<TokenTable> {
+  const [tokens, clients, groups] = await Promise.all([getEnrollmentTokens(), getClients(), getGroups()]);
+  return { tokens, clients, groups };
+}
+
+function fetchWindowsPackage(): Promise<AgentPackage | null> {
+  return getLatestPackage("windows-amd64")
+    .catch(() => getLatestPackage("windows"))
+    .catch(() => null);
+}
+
+function fetchLinuxPackage(): Promise<AgentPackage | null> {
+  return getLatestPackage("linux-amd64").catch(() => null);
+}
+
+function fetchRustDeskConfig(): Promise<RustDeskConfig | null> {
+  return getRustDeskConfig().catch(() => null);
+}
+
 export default function Deployment() {
   const [tokenName, setTokenName] = useState("PC Deployment");
   const [maxUses, setMaxUses] = useState(25);
   const [token, setToken] = useState<CreateTokenResponse | null>(null);
-  const [tokens, setTokens] = useState<EnrollmentToken[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<DeviceGroup[]>([]);
-  const [rustdesk, setRustdesk] = useState<RustDeskConfig | null>(null);
-  const [activePackage, setActivePackage] = useState<AgentPackage | null>(null);
-  const [linuxPackage, setLinuxPackage] = useState<AgentPackage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const table = useCachedQuery("mem.deployment.token-table", async () => {
+    try {
+      return await fetchTokenTable();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load enrollment tokens");
+      throw err;
+    }
+  });
+  const { tokens, clients, groups } = table.data ?? EMPTY_TABLE;
+  const rustdesk = useCachedQuery("page.deployment.rustdesk-config", fetchRustDeskConfig).data ?? null;
+  const activePackage = useCachedQuery("page.deployment.package.windows", fetchWindowsPackage).data ?? null;
+  const linuxPackage = useCachedQuery("page.deployment.package.linux-amd64", fetchLinuxPackage).data ?? null;
   const features = usePlatformFeatures();
   const [loading, setLoading] = useState(false);
-  const [tableLoading, setTableLoading] = useState(false);
   const [copied, setCopied] = useState<CopyTarget>(null);
-  const [error, setError] = useState<string | null>(null);
   const [viewDeployment, setViewDeployment] = useState<EnrollmentTokenDeployment | null>(null);
   const [editToken, setEditToken] = useState<EnrollmentToken | null>(null);
   const [oneTimeToken, setOneTimeToken] = useState<CreateTokenResponse | null>(null);
@@ -251,31 +284,7 @@ export default function Deployment() {
     [filteredTokens, page, pageSize],
   );
 
-  const loadTokens = async () => {
-    setTableLoading(true);
-    try {
-      const [tokenRows, clientRows, groupRows] = await Promise.all([getEnrollmentTokens(), getClients(), getGroups()]);
-      setTokens(tokenRows);
-      setClients(clientRows);
-      setGroups(groupRows);
-    } finally {
-      setTableLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    getRustDeskConfig()
-      .then(setRustdesk)
-      .catch(() => setRustdesk(null));
-    getLatestPackage("windows-amd64")
-      .catch(() => getLatestPackage("windows"))
-      .then(setActivePackage)
-      .catch(() => setActivePackage(null));
-    getLatestPackage("linux-amd64")
-      .then(setLinuxPackage)
-      .catch(() => setLinuxPackage(null));
-    void loadTokens();
-  }, []);
+  const loadTokens = table.reload;
 
   const copy = async (target: Exclude<CopyTarget, null>, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -484,9 +493,7 @@ export default function Deployment() {
           tone="var(--th-accent)"
           title="Enrollment tokens"
           subtitle={
-            tableLoading && tokens.length === 0
-              ? "Loading…"
-              : `${formatCount(tokens.length)} total · per-company GPO and technician tokens`
+            table.loading ? "Loading…" : `${formatCount(tokens.length)} total · per-company GPO and technician tokens`
           }
           aside={
             <Button
@@ -494,9 +501,9 @@ export default function Deployment() {
               type="button"
               size="sm"
               onClick={() => void loadTokens()}
-              disabled={tableLoading}
+              disabled={table.refreshing}
             >
-              <RefreshCcw className={`h-3.5 w-3.5 ${tableLoading ? "animate-spin" : ""}`} />
+              <RefreshCcw className={`h-3.5 w-3.5 ${table.refreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
           }
@@ -547,7 +554,7 @@ export default function Deployment() {
           </div>
         </div>
 
-        {tableLoading && tokens.length === 0 ? (
+        {table.loading ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading tokens">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />

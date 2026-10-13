@@ -38,6 +38,7 @@ import { CardHead } from "../components/ui/PanelCard";
 import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
 import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -1295,66 +1296,61 @@ function PermissionsTab({
 
 // ── Page ──────────────────────────────────────────────────────────────────── //
 
+const NO_OPERATORS: OperatorRecord[] = [];
+const NO_ACCESS_SCOPE: { clients: Client[]; groups: DeviceGroup[]; devices: Device[] } = {
+  clients: [],
+  groups: [],
+  devices: [],
+};
+
+async function loadAccessScope() {
+  const [clients, groups, devices] = await Promise.all([getClients(), getGroups(), getDeviceDirectory()]);
+  return { clients, groups, devices };
+}
+
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { can } = useAuth();
   const canManage = can("admin");
 
-  const [team, setTeam] = useState<TeamDetail | null>(null);
-  const [operators, setOperators] = useState<OperatorRecord[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<DeviceGroup[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tabLoading, setTabLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const teamId = id ? parseInt(id, 10) : NaN;
   const [tab, setTab] = useState<Tab>("overview");
+  const [openedTabs, setOpenedTabs] = useState<ReadonlySet<Tab>>(() => new Set<Tab>(["overview"]));
   const tabsRef = useTabIndicator<HTMLDivElement>(tab);
 
-  const teamId = id ? parseInt(id, 10) : NaN;
+  const {
+    data: team,
+    loading,
+    refreshing,
+    error: teamError,
+    reload: loadTeam,
+    setData: setTeam,
+  } = useCachedQuery(isNaN(teamId) ? null : `page.team:${teamId}`, () => getTeam(teamId));
+  const operatorsQuery = useCachedQuery(openedTabs.has("members") ? "page.teams.operators" : null, getOperators);
+  const accessQuery = useCachedQuery(openedTabs.has("access") ? "page.teams.access-scope" : null, loadAccessScope);
+  const operators = operatorsQuery.data ?? NO_OPERATORS;
+  const { clients, groups, devices } = accessQuery.data ?? NO_ACCESS_SCOPE;
+  const tabLoading = (tab === "members" && operatorsQuery.loading) || (tab === "access" && accessQuery.loading);
+  // The tabs' edit forms take their values from `team` once, when they mount:
+  // they wait for the server's answer rather than start from a cached copy.
+  const panelLoading = tabLoading || refreshing;
+  const error = isNaN(teamId)
+    ? "Invalid team ID"
+    : (teamError ??
+      (operatorsQuery.data ? null : operatorsQuery.error) ??
+      (accessQuery.data ? null : accessQuery.error));
 
-  const loadTeam = async () => {
-    if (isNaN(teamId)) {
-      setError("Invalid team ID");
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      setError(null);
-      setTeam(await getTeam(teamId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load team");
-    } finally {
-      setLoading(false);
-    }
+  const openTab = (next: Tab) => {
+    setTab(next);
+    setOpenedTabs((prev) => (prev.has(next) ? prev : new Set(prev).add(next)));
   };
 
-  useEffect(() => {
+  const retry = () => {
     void loadTeam();
-  }, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (tab === "members" && operators.length === 0) {
-      setTabLoading(true);
-      getOperators()
-        .then(setOperators)
-        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load operators"))
-        .finally(() => setTabLoading(false));
-    }
-    if (tab === "access" && clients.length === 0 && groups.length === 0 && devices.length === 0) {
-      setTabLoading(true);
-      Promise.all([getClients(), getGroups(), getDeviceDirectory()])
-        .then(([nextClients, nextGroups, nextDevices]) => {
-          setClients(nextClients);
-          setGroups(nextGroups);
-          setDevices(nextDevices);
-        })
-        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load device access"))
-        .finally(() => setTabLoading(false));
-    }
-  }, [tab, operators.length, clients.length, groups.length, devices.length]);
+    void operatorsQuery.reload();
+    void accessQuery.reload();
+  };
 
   // Reach: all non-archived devices granted through a client, a group or one by one.
   const effectiveDeviceCount = useMemo(() => {
@@ -1401,7 +1397,7 @@ export default function TeamDetailPage() {
             title="Couldn't open this team"
             description={error ?? "Team not found."}
             action={
-              <Button size="sm" variant="secondary" onClick={() => void loadTeam()}>
+              <Button size="sm" variant="secondary" onClick={retry}>
                 <RefreshCcw className="h-3.5 w-3.5" />
                 Retry
               </Button>
@@ -1543,7 +1539,7 @@ export default function TeamDetailPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === t.key}
-                onClick={() => setTab(t.key)}
+                onClick={() => openTab(t.key)}
                 className="th-tab"
               >
                 <t.icon className="h-3.5 w-3.5" />
@@ -1556,7 +1552,7 @@ export default function TeamDetailPage() {
       </div>
 
       <div role="tabpanel" key={tab} className="th-onb-panel">
-        {tabLoading ? (
+        {panelLoading ? (
           <div className="th-onb-card" aria-busy="true">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />

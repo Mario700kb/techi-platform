@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Mail, Plus, RefreshCcw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 
 import {
@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, PageHeader, SelectField } from "../components/ui";
 import ConfirmationModal from "../components/ConfirmationModal";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { APP_TIME_ZONE, parseUTC, DISPLAY_LOCALE } from "../utils/time";
 
 const INPUT_CLS = "th-input rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:border-techi-orange/60";
@@ -44,14 +45,29 @@ const STATUS_COLOR: Record<string, string> = {
   failed: "var(--th-status-critical)",
 };
 
+async function loadNotificationSettings() {
+  const [channels, rules, deliveries] = await Promise.all([
+    listNotificationChannels(),
+    listNotificationRules(),
+    listNotificationDeliveries({ limit: 25 }),
+  ]);
+  return { channels, rules, deliveries: deliveries.items };
+}
+
 export default function NotificationSettings() {
   const { can } = useAuth();
   const canManage = can("admin");
 
-  const [channels, setChannels] = useState<NotificationChannel[]>([]);
-  const [rules, setRules] = useState<NotificationRule[]>([]);
-  const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Channel configs carry webhook URLs and SMTP accounts: kept out of the browser's storage.
+  const {
+    data,
+    loading,
+    error: loadError,
+    reload: load,
+  } = useCachedQuery("mem.notification-settings", loadNotificationSettings);
+  const channels: NotificationChannel[] = data?.channels ?? [];
+  const rules: NotificationRule[] = data?.rules ?? [];
+  const deliveries: NotificationDelivery[] = data?.deliveries ?? [];
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
 
@@ -80,28 +96,9 @@ export default function NotificationSettings() {
   const [savingRule, setSavingRule] = useState(false);
   const [deleteRuleTarget, setDeleteRuleTarget] = useState<NotificationRule | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [c, r, d] = await Promise.all([
-        listNotificationChannels(),
-        listNotificationRules(),
-        listNotificationDeliveries({ limit: 25 }),
-      ]);
-      setChannels(c);
-      setRules(r);
-      setDeliveries(d.items);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load notification settings");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    setError(loadError);
+  }, [loadError]);
 
   const recipients = smtpTo
     .split(/[,;\s]+/)

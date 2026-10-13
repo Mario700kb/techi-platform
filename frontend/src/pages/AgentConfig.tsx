@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   Activity,
@@ -18,6 +18,7 @@ import AgentCommandsPanel from "../components/AgentCommandsPanel";
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import SaveFooter, { useSaveState } from "../components/ui/SaveFooter";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 
@@ -49,13 +50,17 @@ function intervalsFrom(cfg: AgentConfig) {
   };
 }
 
+function keepEdits(current: Record<string, string>, seeded: Record<string, string>, next: Record<string, string>) {
+  return Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, current[id] === seeded[id] ? next[id] : current[id]]));
+}
+
 export default function AgentConfigPage() {
-  const [config, setConfig] = useState<AgentConfig | null>(null);
+  const { data, loading, error: loadError, setData } = useCachedQuery("page.agent-config", getAgentConfig);
+  const config = data ?? null;
+  const [seededFrom, setSeededFrom] = useState<AgentConfig | null>(null);
   const [heartbeatInputs, setHeartbeatInputs] = useState<Record<string, string>>({});
   const [inventoryInputs, setInventoryInputs] = useState<Record<string, string>>({});
   const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [copying, setCopying] = useState<CopyTarget>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -64,20 +69,32 @@ export default function AgentConfigPage() {
   const remoteState = useSaveState();
 
   const apply = (cfg: AgentConfig) => {
-    setConfig(cfg);
+    setData(cfg);
+    setSeededFrom(cfg);
     const next = intervalsFrom(cfg);
     setHeartbeatInputs(next.heartbeat);
     setInventoryInputs(next.inventory);
     setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
   };
 
-  useEffect(() => {
-    setLoading(true);
-    getAgentConfig()
-      .then(apply)
-      .catch((err) => setLoadError(message(err, "Failed to load the agent configuration")))
-      .finally(() => setLoading(false));
-  }, []);
+  // A cached copy seeds the form at once; the fresh answer then replaces only
+  // the values the operator has not changed since.
+  if (config && config !== seededFrom) {
+    const next = intervalsFrom(config);
+    setSeededFrom(config);
+    if (!seededFrom) {
+      setHeartbeatInputs(next.heartbeat);
+      setInventoryInputs(next.inventory);
+      setManagedPasswordEnabled(config.remote_support_managed_password_enabled);
+    } else {
+      const seeded = intervalsFrom(seededFrom);
+      setHeartbeatInputs(keepEdits(heartbeatInputs, seeded.heartbeat, next.heartbeat));
+      setInventoryInputs(keepEdits(inventoryInputs, seeded.inventory, next.inventory));
+      if (managedPasswordEnabled === seededFrom.remote_support_managed_password_enabled) {
+        setManagedPasswordEnabled(config.remote_support_managed_password_enabled);
+      }
+    }
+  }
 
   const ceiling = config?.maximum_allowed_interval_seconds ?? 600;
   const floorFor = (id: string) =>

@@ -55,6 +55,7 @@ import {
   tokenState,
 } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
@@ -80,6 +81,15 @@ const SECURITY_POINTS = [
   "A device that sleeps or hibernates is unreachable unless Wake-on-LAN is set up.",
   "Choose the Server profile for machines that must stay reachable on AC power.",
 ];
+
+const NO_TOKENS: EnrollmentToken[] = [];
+const NO_CLIENT_NAMES: Record<number, string> = {};
+
+function fetchClientNames(): Promise<Record<number, string>> {
+  return getClients()
+    .then((list) => Object.fromEntries(list.map((c) => [c.id, c.name])))
+    .catch(() => ({}));
+}
 
 function isRevocable(token: EnrollmentToken): boolean {
   return token.status === "active" || token.status === "used";
@@ -134,7 +144,6 @@ export default function EnrollmentBootstrap() {
   const canManage = can("admin");
 
   // ── generator state ──────────────────────────────────────────────────────
-  const [tokens, setTokens] = useState<EnrollmentToken[]>([]);
   const [mode, setMode] = useState<EnrollmentBootstrapMode>("token");
   const [tokenId, setTokenId] = useState("");
   const [plaintextToken, setPlaintextToken] = useState("");
@@ -157,8 +166,26 @@ export default function EnrollmentBootstrap() {
 
   const [bootstrap, setBootstrap] = useState<EnrollmentBootstrapResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tokensLoading, setTokensLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tokenList = useCachedQuery("mem.enrollment.tokens", async () => {
+    try {
+      setError(null);
+      const data = await getEnrollmentTokens();
+      // Auto-select default active token when no selection exists
+      if (!tokenId) {
+        const def = data.find((t) => t.is_default && t.status === "active");
+        const first = data.find((t) => t.status === "active");
+        const pick = def ?? first;
+        if (pick) setTokenId(String(pick.id));
+      }
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tokens");
+      throw err;
+    }
+  });
+  const tokens = tokenList.data ?? NO_TOKENS;
+  const loadTokens = tokenList.reload;
   const [copied, setCopied] = useState<string | null>(null);
 
   // ── flash plaintext (only immediately after create / regenerate) ─────────
@@ -196,7 +223,7 @@ export default function EnrollmentBootstrap() {
   const [tokenSearch, setTokenSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [clientNames, setClientNames] = useState<Record<number, string>>({});
+  const clientNames = useCachedQuery("mem.enrollment.client-names", fetchClientNames).data ?? NO_CLIENT_NAMES;
   const statusTabsRef = useTabIndicator<HTMLDivElement>(statusFilter);
 
   // ── toasts ───────────────────────────────────────────────────────────────
@@ -241,27 +268,6 @@ export default function EnrollmentBootstrap() {
   const isLocalhost = backendUrl.includes("localhost") || backendUrl.includes("127.0.0.1");
   const canGenerate = mode === "gpo" || (mode === "token" && activeTokens.length > 0 && !!tokenId);
 
-  // ── load tokens ──────────────────────────────────────────────────────────
-  const loadTokens = async () => {
-    try {
-      setTokensLoading(true);
-      setError(null);
-      const data = await getEnrollmentTokens();
-      setTokens(data);
-      // Auto-select default active token when no selection exists
-      if (!tokenId) {
-        const def = data.find((t) => t.is_default && t.status === "active");
-        const first = data.find((t) => t.status === "active");
-        const pick = def ?? first;
-        if (pick) setTokenId(String(pick.id));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tokens");
-    } finally {
-      setTokensLoading(false);
-    }
-  };
-
   const openDiagnostics = async (token: EnrollmentToken) => {
     setDiagnosticsToken(token);
     setDiagnostics(null);
@@ -297,13 +303,6 @@ export default function EnrollmentBootstrap() {
       setEventsLoading(false);
     }
   };
-
-  useEffect(() => {
-    void loadTokens();
-    getClients()
-      .then((list) => setClientNames(Object.fromEntries(list.map((c) => [c.id, c.name]))))
-      .catch(() => setClientNames({}));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── open create modal ────────────────────────────────────────────────────
   const openCreateModal = async () => {
@@ -522,9 +521,9 @@ export default function EnrollmentBootstrap() {
             size="sm"
             type="button"
             onClick={() => void loadTokens()}
-            disabled={tokensLoading}
+            disabled={tokenList.refreshing}
           >
-            <RefreshCcw className={`h-3.5 w-3.5 ${tokensLoading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-3.5 w-3.5 ${tokenList.refreshing ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         }
@@ -1114,7 +1113,7 @@ export default function EnrollmentBootstrap() {
             <span>
               Enrollment tokens
               <small>
-                {tokensLoading && tokens.length === 0
+                {tokenList.loading
                   ? "Loading…"
                   : `${formatCount(tokens.length)} total · ${formatCount(activeTokens.length)} active`}
               </small>
@@ -1190,7 +1189,7 @@ export default function EnrollmentBootstrap() {
           </div>
         </div>
 
-        {tokensLoading && tokens.length === 0 ? (
+        {tokenList.loading ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading tokens">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />

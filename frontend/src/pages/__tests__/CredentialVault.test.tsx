@@ -7,6 +7,7 @@ import * as vaultApi from "../../api/vault";
 import * as clientsApi from "../../api/clients";
 import * as authContext from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
+import { appCache } from "../../store/appCache";
 
 const TYPES: vaultApi.VaultCredentialTypeDescriptor[] = [
   {
@@ -93,6 +94,7 @@ function renderPage() {
 describe("CredentialVault enterprise UI", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    appCache.invalidate();
   });
 
   it("shows a loading state, then the credential list", async () => {

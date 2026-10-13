@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { getDeviceAlerts } from "../api/alerts";
 import { Alert } from "../types/alert";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { parseUTC } from "../utils/time";
+import { useCachedQuery } from "./useCachedQuery";
 
 interface UseDeviceAlertsOptions {
   deviceId: number;
@@ -27,32 +28,18 @@ function newestResolvedFirst(alerts: Alert[]): Alert[] {
 }
 
 export function useDeviceAlerts({ deviceId, latestEvent }: UseDeviceAlertsOptions) {
-  const [openAlerts, setOpenAlerts] = useState<Alert[]>([]);
-  const [resolvedAlerts, setResolvedAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(false);
-  const loaded = useRef(false);
+  const open = useCachedQuery(`page.device.${deviceId}.alerts.open`, () => getDeviceAlerts(deviceId, "open"));
+  const resolved = useCachedQuery(`page.device.${deviceId}.alerts.resolved`, async () =>
+    newestResolvedFirst(await getDeviceAlerts(deviceId, "resolved")),
+  );
+  const { reload: reloadOpen, setData: setOpenAlerts } = open;
+  const { reload: reloadResolved, setData: setResolvedAlerts } = resolved;
 
   const reload = useCallback(async () => {
-    try {
-      // Only the first load shows a spinner; refreshes replace the lists quietly.
-      if (!loaded.current) setLoading(true);
-      const [open, resolved] = await Promise.all([
-        getDeviceAlerts(deviceId, "open"),
-        getDeviceAlerts(deviceId, "resolved"),
-      ]);
-      setOpenAlerts(open);
-      setResolvedAlerts(newestResolvedFirst(resolved));
-      loaded.current = true;
-    } catch {
-      // Keep what is shown; the next refresh or event will correct it.
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId]);
+    await Promise.all([reloadOpen(), reloadResolved()]);
+  }, [reloadOpen, reloadResolved]);
 
   useEffect(() => {
-    loaded.current = false;
-    void reload();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void reload();
     }, REFRESH_MS);
@@ -73,13 +60,18 @@ export function useDeviceAlerts({ deviceId, latestEvent }: UseDeviceAlertsOption
     if (alert.device_id !== deviceId || !alert.id) return;
 
     if (type === "alert_created") {
-      setOpenAlerts((prev) => (prev.some((a) => a.id === alert.id) ? prev : [alert, ...prev]));
+      setOpenAlerts((prev = []) => (prev.some((a) => a.id === alert.id) ? prev : [alert, ...prev]));
     }
     if (type === "alert_resolved") {
-      setOpenAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-      setResolvedAlerts((prev) => newestResolvedFirst([alert, ...prev.filter((a) => a.id !== alert.id)]));
+      setOpenAlerts((prev = []) => prev.filter((a) => a.id !== alert.id));
+      setResolvedAlerts((prev = []) => newestResolvedFirst([alert, ...prev.filter((a) => a.id !== alert.id)]));
     }
-  }, [latestEvent, deviceId]);
+  }, [latestEvent, deviceId, setOpenAlerts, setResolvedAlerts]);
 
-  return { openAlerts, resolvedAlerts, loading, reload };
+  return {
+    openAlerts: open.data ?? [],
+    resolvedAlerts: resolved.data ?? [],
+    loading: open.loading || resolved.loading,
+    reload,
+  };
 }

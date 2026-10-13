@@ -9,6 +9,7 @@ import * as vaultApi from "../../api/vault";
 import * as clientsApi from "../../api/clients";
 import * as devicesApi from "../../api/devices";
 import * as authContext from "../../auth/AuthContext";
+import { appCache } from "../../store/appCache";
 
 // Regression coverage for the production bug: creating a Device-scoped
 // credential sent client_id alongside device_id (the picker's narrowing
@@ -132,6 +133,7 @@ async function pickFromSearchSelect(placeholder: string, optionLabel: string) {
 describe("CredentialVault — scope payload regression (device/client/group)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    appCache.invalidate();
   });
 
   it("Client scope sends only client_id", async () => {
@@ -263,6 +265,7 @@ describe("CredentialVault — scope payload regression (device/client/group)", (
 describe("CredentialVault — 'Add credential' prefill from Connect menu (Section D/E)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    appCache.invalidate();
   });
 
   it("opens the form pre-filled with device scope + credential type from the query params", async () => {

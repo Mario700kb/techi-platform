@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import * as alertsApi from "../../api/alerts";
+import { appCache } from "../../store/appCache";
 import { useDeviceAlerts } from "../useDeviceAlerts";
 import type { Alert } from "../../types/alert";
 import type { DeviceRealtimeEvent } from "../../services/deviceRealtime";
@@ -21,6 +22,7 @@ function alert(id: number, overrides: Partial<Alert> = {}): Alert {
 
 describe("useDeviceAlerts", () => {
   afterEach(() => {
+    appCache.invalidate();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -55,6 +57,24 @@ describe("useDeviceAlerts", () => {
     rerender();
     expect(result.current.openAlerts).toHaveLength(0);
     expect(result.current.resolvedAlerts.map((a) => a.id)).toEqual([9, 1]);
+  });
+
+  it("shows the cached lists at once and keeps the cached copy current on realtime events", async () => {
+    appCache.set("page.device.7.alerts.open", [alert(5, { state: "open", resolved_at: null })]);
+    appCache.set("page.device.7.alerts.resolved", [alert(1)]);
+    vi.spyOn(alertsApi, "getDeviceAlerts").mockReturnValue(new Promise<Alert[]>(() => {}));
+    let event: DeviceRealtimeEvent | null = null;
+    const { result, rerender } = renderHook(() => useDeviceAlerts({ deviceId: 7, latestEvent: event }));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.openAlerts.map((a) => a.id)).toEqual([5]);
+
+    event = {
+      type: "alert_created",
+      data: alert(6, { state: "open", resolved_at: null }) as unknown as Record<string, unknown>,
+    } as DeviceRealtimeEvent;
+    rerender();
+    expect(result.current.openAlerts.map((a) => a.id)).toEqual([6, 5]);
+    expect(appCache.peek<Alert[]>("page.device.7.alerts.open")?.map((a) => a.id)).toEqual([6, 5]);
   });
 
   it("re-reads the lists every minute as a backstop for missed events", async () => {

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   AlertTriangle,
@@ -16,6 +16,7 @@ import {
   AuditFacets,
   AuditFilters,
   AuditLogEntry,
+  AuditLogPage,
   ENTITY_TYPE_LABELS,
   getAuditFacets,
   getAuditLogs,
@@ -23,6 +24,7 @@ import {
 import { Button, EmptyState, PageHeader, Select, DatePicker } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import { CardHead } from "../components/ui/PanelCard";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
@@ -68,49 +70,37 @@ function DetailsBlock({ json }: { json: string | null }) {
 }
 
 export default function Audit() {
-  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [facets, setFacets] = useState<AuditFacets | null>(null);
-  const firstLoadDoneRef = useRef(false);
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   const [filters, setFilters] = useState<AuditFilters>({});
   const [draft, setDraft] = useState<AuditFilters>({});
 
-  const load = useCallback(async (f: AuditFilters, p: number, size: number) => {
-    const showLoading = !firstLoadDoneRef.current;
-    try {
-      if (showLoading) setLoading(true);
-      setError(null);
-      const result = await getAuditLogs({ ...f, limit: size, offset: (p - 1) * size });
-      setEntries(result.items);
-      setTotal(result.total);
-      firstLoadDoneRef.current = true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load audit log");
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, []);
+  const request = useMemo(
+    () => ({ ...filters, limit: pageSize, offset: (page - 1) * pageSize }),
+    [filters, page, pageSize],
+  );
+  const logs = useCachedQuery<AuditLogPage>(`mem.audit.logs:${JSON.stringify(request)}`, () => getAuditLogs(request));
+  const facets = useCachedQuery<AuditFacets>("mem.audit.facets", getAuditFacets).data ?? null;
+  const { reload, refreshing } = logs;
+  const [shown, setShown] = useState(logs.data);
+  if (logs.data !== undefined && logs.data !== shown) setShown(logs.data);
+  const view = logs.data ?? shown;
+  const entries: AuditLogEntry[] = view?.items ?? [];
+  const total = view?.total ?? 0;
+  const loading = logs.loading && view === undefined;
+  const error = refreshing || errorDismissed ? null : logs.error;
 
   useEffect(() => {
-    void load(filters, page, pageSize);
-  }, [filters, page, pageSize, load]);
+    if (refreshing) setErrorDismissed(false);
+  }, [refreshing]);
 
   useEffect(() => {
-    const id = window.setInterval(() => void load(filters, page, pageSize), 120000);
+    const id = window.setInterval(() => void reload(), 120000);
     return () => window.clearInterval(id);
-  }, [filters, page, pageSize, load]);
-
-  useEffect(() => {
-    getAuditFacets()
-      .then(setFacets)
-      .catch(() => setFacets(null));
-  }, []);
+  }, [request, reload]);
 
   const applyFilters = () => {
     setPage(1);
@@ -172,7 +162,7 @@ export default function Audit() {
     [facets],
   );
 
-  if (isDenied(error)) {
+  if (isDenied(logs.error)) {
     return (
       <section className="premium-page th-onb space-y-4">
         <PageHeader title="Audit Log" description="Append-only record of operator actions across the platform." />
@@ -193,7 +183,7 @@ export default function Audit() {
         title="Audit Log"
         description="Append-only record of operator actions across the platform."
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void load(filters, page, pageSize)} disabled={loading}>
+          <Button variant="secondary" size="sm" onClick={() => void reload()} disabled={loading}>
             <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -208,7 +198,12 @@ export default function Audit() {
         >
           <AlertTriangle className="h-4 w-4" />
           <span className="flex-1">{error}</span>
-          <button type="button" className="th-onb-action !h-5 !w-5" onClick={() => setError(null)} aria-label="Dismiss">
+          <button
+            type="button"
+            className="th-onb-action !h-5 !w-5"
+            onClick={() => setErrorDismissed(true)}
+            aria-label="Dismiss"
+          >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>

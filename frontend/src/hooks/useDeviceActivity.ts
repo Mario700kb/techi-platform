@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { getDeviceActivity } from "../api/activity";
+import { useCachedQuery } from "./useCachedQuery";
 import { ActivityEvent } from "../types/activity";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 
@@ -34,27 +35,17 @@ const EVENT_SUMMARIES: Partial<Record<string, string>> = {
 const IGNORED_TYPES = new Set(["connection_ready", "server_ping", "telemetry_updated"]);
 
 export function useDeviceActivity({ deviceId, latestEvent, enabled = true }: UseDeviceActivityOptions) {
-  const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [loading, setLoading] = useState(false);
   const seenIds = useRef(new Set<string>());
-
-  const load = useCallback(async () => {
-    if (!deviceId || !enabled) return;
-    try {
-      setLoading(true);
-      const data = await getDeviceActivity(deviceId);
-      seenIds.current = new Set(data.map((e) => e.id));
-      setEvents(data);
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId, enabled]);
+  const key = deviceId && enabled ? `page.device.${deviceId}.activity` : null;
+  const { data, loading, reload, setData } = useCachedQuery(key, async () => {
+    const fresh = await getDeviceActivity(deviceId as number);
+    seenIds.current = new Set(fresh.map((e) => e.id));
+    return fresh;
+  });
 
   useEffect(() => {
-    setEvents([]);
     seenIds.current = new Set();
-    if (deviceId && enabled) void load();
-  }, [deviceId, enabled, load]);
+  }, [key]);
 
   useEffect(() => {
     if (!latestEvent || !deviceId || !enabled) return;
@@ -76,8 +67,12 @@ export function useDeviceActivity({ deviceId, latestEvent, enabled = true }: Use
       device_id: deviceId,
     };
 
-    setEvents((prev) => [newEvent, ...prev].slice(0, 60));
-  }, [latestEvent, deviceId, enabled]);
+    setData((prev) => {
+      const current = prev ?? [];
+      if (current.some((e) => e.id === evtId)) return current;
+      return [newEvent, ...current].slice(0, 60);
+    });
+  }, [latestEvent, deviceId, enabled, setData]);
 
-  return { events, loading, reload: load };
+  return { events: data ?? [], loading, reload };
 }

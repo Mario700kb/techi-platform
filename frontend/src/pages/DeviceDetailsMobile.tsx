@@ -33,6 +33,7 @@ import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect 
 import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import { useFavorites } from "../hooks/useFavorites";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
@@ -118,9 +119,15 @@ export default function DeviceDetailsMobile() {
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const canOperate = can("operator");
 
-  const [device, setDevice] = useState<Device | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const validId = Number.isFinite(deviceId);
+  const {
+    data: cachedDevice,
+    loading,
+    error,
+    reload: loadDevice,
+    setData: setDevice,
+  } = useCachedQuery<Device>(validId ? `page.device.${deviceId}.detail` : null, () => getDevice(deviceId));
+  const device = cachedDevice ?? null;
 
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -136,81 +143,42 @@ export default function DeviceDetailsMobile() {
   // opened far more casually/frequently than the desktop drawer. Only an
   // explicit tap loads it (docs/reference/MOBILE-DESIGN-SPEC.md — Device
   // Details, Implementation Note).
-  const [software, setSoftware] = useState<DeviceInventory | null>(null);
-  const [softwareLoading, setSoftwareLoading] = useState(false);
-  const [softwareRequested, setSoftwareRequested] = useState(false);
-  const [notes, setNotes] = useState<DeviceNote[]>([]);
-  const [notesLoading, setNotesLoading] = useState(false);
+  const [softwareRequestedFor, setSoftwareRequestedFor] = useState<number | null>(null);
+  const softwareRequested = validId && softwareRequestedFor === deviceId;
+  const { data: cachedSoftware, loading: softwareLoading } = useCachedQuery<DeviceInventory>(
+    softwareRequested ? `mem.device.${deviceId}.inventory` : null,
+    () => getDeviceInventory(deviceId),
+  );
+  const software = cachedSoftware ?? null;
+  const [notesRequested, setNotesRequested] = useState(false);
+  const {
+    data: cachedNotes,
+    loading: notesLoading,
+    reload: loadNotes,
+  } = useCachedQuery<DeviceNote[]>(validId && notesRequested ? `page.device.${deviceId}.notes` : null, () =>
+    getDeviceNotes(deviceId),
+  );
+  const notes = cachedNotes ?? [];
   const [noteDraft, setNoteDraft] = useState("");
   const [timelineOpen, setTimelineOpen] = useState(false);
-  const [telemetryHistory, setTelemetryHistory] = useState<TelemetrySnapshot[]>([]);
+  const { data: cachedHistory } = useCachedQuery<TelemetrySnapshot[]>(
+    validId ? `page.device.${deviceId}.telemetry-history` : null,
+    () => getDeviceTelemetryHistory(deviceId, 20),
+  );
+  const telemetryHistory = cachedHistory ?? [];
 
   const telemetry = useDeviceTelemetry({ deviceId: device ? deviceId : null, latestEvent });
   const deviceAlerts = useDeviceAlerts({ deviceId, latestEvent });
   const activity = useDeviceActivity({ deviceId, latestEvent, enabled: timelineOpen });
-
-  useEffect(() => {
-    if (!Number.isFinite(deviceId)) return;
-    let cancelled = false;
-    void getDeviceTelemetryHistory(deviceId, 20)
-      .then((rows) => {
-        if (!cancelled) setTelemetryHistory(rows);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [deviceId]);
-
-  const loadDevice = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const d = await getDevice(deviceId);
-      setDevice(d);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load device");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!Number.isFinite(deviceId)) return;
-    void loadDevice();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId]);
 
   // Live-patch from realtime events for this device (mirrors DevicesTable's merge)
   useEffect(() => {
     const d = latestEvent?.data;
     if (!d?.id || d.id !== deviceId) return;
     setDevice((prev) => (prev ? ({ ...prev, ...d } as Device) : prev));
-  }, [latestEvent, deviceId]);
+  }, [latestEvent, deviceId, setDevice]);
 
-  const loadSoftware = async () => {
-    if (software || softwareLoading) return;
-    setSoftwareRequested(true);
-    setSoftwareLoading(true);
-    try {
-      setSoftware(await getDeviceInventory(deviceId));
-    } catch {
-      // section shows its own empty/error text below
-    } finally {
-      setSoftwareLoading(false);
-    }
-  };
-
-  const loadNotes = async () => {
-    setNotesLoading(true);
-    try {
-      setNotes(await getDeviceNotes(deviceId));
-    } catch {
-      // keep empty
-    } finally {
-      setNotesLoading(false);
-    }
-  };
+  const loadSoftware = () => setSoftwareRequestedFor(deviceId);
 
   const handleAddNote = async () => {
     const trimmed = noteDraft.trim();
@@ -281,7 +249,7 @@ export default function DeviceDetailsMobile() {
     );
   }
 
-  if (error || !device) {
+  if (!device) {
     return (
       <div className="th-onb flex flex-col gap-3">
         <button
@@ -711,7 +679,7 @@ export default function DeviceDetailsMobile() {
         subtitle="Operator notes and recent activity"
         onFirstOpen={() => {
           setTimelineOpen(true);
-          void loadNotes();
+          setNotesRequested(true);
         }}
       >
         <div className="flex gap-2">

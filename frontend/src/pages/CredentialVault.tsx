@@ -62,6 +62,7 @@ import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
 import ConfirmationModal from "../components/ConfirmationModal";
 import EntitySearchSelect, { type EntityOption } from "../components/EntitySearchSelect";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -173,6 +174,25 @@ const EMPTY_FORM: FormState = {
   expires_at: "",
 };
 
+interface VaultLists {
+  items: VaultCredential[];
+  types: VaultCredentialTypeDescriptor[];
+  clients: Client[];
+  groups: DeviceGroup[];
+}
+
+const EMPTY_LISTS: VaultLists = { items: [], types: [], clients: [], groups: [] };
+
+async function fetchVaultLists(): Promise<VaultLists> {
+  const [items, types, clients, groups] = await Promise.all([
+    listVaultCredentials(),
+    listVaultCredentialTypes(),
+    getClients(),
+    getGroups(),
+  ]);
+  return { items, types, clients, groups };
+}
+
 function Note({ tone, children, onDismiss }: { tone: string; children: React.ReactNode; onDismiss?: () => void }) {
   return (
     <div
@@ -231,12 +251,23 @@ export default function CredentialVault() {
   const canTest = isAdmin || hasPermission("vault_test");
   const canAssign = isAdmin || hasPermission("vault_assign");
 
-  const [items, setItems] = useState<VaultCredential[]>([]);
-  const [types, setTypes] = useState<VaultCredentialTypeDescriptor[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [groups, setGroups] = useState<DeviceGroup[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const vault = useCachedQuery("mem.vault.lists", async () => {
+    setError(null);
+    try {
+      return await fetchVaultLists();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load vault");
+      throw e;
+    }
+  });
+  const { items, types, clients, groups } = vault.data ?? EMPTY_LISTS;
+  const { loading, refreshing, reload: load, setData: setVaultLists } = vault;
+  const setItems = useCallback(
+    (update: (current: VaultCredential[]) => VaultCredential[]) =>
+      setVaultLists((current) => ({ ...(current ?? EMPTY_LISTS), items: update(current?.items ?? []) })),
+    [setVaultLists],
+  );
 
   const [view, setView] = useState<ViewTab>("all");
   const [search, setSearch] = useState("");
@@ -266,31 +297,6 @@ export default function CredentialVault() {
   const [assignClientId, setAssignClientId] = useState("");
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, { status: string; message: string }>>({});
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [credentials, typeList, clientList, groupList] = await Promise.all([
-        listVaultCredentials(),
-        listVaultCredentialTypes(),
-        getClients(),
-        getGroups(),
-      ]);
-      setItems(credentials);
-      setTypes(typeList);
-      setClients(clientList);
-      setGroups(groupList);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load vault");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -717,8 +723,8 @@ export default function CredentialVault() {
         description="AES-256-GCM envelope encryption. Using a credential never exposes it; revealing one needs a reason and is audited."
         actions={
           <>
-            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={refreshing}>
+              <RefreshCcw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             {canCreate && (
@@ -771,9 +777,7 @@ export default function CredentialVault() {
           tone="var(--th-accent)"
           title="Credentials"
           subtitle={
-            loading && items.length === 0
-              ? "Loading…"
-              : `${formatCount(items.length)} stored · ${formatCount(filtered.length)} shown`
+            loading ? "Loading…" : `${formatCount(items.length)} stored · ${formatCount(filtered.length)} shown`
           }
         />
         <div className="th-alerts-toolbar">
@@ -877,7 +881,7 @@ export default function CredentialVault() {
           </SelectField>
         </div>
 
-        {loading && items.length === 0 ? (
+        {loading ? (
           <div className="th-alerts-scroll" aria-busy="true">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />

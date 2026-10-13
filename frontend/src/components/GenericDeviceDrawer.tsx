@@ -8,6 +8,7 @@ import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, DeviceNote, getDeviceNotes } from "../api/notes";
 import { DrawerAction, DrawerMeta, getDrawerMeta } from "../api/platform";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
@@ -76,14 +77,32 @@ export default function GenericDeviceDrawer({
 }: Props) {
   useNow();
   const features = usePlatformFeatures();
-  const [meta, setMeta] = useState<DrawerMeta | null>(null);
-  const [metaFailed, setMetaFailed] = useState(false);
+  const [openedFor, setOpenedFor] = useState<number | null>(null);
+  if (isOpen && openedFor !== device.id) setOpenedFor(device.id);
+  const opened = openedFor === device.id;
+  const metaQuery = useCachedQuery<DrawerMeta>(opened ? `page.device.${device.id}.drawer-meta` : null, () =>
+    getDrawerMeta(device.id),
+  );
+  const meta = metaQuery.data ?? null;
+  const metaFailed = metaQuery.error !== null && !metaQuery.refreshing;
+  const loadMeta = () => void metaQuery.reload();
   const [tab, setTab] = useState<string>("overview");
   const tabsRef = useTabIndicator<HTMLDivElement>(`${tab}:${meta ? "ready" : "loading"}`);
-  const [inventory, setInventory] = useState<DeviceInventory | null>(null);
-  const [inventoryState, setInventoryState] = useState<InventoryState>("loading");
-  const [notes, setNotes] = useState<DeviceNote[]>([]);
-  const [notesLoading, setNotesLoading] = useState(false);
+  const inventoryQuery = useCachedQuery<DeviceInventory>(opened ? `mem.device.${device.id}.inventory` : null, () =>
+    getDeviceInventory(device.id),
+  );
+  const inventory = inventoryQuery.data ?? null;
+  const inventoryState: InventoryState = inventory
+    ? "ready"
+    : inventoryQuery.error !== null && !inventoryQuery.refreshing
+      ? "error"
+      : "loading";
+  const loadInventory = () => void inventoryQuery.reload();
+  const notesQuery = useCachedQuery<DeviceNote[]>(
+    opened && tab === "notes" ? `page.device.${device.id}.notes` : null,
+    () => getDeviceNotes(device.id),
+  );
+  const notes = notesQuery.data ?? [];
   const [noteText, setNoteText] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [confirm, setConfirm] = useState<DrawerAction | null>(null);
@@ -112,9 +131,7 @@ export default function GenericDeviceDrawer({
   useEffect(() => {
     if (!isOpen) return;
     setTab(initialTab ?? "overview");
-    loadMeta();
-    loadInventory();
-  }, [isOpen, device.id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, device.id, initialTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -136,38 +153,6 @@ export default function GenericDeviceDrawer({
     },
     [],
   );
-
-  function loadMeta() {
-    setMetaFailed(false);
-    getDrawerMeta(device.id)
-      .then(setMeta)
-      .catch(() => {
-        setMeta(null);
-        setMetaFailed(true);
-      });
-  }
-
-  function loadInventory() {
-    setInventoryState("loading");
-    getDeviceInventory(device.id)
-      .then((inv) => {
-        setInventory(inv);
-        setInventoryState("ready");
-      })
-      .catch(() => {
-        setInventory(null);
-        setInventoryState("error");
-      });
-  }
-
-  useEffect(() => {
-    if (!isOpen || tab !== "notes") return;
-    setNotesLoading(true);
-    getDeviceNotes(device.id)
-      .then(setNotes)
-      .catch(() => setNotes([]))
-      .finally(() => setNotesLoading(false));
-  }, [isOpen, tab, device.id]);
 
   const tabs = useMemo(() => {
     const t: Array<{ id: string; label: string }> = [{ id: "overview", label: "Overview" }];
@@ -211,7 +196,7 @@ export default function GenericDeviceDrawer({
     try {
       await createDeviceNote(device.id, text);
       setNoteText("");
-      setNotes(await getDeviceNotes(device.id));
+      await notesQuery.reload();
     } catch (e) {
       flash(e instanceof Error ? e.message : "Failed to add note", false);
     } finally {
@@ -414,7 +399,7 @@ export default function GenericDeviceDrawer({
                 <div className="th-tab-panel">
                   <NotesPanel
                     notes={notes}
-                    loading={notesLoading}
+                    loading={notesQuery.loading}
                     busy={noteBusy}
                     noteText={noteText}
                     setNoteText={setNoteText}

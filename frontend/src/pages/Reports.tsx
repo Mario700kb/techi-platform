@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   AlertTriangle,
@@ -46,6 +46,7 @@ import PageHeader from "../components/ui/PageHeader";
 import TablePagination from "../components/ui/TablePagination";
 import { CardHead } from "../components/ui/PanelCard";
 import { EmptyState, SelectField, DatePicker } from "../components/ui";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -99,6 +100,14 @@ const RUN_STATUS: Record<ReportStatus, { label: string; tone: string }> = {
 
 type HistoryFilter = "all" | ReportScope;
 
+interface ReportsView {
+  clients: ReportClient[];
+  runs: ReportRun[];
+  schedules: ReportSchedule[];
+}
+
+const EMPTY_REPORTS: ReportsView = { clients: [], runs: [], schedules: [] };
+
 const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "client", label: "Client" },
@@ -108,10 +117,7 @@ const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
 export default function Reports() {
   const { can } = useAuth();
   const isAdmin = can("admin");
-  const [clients, setClients] = useState<ReportClient[]>([]);
-  const [runs, setRuns] = useState<ReportRun[]>([]);
-  const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [manualRefresh, setManualRefresh] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -140,29 +146,32 @@ export default function Reports() {
   const [pageSize, setPageSize] = useState(25);
   const scopeTabsRef = useTabIndicator<HTMLDivElement>(historyFilter);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [clientRows, runRows, scheduleRows] = await Promise.all([
-        getReportClients(),
-        getReportRuns(),
-        isAdmin ? getReportSchedules() : Promise.resolve([]),
-      ]);
-      setClients(clientRows);
-      setRuns(runRows.items);
-      setSchedules(scheduleRows);
-      setClientId((current) => current || (clientRows[0] ? String(clientRows[0].id) : ""));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load reports");
-    } finally {
-      setLoading(false);
-    }
-  }, [isAdmin]);
+  const reports = useCachedQuery<ReportsView>(`page.reports:${isAdmin ? "admin" : "operator"}`, async () => {
+    const [clientRows, runRows, scheduleRows] = await Promise.all([
+      getReportClients(),
+      getReportRuns(),
+      isAdmin ? getReportSchedules() : Promise.resolve([]),
+    ]);
+    return { clients: clientRows, runs: runRows.items, schedules: scheduleRows };
+  });
+  const { data, reload, setData } = reports;
+  const { clients, runs, schedules } = data ?? EMPTY_REPORTS;
+  const loading = reports.loading || manualRefresh;
+  const updateView = (change: (view: ReportsView) => ReportsView) => setData((prev) => prev && change(prev));
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setClientId((current) => current || (clients[0] ? String(clients[0].id) : ""));
+  }, [clients]);
+
+  useEffect(() => {
+    if (!reports.refreshing && reports.error) setError(reports.error);
+  }, [reports.refreshing, reports.error]);
+
+  const refresh = () => {
+    setError(null);
+    setManualRefresh(true);
+    void reload().finally(() => setManualRefresh(false));
+  };
 
   useEffect(() => {
     if (scopeType !== "device") return;
@@ -248,7 +257,7 @@ export default function Reports() {
         report_format: reportFormat,
         ...range,
       });
-      setRuns((current) => [run, ...current]);
+      updateView((view) => ({ ...view, runs: [run, ...view.runs] }));
       setSuccess(`${run.device_name || run.client_name} ${run.report_format.toUpperCase()} report is ready.`);
       await downloadReport(run);
     } catch (err) {
@@ -273,7 +282,7 @@ export default function Reports() {
         day_of_week: cadence === "weekly" ? scheduleDay : null,
         day_of_month: cadence === "monthly" ? scheduleDay : null,
       });
-      setSchedules((current) => [...current, created]);
+      updateView((view) => ({ ...view, schedules: [...view.schedules, created] }));
       setScheduleName("");
       setShowSchedule(false);
       setSuccess("Report schedule created.");
@@ -287,7 +296,10 @@ export default function Reports() {
   async function toggleSchedule(schedule: ReportSchedule) {
     try {
       const updated = await updateReportSchedule(schedule.id, { enabled: !schedule.enabled });
-      setSchedules((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      updateView((view) => ({
+        ...view,
+        schedules: view.schedules.map((item) => (item.id === updated.id ? updated : item)),
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update schedule");
     }
@@ -298,7 +310,7 @@ export default function Reports() {
     setBusy(true);
     try {
       await deleteReportSchedule(deleteTarget.id);
-      setSchedules((current) => current.filter((item) => item.id !== deleteTarget.id));
+      updateView((view) => ({ ...view, schedules: view.schedules.filter((item) => item.id !== deleteTarget.id) }));
       setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete schedule");
@@ -312,7 +324,7 @@ export default function Reports() {
     setBusy(true);
     try {
       await deleteReportRun(deleteRunTarget.id);
-      setRuns((current) => current.filter((item) => item.id !== deleteRunTarget.id));
+      updateView((view) => ({ ...view, runs: view.runs.filter((item) => item.id !== deleteRunTarget.id) }));
       setDeleteRunTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete report");
@@ -327,7 +339,7 @@ export default function Reports() {
         title="Reports"
         description="Client and device reports, on demand or on a schedule."
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+          <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>

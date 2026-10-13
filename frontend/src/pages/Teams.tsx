@@ -26,6 +26,7 @@ import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime } from "../utils/time";
 import { TEAM_COLOR_PRESETS } from "../utils/teamColors";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
@@ -216,8 +217,15 @@ export default function Teams() {
   const canManage = can("admin");
   const navigate = useNavigate();
 
-  const [teams, setTeams] = useState<TeamWithStats[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: teams = [],
+    loading,
+    refreshing,
+    error: loadError,
+    reload: loadData,
+    setData,
+  } = useCachedQuery("page.teams", listTeams);
+  const setTeams = (update: (prev: TeamWithStats[]) => TeamWithStats[]) => setData((prev) => update(prev ?? []));
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -234,21 +242,9 @@ export default function Teams() {
   const [deleteTarget, setDeleteTarget] = useState<TeamWithStats | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      setTeams(await listTeams());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load teams");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    void loadData();
-  }, []);
+    setError(loadError);
+  }, [loadError]);
 
   const filtered = teams.filter(
     (t) =>
@@ -376,8 +372,8 @@ export default function Teams() {
         description="Teams group operators and grant them visibility over clients, device groups or single devices."
         actions={
           <>
-            <Button variant="secondary" size="sm" onClick={() => void loadData()} disabled={loading}>
-              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <Button variant="secondary" size="sm" onClick={() => void loadData()} disabled={refreshing}>
+              <RefreshCcw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             {canManage && (
@@ -475,7 +471,7 @@ export default function Teams() {
           tone="var(--th-accent)"
           title="Teams"
           subtitle={
-            loading && teams.length === 0
+            loading
               ? "Loading…"
               : `${formatCount(teams.length)} team${teams.length === 1 ? "" : "s"} · open one to manage its members and access`
           }
@@ -507,7 +503,7 @@ export default function Teams() {
           }
         />
 
-        {loading && teams.length === 0 ? (
+        {loading ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading teams">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />

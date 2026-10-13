@@ -6,6 +6,7 @@ import * as api from "../../api/enrollmentBootstrap";
 import * as clientsApi from "../../api/clients";
 import { API_BASE_URL } from "../../api/client";
 import EnrollmentBootstrap from "../EnrollmentBootstrap";
+import { appCache } from "../../store/appCache";
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
@@ -43,6 +44,7 @@ function renderPage() {
 
 describe("EnrollmentBootstrap", () => {
   beforeEach(() => {
+    appCache.invalidate();
     vi.spyOn(api, "getEnrollmentTokens").mockResolvedValue(TOKENS as never);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([{ id: 42, name: "Vanto shpk", is_active: true }] as never);
   });

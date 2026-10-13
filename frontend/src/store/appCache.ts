@@ -14,6 +14,8 @@ const PERSISTED_PREFIXES = [
   "clients.list",
   "clients.groups",
   "dashboard.",
+  // useCachedQuery: "page." keys persist, "mem." keys never leave memory.
+  "page.",
 ];
 
 function storage(): Storage | null {

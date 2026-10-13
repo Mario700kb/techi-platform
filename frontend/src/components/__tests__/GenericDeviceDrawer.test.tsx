@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import GenericDeviceDrawer from "../GenericDeviceDrawer";
 import type { Device } from "../../api/devices";
 import type { DrawerMeta } from "../../api/platform";
+import { appCache } from "../../store/appCache";
 
 const getMeta = vi.fn();
 const getInventory = vi.fn();
@@ -57,6 +58,7 @@ function renderDrawer() {
 
 describe("GenericDeviceDrawer", () => {
   beforeEach(() => {
+    appCache.invalidate();
     getMeta.mockReset().mockResolvedValue(META);
     getInventory.mockReset();
   });

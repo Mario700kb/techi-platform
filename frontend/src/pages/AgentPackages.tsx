@@ -29,6 +29,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
@@ -113,8 +114,13 @@ export default function AgentPackages() {
   const types = useMemo(() => PACKAGE_TYPES.filter((t) => t.id !== "linux_binary" || showLinux), [showLinux]);
 
   const [typeId, setTypeId] = useState<TypeId>("msi");
-  const [packages, setPackages] = useState<AgentPackage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: packages,
+    loading,
+    refreshing,
+    error: loadError,
+    reload: load,
+  } = useCachedQuery("page.agent-packages", getAgentPackages);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentPackage | null>(null);
@@ -133,27 +139,17 @@ export default function AgentPackages() {
   const byType = useMemo(() => {
     const map = {} as Record<TypeId, AgentPackage[]>;
     for (const t of PACKAGE_TYPES) {
-      map[t.id] = packages.filter(t.matches).sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
+      map[t.id] = (packages ?? [])
+        .filter(t.matches)
+        .sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
     }
     return map;
   }, [packages]);
   const rows = byType[type.id];
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      setPackages(await getAgentPackages());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load packages");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    void load();
-  }, []);
+    setError(loadError);
+  }, [loadError]);
 
   const selectType = (id: TypeId) => {
     const next = PACKAGE_TYPES.find((t) => t.id === id)!;
@@ -228,8 +224,8 @@ export default function AgentPackages() {
         title="Agent Packages"
         description="Installers and binaries the platform hands out. Activating a package makes it the one new installs and updates use; nothing updates on its own."
         actions={
-          <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          <Button size="sm" variant="secondary" onClick={() => void load()} disabled={refreshing}>
+            <RefreshCcw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         }
@@ -392,7 +388,7 @@ export default function AgentPackages() {
           </div>
         )}
 
-        {loading && packages.length === 0 ? (
+        {loading ? (
           <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading packages">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.15 }} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, RefreshCcw, Search, X } from "lucide-react";
 
@@ -7,6 +7,7 @@ import AlertKindIcon from "../components/AlertKindIcon";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { Button, EmptyState, PageHeader, Select, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
+import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertCount, AlertKind, AlertSeverity } from "../types/alert";
@@ -17,6 +18,11 @@ import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 type SeverityTab = "all" | AlertSeverity;
+
+interface AlertsView {
+  alerts: Alert[];
+  counts: AlertCount;
+}
 
 const SEVERITY_TABS: { id: SeverityTab; label: string }[] = [
   { id: "all", label: "All" },
@@ -33,17 +39,13 @@ export default function AlertsDesktop() {
   const [kind, setKind] = useState<"all" | AlertKind>("all");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [counts, setCounts] = useState<AlertCount | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const requestRef = useRef(0);
+  const [manualRefresh, setManualRefresh] = useState(false);
   const tabsRef = useTabIndicator<HTMLDivElement>(severity);
 
   useEffect(() => {
@@ -66,34 +68,38 @@ export default function AlertsDesktop() {
     setPage(1);
   }, [query, pageSize]);
 
-  const load = useCallback(async () => {
-    const requestId = ++requestRef.current;
-    setFailed(false);
-    try {
-      const [rows, countResult] = await Promise.all([
-        getAlerts({ ...query, limit: pageSize, offset: (page - 1) * pageSize }),
-        getAlertCount(query.search),
-      ]);
-      if (requestRef.current !== requestId) return;
-      setAlerts(rows);
-      setCounts(countResult);
-      setSelected((prev) => new Set([...prev].filter((id) => rows.some((a) => a.id === id))));
-    } catch {
-      if (requestRef.current === requestId) setFailed(true);
-    } finally {
-      if (requestRef.current === requestId) setLoading(false);
-    }
-  }, [query, page, pageSize]);
+  const request = useMemo(
+    () => ({ ...query, limit: pageSize, offset: (page - 1) * pageSize }),
+    [query, page, pageSize],
+  );
+  const { data, loading, refreshing, error, reload, setData } = useCachedQuery<AlertsView>(
+    `page.alerts.list:${JSON.stringify(request)}`,
+    async () => {
+      const [alerts, counts] = await Promise.all([getAlerts(request), getAlertCount(request.search)]);
+      return { alerts, counts };
+    },
+  );
+  const [shown, setShown] = useState(data);
+  if (data !== undefined && data !== shown) setShown(data);
+  const view = data ?? shown;
+  const alerts = view?.alerts ?? [];
+  const counts = view?.counts ?? null;
+  const stale = alerts.length > 0 && (manualRefresh || (refreshing && data === undefined));
+
+  useEffect(() => {
+    if (!data) return;
+    setSelected((prev) => new Set([...prev].filter((id) => data.alerts.some((a) => a.id === id))));
+  }, [data]);
+
+  const refresh = () => {
+    setManualRefresh(true);
+    void reload().finally(() => setManualRefresh(false));
+  };
 
   const changePage = (next: number) => {
     setPage(next);
     scrollRef.current?.scrollTo?.({ top: 0, behavior: "smooth" });
   };
-
-  useEffect(() => {
-    setLoading(true);
-    void load();
-  }, [load]);
 
   // New and resolved alerts arrive over the WebSocket; refetch once a burst
   // settles instead of on every event.
@@ -101,19 +107,19 @@ export default function AlertsDesktop() {
   useEffect(() => {
     if (latestEvent?.type !== "alert_created" && latestEvent?.type !== "alert_resolved") return;
     window.clearTimeout(reloadTimer.current);
-    reloadTimer.current = window.setTimeout(() => void load(), 1500);
-  }, [latestEvent, load]);
+    reloadTimer.current = window.setTimeout(() => void reload(), 1500);
+  }, [latestEvent, reload]);
   useEffect(() => () => window.clearTimeout(reloadTimer.current), []);
 
   const dismiss = async (ids: number[]) => {
     setBusyIds((prev) => new Set([...prev, ...ids]));
     const results = await Promise.allSettled(ids.map((id) => resolveAlert(id)));
     const done = new Set(ids.filter((_, i) => results[i].status === "fulfilled"));
-    setAlerts((prev) => prev.filter((a) => !done.has(a.id)));
+    setData((prev) => prev && { ...prev, alerts: prev.alerts.filter((a) => !done.has(a.id)) });
     setSelected((prev) => new Set([...prev].filter((id) => !done.has(id))));
     setBusyIds((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
     reloadAlerts();
-    void load();
+    void reload();
   };
 
   const selectable = alerts.filter((a) => a.id > 0);
@@ -187,14 +193,7 @@ export default function AlertsDesktop() {
         title="Alerts"
         description="Open alerts on the devices you manage, newest first."
         actions={
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              setLoading(true);
-              void load();
-            }}
-          >
+          <Button size="sm" variant="secondary" onClick={refresh}>
             <RefreshCcw className="h-3.5 w-3.5" />
             Refresh
           </Button>
@@ -300,14 +299,14 @@ export default function AlertsDesktop() {
               <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
             ))}
           </div>
-        ) : failed && alerts.length === 0 ? (
+        ) : error && alerts.length === 0 ? (
           <EmptyState
             className="th-fade-in flex-1 justify-center"
             icon={<AlertTriangle className="h-5 w-5" />}
             title="Couldn't load alerts"
             description="The server did not respond. Try again."
             action={
-              <Button size="sm" variant="secondary" onClick={() => void load()}>
+              <Button size="sm" variant="secondary" onClick={() => void reload()}>
                 <RefreshCcw className="h-3.5 w-3.5" />
                 Retry
               </Button>
@@ -328,11 +327,7 @@ export default function AlertsDesktop() {
             }
           />
         ) : (
-          <div
-            ref={scrollRef}
-            className="th-alerts-scroll th-table-scroll"
-            data-loading={(loading && alerts.length > 0) || undefined}
-          >
+          <div ref={scrollRef} className="th-alerts-scroll th-table-scroll" data-loading={stale || undefined}>
             <table className="th-alerts-table">
               <colgroup>
                 <col className="w-11" />
@@ -489,7 +484,7 @@ export default function AlertsDesktop() {
             pageSize={pageSize}
             total={Math.max(totalForView, alerts.length)}
             itemLabel="alerts"
-            loading={loading && alerts.length > 0}
+            loading={stale}
             extra={selected.size > 0 ? `${formatCount(selected.size)} selected` : undefined}
             onPageChange={changePage}
             onPageSizeChange={setPageSize}
