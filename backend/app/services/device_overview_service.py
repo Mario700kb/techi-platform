@@ -127,12 +127,14 @@ class DeviceOverviewService:
         stats = {"total": 0, "online": 0, "stale": 0, "offline": 0}
         by_client: dict[int, int] = {}
         by_client_category: dict[int, dict[str, int]] = {}
+        by_category: dict[str, int] = {}
         unassigned = 0
         for client_id, category, total, online, stale, offline in count_rows:
             stats["total"] += total
             stats["online"] += online
             stats["stale"] += stale
             stats["offline"] += offline
+            by_category[category] = by_category.get(category, 0) + total
             if client_id is None:
                 unassigned += total
             else:
@@ -153,6 +155,7 @@ class DeviceOverviewService:
                 unassigned=unassigned,
                 by_client=by_client,
                 by_client_category=by_client_category,
+                by_category=by_category,
                 # Extra aggregation query ONLY when Linux is enabled — the
                 # overview stays a 2-query hot path in today's production.
                 by_client_category_platform=(

@@ -319,6 +319,8 @@ export interface DeviceFleetOverview {
     unassigned: number;
     by_client: Record<string, number>;
     by_client_category?: Record<string, Record<string, number>>;
+    // Fleet-wide totals per category, devices without a client included.
+    by_category?: Record<string, number>;
     // Platform Expansion: {clientId: {category: {platform: count}}} (empty when FEATURE_LINUX off).
     by_client_category_platform?: Record<string, Record<string, Record<string, number>>>;
   };

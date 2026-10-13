@@ -25,13 +25,19 @@ vi.mock("../../contexts/AppDataContext", () => ({
     fleetOverview: {
       stats: { total: 1234, online: 1200, stale: 4, offline: 30 },
       needs_updates: 2500,
-      tree_counts: { by_client: {}, unassigned: 0 },
+      tree_counts: { by_client: {}, unassigned: 0, by_category: { clientpc: 1100, servers: 134, network: 0 } },
     },
     fleetOverviewLoading: false,
     latestEvent: null,
     realtimeStatus: "connected",
     refreshFleetOverview: vi.fn(),
-    totalOpenAlerts: 0,
+    alertCount: {
+      total_open: 12,
+      by_severity: { warning: 12 },
+      by_kind: { low_disk: 3, device_offline: 9, high_cpu: 0 },
+      devices_affected: 10,
+    },
+    totalOpenAlerts: 12,
   }),
 }));
 
@@ -73,11 +79,14 @@ describe("Dashboard consistency", () => {
     expect(screen.queryByText("Pending updates")).not.toBeInTheDocument();
   });
 
-  it("caps the operators list at six, online first, without a link for users who cannot manage operators", async () => {
+  it("lists every operator, online first, without a link for users who cannot manage operators", async () => {
     renderDashboard();
     const panel = (await screen.findByText("Operators")).closest("section")!;
     await within(panel).findByText("Operator 7");
-    expect(within(panel).getAllByRole("listitem")).toHaveLength(6);
+    const rows = within(panel).getAllByRole("listitem");
+    expect(rows).toHaveLength(8);
+    expect(rows[0]).toHaveTextContent("Operator 7");
+    expect(rows[0]).toHaveTextContent("Online");
     expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
     const chip = screen.getByText(/1 operator online/);
     expect(chip.closest("a")).toBeNull();
@@ -88,6 +97,36 @@ describe("Dashboard consistency", () => {
     renderDashboard();
     expect(await screen.findByRole("link", { name: "View all" })).toHaveAttribute("href", "/operators");
     expect(screen.getByText(/1 operator online/).closest("a")).toHaveAttribute("href", "/operators");
+  });
+});
+
+describe("Dashboard breakdowns", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    appCache.invalidate();
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    vi.spyOn(devicesApi, "getFleetInsights").mockImplementation(never);
+    vi.spyOn(devicesApi, "getDevices").mockResolvedValue({ devices: [], total: 0 });
+    vi.spyOn(actionsApi, "getRecentActions").mockResolvedValue([]);
+    vi.spyOn(operatorsApi, "getOperatorPresence").mockResolvedValue([]);
+  });
+
+  it("ranks open alerts by type and leaves out types with none", () => {
+    renderDashboard();
+    const panel = screen.getByText("Open alerts by type").closest("section")!;
+    const rows = within(panel).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual(["Device offline975%", "Low disk space325%"]);
+    expect(within(panel).getByText("12 open on 10 devices.")).toBeInTheDocument();
+  });
+
+  it("counts devices per category and links servers and client PCs to their filters", () => {
+    renderDashboard();
+    const panel = screen.getByText("Devices by category").closest("section")!;
+    const rows = within(panel).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByRole("link")).toHaveAttribute("href", "/devices?filter=workstations");
+    expect(rows[0]).toHaveTextContent("Client PCs1,10089%");
+    expect(within(rows[1]).getByRole("link")).toHaveAttribute("href", "/devices?filter=servers");
   });
 });
 

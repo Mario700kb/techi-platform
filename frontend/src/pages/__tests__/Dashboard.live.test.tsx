@@ -26,6 +26,7 @@ const appData = {
   latestEvent: null as DeviceRealtimeEvent | null,
   realtimeStatus: "connected",
   refreshFleetOverview: vi.fn(),
+  alertCount: { total_open: 0, by_severity: {} },
   totalOpenAlerts: 0,
 };
 vi.mock("../../contexts/AppDataContext", () => ({ useAppData: () => appData }));

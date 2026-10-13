@@ -36,7 +36,8 @@ import {
 import { Button, EmptyState, PageHeader } from "../components/ui";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
-import { freshnessTone, TERMS, TONE } from "../utils/deviceStatus";
+import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
+import { ALERT_KIND_LABELS, AlertKind } from "../types/alert";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
@@ -56,7 +57,23 @@ const ACTIVITY_POLL_OFFLINE_MS = 30_000;
 const INSIGHTS_REFRESH_MS = 30 * 60_000;
 /** A tab hidden at least this long refreshes its lists when shown again. */
 const CATCH_UP_AFTER_HIDDEN_MS = 30_000;
-const OPERATORS_LIMIT = 6;
+
+const CATEGORY_LABELS: Record<string, string> = {
+  servers: TERMS.servers,
+  clientpc: TERMS.clientPcs,
+  network: "Network",
+  storage: "Storage",
+  hypervisors: "Hypervisors",
+  printers: "Printers",
+  iot: "IoT",
+  other: "Other",
+  unassigned: "Unclassified",
+};
+
+const CATEGORY_FILTERS: Record<string, string> = {
+  servers: "/devices?filter=servers",
+  clientpc: "/devices?filter=workstations",
+};
 
 // Header chips sit next to a size="sm" Button, so they share its 32px height.
 const HEADER_CHIP = "th-status-chip !h-8";
@@ -90,6 +107,7 @@ export default function Dashboard() {
   useNow();
   const { user, hasPermission } = useAuth();
   const {
+    alertCount,
     fleetOverview,
     fleetOverviewLoading,
     lastFetchTime,
@@ -350,6 +368,24 @@ export default function Dashboard() {
   // System status is for owner and admin only (the API enforces it too).
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   const onlineOperators = operators.filter((op) => op.is_online);
+  const alertsByKind: BreakdownRow[] = Object.entries(alertCount.by_kind ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([kind, count]) => ({
+      key: kind,
+      label: ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind),
+      count,
+      to: "/alerts",
+    }))
+    .sort((a, b) => b.count - a.count);
+  const devicesByCategory: BreakdownRow[] = Object.entries(fleetOverview?.tree_counts.by_category ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([category, count]) => ({
+      key: category,
+      label: CATEGORY_LABELS[category] ?? humanize(category),
+      count,
+      to: CATEGORY_FILTERS[category] ?? "/devices",
+    }))
+    .sort((a, b) => b.count - a.count);
   const clientBreakdown = (() => {
     const byClient = fleetOverview?.tree_counts.by_client ?? {};
     const rows = Object.entries(byClient)
@@ -507,7 +543,7 @@ export default function Dashboard() {
         </div>
 
         {/* Health · attention · platform */}
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className={`grid gap-4 lg:grid-cols-2 ${isAdmin ? "xl:grid-cols-3" : ""}`}>
           <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
             <div className="th-panel-head">
               <h2 id="fleet-health-title">Fleet health</h2>
@@ -695,20 +731,68 @@ export default function Dashboard() {
             </ul>
           </section>
 
-          <div className="grid lg:col-span-2 xl:col-span-1">
-            {isAdmin ? (
+          {isAdmin && (
+            <div className="grid lg:col-span-2 xl:col-span-1">
               <SystemStatusCard compact />
-            ) : (
-              <OperatorsPanel
-                operators={operators}
-                loading={operators.length === 0 && !activityReady}
-                failed={failed.operators}
-                onRetry={retryActivity}
-                currentUserId={user?.id}
-                canManage={canManageOperators}
+            </div>
+          )}
+        </div>
+
+        {/* Operators · alerts by type · devices by category */}
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <OperatorsPanel
+            operators={operators}
+            loading={operators.length === 0 && !activityReady}
+            failed={failed.operators}
+            onRetry={retryActivity}
+            currentUserId={user?.id}
+            canManage={canManageOperators}
+          />
+
+          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alerts-by-kind-title">
+            <div className="th-panel-head">
+              <h2 id="alerts-by-kind-title">Open alerts by type</h2>
+              <Link to="/alerts" className="th-link-btn">
+                View alerts
+              </Link>
+            </div>
+            {alertsByKind.length === 0 ? (
+              <EmptyState
+                className="flex-1"
+                icon={<BellRing className="h-5 w-5" />}
+                title="No open alerts"
+                description="Every alert raised for your devices has been resolved."
               />
+            ) : (
+              <BreakdownBars rows={alertsByKind} total={totalOpenAlerts} unit="alert" />
             )}
-          </div>
+            <p className="th-panel-foot">
+              {formatCount(totalOpenAlerts)} open
+              {alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}.
+            </p>
+          </section>
+
+          <section
+            className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
+            aria-labelledby="devices-by-category-title"
+          >
+            <div className="th-panel-head">
+              <h2 id="devices-by-category-title">Devices by category</h2>
+              <Link to="/devices" className="th-link-btn">
+                View all devices
+              </Link>
+            </div>
+            {loading ? (
+              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                Loading…
+              </p>
+            ) : devicesByCategory.length === 0 ? (
+              <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
+            ) : (
+              <BreakdownBars rows={devicesByCategory} total={total} unit="device" />
+            )}
+            <p className="th-panel-foot">Active devices, all clients. Archived devices are excluded.</p>
+          </section>
         </div>
 
         {/* Trends */}
@@ -1051,6 +1135,50 @@ function HealthRing({ value }: { value: number | null }) {
   );
 }
 
+interface BreakdownRow {
+  key: string;
+  label: string;
+  count: number;
+  to: string;
+}
+
+/** Ranked counts as share-of-total bars, the same look as "Devices by client". */
+function BreakdownBars({ rows, total, unit }: { rows: BreakdownRow[]; total: number; unit: string }) {
+  return (
+    <ul className="flex flex-1 flex-col gap-1 px-5 pb-3">
+      {rows.map((row) => {
+        const pct = total > 0 ? (row.count / total) * 100 : 0;
+        return (
+          <li key={row.key} className="text-[13px]">
+            <Link
+              to={row.to}
+              title={`${row.label}: ${formatCount(row.count)} ${row.count === 1 ? unit : `${unit}s`} (${Math.round(pct)}%)`}
+              className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate" style={{ color: "var(--th-text-secondary)" }}>
+                  {row.label}
+                </span>
+                <span className="flex items-baseline gap-2 tabular-nums">
+                  <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                    {formatCount(row.count)}
+                  </span>
+                  <span className="w-9 text-right text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                    {Math.round(pct)}%
+                  </span>
+                </span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--th-accent)" }} />
+              </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function OperatorsPanel({
   operators,
   loading,
@@ -1091,8 +1219,11 @@ function OperatorsPanel({
       ) : (
         <ul className="flex-1 px-2 pb-2">
           {[...operators]
-            .sort((a, b) => Number(b.is_online) - Number(a.is_online))
-            .slice(0, OPERATORS_LIMIT)
+            .sort(
+              (a, b) =>
+                Number(b.is_online) - Number(a.is_online) ||
+                (a.display_name ?? a.username).localeCompare(b.display_name ?? b.username),
+            )
             .map((op) => {
               const label = op.display_name ?? op.username;
               return (
@@ -1106,8 +1237,9 @@ function OperatorsPanel({
                       {label}
                       {op.id === currentUserId && <span style={{ color: "var(--th-text-muted)" }}> (you)</span>}
                     </span>
-                    <span className="block truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
-                      {op.role}
+                    <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                      <span className="capitalize">{op.role}</span>
+                      {!op.is_online && op.last_active_at && ` · active ${timeAgo(op.last_active_at)}`}
                     </span>
                   </span>
                   <span

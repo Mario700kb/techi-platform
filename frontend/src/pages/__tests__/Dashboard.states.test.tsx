@@ -23,6 +23,7 @@ vi.mock("../../contexts/AppDataContext", () => ({
     latestEvent: null,
     realtimeStatus: "connected",
     refreshFleetOverview: vi.fn(),
+    alertCount: { total_open: 0, by_severity: {} },
     totalOpenAlerts: 0,
   }),
 }));
