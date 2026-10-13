@@ -5085,8 +5085,12 @@ a.th-list-row:hover {
   text-align: left;
   color: var(--th-text-secondary);
   transition:
-    background-color 120ms ease,
-    color 120ms ease;
+    background-color 200ms var(--th-ease),
+    color 200ms var(--th-ease),
+    transform 160ms var(--th-ease-out);
+}
+.th-tree-item:active {
+  transform: scale(0.985);
 }
 .th-tree-item[data-child="true"] {
   height: 30px;
@@ -5133,6 +5137,14 @@ a.th-list-row:hover {
 .th-tree-item:hover .th-tree-caret {
   color: var(--th-text-muted);
 }
+.th-tree-caret svg {
+  transition:
+    transform 300ms var(--th-ease-out),
+    translate 200ms var(--th-ease-out);
+}
+.th-tree-item:hover .th-tree-caret svg:not(.rotate-90) {
+  translate: 2px 0;
+}
 .th-tree-count {
   min-width: 28px;
   padding: 0 6px;
@@ -5149,8 +5161,24 @@ a.th-list-row:hover {
   color: var(--th-text-primary);
   background: color-mix(in srgb, var(--th-text-primary) 10%, transparent);
 }
-/* Client status ring: online, then stale, then offline, clockwise from the top. */
+/* Client status ring: online, then stale, then offline, clockwise from the top.
+   Registered so the arcs sweep in on mount and glide when the counts change. */
+@property --online {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+@property --stale {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
 .th-tree-ring {
+  transition:
+    --online 700ms var(--th-ease-out),
+    --stale 700ms var(--th-ease-out);
+  animation: th-ring-in 800ms var(--th-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 20ms);
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -5169,6 +5197,26 @@ a.th-list-row:hover {
   display: inline-flex;
   flex: none;
   color: var(--th-text-faint);
+  animation: th-fade 300ms var(--th-ease) backwards;
+}
+@keyframes th-ring-in {
+  from {
+    --online: 0%;
+    --stale: 0%;
+  }
+}
+/* Explorer rows rise in one after another (capped, so 40 clients still
+   settle in ~0.5 s); a branch's rows follow each time it opens. */
+.th-tree-row {
+  animation: th-rise 280ms var(--th-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+.th-tree-collapse[data-open="true"] .fleet-tree-child > li {
+  animation: th-rise 260ms var(--th-ease-out) backwards;
+  animation-delay: calc(60ms + var(--i, 0) * 40ms);
+}
+.th-tree-item .th-tree-count {
+  animation: th-count-in 260ms var(--th-ease) both;
 }
 .th-tree-maint {
   width: 6px;

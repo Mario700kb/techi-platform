@@ -184,7 +184,7 @@ const DeviceTree = memo(function DeviceTree({
       <div className="fleet-tree min-h-0 flex-1 overflow-y-auto">
         <p className="th-explorer-label">Fleet</p>
         <ul className="th-explorer-list">
-          <li>
+          <li className="th-tree-row" style={{ "--i": 0 } as CSSProperties}>
             <TreeButton
               active={selectedKey === "all"}
               icon={LayoutGrid}
@@ -193,7 +193,7 @@ const DeviceTree = memo(function DeviceTree({
               onClick={() => onSelect("all")}
             />
           </li>
-          <li>
+          <li className="th-tree-row" style={{ "--i": 1 } as CSSProperties}>
             <TreeButton
               active={selectedKey === "unassigned"}
               icon={PackageX}
@@ -243,14 +243,14 @@ const DeviceTree = memo(function DeviceTree({
           {visibleClients.length === 0 && (
             <li className="th-explorer-empty">{clientQuery ? "No clients match." : "No clients with devices."}</li>
           )}
-          {visibleClients.map((client) => {
+          {visibleClients.map((client, index) => {
             const childFolders = CLIENT_FOLDERS.filter((folder) => {
               if (showEmptyGroups) return true;
               return folderCount(client.id, folder.id) > 0 || selectedKey === `client-${client.id}-${folder.id}`;
             });
             const expanded = expandedClients.has(client.id);
             return (
-              <li key={client.id}>
+              <li key={client.id} className="th-tree-row" style={{ "--i": Math.min(index + 2, 16) } as CSSProperties}>
                 <TreeButton
                   active={selectedKey === `client-${client.id}`}
                   withinActive={activeClientFolder?.clientId === client.id || (expanded && childFolders.length > 0)}
@@ -268,12 +268,12 @@ const DeviceTree = memo(function DeviceTree({
                   <div className="th-tree-collapse" data-open={expanded} aria-hidden={!expanded}>
                     <div className="th-tree-collapse-inner">
                       <ul className="fleet-tree-child">
-                        {childFolders.map((folder) => {
+                        {childFolders.map((folder, folderIndex) => {
                           const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
                           // One platform repeats its folder's count, so it becomes an icon on the folder row.
                           const onlyPlatform = platforms.length === 1 ? platforms[0][0] : null;
                           return (
-                            <li key={folder.id}>
+                            <li key={folder.id} style={{ "--i": folderIndex } as CSSProperties}>
                               <TreeButton
                                 active={selectedKey === `client-${client.id}-${folder.id}`}
                                 child
@@ -404,7 +404,10 @@ function TreeButton({
           <PlatformIcon platform={platformBadge} size={12} />
         </span>
       )}
-      <span className="th-tree-count">{formatCount(count)}</span>
+      {/* Keyed by value, so a changed count fades in rather than snapping. */}
+      <span key={count} className="th-tree-count">
+        {formatCount(count)}
+      </span>
       <span className="th-tree-caret" aria-hidden="true">
         {hasChildren && <ChevronRight className={clsx("th-tree-chevron h-3.5 w-3.5", expanded && "rotate-90")} />}
       </span>

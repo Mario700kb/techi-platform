@@ -5,6 +5,28 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] EXPLORER-MOTION-2026-10-13 — smooth motion on every Explorer element (not deployed)
+
+Frontend only. The owner asked for smooth animation on every element of the
+Explorer. On the existing motion tokens, off under the global
+prefers-reduced-motion rule:
+
+- Rows (fleet and clients) rise in one after another, 18 ms apart, capped at
+  the 16th so 40 clients settle in about half a second; a filter's new
+  matches rise in as they appear.
+- Status ring: `--online` / `--stale` are registered with `@property`, so the
+  arcs sweep from zero on mount and glide (700 ms) when a client's counts
+  change.
+- A changed count fades in (keyed by value) instead of snapping.
+- Opening a client: its folder rows rise in 40 ms apart behind the existing
+  slide; the folder's platform icon fades in.
+- Hover and selection: background and colour ease over 200 ms (was 120 ms),
+  the chevron nudges 2 px right on a closed row, a pressed row dips to 98.5 %.
+
+Measured in Chromium: rows from 0 to full opacity within ~200 ms, rings at
+their real share (50 %, 66.7 % on the mock) by 1.2 s, a branch's rows
+staggered on open. `tsc`, ESLint, Prettier, Vitest 217, Playwright 90 passed.
+
 ## [2026-10-13] DASHBOARD-ALERTS-FAST-2026-10-13 — alert breakdown paints at once (`0e32fdd`)
 
 Frontend only, deployed 2026-10-13 16:16 (Tirana). Rollback image
