@@ -6435,3 +6435,45 @@ span.th-inv-mono {
 .th-device-cell > div {
   max-width: 280px;
 }
+
+/* Clients list: initials mark, devices-by-status bar, editable group chips. */
+.th-client-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--th-accent-bright);
+  background: color-mix(in srgb, var(--th-accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--th-accent) 24%, transparent);
+}
+.th-client-bar {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-client-bar > span {
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: 999px;
+  transition: flex-grow 450ms var(--th-ease-out);
+}
+button.th-client-group {
+  cursor: pointer;
+  transition:
+    border-color 150ms var(--th-ease),
+    color 150ms var(--th-ease);
+}
+button.th-client-group:hover {
+  color: var(--th-text-primary);
+  border-color: var(--th-border-strong);
+}

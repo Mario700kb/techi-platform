@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] CLIENTS-PAGE-2026-10-13 — Clients page leads with the list (not deployed)
+
+Frontend only. The owner asked for an enterprise, symmetric Clients page. The
+page opened with two large create forms above the list, every row repeated
+"Client PC ✎ 🗑 · Servers ✎ 🗑", the groups column left a wide gap, and domain
+mappings sat in a third card at the bottom.
+
+- New client / New group are header buttons opening dialogs (same fields and
+  handlers; the dialog closes on success, the name field is focused).
+- One card with two tabs, Clients and Domain mappings; the status filter is a
+  segmented control beside the search on the same line.
+- Rows: initials mark, name with description (or slug), status, devices with
+  the share online and an online/stale/offline bar (`tree_counts.
+  by_client_status`), groups as plain chips (first three, then "+N") that open
+  the group editor, created date, edit/delete and an arrow to the profile.
+- Delete group moved into the group editor's footer.
+- KPI row two columns on phones, four from xl.
+- Clients test updated (domain mappings behind their tab; online share and
+  dialog); new E2E `clients-page.spec.ts` (no inline forms, status bar, dialog
+  focus, domain tab) in both themes.
+
+`tsc`, ESLint, Prettier, Vitest 231, Playwright 96 passed (the profile E2E now picks the name link exactly, since each row also has an "Open … profile" arrow).
+
 ## [2026-10-13] CLIENT-PROFILE-1-2026-10-13 — client profile, phase 1 (`52e2da4`)
 
 Backend and frontend deployed 2026-10-13 21:00–21:06 (Tirana). Dump

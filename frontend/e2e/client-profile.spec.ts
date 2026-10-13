@@ -133,7 +133,7 @@ test("a client row on the Clients page opens its profile", async ({ page }) => {
   test.skip(test.info().project.name !== "desktop");
   await northwindProfile(page);
   await page.goto("/clients");
-  await page.getByRole("link", { name: "Northwind Clinic" }).click();
+  await page.getByRole("link", { name: "Northwind Clinic", exact: true }).click();
   await expect(page).toHaveURL(/\/clients\/1$/);
   await expect(page.getByRole("heading", { name: "Northwind Clinic" })).toBeVisible();
 });

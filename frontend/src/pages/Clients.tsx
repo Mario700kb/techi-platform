@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Building2,
+  ChevronRight,
   Globe2,
   Layers,
   Monitor,
@@ -35,17 +36,29 @@ import {
 } from "../api/clients";
 import { getDeviceTree } from "../api/devices";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
-import { CardHead } from "../components/ui/PanelCard";
 import Modal from "../components/ui/Modal";
 import TablePagination from "../components/ui/TablePagination";
 import { useAuth } from "../auth/AuthContext";
 import { useTabIndicator } from "../hooks/useTabIndicator";
+import { useAppData } from "../contexts/AppDataContext";
 import { appCache, CACHE_KEYS, CACHE_TTL } from "../store/appCache";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime } from "../utils/time";
 
 type ClientFilter = "all" | "active" | "inactive";
+type Section = "clients" | "domains";
+
+/** Groups shown as chips per row; the rest fold into "+N". */
+const GROUP_CHIPS = 3;
+
+function clientInitials(name: string): string {
+  const words = name
+    .trim()
+    .split(/[\s\-_.]+/)
+    .filter(Boolean);
+  return (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase();
+}
 
 const CLIENT_FILTERS: { id: ClientFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -99,7 +112,10 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
+  const [section, setSection] = useState<Section>("clients");
+  const [creating, setCreating] = useState<"client" | "group" | null>(null);
+  const sectionTabsRef = useTabIndicator<HTMLDivElement>(section);
+  const { fleetOverview } = useAppData();
 
   const groupsByClient = useMemo(() => {
     return groups.reduce<Record<number, DeviceGroup[]>>((acc, group) => {
@@ -203,6 +219,7 @@ export default function Clients() {
       setClientName("");
       setClientSlug("");
       setClientDescription("");
+      setCreating(null);
       if (!groupClientId) setGroupClientId(String(created.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create client");
@@ -225,6 +242,7 @@ export default function Clients() {
       });
       setGroupName("");
       setGroupDescription("");
+      setCreating(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
     }
@@ -399,16 +417,38 @@ export default function Clients() {
   const totalDevices = Object.values(deviceCounts).reduce((sum, n) => sum + n, 0);
   const activeMappings = mappedTrustedDomains.filter((d) => d.is_active).length;
 
+  const statusByClient = fleetOverview?.tree_counts.by_client_status ?? {};
+  const sectionTabs: { id: Section; label: string; count: number }[] = [
+    { id: "clients", label: "Clients", count: counts.all },
+    ...(canManageClients
+      ? [{ id: "domains" as const, label: "Domain mappings", count: mappedTrustedDomains.length }]
+      : []),
+  ];
+
   return (
     <section className="premium-page th-onb flex flex-col gap-4">
       <PageHeader
         title="Clients"
         description="Customer records and the groups that device assignment and enrollment tokens place devices into."
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void loadData(true)} disabled={loading}>
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            {canManageClients && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setCreating("group")} disabled={!clients.length}>
+                  <Layers className="h-3.5 w-3.5" />
+                  New group
+                </Button>
+                <Button size="sm" onClick={() => setCreating("client")}>
+                  <Plus className="h-3.5 w-3.5" />
+                  New client
+                </Button>
+              </>
+            )}
+          </>
         }
       />
 
@@ -427,7 +467,7 @@ export default function Clients() {
       )}
 
       {/* ── summary ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {[
           {
             label: "Clients",
@@ -484,103 +524,472 @@ export default function Clients() {
         ))}
       </div>
 
-      {/* ── create client · create group ────────────────────────────────── */}
-      {canManageClients && (
-        <div className="grid items-stretch gap-4 max-md:order-last xl:grid-cols-2">
-          <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
-            <CardHead
-              icon={Building2}
-              tone="var(--th-accent)"
-              title="New client"
-              subtitle="A customer whose devices the platform manages"
-            />
-            <div className="th-onb-body flex-1">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="th-onb-field">
-                  Name
-                  <input
-                    value={clientName}
-                    onChange={(event) => setClientName(event.target.value)}
-                    placeholder="e.g. Vasgroup"
-                    onKeyDown={(e) => e.key === "Enter" && void handleCreateClient()}
-                  />
-                </label>
-                <label className="th-onb-field">
-                  Slug
-                  <input
-                    value={clientSlug}
-                    onChange={(event) => setClientSlug(event.target.value)}
-                    placeholder={slugify(clientName) || "Derived from the name"}
-                    spellCheck={false}
-                  />
-                </label>
+      {/* ── clients · domain mappings ───────────────────────────────────── */}
+      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>
+        <div className="th-alerts-toolbar">
+          <div ref={sectionTabsRef} role="tablist" aria-label="Client sections" className="th-tabs">
+            {sectionTabs.map(({ id, label, count }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={section === id}
+                onClick={() => setSection(id)}
+                className="th-tab"
+              >
+                {id === "clients" ? <Building2 className="h-3.5 w-3.5" /> : <Globe2 className="h-3.5 w-3.5" />}
+                {label}
+                <span className="th-tab-count">{formatCount(count)}</span>
+              </button>
+            ))}
+          </div>
+          {section === "clients" && (
+            <div className="flex items-center gap-2 pb-2 max-sm:w-full max-sm:flex-wrap">
+              <div role="radiogroup" aria-label="Client status" className="th-segmented">
+                {CLIENT_FILTERS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={filter === id}
+                    className="!px-2.5"
+                    onClick={() => {
+                      setFilter(id);
+                      setPage(1);
+                    }}
+                  >
+                    {label}
+                    <span className="tabular-nums">{formatCount(counts[id])}</span>
+                  </button>
+                ))}
               </div>
-              <label className="th-onb-field">
-                Description
-                <textarea
-                  value={clientDescription}
-                  onChange={(event) => setClientDescription(event.target.value)}
-                  placeholder="Optional"
-                  rows={3}
+              <label className="th-search th-search-sm !w-[240px] flex-none max-sm:!w-full">
+                <Search className="h-3.5 w-3.5 flex-none" />
+                <input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search clients or groups"
+                  aria-label="Search clients"
                 />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="th-explorer-clear"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </label>
             </div>
-            <div className="th-onb-foot">
+          )}
+        </div>
+
+        {section === "clients" ? (
+          <>
+            {loading && clients.length === 0 ? (
+              <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading clients">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
+                ))}
+              </div>
+            ) : visibleClients.length === 0 ? (
+              <EmptyState
+                className="th-fade-in py-10"
+                icon={<Building2 className="h-5 w-5" />}
+                title={clients.length === 0 ? "No clients yet" : "No clients match these filters"}
+                action={
+                  clients.length > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setFilter("all");
+                        setSearch("");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : canManageClients ? (
+                    <Button size="sm" onClick={() => setCreating("client")}>
+                      <Plus className="h-3.5 w-3.5" />
+                      New client
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <div className="th-alerts-scroll th-table-scroll">
+                <table className="th-alerts-table" data-mobile="cards">
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[112px]" />
+                    <col className="w-[190px]" />
+                    <col />
+                    <col className="w-[120px]" />
+                    <col className={canManageClients ? "w-[112px]" : "w-[48px]"} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Client</th>
+                      <th>Status</th>
+                      <th>Devices</th>
+                      <th>Groups</th>
+                      <th>Created</th>
+                      <th className="text-right">{canManageClients ? "Actions" : ""}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedClients.map((client, index) => {
+                      const clientGroups = groupsByClient[client.id] ?? [];
+                      const status = statusByClient[String(client.id)];
+                      const devices = status?.total ?? deviceCounts[String(client.id)] ?? 0;
+                      const shownGroups = clientGroups.slice(0, GROUP_CHIPS);
+                      const hiddenGroups = clientGroups.length - shownGroups.length;
+                      return (
+                        <tr
+                          key={client.id}
+                          className="th-alerts-row cursor-pointer"
+                          style={{ "--row": index } as CSSProperties}
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest("button, a")) return;
+                            navigate(`/clients/${client.id}`);
+                          }}
+                        >
+                          <td>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="th-client-mark" aria-hidden="true">
+                                {clientInitials(client.name)}
+                              </span>
+                              <span className="min-w-0">
+                                <Link to={`/clients/${client.id}`} className="th-alerts-primary th-alerts-link">
+                                  {client.name}
+                                </Link>
+                                <span className="th-alerts-secondary" title={client.description ?? undefined}>
+                                  {client.description || <span className="font-mono">{client.slug}</span>}
+                                </span>
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span
+                              className="th-status-chip"
+                              style={{ "--chip-tone": client.is_active ? TONE.online : TONE.neutral } as CSSProperties}
+                            >
+                              <i />
+                              {client.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span
+                                className="th-alerts-primary tabular-nums"
+                                style={devices ? undefined : { color: "var(--th-text-faint)" }}
+                              >
+                                {formatCount(devices)}
+                              </span>
+                              {status && status.total > 0 && (
+                                <span className="text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+                                  {Math.round((status.online / status.total) * 100)}% online
+                                </span>
+                              )}
+                            </div>
+                            <div
+                              className="th-client-bar"
+                              title={
+                                status
+                                  ? `${status.online} online · ${status.stale} stale · ${status.offline} offline`
+                                  : undefined
+                              }
+                            >
+                              {status && status.total > 0 && (
+                                <>
+                                  <span style={{ flexGrow: status.online, background: TONE.online }} />
+                                  <span style={{ flexGrow: status.stale, background: TONE.stale }} />
+                                  <span style={{ flexGrow: status.offline, background: TONE.offline }} />
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            {clientGroups.length === 0 ? (
+                              <span className="th-alerts-secondary !mt-0">No groups</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {shownGroups.map((group) =>
+                                  canManageClients ? (
+                                    <button
+                                      key={group.id}
+                                      type="button"
+                                      className="th-onb-group th-client-group"
+                                      onClick={() => openEditGroup(group)}
+                                      title={group.description || `Edit ${group.name}`}
+                                    >
+                                      {group.name}
+                                    </button>
+                                  ) : (
+                                    <span
+                                      key={group.id}
+                                      className="th-onb-group"
+                                      title={group.description ?? undefined}
+                                    >
+                                      {group.name}
+                                    </span>
+                                  ),
+                                )}
+                                {hiddenGroups > 0 && (
+                                  <span
+                                    className="th-onb-group"
+                                    title={clientGroups
+                                      .slice(GROUP_CHIPS)
+                                      .map((g) => g.name)
+                                      .join(", ")}
+                                  >
+                                    +{hiddenGroups}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <span className="th-alerts-secondary !mt-0 tabular-nums">
+                              {formatLocalDateTime(client.created_at, {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="th-onb-actions">
+                              {canManageClients && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="th-onb-action"
+                                    onClick={() => openEditClient(client)}
+                                    title="Edit client"
+                                    aria-label={`Edit ${client.name}`}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="th-onb-action"
+                                    data-tone="danger"
+                                    onClick={() => handleDeleteClient(client)}
+                                    title="Delete client"
+                                    aria-label={`Delete ${client.name}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                              <Link
+                                to={`/clients/${client.id}`}
+                                className="th-onb-action"
+                                title="Open profile"
+                                aria-label={`Open ${client.name}'s profile`}
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {visibleClients.length > 0 && (
+              <TablePagination
+                page={page}
+                pageSize={pageSize}
+                total={visibleClients.length}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                pageSizeOptions={[25, 50, 100]}
+                itemLabel="clients"
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <div className="th-onb-maprow th-onb-mapadd">
+              <label className="th-onb-field">
+                Domain
+                <input
+                  value={domainName}
+                  onChange={(event) => setDomainName(event.target.value)}
+                  placeholder="e.g. VASGROUP"
+                  spellCheck={false}
+                  onKeyDown={(e) => e.key === "Enter" && void handleCreateTrustedDomain()}
+                />
+              </label>
+              <div className="th-onb-field">
+                Client
+                <Select
+                  id="domain-client"
+                  aria-label="Mapped client"
+                  value={domainClientId}
+                  onChange={setDomainClientId}
+                  options={clientOptions}
+                  placeholder="Select client"
+                  className="w-full"
+                />
+              </div>
               <Button
                 className="w-full"
                 type="button"
-                onClick={() => void handleCreateClient()}
-                disabled={!clientName.trim()}
+                onClick={() => void handleCreateTrustedDomain()}
+                disabled={!clients.length || !domainName.trim() || !domainClientId}
               >
+                <Plus className="h-4 w-4" />
+                Add mapping
+              </Button>
+            </div>
+            <p className="th-onb-hint px-4 pb-2">
+              Maps the domain a device reports to the client that automatic enrollment places it in.
+            </p>
+            {mappedTrustedDomains.length === 0 ? (
+              <EmptyState
+                className="py-8"
+                icon={<Globe2 className="h-5 w-5" />}
+                title="No domain mappings"
+                description="Without one, domain-joined devices enroll through their token's client."
+              />
+            ) : (
+              <div role="table" aria-label="Domain mappings">
+                <div role="row" className="th-onb-maprow th-onb-maphead">
+                  <span role="columnheader">Domain</span>
+                  <span role="columnheader">Client</span>
+                  <span role="columnheader" className="flex justify-between">
+                    <span>Active</span>
+                    <span>Actions</span>
+                  </span>
+                </div>
+                {mappedTrustedDomains.map((domain, index) => (
+                  <div
+                    role="row"
+                    key={domain.id}
+                    className="th-onb-maprow th-alerts-row"
+                    style={{ "--row": index } as CSSProperties}
+                  >
+                    <span role="cell" className="th-alerts-primary font-mono !text-[12px]">
+                      {domain.domain}
+                    </span>
+                    <span role="cell">
+                      <Select
+                        id={`domain-${domain.id}-client`}
+                        aria-label={`Client for ${domain.domain}`}
+                        value={domain.client_id ? String(domain.client_id) : ""}
+                        onChange={(value) => void handleTrustedDomainClientChange(domain, value)}
+                        options={clientOptions}
+                        className="w-full"
+                      />
+                    </span>
+                    <span role="cell" className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={domain.is_active}
+                        aria-label={`${domain.domain} active`}
+                        className="th-onb-switch"
+                        onClick={() => void handleTrustedDomainActiveChange(domain, !domain.is_active)}
+                      >
+                        <i />
+                      </button>
+                      <button
+                        type="button"
+                        className="th-onb-action"
+                        data-tone="danger"
+                        onClick={() => handleDeleteTrustedDomain(domain)}
+                        title="Delete mapping"
+                        aria-label={`Delete mapping ${domain.domain}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {creating === "client" && (
+        <Modal
+          title="New client"
+          subtitle="A customer whose devices the platform manages"
+          icon={Building2}
+          onClose={() => setCreating(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setCreating(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleCreateClient()} disabled={!clientName.trim()}>
                 <Plus className="h-4 w-4" />
                 Create client
               </Button>
-            </div>
+            </>
+          }
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="th-onb-field">
+              Name
+              <input
+                value={clientName}
+                onChange={(event) => setClientName(event.target.value)}
+                placeholder="e.g. Vasgroup"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && void handleCreateClient()}
+              />
+            </label>
+            <label className="th-onb-field">
+              Slug
+              <input
+                value={clientSlug}
+                onChange={(event) => setClientSlug(event.target.value)}
+                placeholder={slugify(clientName) || "Derived from the name"}
+                spellCheck={false}
+              />
+            </label>
           </div>
-
-          <div className="th-onb-card th-onb-enter" style={{ "--i": 5 } as CSSProperties}>
-            <CardHead
-              icon={Users}
-              tone="var(--th-status-info)"
-              title="New group"
-              subtitle="Groups sort a client's devices; Client PC and Servers exist by default"
+          <label className="th-onb-field">
+            Description
+            <textarea
+              value={clientDescription}
+              onChange={(event) => setClientDescription(event.target.value)}
+              placeholder="Optional"
+              rows={3}
             />
-            <div className="th-onb-body flex-1">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="th-onb-field">
-                  Client
-                  <Select
-                    id="group-client"
-                    aria-label="Client for new group"
-                    value={groupClientId}
-                    onChange={setGroupClientId}
-                    options={clientOptions}
-                    placeholder="Select client"
-                  />
-                </div>
-                <label className="th-onb-field">
-                  Name
-                  <input
-                    value={groupName}
-                    onChange={(event) => setGroupName(event.target.value)}
-                    placeholder="e.g. Reception"
-                    onKeyDown={(e) => e.key === "Enter" && void handleCreateGroup()}
-                  />
-                </label>
-              </div>
-              <label className="th-onb-field">
-                Description
-                <textarea
-                  value={groupDescription}
-                  onChange={(event) => setGroupDescription(event.target.value)}
-                  placeholder="Optional"
-                  rows={3}
-                />
-              </label>
-            </div>
-            <div className="th-onb-foot">
+          </label>
+        </Modal>
+      )}
+
+      {creating === "group" && (
+        <Modal
+          title="New group"
+          subtitle="Groups sort a client's devices; Client PC and Servers exist by default"
+          icon={Layers}
+          onClose={() => setCreating(null)}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={() => setCreating(null)}>
+                Cancel
+              </Button>
               <Button
-                className="w-full"
                 type="button"
                 onClick={() => void handleCreateGroup()}
                 disabled={!clients.length || !groupName.trim() || !groupClientId}
@@ -588,349 +997,42 @@ export default function Clients() {
                 <Plus className="h-4 w-4" />
                 Create group
               </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── clients ─────────────────────────────────────────────────────── */}
-      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
-        <CardHead
-          icon={Building2}
-          tone="var(--th-accent)"
-          title="Clients"
-          subtitle={
-            loading && clients.length === 0
-              ? "Loading…"
-              : `${formatCount(clients.length)} clients · ${formatCount(groups.length)} groups`
+            </>
           }
-        />
-        <div className="th-alerts-toolbar">
-          <div ref={filterTabsRef} role="tablist" aria-label="Client status" className="th-tabs">
-            {CLIENT_FILTERS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={filter === id}
-                onClick={() => {
-                  setFilter(id);
-                  setPage(1);
-                }}
-                className="th-tab"
-              >
-                {label}
-                <span className="th-tab-count">{formatCount(counts[id])}</span>
-              </button>
-            ))}
-          </div>
-          <div className="pb-2">
-            <label className="th-search th-search-sm w-[260px]">
-              <Search className="h-3.5 w-3.5 flex-none" />
-              <input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search clients or groups"
-                aria-label="Search clients"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="th-explorer-clear"
-                  aria-label="Clear search"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </label>
-          </div>
-        </div>
-
-        {loading && clients.length === 0 ? (
-          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading clients">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
-            ))}
-          </div>
-        ) : visibleClients.length === 0 ? (
-          <EmptyState
-            className="th-fade-in py-10"
-            icon={<Building2 className="h-5 w-5" />}
-            title={clients.length === 0 ? "No clients yet" : "No clients match these filters"}
-            action={
-              clients.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setFilter("all");
-                    setSearch("");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table" data-mobile="cards">
-              <colgroup>
-                <col className="w-[28%]" />
-                <col className="w-[110px]" />
-                <col className="w-[100px]" />
-                <col />
-                <col className="w-[130px]" />
-                {canManageClients && <col className="w-[92px]" />}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Status</th>
-                  <th className="text-right">Devices</th>
-                  <th>Groups</th>
-                  <th>Created</th>
-                  {canManageClients && <th className="text-right">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {pagedClients.map((client, index) => {
-                  const clientGroups = groupsByClient[client.id] ?? [];
-                  const devices = deviceCounts[String(client.id)] ?? 0;
-                  return (
-                    <tr
-                      key={client.id}
-                      className="th-alerts-row cursor-pointer"
-                      style={{ "--row": index } as CSSProperties}
-                      onClick={(e) => {
-                        if ((e.target as HTMLElement).closest("button, a")) return;
-                        navigate(`/clients/${client.id}`);
-                      }}
-                    >
-                      <td>
-                        <Link to={`/clients/${client.id}`} className="th-alerts-primary th-alerts-link">
-                          {client.name}
-                        </Link>
-                        <span className="th-alerts-secondary" title={client.description ?? undefined}>
-                          <span className="font-mono">{client.slug}</span>
-                          {client.description ? ` · ${client.description}` : ""}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className="th-status-chip"
-                          style={{ "--chip-tone": client.is_active ? TONE.online : TONE.neutral } as CSSProperties}
-                        >
-                          <i />
-                          {client.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        <span
-                          className="th-alerts-primary tabular-nums"
-                          style={devices ? undefined : { color: "var(--th-text-faint)" }}
-                        >
-                          {formatCount(devices)}
-                        </span>
-                      </td>
-                      <td>
-                        {clientGroups.length === 0 ? (
-                          <span className="th-alerts-secondary">No groups</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {clientGroups.map((group) => (
-                              <span key={group.id} className="th-onb-group" title={group.description ?? undefined}>
-                                {group.name}
-                                {canManageClients && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditGroup(group)}
-                                      aria-label={`Edit group ${group.name}`}
-                                      title="Edit group"
-                                    >
-                                      <Pencil className="h-3 w-3" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      data-tone="danger"
-                                      onClick={() => handleDeleteGroup(group)}
-                                      aria-label={`Delete group ${group.name}`}
-                                      title="Delete group"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  </>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <span className="th-alerts-secondary !mt-0 tabular-nums">
-                          {formatLocalDateTime(client.created_at, { day: "numeric", month: "short", year: "numeric" })}
-                        </span>
-                      </td>
-                      {canManageClients && (
-                        <td>
-                          <div className="th-onb-actions">
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              onClick={() => openEditClient(client)}
-                              title="Edit client"
-                              aria-label={`Edit ${client.name}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              data-tone="danger"
-                              onClick={() => handleDeleteClient(client)}
-                              title="Delete client"
-                              aria-label={`Delete ${client.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {visibleClients.length > 0 && (
-          <TablePagination
-            page={page}
-            pageSize={pageSize}
-            total={visibleClients.length}
-            onPageChange={setPage}
-            onPageSizeChange={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
-            pageSizeOptions={[25, 50, 100]}
-            itemLabel="clients"
-          />
-        )}
-      </div>
-
-      {/* ── domain mappings ─────────────────────────────────────────────── */}
-      {canManageClients && (
-        <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 7 } as CSSProperties}>
-          <CardHead
-            icon={Globe2}
-            tone={TONE.maintenance}
-            title="Domain mapping"
-            subtitle="Maps the domain a device reports to the client that automatic enrollment places it in"
-          />
-          <div className="th-onb-maprow th-onb-mapadd">
-            <label className="th-onb-field">
-              Domain
-              <input
-                value={domainName}
-                onChange={(event) => setDomainName(event.target.value)}
-                placeholder="e.g. VASGROUP"
-                spellCheck={false}
-                onKeyDown={(e) => e.key === "Enter" && void handleCreateTrustedDomain()}
-              />
-            </label>
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="th-onb-field">
               Client
               <Select
-                id="domain-client"
-                aria-label="Mapped client"
-                value={domainClientId}
-                onChange={setDomainClientId}
+                id="group-client"
+                aria-label="Client for new group"
+                value={groupClientId}
+                onChange={setGroupClientId}
                 options={clientOptions}
                 placeholder="Select client"
-                className="w-full"
               />
             </div>
-            <Button
-              className="w-full"
-              type="button"
-              onClick={() => void handleCreateTrustedDomain()}
-              disabled={!clients.length || !domainName.trim() || !domainClientId}
-            >
-              <Plus className="h-4 w-4" />
-              Add mapping
-            </Button>
+            <label className="th-onb-field">
+              Name
+              <input
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="e.g. Reception"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && void handleCreateGroup()}
+              />
+            </label>
           </div>
-          {mappedTrustedDomains.length === 0 ? (
-            <EmptyState
-              className="py-8"
-              icon={<Globe2 className="h-5 w-5" />}
-              title="No domain mappings"
-              description="Without one, domain-joined devices enroll through their token's client."
+          <label className="th-onb-field">
+            Description
+            <textarea
+              value={groupDescription}
+              onChange={(event) => setGroupDescription(event.target.value)}
+              placeholder="Optional"
+              rows={3}
             />
-          ) : (
-            <div role="table" aria-label="Domain mappings">
-              <div role="row" className="th-onb-maprow th-onb-maphead">
-                <span role="columnheader">Domain</span>
-                <span role="columnheader">Client</span>
-                <span role="columnheader" className="flex justify-between">
-                  <span>Active</span>
-                  <span>Actions</span>
-                </span>
-              </div>
-              {mappedTrustedDomains.map((domain, index) => (
-                <div
-                  role="row"
-                  key={domain.id}
-                  className="th-onb-maprow th-alerts-row"
-                  style={{ "--row": index } as CSSProperties}
-                >
-                  <span role="cell" className="th-alerts-primary font-mono !text-[12px]">
-                    {domain.domain}
-                  </span>
-                  <span role="cell">
-                    <Select
-                      id={`domain-${domain.id}-client`}
-                      aria-label={`Client for ${domain.domain}`}
-                      value={domain.client_id ? String(domain.client_id) : ""}
-                      onChange={(value) => void handleTrustedDomainClientChange(domain, value)}
-                      options={clientOptions}
-                      className="w-full"
-                    />
-                  </span>
-                  <span role="cell" className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={domain.is_active}
-                      aria-label={`${domain.domain} active`}
-                      className="th-onb-switch"
-                      onClick={() => void handleTrustedDomainActiveChange(domain, !domain.is_active)}
-                    >
-                      <i />
-                    </button>
-                    <button
-                      type="button"
-                      className="th-onb-action"
-                      data-tone="danger"
-                      onClick={() => handleDeleteTrustedDomain(domain)}
-                      title="Delete mapping"
-                      aria-label={`Delete mapping ${domain.domain}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          </label>
+        </Modal>
       )}
 
       {editingGroup && (
@@ -941,6 +1043,19 @@ export default function Clients() {
           onClose={() => setEditingGroup(null)}
           footer={
             <>
+              <Button
+                variant="danger"
+                type="button"
+                className="mr-auto"
+                onClick={() => {
+                  const group = editingGroup;
+                  setEditingGroup(null);
+                  handleDeleteGroup(group);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete group
+              </Button>
               <Button variant="secondary" type="button" onClick={() => setEditingGroup(null)}>
                 Cancel
               </Button>

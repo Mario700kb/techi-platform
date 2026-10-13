@@ -8,6 +8,13 @@ import { appCache } from "../../store/appCache";
 import Clients from "../Clients";
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
+vi.mock("../../contexts/AppDataContext", () => ({
+  useAppData: () => ({
+    fleetOverview: {
+      tree_counts: { by_client_status: { "1": { total: 42, online: 30, stale: 2, offline: 10 } } },
+    },
+  }),
+}));
 
 const client = (id: number, name: string, is_active = true) => ({
   id,
@@ -63,6 +70,22 @@ describe("Clients", () => {
     const table = screen.getAllByRole("table")[0];
     expect(within(table).getByText("Vasgroup")).toBeInTheDocument();
     expect(within(table).queryByText("Oldco")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: /Domain mappings/ }));
     expect(screen.getByText("VASGROUP")).toBeInTheDocument();
+  });
+
+  it("shows how many of a client's devices are online and opens the forms in dialogs", async () => {
+    mockApi();
+    render(
+      <MemoryRouter>
+        <Clients />
+      </MemoryRouter>,
+    );
+    const table = (await screen.findAllByRole("table"))[0];
+    const vas = within(table).getByText("Vasgroup").closest("tr")!;
+    expect(within(vas).getByText("71% online")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /New client/ }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });
