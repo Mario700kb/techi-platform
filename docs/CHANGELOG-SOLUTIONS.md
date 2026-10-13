@@ -5,7 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] CLIENT-PROFILE-1-2026-10-13 — client profile, phase 1 (not deployed)
+## [2026-10-13] CLIENT-PROFILE-1-2026-10-13 — client profile, phase 1 (`52e2da4`)
+
+Backend and frontend deployed 2026-10-13 21:00–21:06 (Tirana). Dump
+`/opt/backups/techi/pre-client-profile-2026-10-13_21-00.sql.gz` (`gzip -t`
+OK); rollback images `techi-platform-{backend,frontend}:pre-client-profile-270681b`.
+Built both, `nginx -t` OK; `docker compose run --rm --no-deps backend alembic
+upgrade head` → `g7h8i9j0k1l2` while the old backend kept serving (the columns
+are nullable and unused by it): 8,266 entries, 5,188 with device_id, 4,995 with
+client_id, both indexes present. Backend ready 8 s after start, 0 QueuePool;
+frontend healthy; guard and smoke passed; the new endpoints answer 401
+unauthenticated. Live check as owner on Gffa (147 devices): profile 218 ms,
+activity 19 ms (475 entries), resolved alerts 125 ms (all resolved), open
+count 37.
 
 Backend and frontend, **one migration** (`g7h8i9j0k1l2`). The owner asked for
 an enterprise profile per client (devices, alerts, logs, documentation,
