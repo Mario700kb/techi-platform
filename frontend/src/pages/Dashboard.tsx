@@ -108,6 +108,7 @@ export default function Dashboard() {
   const { user, hasPermission } = useAuth();
   const {
     alertCount,
+    alertCountReady,
     fleetOverview,
     fleetOverviewLoading,
     lastFetchTime,
@@ -761,7 +762,9 @@ export default function Dashboard() {
                 View alerts
               </Link>
             </div>
-            {alertsByKind.length === 0 ? (
+            {!alertCountReady ? (
+              <div className="flex-1" aria-busy="true" />
+            ) : alertsByKind.length === 0 ? (
               <EmptyState
                 className="flex-1"
                 icon={<BellRing className="h-5 w-5" />}
@@ -772,8 +775,14 @@ export default function Dashboard() {
               <BreakdownBars rows={alertsByKind} total={totalOpenAlerts} unit="alert" />
             )}
             <p className="th-panel-foot">
-              {formatCount(totalOpenAlerts)} open
-              {alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}.
+              {alertCountReady ? (
+                <>
+                  {formatCount(totalOpenAlerts)} open
+                  {alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}.
+                </>
+              ) : (
+                "Loading alerts…"
+              )}
             </p>
           </section>
 

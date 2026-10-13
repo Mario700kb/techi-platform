@@ -3,7 +3,7 @@ import { DeviceFleetOverview, getDevicesOverview } from "../api/devices";
 import { useAuth } from "../auth/AuthContext";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
-import { useAlerts } from "../hooks/useAlerts";
+import { alertCountCacheKey, useAlerts } from "../hooks/useAlerts";
 import { Alert, AlertCount } from "../types/alert";
 
 const OVERVIEW_STORAGE_KEY = "techi.fleet.overview.v2";
@@ -44,6 +44,7 @@ interface AppDataContextValue {
   latestEvent: DeviceRealtimeEvent | null;
   realtimeStatus: DeviceRealtimeStatus;
   alertCount: AlertCount;
+  alertCountReady: boolean;
   totalOpenAlerts: number;
   alerts: Alert[];
   reloadAlerts: () => void;
@@ -158,7 +159,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     void refreshFleetOverview();
   }, [refreshFleetOverview, userId]);
 
-  const { alerts, alertCount, reload: reloadAlerts } = useAlerts({ latestEvent, enabled: Boolean(userId) });
+  const {
+    alerts,
+    alertCount,
+    alertCountReady,
+    reload: reloadAlerts,
+  } = useAlerts({
+    latestEvent,
+    enabled: Boolean(userId),
+    cacheKey: userId ? alertCountCacheKey(userId) : undefined,
+  });
 
   const realtimeStatus = useDeviceRealtime({
     enabled: Boolean(userId),
@@ -233,6 +243,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       latestEvent,
       realtimeStatus,
       alertCount,
+      alertCountReady,
       totalOpenAlerts: alertCount.total_open,
       alerts,
       reloadAlerts,
@@ -246,6 +257,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       latestEvent,
       realtimeStatus,
       alertCount,
+      alertCountReady,
       alerts,
       reloadAlerts,
     ],

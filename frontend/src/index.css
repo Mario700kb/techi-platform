@@ -6149,18 +6149,18 @@ span.th-inv-mono {
    from the left behind them and glide to a new value, a changed count fades
    in, and an operator's presence dot pops when they come online. */
 .th-share-row {
-  animation: th-rise 420ms var(--th-ease-out) backwards;
-  animation-delay: calc(120ms + var(--i, 0) * 45ms);
+  animation: th-rise 300ms var(--th-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
 }
 .th-share-fill {
   transform-origin: left;
-  animation: th-grow-x 760ms var(--th-ease-out) backwards;
-  animation-delay: calc(200ms + var(--i, 0) * 60ms);
-  transition: width 700ms var(--th-ease-out);
+  animation: th-grow-x 450ms var(--th-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 35ms);
+  transition: width 450ms var(--th-ease-out);
 }
 .th-share-fill > span {
   transition:
-    flex-grow 700ms var(--th-ease-out),
+    flex-grow 450ms var(--th-ease-out),
     background-color var(--th-dur) var(--th-ease);
 }
 .th-share-count {

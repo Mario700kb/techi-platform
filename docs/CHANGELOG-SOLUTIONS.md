@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] DASHBOARD-ALERTS-FAST-2026-10-13 — alert breakdown paints at once (not deployed)
+
+Frontend only. The owner reported the dashboard's charts appear and refresh
+late. "Open alerts by type" had three delays:
+
+- After a reload the count started empty, briefly showing "No open alerts",
+  and `useAlerts` waited for both the count and the 50-alert feed
+  (`Promise.allSettled`) before showing either. The count now resolves on its
+  own and is kept per operator in sessionStorage
+  (`techi.alerts.count.v1:<userId>`, cleared on sign-out), so a reload paints
+  the last counts at once and refreshes them; until the first count the card
+  shows "Loading alerts…" instead of "No open alerts".
+- Realtime `alert_created` / `alert_resolved` moved `total_open` and
+  `by_severity` but not `by_kind`, so the bars changed only on the 2-minute
+  poll. They now move with each event.
+- Breakdown motion shortened: rows 300 ms in 30 ms steps (was 420 ms after
+  120 ms + 45 ms steps), bars 450 ms in 35 ms steps (was 760 ms after 200 ms
+  + 60 ms steps); the last of five bars is full at ~0.6 s instead of ~1.2 s.
+
+`src/hooks/__tests__/useAlerts.test.tsx` covers the count not waiting for the
+feed, the cached paint, per-kind realtime updates and sign-out clearing.
+`tsc`, ESLint, Prettier, Vitest 217, Playwright 90 passed.
+
 ## [2026-10-13] HEARTBEAT-OFFLOOP-2026-10-13 — incident follow-ups (`55a4660`)
 
 Backend only, deployed 2026-10-13 16:02 (Tirana), no migration. Dump

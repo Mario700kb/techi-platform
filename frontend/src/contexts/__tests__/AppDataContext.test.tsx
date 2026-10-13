@@ -15,7 +15,8 @@ vi.mock("../../hooks/useDeviceRealtime", () => ({ useDeviceRealtime: () => socke
 
 const reloadAlerts = vi.fn();
 vi.mock("../../hooks/useAlerts", () => ({
-  useAlerts: () => ({ alerts: [], alertCount: { total_open: 0 }, reload: reloadAlerts }),
+  useAlerts: () => ({ alerts: [], alertCount: { total_open: 0 }, alertCountReady: true, reload: reloadAlerts }),
+  alertCountCacheKey: (userId: number) => `techi.alerts.count.v1:${userId}`,
 }));
 
 const overview = {
