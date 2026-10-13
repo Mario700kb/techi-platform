@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] DASHBOARD-LAYOUT-2026-10-13 — compact operators, status per category, breakdown motion (`639e19f`)
+
+Backend and frontend, deployed 2026-10-13 11:11–11:18, no migration.
+Pre-deploy dump `/opt/backups/techi/pre-dashboard-layout-2026-10-13_11-11.sql.gz`
+(`gzip -t` OK); rollback images
+`techi-platform-{backend,frontend}:pre-dashboard-layout-109acb3`.
+
+The owner reported that two of the three new cards were mostly empty and
+asked for smooth motion. With 11 operators the one-column list made the row
+~670px tall while alerts (5 types) and categories (3) filled the top third.
+Operators now sit two to a row with a presence dot on the avatar (row
+~390px) and the breakdown lists spread over the card. `tree_counts.by_category`
+changed shape to `{total, online, stale, offline}` per category (same loop,
+no query); each category bar is split by status with the counts beneath, and
+shares under 1% read "<1%". The persisted overview key became
+`techi.fleet.overview.v2` so the old shape is never read back. Motion: rows
+rise in a stagger, bars grow from the left and glide to new values, changed
+counts fade in, a presence dot pops when an operator comes online — existing
+motion tokens, off under reduced motion. New E2E
+`dashboard-breakdown.spec.ts` measures the row at 1280/1440/1920 with
+production's shape. Verified live: guard and smoke passed, both services
+healthy, per-category counts sum to the fleet stats (920; 732 online, 8 stale,
+180 offline), 0 tracebacks, new CSS in the served bundle. Authenticated
+browser check pending.
+
 ## [2026-10-13] DASHBOARD-BREAKDOWN-2026-10-13 — operators for every role, open alerts by type, devices by category (`9944fd3`)
 
 Backend and frontend, deployed 2026-10-13 10:51–10:58, no migration.
