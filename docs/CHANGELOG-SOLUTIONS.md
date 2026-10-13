@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-13] TABLE-ROWS-2026-10-13 — one row height, quieter Devices table (`b1175f4`)
+
+Frontend only, deployed 2026-10-13 15:08 (Tirana), no migration, no dump.
+Rollback image `techi-platform-frontend:pre-table-rows-9d72100`. Guard passed
+before and after, `nginx -t` OK, container healthy, smoke passed,
+`.th-device-cell` and "Remote issue" in the served bundle; root disk 83%
+after the build. Authenticated browser check pending.
+
+Frontend only. The owner's production screenshot showed rows of 52 and 68px:
+a Remote Support state ("Remote conflicting dual install") and lifecycle tags
+added a third line, CONSOLE sat on every row, the type "Client PC" repeated
+a group of the same name, and ~140px stood empty before Actions. Now the
+device cell is always two lines: an alias's hostname sits beside the name,
+and the second line holds the type plus at most two tags ordered maintenance
+→ reboot/updates → Remote Support → duplicate → lifecycle → patched, the rest
+folded into "+N" with their names in its tooltip. `remoteSupportIssue` labels
+are "Remote off" / "Remote issue" with the service state in the tooltip. Only
+RDP sign-ins get a tag. The type is left out when the group has the same
+name. Health, IP, Agent and Actions columns fit their content. Offline
+devices keep the grey, disabled Connect. `table-tags.spec.ts` now asserts
+every row has the same height, the fold, the alias line and no CONSOLE tag.
+`tsc`, ESLint, Prettier, Vitest (213) and Playwright (87 passed) pass.
+
 ## [2026-10-13] CONNECT-OFFLINE-2026-10-13 deploy (`d489db7`)
 
 The two entries below shipped together, frontend only, deployed 2026-10-13
