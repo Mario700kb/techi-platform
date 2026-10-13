@@ -5,7 +5,13 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-13] EXPLORER-MOTION-2026-10-13 — smooth motion on every Explorer element (not deployed)
+## [2026-10-13] EXPLORER-MOTION-2026-10-13 — smooth motion on every Explorer element (`4f01c32`)
+
+Frontend only, deployed 2026-10-13 17:22 (Tirana). Rollback image
+`techi-platform-frontend:pre-explorer-motion-4c78141`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200;
+`@property --online`, `th-ring-in` and `th-tree-row` in the served CSS. Root
+disk 87% (3.1 GB free) before the build.
 
 Frontend only. The owner asked for smooth animation on every element of the
 Explorer. On the existing motion tokens, off under the global
