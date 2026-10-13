@@ -378,12 +378,17 @@ export default function Dashboard() {
     }))
     .sort((a, b) => b.count - a.count);
   const devicesByCategory: BreakdownRow[] = Object.entries(fleetOverview?.tree_counts.by_category ?? {})
-    .filter(([, count]) => count > 0)
-    .map(([category, count]) => ({
+    .filter(([, counts]) => counts.total > 0)
+    .map(([category, counts]) => ({
       key: category,
       label: CATEGORY_LABELS[category] ?? humanize(category),
-      count,
+      count: counts.total,
       to: CATEGORY_FILTERS[category] ?? "/devices",
+      segments: [
+        { label: "online", value: counts.online, tone: TONE.online },
+        { label: "stale", value: counts.stale, tone: TONE.stale },
+        { label: "offline", value: counts.offline, tone: TONE.offline },
+      ],
     }))
     .sort((a, b) => b.count - a.count);
   const clientBreakdown = (() => {
@@ -602,8 +607,8 @@ export default function Dashboard() {
                 </p>
               ) : (
                 <ul className="mt-1 flex flex-1 flex-col justify-between gap-1">
-                  {clientBreakdown.map((row) => (
-                    <li key={row.id} className="text-[13px]">
+                  {clientBreakdown.map((row, index) => (
+                    <li key={row.id} className="text-[13px]" style={{ "--i": index } as React.CSSProperties}>
                       <Link
                         to={
                           row.id === "none"
@@ -630,7 +635,7 @@ export default function Dashboard() {
                           style={{ background: "var(--th-ring-track)" }}
                         >
                           <div
-                            className="h-full rounded-full"
+                            className="th-share-fill h-full rounded-full"
                             style={{
                               width: `${total ? (row.count / total) * 100 : 0}%`,
                               background: row.id === "none" ? TONE.neutral : "var(--th-accent)",
@@ -791,7 +796,9 @@ export default function Dashboard() {
             ) : (
               <BreakdownBars rows={devicesByCategory} total={total} unit="device" />
             )}
-            <p className="th-panel-foot">Active devices, all clients. Archived devices are excluded.</p>
+            <p className="th-panel-foot">
+              {formatCount(total)} active devices by current status. Archived devices are excluded.
+            </p>
           </section>
         </div>
 
@@ -1135,24 +1142,39 @@ function HealthRing({ value }: { value: number | null }) {
   );
 }
 
+interface BreakdownSegment {
+  label: string;
+  value: number;
+  tone: string;
+}
+
 interface BreakdownRow {
   key: string;
   label: string;
   count: number;
   to: string;
+  /** Splits the bar (and adds a caption), e.g. a category's devices by status. */
+  segments?: BreakdownSegment[];
 }
 
-/** Ranked counts as share-of-total bars, the same look as "Devices by client". */
+/**
+ * Ranked counts as share-of-total bars, the same look as "Devices by client".
+ * The list spreads over the card's height, so a card beside a taller one
+ * leaves no empty block at the bottom.
+ */
 function BreakdownBars({ rows, total, unit }: { rows: BreakdownRow[]; total: number; unit: string }) {
   return (
-    <ul className="flex flex-1 flex-col gap-1 px-5 pb-3">
-      {rows.map((row) => {
+    <ul className="flex flex-1 flex-col justify-between gap-1 px-5 pb-3">
+      {rows.map((row, index) => {
         const pct = total > 0 ? (row.count / total) * 100 : 0;
+        const share = pct > 0 && pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+        const parts = row.segments?.filter((segment) => segment.value > 0) ?? [];
+        const caption = parts.map((segment) => `${formatCount(segment.value)} ${segment.label}`).join(" · ");
         return (
-          <li key={row.key} className="text-[13px]">
+          <li key={row.key} className="th-share-row text-[13px]" style={{ "--i": index } as React.CSSProperties}>
             <Link
               to={row.to}
-              title={`${row.label}: ${formatCount(row.count)} ${row.count === 1 ? unit : `${unit}s`} (${Math.round(pct)}%)`}
+              title={`${row.label}: ${formatCount(row.count)} ${row.count === 1 ? unit : `${unit}s`} (${share})${caption ? `, ${caption}` : ""}`}
               className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
             >
               <div className="flex items-center justify-between gap-3">
@@ -1160,17 +1182,52 @@ function BreakdownBars({ rows, total, unit }: { rows: BreakdownRow[]; total: num
                   {row.label}
                 </span>
                 <span className="flex items-baseline gap-2 tabular-nums">
-                  <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  <span
+                    key={row.count}
+                    className="th-share-count font-semibold"
+                    style={{ color: "var(--th-text-primary)" }}
+                  >
                     {formatCount(row.count)}
                   </span>
                   <span className="w-9 text-right text-[12px]" style={{ color: "var(--th-text-faint)" }}>
-                    {Math.round(pct)}%
+                    {share}
                   </span>
                 </span>
               </div>
-              <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--th-ring-track)" }}>
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--th-accent)" }} />
+              <div
+                className={`mt-1.5 overflow-hidden rounded-full ${parts.length > 0 ? "h-2" : "h-1.5"}`}
+                style={{ background: "var(--th-ring-track)" }}
+              >
+                <div className="th-share-fill flex h-full gap-[2px]" style={{ width: `${pct}%` }}>
+                  {parts.length > 0 ? (
+                    parts.map((segment) => (
+                      <span
+                        key={segment.label}
+                        className="h-full min-w-[2px] rounded-full"
+                        style={{ flex: `${segment.value} 1 0`, background: segment.tone }}
+                      />
+                    ))
+                  ) : (
+                    <span className="h-full w-full rounded-full" style={{ background: "var(--th-accent)" }} />
+                  )}
+                </div>
               </div>
+              {parts.length > 0 && (
+                <p
+                  className="mt-1.5 flex flex-wrap gap-x-3 text-[12px] tabular-nums"
+                  style={{ color: "var(--th-text-muted)" }}
+                >
+                  {parts.map((segment) => (
+                    <span key={segment.label} className="flex items-center gap-1.5">
+                      <i className="h-1.5 w-1.5 rounded-full" style={{ background: segment.tone }} />
+                      <span>
+                        <span style={{ color: "var(--th-text-secondary)" }}>{formatCount(segment.value)}</span>{" "}
+                        {segment.label}
+                      </span>
+                    </span>
+                  ))}
+                </p>
+              )}
             </Link>
           </li>
         );
@@ -1200,7 +1257,9 @@ function OperatorsPanel({
       <div className="th-panel-head">
         <h2 id="operators-title">Operators</h2>
         <span className="flex items-center gap-3">
-          <span className="th-nav-badge">{formatCount(onlineCount)} online</span>
+          <span key={onlineCount} className="th-nav-badge th-share-count">
+            {formatCount(onlineCount)} online
+          </span>
           {canManage && (
             <Link to="/operators" className="th-link-btn">
               View all
@@ -1217,18 +1276,27 @@ function OperatorsPanel({
       ) : operators.length === 0 ? (
         <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators yet" />
       ) : (
-        <ul className="flex-1 px-2 pb-2">
+        <ul className="grid flex-1 grid-cols-2 content-start gap-x-1 px-2 pb-2">
           {[...operators]
             .sort(
               (a, b) =>
                 Number(b.is_online) - Number(a.is_online) ||
                 (a.display_name ?? a.username).localeCompare(b.display_name ?? b.username),
             )
-            .map((op) => {
+            .map((op, index) => {
               const label = op.display_name ?? op.username;
+              const status = op.is_online ? "Online" : op.last_active_at ? timeAgo(op.last_active_at) : "Offline";
               return (
-                <li key={op.id} className="th-list-row">
-                  <span className="th-avatar">{label.charAt(0).toUpperCase()}</span>
+                <li
+                  key={op.id}
+                  className="th-share-row flex min-w-0 items-center gap-2.5 rounded-lg px-3 py-2"
+                  style={{ "--i": index } as React.CSSProperties}
+                  title={`${label} · ${op.role} · ${op.is_online || !op.last_active_at ? status : `active ${status}`}`}
+                >
+                  <span className="th-avatar relative">
+                    {label.charAt(0).toUpperCase()}
+                    <i className="th-presence-dot" data-online={op.is_online} aria-hidden="true" />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span
                       className="block truncate text-[13px] font-medium"
@@ -1238,16 +1306,8 @@ function OperatorsPanel({
                       {op.id === currentUserId && <span style={{ color: "var(--th-text-muted)" }}> (you)</span>}
                     </span>
                     <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                      <span className="capitalize">{op.role}</span>
-                      {!op.is_online && op.last_active_at && ` · active ${timeAgo(op.last_active_at)}`}
+                      <span className="capitalize">{op.role}</span> · {status}
                     </span>
-                  </span>
-                  <span
-                    className="th-status-chip"
-                    style={{ "--chip-tone": op.is_online ? TONE.online : TONE.offline } as React.CSSProperties}
-                  >
-                    <i />
-                    {op.is_online ? "Online" : "Offline"}
                   </span>
                 </li>
               );

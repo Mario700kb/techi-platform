@@ -187,7 +187,15 @@ function sessionBody(state: MockState): AuthSession {
 
 const overview: DeviceFleetOverview = {
   stats: { total: 5, online: 3, stale: 1, offline: 1 },
-  tree_counts: { total: 5, unassigned: 0, by_client: { "1": 3, "2": 2 } },
+  tree_counts: {
+    total: 5,
+    unassigned: 0,
+    by_client: { "1": 3, "2": 2 },
+    by_category: {
+      clientpc: { total: 4, online: 2, stale: 1, offline: 1 },
+      servers: { total: 1, online: 1, stale: 0, offline: 0 },
+    },
+  },
   critical: 1,
   warnings: 1,
   average_health: 92,
@@ -249,7 +257,12 @@ const features: PlatformFeatures = {
   FEATURE_REPORTING: true,
 };
 
-const alertCount: AlertCount = { total_open: 2, by_severity: { critical: 1, warning: 1 }, devices_affected: 2 };
+const alertCount: AlertCount = {
+  total_open: 2,
+  by_severity: { critical: 1, warning: 1 },
+  by_kind: { device_offline: 1, low_disk: 1 },
+  devices_affected: 2,
+};
 const recentActions: RemoteActionWithDevice[] = [];
 export const presence: OperatorPresenceRecord[] = OPERATORS.map((o) => ({
   id: o.id,

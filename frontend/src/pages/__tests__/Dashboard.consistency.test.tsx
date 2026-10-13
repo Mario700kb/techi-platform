@@ -25,7 +25,15 @@ vi.mock("../../contexts/AppDataContext", () => ({
     fleetOverview: {
       stats: { total: 1234, online: 1200, stale: 4, offline: 30 },
       needs_updates: 2500,
-      tree_counts: { by_client: {}, unassigned: 0, by_category: { clientpc: 1100, servers: 134, network: 0 } },
+      tree_counts: {
+        by_client: {},
+        unassigned: 0,
+        by_category: {
+          clientpc: { total: 1100, online: 1000, stale: 0, offline: 100 },
+          servers: { total: 134, online: 134, stale: 0, offline: 0 },
+          network: { total: 0, online: 0, stale: 0, offline: 0 },
+        },
+      },
     },
     fleetOverviewLoading: false,
     latestEvent: null,
@@ -86,7 +94,7 @@ describe("Dashboard consistency", () => {
     const rows = within(panel).getAllByRole("listitem");
     expect(rows).toHaveLength(8);
     expect(rows[0]).toHaveTextContent("Operator 7");
-    expect(rows[0]).toHaveTextContent("Online");
+    expect(rows[0]).toHaveTextContent("operator · Online");
     expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
     const chip = screen.getByText(/1 operator online/);
     expect(chip.closest("a")).toBeNull();
@@ -125,7 +133,7 @@ describe("Dashboard breakdowns", () => {
     const rows = within(panel).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByRole("link")).toHaveAttribute("href", "/devices?filter=workstations");
-    expect(rows[0]).toHaveTextContent("Client PCs1,10089%");
+    expect(rows[0]).toHaveTextContent("Client PCs1,10089%1,000 online100 offline");
     expect(within(rows[1]).getByRole("link")).toHaveAttribute("href", "/devices?filter=servers");
   });
 });

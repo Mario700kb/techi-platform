@@ -6091,6 +6091,68 @@ span.th-inv-mono {
     stroke 300ms var(--th-ease);
 }
 
+/* Dashboard breakdowns: rows rise in one after another, share bars grow
+   from the left behind them and glide to a new value, a changed count fades
+   in, and an operator's presence dot pops when they come online. */
+.th-share-row {
+  animation: th-rise 420ms var(--th-ease-out) backwards;
+  animation-delay: calc(120ms + var(--i, 0) * 45ms);
+}
+.th-share-fill {
+  transform-origin: left;
+  animation: th-grow-x 760ms var(--th-ease-out) backwards;
+  animation-delay: calc(200ms + var(--i, 0) * 60ms);
+  transition: width 700ms var(--th-ease-out);
+}
+.th-share-fill > span {
+  transition:
+    flex-grow 700ms var(--th-ease-out),
+    background-color var(--th-dur) var(--th-ease);
+}
+.th-share-count {
+  display: inline-block;
+  animation: th-count-in 260ms var(--th-ease) both;
+}
+.th-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--th-status-offline);
+  box-shadow: 0 0 0 2px var(--th-bg-card);
+  transition: background-color var(--th-dur-slow) var(--th-ease);
+}
+.th-presence-dot[data-online="true"] {
+  background: var(--th-status-online);
+  animation: th-presence-in 520ms var(--th-ease-out);
+}
+@keyframes th-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes th-presence-in {
+  0% {
+    transform: scale(0.3);
+    box-shadow:
+      0 0 0 2px var(--th-bg-card),
+      0 0 0 2px var(--th-status-online);
+  }
+  60% {
+    transform: scale(1);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px var(--th-bg-card),
+      0 0 0 7px transparent;
+  }
+}
+
 /* Tabs: one underline that glides to the selected tab (useTabIndicator).
    Until it is placed, each tab keeps its own border, so nothing is lost
    without JS or before the first measure. */

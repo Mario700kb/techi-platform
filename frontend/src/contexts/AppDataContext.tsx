@@ -6,7 +6,7 @@ import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRea
 import { useAlerts } from "../hooks/useAlerts";
 import { Alert, AlertCount } from "../types/alert";
 
-const OVERVIEW_STORAGE_KEY = "techi.fleet.overview";
+const OVERVIEW_STORAGE_KEY = "techi.fleet.overview.v2";
 const OVERVIEW_TTL_MS = 30_000;
 /** Overview polling while the WebSocket is down (events refresh it otherwise). */
 const OVERVIEW_POLL_MS = 30_000;

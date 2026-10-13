@@ -253,7 +253,7 @@ class TestDeviceScopeByClientId:
             "unassigned": 0,
             "by_client": {"1": 1},
             "by_client_category": {"1": {"clientpc": 1}},
-            "by_category": {"clientpc": 1},
+            "by_category": {"clientpc": {"total": 1, "online": 1, "stale": 0, "offline": 0}},
             # Platform Expansion: empty with FEATURE_LINUX off (default).
             "by_client_category_platform": {},
         }
@@ -560,7 +560,9 @@ def test_overview_uses_two_queries_and_cache(db, monkeypatch):
 
     assert overview.stats.total == 700
     assert overview.tree_counts.by_client_category == {}
-    assert overview.tree_counts.by_category == {"clientpc": 700}
+    assert {k: v.model_dump() for k, v in overview.tree_counts.by_category.items()} == {
+        "clientpc": {"total": 700, "online": 0, "stale": 0, "offline": 700}
+    }
     assert cached == overview
     assert statements == 2
 

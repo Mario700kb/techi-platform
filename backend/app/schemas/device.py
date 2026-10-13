@@ -244,8 +244,8 @@ class DeviceTreeCounts(BaseModel):
     unassigned: int
     by_client: Dict[int, int]
     by_client_category: Dict[int, Dict[str, int]] = Field(default_factory=dict)
-    # Fleet-wide totals per category, devices without a client included.
-    by_category: Dict[str, int] = Field(default_factory=dict)
+    # Fleet-wide counts per category by freshness, devices without a client included.
+    by_category: Dict[str, DeviceStats] = Field(default_factory=dict)
     # Platform Expansion (additive): {client_id: {category: {platform: count}}}.
     # Empty for callers that don't compute it; frontend ignores it with the flag off.
     by_client_category_platform: Dict[int, Dict[str, Dict[str, int]]] = Field(default_factory=dict)
