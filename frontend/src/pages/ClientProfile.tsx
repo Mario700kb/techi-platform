@@ -7,14 +7,21 @@ import {
   BarChart3,
   BellRing,
   BookOpen,
+  Box,
+  Boxes,
+  Cpu,
+  HardDrive,
   ExternalLink,
   HeartPulse,
   LayoutDashboard,
   Layers,
   Monitor,
+  Network,
   PackageCheck,
+  Printer,
   RefreshCcw,
   Search,
+  Server,
   ServerOff,
   Ticket,
   Wifi,
@@ -29,7 +36,7 @@ import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../
 import { Device, DeviceStats, getDevice, getDevices, getDeviceTableDetails, getFleetInsights } from "../api/devices";
 import { getConnectUrl } from "../api/remoteSupport";
 import AlertKindIcon from "../components/AlertKindIcon";
-import BreakdownBars, { BreakdownRow, CATEGORY_LABELS } from "../components/BreakdownBars";
+import { CATEGORY_LABELS } from "../components/BreakdownBars";
 import ConnectMenu from "../components/ConnectMenu";
 import DeviceDrawer from "../components/DeviceDrawer";
 import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
@@ -62,6 +69,7 @@ import { formatCount } from "../utils/number";
 import { detectOperatorOS } from "../utils/operatorOs";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
+type StatusFilter = "all" | "online" | "stale" | "offline";
 type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
 
 const DEVICE_PAGE_SIZES = [20, 50];
@@ -119,11 +127,14 @@ function openTerminalWindow(device: Device): boolean {
 function SectionCard({
   title,
   action,
+  footer,
   children,
   index,
 }: {
   title: string;
   action?: React.ReactNode;
+  /** Pinned to the bottom, so cards side by side end on one line. */
+  footer?: React.ReactNode;
   children: React.ReactNode;
   index: number;
 }) {
@@ -134,6 +145,7 @@ function SectionCard({
         {action}
       </div>
       {children}
+      {footer && <div className="th-panel-foot th-cp-foot">{footer}</div>}
     </section>
   );
 }
@@ -157,6 +169,7 @@ export default function ClientProfilePage() {
   const valid = Number.isInteger(clientId) && clientId > 0;
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [deviceStatus, setDeviceStatus] = useState<StatusFilter>("all");
   const [opened, setOpened] = useState<ReadonlySet<Tab>>(() => new Set<Tab>(["overview"]));
   const tabsRef = useTabIndicator<HTMLDivElement>(tab);
   const openTab = (next: Tab) => {
@@ -499,7 +512,11 @@ export default function ClientProfilePage() {
             profile={profile}
             activity={activityPreview.data}
             activityLoading={activityPreview.loading}
-            onShowActivity={() => openTab("activity")}
+            onOpenTab={openTab}
+            onShowDevices={(status) => {
+              setDeviceStatus(status);
+              openTab("devices");
+            }}
             onOpenDevice={openDevice}
           />
         )}
@@ -507,6 +524,8 @@ export default function ClientProfilePage() {
           <DevicesTab
             clientId={client.id}
             stats={stats}
+            status={deviceStatus}
+            onStatusChange={setDeviceStatus}
             onOpenDevice={openDevice}
             selectedId={drawerOpen ? (drawerDevice?.id ?? null) : null}
             latestEvent={latestEvent}
@@ -557,83 +576,424 @@ export default function ClientProfilePage() {
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
+const CATEGORY_ICONS: Record<string, typeof Monitor> = {
+  clientpc: Monitor,
+  servers: Server,
+  network: Network,
+  storage: HardDrive,
+  hypervisors: Boxes,
+  printers: Printer,
+  iot: Cpu,
+};
+
+interface RingSegment {
+  key: string;
+  label: string;
+  value: number;
+  tone: string;
+  /** Shown instead of the share, for a figure that is not part of the total. */
+  share?: string;
+}
+
+function percent(value: number, total: number): string {
+  if (total <= 0) return "0%";
+  const pct = (value / total) * 100;
+  return pct > 0 && pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+/** A donut split into segments; each draws in, then glides to a new value. */
+function SegmentRing({
+  segments,
+  total,
+  center,
+  caption,
+}: {
+  segments: RingSegment[];
+  total: number;
+  center: string;
+  caption: string;
+}) {
+  const size = 128;
+  const stroke = 12;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const shown = total > 0 ? segments.filter((segment) => segment.value > 0) : [];
+  const gap = shown.length > 1 ? 3 : 0;
+  const starts = shown.map((_, i) => shown.slice(0, i).reduce((sum, seg) => sum + (seg.value / total) * c, 0));
+  return (
+    <div className="th-cp-ring" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          style={{ stroke: "var(--th-ring-track)" }}
+        />
+        {shown.map((segment, i) => (
+          <circle
+            key={segment.key}
+            className="th-cp-ring-seg"
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            strokeWidth={stroke}
+            style={
+              {
+                stroke: segment.tone,
+                strokeDasharray: `${Math.max((segment.value / total) * c - gap, 1.5)} ${c}`,
+                strokeDashoffset: -starts[i],
+                "--c": c,
+                "--i": i,
+              } as CSSProperties
+            }
+          />
+        ))}
+      </svg>
+      <div className="th-cp-ring-center">
+        <span key={center} className="th-share-count text-[22px] font-semibold leading-7 tabular-nums">
+          {center}
+        </span>
+        <span className="text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+          {caption}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** The ring's legend: one row per segment, count and share; a row can filter. */
+function RingLegend({
+  segments,
+  total,
+  onSelect,
+}: {
+  segments: RingSegment[];
+  total: number;
+  onSelect?: (key: string) => void;
+}) {
+  return (
+    <ul className="th-cp-legend">
+      {segments.map((segment, index) => (
+        <li key={segment.key} className="th-share-row" style={{ "--i": index } as CSSProperties}>
+          <button type="button" onClick={() => onSelect?.(segment.key)} disabled={!onSelect}>
+            <i style={{ background: segment.tone }} aria-hidden="true" />
+            <span className="truncate">{segment.label}</span>
+            <strong key={segment.value} className="th-share-count tabular-nums">
+              {formatCount(segment.value)}
+            </strong>
+            <small className="tabular-nums">{segment.share ?? percent(segment.value, total)}</small>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * One line per item — mark, name, share bar, count, share — the same grid in
+ * every overview card, so the four cards read as one table.
+ */
+function MeterRow({
+  index,
+  mark,
+  label,
+  count,
+  total,
+  segments,
+  tone = "var(--th-accent)",
+  onClick,
+  title,
+}: {
+  index: number;
+  mark?: React.ReactNode;
+  label: string;
+  count: number;
+  total: number;
+  segments?: RingSegment[];
+  tone?: string;
+  onClick: () => void;
+  title?: string;
+}) {
+  const pct = total > 0 ? (count / total) * 100 : 0;
+  const parts = segments?.filter((segment) => segment.value > 0) ?? [];
+  return (
+    <li className="th-share-row" style={{ "--i": index } as CSSProperties}>
+      <button type="button" className="th-cp-meter" onClick={onClick} title={title}>
+        <span className="th-cp-meter-name">
+          {mark}
+          <span className="truncate">{label}</span>
+        </span>
+        <span className="th-cp-meter-track">
+          <span className="th-share-fill flex h-full gap-[2px]" style={{ width: `${pct}%` }}>
+            {parts.length > 0 ? (
+              parts.map((segment) => (
+                <span
+                  key={segment.key}
+                  className="h-full min-w-[2px] rounded-full"
+                  style={{ flex: `${segment.value} 1 0`, background: segment.tone }}
+                />
+              ))
+            ) : (
+              <span className="h-full w-full rounded-full" style={{ background: tone }} />
+            )}
+          </span>
+        </span>
+        <strong key={count} className="th-share-count tabular-nums">
+          {formatCount(count)}
+        </strong>
+        <small className="tabular-nums">{percent(count, total)}</small>
+      </button>
+    </li>
+  );
+}
+
+function SubHead({ children }: { children: React.ReactNode }) {
+  return <div className="th-cp-subhead">{children}</div>;
+}
+
+function QuietLine({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-5 py-3 text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+      {children}
+    </p>
+  );
+}
+
 function OverviewTab({
   profile,
   activity,
   activityLoading,
-  onShowActivity,
+  onOpenTab,
+  onShowDevices,
   onOpenDevice,
 }: {
   profile: ClientProfile;
   activity?: Awaited<ReturnType<typeof getClientActivity>>;
   activityLoading: boolean;
-  onShowActivity: () => void;
+  onOpenTab: (tab: Tab) => void;
+  onShowDevices: (status: StatusFilter) => void;
   onOpenDevice: (id: number) => void;
 }) {
-  const { client, stats, alerts } = profile;
-  const byCategory: BreakdownRow[] = Object.entries(profile.by_category)
-    .filter(([, counts]) => counts.total > 0)
-    .map(([category, counts]) => ({
-      key: category,
-      label: CATEGORY_LABELS[category] ?? humanize(category),
-      count: counts.total,
-      to: `/devices?client=${client.id}`,
-      segments: [
-        { label: "online", value: counts.online, tone: TONE.online },
-        { label: "stale", value: counts.stale, tone: TONE.stale },
-        { label: "offline", value: counts.offline, tone: TONE.offline },
-      ],
-    }))
-    .sort((a, b) => b.count - a.count);
-  const byKind: BreakdownRow[] = Object.entries(alerts.by_kind ?? {})
-    .filter(([, count]) => count > 0)
-    .map(([kind, count]) => ({
-      key: kind,
-      label: ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind),
-      count,
-      to: "/alerts",
-    }))
-    .sort((a, b) => b.count - a.count);
-  const byGroup: BreakdownRow[] = profile.groups.map((group) => ({
-    key: String(group.id),
-    label: group.name,
-    count: group.devices,
-    to: `/devices?client=${client.id}`,
+  const { stats, alerts } = profile;
+  const statusSegments: RingSegment[] = [
+    { key: "online", label: "Online", value: stats.online, tone: TONE.online },
+    { key: "stale", label: "Stale", value: stats.stale, tone: TONE.stale },
+    { key: "offline", label: "Offline", value: stats.offline, tone: TONE.offline },
+  ];
+  const severitySegments: RingSegment[] = (["critical", "warning", "info"] as const).map((severity) => ({
+    key: severity,
+    label: humanize(severity),
+    value: alerts.by_severity[severity] ?? 0,
+    tone: ALERT_SEVERITY_TONE[severity],
   }));
+  const categories = Object.entries(profile.by_category)
+    .filter(([, counts]) => counts.total > 0)
+    .sort(([, a], [, b]) => b.total - a.total);
+  const kinds = Object.entries(alerts.by_kind ?? {})
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a);
+  const groups = [...profile.groups].sort((a, b) => b.devices - a.devices);
+  const ungrouped = Math.max(stats.total - groups.reduce((sum, g) => sum + g.devices, 0), 0);
+  const groupSegments: RingSegment[] = [
+    { key: "grouped", label: "In a group", value: stats.total - ungrouped, tone: TONE.info },
+    { key: "ungrouped", label: "No group", value: ungrouped, tone: TONE.neutral },
+  ];
+  const onlinePct = stats.total > 0 ? `${Math.round((stats.online / stats.total) * 100)}%` : "—";
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <SectionCard title="Devices by category" index={1}>
-        {byCategory.length === 0 ? (
-          <EmptyState className="flex-1" icon={<ServerOff className="h-5 w-5" />} title="No devices yet" />
-        ) : (
-          <BreakdownBars rows={byCategory} total={stats.total} unit="device" />
-        )}
-      </SectionCard>
-
-      <SectionCard title="Open alerts by type" index={2}>
-        {byKind.length === 0 ? (
-          <EmptyState
-            className="flex-1"
-            icon={<BellRing className="h-5 w-5" />}
-            title="No open alerts"
-            description="Every alert for this client has been resolved."
+    <div className="th-cp-overview grid gap-4 lg:grid-cols-2">
+      <SectionCard
+        title="Fleet status"
+        index={1}
+        action={
+          <button type="button" className="th-link-btn" onClick={() => onShowDevices("all")}>
+            All devices
+          </button>
+        }
+        footer={
+          <>
+            <span>
+              {formatCount(stats.total)} {stats.total === 1 ? "device" : "devices"}
+              {profile.last_seen ? ` · last check-in ${timeAgo(profile.last_seen)}` : ""}
+            </span>
+            {stats.offline > 0 && (
+              <button type="button" className="th-link-btn" onClick={() => onShowDevices("offline")}>
+                Show offline
+              </button>
+            )}
+          </>
+        }
+      >
+        <div className="th-cp-hero">
+          <SegmentRing segments={statusSegments} total={stats.total} center={onlinePct} caption="online" />
+          <RingLegend
+            segments={statusSegments}
+            total={stats.total}
+            onSelect={(key) => onShowDevices(key as StatusFilter)}
           />
+        </div>
+        <SubHead>By category</SubHead>
+        {categories.length === 0 ? (
+          <QuietLine>No devices yet.</QuietLine>
         ) : (
-          <BreakdownBars rows={byKind} total={alerts.total_open} unit="alert" />
+          <ul className="th-cp-meters">
+            {categories.map(([category, counts], index) => (
+              <MeterRow
+                key={category}
+                index={index}
+                mark={(() => {
+                  const Icon = CATEGORY_ICONS[category] ?? Box;
+                  return (
+                    <span className="th-cp-mark-sm" aria-hidden="true">
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                  );
+                })()}
+                label={CATEGORY_LABELS[category] ?? humanize(category)}
+                count={counts.total}
+                total={stats.total}
+                segments={[
+                  { key: "online", label: "online", value: counts.online, tone: TONE.online },
+                  { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
+                  { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
+                ]}
+                title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline`}
+                onClick={() => onShowDevices("all")}
+              />
+            ))}
+          </ul>
         )}
-        <p className="th-panel-foot">
-          {formatCount(alerts.total_open)} open
-          {alerts.devices_affected ? ` on ${formatCount(alerts.devices_affected)} devices` : ""}
-          {alerts.oldest_open_at ? ` · oldest ${timeAgo(alerts.oldest_open_at)}` : ""}.
-        </p>
       </SectionCard>
 
-      <SectionCard title="Groups" index={3}>
-        {byGroup.length === 0 ? (
-          <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No groups" />
+      <SectionCard
+        title="Open alerts"
+        index={2}
+        action={
+          <button type="button" className="th-link-btn" onClick={() => onOpenTab("alerts")}>
+            All alerts
+          </button>
+        }
+        footer={
+          <span>
+            {alerts.total_open === 0
+              ? "Every alert for this client has been resolved."
+              : `${formatCount(alerts.total_open)} open${
+                  alerts.devices_affected ? ` on ${formatCount(alerts.devices_affected)} devices` : ""
+                }${alerts.oldest_open_at ? ` · oldest ${timeAgo(alerts.oldest_open_at)}` : ""}`}
+          </span>
+        }
+      >
+        <div className="th-cp-hero">
+          <SegmentRing
+            segments={severitySegments}
+            total={alerts.total_open}
+            center={formatCount(alerts.total_open)}
+            caption={alerts.total_open === 1 ? "open alert" : "open alerts"}
+          />
+          <RingLegend segments={severitySegments} total={alerts.total_open} onSelect={() => onOpenTab("alerts")} />
+        </div>
+        <SubHead>By type</SubHead>
+        {kinds.length === 0 ? (
+          <QuietLine>No open alerts.</QuietLine>
         ) : (
-          <BreakdownBars rows={byGroup} total={stats.total} unit="device" />
+          <ul className="th-cp-meters">
+            {kinds.map(([kind, count], index) => (
+              <MeterRow
+                key={kind}
+                index={index}
+                mark={
+                  <span className="th-cp-mark-sm" aria-hidden="true">
+                    <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
+                  </span>
+                }
+                label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
+                count={count}
+                total={alerts.total_open}
+                tone={TONE.warning}
+                onClick={() => onOpenTab("alerts")}
+              />
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Groups"
+        index={3}
+        action={
+          <button type="button" className="th-link-btn" onClick={() => onShowDevices("all")}>
+            Devices
+          </button>
+        }
+        footer={
+          <span>
+            {formatCount(groups.length)} {groups.length === 1 ? "group" : "groups"} ·{" "}
+            {ungrouped > 0 ? `${formatCount(ungrouped)} devices without a group` : "every device grouped"}
+          </span>
+        }
+      >
+        <div className="th-cp-hero">
+          <SegmentRing
+            segments={groupSegments}
+            total={stats.total}
+            center={stats.total > 0 ? percent(stats.total - ungrouped, stats.total) : "—"}
+            caption="grouped"
+          />
+          <RingLegend
+            segments={[
+              ...groupSegments,
+              {
+                key: "groups",
+                label: groups.length === 1 ? "Group" : "Groups",
+                value: groups.length,
+                tone: TONE.maintenance,
+                share: "",
+              },
+            ]}
+            total={stats.total}
+            onSelect={() => onShowDevices("all")}
+          />
+        </div>
+        <SubHead>By group</SubHead>
+        {groups.length === 0 && ungrouped === 0 ? (
+          <QuietLine>No groups yet.</QuietLine>
+        ) : (
+          <ul className="th-cp-meters">
+            {groups.map((group, index) => (
+              <MeterRow
+                key={group.id}
+                index={index}
+                mark={
+                  <span className="th-cp-mark-sm" aria-hidden="true">
+                    {initials(group.name)}
+                  </span>
+                }
+                label={group.name}
+                count={group.devices}
+                total={stats.total}
+                tone={TONE.info}
+                onClick={() => onShowDevices("all")}
+              />
+            ))}
+            {ungrouped > 0 && (
+              <MeterRow
+                index={groups.length}
+                mark={
+                  <span className="th-cp-mark-sm" data-muted="true" aria-hidden="true">
+                    —
+                  </span>
+                }
+                label="No group"
+                count={ungrouped}
+                total={stats.total}
+                tone={TONE.neutral}
+                onClick={() => onShowDevices("all")}
+              />
+            )}
+          </ul>
         )}
       </SectionCard>
 
@@ -641,15 +1001,22 @@ function OverviewTab({
         title="Recent activity"
         index={4}
         action={
-          <button type="button" className="th-link-btn" onClick={onShowActivity}>
+          <button type="button" className="th-link-btn" onClick={() => onOpenTab("activity")}>
             View all
           </button>
+        }
+        footer={
+          <span>
+            {activity && activity.total > 0
+              ? `Latest ${formatCount(activity.items.length)} of ${formatCount(activity.total)} entries`
+              : "Remote sessions, actions and credential use appear here."}
+          </span>
         }
       >
         {activityLoading && !activity ? (
           <PanelSkeleton rows={4} />
         ) : !activity || activity.items.length === 0 ? (
-          <EmptyState className="flex-1" icon={<Activity className="h-5 w-5" />} title="No activity yet" />
+          <QuietLine>No activity yet.</QuietLine>
         ) : (
           <ActivityList page={activity} compact onOpenDevice={onOpenDevice} />
         )}
@@ -660,11 +1027,11 @@ function OverviewTab({
 
 // ─── Devices ─────────────────────────────────────────────────────────────────
 
-type StatusFilter = "all" | "online" | "stale" | "offline";
-
 function DevicesTab({
   clientId,
   stats,
+  status,
+  onStatusChange,
   onOpenDevice,
   selectedId,
   latestEvent,
@@ -672,6 +1039,8 @@ function DevicesTab({
 }: {
   clientId: number;
   stats: DeviceStats;
+  status: StatusFilter;
+  onStatusChange: (status: StatusFilter) => void;
   onOpenDevice: (device: Device) => void;
   selectedId: number | null;
   latestEvent: DeviceRealtimeEvent | null;
@@ -681,7 +1050,6 @@ function DevicesTab({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEVICE_PAGE_SIZES[0]);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
   const query = search.trim();
   const { data, loading, refreshing, setData } = useCachedQuery(
     `page.client.${clientId}.devices:${JSON.stringify({ page, pageSize, query, status })}`,
@@ -796,7 +1164,7 @@ function DevicesTab({
                 role="radio"
                 aria-checked={status === f.key}
                 onClick={() => {
-                  setStatus(f.key);
+                  onStatusChange(f.key);
                   setPage(1);
                 }}
               >

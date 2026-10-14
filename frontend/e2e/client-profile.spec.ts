@@ -107,14 +107,26 @@ for (const theme of ["dark", "light"] as const) {
     for (const figure of ["42", "67%", "14", "74", "7"]) {
       await expect(page.locator(".th-onb-stat", { hasText: figure }).first()).toBeVisible();
     }
-    await expect(page.getByRole("heading", { name: "Devices by category" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Open alerts by type" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fleet status" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Open alerts", exact: true })).toBeVisible();
     await expect(page.getByText("NW-RECEPTION-01").first()).toBeVisible();
     // Four overview cards in two even columns.
     const cards = page.locator('[role="tabpanel"] section.premium-card');
     await expect(cards).toHaveCount(4);
     const boxes = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
     expect(Math.max(...boxes) - Math.min(...boxes)).toBeLessThan(2);
+    // Symmetric: cards side by side share one height, footers on one line.
+    const rects = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+    expect(Math.abs(rects[0].height - rects[1].height)).toBeLessThan(2);
+    expect(Math.abs(rects[2].height - rects[3].height)).toBeLessThan(2);
+    const feet = await page
+      .locator('[role="tabpanel"] .th-cp-foot')
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().bottom));
+    expect(Math.abs(feet[0] - feet[1])).toBeLessThan(2);
+    // A legend row opens the Devices tab with that status selected.
+    await page.locator(".th-cp-legend button", { hasText: "Offline" }).first().click();
+    await expect(page.getByRole("radio", { name: /Offline/ })).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("tab", { name: /Overview/ }).click();
     await page.screenshot({ path: test.info().outputPath(`profile-overview-${theme}.png`), fullPage: true });
 
     await page.getByRole("tab", { name: /Devices/ }).click();

@@ -6768,3 +6768,188 @@ button.th-client-group:hover {
     box-shadow: 0 1px 0 var(--th-border-subtle);
   }
 }
+
+/* ── Client profile overview ── each card is head · hero (ring + legend) ·
+   sub-heading · one-line meters · footer pinned to the bottom, so cards side
+   by side line up row for row. Ring segments draw in one after another and
+   glide to new values; meters and legend rows rise in a stagger. */
+.th-cp-overview .th-panel-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.th-cp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-top: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.th-cp-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  padding: 4px 20px 16px;
+}
+.th-cp-ring {
+  position: relative;
+  flex: none;
+}
+.th-cp-ring-seg {
+  transition:
+    stroke-dasharray 700ms var(--th-ease-out),
+    stroke-dashoffset 700ms var(--th-ease-out);
+  animation: th-cp-ring-draw 900ms var(--th-ease-out) backwards;
+  animation-delay: calc(120ms + var(--i, 0) * 140ms);
+}
+@keyframes th-cp-ring-draw {
+  from {
+    stroke-dasharray: 0 var(--c);
+  }
+}
+.th-cp-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--th-text-primary);
+}
+.th-cp-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.th-cp-legend button {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto 40px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--th-text-secondary);
+  transition:
+    background-color 160ms var(--th-ease),
+    color 160ms var(--th-ease);
+}
+.th-cp-legend button:not(:disabled):hover {
+  background: var(--th-sidebar-nav-hover);
+  color: var(--th-text-primary);
+}
+.th-cp-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.th-cp-legend strong,
+.th-cp-meter strong {
+  font-weight: 600;
+  text-align: right;
+  color: var(--th-text-primary);
+}
+.th-cp-legend small,
+.th-cp-meter small {
+  font-size: 12px;
+  text-align: right;
+  color: var(--th-text-faint);
+}
+.th-cp-subhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--th-text-faint);
+}
+.th-cp-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--th-border-subtle);
+}
+.th-cp-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px 12px;
+}
+.th-cp-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(48px, 1fr) 44px 40px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--th-text-secondary);
+  transition:
+    background-color 160ms var(--th-ease),
+    color 160ms var(--th-ease);
+}
+.th-cp-meter:hover {
+  background: var(--th-sidebar-nav-hover);
+  color: var(--th-text-primary);
+}
+.th-cp-meter-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.th-cp-meter-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-cp-meter:hover .th-cp-meter-track {
+  filter: brightness(1.15);
+}
+.th-cp-mark-sm {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--th-text-secondary);
+  background: var(--th-chip-bg);
+  border: 1px solid var(--th-border-subtle);
+  transition:
+    color 160ms var(--th-ease),
+    border-color 160ms var(--th-ease);
+}
+.th-cp-mark-sm[data-muted="true"] {
+  color: var(--th-text-faint);
+}
+.th-cp-meter:hover .th-cp-mark-sm {
+  color: var(--th-text-primary);
+  border-color: var(--th-border-strong);
+}
+@media (max-width: 639px) {
+  .th-cp-hero {
+    gap: 16px;
+    padding: 4px 14px 14px;
+  }
+  .th-cp-meter {
+    grid-template-columns: minmax(0, 1fr) 64px 36px 36px;
+    gap: 10px;
+  }
+}
