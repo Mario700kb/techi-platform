@@ -180,8 +180,8 @@ test("a client's device connects from its row and opens the drawer in place", as
   await expect(page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" })).toBeVisible();
 });
 
-test("a long device list scrolls inside its card under a fixed header", async ({ page }) => {
-  test.skip(test.info().project.name !== "desktop", "phones keep one page scroll");
+test("a long device list keeps its header pinned under the top bar", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "phones show cards without a header");
   await northwindProfile(page);
   const many = Array.from({ length: 40 }, (_, i) => ({
     ...DEVICES[0],
@@ -191,23 +191,18 @@ test("a long device list scrolls inside its card under a fixed header", async ({
   await page.route("**/api/v1/devices/?*", (route) => route.fulfill({ json: { devices: many, total: 40 } }));
   await page.goto("/clients/1");
   await page.getByRole("tab", { name: /Devices/ }).click();
-
-  const scroller = page.locator(".th-cp-scroll");
   await expect(page.locator("tr.th-cp-row")).toHaveCount(40);
-  const fits = await scroller.evaluate((el) => el.scrollHeight > el.clientHeight);
-  expect(fits).toBe(true);
 
-  // The whole card, pagination included, fits the screen once scrolled to.
-  await page
-    .locator(".th-alerts-card")
-    .last()
-    .evaluate((el) => el.scrollIntoView({ block: "end" }));
-  const card = await page.locator(".th-alerts-card").last().boundingBox();
-  expect(card!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // One scroll: the list grows with the page, not inside its own box.
+  const wrapper = page.locator(".th-cp-scroll");
+  expect(await wrapper.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThan(2);
 
-  await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-  const head = await scroller.locator("thead th").first().boundingBox();
-  const box = await scroller.boundingBox();
-  expect(Math.abs(head!.y - box!.y)).toBeLessThan(2);
-  await page.screenshot({ path: test.info().outputPath("profile-devices-scroll.png") });
+  const main = page.locator(".th-main");
+  const top = (await main.boundingBox())!.y;
+  for (const fraction of [0.5, 1]) {
+    await main.evaluate((el, f) => el.scrollTo({ top: (el.scrollHeight - el.clientHeight) * f }), fraction);
+    const head = (await wrapper.locator("thead th").first().boundingBox())!;
+    expect(Math.abs(head.y - top)).toBeLessThan(2);
+  }
+  await page.screenshot({ path: test.info().outputPath("profile-devices-sticky.png") });
 });
