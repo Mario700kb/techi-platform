@@ -5,6 +5,44 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] PROFILE-EDIT-2026-10-14 — edit your own profile; dashboard ring cards; 50 latest enrollments (`fd48c8b`, `ce6b6d1`)
+
+Backend and frontend, deployed 2026-10-14 23:04–23:07 (Tirana). Pre-deploy
+dump `/opt/backups/techi/pre-profile-edit-2026-10-14_23-02.sql.gz` (146 MB,
+`gzip -t` OK). Rollback images `techi-platform-backend:pre-profile-edit-696605b`
+and `techi-platform-frontend:pre-profile-edit-696605b`. No migration. Guard
+passed before and after; backend ready from inside the container ~8 s after
+recreate, 0 restarts, no tracebacks; `nginx -t` OK, frontend healthy; smoke
+passed; `PATCH /auth/me` answers 401 without a session. One SSH connect timed
+out right after the frontend recreate (load average 2.8 on the single vCPU
+while the fleet heartbeated after the backend restart); public 200 throughout,
+containers checked afterwards: 0 restarts. Root filesystem 88% (2.8 GB free).
+
+- **Edit profile (owner request).** `PATCH /auth/me` changes the signed-in
+  operator's display name and email. A new email needs the current password
+  and must not belong to another operator; username and role stay with the
+  Operators page (username is the sign-in identity and audit key). Audited as
+  `operator_updated` with the fields and old/new email. Settings → Edit profile
+  dialog with a live preview; the password field opens only when the email
+  changes.
+- **Dashboard cards (owner: "look how much space there is").** The shared
+  `BreakdownBars` spread its rows over the card's height, so Devices by
+  category (two categories beside the taller Operators card) showed one row
+  at the top and one at the bottom. Open alerts by type and Devices by
+  category now lead with a ring and legend (severity; category — Fleet health
+  already splits by status) and one-line meters that sit together under their
+  heading; footers pinned; rows are links. Devices by category shows online
+  devices and their share per category. Ring, legend and meters live in
+  `components/MeterPanels` (shared with the client profile); `BreakdownBars`
+  removed. The row test now checks rows sit together (no gap > 6 px), equal
+  card heights and a row under 450 px (was 420; the cards carry a ring).
+- **Latest enrollments (owner request).** The newest 50 instead of 6, 10/20/50
+  a page; beyond ten a page the actions card keeps its own height. Cache key
+  renamed so the old 6-row copy is not shown.
+
+Backend pytest 1,375 (6 new for the profile); Vitest 235; Playwright 105 (new:
+edit profile on desktop and phone, enrollments paging).
+
 ## [2026-10-14] CLIENT-ACTIVITY-2026-10-14 — client activity with sessions, methods and time; sidebar keeps Reports on reload (`1da8a2f`, `b90ce64`)
 
 Backend and frontend, deployed 2026-10-14 22:28–22:30 (Tirana). Pre-deploy
