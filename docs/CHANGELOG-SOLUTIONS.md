@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] PROFILE-STICKY-2026-10-14 — client profile table header pinned under the top bar (`dfcd59c`)
+
+Frontend only, deployed 2026-10-14 21:57 (Tirana). Rollback image
+`techi-platform-frontend:pre-profile-sticky-441d271`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200, the new
+sticky rule in the served CSS. Root filesystem 89% (2.7 GB free).
+
+After PROFILE-SCROLL the owner asked for the table header to stay fixed
+globally: with the inner scroll it stayed only inside the card and left with
+the page. The owner chose one page scroll with the header pinned under the top
+bar. From 768px the Devices and Alerts lists on the client profile grow with
+the page; the wrapper clips sideways instead of scrolling (`overflow: clip
+visible`) so `.th-main` holds the sticky header, at `top: -20px` because Chrome
+offsets sticky inside the scroller's `md:p-5` padding (at 0 a 20 px strip of
+rows showed above it). Replaces the inner scroll from `331e59b`. Playwright
+test scrolls the page to the middle and the end and checks the header sits
+flush under the top bar; client-profile suite 6 passed.
+
 ## [2026-10-14] PROFILE-SCROLL-2026-10-14 — client profile lists scroll inside their card (`331e59b`)
 
 Frontend only, deployed 2026-10-14 21:50 (Tirana). Rollback image
