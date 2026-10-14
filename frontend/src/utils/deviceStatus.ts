@@ -82,3 +82,48 @@ export function isDeviceOffline(device: { freshness_state?: string | null; statu
   const state = device.freshness_state ?? device.status;
   return state !== "online" && state !== "stale";
 }
+
+// Production bug fix (Device Catalog Connect button): this row action used
+// to be RustDesk-only (`isValidRustDeskId` + no conflict) regardless of
+// platform, so every non-Windows device — which never has a rustdesk_id —
+// showed a permanently grey Connect button with no explanation, even though
+// those devices have real Connect Framework methods (SSH/Winbox/WebFig/
+// Terminal) available in the Drawer. Platforms whose Connect Framework
+// entry declares at least one capability=None (native, always-present)
+// method never need a reported capability to be connectable; Linux (and any
+// future capability-gated platform) needs at least one reported capability.
+// This is a structural/cheap check — NOT a live credential-aware status
+// (that would need one API call per row across a ~700-device table); the
+// accurate, credential-aware ConnectMenu is what opens when the operator
+// gets to the Drawer.
+const PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD = new Set([
+  "mikrotik",
+  "synology",
+  "qnap",
+  "vmware",
+  "proxmox",
+  "hyperv",
+]);
+
+export function hasStructuralConnectMethod(device: {
+  platform?: string | null;
+  capabilities?: Record<string, unknown> | null;
+}): boolean {
+  const platform = (device.platform || "windows").toLowerCase();
+  if (platform === "windows") return false; // Windows uses the RustDesk-specific check instead.
+  if (PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD.has(platform)) return true;
+  return Object.keys(device.capabilities || {}).length > 0;
+}
+
+// Realtime events that carry a device's new fields: a screen showing that
+// device merges them in place instead of reloading.
+export const DEVICE_PATCH_EVENTS: ReadonlySet<string> = new Set([
+  "device_online",
+  "device_offline",
+  "device_updated",
+  "heartbeat_received",
+  "rustdesk_updated",
+  "rustdesk_online",
+  "rustdesk_offline",
+  "sync_failed",
+]);

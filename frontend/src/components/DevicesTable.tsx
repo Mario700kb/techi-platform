@@ -43,7 +43,13 @@ import { Button, ConnectButton, EmptyState, Select, TablePagination } from "./ui
 import ConfirmationModal from "./ConfirmationModal";
 import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 import { formatCount } from "../utils/number";
-import { isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
+import {
+  hasStructuralConnectMethod,
+  isDeviceOffline,
+  OFFLINE_CONNECT_REASON,
+  TERMS,
+  TONE,
+} from "../utils/deviceStatus";
 import {
   ActionIndicator,
   ActiveActionEntry,
@@ -184,35 +190,6 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
 ];
 
 type PendingAction = "archive" | "restore" | "delete";
-
-// Production bug fix (Device Catalog Connect button): this row action used
-// to be RustDesk-only (`isValidRustDeskId` + no conflict) regardless of
-// platform, so every non-Windows device — which never has a rustdesk_id —
-// showed a permanently grey Connect button with no explanation, even though
-// those devices have real Connect Framework methods (SSH/Winbox/WebFig/
-// Terminal) available in the Drawer. Platforms whose Connect Framework
-// entry declares at least one capability=None (native, always-present)
-// method never need a reported capability to be connectable; Linux (and any
-// future capability-gated platform) needs at least one reported capability.
-// This is a structural/cheap check — NOT a live credential-aware status
-// (that would need one API call per row across a ~700-device table); the
-// accurate, credential-aware ConnectMenu is what opens when the operator
-// gets to the Drawer.
-const PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD = new Set([
-  "mikrotik",
-  "synology",
-  "qnap",
-  "vmware",
-  "proxmox",
-  "hyperv",
-]);
-
-export function hasStructuralConnectMethod(device: Device): boolean {
-  const platform = (device.platform || "windows").toLowerCase();
-  if (platform === "windows") return false; // Windows uses the RustDesk-specific check instead.
-  if (PLATFORMS_WITH_ALWAYS_PRESENT_NATIVE_METHOD.has(platform)) return true;
-  return Object.keys(device.capabilities || {}).length > 0;
-}
 
 // ─── Visual constants ────────────────────────────────────────────────────────
 

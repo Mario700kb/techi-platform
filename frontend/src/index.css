@@ -6648,3 +6648,104 @@ button.th-client-group:hover {
     max-height: 320px;
   }
 }
+
+/* ── Client profile ── the identity mark settles in, a live client's status
+   dot breathes, key figures lift on hover and a changed figure fades in
+   (.th-share-count), device rows open the device drawer in place and their
+   platform tile brightens on hover; the status filter's thumb slides. */
+.th-cp-mark {
+  animation: th-cp-mark-in 560ms var(--th-ease-out) 80ms backwards;
+}
+@keyframes th-cp-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(-6deg);
+  }
+}
+.th-status-chip[data-live] i {
+  animation: th-cp-breathe 2.6s var(--th-ease) infinite;
+}
+@keyframes th-cp-breathe {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-tone) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+.th-cp-kpi {
+  transition:
+    transform 260ms var(--th-ease-out),
+    box-shadow 260ms var(--th-ease-out),
+    border-color 200ms var(--th-ease);
+}
+.th-cp-kpi:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--onb-tone) 35%, var(--th-border-default));
+  box-shadow: 0 10px 28px -18px var(--th-scrim);
+}
+.th-cp-kpi .th-onb-icon {
+  transition: transform 320ms var(--th-ease-out);
+}
+.th-cp-kpi:hover .th-onb-icon {
+  transform: scale(1.08);
+}
+.th-cp-row {
+  cursor: pointer;
+}
+.th-cp-row > td {
+  transition: background-color 200ms var(--th-ease);
+}
+.th-cp-row:focus-visible {
+  outline: none;
+}
+.th-cp-row:focus-visible > td {
+  background: var(--th-table-hover);
+  box-shadow:
+    inset 0 1px 0 var(--th-accent),
+    inset 0 -1px 0 var(--th-accent);
+}
+.th-cp-platform {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--th-text-muted);
+  background: var(--th-chip-bg);
+  border: 1px solid var(--th-border-subtle);
+  transition:
+    color 200ms var(--th-ease),
+    border-color 200ms var(--th-ease),
+    transform 260ms var(--th-ease-out);
+}
+.th-cp-row:hover .th-cp-platform,
+.th-cp-row[data-selected="true"] .th-cp-platform {
+  color: var(--th-text-primary);
+  border-color: var(--th-border-strong);
+  transform: scale(1.05);
+}
+.th-cp-status {
+  min-width: 0;
+}
+.th-cp-status > button {
+  gap: 6px;
+  padding: 0 10px;
+}
+@media (max-width: 767px) {
+  .th-cp-status {
+    width: 100%;
+  }
+  .th-cp-status > button {
+    padding: 0 4px;
+  }
+  .th-cp-status .th-status-dot {
+    display: none;
+  }
+  .th-alerts-table.th-cp-devices[data-mobile="cards"] tbody td:last-child {
+    margin-left: auto;
+  }
+}

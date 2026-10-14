@@ -32,19 +32,9 @@ import { useAuth } from "../auth/AuthContext";
 import { useAppData } from "../contexts/AppDataContext";
 import { isActiveStatus } from "../api/actions";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
+import { DEVICE_PATCH_EVENTS } from "../utils/deviceStatus";
 import { DeviceHealthSummary } from "../types/telemetry";
 import { appCache, CACHE_KEYS, CACHE_TTL, deviceTableCacheKey } from "../store/appCache";
-
-const DEVICE_PATCH_EVENTS = new Set([
-  "device_online",
-  "device_offline",
-  "device_updated",
-  "heartbeat_received",
-  "rustdesk_updated",
-  "rustdesk_online",
-  "rustdesk_offline",
-  "sync_failed",
-]);
 
 interface TreeCounts {
   total: number;

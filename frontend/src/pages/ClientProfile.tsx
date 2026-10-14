@@ -1,4 +1,4 @@
-import { CSSProperties, useMemo, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
@@ -24,19 +24,42 @@ import { ACTION_LABELS } from "../api/audit";
 import { useAuth } from "../auth/AuthContext";
 import ClientDocuments from "../components/ClientDocuments";
 import { getAlerts } from "../api/alerts";
-import { ClientProfile, getClientActivity, getClientProfile } from "../api/clients";
-import { Device, getDevices, getFleetInsights } from "../api/devices";
+import { ClientProfile, getClientActivity, getClientProfile, getClients, getGroups } from "../api/clients";
+import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
+import { Device, DeviceStats, getDevice, getDevices, getDeviceTableDetails, getFleetInsights } from "../api/devices";
+import { getConnectUrl } from "../api/remoteSupport";
 import AlertKindIcon from "../components/AlertKindIcon";
 import BreakdownBars, { BreakdownRow, CATEGORY_LABELS } from "../components/BreakdownBars";
+import ConnectMenu from "../components/ConnectMenu";
+import DeviceDrawer from "../components/DeviceDrawer";
+import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
+import HealthBadge from "../components/HealthBadge";
 import { AlertFlowChart, AvailabilityChart } from "../components/InsightCharts";
-import { Button, EmptyState, TablePagination } from "../components/ui";
+import PlatformIcon from "../components/PlatformIcon";
+import { Button, ConnectButton, EmptyState, TablePagination } from "../components/ui";
+import { useAppData } from "../contexts/AppDataContext";
 import { useCachedQuery } from "../hooks/useCachedQuery";
+import { useFavorites } from "../hooks/useFavorites";
+import { DESKTOP_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { useNow } from "../hooks/useNow";
+import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
+import { DeviceRealtimeEvent } from "../services/deviceRealtime";
+import { buildRustDeskFallbackUrlFromTechiUrl, isValidRustDeskId, launchConnect } from "../services/rustdeskLaunch";
 import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
 import { deviceDisplayName } from "../utils/deviceLabel";
-import { freshnessTone, humanize, TONE } from "../utils/deviceStatus";
+import {
+  DEVICE_PATCH_EVENTS,
+  freshnessTone,
+  hasStructuralConnectMethod,
+  humanize,
+  isDeviceOffline,
+  OFFLINE_CONNECT_REASON,
+  TERMS,
+  TONE,
+} from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
+import { detectOperatorOS } from "../utils/operatorOs";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
 type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
@@ -67,6 +90,30 @@ function parseDetails(json: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** The event's fields over the device it names; the same object when nothing it shows changed. */
+function mergeDeviceEvent(device: Device, event: DeviceRealtimeEvent | null): Device {
+  const data = event?.data;
+  if (!event || !data || data.id !== device.id || !DEVICE_PATCH_EVENTS.has(event.type)) return device;
+  const next = { ...device, ...data } as Device;
+  const changed = (Object.keys(data) as (keyof typeof data)[]).some(
+    (field) => device[field as keyof Device] !== next[field as keyof Device],
+  );
+  return changed ? next : device;
+}
+
+// Same window as the Devices page opens: one per device, so a second click
+// focuses the open terminal instead of starting another session.
+function openTerminalWindow(device: Device): boolean {
+  const name = deviceDisplayName(device);
+  const win = window.open(
+    `/terminal/${device.id}?name=${encodeURIComponent(name)}`,
+    `techi-terminal-${device.id}`,
+    "width=1024,height=640,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes",
+  );
+  win?.focus();
+  return Boolean(win);
 }
 
 function SectionCard({
@@ -124,6 +171,87 @@ export default function ClientProfilePage() {
     getClientActivity(clientId, 6, 0),
   );
   const profile = profileQuery.data;
+  const reloadProfile = profileQuery.reload;
+
+  // ── device drawer ── opened in place from any device on the profile, the
+  // same drawer the Devices page uses. Phones open the device's own page.
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const { latestEvent } = useAppData();
+  const { favorites, toggle: toggleFavorite } = useFavorites();
+  const [drawerDevice, setDrawerDevice] = useState<Device | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [updatedDevice, setUpdatedDevice] = useState<Device | null>(null);
+  const [orgWanted, setOrgWanted] = useState(false);
+  const drawerCloseTimer = useRef<number | undefined>();
+  const drawerRequest = useRef(0);
+  // Clients and groups for the drawer's Management tab, loaded on first open.
+  const org = useCachedQuery(orgWanted ? "page.client-profile.org" : null, () =>
+    Promise.all([getClients(), getGroups()]),
+  );
+
+  const openDevice = useCallback(
+    (target: Device | number) => {
+      const id = typeof target === "number" ? target : target.id;
+      if (!isDesktop) {
+        navigate(`/devices/${id}`);
+        return;
+      }
+      window.clearTimeout(drawerCloseTimer.current);
+      setOrgWanted(true);
+      const request = ++drawerRequest.current;
+      if (typeof target !== "number") {
+        setDrawerDevice(target);
+        setDrawerOpen(true);
+        return;
+      }
+      getDevice(id)
+        .then((device) => {
+          if (request !== drawerRequest.current) return;
+          setDrawerDevice(device);
+          setDrawerOpen(true);
+        })
+        .catch(() => {
+          if (request === drawerRequest.current) navigate(`/devices?device=${id}`);
+        });
+    },
+    [isDesktop, navigate],
+  );
+
+  const closeDrawer = useCallback(() => {
+    drawerRequest.current += 1;
+    setDrawerOpen(false);
+    window.clearTimeout(drawerCloseTimer.current);
+    // Unmount only after the close slide (260ms in index.css) has finished.
+    drawerCloseTimer.current = window.setTimeout(() => setDrawerDevice(null), 300);
+  }, []);
+  useEffect(() => () => window.clearTimeout(drawerCloseTimer.current), []);
+
+  const handleDeviceUpdated = useCallback(
+    (device: Device) => {
+      setDrawerDevice(device);
+      setUpdatedDevice(device);
+      void reloadProfile();
+    },
+    [reloadProfile],
+  );
+
+  // Live: the open drawer follows its device, and a status change on one of
+  // this client's devices refreshes the figures (once, after a short quiet).
+  const profileRefreshTimer = useRef<number | undefined>();
+  useEffect(() => {
+    if (!latestEvent) return;
+    setDrawerDevice((prev) => (prev ? mergeDeviceEvent(prev, latestEvent) : prev));
+    const data = latestEvent.data;
+    const ownDevice = data && (data.client_id === clientId || data.resolved_client_id === clientId);
+    if (
+      ownDevice &&
+      ["device_online", "device_offline", "alert_created", "alert_resolved"].includes(latestEvent.type)
+    ) {
+      window.clearTimeout(profileRefreshTimer.current);
+      profileRefreshTimer.current = window.setTimeout(() => void reloadProfile(), 4000);
+    }
+  }, [latestEvent, clientId, reloadProfile]);
+  useEffect(() => () => window.clearTimeout(profileRefreshTimer.current), []);
 
   if (!valid || (profileQuery.error && !profile)) {
     return (
@@ -239,7 +367,7 @@ export default function ClientProfilePage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <span className="th-team-mark" aria-hidden="true">
+          <span className="th-team-mark th-cp-mark" aria-hidden="true">
             {initials(client.name)}
           </span>
           <div className="min-w-0 flex-1">
@@ -256,6 +384,7 @@ export default function ClientProfilePage() {
           <div className="flex flex-wrap items-center gap-2">
             <span
               className="th-status-chip !h-8"
+              data-live={(client.is_active && stats.online > 0) || undefined}
               style={{ "--chip-tone": client.is_active ? TONE.online : TONE.neutral } as CSSProperties}
             >
               <i />
@@ -291,10 +420,10 @@ export default function ClientProfilePage() {
         {kpis.map((item, index) => (
           <div
             key={item.label}
-            className="th-onb-card th-onb-stat th-onb-enter"
-            style={{ "--i": index + 1 } as CSSProperties}
+            className="th-onb-card th-onb-stat th-onb-enter th-cp-kpi"
+            style={{ "--i": index + 1, "--onb-tone": item.tone } as CSSProperties}
           >
-            <span className="th-onb-icon" style={{ "--onb-tone": item.tone } as CSSProperties}>
+            <span className="th-onb-icon">
               <item.icon className="h-4 w-4" />
             </span>
             <div className="min-w-0">
@@ -305,7 +434,10 @@ export default function ClientProfilePage() {
                 className="text-[24px] font-semibold leading-8 tabular-nums"
                 style={{ color: "var(--th-text-primary)" }}
               >
-                {item.value}
+                {/* Keyed by value: a live change fades the new figure in. */}
+                <span key={item.value} className="th-share-count">
+                  {item.value}
+                </span>
               </div>
               <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
                 {item.hint}
@@ -368,16 +500,57 @@ export default function ClientProfilePage() {
             activity={activityPreview.data}
             activityLoading={activityPreview.loading}
             onShowActivity={() => openTab("activity")}
+            onOpenDevice={openDevice}
           />
         )}
-        {opened.has("devices") && tab === "devices" && <DevicesTab clientId={client.id} />}
-        {opened.has("alerts") && tab === "alerts" && <AlertsTab clientId={client.id} />}
-        {opened.has("activity") && tab === "activity" && <ActivityTab clientId={client.id} />}
-        {opened.has("analytics") && tab === "analytics" && <AnalyticsTab clientId={client.id} />}
+        {opened.has("devices") && tab === "devices" && (
+          <DevicesTab
+            clientId={client.id}
+            stats={stats}
+            onOpenDevice={openDevice}
+            selectedId={drawerOpen ? (drawerDevice?.id ?? null) : null}
+            latestEvent={latestEvent}
+            updatedDevice={updatedDevice}
+          />
+        )}
+        {opened.has("alerts") && tab === "alerts" && <AlertsTab clientId={client.id} onOpenDevice={openDevice} />}
+        {opened.has("activity") && tab === "activity" && <ActivityTab clientId={client.id} onOpenDevice={openDevice} />}
+        {opened.has("analytics") && tab === "analytics" && (
+          <AnalyticsTab clientId={client.id} onOpenDevice={openDevice} />
+        )}
         {opened.has("documents") && tab === "documents" && (
           <ClientDocuments clientId={client.id} canWrite={can("operator")} />
         )}
       </div>
+
+      {drawerDevice &&
+        // Same choice as the Devices page: a device that reports capabilities
+        // uses the registry-driven drawer, every Windows agent the classic one.
+        (drawerDevice.capabilities && Object.keys(drawerDevice.capabilities).length > 0 ? (
+          <GenericDeviceDrawer
+            device={drawerDevice}
+            isOpen={drawerOpen}
+            onClose={closeDrawer}
+            latestEvent={latestEvent}
+            clients={org.data?.[0] ?? []}
+            groups={org.data?.[1] ?? []}
+            canOperate={can("operator")}
+            onDeviceUpdated={handleDeviceUpdated}
+          />
+        ) : (
+          <DeviceDrawer
+            device={drawerDevice}
+            isOpen={drawerOpen}
+            onClose={closeDrawer}
+            latestEvent={latestEvent}
+            clients={org.data?.[0] ?? []}
+            groups={org.data?.[1] ?? []}
+            onDeviceUpdated={handleDeviceUpdated}
+            canOperate={can("operator")}
+            isFavorite={favorites.has(drawerDevice.id)}
+            onToggleFavorite={toggleFavorite}
+          />
+        ))}
     </section>
   );
 }
@@ -389,11 +562,13 @@ function OverviewTab({
   activity,
   activityLoading,
   onShowActivity,
+  onOpenDevice,
 }: {
   profile: ClientProfile;
   activity?: Awaited<ReturnType<typeof getClientActivity>>;
   activityLoading: boolean;
   onShowActivity: () => void;
+  onOpenDevice: (id: number) => void;
 }) {
   const { client, stats, alerts } = profile;
   const byCategory: BreakdownRow[] = Object.entries(profile.by_category)
@@ -476,7 +651,7 @@ function OverviewTab({
         ) : !activity || activity.items.length === 0 ? (
           <EmptyState className="flex-1" icon={<Activity className="h-5 w-5" />} title="No activity yet" />
         ) : (
-          <ActivityList page={activity} compact />
+          <ActivityList page={activity} compact onOpenDevice={onOpenDevice} />
         )}
       </SectionCard>
     </div>
@@ -485,39 +660,154 @@ function OverviewTab({
 
 // ─── Devices ─────────────────────────────────────────────────────────────────
 
-function DevicesTab({ clientId }: { clientId: number }) {
-  const navigate = useNavigate();
+type StatusFilter = "all" | "online" | "stale" | "offline";
+
+function DevicesTab({
+  clientId,
+  stats,
+  onOpenDevice,
+  selectedId,
+  latestEvent,
+  updatedDevice,
+}: {
+  clientId: number;
+  stats: DeviceStats;
+  onOpenDevice: (device: Device) => void;
+  selectedId: number | null;
+  latestEvent: DeviceRealtimeEvent | null;
+  updatedDevice: Device | null;
+}) {
+  const features = usePlatformFeatures();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEVICE_PAGE_SIZES[0]);
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const query = search.trim();
-  const { data, loading, refreshing } = useCachedQuery(
-    `page.client.${clientId}.devices:${JSON.stringify({ page, pageSize, query })}`,
+  const { data, loading, refreshing, setData } = useCachedQuery(
+    `page.client.${clientId}.devices:${JSON.stringify({ page, pageSize, query, status })}`,
     () =>
       getDevices(
-        { client_id: clientId, search: query || undefined, sort: "hostname", order: "asc" },
+        {
+          client_id: clientId,
+          search: query || undefined,
+          freshness_state: status === "all" ? undefined : status,
+          sort: "hostname",
+          order: "asc",
+        },
         (page - 1) * pageSize,
         pageSize,
       ),
   );
-  const devices = data?.devices ?? [];
+  const devices = useMemo(() => data?.devices ?? [], [data]);
+
+  // Rows follow realtime events and edits made in the drawer, in place.
+  useEffect(() => {
+    if (!latestEvent?.data?.id || !DEVICE_PATCH_EVENTS.has(latestEvent.type)) return;
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = prev.devices.map((device) => mergeDeviceEvent(device, latestEvent));
+      return next.some((device, i) => device !== prev.devices[i]) ? { ...prev, devices: next } : prev;
+    });
+  }, [latestEvent, setData]);
+  useEffect(() => {
+    if (!updatedDevice) return;
+    setData((prev) =>
+      prev && prev.devices.some((d) => d.id === updatedDevice.id)
+        ? { ...prev, devices: prev.devices.map((d) => (d.id === updatedDevice.id ? updatedDevice : d)) }
+        : prev,
+    );
+  }, [updatedDevice, setData]);
+
+  // Health for the rows on screen, in one request.
+  const idsKey = devices.map((d) => d.id).join(",");
+  const details = useCachedQuery(idsKey ? `page.client.${clientId}.details:${idsKey}` : null, () =>
+    getDeviceTableDetails(idsKey.split(",").map(Number)),
+  );
+  const healthById = useMemo(
+    () => new Map((details.data?.health ?? []).map((item) => [item.device_id, item])),
+    [details.data],
+  );
+
+  // Credential-aware Connect state for non-Windows rows, one batched request
+  // (as on the Devices page), refreshed when a credential or default changes.
+  const nonWindowsKey = devices
+    .filter((d) => d.platform && d.platform.toLowerCase() !== "windows")
+    .map((d) => d.id)
+    .join(",");
+  const connectStatuses = useCachedQuery(
+    features.FEATURE_PLATFORM_CORE && nonWindowsKey ? `mem.client.${clientId}.connect:${nonWindowsKey}` : null,
+    () => getConnectStatuses(nonWindowsKey.split(",").map(Number), detectOperatorOS()),
+  );
+  const reloadConnectStatuses = connectStatuses.reload;
+  useEffect(() => {
+    const refresh = () => void reloadConnectStatuses();
+    window.addEventListener(CONNECT_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(CONNECT_REFRESH_EVENT, refresh);
+  }, [reloadConnectStatuses]);
+  const connectById = useMemo(
+    () => new Map((connectStatuses.data ?? []).map((row) => [row.device_id, row])),
+    [connectStatuses.data],
+  );
+
+  const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const toastTimer = useRef<number | undefined>();
+  const showToast = useCallback((message: string, ok: boolean) => {
+    setToast({ message, ok });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  }, []);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  const filters: { key: StatusFilter; label: string; count: number }[] = [
+    { key: "all", label: "All", count: stats.total },
+    { key: "online", label: "Online", count: stats.online },
+    { key: "stale", label: "Stale", count: stats.stale },
+    { key: "offline", label: "Offline", count: stats.offline },
+  ];
+  const filterIndex = filters.findIndex((f) => f.key === status);
 
   return (
     <div className="th-alerts-card">
       <div className="th-alerts-toolbar !items-center !py-3">
-        <label className="th-search th-search-sm w-full max-w-[320px]">
-          <Search className="h-3.5 w-3.5 flex-none" />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search this client's devices"
-            aria-label="Search this client's devices"
-          />
-        </label>
-        <Link to={`/devices?client=${clientId}`} className="th-link-btn">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <label className="th-search th-search-sm w-full max-w-[320px]">
+            <Search className="h-3.5 w-3.5 flex-none" />
+            <input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search this client's devices"
+              aria-label="Search this client's devices"
+            />
+          </label>
+          <div
+            className="th-segmented th-cp-status"
+            role="radiogroup"
+            aria-label="Device status"
+            data-thumb
+            style={{ "--seg-n": filters.length, "--seg-i": filterIndex } as CSSProperties}
+          >
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                role="radio"
+                aria-checked={status === f.key}
+                onClick={() => {
+                  setStatus(f.key);
+                  setPage(1);
+                }}
+              >
+                {f.key !== "all" && <span className="th-status-dot" data-state={f.key} aria-hidden="true" />}
+                {f.label}
+                <span className="th-inv-seg-count">{formatCount(f.count)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <Link to={`/devices?client=${clientId}`} className="th-link-btn max-sm:hidden">
           Open in Devices
         </Link>
       </div>
@@ -527,65 +817,110 @@ function DevicesTab({ clientId }: { clientId: number }) {
         <EmptyState
           className="py-10"
           icon={<ServerOff className="h-5 w-5" />}
-          title={query ? "No devices match" : "No devices"}
+          title={query || status !== "all" ? "No devices match" : "No devices"}
         />
       ) : (
         <div className="th-alerts-scroll th-table-scroll" data-loading={refreshing || undefined}>
-          <table className="th-alerts-table">
+          <table className="th-alerts-table th-cp-devices" data-mobile="cards">
             <colgroup>
               <col />
+              <col className="w-[130px]" />
+              <col className="w-[120px]" />
+              <col className="w-[14%]" />
+              <col className="w-[15%]" />
               <col className="w-[150px]" />
-              <col className="w-[18%]" />
-              <col className="w-[18%]" />
-              <col className="w-[150px]" />
-              <col className="w-[110px]" />
+              <col className="w-[80px]" />
+              <col className="w-[132px]" />
             </colgroup>
             <thead>
               <tr>
                 <th>Device</th>
                 <th>Status</th>
+                <th>Health</th>
                 <th>Group</th>
                 <th>User</th>
                 <th>IP address</th>
                 <th className="text-right">Agent</th>
+                <th className="text-right">
+                  <span className="sr-only">Connect</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {devices.map((device: Device, index) => {
                 const state = device.freshness_state ?? device.status ?? "offline";
+                const health = healthById.get(device.id);
                 return (
                   <tr
                     key={device.id}
-                    className="th-alerts-row cursor-pointer"
-                    style={{ "--row": index } as CSSProperties}
-                    onClick={() => navigate(`/devices?device=${device.id}`)}
+                    className="th-alerts-row th-cp-row"
+                    data-selected={selectedId === device.id || undefined}
+                    style={{ "--row": index, "--row-tone": freshnessTone(state) } as CSSProperties}
+                    tabIndex={0}
+                    aria-label={`Open ${deviceDisplayName(device)}`}
+                    onClick={() => onOpenDevice(device)}
+                    onKeyDown={(e) => {
+                      if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        onOpenDevice(device);
+                      }
+                    }}
                   >
                     <td>
-                      <span className="th-alerts-primary">{deviceDisplayName(device)}</span>
-                      <span className="th-alerts-secondary font-mono">{device.hostname}</span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="th-cp-platform" aria-hidden="true">
+                          <PlatformIcon platform={device.platform} size={15} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="th-alerts-primary">{deviceDisplayName(device)}</span>
+                          <span className="th-alerts-secondary font-mono">{device.hostname}</span>
+                        </span>
+                      </div>
                     </td>
                     <td>
                       <span className="flex items-center gap-2">
                         <span className="th-status-dot" data-state={state} aria-hidden="true" />
-                        <span className="th-alerts-primary !mt-0 capitalize">{state}</span>
+                        <span key={state} className="th-alerts-primary th-share-count !mt-0 capitalize">
+                          {state}
+                        </span>
                       </span>
                       <span className="th-alerts-secondary">
                         {device.last_seen ? timeAgo(device.last_seen) : "Never"}
                       </span>
                     </td>
-                    <td>
+                    <td data-m={health ? undefined : "hide"}>
+                      {health ? (
+                        <HealthBadge state={health.health_state} score={health.health_score} showLabel />
+                      ) : (
+                        <span className="th-alerts-secondary !mt-0">—</span>
+                      )}
+                    </td>
+                    <td data-m="hide">
                       <span className="th-alerts-primary">{device.group_name || "No group"}</span>
                     </td>
-                    <td>
+                    <td data-m="hide">
                       <span className="th-alerts-primary">{device.current_user || "—"}</span>
                       <span className="th-alerts-secondary">{device.domain || ""}</span>
                     </td>
-                    <td>
+                    <td data-m="hide">
                       <span className="th-alerts-primary font-mono text-[12px]">{device.public_ip || "—"}</span>
                       <span className="th-alerts-secondary font-mono">{device.local_ip || ""}</span>
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" data-m="hide">
                       <span className="th-alerts-primary font-mono text-[12px]">{device.agent_version || "—"}</span>
+                    </td>
+                    <td
+                      className="text-right"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <DeviceConnect
+                        device={device}
+                        status={connectById.get(device.id)}
+                        platformCore={features.FEATURE_PLATFORM_CORE}
+                        onOpenDevice={onOpenDevice}
+                        onToast={showToast}
+                      />
                     </td>
                   </tr>
                 );
@@ -609,14 +944,111 @@ function DevicesTab({ clientId }: { clientId: number }) {
           loading={refreshing}
         />
       )}
+      {toast && (
+        <div
+          role="status"
+          className="th-toast fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
+          style={{
+            background: `color-mix(in srgb, ${toast.ok ? TONE.online : TONE.critical} 15%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${toast.ok ? TONE.online : TONE.critical} 30%, transparent)`,
+            color: toast.ok ? TONE.online : TONE.critical,
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * The row's Connect, as on the Devices page: Windows opens Remote Support
+ * directly; other platforms get the split Connect menu (SSH, Winbox, WebFig,
+ * terminal). Disabled while the device is offline; stale stays connectable.
+ */
+function DeviceConnect({
+  device,
+  status,
+  platformCore,
+  onOpenDevice,
+  onToast,
+}: {
+  device: Device;
+  status?: ConnectRowStatus;
+  platformCore: boolean;
+  onOpenDevice: (device: Device) => void;
+  onToast: (message: string, ok: boolean) => void;
+}) {
+  const [launching, setLaunching] = useState(false);
+  const isWindows = !device.platform || device.platform.toLowerCase() === "windows";
+  const offline = isDeviceOffline(device);
+  const canConnect =
+    !offline &&
+    (isWindows
+      ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+      : hasStructuralConnectMethod(device));
+
+  if (!isWindows && platformCore) {
+    return (
+      <div className="inline-flex">
+        <ConnectMenu
+          variant="row"
+          lazyLoad
+          deviceId={device.id}
+          hostname={device.hostname}
+          initialState={status?.state ?? (canConnect ? null : "unavailable")}
+          initialStateReason={status?.reason ?? (canConnect ? null : "No Connect method available for this device yet")}
+          disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
+          onOpenTerminal={() => {
+            // Popup blocked: the drawer still gets the operator to the device.
+            if (!openTerminalWindow(device)) onOpenDevice(device);
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <ConnectButton
+      size="sm"
+      loading={launching}
+      disabled={!canConnect || launching}
+      aria-label={`Connect to ${deviceDisplayName(device)}`}
+      title={
+        offline
+          ? OFFLINE_CONNECT_REASON
+          : isWindows
+            ? device.rustdesk_conflict_detected
+              ? "Remote Support ID conflict"
+              : canConnect
+                ? "Open TECHI Remote Support"
+                : `${TERMS.remoteSupportId} not resolved yet`
+            : "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+      }
+      onClick={
+        isWindows
+          ? async () => {
+              setLaunching(true);
+              try {
+                const res = await getConnectUrl(device.id);
+                launchConnect(res.connect_url, buildRustDeskFallbackUrlFromTechiUrl(res.connect_url), () =>
+                  onToast(`Opening the ${TERMS.remoteSupport} app instead`, true),
+                );
+              } catch (err) {
+                onToast(err instanceof Error ? err.message : "Connect failed", false);
+              } finally {
+                setLaunching(false);
+              }
+            }
+          : () => onOpenDevice(device)
+      }
+    />
   );
 }
 
 // ─── Alerts ──────────────────────────────────────────────────────────────────
 
-function AlertsTab({ clientId }: { clientId: number }) {
-  const navigate = useNavigate();
+function AlertsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
   const [state, setState] = useState<"open" | "resolved">("open");
   const { data, loading, refreshing } = useCachedQuery(`page.client.${clientId}.alerts:${state}`, () =>
     getAlerts({ clientId, state, limit: 100 }),
@@ -676,7 +1108,7 @@ function AlertsTab({ clientId }: { clientId: number }) {
                     key={alert.id}
                     className="th-alerts-row cursor-pointer"
                     style={{ "--row": index } as CSSProperties}
-                    onClick={() => alert.device_id && navigate(`/devices?device=${alert.device_id}`)}
+                    onClick={() => alert.device_id && onOpenDevice(alert.device_id)}
                   >
                     <td>
                       <span className="th-status-chip capitalize" style={{ "--chip-tone": tone } as CSSProperties}>
@@ -722,11 +1154,12 @@ function AlertsTab({ clientId }: { clientId: number }) {
 function ActivityList({
   page,
   compact = false,
+  onOpenDevice,
 }: {
   page: Awaited<ReturnType<typeof getClientActivity>>;
   compact?: boolean;
+  onOpenDevice: (id: number) => void;
 }) {
-  const navigate = useNavigate();
   return (
     <ul className={`flex flex-col ${compact ? "px-5 pb-3" : ""}`}>
       {page.items.map((entry, index) => {
@@ -762,7 +1195,7 @@ function ActivityList({
                     <button
                       type="button"
                       className="th-alerts-link font-medium"
-                      onClick={() => navigate(`/devices?device=${entry.device_id}`)}
+                      onClick={() => entry.device_id != null && onOpenDevice(entry.device_id)}
                     >
                       {deviceName}
                     </button>
@@ -789,7 +1222,7 @@ function ActivityList({
   );
 }
 
-function ActivityTab({ clientId }: { clientId: number }) {
+function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
   const [page, setPage] = useState(1);
   // Audit data: memory only, never written to the browser's storage.
   const { data, loading, refreshing } = useCachedQuery(`mem.client.${clientId}.activity:${page}`, () =>
@@ -809,7 +1242,7 @@ function ActivityTab({ clientId }: { clientId: number }) {
         />
       ) : (
         <div className="th-alerts-scroll" data-loading={refreshing || undefined}>
-          <ActivityList page={data} />
+          <ActivityList page={data} onOpenDevice={onOpenDevice} />
         </div>
       )}
       {data && data.total > 0 && (
@@ -828,8 +1261,7 @@ function ActivityTab({ clientId }: { clientId: number }) {
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
-function AnalyticsTab({ clientId }: { clientId: number }) {
-  const navigate = useNavigate();
+function AnalyticsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
   const { data, loading, error } = useCachedQuery(`page.client.${clientId}.insights`, () =>
     getFleetInsights(30, clientId),
   );
@@ -925,7 +1357,7 @@ function AnalyticsTab({ clientId }: { clientId: number }) {
                   key={device.device_id}
                   className="th-alerts-row cursor-pointer"
                   style={{ "--row": index } as CSSProperties}
-                  onClick={() => navigate(`/devices?device=${device.device_id}`)}
+                  onClick={() => onOpenDevice(device.device_id)}
                 >
                   <td>
                     <span className="th-alerts-primary">{device.name}</span>

@@ -118,6 +118,7 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.getByRole("tab", { name: /Devices/ }).click();
     await expect(page.locator("tbody tr").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Connect to/ }).first()).toBeVisible();
     await page.getByRole("tab", { name: /Alerts/ }).click();
     await expect(page.getByRole("tab", { name: "Open" })).toBeVisible();
     await page.getByRole("tab", { name: /Activity/ }).click();
@@ -145,4 +146,35 @@ test("an unknown client shows a clear message", async ({ page }) => {
   );
   await page.goto("/clients/99");
   await expect(page.getByText("Couldn't open this client")).toBeVisible();
+});
+
+test("a client's device connects from its row and opens the drawer in place", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "the drawer is the desktop device view");
+  await northwindProfile(page);
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /Devices/ }).click();
+
+  const row = page.locator("tr.th-cp-row", { hasText: "NW-RECEPTION-01" });
+  await expect(row.getByRole("button", { name: "Connect to NW-RECEPTION-01" })).toBeEnabled();
+  // Offline devices keep the button but cannot connect.
+  await expect(
+    page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" }).getByRole("button", { name: /Connect to/ }),
+  ).toBeDisabled();
+  await page.screenshot({ path: test.info().outputPath("profile-devices.png") });
+
+  await row.locator("td").first().click();
+  await expect(page).toHaveURL(/\/clients\/1$/);
+  const drawer = page.locator(".th-drawer-panel");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "NW-RECEPTION-01" })).toBeVisible();
+  await expect(row).toHaveAttribute("data-selected", "true");
+  await page.screenshot({ path: test.info().outputPath("profile-device-drawer.png") });
+
+  await drawer.getByRole("button", { name: "Close" }).click();
+  await expect(drawer).toBeHidden();
+
+  // The status filter narrows the list.
+  await page.getByRole("radio", { name: /Offline/ }).click();
+  await expect(page.locator("tr.th-cp-row")).toHaveCount(1);
+  await expect(page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" })).toBeVisible();
 });

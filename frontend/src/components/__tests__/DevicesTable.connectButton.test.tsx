@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasStructuralConnectMethod } from "../DevicesTable";
+import { hasStructuralConnectMethod } from "../../utils/deviceStatus";
 import type { Device } from "../../api/devices";
 
 // Production bug fix: the Device Catalog Connect button used the Windows-
