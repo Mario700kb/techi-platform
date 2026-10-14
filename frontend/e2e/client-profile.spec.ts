@@ -48,7 +48,33 @@ async function northwindProfile(page: Page) {
       },
     }),
   );
-  await page.route("**/api/v1/clients/1/activity*", (route) =>
+  await page.route("**/api/v1/clients/1/activity/summary*", (route) =>
+    route.fulfill({
+      json: {
+        days: 30,
+        since: iso(60 * 24 * 30),
+        events: 64,
+        remote_connects: 41,
+        remote_devices: 9,
+        last_remote_at: iso(5),
+        terminal_sessions: 4,
+        terminal_seconds: 2710,
+        remote_sessions: 0,
+        remote_minutes: 0,
+        operators: [
+          { username: "mario", events: 38, remote_connects: 29, last_at: iso(5) },
+          { username: "denis", events: 19, remote_connects: 10, last_at: iso(40) },
+          { username: "sabina", events: 7, remote_connects: 2, last_at: iso(60 * 30) },
+        ],
+        devices: [
+          { device_id: 1, name: "NW-RECEPTION-01", remote_connects: 18, last_at: iso(5) },
+          { device_id: 3, name: "NW-SRV-01", remote_connects: 11, last_at: iso(40) },
+          { device_id: 2, name: "NW-DOCTOR-02", remote_connects: 6, last_at: iso(60 * 26) },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/clients/1/activity?*", (route) =>
     route.fulfill({
       json: {
         total: 3,
@@ -63,7 +89,7 @@ async function northwindProfile(page: Page) {
             entity_id: 1,
             device_id: 1,
             client_id: 1,
-            details_json: '{"ip": "10.0.0.5"}',
+            details_json: '{"techi_remote_id": "250862989", "remote_support_status": "online", "ip": "185.66.128.121"}',
             created_at: iso(5),
           },
           {
@@ -87,7 +113,7 @@ async function northwindProfile(page: Page) {
             entity_id: null,
             device_id: 3,
             client_id: 1,
-            details_json: '{"reason": "operator_closed"}',
+            details_json: '{"reason": "operator_closed", "duration_seconds": 1520, "engine": "bash"}',
             created_at: iso(180),
           },
         ],
@@ -217,4 +243,32 @@ test("a long device list keeps its header pinned under the top bar", async ({ pa
     expect(Math.abs(head.y - top)).toBeLessThan(2);
   }
   await page.screenshot({ path: test.info().outputPath("profile-devices-sticky.png") });
+});
+
+test("activity shows who connected where, for how long, and filters by type and operator", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop");
+  await northwindProfile(page);
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /Activity/ }).click();
+
+  await expect(page.locator(".th-onb-stat", { hasText: "Remote connections" })).toContainText("41");
+  await expect(page.locator(".th-onb-stat", { hasText: "Terminal & SSH time" })).toContainText("45 min");
+  await expect(page.locator(".th-onb-stat", { hasText: "Remote Support time" })).toContainText("agent 2.1.24");
+  await expect(page.getByRole("heading", { name: "Most reached devices" })).toBeVisible();
+
+  const log = page.locator("table.th-cp-log");
+  await expect(log.locator("tr.th-cp-day").first()).toContainText("Today");
+  const connect = log.locator("tr.th-alerts-row", { hasText: "Remote connect" });
+  await expect(connect).toContainText("Remote Support online");
+  await expect(connect).toContainText("185.66.128.121");
+  await expect(log.locator("tr.th-alerts-row", { hasText: "Terminal closed" })).toContainText("25 min");
+  await page.screenshot({ path: test.info().outputPath("profile-activity.png"), fullPage: true });
+
+  const requests: string[] = [];
+  page.on("request", (r) => r.url().includes("/clients/1/activity?") && requests.push(r.url()));
+  await page.getByRole("radio", { name: "Terminal & SSH" }).click();
+  await expect.poll(() => requests.some((u) => u.includes("kind=terminal"))).toBe(true);
+  await page.locator(".th-cp-meter", { hasText: "mario" }).click();
+  await expect.poll(() => requests.some((u) => u.includes("operator=mario"))).toBe(true);
+  await expect(page.getByRole("button", { name: "Remove operator filter mario" })).toBeVisible();
 });

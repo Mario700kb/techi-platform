@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
@@ -57,20 +57,124 @@ class AuditLogRepository:
             client_id = self.db.query(Device.client_id).filter(Device.id == device_id).scalar()
         return device_id, client_id
 
-    def for_client(self, client_id: int, device_ids: Optional[List[int]], limit: int, offset: int) -> Tuple[int, List[AuditLog]]:
+    def _client_query(self, client_id: int, device_ids: Optional[List[int]]):
+        q = self.db.query(AuditLog)
+        if device_ids is None:
+            return q.filter(AuditLog.client_id == client_id)
+        return q.filter(AuditLog.device_id.in_(device_ids or [-1]))
+
+    def for_client(
+        self,
+        client_id: int,
+        device_ids: Optional[List[int]],
+        limit: int,
+        offset: int,
+        *,
+        actions: Optional[List[str]] = None,
+        operator_username: Optional[str] = None,
+    ) -> Tuple[int, List[AuditLog]]:
         """Entries about a client or its devices, newest first.
 
         device_ids None: the whole client. A list: an operator who sees only
         those devices of it gets only their entries.
         """
-        q = self.db.query(AuditLog)
-        if device_ids is None:
-            q = q.filter(AuditLog.client_id == client_id)
-        else:
-            q = q.filter(AuditLog.device_id.in_(device_ids or [-1]))
+        q = self._client_query(client_id, device_ids)
+        if actions:
+            q = q.filter(AuditLog.action.in_(actions))
+        if operator_username:
+            q = q.filter(AuditLog.operator_username == operator_username)
         total = q.count()
         rows = q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
         return total, rows
+
+    def client_summary(
+        self,
+        client_id: int,
+        device_ids: Optional[List[int]],
+        since: datetime,
+        *,
+        remote_action: str,
+        duration_actions: List[str],
+        top: int = 6,
+    ) -> dict:
+        """Counts and session time for a client's entries since `since`.
+
+        Session time comes from the entries that carry it: terminal and SSH
+        sessions (duration_seconds, written once per session id but sometimes
+        twice when both sides report the close) and Remote Support sessions
+        ended by agents that report them (duration_minutes).
+        """
+        since_naive = since.replace(tzinfo=None)
+        base = self._client_query(client_id, device_ids).filter(AuditLog.created_at >= since_naive)
+        remote = base.filter(AuditLog.action == remote_action)
+
+        events = base.count()
+        remote_connects = remote.count()
+        remote_devices = remote.with_entities(func.count(func.distinct(AuditLog.device_id))).scalar() or 0
+        last_remote_at = remote.with_entities(func.max(AuditLog.created_at)).scalar()
+
+        operators = (
+            base.with_entities(
+                AuditLog.operator_username,
+                func.count(AuditLog.id),
+                func.sum(case((AuditLog.action == remote_action, 1), else_=0)),
+                func.max(AuditLog.created_at),
+            )
+            .filter(AuditLog.operator_username.isnot(None), AuditLog.operator_username != "unknown")
+            .group_by(AuditLog.operator_username)
+            .order_by(func.count(AuditLog.id).desc())
+            .limit(top)
+            .all()
+        )
+        devices = (
+            remote.with_entities(AuditLog.device_id, func.count(AuditLog.id), func.max(AuditLog.created_at))
+            .filter(AuditLog.device_id.isnot(None))
+            .group_by(AuditLog.device_id)
+            .order_by(func.count(AuditLog.id).desc(), func.max(AuditLog.created_at).desc())
+            .limit(top)
+            .all()
+        )
+
+        terminal_seconds: dict = {}
+        remote_sessions = 0
+        remote_minutes = 0
+        for action, details_json in base.filter(AuditLog.action.in_(duration_actions)).with_entities(
+            AuditLog.action, AuditLog.details_json
+        ):
+            try:
+                details = json.loads(details_json or "{}") or {}
+            except (TypeError, ValueError):
+                continue
+            if action == "remote_session_ended":
+                minutes = _as_int(details.get("duration_minutes"))
+                if minutes is not None:
+                    remote_sessions += 1
+                    remote_minutes += max(minutes, 0)
+                continue
+            seconds = _as_int(details.get("duration_seconds"))
+            if seconds is None:
+                continue
+            key = (action, details.get("session_id") or id(details))
+            terminal_seconds[key] = max(terminal_seconds.get(key, 0), max(seconds, 0))
+
+        return {
+            "events": events,
+            "remote_connects": remote_connects,
+            "remote_devices": remote_devices,
+            "last_remote_at": last_remote_at,
+            "terminal_sessions": len(terminal_seconds),
+            "terminal_seconds": sum(terminal_seconds.values()),
+            "remote_sessions": remote_sessions,
+            "remote_minutes": remote_minutes,
+            "operators": [
+                {"username": name, "events": count, "remote_connects": int(connects or 0), "last_at": last}
+                for name, count, connects, last in operators
+            ],
+            "devices": [
+                {"device_id": device_id, "remote_connects": count, "last_at": last}
+                for device_id, count, last in devices
+            ],
+        }
 
     def get_multi(
         self,

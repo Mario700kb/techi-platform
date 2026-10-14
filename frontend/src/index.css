@@ -6857,6 +6857,7 @@ button.th-client-group:hover {
 }
 .th-cp-legend small,
 .th-cp-meter small {
+  white-space: nowrap;
   font-size: 12px;
   text-align: right;
   color: var(--th-text-faint);
@@ -6886,7 +6887,7 @@ button.th-client-group:hover {
 }
 .th-cp-meter {
   display: grid;
-  grid-template-columns: minmax(0, 13rem) minmax(48px, 1fr) 44px 40px;
+  grid-template-columns: minmax(0, 13rem) minmax(48px, 1fr) 44px 56px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -6951,5 +6952,83 @@ button.th-client-group:hover {
   .th-cp-meter {
     grid-template-columns: minmax(0, 1fr) 64px 36px 36px;
     gap: 10px;
+  }
+}
+
+/* ── Client profile activity ── each entry carries a kind mark (remote,
+   terminal/SSH, action, credential; red when it failed), a duration pill when
+   the session reported one, and day separators in the log. */
+.th-cp-kind {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--kind-tone);
+  border: 1px solid color-mix(in srgb, var(--kind-tone) 28%, transparent);
+  background: color-mix(in srgb, var(--kind-tone) 11%, transparent);
+}
+.th-cp-duration {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-primary);
+  background: var(--th-chip-bg);
+  border: 1px solid var(--th-border-default);
+  animation: th-count-in 260ms var(--th-ease) both;
+}
+.th-cp-recent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 0;
+}
+.th-cp-day > td {
+  padding: 14px 16px 6px !important;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--th-text-faint);
+  background: transparent !important;
+  border-bottom: 1px solid var(--th-border-subtle);
+  animation: th-fade 240ms var(--th-ease) backwards;
+}
+.th-cp-day:first-child > td {
+  padding-top: 10px !important;
+}
+.th-cp-meter[data-selected="true"] {
+  background: color-mix(in srgb, var(--th-accent) 9%, transparent);
+  color: var(--th-text-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--th-accent) 30%, transparent);
+}
+.th-cp-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  cursor: pointer;
+  animation: th-pop-in 180ms var(--th-ease-out);
+}
+@media (max-width: 767px) {
+  .th-alerts-table.th-cp-log[data-mobile="cards"] tbody tr.th-cp-day {
+    padding: 12px 14px 4px;
+    box-shadow: none;
+  }
+  .th-alerts-table.th-cp-log[data-mobile="cards"] tbody tr.th-cp-day > td {
+    padding: 0 !important;
+    border: 0;
+  }
+  .th-alerts-table.th-cp-log[data-mobile="cards"] tbody td:last-child {
+    margin-left: auto;
   }
 }

@@ -172,8 +172,38 @@ export interface ClientActivityPage extends AuditLogPage {
   device_names: Record<number, string>;
 }
 
-export async function getClientActivity(clientId: number, limit = 50, offset = 0): Promise<ClientActivityPage> {
-  return fetchJson<ClientActivityPage>(`/api/v1/clients/${clientId}/activity?limit=${limit}&offset=${offset}`);
+export type ClientActivityKind = "all" | "remote" | "terminal" | "actions" | "credentials";
+
+export async function getClientActivity(
+  clientId: number,
+  limit = 50,
+  offset = 0,
+  filters: { kind?: ClientActivityKind; operator?: string | null } = {},
+): Promise<ClientActivityPage> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (filters.kind && filters.kind !== "all") params.set("kind", filters.kind);
+  if (filters.operator) params.set("operator", filters.operator);
+  return fetchJson<ClientActivityPage>(`/api/v1/clients/${clientId}/activity?${params.toString()}`);
+}
+
+export interface ClientActivitySummary {
+  days: number;
+  since: string;
+  events: number;
+  remote_connects: number;
+  remote_devices: number;
+  last_remote_at: string | null;
+  terminal_sessions: number;
+  terminal_seconds: number;
+  /** Remote Support sessions ended, from agents that report sessions; 0 until then. */
+  remote_sessions: number;
+  remote_minutes: number;
+  operators: { username: string; events: number; remote_connects: number; last_at: string | null }[];
+  devices: { device_id: number; name: string; remote_connects: number; last_at: string | null }[];
+}
+
+export async function getClientActivitySummary(clientId: number, days = 30): Promise<ClientActivitySummary> {
+  return fetchJson<ClientActivitySummary>(`/api/v1/clients/${clientId}/activity/summary?days=${days}`);
 }
 
 export type DocumentCategory = "general" | "network" | "procedures" | "contacts" | "hardware" | "software";

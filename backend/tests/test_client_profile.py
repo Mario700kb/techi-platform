@@ -211,3 +211,63 @@ def test_resolved_alerts_list_newest_resolution_first(db):
     assert all(a["state"] == "resolved" for a in resolved)
     unscoped = api.get("/alerts/", params={"state": "resolved"}).json()
     assert all(a["state"] == "resolved" for a in unscoped)
+
+
+def test_activity_filters_by_kind_and_operator(db):
+    repo = AuditLogRepository(db)
+    repo.create(operator_id=1, operator_username="mario", action="remote_connect", entity_type="device",
+                entity_id=101)
+    repo.create(operator_id=2, operator_username="denis", action="remote_connect", entity_type="device",
+                entity_id=102)
+    repo.create(operator_id=1, operator_username="mario", action="terminal_session_closed",
+                entity_type="terminal_session", details={"device_id": 103, "session_id": "s1",
+                                                         "duration_seconds": 90})
+    repo.create(operator_id=1, operator_username="mario", action="action_queued", entity_type="remote_action",
+                details={"device_id": 101, "action_type": "restart_device"})
+    api = _api(db, _operator(db, "boss", role="admin"))
+
+    def actions(**params):
+        return sorted(item["action"] for item in api.get("/clients/1/activity", params=params).json()["items"])
+
+    assert actions(kind="remote") == ["remote_connect", "remote_connect"]
+    assert actions(kind="terminal") == ["terminal_session_closed"]
+    assert actions(kind="actions") == ["action_queued"]
+    assert actions(kind="remote", operator="denis") == ["remote_connect"]
+    assert len(actions()) == 4
+    assert api.get("/clients/1/activity", params={"kind": "nope"}).status_code == 422
+
+
+def test_activity_summary_counts_connections_operators_devices_and_session_time(db):
+    repo = AuditLogRepository(db)
+    for operator, device_id in (("mario", 101), ("mario", 101), ("denis", 102), ("mario", 201)):
+        repo.create(operator_id=1, operator_username=operator, action="remote_connect", entity_type="device",
+                    entity_id=device_id)
+    # One terminal session whose close was reported twice, and one SSH session.
+    for reason in ("agent_gone", "operator_closed"):
+        repo.create(operator_id=1, operator_username="mario", action="terminal_session_closed",
+                    entity_type="terminal_session",
+                    details={"device_id": 103, "session_id": "t1", "duration_seconds": 120, "reason": reason})
+    repo.create(operator_id=1, operator_username="mario", action="ssh_session_ended", entity_type="ssh_session",
+                details={"device_id": 103, "session_id": "s1", "duration_seconds": 30})
+    repo.create(operator_id=None, operator_username="denis", action="remote_session_ended", entity_type="device",
+                entity_id=102, details={"duration_minutes": 25})
+    old = repo.create(operator_id=1, operator_username="mario", action="remote_connect", entity_type="device",
+                      entity_id=101)
+    old.created_at = utcnow().replace(tzinfo=None) - timedelta(days=40)
+    db.commit()
+
+    body = _api(db, _operator(db, "boss", role="admin")).get("/clients/1/activity/summary").json()
+    assert body["days"] == 30
+    assert body["remote_connects"] == 3
+    assert body["remote_devices"] == 2
+    assert body["terminal_sessions"] == 2
+    assert body["terminal_seconds"] == 150
+    assert (body["remote_sessions"], body["remote_minutes"]) == (1, 25)
+    assert [(o["username"], o["remote_connects"]) for o in body["operators"]] == [("mario", 2), ("denis", 1)]
+    assert [(d["name"], d["remote_connects"]) for d in body["devices"]] == [("host-101", 2), ("host-102", 1)]
+
+    op = _operator(db, "partial")
+    _team(db, op, device_id=102)
+    partial = _api(db, op).get("/clients/1/activity/summary").json()
+    assert partial["remote_connects"] == 1
+    assert [d["name"] for d in partial["devices"]] == ["host-102"]

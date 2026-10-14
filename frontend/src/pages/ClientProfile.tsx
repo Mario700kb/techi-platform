@@ -10,12 +10,15 @@ import {
   Box,
   Boxes,
   Cpu,
+  FileText,
   HardDrive,
+  KeyRound,
   ExternalLink,
   HeartPulse,
   LayoutDashboard,
   Layers,
   Monitor,
+  MonitorSmartphone,
   Network,
   PackageCheck,
   Printer,
@@ -23,15 +26,28 @@ import {
   Search,
   Server,
   ServerOff,
+  SquareTerminal,
   Ticket,
+  Timer,
+  Users,
   Wifi,
+  X,
+  Zap,
 } from "lucide-react";
 
-import { ACTION_LABELS } from "../api/audit";
+import { ACTION_LABELS, AuditLogEntry } from "../api/audit";
 import { useAuth } from "../auth/AuthContext";
 import ClientDocuments from "../components/ClientDocuments";
 import { getAlerts } from "../api/alerts";
-import { ClientProfile, getClientActivity, getClientProfile, getClients, getGroups } from "../api/clients";
+import {
+  ClientActivityKind,
+  ClientProfile,
+  getClientActivity,
+  getClientActivitySummary,
+  getClientProfile,
+  getClients,
+  getGroups,
+} from "../api/clients";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { Device, DeviceStats, getDevice, getDevices, getDeviceTableDetails, getFleetInsights } from "../api/devices";
 import { getConnectUrl } from "../api/remoteSupport";
@@ -73,7 +89,7 @@ type StatusFilter = "all" | "online" | "stale" | "offline";
 type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
 
 const DEVICE_PAGE_SIZES = [20, 50];
-const ACTIVITY_PAGE_SIZE = 25;
+const ACTIVITY_PAGE_SIZE = 50;
 
 function initials(name: string): string {
   const words = name
@@ -704,6 +720,8 @@ function MeterRow({
   total,
   segments,
   tone = "var(--th-accent)",
+  share,
+  selected = false,
   onClick,
   title,
 }: {
@@ -714,6 +732,9 @@ function MeterRow({
   total: number;
   segments?: RingSegment[];
   tone?: string;
+  /** Replaces the share column, e.g. with when the item was last seen. */
+  share?: string;
+  selected?: boolean;
   onClick: () => void;
   title?: string;
 }) {
@@ -721,7 +742,14 @@ function MeterRow({
   const parts = segments?.filter((segment) => segment.value > 0) ?? [];
   return (
     <li className="th-share-row" style={{ "--i": index } as CSSProperties}>
-      <button type="button" className="th-cp-meter" onClick={onClick} title={title}>
+      <button
+        type="button"
+        className="th-cp-meter"
+        data-selected={selected || undefined}
+        aria-pressed={selected || undefined}
+        onClick={onClick}
+        title={title}
+      >
         <span className="th-cp-meter-name">
           {mark}
           <span className="truncate">{label}</span>
@@ -744,7 +772,7 @@ function MeterRow({
         <strong key={count} className="th-share-count tabular-nums">
           {formatCount(count)}
         </strong>
-        <small className="tabular-nums">{percent(count, total)}</small>
+        <small className="tabular-nums">{share ?? percent(count, total)}</small>
       </button>
     </li>
   );
@@ -1018,7 +1046,7 @@ function OverviewTab({
         ) : !activity || activity.items.length === 0 ? (
           <QuietLine>No activity yet.</QuietLine>
         ) : (
-          <ActivityList page={activity} compact onOpenDevice={onOpenDevice} />
+          <ActivityList page={activity} onOpenDevice={onOpenDevice} />
         )}
       </SectionCard>
     </div>
@@ -1519,69 +1547,184 @@ function AlertsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice:
 
 // ─── Activity ────────────────────────────────────────────────────────────────
 
+type ActivityKind = Exclude<ClientActivityKind, "all"> | "other";
+
+const ACTIVITY_KIND_OF: Record<string, ActivityKind> = {
+  remote_connect: "remote",
+  remote_session_started: "remote",
+  remote_session_ended: "remote",
+  terminal_session_opened: "terminal",
+  terminal_session_closed: "terminal",
+  terminal_session_denied: "terminal",
+  terminal_session_expired: "terminal",
+  ssh_session_started: "terminal",
+  ssh_session_ended: "terminal",
+  ssh_connection_failed: "terminal",
+  ssh_authentication_failed: "terminal",
+  action_queued: "actions",
+  action_cancelled: "actions",
+  maintenance_entered: "actions",
+  maintenance_cleared: "actions",
+  note_created: "actions",
+  vault_credential_revealed: "credentials",
+  vault_credential_assigned: "credentials",
+  ssh_credential_resolved: "credentials",
+};
+
+const ACTIVITY_KIND_META: Record<ActivityKind, { icon: typeof Monitor; tone: string }> = {
+  remote: { icon: MonitorSmartphone, tone: TONE.info },
+  terminal: { icon: SquareTerminal, tone: TONE.online },
+  actions: { icon: Zap, tone: TONE.warning },
+  credentials: { icon: KeyRound, tone: TONE.maintenance },
+  other: { icon: FileText, tone: TONE.neutral },
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  webfig: "WebFig",
+  winbox: "Winbox",
+  ssh: "SSH",
+  terminal: "Terminal",
+  remote_support: "Remote Support",
+  rdp: "RDP",
+};
+
+const FAILED_ACTIONS = new Set([
+  "terminal_session_denied",
+  "ssh_connection_failed",
+  "ssh_authentication_failed",
+  "action_cancelled",
+]);
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} h ${String(rest).padStart(2, "0")} min` : `${hours} h`;
+}
+
+interface ActivityView {
+  kind: ActivityKind;
+  label: string;
+  method: string | null;
+  facts: string[];
+  ip: string | null;
+  status: { label: string; tone: string } | null;
+  duration: string | null;
+  failed: boolean;
+}
+
+/** What one audit entry says, in the words and parts the activity log shows. */
+function describeActivity(entry: AuditLogEntry): ActivityView {
+  const d = parseDetails(entry.details_json);
+  const text = (key: string) => (typeof d[key] === "string" && d[key] ? (d[key] as string) : null);
+  const num = (key: string) => (typeof d[key] === "number" ? (d[key] as number) : null);
+  const kind = ACTIVITY_KIND_OF[entry.action] ?? "other";
+
+  let method = text("method");
+  if (!method && (entry.action === "remote_connect" || kind === "remote")) method = "remote_support";
+  if (!method && entry.action.startsWith("ssh_")) method = "ssh";
+  if (!method && entry.action.startsWith("terminal_")) method = text("engine") ? "terminal" : null;
+
+  const facts: string[] = [];
+  const rs = text("remote_support_status");
+  const status =
+    entry.action === "remote_connect" && rs
+      ? {
+          label: `Remote Support ${rs}`,
+          tone: rs === "online" ? TONE.online : rs === "offline" ? TONE.offline : TONE.warning,
+        }
+      : null;
+  const reason = text("reason");
+  if (reason && !reason.startsWith("Connect:")) facts.push(humanize(reason));
+  if (text("action_type")) facts.push(humanize(text("action_type")!));
+  if (text("engine")) facts.push(text("engine")!);
+  if (text("ssh_username")) facts.push(`as ${text("ssh_username")}`);
+  if (text("credential_source")) facts.push(`${humanize(text("credential_source")!)} credential`);
+  if (text("name") && kind === "credentials") facts.push(text("name")!);
+  if (text("note")) facts.push(`“${text("note")}”`);
+  if (text("message")) facts.push(text("message")!);
+  if (text("attribution") === "unattributed") facts.push("No Connect click before it");
+
+  const seconds = num("duration_seconds");
+  const minutes = num("duration_minutes");
+  const duration = seconds != null ? formatDuration(seconds) : minutes != null ? formatDuration(minutes * 60) : null;
+
+  return {
+    kind,
+    label: ACTION_LABELS[entry.action] ?? humanize(entry.action),
+    method: method ? (METHOD_LABELS[method] ?? humanize(method)) : null,
+    facts,
+    ip: text("ip"),
+    status,
+    duration,
+    failed: FAILED_ACTIONS.has(entry.action),
+  };
+}
+
+function KindMark({ kind, failed = false }: { kind: ActivityKind; failed?: boolean }) {
+  const meta = ACTIVITY_KIND_META[kind];
+  return (
+    <span
+      className="th-cp-kind"
+      style={{ "--kind-tone": failed ? TONE.critical : meta.tone } as CSSProperties}
+      aria-hidden="true"
+    >
+      <meta.icon className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
+/** The Overview's recent activity: one line per entry with its method and duration. */
 function ActivityList({
   page,
-  compact = false,
   onOpenDevice,
 }: {
   page: Awaited<ReturnType<typeof getClientActivity>>;
-  compact?: boolean;
   onOpenDevice: (id: number) => void;
 }) {
   return (
-    <ul className={`flex flex-col ${compact ? "px-5 pb-3" : ""}`}>
+    <ul className="flex flex-col px-5 pb-2">
       {page.items.map((entry, index) => {
-        const details = parseDetails(entry.details_json);
+        const view = describeActivity(entry);
         const deviceName = entry.device_id != null ? page.device_names[entry.device_id] : undefined;
-        const extra = [details.reason, details.method, details.action_type]
-          .filter((v): v is string => typeof v === "string" && v.length > 0)
-          .map(humanize)
-          .join(" · ");
         return (
           <li
             key={entry.id}
-            className={`th-share-row flex items-start gap-3 ${compact ? "py-2" : "px-4 py-2.5"}`}
+            className="th-share-row th-cp-recent"
             style={
-              {
-                "--i": index,
-                borderTop: index ? "1px solid var(--th-border-subtle)" : undefined,
-              } as CSSProperties
+              { "--i": index, borderTop: index ? "1px solid var(--th-border-subtle)" : undefined } as CSSProperties
             }
           >
-            <span className="th-onb-avatar mt-0.5" aria-hidden="true">
-              {(entry.operator_username ?? "S").charAt(0).toUpperCase()}
-            </span>
+            <KindMark kind={view.kind} failed={view.failed} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px]" style={{ color: "var(--th-text-primary)" }}>
                 <span className="font-semibold">{entry.operator_username ?? "System"}</span>{" "}
-                <span style={{ color: "var(--th-text-secondary)" }}>
-                  {(ACTION_LABELS[entry.action] ?? humanize(entry.action)).toLowerCase()}
-                </span>
+                <span style={{ color: "var(--th-text-secondary)" }}>{view.label.toLowerCase()}</span>
                 {deviceName && entry.device_id != null && (
                   <>
                     {" · "}
                     <button
                       type="button"
                       className="th-alerts-link font-medium"
-                      onClick={() => entry.device_id != null && onOpenDevice(entry.device_id)}
+                      onClick={() => onOpenDevice(entry.device_id!)}
                     >
                       {deviceName}
                     </button>
                   </>
                 )}
               </div>
-              {extra && (
-                <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
-                  {extra}
-                </div>
-              )}
+              <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                {[view.method, ...view.facts.slice(0, 1), view.ip].filter(Boolean).join(" · ") || " "}
+              </div>
             </div>
-            <span
-              className="flex-none text-right text-[12px] tabular-nums"
-              style={{ color: "var(--th-text-muted)" }}
-              title={formatDateTime(entry.created_at)}
-            >
-              {compact ? timeAgo(entry.created_at) : formatLocalDateTime(entry.created_at)}
+            <span className="flex flex-none flex-col items-end gap-0.5 text-[12px] tabular-nums">
+              <span style={{ color: "var(--th-text-muted)" }} title={formatDateTime(entry.created_at)}>
+                {timeAgo(entry.created_at)}
+              </span>
+              {view.duration && <span className="th-cp-duration">{view.duration}</span>}
             </span>
           </li>
         );
@@ -1590,39 +1733,386 @@ function ActivityList({
   );
 }
 
+const ACTIVITY_KINDS: { key: ClientActivityKind; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "remote", label: "Remote" },
+  { key: "terminal", label: "Terminal & SSH" },
+  { key: "actions", label: "Actions" },
+  { key: "credentials", label: "Credentials" },
+];
+
+function dayLabel(iso: string): string {
+  const day = formatLocalDateTime(iso, { year: "numeric", month: "short", day: "numeric", weekday: "short" });
+  const key = (when: Date) =>
+    formatLocalDateTime(when.toISOString(), { year: "numeric", month: "2-digit", day: "2-digit" });
+  const own = formatLocalDateTime(iso, { year: "numeric", month: "2-digit", day: "2-digit" });
+  const now = new Date();
+  if (own === key(now)) return `Today · ${day}`;
+  if (own === key(new Date(now.getTime() - 86_400_000))) return `Yesterday · ${day}`;
+  return day;
+}
+
 function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
   const [page, setPage] = useState(1);
+  const [kind, setKind] = useState<ClientActivityKind>("all");
+  const [operator, setOperator] = useState<string | null>(null);
   // Audit data: memory only, never written to the browser's storage.
-  const { data, loading, refreshing } = useCachedQuery(`mem.client.${clientId}.activity:${page}`, () =>
-    getClientActivity(clientId, ACTIVITY_PAGE_SIZE, (page - 1) * ACTIVITY_PAGE_SIZE),
+  const summary = useCachedQuery(`mem.client.${clientId}.activity-summary`, () =>
+    getClientActivitySummary(clientId, 30),
   );
+  const { data, loading, refreshing } = useCachedQuery(
+    `mem.client.${clientId}.activity:${JSON.stringify({ page, kind, operator })}`,
+    () => getClientActivity(clientId, ACTIVITY_PAGE_SIZE, (page - 1) * ACTIVITY_PAGE_SIZE, { kind, operator }),
+  );
+  const s = summary.data;
+  const kindIndex = ACTIVITY_KINDS.findIndex((k) => k.key === kind);
+  const topOperator = s?.operators[0];
 
+  const tiles = s
+    ? [
+        {
+          label: "Remote connections",
+          value: formatCount(s.remote_connects),
+          hint: s.remote_connects
+            ? `${formatCount(s.remote_devices)} devices · last ${timeAgo(s.last_remote_at)}`
+            : "None in 30 days",
+          icon: MonitorSmartphone,
+          tone: TONE.info,
+        },
+        {
+          label: "Active operators",
+          value: formatCount(s.operators.length),
+          hint: topOperator ? `${topOperator.username} most active` : "No one yet",
+          icon: Users,
+          tone: TONE.maintenance,
+        },
+        {
+          label: "Terminal & SSH time",
+          value: s.terminal_sessions ? formatDuration(s.terminal_seconds) : "—",
+          hint: `${formatCount(s.terminal_sessions)} ${s.terminal_sessions === 1 ? "session" : "sessions"}`,
+          icon: SquareTerminal,
+          tone: TONE.online,
+        },
+        {
+          label: "Remote Support time",
+          value: s.remote_sessions ? formatDuration(s.remote_minutes * 60) : "—",
+          hint: s.remote_sessions
+            ? `${formatCount(s.remote_sessions)} sessions measured`
+            : "Measured from agent 2.1.24",
+          icon: Timer,
+          tone: TONE.warning,
+        },
+      ]
+    : [];
+  const maxDevice = Math.max(1, ...(s?.devices ?? []).map((d) => d.remote_connects));
+  const maxOperator = Math.max(1, ...(s?.operators ?? []).map((o) => o.events));
+
+  const days = (data?.items ?? []).map((entry) => dayLabel(entry.created_at));
   return (
-    <div className="th-alerts-card">
-      {loading ? (
-        <PanelSkeleton rows={8} />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          className="py-10"
-          icon={<Activity className="h-5 w-5" />}
-          title="No activity yet"
-          description="Remote sessions, actions, terminal sessions and credential use on this client's devices appear here."
-        />
-      ) : (
-        <div className="th-alerts-scroll th-cp-scroll" data-loading={refreshing || undefined}>
-          <ActivityList page={data} onOpenDevice={onOpenDevice} />
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {(s ? tiles : Array.from({ length: 4 })).map((tile, index) =>
+          tile ? (
+            <div
+              key={(tile as (typeof tiles)[number]).label}
+              className="th-onb-card th-onb-stat th-onb-enter th-cp-kpi"
+              style={{ "--i": index, "--onb-tone": (tile as (typeof tiles)[number]).tone } as CSSProperties}
+            >
+              {(() => {
+                const t = tile as (typeof tiles)[number];
+                return (
+                  <>
+                    <span className="th-onb-icon">
+                      <t.icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                        {t.label} <span style={{ color: "var(--th-text-faint)" }}>· 30 days</span>
+                      </div>
+                      <div
+                        className="text-[22px] font-semibold leading-8 tabular-nums"
+                        style={{ color: "var(--th-text-primary)" }}
+                      >
+                        <span key={t.value} className="th-share-count">
+                          {t.value}
+                        </span>
+                      </div>
+                      <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+                        {t.hint}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : (
+            <div key={index} className="th-onb-card th-onb-stat">
+              <div className="th-alerts-skeleton w-full" />
+            </div>
+          ),
+        )}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCard
+          title="Most reached devices"
+          index={4}
+          footer={<span>Remote connections per device, last 30 days.</span>}
+        >
+          {!s ? (
+            <PanelSkeleton rows={4} />
+          ) : s.devices.length === 0 ? (
+            <QuietLine>No remote connections in 30 days.</QuietLine>
+          ) : (
+            <ul className="th-cp-meters pt-1">
+              {s.devices.map((device, index) => (
+                <MeterRow
+                  key={device.device_id}
+                  index={index}
+                  mark={
+                    <span className="th-cp-mark-sm" aria-hidden="true">
+                      <Monitor className="h-3.5 w-3.5" />
+                    </span>
+                  }
+                  label={device.name}
+                  count={device.remote_connects}
+                  total={maxDevice}
+                  share={device.last_at ? timeAgo(device.last_at) : ""}
+                  tone={TONE.info}
+                  title={`Last connection ${formatDateTime(device.last_at)}`}
+                  onClick={() => onOpenDevice(device.device_id)}
+                />
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+        <SectionCard
+          title="Operators"
+          index={5}
+          footer={<span>Entries per operator, last 30 days. Select one to filter the log.</span>}
+        >
+          {!s ? (
+            <PanelSkeleton rows={4} />
+          ) : s.operators.length === 0 ? (
+            <QuietLine>No operator activity in 30 days.</QuietLine>
+          ) : (
+            <ul className="th-cp-meters pt-1">
+              {s.operators.map((op, index) => (
+                <MeterRow
+                  key={op.username}
+                  index={index}
+                  selected={operator === op.username}
+                  mark={
+                    <span className="th-cp-mark-sm" aria-hidden="true">
+                      {op.username.charAt(0).toUpperCase()}
+                    </span>
+                  }
+                  label={op.username}
+                  count={op.events}
+                  total={maxOperator}
+                  share={op.last_at ? timeAgo(op.last_at) : ""}
+                  tone={TONE.maintenance}
+                  title={`${formatCount(op.remote_connects)} remote connections · last ${formatDateTime(op.last_at)}`}
+                  onClick={() => {
+                    setOperator((prev) => (prev === op.username ? null : op.username));
+                    setPage(1);
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="th-alerts-card th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
+        <div className="th-alerts-toolbar !items-center !py-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <div
+              className="th-segmented th-cp-status"
+              role="radiogroup"
+              aria-label="Activity type"
+              data-thumb
+              style={{ "--seg-n": ACTIVITY_KINDS.length, "--seg-i": kindIndex } as CSSProperties}
+            >
+              {ACTIVITY_KINDS.map((k) => (
+                <button
+                  key={k.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === k.key}
+                  onClick={() => {
+                    setKind(k.key);
+                    setPage(1);
+                  }}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+            {operator && (
+              <button
+                type="button"
+                className="th-tag th-cp-filter-chip"
+                onClick={() => {
+                  setOperator(null);
+                  setPage(1);
+                }}
+                aria-label={`Remove operator filter ${operator}`}
+              >
+                {operator}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {data && (
+            <span className="text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+              {formatCount(data.total)} entries
+            </span>
+          )}
         </div>
-      )}
-      {data && data.total > 0 && (
-        <TablePagination
-          page={page}
-          pageSize={ACTIVITY_PAGE_SIZE}
-          total={data.total}
-          onPageChange={setPage}
-          itemLabel="entries"
-          loading={refreshing}
-        />
-      )}
+        {loading ? (
+          <PanelSkeleton rows={8} />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState
+            className="py-10"
+            icon={<Activity className="h-5 w-5" />}
+            title={kind !== "all" || operator ? "Nothing matches" : "No activity yet"}
+            description="Remote connections, terminal and SSH sessions, actions and credential use on this client's devices appear here."
+          />
+        ) : (
+          <div className="th-alerts-scroll th-table-scroll th-cp-scroll" data-loading={refreshing || undefined}>
+            <table className="th-alerts-table th-cp-log" data-mobile="cards">
+              <colgroup>
+                <col className="w-[84px]" />
+                <col className="w-[15%]" />
+                <col className="w-[24%]" />
+                <col className="w-[17%]" />
+                <col />
+                <col className="w-[110px]" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Operator</th>
+                  <th>Event</th>
+                  <th>Device</th>
+                  <th>Details</th>
+                  <th className="text-right">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.flatMap((entry, index) => {
+                  const view = describeActivity(entry);
+                  const deviceName = entry.device_id != null ? data.device_names[entry.device_id] : undefined;
+                  const day = days[index];
+                  const rows = [];
+                  if (index === 0 || day !== days[index - 1]) {
+                    rows.push(
+                      <tr key={`day-${day}`} className="th-cp-day">
+                        <td colSpan={6}>{day}</td>
+                      </tr>,
+                    );
+                  }
+                  rows.push(
+                    <tr
+                      key={entry.id}
+                      className="th-alerts-row"
+                      style={
+                        { "--row": index, "--row-tone": view.failed ? TONE.critical : "transparent" } as CSSProperties
+                      }
+                    >
+                      <td title={formatDateTime(entry.created_at)}>
+                        <span className="th-alerts-primary tabular-nums">
+                          {formatLocalDateTime(entry.created_at, { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="th-alerts-secondary">{timeAgo(entry.created_at)}</span>
+                      </td>
+                      <td>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="th-onb-avatar" aria-hidden="true">
+                            {(entry.operator_username ?? "S").charAt(0).toUpperCase()}
+                          </span>
+                          <span className="th-alerts-primary !mt-0 truncate">
+                            {entry.operator_username ?? "System"}
+                          </span>
+                        </span>
+                      </td>
+                      <td>
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <KindMark kind={view.kind} failed={view.failed} />
+                          <span className="min-w-0">
+                            <span className="th-alerts-primary">{view.label}</span>
+                            {view.method && <span className="th-alerts-secondary">{view.method}</span>}
+                          </span>
+                        </span>
+                      </td>
+                      <td>
+                        {deviceName && entry.device_id != null ? (
+                          <button
+                            type="button"
+                            className="th-alerts-link th-alerts-primary text-left font-medium"
+                            onClick={() => onOpenDevice(entry.device_id!)}
+                          >
+                            {deviceName}
+                          </button>
+                        ) : (
+                          <span className="th-alerts-secondary !mt-0">—</span>
+                        )}
+                      </td>
+                      <td data-m={view.facts.length || view.ip || view.status ? undefined : "hide"}>
+                        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          {view.status && (
+                            <span
+                              className="th-status-chip !h-5 !px-2 !text-[11px]"
+                              style={{ "--chip-tone": view.status.tone } as CSSProperties}
+                            >
+                              <i />
+                              {view.status.label}
+                            </span>
+                          )}
+                          {view.facts.length > 0 && (
+                            <span className="th-alerts-primary !mt-0 truncate" title={view.facts.join(" · ")}>
+                              {view.facts.join(" · ")}
+                            </span>
+                          )}
+                        </span>
+                        {view.ip && <span className="th-alerts-secondary font-mono">from {view.ip}</span>}
+                      </td>
+                      <td className="text-right">
+                        {view.duration ? (
+                          <span className="th-cp-duration">{view.duration}</span>
+                        ) : (
+                          <span
+                            className="th-alerts-secondary !mt-0"
+                            title={
+                              entry.action === "remote_connect"
+                                ? "Remote Support session length is reported from agent 2.1.24"
+                                : undefined
+                            }
+                          >
+                            —
+                          </span>
+                        )}
+                      </td>
+                    </tr>,
+                  );
+                  return rows;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {data && data.total > 0 && (
+          <TablePagination
+            page={page}
+            pageSize={ACTIVITY_PAGE_SIZE}
+            total={data.total}
+            onPageChange={setPage}
+            itemLabel="entries"
+            loading={refreshing}
+          />
+        )}
+      </div>
     </div>
   );
 }

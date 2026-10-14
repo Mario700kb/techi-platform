@@ -1,5 +1,6 @@
 import re
-from typing import List, Optional
+from datetime import timedelta
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_
@@ -25,7 +26,10 @@ from app.schemas.client_document import (
 )
 from app.schemas.client import (
     Client,
+    ClientActivityDevice,
+    ClientActivityOperator,
     ClientActivityPage,
+    ClientActivitySummary,
     ClientCreate,
     ClientProfile,
     ClientProfileGroup,
@@ -137,38 +141,111 @@ def get_client_profile(
     )
 
 
+# What each Activity filter on the client profile shows.
+ACTIVITY_KINDS = {
+    "remote": ["remote_connect", "remote_session_started", "remote_session_ended"],
+    "terminal": [
+        "terminal_session_opened",
+        "terminal_session_closed",
+        "terminal_session_denied",
+        "terminal_session_expired",
+        "ssh_session_started",
+        "ssh_session_ended",
+        "ssh_connection_failed",
+        "ssh_authentication_failed",
+    ],
+    "actions": [
+        "action_queued",
+        "action_cancelled",
+        "maintenance_entered",
+        "maintenance_cleared",
+        "note_created",
+        "note_updated",
+        "note_deleted",
+    ],
+    "credentials": ["vault_credential_revealed", "vault_credential_assigned", "ssh_credential_resolved"],
+}
+SESSION_DURATION_ACTIONS = ["terminal_session_closed", "ssh_session_ended", "remote_session_ended"]
+
+
+def _activity_device_ids(db: Session, scope, client_id: int) -> Optional[List[int]]:
+    """None when the operator sees the whole client, else the devices they see in it."""
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    if client_id in narrowed.client_ids:
+        return None
+    return [
+        row[0]
+        for row in DeviceRepository(db)
+        ._apply_scope_filter(db.query(Device.id).filter(Device.client_id == client_id), narrowed)
+        .all()
+    ]
+
+
+def _device_names(db: Session, ids) -> dict:
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    rows = db.query(Device.id, Device.display_name, Device.hostname).filter(Device.id.in_(ids)).all()
+    return {device_id: display or hostname for device_id, display, hostname in rows}
+
+
+@router.get("/{client_id}/activity/summary", response_model=ClientActivitySummary)
+def get_client_activity_summary(
+    client_id: int,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Remote connections, operators, most-reached devices and session time
+    for the client over the last `days`, within the operator's view."""
+    device_ids = _activity_device_ids(db, scope, client_id)
+    since = utcnow() - timedelta(days=days)
+    summary = AuditLogRepository(db).client_summary(
+        client_id,
+        device_ids,
+        since,
+        remote_action=AuditAction.REMOTE_CONNECT,
+        duration_actions=SESSION_DURATION_ACTIONS,
+    )
+    names = _device_names(db, (d["device_id"] for d in summary["devices"]))
+    return ClientActivitySummary(
+        days=days,
+        since=since,
+        **{k: v for k, v in summary.items() if k not in ("operators", "devices")},
+        operators=[ClientActivityOperator(**o) for o in summary["operators"]],
+        devices=[
+            ClientActivityDevice(name=names.get(d["device_id"], f"Device #{d['device_id']}"), **d)
+            for d in summary["devices"]
+        ],
+    )
+
+
 @router.get("/{client_id}/activity", response_model=ClientActivityPage)
 def get_client_activity(
     client_id: int,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    kind: Literal["all", "remote", "terminal", "actions", "credentials"] = Query(default="all"),
+    operator: Optional[str] = Query(default=None, max_length=128),
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
 ):
     """Audit entries about the client or its devices (connections, actions,
-    terminal sessions, credential use…), newest first."""
-    _, narrowed = _client_in_scope(db, scope, client_id)
-    device_ids = None
-    if client_id not in narrowed.client_ids:
-        device_ids = [
-            row[0]
-            for row in DeviceRepository(db)
-            ._apply_scope_filter(db.query(Device.id).filter(Device.client_id == client_id), narrowed)
-            .all()
-        ]
-    total, items = AuditLogRepository(db).for_client(client_id, device_ids, limit, offset)
-    mentioned = {item.device_id for item in items if item.device_id is not None}
-    names = (
-        db.query(Device.id, Device.display_name, Device.hostname).filter(Device.id.in_(mentioned)).all()
-        if mentioned
-        else []
+    terminal sessions, credential use…), newest first; `kind` and `operator`
+    narrow the list."""
+    device_ids = _activity_device_ids(db, scope, client_id)
+    total, items = AuditLogRepository(db).for_client(
+        client_id,
+        device_ids,
+        limit,
+        offset,
+        actions=ACTIVITY_KINDS.get(kind),
+        operator_username=operator or None,
     )
-    return ClientActivityPage(
-        total=total,
-        items=items,
-        device_names={device_id: display or hostname for device_id, display, hostname in names},
-    )
+    names = _device_names(db, (item.device_id for item in items))
+    return ClientActivityPage(total=total, items=items, device_names=names)
 
 
 def _excerpt(body: str) -> str:

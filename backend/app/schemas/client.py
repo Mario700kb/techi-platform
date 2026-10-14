@@ -58,6 +58,40 @@ class ClientProfile(BaseModel):
     last_seen: Optional[datetime] = None
 
 
+class ClientActivityOperator(BaseModel):
+    username: str
+    events: int
+    remote_connects: int
+    last_at: Optional[datetime] = None
+
+
+class ClientActivityDevice(BaseModel):
+    device_id: int
+    name: str
+    remote_connects: int
+    last_at: Optional[datetime] = None
+
+
+class ClientActivitySummary(BaseModel):
+    """The client's activity over the last `days`: remote connections, who
+    made them and to which devices, and time in terminal/SSH sessions and in
+    Remote Support sessions reported by agents that send them."""
+
+    days: int
+    since: datetime
+    events: int
+    remote_connects: int
+    remote_devices: int
+    last_remote_at: Optional[datetime] = None
+    terminal_sessions: int
+    terminal_seconds: int
+    # Remote Support sessions ended, from agents that report sessions; 0 until then.
+    remote_sessions: int
+    remote_minutes: int
+    operators: List[ClientActivityOperator] = []
+    devices: List[ClientActivityDevice] = []
+
+
 from app.schemas.alert import AlertCountResponse  # noqa: E402
 from app.schemas.audit_log import AuditLogOut  # noqa: E402
 from app.schemas.device import DeviceStats  # noqa: E402
