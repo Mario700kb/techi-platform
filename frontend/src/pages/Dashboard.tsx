@@ -17,8 +17,18 @@ import {
   Users,
   WifiOff,
 } from "lucide-react";
-import BreakdownBars, { BreakdownRow, CATEGORY_LABELS } from "../components/BreakdownBars";
-import { Link } from "react-router-dom";
+import AlertKindIcon from "../components/AlertKindIcon";
+import {
+  CATEGORY_ICONS,
+  CATEGORY_LABELS,
+  MeterRow,
+  RingLegend,
+  RingSegment,
+  SegmentRing,
+  SubHead,
+  percent,
+} from "../components/MeterPanels";
+import { Link, useNavigate } from "react-router-dom";
 import { Device, FleetInsights, getDevices, getFleetInsights } from "../api/devices";
 import { AlertFlowChart, AvailabilityChart } from "../components/InsightCharts";
 import { Client, getClients } from "../api/clients";
@@ -34,18 +44,20 @@ import {
   statusColor,
   statusDotColor,
 } from "../api/actions";
-import { Button, EmptyState, PageHeader } from "../components/ui";
+import { Button, EmptyState, PageHeader, TablePagination } from "../components/ui";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
 import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
-import { ALERT_KIND_LABELS, AlertKind } from "../types/alert";
+import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
 import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./DashboardMobile";
 
-const RECENT_DEVICES_LIMIT = 6;
+// Latest enrollments: the newest 50, shown 10, 20 or 50 to a page.
+const RECENT_DEVICES_LIMIT = 50;
+const ENROLLMENT_PAGE_SIZES = [10, 20, 50];
 /**
  * Enrollments, actions and operator presence are re-read on this cadence
  * while the page is visible: events keep device rows and actions current, but
@@ -58,6 +70,9 @@ const ACTIVITY_POLL_OFFLINE_MS = 30_000;
 const INSIGHTS_REFRESH_MS = 30 * 60_000;
 /** A tab hidden at least this long refreshes its lists when shown again. */
 const CATCH_UP_AFTER_HIDDEN_MS = 30_000;
+
+// Categories are not states, so their ring uses colours that never mean one.
+const CATEGORY_TONES = [TONE.info, TONE.maintenance, "var(--th-accent)", TONE.neutral];
 
 const CATEGORY_FILTERS: Record<string, string> = {
   servers: "/devices?filter=servers",
@@ -93,6 +108,7 @@ function updatedLabel(at: number): string {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   useNow();
   const { user, hasPermission } = useAuth();
   const {
@@ -121,6 +137,8 @@ export default function Dashboard() {
   );
   // Mirrors recentDevices so realtime events can patch it without a stale closure.
   const recentDevicesRef = useRef(recentDevices);
+  const [enrollmentPage, setEnrollmentPage] = useState(1);
+  const [enrollmentPageSize, setEnrollmentPageSize] = useState(ENROLLMENT_PAGE_SIZES[0]);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
     () => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [],
   );
@@ -362,29 +380,25 @@ export default function Dashboard() {
   // System status is for owner and admin only (the API enforces it too).
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   const onlineOperators = operators.filter((op) => op.is_online);
-  const alertsByKind: BreakdownRow[] = Object.entries(alertCount.by_kind ?? {})
+  const alertsByKind = Object.entries(alertCount.by_kind ?? {})
     .filter(([, count]) => count > 0)
-    .map(([kind, count]) => ({
-      key: kind,
-      label: ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind),
-      count,
-      to: "/alerts",
-    }))
-    .sort((a, b) => b.count - a.count);
-  const devicesByCategory: BreakdownRow[] = Object.entries(fleetOverview?.tree_counts.by_category ?? {})
+    .sort(([, x], [, y]) => y - x);
+  const severitySegments: RingSegment[] = (["critical", "warning", "info"] as const).map((severity) => ({
+    key: severity,
+    label: humanize(severity),
+    value: alertCount.by_severity?.[severity] ?? 0,
+    tone: ALERT_SEVERITY_TONE[severity],
+  }));
+  const devicesByCategory = Object.entries(fleetOverview?.tree_counts.by_category ?? {})
     .filter(([, counts]) => counts.total > 0)
-    .map(([category, counts]) => ({
-      key: category,
-      label: CATEGORY_LABELS[category] ?? humanize(category),
-      count: counts.total,
-      to: CATEGORY_FILTERS[category] ?? "/devices",
-      segments: [
-        { label: "online", value: counts.online, tone: TONE.online },
-        { label: "stale", value: counts.stale, tone: TONE.stale },
-        { label: "offline", value: counts.offline, tone: TONE.offline },
-      ],
-    }))
-    .sort((a, b) => b.count - a.count);
+    .sort(([, x], [, y]) => y.total - x.total);
+  // Fleet health already splits the fleet by status; this ring splits it by category.
+  const categorySegments: RingSegment[] = devicesByCategory.map(([category, counts], index) => ({
+    key: category,
+    label: CATEGORY_LABELS[category] ?? humanize(category),
+    value: counts.total,
+    tone: CATEGORY_TONES[index % CATEGORY_TONES.length],
+  }));
   const clientBreakdown = (() => {
     const byClient = fleetOverview?.tree_counts.by_client ?? {};
     const rows = Object.entries(byClient)
@@ -748,7 +762,10 @@ export default function Dashboard() {
             canManage={canManageOperators}
           />
 
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alerts-by-kind-title">
+          <section
+            className="premium-card th-cp-overview flex h-full flex-col p-0"
+            aria-labelledby="alerts-by-kind-title"
+          >
             <div className="th-panel-head">
               <h2 id="alerts-by-kind-title">Open alerts by type</h2>
               <Link to="/alerts" className="th-link-btn">
@@ -765,9 +782,43 @@ export default function Dashboard() {
                 description="Every alert raised for your devices has been resolved."
               />
             ) : (
-              <BreakdownBars rows={alertsByKind} total={totalOpenAlerts} unit="alert" />
+              <>
+                <div className="th-cp-hero">
+                  <SegmentRing
+                    segments={severitySegments}
+                    total={totalOpenAlerts}
+                    center={formatCount(totalOpenAlerts)}
+                    caption={totalOpenAlerts === 1 ? "open alert" : "open alerts"}
+                    size={108}
+                  />
+                  <RingLegend
+                    segments={severitySegments}
+                    total={totalOpenAlerts}
+                    onSelect={() => navigate("/alerts")}
+                  />
+                </div>
+                <SubHead>By type</SubHead>
+                <ul className="th-cp-meters" data-dense="true">
+                  {alertsByKind.map(([kind, count], index) => (
+                    <MeterRow
+                      key={kind}
+                      index={index}
+                      mark={
+                        <span className="th-cp-mark-sm" aria-hidden="true">
+                          <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
+                        </span>
+                      }
+                      label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
+                      count={count}
+                      total={totalOpenAlerts}
+                      tone={TONE.warning}
+                      to="/alerts"
+                    />
+                  ))}
+                </ul>
+              </>
             )}
-            <p className="th-panel-foot">
+            <p className="th-panel-foot mt-auto">
               {alertCountReady ? (
                 <>
                   {formatCount(totalOpenAlerts)} open
@@ -780,7 +831,7 @@ export default function Dashboard() {
           </section>
 
           <section
-            className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
+            className="premium-card th-cp-overview flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
             aria-labelledby="devices-by-category-title"
           >
             <div className="th-panel-head">
@@ -796,9 +847,52 @@ export default function Dashboard() {
             ) : devicesByCategory.length === 0 ? (
               <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
             ) : (
-              <BreakdownBars rows={devicesByCategory} total={total} unit="device" />
+              <>
+                <div className="th-cp-hero">
+                  <SegmentRing
+                    segments={categorySegments}
+                    total={total}
+                    center={formatCount(total)}
+                    caption="devices"
+                    size={108}
+                  />
+                  <RingLegend
+                    segments={categorySegments}
+                    total={total}
+                    onSelect={(key) => navigate(CATEGORY_FILTERS[key] ?? "/devices")}
+                  />
+                </div>
+                <SubHead>Online by category</SubHead>
+                <ul className="th-cp-meters" data-dense="true">
+                  {devicesByCategory.map(([category, counts], index) => {
+                    const Icon = CATEGORY_ICONS[category] ?? Monitor;
+                    return (
+                      <MeterRow
+                        key={category}
+                        index={index}
+                        mark={
+                          <span className="th-cp-mark-sm" aria-hidden="true">
+                            <Icon className="h-3.5 w-3.5" />
+                          </span>
+                        }
+                        label={CATEGORY_LABELS[category] ?? humanize(category)}
+                        count={counts.online}
+                        total={counts.total}
+                        share={percent(counts.online, counts.total)}
+                        segments={[
+                          { key: "online", label: "online", value: counts.online, tone: TONE.online },
+                          { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
+                          { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
+                        ]}
+                        title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline of ${formatCount(counts.total)}`}
+                        to={CATEGORY_FILTERS[category] ?? "/devices"}
+                      />
+                    );
+                  })}
+                </ul>
+              </>
             )}
-            <p className="th-panel-foot">
+            <p className="th-panel-foot mt-auto">
               {formatCount(total)} active devices by current status. Archived devices are excluded.
             </p>
           </section>
@@ -969,8 +1063,9 @@ export default function Dashboard() {
           </section>
         </div>
 
-        {/* Enrollments · activity */}
-        <div className="grid gap-4 lg:grid-cols-2">
+        {/* Enrollments · activity. Beyond ten enrollments a page the two cards
+            keep their own heights, so the actions card is not stretched empty. */}
+        <div className={`grid gap-4 lg:grid-cols-2 ${enrollmentPageSize > 10 ? "lg:items-start" : ""}`}>
           <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
             <div className="th-panel-head">
               <h2 id="enrollments-title">Latest enrollments</h2>
@@ -992,50 +1087,70 @@ export default function Dashboard() {
                 description="Enrolled devices appear here as soon as their agent checks in."
               />
             ) : (
-              <ul className="flex-1 px-2 pb-2">
-                {recentDevices.slice(0, RECENT_DEVICES_LIMIT).map((device) => {
-                  const state = device.freshness_state ?? device.status;
-                  const tone = freshnessTone(state);
-                  return (
-                    <li key={device.id}>
-                      <Link to={`/devices?device=${device.id}`} className="th-list-row">
-                        <span className="th-palette-icon !h-8 !w-8">
-                          <Monitor className="h-4 w-4" />
-                          <i style={{ background: tone }} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className="block truncate text-[13px] font-medium"
-                            style={{ color: "var(--th-text-primary)" }}
-                          >
-                            {device.hostname || "Unknown"}
+              <ul className="flex-1 px-2 pb-2" key={`${enrollmentPage}:${enrollmentPageSize}`}>
+                {recentDevices
+                  .slice((enrollmentPage - 1) * enrollmentPageSize, enrollmentPage * enrollmentPageSize)
+                  .map((device, index) => {
+                    const state = device.freshness_state ?? device.status;
+                    const tone = freshnessTone(state);
+                    return (
+                      <li
+                        key={device.id}
+                        className="th-share-row"
+                        style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
+                      >
+                        <Link to={`/devices?device=${device.id}`} className="th-list-row">
+                          <span className="th-palette-icon !h-8 !w-8">
+                            <Monitor className="h-4 w-4" />
+                            <i style={{ background: tone }} />
                           </span>
-                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                            {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
-                              .filter(Boolean)
-                              .join(" · ")}
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className="block truncate text-[13px] font-medium"
+                              style={{ color: "var(--th-text-primary)" }}
+                            >
+                              {device.hostname || "Unknown"}
+                            </span>
+                            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                              {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
                           </span>
-                        </span>
-                        <span className="text-right">
-                          <span
-                            className="th-status-chip capitalize"
-                            style={{ "--chip-tone": tone } as React.CSSProperties}
-                          >
-                            <i />
-                            {state}
+                          <span className="text-right">
+                            <span
+                              className="th-status-chip capitalize"
+                              style={{ "--chip-tone": tone } as React.CSSProperties}
+                            >
+                              <i />
+                              {state}
+                            </span>
+                            <span
+                              className="mt-0.5 block text-[11px] tabular-nums"
+                              style={{ color: "var(--th-text-faint)" }}
+                            >
+                              {formatLocalDateTime(device.registered_at)}
+                            </span>
                           </span>
-                          <span
-                            className="mt-0.5 block text-[11px] tabular-nums"
-                            style={{ color: "var(--th-text-faint)" }}
-                          >
-                            {formatLocalDateTime(device.registered_at)}
-                          </span>
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                        </Link>
+                      </li>
+                    );
+                  })}
               </ul>
+            )}
+            {recentDevices.length > ENROLLMENT_PAGE_SIZES[0] && (
+              <TablePagination
+                page={enrollmentPage}
+                pageSize={enrollmentPageSize}
+                total={recentDevices.length}
+                onPageChange={setEnrollmentPage}
+                onPageSizeChange={(size) => {
+                  setEnrollmentPageSize(size);
+                  setEnrollmentPage(1);
+                }}
+                pageSizeOptions={ENROLLMENT_PAGE_SIZES}
+                itemLabel="latest enrollments"
+              />
             )}
           </section>
 

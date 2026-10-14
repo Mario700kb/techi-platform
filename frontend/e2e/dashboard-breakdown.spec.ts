@@ -73,19 +73,16 @@ async function productionShape(page: Page) {
   );
 }
 
-/** Space between a card's last row and the end of its content area. */
-async function emptyBelowRows(card: Locator): Promise<number> {
+/** The largest gap between two consecutive meter rows in a card. */
+async function largestGapBetweenRows(card: Locator): Promise<number> {
   return card.evaluate((section) => {
-    const rows = section.querySelectorAll("li");
-    const last = rows[rows.length - 1].getBoundingClientRect();
-    const foot = section.querySelector(".th-panel-foot");
-    const end = foot ? foot.getBoundingClientRect().top : section.getBoundingClientRect().bottom;
-    return end - last.bottom;
+    const rows = [...section.querySelectorAll(".th-cp-meter")].map((row) => row.getBoundingClientRect());
+    return rows.slice(1).reduce((gap, row, i) => Math.max(gap, row.top - rows[i].bottom), 0);
   });
 }
 
 for (const width of [1280, 1440, 1920]) {
-  test(`operators, alerts by type and devices by category fill their row at ${width}px`, async ({ page }) => {
+  test(`operators, alerts by type and devices by category share one row at ${width}px`, async ({ page }) => {
     test.skip(test.info().project.name !== "desktop", "the three cards are on the desktop dashboard");
     await productionShape(page);
     await page.setViewportSize({ width, height: 1000 });
@@ -95,9 +92,14 @@ for (const width of [1280, 1440, 1920]) {
     const alerts = page.locator("section[aria-labelledby='alerts-by-kind-title']");
     const devices = page.locator("section[aria-labelledby='devices-by-category-title']");
     await expect(operators.getByText("Klevis T")).toBeVisible();
-    await expect(alerts.getByRole("listitem")).toHaveCount(5);
-    await expect(devices.getByRole("listitem")).toHaveCount(3);
-    await expect(devices.getByRole("listitem").first()).toContainText("560 online");
+    await expect(alerts.locator(".th-cp-meter")).toHaveCount(5);
+    await expect(devices.locator(".th-cp-meter")).toHaveCount(3);
+    await expect(devices.locator(".th-cp-meter").first()).toHaveAttribute("title", /560 online/);
+    // Each card leads with a ring and its legend: alerts by severity, devices by
+    // category (Fleet health already splits the fleet by status).
+    await expect(alerts.locator(".th-cp-legend")).toContainText("Critical");
+    await expect(devices.locator(".th-cp-ring")).toContainText("920");
+    await expect(devices.locator(".th-cp-legend")).toContainText("Client PCs");
 
     // Operators sit two to a row, so eleven of them take six rows, not eleven.
     const tops = await operators
@@ -105,14 +107,16 @@ for (const width of [1280, 1440, 1920]) {
       .evaluateAll((items) => new Set(items.map((item) => Math.round(item.getBoundingClientRect().top))).size);
     expect(tops).toBe(6);
 
-    const heights = await Promise.all(
-      [operators, alerts, devices].map(async (card) => (await card.boundingBox())!.height),
-    );
+    const boxes = await Promise.all([operators, alerts, devices].map(async (card) => (await card.boundingBox())!));
+    const heights = boxes.map((box) => box.height);
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
-    expect(heights[0]).toBeLessThan(420);
+    expect(heights[0]).toBeLessThan(450);
 
-    for (const card of [operators, alerts, devices]) {
-      expect(await emptyBelowRows(card)).toBeLessThan(32);
+    // Rows sit together under their heading, never spread apart to fill the
+    // card (the gap the owner saw with two categories beside a taller card).
+    for (const card of [alerts, devices]) {
+      expect(await largestGapBetweenRows(card)).toBeLessThan(6);
     }
+    await page.screenshot({ path: test.info().outputPath(`dashboard-row-${width}.png`) });
   });
 }

@@ -7032,3 +7032,46 @@ button.th-client-group:hover {
     margin-left: auto;
   }
 }
+
+/* ── Edit profile ── a live preview of the name as you type, and the
+   identity fields that stay with the Operators page. */
+.th-profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-chip-bg);
+}
+.th-profile-preview strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-profile-preview small {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-profile-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--th-text-muted);
+}
+.th-profile-locked svg {
+  margin-top: 2px;
+}
+
+/* Dashboard cards sit three to a row: tighter meters keep the row short. */
+.th-cp-meters[data-dense] .th-cp-meter {
+  grid-template-columns: minmax(0, 10rem) minmax(40px, 1fr) 40px 44px;
+  gap: 12px;
+  height: 34px;
+}
+.th-cp-meters[data-dense] .th-cp-mark-sm {
+  width: 24px;
+  height: 24px;
+}

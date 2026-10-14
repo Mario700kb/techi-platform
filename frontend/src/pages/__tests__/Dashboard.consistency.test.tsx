@@ -123,19 +123,24 @@ describe("Dashboard breakdowns", () => {
   it("ranks open alerts by type and leaves out types with none", () => {
     renderDashboard();
     const panel = screen.getByText("Open alerts by type").closest("section")!;
-    const rows = within(panel).getAllByRole("listitem");
+    const rows = [...panel.querySelectorAll(".th-cp-meter")];
     expect(rows.map((row) => row.textContent)).toEqual(["Device offline975%", "Low disk space325%"]);
+    expect(rows[0]).toHaveAttribute("href", "/alerts");
     expect(within(panel).getByText("12 open on 10 devices.")).toBeInTheDocument();
   });
 
   it("counts devices per category and links servers and client PCs to their filters", () => {
     renderDashboard();
     const panel = screen.getByText("Devices by category").closest("section")!;
-    const rows = within(panel).getAllByRole("listitem");
+    const rows = [...panel.querySelectorAll(".th-cp-meter")];
     expect(rows).toHaveLength(2);
-    expect(within(rows[0]).getByRole("link")).toHaveAttribute("href", "/devices?filter=workstations");
-    expect(rows[0]).toHaveTextContent("Client PCs1,10089%1,000 online100 offline");
-    expect(within(rows[1]).getByRole("link")).toHaveAttribute("href", "/devices?filter=servers");
+    // Each row: online devices of the category and their share of it.
+    expect(rows[0]).toHaveAttribute("href", "/devices?filter=workstations");
+    expect(rows[0]).toHaveTextContent("Client PCs1,00091%");
+    expect(rows[0]).toHaveAttribute("title", "1,000 online · 0 stale · 100 offline of 1,100");
+    expect(rows[1]).toHaveAttribute("href", "/devices?filter=servers");
+    // The ring splits the fleet by category.
+    expect(within(panel).getByText("Client PCs", { selector: ".th-cp-legend span" })).toBeInTheDocument();
   });
 });
 
