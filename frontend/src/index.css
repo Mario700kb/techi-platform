@@ -6749,3 +6749,17 @@ button.th-client-group:hover {
     margin-left: auto;
   }
 }
+/* Long lists on the profile (devices, alerts, activity) scroll inside their
+   card under the sticky header, sized so toolbar, rows and pagination fit on
+   screen together; phones keep one page scroll. */
+@media (min-width: 768px) {
+  .th-cp-scroll {
+    max-height: max(320px, calc(100dvh - 230px));
+  }
+  .th-cp-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--th-bg-table-head);
+  }
+}

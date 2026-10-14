@@ -820,7 +820,7 @@ function DevicesTab({
           title={query || status !== "all" ? "No devices match" : "No devices"}
         />
       ) : (
-        <div className="th-alerts-scroll th-table-scroll" data-loading={refreshing || undefined}>
+        <div className="th-alerts-scroll th-table-scroll th-cp-scroll" data-loading={refreshing || undefined}>
           <table className="th-alerts-table th-cp-devices" data-mobile="cards">
             <colgroup>
               <col />
@@ -1083,7 +1083,7 @@ function AlertsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice:
           title={state === "open" ? "No open alerts" : "No resolved alerts"}
         />
       ) : (
-        <div className="th-alerts-scroll th-table-scroll" data-loading={refreshing || undefined}>
+        <div className="th-alerts-scroll th-table-scroll th-cp-scroll" data-loading={refreshing || undefined}>
           <table className="th-alerts-table">
             <colgroup>
               <col className="w-[120px]" />
@@ -1241,7 +1241,7 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
           description="Remote sessions, actions, terminal sessions and credential use on this client's devices appear here."
         />
       ) : (
-        <div className="th-alerts-scroll" data-loading={refreshing || undefined}>
+        <div className="th-alerts-scroll th-cp-scroll" data-loading={refreshing || undefined}>
           <ActivityList page={data} onOpenDevice={onOpenDevice} />
         </div>
       )}

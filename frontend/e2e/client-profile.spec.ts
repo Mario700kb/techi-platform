@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 
+import { DEVICES } from "./mockApi";
 import { expect, test } from "./test";
 
 test.use({ reducedMotion: "reduce" });
@@ -177,4 +178,36 @@ test("a client's device connects from its row and opens the drawer in place", as
   await page.getByRole("radio", { name: /Offline/ }).click();
   await expect(page.locator("tr.th-cp-row")).toHaveCount(1);
   await expect(page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" })).toBeVisible();
+});
+
+test("a long device list scrolls inside its card under a fixed header", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "phones keep one page scroll");
+  await northwindProfile(page);
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    ...DEVICES[0],
+    id: 100 + i,
+    hostname: `NW-PC-${String(i + 1).padStart(2, "0")}`,
+  }));
+  await page.route("**/api/v1/devices/?*", (route) => route.fulfill({ json: { devices: many, total: 40 } }));
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /Devices/ }).click();
+
+  const scroller = page.locator(".th-cp-scroll");
+  await expect(page.locator("tr.th-cp-row")).toHaveCount(40);
+  const fits = await scroller.evaluate((el) => el.scrollHeight > el.clientHeight);
+  expect(fits).toBe(true);
+
+  // The whole card, pagination included, fits the screen once scrolled to.
+  await page
+    .locator(".th-alerts-card")
+    .last()
+    .evaluate((el) => el.scrollIntoView({ block: "end" }));
+  const card = await page.locator(".th-alerts-card").last().boundingBox();
+  expect(card!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  const head = await scroller.locator("thead th").first().boundingBox();
+  const box = await scroller.boundingBox();
+  expect(Math.abs(head!.y - box!.y)).toBeLessThan(2);
+  await page.screenshot({ path: test.info().outputPath("profile-devices-scroll.png") });
 });
