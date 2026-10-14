@@ -33,6 +33,24 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   apply_power_policy: "Apply power policy",
 };
 
+// Types the server queues that operators do not pick from the actions menu.
+const OTHER_ACTION_LABELS: Record<string, string> = {
+  open_terminal: "Open terminal",
+  run_powershell: "Run PowerShell",
+  self_update: `Update ${TERMS.agent}`,
+  deploy_remote_support: `Deploy ${TERMS.remoteSupport}`,
+  set_remote_password: `Set ${TERMS.remoteSupport} password`,
+};
+
+/** A readable name for any action type, including ones not in ActionType. */
+export function actionTypeLabel(type: string): string {
+  return (
+    ACTION_LABELS[type as ActionType] ??
+    OTHER_ACTION_LABELS[type] ??
+    type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+  );
+}
+
 export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
   queued: "Queued",
   sent: "Sent",

@@ -60,7 +60,7 @@ import {
 } from "../utils/deviceStatus";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
-  ACTION_LABELS,
+  actionTypeLabel,
   ACTION_STATUS_LABELS,
   ActionType,
   cancelAction,
@@ -2397,7 +2397,7 @@ function ActionRow({
   onCancel?: (id: number) => void;
   onRetry?: (id: number) => void;
 }) {
-  const label = ACTION_LABELS[action.action_type as ActionType] ?? action.action_type;
+  const label = actionTypeLabel(action.action_type);
   const statusLabel = ACTION_STATUS_LABELS[action.status] ?? action.status;
   const canCancel = Boolean(onCancel) && isActiveStatus(action.status);
   const canRetry = Boolean(onRetry) && isTerminalStatus(action.status);

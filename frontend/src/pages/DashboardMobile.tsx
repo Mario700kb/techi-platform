@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { CardHead } from "../components/ui/PanelCard";
-import { ACTION_LABELS, RemoteAction, RemoteActionWithDevice } from "../api/actions";
+import { actionTypeLabel, RemoteAction, RemoteActionWithDevice } from "../api/actions";
 import { formatCount } from "../utils/number";
 import { TONE } from "../utils/deviceStatus";
 import { timeAgo } from "../utils/time";
@@ -318,7 +318,7 @@ export function DashboardMobile({
                   <Zap className="h-4 w-4" />
                 </span>
                 <span className="th-mrow-label">
-                  <strong>{ACTION_LABELS[a.action_type] ?? a.action_type}</strong>
+                  <strong>{actionTypeLabel(a.action_type)}</strong>
                   <small>{[a.device_hostname, a.created_by].filter(Boolean).join(" · ") || "—"}</small>
                 </span>
                 <time className="th-mrow-end text-[12px] tabular-nums">{timeAgo(actionRelevantTime(a))}</time>

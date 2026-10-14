@@ -36,9 +36,8 @@ import SystemStatusCard from "../components/SystemStatusCard";
 import { getOperatorPresence, OperatorPresenceRecord } from "../api/operators";
 import { useAuth } from "../auth/AuthContext";
 import {
-  ACTION_LABELS,
   ACTION_STATUS_LABELS,
-  ActionType,
+  actionTypeLabel,
   getRecentActions,
   RemoteActionWithDevice,
   statusColor,
@@ -58,6 +57,9 @@ import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./Dashboa
 // Latest enrollments: the newest 50, shown 10, 20 or 50 to a page.
 const RECENT_DEVICES_LIMIT = 50;
 const ENROLLMENT_PAGE_SIZES = [10, 20, 50];
+// Recent remote actions: the same — the newest 50, 10, 20 or 50 to a page.
+const RECENT_ACTIONS_LIMIT = 50;
+const ACTION_PAGE_SIZES = [10, 20, 50];
 /**
  * Enrollments, actions and operator presence are re-read on this cadence
  * while the page is visible: events keep device rows and actions current, but
@@ -139,6 +141,8 @@ export default function Dashboard() {
   const recentDevicesRef = useRef(recentDevices);
   const [enrollmentPage, setEnrollmentPage] = useState(1);
   const [enrollmentPageSize, setEnrollmentPageSize] = useState(ENROLLMENT_PAGE_SIZES[0]);
+  const [actionPage, setActionPage] = useState(1);
+  const [actionPageSize, setActionPageSize] = useState(ACTION_PAGE_SIZES[0]);
   const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
     () => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [],
   );
@@ -218,7 +222,7 @@ export default function Dashboard() {
           }),
       actionsFresh
         ? Promise.resolve(null)
-        : getRecentActions(10).then((value) => {
+        : getRecentActions(RECENT_ACTIONS_LIMIT).then((value) => {
             appCache.set(CACHE_KEYS.recentActions, value);
             setRecentActions(value);
           }),
@@ -1063,9 +1067,11 @@ export default function Dashboard() {
           </section>
         </div>
 
-        {/* Enrollments · activity. Beyond ten enrollments a page the two cards
-            keep their own heights, so the actions card is not stretched empty. */}
-        <div className={`grid gap-4 lg:grid-cols-2 ${enrollmentPageSize > 10 ? "lg:items-start" : ""}`}>
+        {/* Enrollments · activity. Beyond ten rows a page the two cards keep
+            their own heights, so the shorter one is not stretched empty. */}
+        <div
+          className={`grid gap-4 lg:grid-cols-2 ${enrollmentPageSize > 10 || actionPageSize > 10 ? "lg:items-start" : ""}`}
+        >
           <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
             <div className="th-panel-head">
               <h2 id="enrollments-title">Latest enrollments</h2>
@@ -1177,42 +1183,66 @@ export default function Dashboard() {
                 description="Restarts, syncs and scripts sent to devices show up here with their result."
               />
             ) : (
-              <ul className="flex-1 px-2 pb-2">
-                {recentActions.slice(0, 6).map((action) => {
-                  const isRunning = action.status === "running";
-                  return (
-                    <li key={action.id}>
-                      <div className="th-list-row">
-                        <span className="th-palette-icon !h-8 !w-8">
-                          {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className="block truncate text-[13px] font-medium"
-                            style={{ color: "var(--th-text-primary)" }}
-                          >
-                            {ACTION_LABELS[action.action_type as ActionType] ?? action.action_type}
-                            <span style={{ color: "var(--th-text-muted)" }}>
-                              {" "}
-                              · {action.device_hostname ?? `Device #${action.device_id}`}
+              <ul className="flex-1 px-2 pb-2" key={`${actionPage}:${actionPageSize}`}>
+                {recentActions
+                  .slice((actionPage - 1) * actionPageSize, actionPage * actionPageSize)
+                  .map((action, index) => {
+                    const isRunning = action.status === "running";
+                    return (
+                      <li
+                        key={action.id}
+                        className="th-share-row"
+                        style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
+                      >
+                        <div className="th-list-row">
+                          <span className="th-palette-icon !h-8 !w-8">
+                            {isRunning ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Terminal className="h-4 w-4" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className="block truncate text-[13px] font-medium"
+                              style={{ color: "var(--th-text-primary)" }}
+                            >
+                              {actionTypeLabel(action.action_type)}
+                              <span style={{ color: "var(--th-text-muted)" }}>
+                                {" "}
+                                · {action.device_hostname ?? `Device #${action.device_id}`}
+                              </span>
+                            </span>
+                            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                              {action.created_by ? `by ${action.created_by} · ` : ""}
+                              {timeAgo(actionRelevantTime(action))}
                             </span>
                           </span>
-                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                            {action.created_by ? `by ${action.created_by} · ` : ""}
-                            {timeAgo(actionRelevantTime(action))}
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
+                            {ACTION_STATUS_LABELS[action.status] ?? action.status}
                           </span>
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
-                          {ACTION_STATUS_LABELS[action.status] ?? action.status}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
+                        </div>
+                      </li>
+                    );
+                  })}
               </ul>
+            )}
+            {recentActions.length > ACTION_PAGE_SIZES[0] && (
+              <TablePagination
+                page={actionPage}
+                pageSize={actionPageSize}
+                total={recentActions.length}
+                onPageChange={setActionPage}
+                onPageSizeChange={(size) => {
+                  setActionPageSize(size);
+                  setActionPage(1);
+                }}
+                pageSizeOptions={ACTION_PAGE_SIZES}
+                itemLabel="recent actions"
+              />
             )}
           </section>
         </div>

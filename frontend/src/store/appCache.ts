@@ -123,7 +123,7 @@ export const appCache = new AppCache();
 
 export const CACHE_KEYS = {
   dashboardRecentDevices: "dashboard.recent-devices.50", // Device[], the latest 50 enrollments
-  recentActions: "dashboard.actions", // RemoteActionWithDevice[]
+  recentActions: "dashboard.actions.50", // RemoteActionWithDevice[], the latest 50
   operatorPresence: "dashboard.op-presence", // OperatorPresenceRecord[]
   clientsList: "clients.list", // Client[]
   groupsList: "clients.groups", // DeviceGroup[]
