@@ -5,6 +5,36 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] PROFILE-OVERVIEW-2026-10-14 — symmetric overview on the client profile (`5535da8`)
+
+Frontend only, deployed 2026-10-14 22:07 (Tirana). Rollback image
+`techi-platform-frontend:pre-profile-overview-189a069`. Guard passed before
+and after, `nginx -t` OK, container healthy, smoke passed, public 200,
+`.th-cp-ring-seg` in the served CSS. Root filesystem **90% (2.6 GB free)**
+after the build.
+
+The owner asked for the profile overview to be enterprise, modern,
+professional and symmetric. The shared `BreakdownBars` spreads its rows over
+the card's height (`justify-between`), so in Groups the first and last rows
+sat at opposite edges with a block of empty space between them. The profile
+now has its own panels; the Dashboard is unchanged.
+
+- Four cards with one structure: head, ring with legend, sub-heading,
+  one-line meters, footer pinned to the bottom, so cards side by side end on
+  one line. Fleet status (online/stale/offline ring, % online; by category
+  with status-split bars), Open alerts (critical/warning/info ring; by type
+  with kind icons), Groups (grouped vs no group ring; by group), Recent
+  activity (footer "Latest N of M entries").
+- Meters share one grid (mark, name, bar, count, share) so columns align
+  across cards. Legend rows filter: Offline opens the Devices tab with that
+  status; alert rows open the Alerts tab.
+- Ring segments draw in one after another and glide to new values; rows
+  rise in a stagger, bars grow, changed counts fade in.
+
+Playwright checks equal heights for cards side by side, footers on one line
+and the legend filter; client-profile and dashboard suites 10 passed, Vitest
+234.
+
 ## [2026-10-14] PROFILE-STICKY-2026-10-14 — client profile table header pinned under the top bar (`dfcd59c`)
 
 Frontend only, deployed 2026-10-14 21:57 (Tirana). Rollback image
