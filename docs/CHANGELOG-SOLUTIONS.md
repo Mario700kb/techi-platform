@@ -5,6 +5,28 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] RECENT-ACTIONS-2026-10-14 — dashboard: 50 recent remote actions, paged, readable names (`b5905f7`)
+
+Frontend only, deployed 2026-10-14 23:14 (Tirana). Rollback image
+`techi-platform-frontend:pre-recent-actions-ed6aaa5`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public 200,
+the new cache key and labels in the served bundle. Root filesystem 89%
+(2.7 GB free).
+
+The owner asked for the latest 50 remote actions, 10/20/50 a page, like
+Latest enrollments. The card showed 6 of 10 fetched, and five action types in
+production showed their raw names (`open_terminal`, `run_powershell`,
+`self_update`, `deploy_remote_support`, `set_remote_password`).
+
+- Recent remote actions: the newest 50 (`/actions/recent?limit=50`, the
+  endpoint allows 100), 10/20/50 a page; beyond ten a page either card in the
+  row keeps its own height.
+- `actionTypeLabel()` names every action type in production; used on the
+  desktop and phone dashboards and in the device drawer.
+- Cache key renamed so the old short list is not shown.
+
+Vitest 235; Playwright 106 (new: 50 actions, readable names, 50 a page).
+
 ## [2026-10-14] PROFILE-EDIT-2026-10-14 — edit your own profile; dashboard ring cards; 50 latest enrollments (`fd48c8b`, `ce6b6d1`)
 
 Backend and frontend, deployed 2026-10-14 23:04–23:07 (Tirana). Pre-deploy
