@@ -5,6 +5,58 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] CLIENT-ACTIVITY-2026-10-14 — client activity with sessions, methods and time; sidebar keeps Reports on reload (`1da8a2f`, `b90ce64`)
+
+Backend and frontend, deployed 2026-10-14 22:28–22:30 (Tirana). Pre-deploy
+dump `/opt/backups/techi/pre-client-activity-2026-10-14_22-26.sql.gz` (145 MB,
+`gzip -t` OK). Rollback images `techi-platform-backend:pre-client-activity-790a76a`
+and `techi-platform-frontend:pre-client-activity-790a76a`. No migration. Guard
+passed before and after, backend ready from inside the container ~8 s after
+recreate, 0 restarts, no tracebacks; `nginx -t` OK, frontend healthy; smoke
+passed. New endpoints answer 401 without a session (directly on the backend;
+the public host serves the app's HTML for unknown paths). Summary for the
+busiest client (1,371 entries) 50 ms, filtered list 10 ms.
+
+**Owner request.** The client's Activity was a bare list ("mario remote
+connect · PC-036"); the owner asked for more data, e.g. how long a remote
+session lasted.
+
+**Finding.** No Remote Support session length exists in production: 0
+`remote_session_started/ended` rows. The backend has accepted
+`remote_session_active` since RS-SECURITY, but no agent sends it — it is not
+in the agent source, and the fleet runs 2.1.20 (904 devices). The 3,804
+`remote_connect` rows record only the click (operator, IP, Remote Support
+status). Terminal/SSH sessions carry exact `duration_seconds`. The owner chose
+the richer Activity now and agent 2.1.24 (session reporting) as a separate
+step.
+
+- `GET /clients/{id}/activity`: `kind` (remote, terminal, actions,
+  credentials) and `operator` filters.
+- `GET /clients/{id}/activity/summary?days=30`: remote connections and
+  devices reached, operators, terminal/SSH time (a close reported twice for
+  one session counts once), Remote Support time from `remote_session_ended`.
+  Same operator scope as the list.
+- Activity tab: four 30-day figures, most reached devices (open the drawer),
+  operators (filter the log), a log grouped by day with kind marks (red when
+  failed), method, Remote Support status at connect, operator IP, close
+  reason and duration. Remote Support duration reads "—" until agents report
+  sessions.
+- Sidebar: platform feature flags started all-off on every load, so Reports
+  (and other flagged items) dropped out of the menu until
+  `/platform/features` answered. The last known flags are kept in
+  localStorage and painted at once; route guards still wait for the fetch and
+  the backend enforces every flag.
+
+**Disk.** Before the deploy the owner approved removing the 13 Oct rollback
+images: 14 frontend and 5 backend tags removed, kept
+`frontend:pre-client-connect-d33ae4b` and `backend:pre-client-docs-fb5292d`
+(the running backend's previous image) with the 14 Oct set. Root filesystem
+90% (2.5 GB free) → 87% (3.1 GB); 87% (3.0 GB) after both builds.
+
+Backend pytest 1,369 passed; Vitest 235; Playwright 102 (new: activity
+figures, log, filters; reload with delayed flags keeps Reports — fails
+without the fix).
+
 ## [2026-10-14] PROFILE-OVERVIEW-2026-10-14 — symmetric overview on the client profile (`5535da8`)
 
 Frontend only, deployed 2026-10-14 22:07 (Tirana). Rollback image
