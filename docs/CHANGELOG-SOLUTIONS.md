@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] PROFILE-SCROLL-2026-10-14 — client profile lists scroll inside their card (`331e59b`)
+
+Frontend only, deployed 2026-10-14 21:50 (Tirana). Rollback image
+`techi-platform-frontend:pre-profile-scroll-9df2a84`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200,
+`.th-cp-scroll` in the served CSS. Root filesystem 88% (2.8 GB free).
+
+The owner reported that a long device list on the client profile stretched the
+page. From 768px the Devices, Alerts and Activity lists now scroll inside
+their card under a sticky header, capped at `max(320px, 100dvh − 230px)` so
+toolbar, rows and pagination fit on screen together; phones keep one page
+scroll. New Playwright test with 40 devices (inner scroll, card fits the
+viewport, header stays at the top); client-profile suite 6 passed.
+
 ## [2026-10-14] CLIENT-CONNECT-2026-10-14 — client profile: Connect and the device drawer (`927c54d`)
 
 Frontend only, deployed 2026-10-14 21:43 (Tirana). Rollback image
