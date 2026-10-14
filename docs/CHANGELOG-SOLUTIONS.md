@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-14] CLIENT-CONNECT-2026-10-14 — client profile: Connect and the device drawer (`927c54d`)
+
+Frontend only, deployed 2026-10-14 21:43 (Tirana). Rollback image
+`techi-platform-frontend:pre-client-connect-d33ae4b`. Guard passed before and
+after, `nginx -t` OK, container healthy, smoke passed, public 200,
+`.th-cp-kpi` in the served CSS. Root filesystem 88% (2.9 GB free) after the
+build.
+
+The owner asked for an enterprise client profile with smooth motion in line
+with the app, a Connect button on the profile's device rows, and the device's
+full details in a side drawer without leaving the profile.
+
+- Devices tab: Connect on every row, same flow as the Devices page (Windows
+  opens Remote Support directly; other platforms get the Connect menu;
+  disabled while offline, stale stays connectable). Platform icon, health per
+  row (`/devices/table-details`), All/Online/Stale/Offline filter with counts.
+- A device anywhere on the profile (Devices, Alerts, Activity, Analytics,
+  recent activity) opens the device drawer in place; phones open the device
+  page. Drawer edits update the row and reload the profile figures.
+- Live: rows and the open drawer follow realtime device events; a status or
+  alert change on the client's devices reloads the figures after 4 s quiet.
+- Motion: identity mark settles in, the live status dot breathes, key figures
+  lift on hover and fade in on change, rows rise, the filter thumb slides.
+- `hasStructuralConnectMethod` and `DEVICE_PATCH_EVENTS` moved to
+  `utils/deviceStatus.ts` so the profile chunk does not include the Devices
+  table.
+
+Vitest 234 passed; Playwright client-profile and alert-to-device passed,
+including a new test for row Connect, the drawer in place and the filter.
+Authenticated browser smoke pending.
+
 ## [2026-10-13] CLIENT-DOCS-2026-10-13 — client profile, phase 2: documentation (`b490029`)
 
 Backend and frontend deployed 2026-10-13 21:31–21:36 (Tirana). Dump
