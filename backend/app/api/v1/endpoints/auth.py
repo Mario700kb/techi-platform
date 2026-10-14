@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.agent_auth import _SlidingWindowRateLimiter, login_limiter
@@ -30,6 +31,7 @@ from app.schemas.auth import (
     MfaSetup,
     MfaStatus,
     OperatorSessionOut,
+    ProfileUpdateRequest,
     RecoveryCodes,
     SessionInfo,
 )
@@ -195,6 +197,50 @@ def logout(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=Operator)
 def read_me(operator: OperatorModel = Depends(get_current_operator)):
+    return operator
+
+
+@router.patch("/me", response_model=Operator)
+def update_me(
+    payload: ProfileUpdateRequest,
+    operator: OperatorModel = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    """Edit your own display name and email. Changing the email asks for the
+    current password, since it is how the account is reached."""
+    changed: List[str] = []
+    if "display_name" in payload.model_fields_set and payload.display_name != operator.display_name:
+        operator.display_name = payload.display_name
+        changed.append("display_name")
+
+    new_email = str(payload.email).strip().lower() if payload.email else None
+    if new_email and new_email != (operator.email or "").lower():
+        if not payload.current_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter your current password to change your email")
+        if not verify_password(payload.current_password, operator.hashed_password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        taken = (
+            db.query(OperatorModel.id)
+            .filter(func.lower(OperatorModel.email) == new_email, OperatorModel.id != operator.id)
+            .first()
+        )
+        if taken:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Another operator already uses this email")
+        previous_email = operator.email
+        operator.email = new_email
+        changed.append("email")
+
+    if changed:
+        db.add(operator)
+        db.commit()
+        db.refresh(operator)
+        details = {"self": True, "fields": changed}
+        if "display_name" in changed:
+            details["display_name"] = operator.display_name
+        if "email" in changed:
+            details["email_from"] = previous_email
+            details["email_to"] = operator.email
+        audit_log(db, operator=operator, action=AuditAction.OPERATOR_UPDATED, entity_type="operator", entity_id=operator.id, details=details)
     return operator
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.operator import Operator
 
@@ -81,6 +81,22 @@ class MfaDisableRequest(BaseModel):
 
 class RecoveryCodes(BaseModel):
     recovery_codes: List[str]
+
+
+class ProfileUpdateRequest(BaseModel):
+    """The signed-in operator's own profile. Username and role stay with
+    whoever manages operators; a new email needs the current password."""
+
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    email: Optional[EmailStr] = None
+    current_password: Optional[str] = None
+
+    @field_validator("display_name")
+    @classmethod
+    def display_name_trimmed(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class ChangePasswordRequest(BaseModel):

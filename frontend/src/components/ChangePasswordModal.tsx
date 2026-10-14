@@ -9,7 +9,7 @@ interface ChangePasswordModalProps {
   onClose: () => void;
 }
 
-function PasswordField({
+export function PasswordField({
   label,
   value,
   onChange,

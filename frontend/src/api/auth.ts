@@ -67,6 +67,19 @@ export async function getCurrentUser(): Promise<AuthUser> {
   return fetchJson<AuthUser>("/api/v1/auth/me");
 }
 
+/** Your own display name and email; a new email needs the current password. */
+export async function updateProfile(changes: {
+  display_name?: string | null;
+  email?: string;
+  current_password?: string;
+}): Promise<AuthUser> {
+  return fetchJson<AuthUser>("/api/v1/auth/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<{ message: string }> {
   return fetchJson<{ message: string }>("/api/v1/auth/change-password", {
     method: "POST",

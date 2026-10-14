@@ -16,12 +16,14 @@ import {
   Shield,
   Sun,
   X,
+  UserRoundPen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useAppData } from "../contexts/AppDataContext";
 import ChangePasswordModal from "../components/ChangePasswordModal";
+import EditProfileModal from "../components/EditProfileModal";
 import SecurityCard from "../components/security/SecurityCard";
 import RemoteSupportPasswordsCard from "../components/security/RemoteSupportPasswordsCard";
 import { DefaultScreen, getPreferredDefaultScreen, setPreferredDefaultScreen } from "../utils/defaultScreen";
@@ -107,10 +109,11 @@ const SCREEN_OPTIONS: ChoiceOption<DefaultScreen>[] = [
 ];
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user, logout, reloadSession } = useAuth();
   const { themePreference, setThemeMode } = useTheme();
   const { fleetOverview, realtimeStatus } = useAppData();
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [defaultScreen, setDefaultScreen] = useState<DefaultScreen>(getPreferredDefaultScreen);
   const [copied, setCopied] = useState(false);
   const [connectPreferences, setConnectPreferences] = useState<ConnectPreference[]>([]);
@@ -196,6 +199,10 @@ export default function Settings() {
               </p>
             </div>
             <div className="th-settings-profile-actions">
+              <Button variant="secondary" size="sm" onClick={() => setShowEditProfile(true)}>
+                <UserRoundPen className="h-3.5 w-3.5" />
+                Edit profile
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setShowChangePwd(true)}>
                 <KeyRound className="h-3.5 w-3.5" />
                 Change password
@@ -356,6 +363,9 @@ export default function Settings() {
       </div>
 
       {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+      {showEditProfile && user && (
+        <EditProfileModal user={user} onClose={() => setShowEditProfile(false)} onSaved={reloadSession} />
+      )}
     </section>
   );
 }

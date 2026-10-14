@@ -528,6 +528,24 @@ const HANDLERS: Record<string, Handler> = {
       session_expires_at: sessionBody(state).session_expires_at,
     });
   },
+  // Your own profile: a new email needs the current password, as on the server.
+  "PATCH /api/v1/auth/me": (route, state) => {
+    if (!state.user) return json(route, { detail: "Not authenticated" }, 401);
+    const body = route.request().postDataJSON() as {
+      display_name?: string | null;
+      email?: string;
+      current_password?: string;
+    };
+    const next = { ...state.user };
+    if ("display_name" in body) next.display_name = body.display_name ?? null;
+    if (body.email && body.email.toLowerCase() !== state.user.email.toLowerCase()) {
+      if (body.current_password !== "correct-password")
+        return json(route, { detail: "Current password is incorrect" }, 400);
+      next.email = body.email.toLowerCase();
+    }
+    state.user = next;
+    return json(route, next);
+  },
   "GET /api/v1/auth/mfa": (route) => json(route, mfaStatus),
   "GET /api/v1/auth/sessions": (route) => json(route, sessions),
   "GET /api/v1/platform/features": (route) => json(route, features),
