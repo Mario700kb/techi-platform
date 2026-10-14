@@ -26,7 +26,36 @@ interface FeaturesSnapshot {
 // fetch from ALL_OFF: a route guard mounting after the Sidebar had already
 // resolved would still start from ALL_OFF/loading, treat the flag as off,
 // and redirect to "/" before its own fetch completed.
-let snapshot: FeaturesSnapshot = { features: ALL_OFF, loading: true };
+// The last flags this browser was told, so the Sidebar paints its full menu
+// on a reload instead of dropping Reports, Vault… until the fetch returns.
+// Display only: route guards still wait for the fetch (loading stays true)
+// and the backend enforces every flag itself.
+const STORAGE_KEY = "techi.platform-features";
+
+function readStored(): PlatformFeatures | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const next = { ...ALL_OFF };
+    (Object.keys(ALL_OFF) as (keyof PlatformFeatures)[]).forEach((key) => {
+      next[key] = parsed[key] === true;
+    });
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(features: PlatformFeatures): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(features));
+  } catch {
+    // Storage blocked: the menu fills in when the fetch returns, as before.
+  }
+}
+
+let snapshot: FeaturesSnapshot = { features: readStored() ?? ALL_OFF, loading: true };
 let fetchPromise: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
@@ -38,9 +67,13 @@ function emit(next: FeaturesSnapshot): void {
 function ensureFetch(): void {
   if (fetchPromise) return;
   fetchPromise = getPlatformFeatures()
-    .then((f) => emit({ features: f, loading: false }))
+    .then((f) => {
+      writeStored(f);
+      emit({ features: f, loading: false });
+    })
     .catch(() => {
-      emit({ features: ALL_OFF, loading: false });
+      // Keep the last known flags for display (all off when there are none).
+      emit({ features: readStored() ?? ALL_OFF, loading: false });
       // Don't cache a failure (e.g. a 401 fetched before login completes) —
       // allow the next mount/subscribe to retry.
       fetchPromise = null;

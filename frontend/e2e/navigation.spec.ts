@@ -41,3 +41,18 @@ test.describe("read-only operator", () => {
     await expect(page.getByText("You do not have access to this page")).toBeVisible();
   });
 });
+
+test("a reload keeps Reports in the sidebar while the feature flags load", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "the sidebar is the desktop navigation");
+  await page.goto("/");
+  const reports = page.getByRole("navigation").getByRole("link", { name: "Reports" });
+  await expect(reports).toBeVisible();
+
+  // The flags answer slowly on the reload; the menu must not lose Reports meanwhile.
+  await page.route("**/api/v1/platform/features", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fallback();
+  });
+  await page.reload();
+  await expect(reports).toBeVisible({ timeout: 1000 });
+});

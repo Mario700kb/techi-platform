@@ -34,6 +34,30 @@ function Probe({
 describe("usePlatformFeatures shared store", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it("paints the last known flags at once on a reload, then follows the fetch", async () => {
+    window.localStorage.setItem("techi.platform-features", JSON.stringify({ FEATURE_REPORTING: true }));
+    let resolveFetch: (v: Record<string, boolean>) => void = () => {};
+    getPlatformFeaturesMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const { usePlatformFeatures, usePlatformFeaturesLoading } = await loadHook();
+
+    render(<Probe usePlatformFeatures={usePlatformFeatures} usePlatformFeaturesLoading={usePlatformFeaturesLoading} />);
+    // Shown before the fetch returns; guards still see it as loading.
+    expect(screen.getByTestId("reporting").textContent).toBe("true");
+    expect(screen.getByTestId("loading").textContent).toBe("true");
+
+    await act(async () => {
+      resolveFetch({ FEATURE_REPORTING: false });
+    });
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"));
+    expect(screen.getByTestId("reporting").textContent).toBe("false");
+    expect(JSON.parse(window.localStorage.getItem("techi.platform-features")!)).toEqual({ FEATURE_REPORTING: false });
   });
 
   it("starts loading and resolves to the fetched flags", async () => {
