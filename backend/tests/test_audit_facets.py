@@ -11,12 +11,13 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.audit_log import AuditLog
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.repositories.audit_log_repository import AuditLogRepository
 
 
 def test_facets_count_every_action_entity_and_operator():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(bind=engine, tables=[AuditLog.__table__, Device.__table__])
+    Base.metadata.create_all(bind=engine, tables=[AuditLog.__table__, ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__])
     db = sessionmaker(bind=engine)()
     repo = AuditLogRepository(db)
     for _ in range(3):

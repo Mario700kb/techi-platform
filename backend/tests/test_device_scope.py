@@ -24,6 +24,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.device_inventory import DeviceInventory
 from app.models.device_telemetry import DeviceTelemetry
@@ -45,7 +46,7 @@ from app.services.device_summary_service import DeviceSummaryService
 TABLES = [
     Client.__table__,
     DeviceGroup.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     DeviceTelemetry.__table__,
     DeviceInventory.__table__,
     DeviceAlert.__table__,
@@ -257,6 +258,9 @@ class TestDeviceScopeByClientId:
             "by_client_status": {"1": {"total": 1, "online": 1, "stale": 0, "offline": 0}},
             # Platform Expansion: empty with FEATURE_LINUX off (default).
             "by_client_category_platform": {},
+            # No client has a location yet.
+            "locations": [],
+            "by_client_location": {},
         }
         assert body["critical"] == 0
         assert body["warnings"] == 0

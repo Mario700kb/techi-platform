@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.db.base import Base
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_telemetry import DeviceTelemetry
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 
@@ -17,7 +18,7 @@ from app.repositories.device_telemetry_repository import DeviceTelemetryReposito
 @pytest.fixture()
 def db():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(bind=engine, tables=[Device.__table__, DeviceTelemetry.__table__])
+    Base.metadata.create_all(bind=engine, tables=[ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__, DeviceTelemetry.__table__])
     session = sessionmaker(bind=engine)()
     session.info["engine"] = engine
     yield session

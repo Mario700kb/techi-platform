@@ -25,6 +25,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.team import Team, TeamMember
@@ -63,7 +64,7 @@ def _build(monkeypatch, role="operator", perms=None):
     Base.metadata.create_all(
         bind=engine,
         tables=[
-            Device.__table__, Client.__table__, DeviceGroup.__table__,
+            ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__, Client.__table__, DeviceGroup.__table__,
             Operator.__table__, Team.__table__, TeamMember.__table__,
             TerminalSession.__table__, VaultCredential.__table__,
             VaultCredentialUsage.__table__, VaultCredentialAssignment.__table__,

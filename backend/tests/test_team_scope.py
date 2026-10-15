@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db.base import Base
 from app.models.client import Client
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.operator_scope import OperatorScope
@@ -41,7 +42,7 @@ TABLES = [
     Operator.__table__,
     Client.__table__,
     DeviceGroup.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     OperatorScope.__table__,
     Team.__table__,
     TeamMember.__table__,

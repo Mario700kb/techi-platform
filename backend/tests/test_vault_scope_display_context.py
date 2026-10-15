@@ -23,6 +23,7 @@ from app.db.base import Base
 from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 from app.schemas.vault import VaultCredentialCreate
@@ -50,7 +51,7 @@ def _session():
         bind=engine,
         tables=[
             VaultCredential.__table__, VaultCredentialUsage.__table__, VaultCredentialAssignment.__table__,
-            AuditLog.__table__, Client.__table__, DeviceGroup.__table__, Device.__table__,
+            AuditLog.__table__, Client.__table__, DeviceGroup.__table__, ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
         ],
     )
     return sessionmaker(bind=engine)()

@@ -20,6 +20,7 @@ from app.models.alert import DeviceAlert
 from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.device_inventory import DeviceInventory
 from app.models.device_telemetry import DeviceTelemetry
@@ -31,7 +32,7 @@ from app.services.device_overview_service import invalidate_overview_cache
 TABLES = [
     Client.__table__,
     DeviceGroup.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     DeviceTelemetry.__table__,
     DeviceInventory.__table__,
     DeviceAlert.__table__,

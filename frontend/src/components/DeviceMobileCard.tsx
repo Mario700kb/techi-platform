@@ -125,7 +125,9 @@ export function DeviceMobileCard({
   const rsIssue = remoteSupportIssue(device);
   const patchView = patchBadge(patch);
   const maintenanceView = maintenanceBadge(device);
-  const groupLine = device.group_name ? ` · ${device.group_name}` : "";
+  // The client's site where it has sites, the group otherwise.
+  const place = device.location_name || device.group_name;
+  const groupLine = place ? ` · ${place}` : "";
 
   const freshness = freshnessOf(device);
   const meta = [

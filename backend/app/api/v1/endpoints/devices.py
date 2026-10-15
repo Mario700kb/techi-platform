@@ -151,6 +151,7 @@ def read_devices(
     ids: Optional[str] = None,
     agent_version: Optional[str] = None,
     hide_offline_days: Optional[int] = Query(default=None, ge=1, le=3650),
+    location_ids: Optional[str] = None,
     sort: Optional[str] = Query(default=None, pattern="^(" + "|".join(SORT_KEYS) + ")$"),
     order: Optional[str] = Query(default=None, pattern="^(asc|desc)$"),
 ):
@@ -174,7 +175,7 @@ def read_devices(
         quick_filter=_check_quick_filter(quick_filter),
         device_ids=_parse_ids(ids, "ids"),
         agent_version=agent_version,
-        hide_offline_days=hide_offline_days,
+        hide_offline_days=hide_offline_days, location_ids=_parse_ids(location_ids, "location_ids"),
     )
     devices = svc.get_devices(skip=skip, limit=limit, sort=sort, order=order, **filter_kwargs)
     total = svc.get_devices_count(**filter_kwargs)
@@ -200,6 +201,7 @@ def read_device_quick_counts(
     category: Optional[str] = None,
     agent_version: Optional[str] = None,
     hide_offline_days: Optional[int] = Query(default=None, ge=1, le=3650),
+    location_ids: Optional[str] = None,
     favorite_ids: Optional[str] = None,
 ):
     return DeviceService(db).get_device_counts(
@@ -217,7 +219,7 @@ def read_device_quick_counts(
         platform=platform,
         category=category,
         agent_version=agent_version,
-        hide_offline_days=hide_offline_days,
+        hide_offline_days=hide_offline_days, location_ids=_parse_ids(location_ids, "location_ids"),
         favorite_ids=_parse_ids(favorite_ids, "favorite_ids"),
         scope=scope,
     )

@@ -33,6 +33,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.schemas.remote_action import PendingActionDelivery
 
@@ -48,7 +49,7 @@ def db():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[Client.__table__, DeviceGroup.__table__, Device.__table__],
+        tables=[Client.__table__, DeviceGroup.__table__, ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__],
     )
     session = sessionmaker(bind=engine)()
     yield session

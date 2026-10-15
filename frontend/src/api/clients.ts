@@ -264,3 +264,139 @@ export async function updateClientDocument(
 export async function deleteClientDocument(clientId: number, documentId: number): Promise<void> {
   await fetchJson<void>(`/api/v1/clients/${clientId}/documents/${documentId}`, { method: "DELETE" });
 }
+
+// ─── Locations (a client's sites) ───────────────────────────────────────────
+
+export type LocationKind = "office" | "branch" | "shop" | "warehouse" | "datacenter" | "other";
+
+export const LOCATION_KINDS: { value: LocationKind; label: string }[] = [
+  { value: "office", label: "Head office" },
+  { value: "branch", label: "Branch" },
+  { value: "shop", label: "Shop" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "datacenter", label: "Data centre" },
+  { value: "other", label: "Other" },
+];
+
+export interface LocationRule {
+  id?: number;
+  public_ip?: string | null;
+  lan_cidr?: string | null;
+}
+
+export interface LocationStats extends DeviceStats {
+  servers: number;
+  clientpc: number;
+}
+
+export interface ClientLocation {
+  id: number;
+  client_id: number;
+  name: string;
+  kind: LocationKind;
+  country: string;
+  city: string;
+  address?: string | null;
+  contact?: string | null;
+  notes?: string | null;
+  rules: LocationRule[];
+  stats: LocationStats;
+  manual_devices: number;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientLocationList {
+  locations: ClientLocation[];
+  unlocated: LocationStats;
+}
+
+export interface LocationInput {
+  name: string;
+  kind: LocationKind;
+  country: string;
+  city: string;
+  address?: string | null;
+  contact?: string | null;
+  notes?: string | null;
+  rules: LocationRule[];
+}
+
+export interface LocationSuggestion {
+  public_ip: string;
+  devices: number;
+  online: number;
+  networks: { lan_cidr: string; devices: number }[];
+  other_network_devices: number;
+  sample_hostnames: string[];
+}
+
+export interface LocationApplyResult {
+  assigned: number;
+  cleared: number;
+}
+
+const json = (method: string, body: unknown) => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export async function getClientLocations(clientId: number): Promise<ClientLocationList> {
+  return fetchJson<ClientLocationList>(`/api/v1/clients/${clientId}/locations`);
+}
+
+export async function getLocationSuggestions(clientId: number): Promise<LocationSuggestion[]> {
+  return fetchJson<LocationSuggestion[]>(`/api/v1/clients/${clientId}/locations/suggestions`);
+}
+
+export async function createClientLocation(clientId: number, input: LocationInput): Promise<ClientLocation> {
+  return fetchJson<ClientLocation>(`/api/v1/clients/${clientId}/locations`, json("POST", input));
+}
+
+export async function updateClientLocation(
+  clientId: number,
+  locationId: number,
+  input: Partial<LocationInput>,
+): Promise<ClientLocation> {
+  return fetchJson<ClientLocation>(`/api/v1/clients/${clientId}/locations/${locationId}`, json("PUT", input));
+}
+
+export async function deleteClientLocation(clientId: number, locationId: number): Promise<void> {
+  await fetchJson<void>(`/api/v1/clients/${clientId}/locations/${locationId}`, { method: "DELETE" });
+}
+
+export async function applyLocationRules(clientId: number): Promise<LocationApplyResult> {
+  return fetchJson<LocationApplyResult>(`/api/v1/clients/${clientId}/locations/apply`, { method: "POST" });
+}
+
+/** Put devices at a location by hand ("manual", pinned) or give them back to the rules ("auto"). */
+export async function assignDeviceLocation(
+  clientId: number,
+  deviceIds: number[],
+  locationId: number | null,
+  mode: "manual" | "auto" = "manual",
+): Promise<LocationApplyResult> {
+  return fetchJson<LocationApplyResult>(
+    `/api/v1/clients/${clientId}/locations/assign`,
+    json("POST", { device_ids: deviceIds, location_id: locationId, mode }),
+  );
+}
+
+/** "AL" → "🇦🇱"; anything else → "". */
+export function countryFlag(code: string): string {
+  const cc = code.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return "";
+  return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+/** "AL" → "Albania" in the operator's language, falling back to the code. */
+export function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}

@@ -15,6 +15,7 @@ import {
   HeartPulse,
   LayoutDashboard,
   Layers,
+  MapPin,
   Monitor,
   MonitorSmartphone,
   PackageCheck,
@@ -34,6 +35,7 @@ import {
 import { ACTION_LABELS, AuditLogEntry } from "../api/audit";
 import { useAuth } from "../auth/AuthContext";
 import ClientDocuments from "../components/ClientDocuments";
+import ClientLocations from "../components/ClientLocations";
 import { getAlerts } from "../api/alerts";
 import {
   ClientActivityKind,
@@ -101,7 +103,7 @@ import { detectOperatorOS } from "../utils/operatorOs";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
 type StatusFilter = "all" | "online" | "stale" | "offline";
-type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
+type Tab = "overview" | "devices" | "locations" | "alerts" | "activity" | "analytics" | "documents";
 
 const DEVICE_PAGE_SIZES = [20, 50];
 const ACTIVITY_PAGE_SIZE = 20;
@@ -195,7 +197,7 @@ export default function ClientProfilePage() {
   useNow();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { can } = useAuth();
+  const { can, hasPermission } = useAuth();
   const clientId = id ? Number(id) : NaN;
   const valid = Number.isInteger(clientId) && clientId > 0;
 
@@ -351,6 +353,7 @@ export default function ClientProfilePage() {
   const TABS: { key: Tab; label: string; icon: typeof Monitor; count?: number }[] = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "devices", label: "Devices", icon: Monitor, count: stats.total },
+    { key: "locations", label: "Locations", icon: MapPin },
     { key: "alerts", label: "Alerts", icon: BellRing, count: alerts.total_open },
     { key: "activity", label: "Activity", icon: Activity },
     { key: "analytics", label: "Analytics", icon: BarChart3 },
@@ -571,6 +574,9 @@ export default function ClientProfilePage() {
             latestEvent={latestEvent}
             updatedDevice={updatedDevice}
           />
+        )}
+        {opened.has("locations") && tab === "locations" && (
+          <ClientLocations clientId={client.id} canManage={hasPermission("manage_clients")} />
         )}
         {opened.has("alerts") && tab === "alerts" && <AlertsTab clientId={client.id} onOpenDevice={openDevice} />}
         {opened.has("activity") && tab === "activity" && <ActivityTab clientId={client.id} onOpenDevice={openDevice} />}

@@ -1,7 +1,8 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, event, text
 from sqlalchemy.orm import relationship
+from sqlalchemy.orm.base import NO_VALUE
 
 from app.db.base import Base
 from app.core.time import ensure_utc, utcnow
@@ -127,6 +128,10 @@ class Device(Base):
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)
     auto_assigned = Column(Boolean, default=False, nullable=False)
     assignment_source = Column(String(40), default="manual", nullable=False)
+    # The client's site the device is at: set by a location rule ("rule") or
+    # by an operator ("manual", which the rules never move).
+    location_id = Column(Integer, ForeignKey("client_locations.id", ondelete="SET NULL"), nullable=True, index=True)
+    location_source = Column(String(16), nullable=True)
 
     # Joined: every heartbeat reads client_name/group_name, and each commit in
     # the heartbeat path expires the device, so lazy loading re-selected the
@@ -135,6 +140,8 @@ class Device(Base):
     # the device's own refresh brings both along.
     client = relationship("Client", back_populates="devices", lazy="joined")
     group = relationship("DeviceGroup", back_populates="devices", lazy="joined")
+    # Joined for the same reason as client and group; a small table.
+    location = relationship("ClientLocation", lazy="joined")
     heartbeats = relationship("DeviceHeartbeat", back_populates="device")
     remote_actions = relationship("RemoteAction", back_populates="device", cascade="all, delete-orphan")
     notes = relationship("DeviceNote", back_populates="device", cascade="all, delete-orphan")
@@ -148,8 +155,24 @@ class Device(Base):
         return self.group.name if self.group else None
 
     @property
+    def location_name(self):
+        # A location of another client (the device moved) does not count.
+        if self.location and self.location.client_id == self.client_id:
+            return self.location.name
+        return None
+
+    @property
     def freshness_state(self):
         return freshness_for(self.last_seen)
+
+
+@event.listens_for(Device.client_id, "set", active_history=True)
+def _leave_location_with_the_client(target, value, oldvalue, _initiator):
+    """A device that moves to another client leaves its old client's site; the
+    new client's rules place it again."""
+    if oldvalue is not NO_VALUE and oldvalue != value:
+        target.location_id = None
+        target.location_source = None
 
 
 def freshness_for(last_seen) -> str:

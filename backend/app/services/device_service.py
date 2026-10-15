@@ -67,6 +67,7 @@ class DeviceService:
         device_ids: Optional[Sequence[int]] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
         sort: Optional[str] = None,
         order: Optional[str] = None,
     ) -> List[Device]:
@@ -94,7 +95,7 @@ class DeviceService:
             health_index=self._health_index_for(quick_filter, sort, scope),
             device_ids=device_ids,
             agent_version=agent_version,
-            hide_offline_days=hide_offline_days,
+            hide_offline_days=hide_offline_days, location_ids=location_ids,
             sort=sort,
             order=order,
         )
@@ -123,6 +124,7 @@ class DeviceService:
         category: Optional[str] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
         favorite_ids: Optional[Sequence[int]] = None,
         scope: Optional["AllowedScope"] = None,
     ) -> dict:
@@ -136,7 +138,7 @@ class DeviceService:
             assignment_source=assignment_source, smart_folder=smart_folder,
             client_id=client_id, group_id=group_id, lifecycle_state=lifecycle_state, search=search,
             duplicate_candidates=duplicate_candidates, maintenance_state=maintenance_state,
-            platform=platform, category=category, hide_offline_days=hide_offline_days, scope=scope,
+            platform=platform, category=category, hide_offline_days=hide_offline_days, location_ids=location_ids, scope=scope,
         )
         counts = self.repository.count_quick_filters(
             get_health_index(self.repository.db, scope), agent_version=agent_version, **base,
@@ -242,6 +244,7 @@ class DeviceService:
         device_ids: Optional[Sequence[int]] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
     ) -> int:
         active_agent_version, active_agent_sha256 = self._active_agent_package_for_filter(agent_update_state)
         return self.repository.count(
@@ -265,7 +268,7 @@ class DeviceService:
             health_index=self._health_index_for(quick_filter, None, scope),
             device_ids=device_ids,
             agent_version=agent_version,
-            hide_offline_days=hide_offline_days,
+            hide_offline_days=hide_offline_days, location_ids=location_ids,
         )
 
     def get_devices_stats(self, scope: Optional["AllowedScope"] = None) -> dict:

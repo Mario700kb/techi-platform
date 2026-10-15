@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.enrollment_audit import EnrollmentAudit
 from app.models.enrollment_token import EnrollmentToken, EnrollmentTokenStatus
@@ -27,7 +28,7 @@ TABLES = [
     DeviceGroup.__table__,
     EnrollmentToken.__table__,
     TrustedDomain.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     EnrollmentAudit.__table__,
 ]
 

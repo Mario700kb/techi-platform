@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models.agent_command_batch import AgentCommandBatch
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.remote_action import ActionStatus, RemoteAction
@@ -20,7 +21,7 @@ TABLES = [
     Client.__table__,
     DeviceGroup.__table__,
     Operator.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     AgentCommandBatch.__table__,
     RemoteAction.__table__,
 ]

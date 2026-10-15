@@ -11,6 +11,7 @@ from app.core.time import utcnow
 from app.core.scope import AllowedScope
 from app.db.session import get_db
 from app.models.client_document import ClientDocument
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator, OperatorRole
@@ -23,6 +24,15 @@ from app.schemas.client_document import (
     ClientDocumentOut,
     ClientDocumentSummary,
     ClientDocumentUpdate,
+)
+from app.schemas.client_location import (
+    DeviceLocationAssign,
+    LocationApplyResult,
+    LocationCreate,
+    LocationList,
+    LocationOut,
+    LocationSuggestion,
+    LocationUpdate,
 )
 from app.schemas.client import (
     Client,
@@ -38,6 +48,7 @@ from app.schemas.client import (
 from app.services.audit_service import AuditAction, audit_log
 from app.services.client_service import ClientService
 from app.services.device_overview_service import DeviceOverviewService
+from app.services.location_service import LocationService
 from app.services.operator_scope_service import OperatorScopeService
 from app.services.permission_service import MANAGE_CLIENTS
 
@@ -373,6 +384,181 @@ def delete_client_document(
     audit_log(db, operator=operator, action=AuditAction.CLIENT_DOCUMENT_DELETED, entity_type="client_document",
               entity_id=document_id, details={"client_id": client_id, "title": title})
     return Response(status_code=204)
+
+
+# ─── Locations ──────────────────────────────────────────────────────────────
+
+
+def _location(db: Session, client_id: int, location_id: int) -> ClientLocation:
+    location = db.query(ClientLocation).filter(
+        ClientLocation.id == location_id, ClientLocation.client_id == client_id
+    ).first()
+    if location is None:
+        raise HTTPException(status_code=404, detail="Location not found")
+    return location
+
+
+def _location_out(db: Session, client_id: int, location_id: int, scope) -> LocationOut:
+    listing = LocationService(db).listing(client_id, scope)
+    return next(item for item in listing.locations if item.id == location_id)
+
+
+def _check_unique_name(db: Session, client_id: int, name: str, exclude_id: Optional[int] = None) -> None:
+    query = db.query(ClientLocation.id).filter(
+        ClientLocation.client_id == client_id, func.lower(ClientLocation.name) == name.lower()
+    )
+    if exclude_id is not None:
+        query = query.filter(ClientLocation.id != exclude_id)
+    if query.first():
+        raise HTTPException(status_code=409, detail="This client already has a location with that name")
+
+
+@router.get("/{client_id}/locations", response_model=LocationList)
+def list_client_locations(
+    client_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """The client's sites with the devices at each, and the devices at none."""
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    return LocationService(db).listing(client_id, narrowed)
+
+
+@router.get("/{client_id}/locations/suggestions", response_model=List[LocationSuggestion])
+def suggest_client_locations(
+    client_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Public IPs that several of the client's unlocated devices share."""
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    return LocationService(db).suggestions(client_id, narrowed)
+
+
+@router.post("/{client_id}/locations", response_model=LocationOut, status_code=201)
+def create_client_location(
+    client_id: int,
+    payload: LocationCreate,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_manage_clients),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    _check_unique_name(db, client_id, payload.name)
+    now = utcnow()
+    location = ClientLocation(
+        client_id=client_id,
+        **payload.model_dump(exclude={"rules"}),
+        created_by=operator.username,
+        updated_by=operator.username,
+        created_at=now,
+        updated_at=now,
+    )
+    location.rules = [ClientLocationRule(**rule.model_dump()) for rule in payload.rules]
+    db.add(location)
+    db.commit()
+    placed = LocationService(db).apply_rules(client_id)
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_LOCATION_CREATED, entity_type="client_location",
+              entity_id=location.id, details={"client_id": client_id, "name": location.name,
+                                              "city": location.city, "country": location.country,
+                                              "rules": len(payload.rules), "devices_placed": placed.assigned})
+    return _location_out(db, client_id, location.id, narrowed)
+
+
+@router.put("/{client_id}/locations/{location_id}", response_model=LocationOut)
+def update_client_location(
+    client_id: int,
+    location_id: int,
+    payload: LocationUpdate,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_manage_clients),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    location = _location(db, client_id, location_id)
+    changes = payload.model_dump(exclude_unset=True, exclude={"rules"})
+    if changes.get("name"):
+        _check_unique_name(db, client_id, changes["name"], exclude_id=location_id)
+    for field, value in changes.items():
+        setattr(location, field, value)
+    if payload.rules is not None:
+        location.rules = [ClientLocationRule(**rule.model_dump()) for rule in payload.rules]
+    location.updated_by = operator.username
+    location.updated_at = utcnow()
+    db.commit()
+    placed = LocationService(db).apply_rules(client_id)
+    fields = sorted(changes) + (["rules"] if payload.rules is not None else [])
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_LOCATION_UPDATED, entity_type="client_location",
+              entity_id=location_id, details={"client_id": client_id, "name": location.name, "fields": fields,
+                                              "devices_placed": placed.assigned, "devices_cleared": placed.cleared})
+    return _location_out(db, client_id, location_id, narrowed)
+
+
+@router.delete("/{client_id}/locations/{location_id}", status_code=204)
+def delete_client_location(
+    client_id: int,
+    location_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_manage_clients),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """The location's devices go back to the rules of the remaining locations."""
+    _client_in_scope(db, scope, client_id)
+    location = _location(db, client_id, location_id)
+    name = location.name
+    db.query(Device).filter(Device.location_id == location_id).update(
+        {Device.location_id: None, Device.location_source: None}, synchronize_session=False
+    )
+    db.delete(location)
+    db.commit()
+    placed = LocationService(db).apply_rules(client_id)
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_LOCATION_DELETED, entity_type="client_location",
+              entity_id=location_id, details={"client_id": client_id, "name": name,
+                                              "devices_placed_elsewhere": placed.assigned})
+    return Response(status_code=204)
+
+
+@router.post("/{client_id}/locations/apply", response_model=LocationApplyResult)
+def apply_client_location_rules(
+    client_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_manage_clients),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Place every device no operator placed by hand, with the current rules."""
+    _client_in_scope(db, scope, client_id)
+    result = LocationService(db).apply_rules(client_id)
+    audit_log(db, operator=operator, action=AuditAction.CLIENT_LOCATIONS_APPLIED, entity_type="client",
+              entity_id=client_id, details={"client_id": client_id, "trigger": "manual",
+                                            "assigned": result.assigned, "cleared": result.cleared})
+    return result
+
+
+@router.post("/{client_id}/locations/assign", response_model=LocationApplyResult)
+def assign_device_location(
+    client_id: int,
+    payload: DeviceLocationAssign,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(get_current_operator),
+    _: None = Depends(_require_manage_clients),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Put devices at a location by hand (pinned), or give them back to the rules."""
+    _, narrowed = _client_in_scope(db, scope, client_id)
+    if payload.mode == "manual" and payload.location_id is not None:
+        _location(db, client_id, payload.location_id)
+    devices = LocationService(db).assign(client_id, narrowed, payload.device_ids, payload.location_id, payload.mode)
+    for device in devices:
+        audit_log(db, operator=operator, action=AuditAction.DEVICE_LOCATION_SET, entity_type="device",
+                  entity_id=device.id, details={"client_id": client_id, "device_id": device.id,
+                                                "location_id": device.location_id, "mode": payload.mode})
+    return LocationApplyResult(assigned=len(devices), cleared=0)
 
 
 @router.put("/{client_id}", response_model=Client)

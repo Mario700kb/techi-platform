@@ -18,6 +18,8 @@ import {
   DeviceSortKey,
   DeviceStats,
   DeviceTableDetails,
+  TreeLocation,
+  TreeLocationCounts,
 } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
@@ -44,6 +46,9 @@ interface TreeCounts {
   // Platform Expansion: clientId → category → platform → count.
   byClientCategoryPlatform: Map<number, Map<string, Map<string, number>>>;
   byClientStatus: Map<number, DeviceStats>;
+  // Client sites: the locations, and clientId → locationId (0: none) → counts.
+  locations: TreeLocation[];
+  byClientLocation: Map<number, Map<number, TreeLocationCounts>>;
 }
 
 function computeTreeCounts(devices: Device[]): TreeCounts {
@@ -61,6 +66,8 @@ function computeTreeCounts(devices: Device[]): TreeCounts {
     byClientCategory: new Map(),
     byClientCategoryPlatform: new Map(),
     byClientStatus: new Map(),
+    locations: [],
+    byClientLocation: new Map(),
   };
 }
 
@@ -85,6 +92,21 @@ function treeKeyFilters(key: string, base: DeviceFilters): DeviceFilters {
   };
   if (key === "unassigned") {
     next.client_id = -1;
+    next.group_id = undefined;
+  } else if (/^client-\d+-locs?-/.test(key)) {
+    // Client sites: client-N-loc-<id|none>[-<category>[-<platform>]], and a
+    // city with several sites, client-N-locs-<id>.<id>…
+    const city = key.match(/^client-(\d+)-locs-([\d.]+)$/);
+    const site = key.match(new RegExp(`^client-(\\d+)-loc-(\\d+|none)(?:-(${TREE_CATEGORIES})(?:-([a-z0-9]+))?)?$`));
+    if (city) {
+      next.client_id = Number(city[1]);
+      next.location_ids = city[2].split(".").map(Number).filter(Boolean);
+    } else if (site) {
+      next.client_id = Number(site[1]);
+      next.location_ids = [site[2] === "none" ? -1 : Number(site[2])];
+      if (site[3]) next.category = site[3];
+      if (site[4]) next.platform = site[4];
+    }
     next.group_id = undefined;
   } else if (key.startsWith("client-")) {
     // Platform sub-folder: client-N-<category>-<platform> (Platform Expansion).
@@ -274,6 +296,13 @@ export default function Devices() {
       ),
       byClientStatus: new Map(
         Object.entries(fleetOverview.tree_counts.by_client_status ?? {}).map(([id, stats]) => [Number(id), stats]),
+      ),
+      locations: fleetOverview.tree_counts.locations ?? [],
+      byClientLocation: new Map(
+        Object.entries(fleetOverview.tree_counts.by_client_location ?? {}).map(([clientId, sites]) => [
+          Number(clientId),
+          new Map(Object.entries(sites).map(([locationId, counts]) => [Number(locationId), counts])),
+        ]),
       ),
     };
   }, [fleetOverview]);

@@ -374,7 +374,9 @@ export default function DeviceDetailsMobile() {
 
         <p className="mt-1 truncate pl-1 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
           {device.client_name ?? "No client"}
-          {device.group_name && <span style={{ color: "var(--th-text-muted)" }}> · {device.group_name}</span>}
+          {(device.location_name || device.group_name) && (
+            <span style={{ color: "var(--th-text-muted)" }}> · {device.location_name || device.group_name}</span>
+          )}
           {hostnameSubtitle && (
             <span className="font-mono text-[12px]" style={{ color: "var(--th-text-muted)" }}>
               {" "}

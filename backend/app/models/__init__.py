@@ -2,6 +2,7 @@ from app.models.agent_command_batch import AgentCommandBatch
 from app.models.alert import DeviceAlert
 from app.models.client import Client
 from app.models.client_document import ClientDocument
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.connect_preference import OperatorConnectPreference
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
@@ -33,6 +34,8 @@ __all__ = [
     "AgentCommandBatch",
     "Client",
     "ClientDocument",
+    "ClientLocation",
+    "ClientLocationRule",
     "Device",
     "DeviceAlert",
     "DeviceGroup",

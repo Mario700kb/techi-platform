@@ -57,6 +57,10 @@ export interface Device {
   group_id?: number;
   client_name?: string | null;
   group_name?: string | null;
+  // The client's site the device is at: by a location rule, or placed by hand ("manual").
+  location_id?: number | null;
+  location_name?: string | null;
+  location_source?: "rule" | "manual" | null;
   cpu?: string;
   ram?: string;
   storage?: string;
@@ -132,6 +136,8 @@ export interface DeviceFilters {
   ids?: number[];
   // "unknown" selects devices that report no agent version.
   agent_version?: string;
+  // Explorer location (one id) or city (several); -1 is "no location".
+  location_ids?: number[];
   hide_offline_days?: number;
   sort?: DeviceSortKey;
   order?: "asc" | "desc";
@@ -228,6 +234,7 @@ function appendDeviceFilterParams(params: URLSearchParams, filters: DeviceFilter
   if (filters.ids) params.append("ids", filters.ids.join(","));
   if (filters.agent_version?.trim()) params.append("agent_version", filters.agent_version.trim());
   if (filters.hide_offline_days) params.append("hide_offline_days", String(filters.hide_offline_days));
+  if (filters.location_ids) params.append("location_ids", filters.location_ids.join(","));
   if (filters.sort) params.append("sort", filters.sort);
   if (filters.order) params.append("order", filters.order);
 }
@@ -312,6 +319,20 @@ export interface DevicesSummary {
   loaded_at: string;
 }
 
+export interface TreeLocation {
+  id: number;
+  client_id: number;
+  name: string;
+  kind: string;
+  country: string;
+  city: string;
+}
+
+export interface TreeLocationCounts extends DeviceStats {
+  // {category: {platform: count}}
+  by_category_platform: Record<string, Record<string, number>>;
+}
+
 export interface DeviceFleetOverview {
   stats: DeviceStats;
   tree_counts: {
@@ -325,6 +346,9 @@ export interface DeviceFleetOverview {
     by_client_status?: Record<string, DeviceStats>;
     // Platform Expansion: {clientId: {category: {platform: count}}} (empty when FEATURE_LINUX off).
     by_client_category_platform?: Record<string, Record<string, Record<string, number>>>;
+    // Client sites: each client's locations, and {clientId: {locationId, or 0 for none: counts}}.
+    locations?: TreeLocation[];
+    by_client_location?: Record<string, Record<string, TreeLocationCounts>>;
   };
   critical: number;
   warnings: number;

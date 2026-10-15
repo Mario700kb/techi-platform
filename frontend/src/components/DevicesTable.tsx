@@ -12,6 +12,7 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  MapPin,
   MoreHorizontal,
   PlayCircle,
   RotateCcw,
@@ -1326,7 +1327,10 @@ const DevicesTable = memo(function DevicesTable({
                             const hostname = deviceHostnameSubtitle(device);
                             const typeLabel = deviceTypeLabel(device);
                             // A group named after the device type already says it in Client / group.
-                            const showType = typeLabel.toLowerCase() !== (device.group_name ?? "").trim().toLowerCase();
+                            // (With a location, Client / group shows the site instead, so the type stays.)
+                            const showType =
+                              !!device.location_name ||
+                              typeLabel.toLowerCase() !== (device.group_name ?? "").trim().toLowerCase();
                             return (
                               <>
                                 <div
@@ -1422,13 +1426,25 @@ const DevicesTable = memo(function DevicesTable({
                             )}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1">
-                            <span
-                              className="max-w-[160px] truncate text-[12px]"
-                              style={{ color: "var(--th-text-muted)" }}
-                              title={device.group_name || TERMS.noGroup}
-                            >
-                              {device.group_name || TERMS.noGroup}
-                            </span>
+                            {device.location_name ? (
+                              // The client's site, where it has sites; the group otherwise.
+                              <span
+                                className="flex max-w-[160px] items-center gap-1 truncate text-[12px]"
+                                style={{ color: "var(--th-text-muted)" }}
+                                title={`${device.location_name}${device.location_source === "manual" ? " · placed by hand" : ""}`}
+                              >
+                                <MapPin className="h-3 w-3 flex-none" aria-hidden="true" />
+                                <span className="truncate">{device.location_name}</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="max-w-[160px] truncate text-[12px]"
+                                style={{ color: "var(--th-text-muted)" }}
+                                title={device.group_name || TERMS.noGroup}
+                              >
+                                {device.group_name || TERMS.noGroup}
+                              </span>
+                            )}
                           </div>
                         </td>
 

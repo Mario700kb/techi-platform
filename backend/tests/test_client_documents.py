@@ -15,6 +15,7 @@ from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.client_document import ClientDocument
 from app.models.device import Device
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
@@ -25,7 +26,7 @@ TABLES = [
     Client.__table__,
     ClientDocument.__table__,
     DeviceGroup.__table__,
-    Device.__table__,
+    ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
     AuditLog.__table__,
     Operator.__table__,
     Team.__table__,

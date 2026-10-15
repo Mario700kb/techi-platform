@@ -22,6 +22,7 @@ from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus, DeviceType
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.models.operator import Operator, OperatorRole
 from app.models.terminal_session import TerminalSession
@@ -65,7 +66,7 @@ def _client(
     Base.metadata.create_all(
         bind=engine,
         tables=[
-            Device.__table__,
+            ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__,
             Client.__table__,
             DeviceGroup.__table__,
             Operator.__table__,

@@ -135,6 +135,7 @@ class DeviceRepository:
         device_ids: Optional[Sequence[int]] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
         sort: Optional[str] = None,
         order: Optional[str] = None,
     ) -> List[Device]:
@@ -147,7 +148,7 @@ class DeviceRepository:
             active_agent_version=active_agent_version, active_agent_sha256=active_agent_sha256,
             platform=platform, category=category, scope=scope, quick_filter=quick_filter,
             health_index=health_index, device_ids=device_ids, agent_version=agent_version,
-            hide_offline_days=hide_offline_days,
+            hide_offline_days=hide_offline_days, location_ids=location_ids,
         )
         descending = (order or "asc").strip().lower() == "desc"
         sort_key = (sort or "").strip().lower()
@@ -217,6 +218,7 @@ class DeviceRepository:
         device_ids: Optional[Sequence[int]] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
         group_join: bool = False,
     ):
         if group_join or self._needs_group_join(category, smart_folder) or quick_filter in ("servers", "workstations"):
@@ -261,6 +263,13 @@ class DeviceRepository:
                 query = query.filter(Device.agent_version == agent_version)
         if hide_offline_days:
             query = query.filter(Device.last_seen >= utcnow() - timedelta(days=hide_offline_days))
+        if location_ids is not None:
+            # An Explorer location (one id) or city (several); -1 is "no location".
+            wanted = [i for i in location_ids if i > 0]
+            clauses = [Device.location_id.in_(wanted)] if wanted else []
+            if -1 in location_ids:
+                clauses.append(Device.location_id.is_(None))
+            query = query.filter(or_(*clauses) if clauses else false())
         if quick_filter:
             query = query.filter(self.quick_filter_clause(quick_filter, health_index or {}))
         return self._apply_scope_filter(query, scope)
@@ -535,7 +544,7 @@ class DeviceRepository:
     def clear_client(self, client_id: int) -> int:
         count = self.db.query(Device).filter(Device.client_id == client_id).count()
         self.db.query(Device).filter(Device.client_id == client_id).update(
-            {Device.client_id: None, Device.group_id: None},
+            {Device.client_id: None, Device.group_id: None, Device.location_id: None, Device.location_source: None},
             synchronize_session=False,
         )
         self.db.commit()
@@ -564,6 +573,7 @@ class DeviceRepository:
         device_ids: Optional[Sequence[int]] = None,
         agent_version: Optional[str] = None,
         hide_offline_days: Optional[int] = None,
+        location_ids: Optional[Sequence[int]] = None,
     ) -> int:
         return self._filtered_query(
             self.db.query(Device),
@@ -574,7 +584,7 @@ class DeviceRepository:
             active_agent_version=active_agent_version, active_agent_sha256=active_agent_sha256,
             platform=platform, category=category, scope=scope, quick_filter=quick_filter,
             health_index=health_index, device_ids=device_ids, agent_version=agent_version,
-            hide_offline_days=hide_offline_days,
+            hide_offline_days=hide_offline_days, location_ids=location_ids,
         ).count()
 
     def count_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
@@ -655,6 +665,63 @@ class DeviceRepository:
                 continue
             result.setdefault(client_id, {}).setdefault(cat, {})[plat] = total
         return result
+
+    def location_stats(self, client_id: int, known_location_ids, scope: Optional["AllowedScope"] = None):
+        """One client's devices per location (None: at no location of its own):
+        rows of (location_id, total, online, stale, offline, servers, clientpc,
+        placed by hand)."""
+        now = utcnow()
+        online_cutoff = now - ONLINE_WINDOW
+        stale_cutoff = now - STALE_WINDOW
+        category = clf.category_case()
+        location = case((Device.location_id.in_(list(known_location_ids)), Device.location_id), else_=None)
+        q = (
+            self.db.query(
+                location,
+                func.count(Device.id),
+                func.count(case((Device.last_seen >= online_cutoff, 1))),
+                func.count(case((and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1))),
+                func.count(case((or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1))),
+                func.count(case((category == clf.CATEGORY_SERVERS, 1))),
+                func.count(case((category == clf.CATEGORY_CLIENTPC, 1))),
+                func.count(case((Device.location_source == "manual", 1))),
+            )
+            .outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
+            .filter(Device.client_id == client_id, Device.is_archived.is_(False))
+        )
+        q = self._apply_scope_filter(q, scope)
+        return q.group_by(location).all()
+
+    def count_by_client_location(self, scope: Optional["AllowedScope"] = None):
+        """Explorer counts for client sites: rows of (client_id, location_id or
+        None, category, platform, total, online, stale, offline). A location of
+        another client (the device moved) counts as no location."""
+        from app.models.client_location import ClientLocation
+
+        now = utcnow()
+        online_cutoff = now - ONLINE_WINDOW
+        stale_cutoff = now - STALE_WINDOW
+        category = clf.category_case()
+        platform_class = clf.platform_case()
+        location = case((ClientLocation.client_id == Device.client_id, Device.location_id), else_=None)
+        q = (
+            self.db.query(
+                Device.client_id,
+                location,
+                category,
+                platform_class,
+                func.count(Device.id),
+                func.count(case((Device.last_seen >= online_cutoff, 1))),
+                func.count(case((and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1))),
+                func.count(case((or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1))),
+            )
+            .outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
+            .outerjoin(ClientLocation, ClientLocation.id == Device.location_id)
+            .filter(Device.client_id.isnot(None))
+        )
+        q = self._apply_lifecycle_filter(q, "active")
+        q = self._apply_scope_filter(q, scope)
+        return q.group_by(Device.client_id, location, category, platform_class).all()
 
     def get_fleet_counts(self, scope: Optional["AllowedScope"] = None):
         """Active-device totals per client and category, by freshness."""

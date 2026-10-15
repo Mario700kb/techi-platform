@@ -10,7 +10,7 @@ from app.core.swr_cache import SWRCache, scope_cache_key
 from app.core.time import utcnow
 from app.platform_core.flags import feature_enabled
 from app.repositories.device_repository import DeviceRepository
-from app.schemas.device import DeviceFleetOverview, DeviceStats, DeviceTreeCounts
+from app.schemas.device import DeviceFleetOverview, DeviceStats, DeviceTreeCounts, TreeLocation, TreeLocationCounts
 from app.services.agent_package_service import AgentPackageService
 from app.services.device_health_score_service import compute_device_health_score
 
@@ -115,6 +115,42 @@ class DeviceOverviewService:
         return _overview_cache.get(scope_cache_key(scope), self.db,
                                    lambda session: DeviceOverviewService(session)._compute_overview(scope))
 
+    def _location_tree(self, scope: Optional[AllowedScope], visible_clients: set[int]):
+        """Client sites for the Explorer. One cheap probe while no client has a
+        location, so the overview stays its two queries until sites are used."""
+        from app.models.client_location import ClientLocation
+
+        rows = (
+            self.db.query(ClientLocation)
+            .filter(ClientLocation.client_id.in_(visible_clients))
+            .order_by(ClientLocation.client_id, ClientLocation.country, ClientLocation.city, ClientLocation.name)
+            .all()
+            if visible_clients
+            else []
+        )
+        if not rows:
+            return [], {}
+        located_clients = {row.client_id for row in rows}
+        by_client_location: dict[int, dict[int, TreeLocationCounts]] = {}
+        for client_id, location_id, category, platform, total, online, stale, offline in (
+            self.repository.count_by_client_location(scope=scope)
+        ):
+            if client_id not in located_clients:
+                continue
+            node = by_client_location.setdefault(client_id, {}).setdefault(location_id or 0, TreeLocationCounts())
+            node.total += total
+            node.online += online
+            node.stale += stale
+            node.offline += offline
+            platforms = node.by_category_platform.setdefault(category, {})
+            platforms[platform] = platforms.get(platform, 0) + total
+        locations = [
+            TreeLocation(id=row.id, client_id=row.client_id, name=row.name, kind=row.kind,
+                         country=row.country, city=row.city)
+            for row in rows
+        ]
+        return locations, by_client_location
+
     def _compute_overview(self, scope: Optional[AllowedScope]) -> DeviceFleetOverview:
         active_pkg = _active_agent_package()
         active_agent_version = active_pkg.version if active_pkg else None
@@ -151,6 +187,8 @@ class DeviceOverviewService:
                 client_row["stale"] += stale
                 client_row["offline"] += offline
 
+        locations, by_client_location = self._location_tree(scope, set(by_client))
+
         active_entries = [entry for entry in get_health_index(self.db, scope).values() if not entry.archived]
         critical = sum(1 for entry in active_entries if entry.state == "critical")
         warnings = sum(1 for entry in active_entries if entry.state == "warning")
@@ -174,6 +212,8 @@ class DeviceOverviewService:
                     if feature_enabled("FEATURE_LINUX")
                     else {}
                 ),
+                locations=locations,
+                by_client_location=by_client_location,
             ),
             critical=critical,
             warnings=warnings,

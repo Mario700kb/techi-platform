@@ -6,6 +6,7 @@ from app.core.secret_cipher import decrypt_secret, encrypt_secret
 from app.db.base import Base
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus
+from app.models.client_location import ClientLocation, ClientLocationRule
 from app.models.device_group import DeviceGroup
 from app.services.remote_support_password_service import RemoteSupportPasswordService
 
@@ -18,7 +19,7 @@ def _db():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[Client.__table__, DeviceGroup.__table__, Device.__table__],
+        tables=[Client.__table__, DeviceGroup.__table__, ClientLocation.__table__, ClientLocationRule.__table__, Device.__table__],
     )
     return sessionmaker(bind=engine)()
 

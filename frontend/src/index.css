@@ -5235,6 +5235,12 @@ a.th-list-row:hover {
   padding-left: 7px;
   border-left: 1px solid var(--th-border-subtle);
 }
+/* Client sites nest deeper (city → site → category → platform): the inner
+   levels step in less, so names keep their width in the narrow panel. */
+.fleet-tree-child .fleet-tree-child .fleet-tree-child {
+  margin-left: 10px;
+  padding-left: 5px;
+}
 
 /* ── Switch (checkbox with role="switch") ── */
 input.th-switch {
@@ -6917,6 +6923,181 @@ button.th-client-group:hover {
   border-radius: 999px;
   background: var(--th-ring-track);
 }
+/* Client profile → Locations: sites grouped by city, a card per site with its
+   devices, status bar, rules and actions; suggestions from shared public IPs. */
+.th-loc-city {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 10px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-loc-city-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-loc-city-name small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--th-text-muted);
+}
+.th-loc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.th-loc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+}
+.th-loc-card > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.th-loc-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-loc-card header p {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-loc-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-loc-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--th-accent);
+  background: color-mix(in srgb, var(--th-accent) 12%, transparent);
+}
+.th-loc-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-loc-bar > i {
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: 999px;
+  transition: flex-grow 450ms var(--th-ease-out);
+}
+.th-loc-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--th-text-secondary);
+  background: var(--th-chip-bg);
+}
+.th-loc-rule b {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--th-text-faint);
+}
+.th-loc-rule b:not(:first-child) {
+  margin-left: 4px;
+}
+.th-loc-rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.th-loc-rule-row input {
+  height: 36px;
+  width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--th-border-input);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--th-text-primary);
+  background: var(--th-bg-input, transparent);
+}
+.th-loc-suggestions > li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-loc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px dashed var(--th-border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--th-text-secondary);
+  transition:
+    border-color var(--th-dur) var(--th-ease),
+    color var(--th-dur) var(--th-ease);
+}
+.th-loc-chip:hover {
+  border-color: var(--th-accent);
+  color: var(--th-text-primary);
+}
+.th-loc-chip b {
+  font-weight: 600;
+  color: var(--th-text-muted);
+}
+.th-loc-unlocated {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+}
+.th-loc-unlocated .th-loc-icon {
+  color: var(--th-text-muted);
+  background: var(--th-chip-bg);
+}
+@media (max-width: 639px) {
+  .th-loc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .th-loc-suggestions > li {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .th-loc-rule-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .th-loc-rule-row input:nth-child(2) {
+    grid-row: 2;
+  }
+}
+
 /* Client profile → Analytics: both charts one height, period and legend in
    the card head, the attention table's counts as bars on a shared scale. */
 .th-cp-chart {

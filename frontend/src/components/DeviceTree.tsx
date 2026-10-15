@@ -7,6 +7,8 @@ import {
   HardDrive,
   Layers,
   LayoutGrid,
+  MapPin,
+  MapPinOff,
   Monitor,
   Network,
   PackageX,
@@ -16,8 +18,8 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import { Client, DeviceGroup } from "../api/clients";
-import { Device, DeviceStats } from "../api/devices";
+import { Client, countryFlag, DeviceGroup } from "../api/clients";
+import { Device, DeviceStats, TreeLocation, TreeLocationCounts } from "../api/devices";
 import PlatformIcon from "./PlatformIcon";
 import { TERMS } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
@@ -66,7 +68,21 @@ interface TreeCounts {
   byClientCategory: Map<number, Map<string, number>>;
   byClientCategoryPlatform?: Map<number, Map<string, Map<string, number>>>;
   byClientStatus?: Map<number, DeviceStats>;
+  // Client sites: the locations, and clientId → locationId (0: none) → counts.
+  locations?: TreeLocation[];
+  byClientLocation?: Map<number, Map<number, TreeLocationCounts>>;
 }
+
+const sumStats = (items: (DeviceStats | undefined)[]): DeviceStats =>
+  items.reduce<DeviceStats>(
+    (acc, s) => ({
+      total: acc.total + (s?.total ?? 0),
+      online: acc.online + (s?.online ?? 0),
+      stale: acc.stale + (s?.stale ?? 0),
+      offline: acc.offline + (s?.offline ?? 0),
+    }),
+    { total: 0, online: 0, stale: 0, offline: 0 },
+  );
 
 interface DeviceTreeProps {
   selectedKey: string;
@@ -89,12 +105,68 @@ const DeviceTree = memo(function DeviceTree({
   onRefreshCounts,
 }: DeviceTreeProps) {
   const navigate = useNavigate();
-  const activeClientFolder = useMemo(() => {
-    const match = selectedKey.match(/^client-(\d+)-(servers|clientpc|network|storage|hypervisors|other)$/);
-    if (!match) return null;
-    return { clientId: Number(match[1]), folderId: match[2] };
-  }, [selectedKey]);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
+  // Cities and locations opened below a client, by tree key.
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+  // Each client's sites, grouped by country and city (a city row only when it
+  // holds more than one site).
+  const sitesByClient = useMemo(() => {
+    const byClient = new Map<number, { cityKey: string; city: string; country: string; sites: TreeLocation[] }[]>();
+    const sorted = [...(treeCounts.locations ?? [])].sort(
+      (a, b) =>
+        a.country.localeCompare(b.country) ||
+        a.city.localeCompare(b.city, undefined, { sensitivity: "base" }) ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+    for (const site of sorted) {
+      const cities = byClient.get(site.client_id) ?? [];
+      const last = cities[cities.length - 1];
+      if (last && last.country === site.country && last.city.toLowerCase() === site.city.toLowerCase()) {
+        last.sites.push(site);
+      } else {
+        cities.push({ cityKey: "", city: site.city, country: site.country, sites: [site] });
+      }
+      byClient.set(site.client_id, cities);
+    }
+    for (const [clientId, cities] of byClient) {
+      for (const city of cities)
+        city.cityKey = `client-${clientId}-locs-${city.sites
+          .map((x) => x.id)
+          .sort((a, b) => a - b)
+          .join(".")}`;
+    }
+    return byClient;
+  }, [treeCounts.locations]);
+
+  // A selection inside a client (a reload with ?folder=, a link) opens its branch.
+  useEffect(() => {
+    const match = selectedKey.match(/^client-(\d+)-/);
+    if (!match) return;
+    const clientId = Number(match[1]);
+    setExpandedClients((prev) => (prev.has(clientId) ? prev : new Set(prev).add(clientId)));
+    const site = selectedKey.match(/^(client-\d+-loc-(\d+|none))-/);
+    const opened: string[] = [];
+    if (site) opened.push(site[1]);
+    const siteId = site?.[2] ?? selectedKey.match(/^client-\d+-loc-(\d+)$/)?.[1];
+    if (siteId && siteId !== "none") {
+      const city = sitesByClient.get(clientId)?.find((c) => c.sites.some((x) => String(x.id) === siteId));
+      if (city && city.sites.length > 1) opened.push(city.cityKey);
+    }
+    if (opened.length) {
+      setExpandedNodes((prev) => (opened.every((k) => prev.has(k)) ? prev : new Set([...prev, ...opened])));
+    }
+  }, [selectedKey, sitesByClient]);
+
+  const toggleNode = (key: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    onSelect(key);
+  };
   const [showEmptyGroups, setShowEmptyGroups] = useState(readShowEmptyGroups);
   const [clientQuery, setClientQuery] = useState("");
 
@@ -140,10 +212,10 @@ const DeviceTree = memo(function DeviceTree({
     if (showEmptyGroups) return matching;
     return matching.filter((client) => {
       const hasDevices = (treeCounts.byClient.get(client.id) ?? 0) > 0;
-      const isActive = selectedKey === `client-${client.id}` || activeClientFolder?.clientId === client.id;
+      const isActive = selectedKey === `client-${client.id}` || selectedKey.startsWith(`client-${client.id}-`);
       return hasDevices || isActive;
     });
-  }, [activeClientFolder, treeCounts, selectedKey, showEmptyGroups, sortedClients, clientQuery]);
+  }, [treeCounts, selectedKey, showEmptyGroups, sortedClients, clientQuery]);
 
   useEffect(() => {
     try {
@@ -252,20 +324,25 @@ const DeviceTree = memo(function DeviceTree({
               return folderCount(client.id, folder.id) > 0 || selectedKey === `client-${client.id}-${folder.id}`;
             });
             const expanded = expandedClients.has(client.id);
+            const cities = sitesByClient.get(client.id);
+            const hasSites = !!cities?.length;
             return (
               <li key={client.id} className="th-tree-row" style={{ "--i": Math.min(index + 2, 16) } as CSSProperties}>
                 <TreeButton
                   active={selectedKey === `client-${client.id}`}
-                  withinActive={activeClientFolder?.clientId === client.id || (expanded && childFolders.length > 0)}
+                  withinActive={
+                    selectedKey.startsWith(`client-${client.id}-`) ||
+                    (expanded && (hasSites || childFolders.length > 0))
+                  }
                   expanded={expanded}
-                  hasChildren={childFolders.length > 0}
+                  hasChildren={hasSites || childFolders.length > 0}
                   status={treeCounts.byClientStatus?.get(client.id)}
                   label={client.name}
                   count={clientCount(client.id)}
                   hasMaintenance={clientHasMaintenance(client.id)}
                   onClick={() => toggleClient(client.id)}
                 />
-                {childFolders.length > 0 && (
+                {(hasSites || childFolders.length > 0) && (
                   // Always rendered so the branch can slide closed as well as
                   // open; a closed branch is hidden from focus and the a11y tree.
                   <div className="th-tree-collapse" data-open={expanded} aria-hidden={!expanded}>
@@ -281,44 +358,58 @@ const DeviceTree = memo(function DeviceTree({
                             onClick={() => navigate(`/clients/${client.id}`)}
                           />
                         </li>
-                        {childFolders.map((folder, folderIndex) => {
-                          const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
-                          // One platform repeats its folder's count, so it becomes an icon on the folder row.
-                          const onlyPlatform = platforms.length === 1 ? platforms[0][0] : null;
-                          return (
-                            <li key={folder.id} style={{ "--i": folderIndex + 1 } as CSSProperties}>
-                              <TreeButton
-                                active={selectedKey === `client-${client.id}-${folder.id}`}
-                                child
-                                icon={folder.icon}
-                                label={folder.label}
-                                platformBadge={onlyPlatform}
-                                count={folderCount(client.id, folder.id)}
-                                hasMaintenance={folderHasMaintenance(client.id, folder.id)}
-                                onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
-                              />
-                              {platforms.length > 1 && (
-                                <ul className="fleet-tree-child">
-                                  {platforms.map(([platform, count]) => {
-                                    const key = `client-${client.id}-${folder.id}-${platform}`;
-                                    return (
-                                      <li key={platform}>
-                                        <TreeButton
-                                          active={selectedKey === key}
-                                          child
-                                          platformIcon={platform}
-                                          label={PLATFORM_LABELS[platform] ?? platform}
-                                          count={count}
-                                          onClick={() => onSelect(key)}
-                                        />
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              )}
-                            </li>
-                          );
-                        })}
+                        {hasSites && (
+                          <SiteBranch
+                            clientId={client.id}
+                            cities={cities!}
+                            counts={treeCounts.byClientLocation?.get(client.id)}
+                            selectedKey={selectedKey}
+                            expandedNodes={expandedNodes}
+                            showEmptyGroups={showEmptyGroups}
+                            showPlatformFolders={showPlatformFolders}
+                            onToggle={toggleNode}
+                            onSelect={onSelect}
+                          />
+                        )}
+                        {!hasSites &&
+                          childFolders.map((folder, folderIndex) => {
+                            const platforms = showPlatformFolders ? platformChildren(client.id, folder.id) : [];
+                            // One platform repeats its folder's count, so it becomes an icon on the folder row.
+                            const onlyPlatform = platforms.length === 1 ? platforms[0][0] : null;
+                            return (
+                              <li key={folder.id} style={{ "--i": folderIndex + 1 } as CSSProperties}>
+                                <TreeButton
+                                  active={selectedKey === `client-${client.id}-${folder.id}`}
+                                  child
+                                  icon={folder.icon}
+                                  label={folder.label}
+                                  platformBadge={onlyPlatform}
+                                  count={folderCount(client.id, folder.id)}
+                                  hasMaintenance={folderHasMaintenance(client.id, folder.id)}
+                                  onClick={() => onSelect(`client-${client.id}-${folder.id}`)}
+                                />
+                                {platforms.length > 1 && (
+                                  <ul className="fleet-tree-child">
+                                    {platforms.map(([platform, count]) => {
+                                      const key = `client-${client.id}-${folder.id}-${platform}`;
+                                      return (
+                                        <li key={platform}>
+                                          <TreeButton
+                                            active={selectedKey === key}
+                                            child
+                                            platformIcon={platform}
+                                            label={PLATFORM_LABELS[platform] ?? platform}
+                                            count={count}
+                                            onClick={() => onSelect(key)}
+                                          />
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
+                              </li>
+                            );
+                          })}
                       </ul>
                     </div>
                   </div>
@@ -344,6 +435,177 @@ const DeviceTree = memo(function DeviceTree({
 });
 
 export default DeviceTree;
+
+type CityGroup = { cityKey: string; city: string; country: string; sites: TreeLocation[] };
+
+/** Under its city's row a site drops the city its name starts with: "Tiranë – Magazina" → "Magazina". */
+function shortSiteName(name: string, city: string): string {
+  if (!name.toLowerCase().startsWith(city.toLowerCase())) return name;
+  const rest = name.slice(city.length).replace(/^[\s–—\-:,·|/]+/, "");
+  return rest || name;
+}
+
+/** A client's sites: city rows (when a city holds several), each site with its
+ *  categories and platforms, then the devices at no site. */
+function SiteBranch({
+  clientId,
+  cities,
+  counts,
+  selectedKey,
+  expandedNodes,
+  showEmptyGroups,
+  showPlatformFolders,
+  onToggle,
+  onSelect,
+}: {
+  clientId: number;
+  cities: CityGroup[];
+  counts: Map<number, TreeLocationCounts> | undefined;
+  selectedKey: string;
+  expandedNodes: Set<string>;
+  showEmptyGroups: boolean;
+  showPlatformFolders: boolean;
+  onToggle: (key: string) => void;
+  onSelect: (key: string) => void;
+}) {
+  const severalCountries = new Set(cities.map((c) => c.country)).size > 1;
+  const unlocated = counts?.get(0);
+
+  const categoryRows = (siteKey: string, siteCounts: TreeLocationCounts | undefined) => {
+    const byCategory = siteCounts?.by_category_platform ?? {};
+    return CLIENT_FOLDERS.map((folder) => {
+      const platforms = Object.entries(byCategory[folder.id] ?? {}).sort(([a], [b]) =>
+        a === "windows" ? -1 : b === "windows" ? 1 : a.localeCompare(b),
+      );
+      const count = platforms.reduce((sum, [, n]) => sum + n, 0);
+      return { folder, platforms, count, key: `${siteKey}-${folder.id}` };
+    }).filter(
+      (row) =>
+        row.count > 0 ||
+        selectedKey === row.key ||
+        (showEmptyGroups && (row.folder.id === "servers" || row.folder.id === "clientpc")),
+    );
+  };
+
+  const siteRow = (key: string, label: string, siteCounts: TreeLocationCounts | undefined, icon?: typeof MapPin) => {
+    const rows = categoryRows(key, siteCounts);
+    const open = expandedNodes.has(key);
+    return (
+      <>
+        <TreeButton
+          active={selectedKey === key}
+          withinActive={selectedKey.startsWith(`${key}-`) || (open && rows.length > 0)}
+          child
+          icon={icon}
+          status={icon ? undefined : (siteCounts ?? { total: 0, online: 0, stale: 0, offline: 0 })}
+          label={label}
+          count={siteCounts?.total ?? 0}
+          expanded={open}
+          hasChildren={rows.length > 0}
+          onClick={() => onToggle(key)}
+        />
+        {rows.length > 0 && (
+          <div className="th-tree-collapse" data-open={open} aria-hidden={!open}>
+            <div className="th-tree-collapse-inner">
+              <ul className="fleet-tree-child">
+                {rows.map(({ folder, platforms, count, key: folderKey }, i) => {
+                  const shown = showPlatformFolders ? platforms : [];
+                  const onlyPlatform = shown.length === 1 ? shown[0][0] : null;
+                  return (
+                    <li key={folder.id} style={{ "--i": i } as CSSProperties}>
+                      <TreeButton
+                        active={selectedKey === folderKey}
+                        child
+                        icon={folder.icon}
+                        label={folder.label}
+                        platformBadge={onlyPlatform}
+                        count={count}
+                        onClick={() => onSelect(folderKey)}
+                      />
+                      {shown.length > 1 && (
+                        <ul className="fleet-tree-child">
+                          {shown.map(([platform, n]) => {
+                            const platformKey = `${folderKey}-${platform}`;
+                            return (
+                              <li key={platform}>
+                                <TreeButton
+                                  active={selectedKey === platformKey}
+                                  child
+                                  platformIcon={platform}
+                                  label={PLATFORM_LABELS[platform] ?? platform}
+                                  count={n}
+                                  onClick={() => onSelect(platformKey)}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  let index = 1;
+  return (
+    <>
+      {cities.map((city) => {
+        const flag = severalCountries ? `${countryFlag(city.country)} ` : "";
+        if (city.sites.length === 1) {
+          const site = city.sites[0];
+          return (
+            <li key={site.id} style={{ "--i": index++ } as CSSProperties}>
+              {siteRow(`client-${clientId}-loc-${site.id}`, `${flag}${site.name}`, counts?.get(site.id))}
+            </li>
+          );
+        }
+        const open = expandedNodes.has(city.cityKey);
+        const cityStats = sumStats(city.sites.map((x) => counts?.get(x.id)));
+        return (
+          <li key={city.cityKey} style={{ "--i": index++ } as CSSProperties}>
+            <TreeButton
+              active={selectedKey === city.cityKey}
+              withinActive={open || city.sites.some((x) => selectedKey.startsWith(`client-${clientId}-loc-${x.id}`))}
+              child
+              status={cityStats}
+              label={`${flag}${city.city}`}
+              count={cityStats.total}
+              expanded={open}
+              hasChildren
+              onClick={() => onToggle(city.cityKey)}
+            />
+            <div className="th-tree-collapse" data-open={open} aria-hidden={!open}>
+              <div className="th-tree-collapse-inner">
+                <ul className="fleet-tree-child">
+                  {city.sites.map((site, i) => (
+                    <li key={site.id} style={{ "--i": i } as CSSProperties}>
+                      {siteRow(
+                        `client-${clientId}-loc-${site.id}`,
+                        shortSiteName(site.name, city.city),
+                        counts?.get(site.id),
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+      {(unlocated?.total ?? 0) > 0 && (
+        <li style={{ "--i": index } as CSSProperties}>
+          {siteRow(`client-${clientId}-loc-none`, "No location", unlocated, MapPinOff)}
+        </li>
+      )}
+    </>
+  );
+}
 
 interface TreeButtonProps {
   active: boolean;

@@ -36,7 +36,7 @@ import {
   regenerateRemoteSupportPassword,
   RemoteSupportDevice,
 } from "../api/remoteSupport";
-import { Client, DeviceGroup } from "../api/clients";
+import { assignDeviceLocation, Client, DeviceGroup, getClientLocations } from "../api/clients";
 import {
   archiveDevice,
   assignDeviceClient,
@@ -45,6 +45,7 @@ import {
   Device,
   DeviceOfflineAnalysis,
   enterDeviceMaintenance,
+  getDevice,
   getDeviceOfflineAnalysis,
   updateDevice,
 } from "../api/devices";
@@ -559,6 +560,21 @@ export default function DeviceDrawer({
 
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
+  // The client's sites, for the Management tab's location picker (only once it is opened).
+  const locationClientId = device.client_id ?? null;
+  const siteList = useCachedQuery(
+    activeTab === "management" && locationClientId ? `page.client.${locationClientId}.locations` : null,
+    () => getClientLocations(locationClientId as number),
+  );
+  const sites = siteList.data?.locations ?? [];
+  const setLocation = async (value: string) => {
+    if (!locationClientId) return;
+    if (value === "auto") await assignDeviceLocation(locationClientId, [device.id], null, "auto");
+    else if (value === "none") await assignDeviceLocation(locationClientId, [device.id], null, "manual");
+    else await assignDeviceLocation(locationClientId, [device.id], Number(value), "manual");
+    onDeviceUpdated?.(await getDevice(device.id));
+    void siteList.reload();
+  };
 
   const syncColor = device.rustdesk_conflict_detected
     ? "text-red-400"
@@ -1319,6 +1335,18 @@ export default function DeviceDrawer({
                 <DetailRow label="Client" value={device.resolved_client_name || device.client_name || TERMS.noClient} />
                 <DetailRow label="Group" value={device.resolved_group || device.group_name || TERMS.noGroup} />
                 <div className="col-span-2">
+                  <DetailRow
+                    label="Location"
+                    value={
+                      device.location_name
+                        ? `${device.location_name} · ${device.location_source === "manual" ? "placed by hand" : "by rule"}`
+                        : device.location_source === "manual"
+                          ? "No location · placed by hand"
+                          : "No location"
+                    }
+                  />
+                </div>
+                <div className="col-span-2">
                   <p className="premium-kicker mb-1">Assignment source</p>
                   <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
                 </div>
@@ -1340,6 +1368,24 @@ export default function DeviceDrawer({
                           {client.name}
                         </option>
                       ))}
+                    </SelectField>
+                  </label>
+                )}
+                {hasPermission("manage_clients") && locationClientId && sites.length > 0 && (
+                  <label className="col-span-2 block">
+                    <span className="premium-kicker mb-1 block">Assign location</span>
+                    <SelectField
+                      value={device.location_source === "manual" ? String(device.location_id ?? "none") : "auto"}
+                      onChange={(event) => void setLocation(event.target.value)}
+                      className="w-full"
+                    >
+                      <option value="auto">By the rules (automatic)</option>
+                      {sites.map((site) => (
+                        <option key={site.id} value={site.id}>
+                          {site.name}
+                        </option>
+                      ))}
+                      <option value="none">No location (keep it here)</option>
                     </SelectField>
                   </label>
                 )}

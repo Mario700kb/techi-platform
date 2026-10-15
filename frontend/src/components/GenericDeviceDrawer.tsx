@@ -716,6 +716,12 @@ function Overview({
           <dd>{device.resolved_client_name || device.client_name || TERMS.noClient}</dd>
           <dt>Group</dt>
           <dd>{device.resolved_group || device.group_name || TERMS.noGroup}</dd>
+          <dt>Location</dt>
+          <dd>
+            {device.location_name
+              ? `${device.location_name} · ${device.location_source === "manual" ? "placed by hand" : "by rule"}`
+              : "No location"}
+          </dd>
           <dt>Source</dt>
           <dd>
             <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />

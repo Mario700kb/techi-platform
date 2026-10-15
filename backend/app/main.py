@@ -112,6 +112,36 @@ async def _heartbeat_cleanup_scheduler() -> None:
         await asyncio.to_thread(_run_heartbeat_cleanup)
 
 
+# Client locations: new devices and changed addresses reach their site
+# without anyone pressing Re-apply. Light (only clients that have locations,
+# ~150 devices each), and first run after the restart's heartbeat surge.
+LOCATION_SWEEP_FIRST_DELAY_S = 120
+LOCATION_SWEEP_INTERVAL_S = 900
+
+
+def _run_location_sweep() -> None:
+    from app.db.session import SessionLocal
+    from app.services.location_service import sweep_location_rules
+
+    db = SessionLocal()
+    try:
+        result = sweep_location_rules(db)
+        if result.assigned or result.cleared:
+            logger.info("Location rules: %d placed, %d cleared", result.assigned, result.cleared)
+    except Exception:
+        logger.exception("Location rule sweep failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _location_sweep_scheduler() -> None:
+    await asyncio.sleep(LOCATION_SWEEP_FIRST_DELAY_S)
+    while True:
+        await asyncio.to_thread(_run_location_sweep)
+        await asyncio.sleep(LOCATION_SWEEP_INTERVAL_S)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting %s v%s [env=%s]", settings.PROJECT_NAME, settings.PROJECT_VERSION, settings.ENVIRONMENT)
@@ -153,6 +183,7 @@ async def lifespan(app: FastAPI):
     realtime_publisher.start()
     device_reconciliation_worker.start()
     cleanup_task = asyncio.create_task(_heartbeat_cleanup_scheduler())
+    location_sweep_task = asyncio.create_task(_location_sweep_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -177,11 +208,12 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
+    for task in (cleanup_task, location_sweep_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await terminal_watchdog.stop()
     ssh_connector_runner.stop()
     await notification_worker.stop()

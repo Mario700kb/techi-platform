@@ -215,6 +215,9 @@ class Device(DeviceBase):
     group_id: Optional[int]
     client_name: Optional[str] = None
     group_name: Optional[str] = None
+    location_id: Optional[int] = None
+    location_name: Optional[str] = None
+    location_source: Optional[str] = None
     resolved_client_id: Optional[int] = None
     resolved_client_name: Optional[str] = None
     resolved_group: Optional[str] = None
@@ -239,6 +242,24 @@ class DeviceStats(BaseModel):
     offline: int
 
 
+class TreeLocation(BaseModel):
+    id: int
+    client_id: int
+    name: str
+    kind: str
+    country: str
+    city: str
+
+
+class TreeLocationCounts(BaseModel):
+    total: int = 0
+    online: int = 0
+    stale: int = 0
+    offline: int = 0
+    # {category: {platform: count}}, as by_client_category_platform.
+    by_category_platform: Dict[str, Dict[str, int]] = Field(default_factory=dict)
+
+
 class DeviceTreeCounts(BaseModel):
     total: int
     unassigned: int
@@ -251,6 +272,10 @@ class DeviceTreeCounts(BaseModel):
     # Platform Expansion (additive): {client_id: {category: {platform: count}}}.
     # Empty for callers that don't compute it; frontend ignores it with the flag off.
     by_client_category_platform: Dict[int, Dict[str, Dict[str, int]]] = Field(default_factory=dict)
+    # Client sites: each visible client's locations, and per client
+    # {location_id, or 0 for no location: counts}. Empty while no client has one.
+    locations: List[TreeLocation] = Field(default_factory=list)
+    by_client_location: Dict[int, Dict[int, TreeLocationCounts]] = Field(default_factory=dict)
 
 
 class DevicesSummary(BaseModel):

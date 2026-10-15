@@ -174,6 +174,8 @@ export function deviceTableCacheKey(
     Array.isArray(filters.ids) ? filters.ids.join(",") : "",
     filters.agent_version ?? "",
     filters.hide_offline_days ?? "",
+    // Client sites: a city and a site inside it differ only by these.
+    Array.isArray(filters.location_ids) ? filters.location_ids.join(",") : "",
     filters.sort ?? "",
     filters.order ?? "",
   ].join("|");
