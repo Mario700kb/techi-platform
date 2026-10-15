@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] GLOBAL-SEARCH-2026-10-15 — global search opens the exact client or operator (`649fe5f`)
+
+Frontend only, deployed 2026-10-15 13:39 (Tirana). Rollback image
+`techi-platform-frontend:pre-global-search-93004be`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, the
+served bundle carries the new links. Root filesystem 89% (2.7 GB free).
+
+The owner asked that a global-search result open exactly what was clicked: a
+client opened the full client list instead of its profile.
+
+- Client result → its profile `/clients/:id`; an operator who may manage
+  clients but lacks `view_devices` (the profile's permission) still gets the
+  list.
+- Operator result → Operators narrowed to that operator (`?q=<email>`), also
+  when the page is already open.
+- Devices (drawer via `?device=`) and teams (`/teams/:id`) already opened
+  directly; unchanged.
+
+Vitest 236 (new: Operators opens narrowed by `?q=`).
+
 ## [2026-10-14] RECENT-ACTIONS-2026-10-14 — dashboard: 50 recent remote actions, paged, readable names (`b5905f7`)
 
 Frontend only, deployed 2026-10-14 23:14 (Tirana). Rollback image
