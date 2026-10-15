@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] PG-RESTART-2026-10-15 — PostgreSQL max_connections 100, jit off (`5b3272c`)
+
+Configuration only, PostgreSQL container recreated 2026-10-15 22:15:48
+(Tirana), the restart step of DB-HYGIENE that the owner approved. `CHECKPOINT`
+first, then `docker compose up -d --no-deps --timeout 60 postgres`: clean
+shutdown ("database system was shut down", no recovery), healthy 10 s later.
+Settings verified: max_connections 100, jit off, shared_buffers 256MB and
+pg_stat_statements unchanged. Backend ready (pool_pre_ping replaced the old
+connections), 0 restarts; guard and smoke passed; 103 devices checked in
+within 60 s; 17 connections. Four requests failed in the restart second
+(22:15:49, `failed to resolve host 'postgres'` while the container was
+recreated); none after.
+
+- max_connections 200 → **100**, not the 50 first proposed: the request
+  pool reaches 80 (30 + 50 overflow) and maintenance 4, so 50 would refuse
+  connections in a heartbeat surge (as in the 2026-10-13 incident). Going
+  lower means shrinking the pool first — a separate decision.
+- jit off: JIT compilation costs more than it saves for this OLTP load on
+  one vCPU.
+
 ## [2026-10-15] DB-HYGIENE-2026-10-15 — database review; one statement for id lists; 38 redundant indexes dropped (`2d5128f`)
 
 Backend and database, deployed 2026-10-15 22:09–22:16 (Tirana). Dump
