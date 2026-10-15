@@ -356,9 +356,7 @@ export default function AlertsDesktop() {
                   <th>Device</th>
                   <th className="text-right">Value</th>
                   <th className="text-right">Opened</th>
-                  <th>
-                    <span className="sr-only">Actions</span>
-                  </th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>

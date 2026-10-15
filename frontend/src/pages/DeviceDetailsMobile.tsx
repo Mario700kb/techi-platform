@@ -38,6 +38,7 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { useDeviceAlerts } from "../hooks/useDeviceAlerts";
 import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useNow } from "../hooks/useNow";
+import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { timeAgo } from "../utils/time";
 import { FreshnessState } from "../components/mobile/primitives";
@@ -374,8 +375,8 @@ export default function DeviceDetailsMobile() {
 
         <p className="mt-1 truncate pl-1 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
           {device.client_name ?? "No client"}
-          {(device.location_name || device.group_name) && (
-            <span style={{ color: "var(--th-text-muted)" }}> · {device.location_name || device.group_name}</span>
+          {(deviceSite(device)?.text || device.group_name) && (
+            <span style={{ color: "var(--th-text-muted)" }}> · {deviceSite(device)?.text || device.group_name}</span>
           )}
           {hostnameSubtitle && (
             <span className="font-mono text-[12px]" style={{ color: "var(--th-text-muted)" }}>

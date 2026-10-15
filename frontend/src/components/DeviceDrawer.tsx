@@ -95,6 +95,7 @@ import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
 import ResourceBar from "./ResourceBar";
+import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 
 interface DeviceDrawerProps {
@@ -1339,7 +1340,7 @@ export default function DeviceDrawer({
                     label="Location"
                     value={
                       device.location_name
-                        ? `${device.location_name} · ${device.location_source === "manual" ? "placed by hand" : "by rule"}`
+                        ? (deviceSite(device)?.title ?? device.location_name)
                         : device.location_source === "manual"
                           ? "No location · placed by hand"
                           : "No location"

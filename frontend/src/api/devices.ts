@@ -60,6 +60,8 @@ export interface Device {
   // The client's site the device is at: by a location rule, or placed by hand ("manual").
   location_id?: number | null;
   location_name?: string | null;
+  location_city?: string | null;
+  location_country?: string | null;
   location_source?: "rule" | "manual" | null;
   cpu?: string;
   ram?: string;

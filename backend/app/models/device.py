@@ -155,11 +155,23 @@ class Device(Base):
         return self.group.name if self.group else None
 
     @property
-    def location_name(self):
+    def _own_location(self):
         # A location of another client (the device moved) does not count.
         if self.location and self.location.client_id == self.client_id:
-            return self.location.name
+            return self.location
         return None
+
+    @property
+    def location_name(self):
+        return self._own_location.name if self._own_location else None
+
+    @property
+    def location_city(self):
+        return self._own_location.city if self._own_location else None
+
+    @property
+    def location_country(self):
+        return self._own_location.country if self._own_location else None
 
     @property
     def freshness_state(self):

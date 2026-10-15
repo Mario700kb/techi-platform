@@ -18,9 +18,10 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import { Client, countryFlag, DeviceGroup } from "../api/clients";
+import { Client, DeviceGroup } from "../api/clients";
 import { Device, DeviceStats, TreeLocation, TreeLocationCounts } from "../api/devices";
 import PlatformIcon from "./PlatformIcon";
+import { shortSiteName } from "../utils/location";
 import { TERMS } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 
@@ -438,13 +439,6 @@ export default DeviceTree;
 
 type CityGroup = { cityKey: string; city: string; country: string; sites: TreeLocation[] };
 
-/** Under its city's row a site drops the city its name starts with: "Tiranë – Magazina" → "Magazina". */
-function shortSiteName(name: string, city: string): string {
-  if (!name.toLowerCase().startsWith(city.toLowerCase())) return name;
-  const rest = name.slice(city.length).replace(/^[\s–—\-:,·|/]+/, "");
-  return rest || name;
-}
-
 /** A client's sites: city rows (when a city holds several), each site with its
  *  categories and platforms, then the devices at no site. */
 function SiteBranch({
@@ -556,7 +550,7 @@ function SiteBranch({
   return (
     <>
       {cities.map((city) => {
-        const flag = severalCountries ? `${countryFlag(city.country)} ` : "";
+        const flag = severalCountries ? `${city.country} ` : "";
         if (city.sites.length === 1) {
           const site = city.sites[0];
           return (

@@ -92,7 +92,7 @@ describe("DevicesTable with server-side filters", () => {
 
   it("asks the server to sort when a column header is clicked", () => {
     const props = renderTable();
-    fireEvent.click(within(screen.getByRole("table")).getByText("Client / group"));
+    fireEvent.click(within(screen.getByRole("table")).getByText("Client / location"));
     expect(props.onSortChange).toHaveBeenCalledWith("client_name");
   });
 

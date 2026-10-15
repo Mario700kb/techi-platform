@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { overview } from "./mockApi";
+import { DEVICES, overview } from "./mockApi";
 import { northwindProfile } from "./profileMocks";
 import { expect, test } from "./test";
 
@@ -230,4 +230,36 @@ test("on a phone the sites stack in one column and nothing scrolls sideways", as
   expect(overflow).toBeLessThanOrEqual(0);
   await expect(page.getByRole("button", { name: "Add location" })).toBeVisible();
   await page.locator('[role="tabpanel"]').screenshot({ path: test.info().outputPath("locations-phone.png") });
+});
+
+test("the Devices table shows each device's site as country, city and site", async ({ page }) => {
+  desktopOnly();
+  const sited = DEVICES.map((d, i) =>
+    i === 0
+      ? {
+          ...d,
+          location_id: 12,
+          location_name: "Durrës – Magazina",
+          location_city: "Durrës",
+          location_country: "AL",
+          location_source: "rule",
+        }
+      : d,
+  );
+  await page.route(/\/api\/v1\/devices\/\?/, (route) =>
+    route.fulfill({ json: { devices: sited, total: sited.length } }),
+  );
+  await page.goto("/devices");
+  await expect(page.getByRole("columnheader", { name: "Client / location" })).toBeVisible();
+  const row = page.getByRole("row", { name: /NW-RECEPTION-01/ });
+  const site = row.locator(".th-site-line");
+  await expect(site).toContainText("AL");
+  await expect(site).toContainText("Durrës · Magazina");
+  await expect(site).toHaveAttribute("title", "Durrës – Magazina · Durrës, Albania · by rule");
+  // Without a site the group shows, as before.
+  await expect(page.getByRole("row", { name: /NW-DOCTOR-02/ })).toContainText("Front desk");
+  await page
+    .locator("table")
+    .first()
+    .screenshot({ path: test.info().outputPath("table-sites.png") });
 });

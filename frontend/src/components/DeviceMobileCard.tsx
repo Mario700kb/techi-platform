@@ -3,6 +3,7 @@ import { Star } from "lucide-react";
 import { Device } from "../api/devices";
 import { PatchStatus } from "../api/inventory";
 import { DeviceHealthSummary } from "../types/telemetry";
+import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import {
@@ -125,8 +126,8 @@ export function DeviceMobileCard({
   const rsIssue = remoteSupportIssue(device);
   const patchView = patchBadge(patch);
   const maintenanceView = maintenanceBadge(device);
-  // The client's site where it has sites, the group otherwise.
-  const place = device.location_name || device.group_name;
+  // The client's site where it has sites ("AL Durrës · Magazina"), the group otherwise.
+  const place = deviceSite(device)?.text || device.group_name;
   const groupLine = place ? ` · ${place}` : "";
 
   const freshness = freshnessOf(device);

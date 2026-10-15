@@ -3107,6 +3107,14 @@ a.th-kpi:hover {
   justify-content: flex-end;
   gap: 2px;
 }
+/* In a table the icon buttons show only their glyph until hover: pull the
+   group out by the button's inset (30px box, 16px icon) so the last icon ends
+   where the right-aligned "Actions" heading does. */
+@media (min-width: 640px) {
+  table td > .th-onb-actions {
+    margin-right: -7px;
+  }
+}
 .th-onb-action {
   display: inline-flex;
   flex: none;
@@ -6923,6 +6931,33 @@ button.th-client-group:hover {
   border-radius: 999px;
   background: var(--th-ring-track);
 }
+/* A country as its ISO code, and a device's site line: [AL] Durrës · Magazina. */
+.th-country {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--th-border-default);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  color: var(--th-text-secondary);
+}
+.th-site-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.th-site-sep {
+  color: var(--th-text-faint);
+}
+
 /* Client profile → Locations: sites grouped by city, a card per site with its
    devices, status bar, rules and actions; suggestions from shared public IPs. */
 .th-loc-city {

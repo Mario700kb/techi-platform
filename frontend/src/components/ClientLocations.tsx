@@ -16,7 +16,6 @@ import {
 import {
   applyLocationRules,
   ClientLocation,
-  countryFlag,
   countryName,
   createClientLocation,
   deleteClientLocation,
@@ -32,6 +31,7 @@ import {
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { formatCount } from "../utils/number";
 import ConfirmationModal from "./ConfirmationModal";
+import CountryTag from "./CountryTag";
 import { Button, EmptyState, Modal, Select } from "./ui";
 
 // Countries the console's clients are in, nearest first. A site saved with
@@ -418,7 +418,7 @@ export default function ClientLocations({ clientId, canManage }: { clientId: num
             <section key={city.key} className="th-onb-enter" style={{ "--i": cityIndex + 2 } as CSSProperties}>
               <div className="th-loc-city">
                 <span className="th-loc-city-name">
-                  {countryFlag(city.country)} {city.city}
+                  <CountryTag code={city.country} /> {city.city}
                   {severalCountries && <small>{countryName(city.country)}</small>}
                 </span>
                 <span className="tabular-nums">
@@ -618,7 +618,7 @@ export default function ClientLocations({ clientId, canManage }: { clientId: num
                   value={draft.country}
                   onChange={(value) => setDraft({ ...draft, country: value })}
                   options={(COUNTRIES.includes(draft.country) ? COUNTRIES : [draft.country, ...COUNTRIES]).map(
-                    (code) => ({ value: code, label: `${countryFlag(code)} ${countryName(code)}` }),
+                    (code) => ({ value: code, label: `${code} · ${countryName(code)}` }),
                   )}
                 />
               </div>

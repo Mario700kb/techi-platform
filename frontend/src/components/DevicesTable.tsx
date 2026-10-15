@@ -12,7 +12,6 @@ import {
   Copy,
   ExternalLink,
   Loader2,
-  MapPin,
   MoreHorizontal,
   PlayCircle,
   RotateCcw,
@@ -72,6 +71,7 @@ import {
 import { DeviceMobileCard } from "./DeviceMobileCard";
 import { toggled } from "../utils/sets";
 import PlatformIcon from "./PlatformIcon";
+import SiteLine from "./SiteLine";
 import VersionBadge from "./VersionBadge";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
@@ -1249,7 +1249,7 @@ const DevicesTable = memo(function DevicesTable({
                       { label: "Device", sortable: "hostname" as SortKey },
                       { label: "Status", sortable: "last_seen" as SortKey },
                       { label: "Health", sortable: null },
-                      { label: "Client / group", sortable: "client_name" as SortKey },
+                      { label: "Client / location", sortable: "client_name" as SortKey },
                       { label: "User / domain", sortable: null },
                       { label: "IP address", sortable: null },
                       { label: "Agent", sortable: null },
@@ -1326,8 +1326,8 @@ const DevicesTable = memo(function DevicesTable({
                             const label = deviceDisplayName(device);
                             const hostname = deviceHostnameSubtitle(device);
                             const typeLabel = deviceTypeLabel(device);
-                            // A group named after the device type already says it in Client / group.
-                            // (With a location, Client / group shows the site instead, so the type stays.)
+                            // A group named after the device type already says it in Client / location,
+                            // unless that column shows the device's site instead.
                             const showType =
                               !!device.location_name ||
                               typeLabel.toLowerCase() !== (device.group_name ?? "").trim().toLowerCase();
@@ -1414,7 +1414,7 @@ const DevicesTable = memo(function DevicesTable({
                           </div>
                         </td>
 
-                        {/* ── Client / Group ── */}
+                        {/* ── Client / Location ── */}
                         <td className="px-2.5 py-1.5 align-middle">
                           <div
                             className="max-w-[160px] truncate text-[12px] font-semibold leading-[1.3]"
@@ -1428,14 +1428,10 @@ const DevicesTable = memo(function DevicesTable({
                           <div className="mt-0.5 flex items-center gap-1">
                             {device.location_name ? (
                               // The client's site, where it has sites; the group otherwise.
-                              <span
-                                className="flex max-w-[160px] items-center gap-1 truncate text-[12px]"
-                                style={{ color: "var(--th-text-muted)" }}
-                                title={`${device.location_name}${device.location_source === "manual" ? " · placed by hand" : ""}`}
-                              >
-                                <MapPin className="h-3 w-3 flex-none" aria-hidden="true" />
-                                <span className="truncate">{device.location_name}</span>
-                              </span>
+                              <SiteLine
+                                device={device}
+                                className="max-w-[180px] text-[12px] text-[var(--th-text-muted)]"
+                              />
                             ) : (
                               <span
                                 className="max-w-[160px] truncate text-[12px]"

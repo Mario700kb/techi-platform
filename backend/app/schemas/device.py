@@ -217,6 +217,8 @@ class Device(DeviceBase):
     group_name: Optional[str] = None
     location_id: Optional[int] = None
     location_name: Optional[str] = None
+    location_city: Optional[str] = None
+    location_country: Optional[str] = None
     location_source: Optional[str] = None
     resolved_client_id: Optional[int] = None
     resolved_client_name: Optional[str] = None

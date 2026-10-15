@@ -36,6 +36,7 @@ import { ACTION_LABELS, AuditLogEntry } from "../api/audit";
 import { useAuth } from "../auth/AuthContext";
 import ClientDocuments from "../components/ClientDocuments";
 import ClientLocations from "../components/ClientLocations";
+import SiteLine from "../components/SiteLine";
 import { getAlerts } from "../api/alerts";
 import {
   ClientActivityKind,
@@ -1065,13 +1066,11 @@ function DevicesTab({
                 <th>Device</th>
                 <th>Status</th>
                 <th>Health</th>
-                <th>Group</th>
+                <th>Location</th>
                 <th>User</th>
                 <th>IP address</th>
-                <th className="text-right">Agent</th>
-                <th className="text-right">
-                  <span className="sr-only">Connect</span>
-                </th>
+                <th>Agent</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1124,7 +1123,13 @@ function DevicesTab({
                       )}
                     </td>
                     <td data-m="hide">
-                      <span className="th-alerts-primary">{device.group_name || "No group"}</span>
+                      {device.location_name ? (
+                        <SiteLine device={device} className="th-alerts-primary" />
+                      ) : (
+                        <span className="th-alerts-primary" style={{ color: "var(--th-text-muted)" }}>
+                          {device.group_name || "No group"}
+                        </span>
+                      )}
                     </td>
                     <td data-m="hide">
                       <span className="th-alerts-primary">{device.current_user || "—"}</span>
@@ -1134,14 +1139,10 @@ function DevicesTab({
                       <span className="th-alerts-primary font-mono text-[12px]">{device.public_ip || "—"}</span>
                       <span className="th-alerts-secondary font-mono">{device.local_ip || ""}</span>
                     </td>
-                    <td className="text-right" data-m="hide">
+                    <td data-m="hide">
                       <span className="th-alerts-primary font-mono text-[12px]">{device.agent_version || "—"}</span>
                     </td>
-                    <td
-                      className="text-right"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                    <td onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <DeviceConnect
                         device={device}
                         status={connectById.get(device.id)}

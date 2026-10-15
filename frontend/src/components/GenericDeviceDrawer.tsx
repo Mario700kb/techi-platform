@@ -15,6 +15,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { freshnessTone, humanize, isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
+import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { formatDateTime, timeAgo } from "../utils/time";
 import ActivityTimeline from "./ActivityTimeline";
@@ -717,11 +718,7 @@ function Overview({
           <dt>Group</dt>
           <dd>{device.resolved_group || device.group_name || TERMS.noGroup}</dd>
           <dt>Location</dt>
-          <dd>
-            {device.location_name
-              ? `${device.location_name} · ${device.location_source === "manual" ? "placed by hand" : "by rule"}`
-              : "No location"}
-          </dd>
+          <dd>{device.location_name ? (deviceSite(device)?.title ?? device.location_name) : "No location"}</dd>
           <dt>Source</dt>
           <dd>
             <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />

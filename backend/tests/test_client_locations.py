@@ -292,11 +292,13 @@ def test_a_device_that_moves_to_another_client_leaves_its_site(db):
                                                 "rules": [{"public_ip": HQ_IP}]}).json()
     device = db.get(Device, 1)
     assert device.location_id == hq["id"] and device.location_name == "HQ"
+    assert (device.location_city, device.location_country) == ("Tiranë", "AL")
     device.client_id = 2
     db.commit()
     db.expire_all()
     device = db.get(Device, 1)
     assert device.location_id is None and device.location_source is None and device.location_name is None
+    assert device.location_city is None and device.location_country is None
 
 
 def test_the_sweep_places_new_and_moved_devices_and_says_so_only_when_something_moved(db):
