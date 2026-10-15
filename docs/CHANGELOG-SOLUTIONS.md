@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] TABLE-ALIGN-2026-10-15 — Devices column headings line up with their content (`4d1943e`)
+
+Frontend only, deployed 2026-10-15 20:38 (Tirana). Rollback image
+`techi-platform-frontend:pre-table-align-44c034e`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200, the new badge classes in the served bundle. Root filesystem 86% (3.3 GB
+free).
+
+The owner pointed out that "Actions" did not line up with its button and
+asked for one standard across the headings. Measured in the browser:
+Actions 34 px off (the favourite star, hidden until hover but always 28 px
+wide, sat before Connect; the cell also had narrower padding than its
+heading), Agent 7 px off (an up-to-date version is plain text but kept the
+badge inset). Every other column was within 1 px.
+
+- The star follows Connect (before ⋯); the Actions cell has the heading's
+  padding.
+- An up-to-date version starts at its heading; coloured badges keep their
+  box, as in Health.
+- New `table-alignment.spec.ts`: each heading within 2 px of the left edge
+  of what its cell shows (text, badge, dot, button); it fails on the
+  previous layout ("Agent is 7px off").
+
+Vitest 236; Playwright 114.
+
 ## [2026-10-15] CLIENT-LOCATIONS-2026-10-15 — client sites: rules, Explorer levels, Locations tab (`1549520`)
 
 Backend, database and frontend, deployed 2026-10-15 20:21–20:28 (Tirana).
