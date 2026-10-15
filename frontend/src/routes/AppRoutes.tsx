@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppPreloader from "../components/AppPreloader";
 // The sign-in screen and the Dashboard are what nearly every visit starts
@@ -28,9 +28,28 @@ const Reports = lazy(() => import("../pages/Reports"));
 import { NotFound } from "../pages/StatusPages";
 import { RequireAuth, RequireFeature, RequirePermission } from "./guards";
 
+// After a reload the page's own code (Devices, Alerts, …) is still on its way
+// when the shell can already draw. Until the first page has shown, keep the
+// full-screen preloader the boot screen started — the same animation, so it
+// simply stays — instead of an empty shell with a bar; later navigations
+// show the in-page bar inside the shell.
+let firstPageShown = false;
+
+function FirstPageShown() {
+  useEffect(() => {
+    firstPageShown = true;
+  }, []);
+  return null;
+}
+
+function RouteFallback() {
+  return firstPageShown ? <AppPreloader inline label="Loading" /> : <AppPreloader />;
+}
+
 export default function AppRoutes() {
   return (
-    <Suspense fallback={<AppPreloader inline label="Loading" />}>
+    <Suspense fallback={<RouteFallback />}>
+      <FirstPageShown />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
