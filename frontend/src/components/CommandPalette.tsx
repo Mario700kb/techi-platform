@@ -195,7 +195,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
             title: client.name,
             subtitle: client.description || client.slug,
             icon: Building2,
-            run: () => go("/clients"),
+            // The client's own profile; the plain list only for an operator who
+            // may manage clients but not open a profile (needs view_devices).
+            run: () => go(canSearchDevices ? `/clients/${client.id}` : "/clients"),
           },
           score(q, client.name, `${client.slug} ${client.description ?? ""}`),
         );
@@ -222,7 +224,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
             title: name,
             subtitle: `${op.email} · ${op.role}`,
             icon: User,
-            run: () => go("/operators"),
+            run: () => go(`/operators?q=${encodeURIComponent(op.email)}`),
           },
           score(q, name, `${op.username} ${op.email} ${op.role}`),
         );

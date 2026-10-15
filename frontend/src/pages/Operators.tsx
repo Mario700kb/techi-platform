@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { CSSProperties } from "react";
 import {
   AlertTriangle,
@@ -134,6 +135,7 @@ export default function Operators() {
 
   const [filter, setFilter] = useState<OperatorFilter>("all");
   const [search, setSearch] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
@@ -157,6 +159,25 @@ export default function Operators() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  // Global search links here with ?q=<email>: narrow the table to that operator,
+  // also when the page is already open.
+  const urlQuery = searchParams.get("q");
+  useEffect(() => {
+    if (urlQuery === null) return;
+    setFilter("all");
+    setSearch(urlQuery);
+    setPage(1);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("q");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuery]);
 
   const activePrivilegedCount = operators.filter(
     (op) => op.is_active && (op.role === "owner" || op.role === "admin"),

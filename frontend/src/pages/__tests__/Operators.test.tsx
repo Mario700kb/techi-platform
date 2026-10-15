@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as operatorsApi from "../../api/operators";
@@ -37,6 +38,14 @@ function mockApi() {
   ]);
 }
 
+function renderPage(url = "/operators") {
+  return render(
+    <MemoryRouter initialEntries={[url]}>
+      <Operators />
+    </MemoryRouter>,
+  );
+}
+
 describe("Operators", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -45,7 +54,7 @@ describe("Operators", () => {
 
   it("keeps every action in place but locks the ones that would lock you out", async () => {
     mockApi();
-    render(<Operators />);
+    renderPage();
     const self = (await screen.findByText("Denis")).closest("tr")!;
     // Denis is both "you" and the last active owner.
     expect(within(self).getByRole("button", { name: "Deactivate Denis" })).toBeDisabled();
@@ -57,7 +66,7 @@ describe("Operators", () => {
 
   it("filters by role and finds an operator by team", async () => {
     mockApi();
-    render(<Operators />);
+    renderPage();
     await screen.findByText("Laura");
     fireEvent.click(screen.getByRole("tab", { name: /Owners & admins/ }));
     expect(screen.queryByText("Laura")).toBeNull();
@@ -65,5 +74,13 @@ describe("Operators", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Search operators" }), { target: { value: "it support" } });
     expect(screen.getByText("Laura")).toBeInTheDocument();
     expect(screen.queryByText("Denis")).toBeNull();
+  });
+
+  it("opens narrowed to the operator a global-search result names", async () => {
+    mockApi();
+    renderPage("/operators?q=laura%40techi.al");
+    expect(await screen.findByText("Laura")).toBeInTheDocument();
+    expect(screen.queryByText("Denis")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Search operators" })).toHaveValue("laura@techi.al");
   });
 });
