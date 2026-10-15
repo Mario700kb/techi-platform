@@ -5,6 +5,36 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] SITE-COLUMN-2026-10-15 — one alignment standard for tables; Client / location column (`754113e`)
+
+Backend and frontend, no migration, deployed 2026-10-15 20:52–20:55 (Tirana).
+Rollback images `techi-platform-{backend,frontend}:pre-site-column-39aa4e3`.
+Guard passed before and after, `nginx -t` OK, backend ready 9 s after start
+(0 restarts), 279 devices checked in within the first minutes, frontend
+healthy, smoke passed, public 200, new column in the served bundle. Root
+filesystem 87% (3.2 GB free).
+
+The owner found the same heading asymmetry on the client profile's Devices
+tab and asked for one standard everywhere; then asked for "Client / group"
+to become "Client / location" with country and city.
+
+- Alignment: the alignment test now measures 10 tables (Devices, client
+  profile Devices/Alerts/Activity/Analytics, Alerts, Clients, Operators,
+  Teams, Audit) — each heading within 2 px of what its cells show, on its
+  aligned side; 5 failed on the old layout. Fixes: profile Devices (Agent
+  left, visible Actions heading), Alerts (visible right-aligned Actions),
+  icon action groups pulled out by the ghost button's 7 px inset on desktop
+  (Clients, Operators, Teams and the other `th-onb-actions` tables).
+- Client / location: `[AL] Durrës · Magazina` under the client — ISO code
+  tag (flag emoji render as two letters on Windows), city, site without its
+  city; tooltip with full name, place and rule/hand; the group still shows
+  for devices at no site. Same view on phone cards, the phone device page,
+  both drawers and the profile's Devices tab (Group → Location); country
+  tags replace flag emoji in the Locations tab, Explorer and picker.
+- Backend: device responses carry `location_city` and `location_country`.
+
+Pytest 1386; Vitest 236; Playwright 124.
+
 ## [2026-10-15] TABLE-ALIGN-2026-10-15 — Devices column headings line up with their content (`4d1943e`)
 
 Frontend only, deployed 2026-10-15 20:38 (Tirana). Rollback image
