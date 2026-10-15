@@ -6960,27 +6960,21 @@ button.th-client-group:hover {
 
 /* Client profile → Locations: sites grouped by city, a card per site with its
    devices, status bar, rules and actions; suggestions from shared public IPs. */
-.th-loc-city {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 4px 10px;
-  font-size: 12px;
-  color: var(--th-text-muted);
+/* The sites scroll inside their own area under the toolbar (wider screens;
+   its max-height comes from useFillHeight). */
+.th-loc-scroll[data-fill="true"] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* Room for card shadows and focus rings at the edges. */
+  margin: -4px;
+  padding: 4px;
 }
-.th-loc-city-name {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--th-text-primary);
-}
-.th-loc-city-name small {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--th-text-muted);
+/* The Locations toolbar's search takes the room between title and buttons. */
+.th-loc-search {
+  flex: 1 1 260px;
+  max-width: 420px;
+  margin-left: auto;
 }
 .th-loc-grid {
   display: grid;

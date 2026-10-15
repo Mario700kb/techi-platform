@@ -172,9 +172,12 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("tab", { name: /Locations/ }).click();
 
     // Sites grouped by city, each with devices, status, rules and actions.
-    await expect(page.locator(".th-loc-city", { hasText: "Tiranë" })).toContainText("2 sites · 59 devices");
+    await expect(page.getByText("3 sites in 2 cities")).toBeVisible();
     const hq = page.locator(".th-loc-card", { hasText: "Tiranë – Zyra qendrore" });
     await expect(hq).toContainText("38");
+    // City and country on the card itself: a city with one site takes no row of its own.
+    await expect(hq.locator("header")).toContainText("AL");
+    await expect(hq.locator("header")).toContainText("Tiranë · Rr. Myslym Shyri 12");
     await expect(hq).toContainText("31 Client PCs · 7 Servers");
     await expect(page.locator(".th-loc-card", { hasText: "Durrës – Dega" })).toContainText("10 Client PCs · 1 Server");
     await expect(hq.locator(".th-loc-rule")).toContainText("80.90.87.187");
@@ -350,4 +353,88 @@ test("a device is placed by hand from its drawer, even at a site made on the spo
   await expect(page.getByRole("combobox", { name: "Assign location" })).toContainText("Durrës – Magazina");
   await page.getByRole("combobox", { name: "Assign location" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath("drawer-location.png") });
+});
+
+test("many sites scroll inside their own area while the profile above stays put", async ({ page }) => {
+  desktopOnly();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await northwindProfile(page);
+  const many = Array.from({ length: 14 }, (_, i) => ({
+    ...LOCATION_LIST.locations[2],
+    id: 100 + i,
+    name: `Site ${String(i + 1).padStart(2, "0")}`,
+    city: ["Tiranë", "Durrës", "Vlorë", "Shkodër", "Prishtinë", "Podgoricë", "Frankfurt"][i % 7],
+  }));
+  await page.route("**/api/v1/clients/1/locations/suggestions", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/clients/1/locations", (route) =>
+    route.fulfill({ json: { locations: many, unlocated: stats(0, 0) } }),
+  );
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /Locations/ }).click();
+  await expect(page.locator(".th-loc-card")).toHaveCount(14);
+
+  const area = page.locator(".th-loc-scroll");
+  await expect(area).toHaveAttribute("data-fill", "true");
+  const sizes = await page.evaluate(() => {
+    const main = document.querySelector(".th-main") as HTMLElement;
+    const list = document.querySelector(".th-loc-scroll") as HTMLElement;
+    return {
+      pageOverflow: main.scrollHeight - main.clientHeight,
+      listOverflow: list.scrollHeight - list.clientHeight,
+      listBottom: Math.round(list.getBoundingClientRect().bottom),
+      pageBottom: Math.round(main.getBoundingClientRect().bottom),
+    };
+  });
+  expect(sizes.pageOverflow).toBeLessThanOrEqual(1);
+  expect(sizes.listOverflow).toBeGreaterThan(100);
+  // The list ends where the page area does (less its bottom padding).
+  expect(sizes.pageBottom - sizes.listBottom).toBeLessThanOrEqual(24);
+
+  // Scrolling the list leaves the toolbar where it was.
+  const toolbar = page.getByRole("button", { name: "Add location" });
+  const before = (await toolbar.boundingBox())!.y;
+  await area.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => area.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect((await toolbar.boundingBox())!.y).toBe(before);
+  await page.screenshot({ path: test.info().outputPath("locations-scroll.png") });
+});
+
+test("the Locations search finds sites by name, place, country, kind and rule", async ({ page }) => {
+  desktopOnly();
+  await northwindProfile(page);
+  await page.route("**/api/v1/clients/1/locations/suggestions", (route) => route.fulfill({ json: SUGGESTIONS }));
+  await page.route("**/api/v1/clients/1/locations", (route) => route.fulfill({ json: LOCATION_LIST }));
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /Locations/ }).click();
+  const search = page.getByRole("textbox", { name: "Search locations" });
+  const cards = page.locator(".th-loc-card h3");
+  await expect(cards).toHaveCount(3);
+
+  await search.fill("durrës");
+  await expect(cards).toHaveText(["Durrës – Dega"]);
+  await expect(page.getByText("1 of 3 sites match")).toBeVisible();
+
+  await search.fill("80.90.87");
+  await expect(cards).toHaveText(["Tiranë – Magazina", "Tiranë – Zyra qendrore"]);
+  await search.fill("10.130.50");
+  await expect(cards).toHaveText(["Tiranë – Magazina"]);
+  await search.fill("albania warehouse");
+  await expect(cards).toHaveText(["Tiranë – Magazina"]);
+  // The suggestion's IP and networks are searched too; the unlocated card waits.
+  await search.fill("10.170.2");
+  await expect(page.locator(".th-loc-suggestions li")).toHaveCount(1);
+  await expect(page.locator(".th-loc-unlocated")).toHaveCount(0);
+
+  await search.fill("skopje");
+  await expect(page.getByText("No location matches “skopje”")).toBeVisible();
+  await expect(page.locator(".th-loc-suggestions li")).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear search" }).first().click();
+  await expect(cards).toHaveCount(3);
+
+  await search.fill("dega");
+  await search.press("Escape");
+  await expect(search).toHaveValue("");
+  await expect(cards).toHaveCount(3);
+  await page.locator("[role=tabpanel]").screenshot({ path: test.info().outputPath("locations-search.png") });
 });
