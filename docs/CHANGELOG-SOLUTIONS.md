@@ -5,6 +5,50 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] DB-HYGIENE-2026-10-15 — database review; one statement for id lists; 38 redundant indexes dropped (`2d5128f`)
+
+Backend and database, deployed 2026-10-15 22:09–22:16 (Tirana). Dump
+`/opt/backups/techi/pre-db-hygiene-2026-10-15_22-09.sql.gz` (145 MB, `gzip -t`
+OK); rollback image `techi-platform-backend:pre-db-hygiene-20fa618`. Migration
+`i9j0k1l2m3n4` → `j0k1l2m3n4o5` in 3.6 s while the old backend served
+(indexes dropped CONCURRENTLY). Backend ready 9 s after start, 0 restarts,
+129 devices checked in within 90 s, guard and smoke passed, no errors.
+
+**Review (read-only, at the owner's request: "is the database enterprise
+and professional?").** Sound foundations: 39 tables with primary keys, 48
+foreign keys, single Alembic head, the application on the non-superuser
+`techi_app` (idle-in-transaction 5 min), PostgreSQL bound to localhost,
+nightly verified dumps (8 days) plus the manual WD off-site pull, nightly
+retention (heartbeats, telemetry, resolved alerts 90 days, enrollment audit
+180 days — the oldest resolved alert is from 2026-07-18, exactly 90 days
+back), no deadlocks. The 201,694 historical sequential scans of
+device_telemetry no longer happen (0 in a 60 s sample). Findings acted on:
+
+- pg_stat_statements query-text file at **356 MB** for 4,878 entries: the
+  quick counts put hundreds of device ids into `IN (...)`, one placeholder
+  each, so every list length was a new statement (6,918 variants >10 KB).
+  New `id_in()` renders `= ANY($1)` with one array parameter on PostgreSQL
+  (quick counts, fleet insights over a client's devices). Statistics reset
+  after the deploy: `pg_stat_tmp` 358 MB → 8 KB.
+- **38 redundant indexes** (`ix_<table>_id` duplicating primary keys from
+  `index=True`, unique columns, leading columns of composite indexes):
+  dropped; 184 → 146 indexes, 722 → 652 MB; models no longer declare them.
+- Leftover table `device_repair_count_reset_20260702` (July, no primary key,
+  314 rows; in the dump) dropped.
+
+Root filesystem 89% → 87% (3.2 GB free).
+
+Open, approved as a separate step (needs a PostgreSQL restart):
+`max_connections` 200 → 50 (12 in use on a 2 GB host), `jit` off. Not
+changed by choice: naive-UTC timestamps (documented convention), JSON stored
+as text, no PITR. Further: only 3 CHECK constraints (enum-like varchar
+columns validated in the application), 7 foreign keys without an index (all
+on small tables), restore test run once (2026-10-12), WD pull manual
+(RISK-BKP-001).
+
+Pytest 1388 (2 new: one statement whatever the list length); migration
+checked on PostgreSQL 16 up/down/up.
+
 ## [2026-10-15] LOCATION-PICKER-2026-10-15 — place a device by hand from its drawer, any time (`caec791`)
 
 Frontend only, deployed 2026-10-15 21:48 (Tirana). Rollback image
