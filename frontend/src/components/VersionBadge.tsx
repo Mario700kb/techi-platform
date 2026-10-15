@@ -42,7 +42,8 @@ export default function VersionBadge({ version, status, title }: Props) {
   }
   return (
     <span
-      className={`inline-flex items-center rounded px-1.5 py-px font-mono text-[12px] ${status === "current" ? "font-medium" : "font-semibold"}`}
+      // Current is plain text without the badge's inset, so it starts where its column heading does.
+      className={`inline-flex items-center rounded py-px font-mono text-[12px] ${status === "current" ? "font-medium" : "px-1.5 font-semibold"}`}
       style={STYLES[status]}
       title={title ?? (status === "current" ? "Up to date" : undefined)}
     >

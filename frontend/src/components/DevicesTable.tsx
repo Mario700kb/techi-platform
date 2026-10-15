@@ -1491,23 +1491,8 @@ const DevicesTable = memo(function DevicesTable({
                         </td>
 
                         {/* ── Actions ── */}
-                        <td className="th-sticky-end px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                        <td className="th-sticky-end px-2.5 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
-                            {/* Star / favourite */}
-                            {onToggleFavorite && (
-                              <button
-                                type="button"
-                                onClick={() => onToggleFavorite(device.id)}
-                                title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
-                                aria-label={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
-                                className={`flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:bg-[var(--th-sidebar-nav-hover)] ${favorites.has(device.id) ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
-                                style={{
-                                  color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)",
-                                }}
-                              >
-                                <Star className={`h-3.5 w-3.5 ${favorites.has(device.id) ? "fill-current" : ""}`} />
-                              </button>
-                            )}
                             {/* Connect (approved V3 Connect mockup). Windows keeps its
                               existing dedicated RustDesk flow, byte-identical — main
                               click opens directly, single option, exactly as before
@@ -1570,6 +1555,21 @@ const DevicesTable = memo(function DevicesTable({
                               />
                             )}
 
+                            {/* Star / favourite: after Connect, so Connect starts under the column heading */}
+                            {onToggleFavorite && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleFavorite(device.id)}
+                                title={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                                aria-label={favorites.has(device.id) ? "Remove from favorites" : "Add to favorites"}
+                                className={`flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:bg-[var(--th-sidebar-nav-hover)] ${favorites.has(device.id) ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
+                                style={{
+                                  color: favorites.has(device.id) ? "var(--th-status-warning)" : "var(--th-text-muted)",
+                                }}
+                              >
+                                <Star className={`h-3.5 w-3.5 ${favorites.has(device.id) ? "fill-current" : ""}`} />
+                              </button>
+                            )}
                             {canOperate && (
                               <button
                                 type="button"
