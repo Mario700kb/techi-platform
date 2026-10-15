@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] CLIENT-ANALYTICS-2026-10-15 — client Analytics opens fast and reads clearly; Activity 20 a page (`216e2e2`)
+
+Frontend only, deployed 2026-10-15 16:54 (Tirana). Rollback image
+`techi-platform-frontend:pre-client-analytics-f03cfa1`. Guard passed before
+and after, `nginx -t` OK, container healthy (0 restarts), smoke passed,
+public 200, the new styles in the served bundle. Root filesystem 89%
+(2.6 GB free).
+
+The owner asked for the client profile's Analytics to open faster and look
+enterprise and symmetric, and for Activity to show 20 rows a page.
+Production logs showed a client's first Analytics request taking 1–3 s
+(the 30-day availability is measured once per client, then cached 30 min).
+
+- Analytics starts loading in the background 600 ms after the profile is
+  shown; the tab and the background start share one in-flight request per
+  client, so the server never measures a client twice at once.
+- Skeleton in the tab's own shape (four figures, two charts, table).
+- Key figures with icon, period and a hint line: availability names its 30
+  days, the alert figures their 7 days (before, nothing said so).
+- Charts one height (220 px), period and Opened/Resolved legend in the card
+  head; availability axis on round steps (also on the Dashboard); bars up
+  to 18 px.
+- Devices needing attention: rank, bars for offline events and alerts on a
+  shared scale, columns on the card grid; counts only on phones.
+- Activity: 20 entries a page instead of 50.
+
+Vitest 236; Playwright 106 (new: periods and legend on Analytics, 20 a page
+on Activity). Checked in screenshots: dark, light, phone.
+
 ## [2026-10-15] GLOBAL-SEARCH-2026-10-15 — global search opens the exact client or operator (`649fe5f`)
 
 Frontend only, deployed 2026-10-15 13:39 (Tirana). Rollback image
